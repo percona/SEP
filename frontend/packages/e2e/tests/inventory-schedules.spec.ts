@@ -16,7 +16,9 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
+const NODES_ROUTE = '/inventory/nodes';
 const SCHEDULE_ROUTE = '/inventory/schedule';
 const TASK_NAME = 'inventory-sync';
 
@@ -45,7 +47,7 @@ const MOCK_SCHEMA = {
   ],
 };
 
-const MOCK_PLUGIN_TASKS = [{ name: TASK_NAME }];
+const MOCK_APP_TASKS = [{ name: TASK_NAME }];
 
 const MOCK_AVAILABLE_SYNCERS = [
   { name: 'myapp.SyncerA', display_name: 'Syncer A' },
@@ -67,6 +69,10 @@ async function mockInventoryScheduleApis(page: Page) {
       return route.continue();
     }
 
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
+    }
+
     // Auth
     if (pathname.includes('/oauth/refresh')) {
       return route.fulfill({
@@ -83,8 +89,8 @@ async function mockInventoryScheduleApis(page: Page) {
       });
     }
 
-    // Plugin schema
-    if (pathname.endsWith('/plugins/inventory/schema')) {
+    // App schema
+    if (pathname.endsWith('/apps/inventory/schema')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -92,17 +98,17 @@ async function mockInventoryScheduleApis(page: Page) {
       });
     }
 
-    // Plugin tasks list (usePluginTasks)
-    if (pathname.endsWith('/plugins/inventory/') && method === 'GET') {
+    // App tasks list (useAppTasks)
+    if (pathname.endsWith('/apps/inventory/') && method === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PLUGIN_TASKS),
+        body: JSON.stringify(MOCK_APP_TASKS),
       });
     }
 
     // Available syncers
-    if (pathname.includes('/plugins/inventory/available-syncers/')) {
+    if (pathname.includes('/apps/inventory/available-syncers/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -111,7 +117,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Sync status (for SyncControl on nodes page)
-    if (pathname.includes('/plugins/inventory/sync/status/')) {
+    if (pathname.includes('/apps/inventory/sync/status/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -120,12 +126,12 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Inventory nodes
-    if (pathname.includes('/plugins/inventory/nodes')) {
+    if (pathname.includes('/apps/inventory/nodes')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     }
 
     // Periodic task list
-    if (pathname.endsWith('/tasks/periodic/') && method === 'GET') {
+    if (pathname.endsWith('/sep/periodic-tasks/') && method === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -134,7 +140,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Periodic task create
-    if (pathname.endsWith(`/tasks/${TASK_NAME}/periodic/`) && method === 'POST') {
+    if (pathname.endsWith(`/sep/periodic-tasks/${TASK_NAME}/`) && method === 'POST') {
       const body = JSON.parse((await route.request().postData()) ?? '{}') as PeriodicTask;
       const created: PeriodicTask = {
         ...body,
@@ -158,7 +164,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Periodic task update / delete
-    const periodicMatch = pathname.match(/\/tasks\/periodic\/(\d+)$/);
+    const periodicMatch = pathname.match(/\/sep\/periodic-tasks\/(\d+)$/);
     if (periodicMatch) {
       const id = Number(periodicMatch[1]);
       const idx = schedules.findIndex((s) => s.id === id);
@@ -188,6 +194,26 @@ async function mockInventoryScheduleApis(page: Page) {
 test.describe('Inventory schedule management smoke', () => {
   test.beforeEach(async ({ page }) => {
     await mockInventoryScheduleApis(page);
+  });
+
+  test('nodes list shows exactly one Schedules button that opens the scheduler', async ({
+    page,
+  }) => {
+    await page.goto(NODES_ROUTE);
+
+    // Exactly one Schedules button: inventory's working custom one. The generic
+    // AppListPage button is suppressed via hideScheduleButton.
+    const scheduleButtons = page.getByRole('button', { name: /Schedules/i });
+    await expect(scheduleButtons).toHaveCount(1);
+
+    const invButton = page.getByTestId('inv-schedule-link');
+    await expect(invButton).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('plugin-schedule-link')).toHaveCount(0);
+
+    // It navigates to the inventory scheduler.
+    await invButton.click();
+    await expect(page).toHaveURL(new RegExp(`${SCHEDULE_ROUTE}$`));
+    await expect(page.getByTestId('inv-sched-attach')).toBeVisible({ timeout: 10_000 });
   });
 
   test('attach → edit → disable → clear a sync schedule', async ({ page }) => {

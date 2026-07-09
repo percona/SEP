@@ -19,7 +19,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from starlette.status import HTTP_200_OK
+from fastapi import HTTPException
+from starlette.status import HTTP_200_OK, HTTP_500_INTERNAL_SERVER_ERROR
 
 from app.core.requests import RemoteAPI
 from app.sep.deps import get_current_user, get_task_history, get_tasks_api
@@ -81,3 +82,21 @@ class TestListTaskExecutionEvents:
         mock_tasks_api_dep.get.assert_awaited_once_with(
             f"/history/{task_history_response.id}/events"
         )
+
+    def test_propagates_tasks_api_error(
+        self,
+        mocker,
+        test_client,
+        regular_user,
+        mock_tasks_api_dep,
+        task_history_response,
+    ):
+        """Assert an upstream Tasks API server error propagates to the response."""
+        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
+        mock_tasks_api_dep.get.side_effect = HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+        response = test_client.get(f"/execution-events/{task_history_response.id}")
+
+        assert response.status_code == HTTP_500_INTERNAL_SERVER_ERROR

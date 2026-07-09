@@ -20,8 +20,16 @@ import re
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
+from sqlalchemy_celery_beat.models import Period
 
-from app.sep.snippets.config import SnippetSudoOption
+from app.core.celery.models import IntervalSchedule
+from app.core.settings_override.registry import (
+    is_hot_reloadable,
+    materialize_override_value,
+)
+from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
+from app.sep.snippets.config import SnippetsSettings, SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippet, SUDO_INPUT_NAME
 
 EXECUTOR_HOSTS = frozenset({("host1", "host1")})
@@ -231,6 +239,44 @@ class TestToFormParameterGrouping:
         assert "Parameters" not in legends
 
 
+class TestToFormHiddenParameters:
+    """Test that _to_form omits parameters marked ``hidden``."""
+
+    def test_hidden_param_omitted_from_html(self):
+        """A hidden param is not rendered while a sibling still renders."""
+        params = _make_params_json(
+            {"name": "pmmserver"},
+            {"name": "apikey", "hidden": True},
+        )
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        assert 'name="pmmserver"' in html
+        assert 'name="apikey"' not in html
+
+    def test_hidden_secret_value_never_in_html(self):
+        """A hidden param's default value never leaks into the page source."""
+        secret = "super-secret-api-key"
+        params = _make_params_json(
+            {"name": "apikey", "hidden": True, "default": secret},
+        )
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        assert secret not in html
+        assert 'name="apikey"' not in html
+
+    def test_hidden_param_creates_no_fieldset(self):
+        """A solely-hidden parameter produces no extra 'Parameters' fieldset."""
+        params = _make_params_json({"name": "apikey", "hidden": True})
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        legends = _extract_fieldset_legends(html)
+        assert "Parameters" not in legends
+
+    def test_non_hidden_params_render_unchanged(self):
+        """Params without ``hidden`` render exactly as before."""
+        params = _make_params_json({"name": "host"}, {"name": "port"})
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        assert 'name="host"' in html
+        assert 'name="port"' in html
+
+
 class TestToFormOptionalExecutorHosts:
     """Test ``_to_form`` with optional executor hosts and custom form ID."""
 
@@ -238,7 +284,7 @@ class TestToFormOptionalExecutorHosts:
         """Verify no executor host fieldset is rendered when hosts are ``None``."""
         html = BaseSnippet._to_form("[]", None)
         legends = _extract_fieldset_legends(html)
-        assert "Executor Host" not in legends
+        assert EXECUTION_HOST_LABEL not in legends
 
     def test_executor_hosts_none_still_renders_parameters(self):
         """Verify parameter fieldsets render even when hosts are ``None``."""
@@ -251,7 +297,7 @@ class TestToFormOptionalExecutorHosts:
         """Verify executor host fieldset renders when hosts are provided."""
         html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
         legends = _extract_fieldset_legends(html)
-        assert "Executor Host" in legends
+        assert EXECUTION_HOST_LABEL in legends
 
     def test_custom_form_id(self):
         """Verify the form element uses a custom ID when provided."""
@@ -268,5 +314,44 @@ class TestToFormOptionalExecutorHosts:
         params = _make_params_json({"name": "host"})
         html = BaseSnippet._to_form(params, None, form_id="troubleshoot-test")
         assert 'id="troubleshoot-test"' in html
-        assert "Executor Host" not in html
+        assert EXECUTION_HOST_LABEL not in html
         assert "Parameters" in html
+
+
+class TestSyncIntervalHotField:
+    """``SYNC_INTERVAL`` is HOT-reloadable so a DB override takes effect live."""
+
+    def test_sync_interval_is_hot_reloadable(self) -> None:
+        """``SYNC_INTERVAL`` is declared HOT via ``hot_field``."""
+        assert is_hot_reloadable(SnippetsSettings, "SYNC_INTERVAL") is True
+
+    def test_materializes_dict_override_to_interval_schedule(self) -> None:
+        """A raw dict override coerces to an ``IntervalSchedule`` snapshot value."""
+        field_info = SnippetsSettings.model_fields["SYNC_INTERVAL"]
+        value = materialize_override_value(
+            SnippetsSettings,
+            "SYNC_INTERVAL",
+            field_info,
+            {"every": 30, "period": "minutes"},
+        )
+        assert value == IntervalSchedule(every=30, period=Period.MINUTES)
+
+    def test_materializes_string_override_to_interval_schedule(self) -> None:
+        """A raw string override coerces via ``IntervalSchedule.create_from_str``."""
+        field_info = SnippetsSettings.model_fields["SYNC_INTERVAL"]
+        value = materialize_override_value(
+            SnippetsSettings, "SYNC_INTERVAL", field_info, "every 15 minutes"
+        )
+        assert value == IntervalSchedule(every=15, period=Period.MINUTES)
+
+    @pytest.mark.parametrize(
+        "bad",
+        [{"every": 0, "period": "minutes"}, {"every": -1, "period": "hours"}, "junk"],
+    )
+    def test_invalid_override_rejected(self, bad: Any) -> None:
+        """Non-positive or unparseable overrides fail coercion (caller logs+skips)."""
+        field_info = SnippetsSettings.model_fields["SYNC_INTERVAL"]
+        with pytest.raises((ValidationError, ValueError)):
+            materialize_override_value(
+                SnippetsSettings, "SYNC_INTERVAL", field_info, bad
+            )

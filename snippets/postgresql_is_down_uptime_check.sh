@@ -6,6 +6,12 @@
 # allow_extra_args: false
 # sudo: always
 # service_type: postgresql
+# parameters:
+#  - name: dbname
+#    type: str
+#    label: Target database
+#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    default: postgres
 # alerts:
 #   - PostgreSQLIsDown
 #   - PostgreSQLUptime
@@ -14,6 +20,14 @@
 # Usage: ./postgresql_is_down_check.sh
 
 set -euo pipefail
+
+DBNAME="${PGDATABASE:-postgres}"
+if [[ ${1:-} == --dbname=* ]]; then
+    DBNAME="${1#*=}"
+elif [[ ${1:-} == --dbname ]]; then
+    DBNAME="${2:-postgres}"
+fi
+export PGDATABASE="${DBNAME:-postgres}"
 
 PSQL="psql"
 

@@ -19,8 +19,11 @@ import type { ComponentType, ReactNode } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider, Link } from 'react-router-dom';
+import { Controller, useFormContext } from 'react-hook-form';
+import Slider from '@mui/material/Slider';
+import Typography from '@mui/material/Typography';
 import { ALERT_CONFIG_QUERY_KEY } from '@sep/api';
-import type { FormSection } from './types';
+import type { FormSection, RenderFieldOverride } from './types';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 
 const MULTI_SECTION_SCHEMA: FormSection[] = [
@@ -106,7 +109,7 @@ const MULTI_SECTION_SCHEMA: FormSection[] = [
       },
       { type: 'bool', name: 'dryRun', label: 'Dry run', default: true },
       {
-        type: 'multichoice',
+        type: 'multi_choice',
         name: 'tags',
         label: 'Tags',
         choices: [
@@ -191,6 +194,27 @@ export const WithSubmitError: Story = {
   },
 };
 
+export const WithFieldErrors: Story = {
+  args: {
+    sections: MULTI_SECTION_SCHEMA.slice(0, 1),
+    submitLabel: 'Retry',
+    // Mirrors what the create/edit pages produce from a 422: a persistent banner
+    // listing every backend message plus inline per-field errors applied via
+    // setError. The `host` entry below maps to no rendered field, so it is
+    // surfaced through the banner only — never silently dropped.
+    submitError: [
+      "Couldn't save your changes:",
+      '• Title: String should have at least 3 characters',
+      '• host: field required',
+    ].join('\n'),
+    fieldErrors: [
+      { path: 'title', message: 'String should have at least 3 characters' },
+      { path: 'host', message: 'field required' },
+    ],
+    onSubmit: () => {},
+  },
+};
+
 export const MinimalForm: Story = {
   args: {
     sections: [
@@ -246,7 +270,7 @@ export const ConditionalFields: Story = {
 };
 
 /**
- * Mirrors the pt-online-schema-change (alters) plugin's Recursion section.
+ * Mirrors the pt-online-schema-change (alters) app's Recursion section.
  * "DSN Table" is only needed when Recursion Method is "DSN" — otherwise it
  * is hidden and excluded from the submission payload.
  */
@@ -289,7 +313,7 @@ export const AltersRecursionMethod: Story = {
 };
 
 /**
- * Mirrors the pt-archiver (archives) plugin's purge-conditions section.
+ * Mirrors the pt-archiver (archives) app's purge-conditions section.
  * When Swap Drop = 1 (SWAP_DROP) the WHERE clause is forbidden — pt-archiver
  * selects all rows. Any other swap_drop value requires a WHERE clause.
  */
@@ -338,7 +362,7 @@ export const ArchivesSwapDrop: Story = {
  *  - forbidden + requires on `where`: hidden when swap_drop=1, required otherwise
  *
  * This is the "combined 5-validator" shape referenced in SEP-1077 AC #4 —
- * intended as living documentation for plugin authors migrating to Wave 2.
+ * intended as living documentation for app authors migrating to Wave 2.
  */
 export const ArchivesCombined: Story = {
   args: {
@@ -448,6 +472,102 @@ export const ArchivesSourceXor: Story = {
   },
 };
 
+/** Segmented one-of group with nested dotted branch fields. */
+export const OneOfSourceGroup: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Source',
+        fields: [
+          {
+            type: 'one_of',
+            name: 'source',
+            label: 'Source',
+            description: 'Choose how to specify source rows.',
+            discriminator: 'source.mode',
+            default: 'schema',
+            branches: [
+              {
+                value: 'schema',
+                label: 'Schema & Table',
+                fields: [
+                  {
+                    type: 'string',
+                    name: 'source.source_db_id',
+                    label: 'Source Schema',
+                  },
+                ],
+              },
+              {
+                value: 'query',
+                label: 'Custom Query',
+                fields: [
+                  {
+                    type: 'string',
+                    name: 'source.source_query',
+                    label: 'Source Query',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
+/**
+ * Empty-state placeholder for `multi_choice` and `choice` (select-mode).
+ * Confirms the floating label sits above and a muted "Select…" affordance
+ * is visible inside the control when no value is chosen (SEP-1278).
+ */
+export const EmptyChoicePlaceholder: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Empty selects',
+        description:
+          'Both controls below render a muted "Select…" placeholder when no value is selected.',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+              { label: 'GCS', value: 'GCS' },
+            ],
+          },
+          {
+            type: 'choice',
+            name: 'region',
+            label: 'Region (required)',
+            required: true,
+            choices: [
+              { label: 'us-east-1', value: 'us-east-1' },
+              { label: 'us-west-2', value: 'us-west-2' },
+              { label: 'eu-west-1', value: 'eu-west-1' },
+              { label: 'ap-south-1', value: 'ap-south-1' },
+            ],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Submit',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
 /** Alert provider configured: checkbox is enabled and actionable. */
 export const WithAlertCapabilityEnabled: Story = {
   decorators: [withAlertConfig(true)],
@@ -525,5 +645,61 @@ export const UnsavedChangesGuard: StoryObj = {
         <RouterProvider router={router} />
       </QueryClientProvider>
     );
+  },
+};
+
+/**
+ * `renderField` override (SEP-1355). Replaces the default numeric widget for the
+ * `samplingRate` field with a MUI Slider, while every other field falls back to
+ * the framework default via `renderDefault()`. The slider writes through
+ * react-hook-form (`Controller`), so its value participates in validation and
+ * submission exactly like a built-in widget.
+ */
+function SamplingRateSlider({ name }: { name: string }) {
+  const { control } = useFormContext();
+  return (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field }) => (
+        <div>
+          <Typography gutterBottom>Sampling rate: {String(field.value ?? 0)}</Typography>
+          <Slider
+            value={typeof field.value === 'number' ? field.value : 0}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(_, v) => field.onChange(v)}
+            valueLabelDisplay="auto"
+          />
+        </div>
+      )}
+    />
+  );
+}
+
+const renderSamplingSlider: RenderFieldOverride = ({ field, renderDefault }) =>
+  field.name === 'samplingRate' ? <SamplingRateSlider name={field.name} /> : renderDefault();
+
+export const WithRenderFieldOverride: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Sampling',
+        description:
+          'The "Sampling rate" field is rendered by a renderField override (a Slider); the other fields use the framework defaults.',
+        fields: [
+          { type: 'string', name: 'title', label: 'Title', required: true },
+          { type: 'float', name: 'samplingRate', label: 'Sampling rate', default: 0.1 },
+          { type: 'bool', name: 'dryRun', label: 'Dry run', default: true },
+        ],
+      },
+    ],
+    submitLabel: 'Submit',
+    renderField: renderSamplingSlider,
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
   },
 };

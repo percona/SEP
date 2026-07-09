@@ -1,0 +1,265 @@
+{
+  "capabilities": {
+    "alert_on_fail": true,
+    "chaining": true,
+    "pii_anonymization": true,
+    "scheduling": true,
+    "stats": true
+  },
+  "description": "Run pt-table-checksum to verify MySQL replication consistency.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Command",
+            "path": "data.meta.command"
+          },
+          {
+            "label": "Args",
+            "path": "data.meta.args"
+          },
+          {
+            "label": "Execution Host",
+            "path": "data.meta.target"
+          }
+        ],
+        "title": "Execution"
+      }
+    ]
+  },
+  "display_name": "Checksums",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Task Name",
+          "name": "task_name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
+        },
+        {
+          "label": "Database Host",
+          "name": "service_id",
+          "required": true,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "description": "Comma-separated database names",
+          "label": "Databases",
+          "name": "databases",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Comma-separated table names (schema.table format)",
+          "label": "Tables",
+          "name": "tables",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Data"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "choices": [
+            {
+              "label": "Default",
+              "value": "default"
+            },
+            {
+              "label": "Processlist",
+              "value": "processlist"
+            },
+            {
+              "label": "Hosts",
+              "value": "hosts"
+            },
+            {
+              "label": "DSN",
+              "value": "dsn"
+            },
+            {
+              "label": "None",
+              "value": "none"
+            }
+          ],
+          "default": "processlist",
+          "label": "Recursion Method",
+          "name": "recursion_method",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "default": "D=percona,t=dsns",
+          "description": "Only used when recursion method is 'dsn'",
+          "label": "DSN Table",
+          "name": "dsn_table",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Recursion"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "default": false,
+          "description": "Use BLOB type for replicate-table boundary columns",
+          "label": "Binary Index",
+          "name": "binary_index",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Show but do not execute checksum queries",
+          "label": "Explain (dry run)",
+          "name": "explain_arg",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Fail with an error if replication is stopped",
+          "label": "Fail on Stopped Replication",
+          "name": "fail_on_stopped_replication",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Truncate the replicate table before starting",
+          "label": "Truncate Replicate Table",
+          "name": "truncate_replicate_table",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Flags"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "description": "Execution pauses while this file exists",
+          "label": "Pause File",
+          "name": "pause_file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": "time,10",
+          "description": "Print progress reports to STDERR (e.g. time,10)",
+          "label": "Progress",
+          "name": "progress",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": "transaction_isolation='READ-COMMITTED',lock_wait_timeout=5",
+          "description": "MySQL variables to set (comma-separated key=value pairs)",
+          "label": "Set Vars",
+          "name": "set_vars",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": "Threads_running=50",
+          "description": "Pause when any GLOBAL STATUS variable exceeds this threshold",
+          "label": "Max Load",
+          "name": "max_load",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": "0.5",
+          "description": "Target execution time per chunk in seconds",
+          "label": "Chunk Time",
+          "name": "chunk_time",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": "150",
+          "description": "Pause until replica lag falls below this value (seconds)",
+          "label": "Max Lag",
+          "name": "max_lag",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Advanced"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      },
+      {
+        "format": "chip",
+        "key": "service_type",
+        "label": "Service Type",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "checksums"
+}

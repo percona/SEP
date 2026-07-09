@@ -17,52 +17,18 @@
 
 import { lazy } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { buildAppRoutes } from './appRegistry';
 import RootLayout from './layouts/RootLayout';
 import MainLayout from './layouts/MainLayout';
 import AuthGuard from './components/AuthGuard';
-import { useAuth } from './contexts/auth';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
-const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const AdminAppsPage = lazy(() => import('./pages/AdminAppsPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
-// Schema-driven plugins — each is a single lazy import
-const ChecksumsPlugin = lazy(() =>
-  import('@sep/plugin-checksums').then((m) => ({ default: m.ChecksumsPlugin })),
-);
-const MysqlBackupsPlugin = lazy(() =>
-  import('@sep/plugin-mysql-backups').then((m) => ({ default: m.MysqlBackupsPlugin })),
-);
-const AtwPlugin = lazy(() => import('@sep/plugin-atw').then((m) => ({ default: m.AtwPlugin })));
-const DipperPlugin = lazy(() =>
-  import('@sep/plugin-dipper').then((m) => ({ default: m.DipperPlugin })),
-);
-const InventoryPlugin = lazy(() =>
-  import('@sep/inventory').then((m) => ({ default: m.InventoryPlugin })),
-);
-const SnippetsPluginLazy = lazy(() =>
-  import('@sep/plugins-snippets').then((m) => ({ default: m.SnippetsPlugin })),
-);
-const AlertTroubleshootingPlugin = lazy(() =>
-  import('@sep/plugin-alert-troubleshooting').then((m) => ({
-    default: m.AlertTroubleshootingPlugin,
-  })),
-);
-const TasksPlugin = lazy(() =>
-  import('@sep/plugin-tasks').then((m) => ({ default: m.TasksPlugin })),
-);
-const ArchivesPlugin = lazy(() =>
-  import('@sep/plugin-archives').then((m) => ({ default: m.ArchivesPlugin })),
-);
-const BackupMongoPlugin = lazy(() =>
-  import('@sep/plugin-backup-mongo').then((m) => ({ default: m.BackupMongoPlugin })),
-);
-
-function SnippetsPlugin() {
-  const { isAdmin } = useAuth();
-  return <SnippetsPluginLazy isAdmin={isAdmin} />;
-}
+const appRoutes = buildAppRoutes();
 
 export const router = createBrowserRouter([
   {
@@ -81,25 +47,9 @@ export const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <DashboardPage /> },
-          { path: 'inventory/*', element: <InventoryPlugin /> },
-          { path: 'tasks/*', element: <TasksPlugin /> },
-          { path: 'snippets/*', element: <SnippetsPlugin /> },
-          { path: 'atw/*', element: <AtwPlugin /> },
-          { path: 'dipper/*', element: <DipperPlugin /> },
-          { path: 'alerts/templates', element: <PlaceholderPage /> },
-          { path: 'alerts/troubleshooting/*', element: <AlertTroubleshootingPlugin /> },
-          { path: 'schema-change/alters', element: <PlaceholderPage /> },
-          // Checksums — schema-driven plugin (handles its own sub-routes)
-          { path: 'plugins/checksums/*', element: <ChecksumsPlugin /> },
-          { path: 'schema-change/checksums/*', element: <ChecksumsPlugin /> },
-          { path: 'plugins/mysql_backups/*', element: <MysqlBackupsPlugin /> },
-          { path: 'schema-change/inventory/*', element: <InventoryPlugin /> },
-          { path: 'backups/mysql', element: <PlaceholderPage /> },
-          { path: 'backups/mongodb/*', element: <BackupMongoPlugin /> },
-          { path: 'backups/postgresql', element: <PlaceholderPage /> },
-          { path: 'plugins/archives/*', element: <ArchivesPlugin /> },
-          { path: 'reports', element: <PlaceholderPage /> },
-          { path: 'settings', element: <PlaceholderPage /> },
+          ...appRoutes.map(({ path, element }) => ({ path, element })),
+          { path: 'settings', element: <SettingsPage /> },
+          { path: 'admin/apps', element: <AdminAppsPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

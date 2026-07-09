@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { memo, useCallback, useContext, useMemo } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { FormProvider, useForm, useFormContext, type SubmitHandler } from 'react-hook-form';
 // UNSAFE_DataRouterContext is an unstable react-router API — pinned to react-router-dom ^7.6.0; review on version bumps.
 import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
@@ -33,24 +33,35 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import type { PluginCapabilities } from '@sep/api';
+import type { AppCapabilities, FieldValidationError } from '@sep/api';
 import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from '../AlertOnFailField';
-import { FieldRenderer } from './fields';
-import { useConditionalField } from './hooks/useConditionalField';
+import { ConditionalFieldSlot } from './ConditionalFieldSlot';
+import { OneOfGroupSlot } from './OneOfGroupSlot';
+import { useConditionalSection } from './hooks/useConditionalSection';
 import { useCardinalityRules } from './hooks/useCardinalityRules';
 import { useFailRules } from './hooks/useFailRules';
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard';
 import { coerceFormValues } from './utils/validationMapper';
-import type { FormSection, PluginField } from './types';
+import { getAtPath, setAtPath } from './utils/fieldPath';
+import {
+  collectOneOfGroups,
+  flattenSectionFields,
+  isOneOfGroup,
+} from './utils/flattenSectionFields';
+import type { FormSection, AppField, RenderFieldOverride } from './types';
 
-function fieldDefault(field: PluginField): unknown {
+function fieldDefault(field: AppField): unknown {
   switch (field.type) {
     case 'bool':
       return field.default ?? false;
     case 'integer':
     case 'float':
       return field.default ?? '';
-    case 'multichoice':
+    case 'multi_choice':
+    case 'multi_service':
+    case 'multi_schema':
+    case 'multi_table':
+    case 'multi_host':
       return field.default ?? [];
     case 'file':
       return undefined;
@@ -64,42 +75,54 @@ function fieldDefault(field: PluginField): unknown {
   }
 }
 
-function flattenFields(sections: FormSection[]): PluginField[] {
-  return sections.flatMap((s) => s.fields);
+function flattenFields(sections: FormSection[]): AppField[] {
+  return flattenSectionFields(sections);
 }
 
-const ConditionalFieldSlot = memo(function ConditionalFieldSlot({ field }: { field: PluginField }) {
-  const { isHidden, isRequired } = useConditionalField(field);
-
-  if (isHidden) {
-    return null;
+function buildFormDefaults(
+  sections: FormSection[],
+  allFields: AppField[],
+  defaultValues: Record<string, unknown> | undefined,
+  capabilities: AppCapabilities | undefined,
+): Record<string, unknown> {
+  const defaults: Record<string, unknown> = {};
+  for (const field of allFields) {
+    const seed = defaultValues ? getAtPath(defaultValues, field.name) : undefined;
+    setAtPath(defaults, field.name, seed ?? fieldDefault(field));
   }
-
-  // Clone the field with the resolved required flag so FieldRenderer passes it
-  // to register(). RHF's register() is idempotent — re-calling it on each
-  // render updates the validation rules in place, so the required constraint
-  // stays in sync with gate state without a separate validate callback.
-  const resolvedField =
-    Boolean(field.required) !== isRequired ? { ...field, required: isRequired } : field;
-
-  return (
-    <Box sx={{ mb: 2 }}>
-      <FieldRenderer field={resolvedField} />
-    </Box>
-  );
-});
+  for (const group of collectOneOfGroups(sections)) {
+    const seed = defaultValues ? getAtPath(defaultValues, group.discriminator) : undefined;
+    setAtPath(
+      defaults,
+      group.discriminator,
+      seed ?? group.default ?? group.branches[0]?.value ?? '',
+    );
+  }
+  if (capabilities?.alert_on_fail) {
+    defaults[ALERT_ON_FAIL_FIELD_NAME] = defaultValues?.[ALERT_ON_FAIL_FIELD_NAME] ?? false;
+  }
+  return defaults;
+}
 
 interface SectionRendererProps {
   section: FormSection;
   idx: number;
   violations: Array<{ message: string }>;
+  renderField?: RenderFieldOverride;
 }
 
 const SectionRenderer = memo(function SectionRenderer({
   section,
   idx,
   violations,
+  renderField,
 }: SectionRendererProps) {
+  const { isHidden } = useConditionalSection(section);
+
+  if (isHidden) {
+    return null;
+  }
+
   const sectionContent = (
     <>
       {section.description && (
@@ -112,9 +135,13 @@ const SectionRenderer = memo(function SectionRenderer({
           {v.message}
         </Alert>
       ))}
-      {section.fields.map((field) => (
-        <ConditionalFieldSlot key={field.name} field={field} />
-      ))}
+      {section.fields.map((field) =>
+        isOneOfGroup(field) ? (
+          <OneOfGroupSlot key={field.name} group={field} renderField={renderField} />
+        ) : (
+          <ConditionalFieldSlot key={field.name} field={field} renderField={renderField} />
+        ),
+      )}
     </>
   );
 
@@ -162,8 +189,24 @@ export interface SchemaFormRendererProps {
   defaultValues?: Record<string, unknown>;
   /** Server-side error to show above the form (e.g. API failure from the caller's mutation). */
   submitError?: string | null;
-  /** Plugin capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
-  capabilities?: PluginCapabilities;
+  /**
+   * Backend per-field validation errors (e.g. parsed from a 422) applied to the
+   * form this renderer owns via react-hook-form `setError`. Each entry's `path`
+   * is a react-hook-form field name; entries with an empty `path` are skipped
+   * here (callers surface those through {@link submitError}). Pass a fresh array
+   * on each submit failure — changing the array identity re-runs setError, and
+   * previously applied errors are cleared before the new set is applied.
+   */
+  fieldErrors?: FieldValidationError[];
+  /** App capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
+  capabilities?: AppCapabilities;
+  /**
+   * Optional per-field widget override. Applied after the conditional gate
+   * decides visibility / required-ness; receives the gate-resolved field and a
+   * `renderDefault()` callback. Overrides must write through react-hook-form.
+   * See {@link RenderFieldOverride}.
+   */
+  renderField?: RenderFieldOverride;
 }
 
 /**
@@ -214,9 +257,37 @@ function SchemaFormBody({
   submitLabel = 'Run',
   loading = false,
   submitError,
+  fieldErrors,
   capabilities,
+  renderField,
 }: SchemaFormRendererProps) {
-  const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
+  const { handleSubmit, formState, setError, clearErrors, getFieldState } =
+    useFormContext<Record<string, unknown>>();
+
+  // Apply backend per-field errors to the form. Clear the paths set by the
+  // previous failure first so a resubmit that fixes some fields does not leave
+  // stale server errors on the corrected ones. Empty paths are form-level and
+  // surfaced only through the submitError banner.
+  const appliedServerErrorPaths = useRef<string[]>([]);
+  useEffect(() => {
+    if (appliedServerErrorPaths.current.length > 0) {
+      clearErrors(appliedServerErrorPaths.current);
+      appliedServerErrorPaths.current = [];
+    }
+    if (!fieldErrors?.length) {
+      return;
+    }
+    const applied: string[] = [];
+    for (const { path, message } of fieldErrors) {
+      if (!path) {
+        continue;
+      }
+      setError(path, { type: 'server', message });
+      applied.push(path);
+    }
+    appliedServerErrorPaths.current = applied;
+  }, [fieldErrors, setError, clearErrors]);
+
   const isGuarded = useUnsavedChangesGuard(submitError);
   const inDataRouter = Boolean(useContext(UNSAFE_DataRouterContext));
   const allFields = useMemo(() => flattenFields(sections), [sections]);
@@ -253,17 +324,46 @@ function SchemaFormBody({
     onSubmit(coerceFormValues(values, allFields));
   };
 
+  // Clear the server errors from the previous failure before react-hook-form's
+  // validation gate runs. A 422 whose loc lands on a field with no mounted
+  // input (unknown field, hidden conditional section, or array/nested path)
+  // gets a setError entry that no input can ever clear; handleSubmit refuses to
+  // call onValid while any error remains, which would wedge resubmission.
+  // Those errors stay visible in the persistent banner regardless. Defined
+  // inline (not memoized) so it always wraps the latest handleFormSubmit, which
+  // closes over the current cardinality / fail_when violation state.
+  const handleSubmitEvent = (event: FormEvent<HTMLFormElement>) => {
+    if (appliedServerErrorPaths.current.length > 0) {
+      clearErrors(appliedServerErrorPaths.current);
+      appliedServerErrorPaths.current = [];
+    }
+    void handleSubmit(handleFormSubmit, () => {
+      // Resubmit was blocked by a client-side validation error on some field, so
+      // handleFormSubmit never fired: the parent won't re-send fieldErrors and the
+      // effect won't re-run. Re-apply the server errors we cleared above (skipping
+      // any field that now has its own client-side error) so their inline highlight
+      // stays in sync with the still-visible persistent banner. Cleared again at the
+      // top of the next submit, so this never re-introduces the resubmission wedge.
+      if (!fieldErrors?.length) {
+        return;
+      }
+      const reapplied: string[] = [];
+      for (const { path, message } of fieldErrors) {
+        if (path && !getFieldState(path).error) {
+          setError(path, { type: 'server', message });
+          reapplied.push(path);
+        }
+      }
+      appliedServerErrorPaths.current = reapplied;
+    })(event);
+  };
+
   return (
     <>
       {inDataRouter && <UnsavedChangesBlocker isGuarded={isGuarded} />}
-      <Box
-        component="form"
-        onSubmit={handleSubmit(handleFormSubmit)}
-        noValidate
-        sx={{ maxWidth: 640 }}
-      >
+      <Box component="form" onSubmit={handleSubmitEvent} noValidate sx={{ maxWidth: 640 }}>
         {submitError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error" sx={{ mb: 2, whiteSpace: 'pre-line' }}>
             {submitError}
           </Alert>
         )}
@@ -279,6 +379,7 @@ function SchemaFormBody({
             section={section}
             idx={idx}
             violations={violationsBySection.get(section) ?? []}
+            renderField={renderField}
           />
         ))}
 
@@ -307,6 +408,7 @@ function SchemaFormBody({
                 section={section}
                 idx={idx}
                 violations={violationsBySection.get(section) ?? []}
+                renderField={renderField}
               />
             ))}
           </Box>
@@ -320,20 +422,10 @@ export function SchemaFormRenderer(props: SchemaFormRendererProps) {
   const { sections, defaultValues, capabilities } = props;
   const allFields = useMemo(() => flattenFields(sections), [sections]);
 
-  const formDefaults = useMemo(() => {
-    const defaults = allFields.reduce<Record<string, unknown>>((acc, field) => {
-      acc[field.name] = defaultValues?.[field.name] ?? fieldDefault(field);
-      return acc;
-    }, {});
-    if (capabilities?.alert_on_fail) {
-      // Capability-injected fields are not in allFields, so coerceFormValues leaves them
-      // unchanged (extra keys pass through as-is via the initial spread). The value seeded
-      // here must therefore already be the correct submit type — boolean for alert_on_fail.
-      // If more capability fields are added, ensure they are pre-coerced at this point.
-      defaults[ALERT_ON_FAIL_FIELD_NAME] = defaultValues?.[ALERT_ON_FAIL_FIELD_NAME] ?? false;
-    }
-    return defaults;
-  }, [allFields, defaultValues, capabilities]);
+  const formDefaults = useMemo(
+    () => buildFormDefaults(sections, allFields, defaultValues, capabilities),
+    [sections, allFields, defaultValues, capabilities],
+  );
 
   const methods = useForm<Record<string, unknown>>({ defaultValues: formDefaults });
 

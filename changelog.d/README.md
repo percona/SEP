@@ -38,7 +38,7 @@ make changelog-add TICKET=SEP-503 SECTION=added \
 This creates `changelog.d/SEP-503.added.md` containing just the description.
 Commit the file as part of your PR.
 
-**Skip this step when either applies:**
+**Skip this step when any of these applies:**
 
 1. **Purely internal changes** — CI, refactoring, tooling, docs with no
    user-visible effect.
@@ -49,6 +49,17 @@ Commit the file as part of your PR.
    by` link to a sibling ticket in the same version. The bug never
    shipped to users, so a fragment would add confusing "regression fixed"
    noise to release notes describing behaviour users never saw.
+3. **Framework-spine-uniform surface** — a verb, query param, or field
+   introduced once by a shared framework and inherited *identically* by
+   every plugin that migrates onto it is documented once, when the
+   framework ships it — not re-documented per migrating plugin. Add a
+   fragment only for the plugin-specific delta (e.g. a request-body shape
+   change unique to this plugin). Example: the `TaskExecutionApp` spine's
+   `update=True` / `connectivity_check=True` flags (PUT verb,
+   `check_connectivity` param, `connectivity_warning` field) shipped with
+   the checksums pilot (SEP-1370); a later plugin migrating onto the same
+   spine does not re-document them, but does add a fragment for, say, a
+   request-body casing narrowing that only that plugin undergoes.
 
 ## File format
 

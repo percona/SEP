@@ -21,6 +21,9 @@ from typing import Any, ClassVar
 from pydantic import Field, field_validator
 
 from app.core.config import BaseYamlSettings
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import hot_field, materialize_via_owning_model
 from app.core.utils import run_pydantic_type_validator
 from app.tasks.anonymizer.entities import PIIEntity
 
@@ -28,22 +31,29 @@ from app.tasks.anonymizer.entities import PIIEntity
 class AnonymizerSettings(BaseYamlSettings):
     """Define settings for task data anonymization.
 
+    The module-level ``anonymizer_settings`` is wrapped in an
+    :class:`OverridableSettingsProxy`, so its underlying instance is constructed
+    and validated lazily on first attribute access rather than at import. The
+    Tasks Celery worker's ``start_settings_override_refresher`` handler calls
+    ``anonymizer_settings._resolve()`` at ``worker_process_init`` to restore
+    fail-fast validation; removing that call regresses to lazy validation.
+
     :cvar SETTINGS_PREFIXES: The prefixes for anonymizer related settings in the
-        configuration file. Set to `["TASKS", "ANONYMIZER"]`.
+        configuration file. Set to ``["TASKS", "ANONYMIZER"]``.
     :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param DEFAULT_ENTITIES: A mapping of task owners to sets of anonymizer entities.
-        If set to `"*"`, defaults to all available anonymizer entities for all owners.
+        If set to ``"*"``, defaults to all available anonymizer entities for all owners.
         If a list of anonymizer entities is provided, it will be used as default for all
         owners. Defaults to an empty set.
-    :type DEFAULT_ENTITIES: defaultdict[str, set[PIIEntity]]
     :param NLP_MODELS: A mapping of language codes to spaCy model names for NLP
-        processing. Defaults to `{"en": "en_core_web_sm"}`.
-    :type NLP_MODELS: dict[str, str]
+        processing. Defaults to ``{"en": "en_core_web_sm"}``.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS", "ANONYMIZER"]
-    DEFAULT_ENTITIES: defaultdict[str, set[PIIEntity]] = Field(
-        default_factory=dict, validate_default=True
+    DEFAULT_ENTITIES: defaultdict[str, set[PIIEntity]] = hot_field(
+        defaultdict(set),
+        materializer=materialize_via_owning_model,
+        validate_default=True,
     )
     NLP_MODELS: dict[str, str] = Field({"en": "en_core_web_sm"}, min_length=1)
 
@@ -53,10 +63,8 @@ class AnonymizerSettings(BaseYamlSettings):
         """Validate and transform the DEFAULT_ENTITIES field.
 
         :param v: The value to be validated.
-        :type v: Any
-        :return: A defaultdict with TaskOwner keys and sets of PIIEntity as
+        :return: A defaultdict with task-owner keys and sets of PIIEntity as
             values.
-        :rtype: Any
         """
         if v == "*":
             v = list(PIIEntity)
@@ -88,4 +96,6 @@ class AnonymizerSettings(BaseYamlSettings):
         return PIIEntity.encode_selection(self.DEFAULT_ENTITIES[owner])
 
 
-anonymizer_settings = AnonymizerSettings()
+anonymizer_settings: AnonymizerSettings = OverridableSettingsProxy(
+    AnonymizerSettings, setting_class=SettingClassEnum.ANONYMIZER_SETTINGS
+)

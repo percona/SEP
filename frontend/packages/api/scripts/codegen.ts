@@ -20,8 +20,10 @@
  * OpenAPI → TypeScript codegen.
  *
  * Iterates over SPECS and writes one `src/generated/{name}.ts` per entry.
- * If SEP ever publishes a single merged spec, collapse SPECS to one entry.
- * The source may be an HTTP URL (live backend) or a local file path.
+ * Reads the committed `specs/{name}.json` fixtures by default (no backend
+ * required); set CODEGEN_BASE_URL to regenerate from a live backend instead.
+ * Regenerate the fixtures with `python scripts/dump_openapi.py` after a
+ * backend contract change.
  *
  * Usage:
  *   pnpm --filter @sep/api codegen
@@ -29,22 +31,28 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import openapiTS, { astToString } from 'openapi-typescript';
 
 type SpecSource = { name: string; source: string };
 
-const BASE_URL = process.env.CODEGEN_BASE_URL ?? 'http://localhost:8000';
-
-const SPECS: SpecSource[] = [
-  { name: 'main', source: `${BASE_URL}/openapi.json` },
-  { name: 'inventory', source: `${BASE_URL}/api/inventory/openapi.json` },
-  { name: 'tasks', source: `${BASE_URL}/api/tasks/openapi.json` },
-  { name: 'sep', source: `${BASE_URL}/api/sep/openapi.json` },
-];
+const BASE_URL = process.env.CODEGEN_BASE_URL;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = path.resolve(HERE, '..', 'src', 'generated');
+const SPECS_DIR = path.resolve(HERE, '..', 'specs');
+
+const HTTP_PATHS: Record<string, string> = {
+  main: '/openapi.json',
+  inventory: '/api/inventory/openapi.json',
+  tasks: '/api/tasks/openapi.json',
+  sep: '/api/sep/openapi.json',
+};
+
+const SPECS: SpecSource[] = Object.entries(HTTP_PATHS).map(([name, httpPath]) => ({
+  name,
+  source: BASE_URL ? `${BASE_URL}${httpPath}` : path.resolve(SPECS_DIR, `${name}.json`),
+}));
 
 const HEADER = [
   '/**',
@@ -54,15 +62,15 @@ const HEADER = [
   '',
 ].join('\n');
 
-async function toURL(source: string): Promise<URL | string> {
+function toURL(source: string): URL {
   if (source.startsWith('http://') || source.startsWith('https://')) {
     return new URL(source);
   }
-  return path.resolve(process.cwd(), source);
+  return pathToFileURL(source);
 }
 
 async function generateOne(spec: SpecSource): Promise<void> {
-  const input = await toURL(spec.source);
+  const input = toURL(spec.source);
   const ast = await openapiTS(input, {
     enum: false,
     immutable: false,

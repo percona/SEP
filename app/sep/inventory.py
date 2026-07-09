@@ -422,7 +422,7 @@ class CreatedTable(CreatedEntityBase, Table):
 CreatedEntity = CreatedNode | CreatedService | CreatedSchema | CreatedTable
 
 ENTITY_MAPPING = {
-    SyncInventoryEntityTypeEnum.NODE: ("", CreatedNode),
+    SyncInventoryEntityTypeEnum.NODE: ("/nodes", CreatedNode),
     SyncInventoryEntityTypeEnum.SERVICE: ("/services", CreatedService),
     SyncInventoryEntityTypeEnum.SCHEMA: ("/schemas", CreatedSchema),
     SyncInventoryEntityTypeEnum.TABLE: ("/tables", CreatedTable),

@@ -36,12 +36,12 @@ export interface StandaloneHostSelectorProps {
 export function StandaloneHostSelector({
   value,
   onChange,
-  label = 'Executor Host',
+  label = 'Execution Host',
   disabled,
   sx,
 }: StandaloneHostSelectorProps) {
   const { enqueueSnackbar } = useSnackbar();
-  const { data, isLoading, isError, error } = useHosts();
+  const { data, isLoading, isError, error, refetch } = useHosts();
   const hosts = data ?? EMPTY_OPTIONS;
 
   // Surface a hosts-query failure (e.g. an upstream Tasks-API 502) via the
@@ -67,6 +67,7 @@ export function StandaloneHostSelector({
       options={options}
       value={selected}
       onChange={(_, opt) => onChange(opt?.id ?? '')}
+      onOpen={() => refetch()}
       getOptionLabel={(o) => o.label}
       isOptionEqualToValue={(a, b) => a.id === b.id}
       loading={isLoading}

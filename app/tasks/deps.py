@@ -34,6 +34,7 @@ from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.execution.executors.celery.models import CeleryExecutor
 from app.tasks.execution.models import BaseExecutor
+from app.tasks.execution.nomad_lifecycle import normalize_nomad_config_value
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -66,7 +67,17 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecutor:
-    """Get the task executor for the given backend.
+    """Get a task executor for the given backend without a request context.
+
+    For NOMAD, returns an **un-entered** executor normalised from the override
+    snapshot: when a ``NOMAD`` override is active the snapshot holds a config
+    fingerprint, so it is reconstructed into a usable :class:`NomadExecutor`;
+    with no override the live YAML executor passes through unchanged. The
+    un-entered executor drives only the config-built sync ``self.backend``
+    sub-client, so it suffices for any request-less reader that does not touch
+    the live aiohttp session. Request-scoped callers that need the live session
+    must use the :data:`TaskExecutor` dependency, which reaches the entered
+    executor held by :class:`NomadLifecycle`.
 
     :param backend: The backend type to get an executor for.
     :type backend: TaskBackendEnum
@@ -75,13 +86,45 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
     :raises ValueError: If the backend is not supported.
     """
     if backend == TaskBackendEnum.NOMAD:
-        return tasks_settings.NOMAD
+        return normalize_nomad_config_value(tasks_settings.NOMAD)
     if backend == TaskBackendEnum.CELERY:
         return CeleryExecutor()
     raise ValueError(f"Unsupported backend {backend}")
 
 
-TaskExecutor = Annotated[BaseExecutor, Depends(get_executor)]
+def get_request_executor(
+    request: Request, backend: TaskBackendEnum = TaskBackendEnum.NOMAD
+) -> BaseExecutor:
+    """Resolve the request-scoped task executor for the given backend.
+
+    For NOMAD, returns the live **entered** executor owned by
+    :class:`NomadLifecycle` (``app.state.nomad_lifecycle``) so routes that
+    stream logs or list files use an open aiohttp session. When no holder is
+    present (e.g. a unit test without the Tasks lifespan) or the holder is not
+    started, falls back to the request-less :func:`get_executor`. Other backends defer to
+    :func:`get_executor` unchanged.
+
+    :param request: The incoming request, injected by FastAPI.
+    :type request: Request
+    :param backend: The backend type to get an executor for.
+    :type backend: TaskBackendEnum
+    :return: The task executor.
+    :rtype: BaseExecutor
+    :raises ValueError: If the backend is not supported.
+    """
+    if backend == TaskBackendEnum.NOMAD:
+        holder = getattr(request.app.state, "nomad_lifecycle", None)
+        if holder is not None:
+            try:
+                return holder.current
+            except RuntimeError:
+                # Stale holder left on app.state post-shutdown; degrade here
+                # instead of failing the request.
+                pass
+    return get_executor(backend)
+
+
+TaskExecutor = Annotated[BaseExecutor, Depends(get_request_executor)]
 
 
 async def get_active_task_by_name(session: SessionDep, task_name: str) -> Task:

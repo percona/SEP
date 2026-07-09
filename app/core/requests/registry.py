@@ -115,6 +115,42 @@ class ClientRegistry:
             self._clients[key] = await client.open()
             return client
 
+    async def invalidate(self, endpoint: str) -> None:
+        """Close and evict every cached client served from ``endpoint``.
+
+        Removes the matching clients from the cache before closing them, so a
+        subsequent :meth:`get` for the same configuration reconstructs a fresh
+        client. Used to rebind PMM and other endpoint-keyed clients when their
+        DB-backed settings override changes at runtime. A no-op when the
+        registry is closed or when no cached client serves ``endpoint``.
+
+        :param endpoint: The endpoint URL whose cached clients to evict.
+            Compared trailing-slash-insensitively against each client's
+            ``endpoint``.
+        :type endpoint: str
+        """
+        normalized = endpoint.rstrip("/")
+        async with self._close_lock:
+            if self.closed:
+                return
+            matching = [
+                (key, client)
+                for key, client in self._clients.items()
+                if str(client.endpoint).rstrip("/") == normalized
+            ]
+            for key, _client in matching:
+                del self._clients[key]
+                self._locks.pop(key, None)
+
+        if not matching:
+            return
+        results = await asyncio.gather(
+            *(client.close() for _key, client in matching), return_exceptions=True
+        )
+        for (_key, client), result in zip(matching, results, strict=False):
+            if isinstance(result, Exception):
+                logger.warning("Error closing client %r: %s", client.base_url, result)
+
     async def close_all(self) -> None:
         """Close all RemoteAPI clients and clear the registry.
 

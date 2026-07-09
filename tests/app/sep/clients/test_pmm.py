@@ -15,11 +15,20 @@
 
 """Define tests for the alerting methods of app.sep.clients.pmm."""
 
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, call, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiohttp import ClientResponse
+from aiohttp import ClientResponse, ClientResponseError
+from fastapi import HTTPException
+from starlette.status import (
+    HTTP_404_NOT_FOUND,
+    HTTP_409_CONFLICT,
+    HTTP_500_INTERNAL_SERVER_ERROR,
+    HTTP_502_BAD_GATEWAY,
+    HTTP_503_SERVICE_UNAVAILABLE,
+)
 
 from app.sep.clients.pmm import (
     AlertRule,
@@ -33,10 +42,22 @@ from app.sep.clients.pmm import (
 ALERTING_HEADERS = {"X-Disable-Provenance": "true"}
 
 
+def _client_response_error(status_code: int) -> ClientResponseError:
+    """Build a ``ClientResponseError`` simulating a failed PMM HTTP response."""
+    return ClientResponseError(
+        request_info=MagicMock(),
+        history=(),
+        status=status_code,
+        message="PMM error",
+    )
+
+
 @pytest.fixture
-def pmm_remote_api() -> PMMRemoteAPI:
-    """Return a PMMRemoteAPI instance."""
-    return PMMRemoteAPI(endpoint="http://localhost", api_key="test-key")
+def pmm_remote_api() -> Iterator[PMMRemoteAPI]:
+    """Yield a PMMRemoteAPI instance, clearing its version cache on teardown."""
+    pmm_remote_api = PMMRemoteAPI(endpoint="http://localhost", api_key="test-key")
+    yield pmm_remote_api
+    pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 @pytest.fixture
@@ -51,6 +72,28 @@ def mock_get_version(mocker) -> AsyncMock:
     return mocker.patch(
         "app.sep.clients.pmm.PMMRemoteAPI.get_version", new_callable=AsyncMock
     )
+
+
+@pytest.fixture
+def captured_requests(mocker) -> tuple[list[dict], MagicMock]:
+    """Patch ``PMMRemoteAPI._request`` to capture calls at the HTTP boundary.
+
+    :param mocker: Pytest-mock fixture used to patch ``PMMRemoteAPI._request``.
+    :return: A ``(captured, response)`` tuple where ``captured`` accumulates one
+        ``{"method", "path", "kwargs"}`` record per ``_request`` call and ``response``
+        is the shared :class:`ClientResponse` mock each call yields.
+    """
+    captured: list[dict] = []
+    mock_response = MagicMock(spec=ClientResponse)
+    mock_response.raise_for_status = MagicMock()
+
+    @asynccontextmanager
+    async def fake_request(self_arg, method: str, path: str, **kwargs):
+        captured.append({"method": method, "path": path, "kwargs": kwargs})
+        yield mock_response
+
+    mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+    return captured, mock_response
 
 
 class TestAlertingHeaders:
@@ -101,7 +144,6 @@ class TestCreateTemplate:
             json={"yaml": "name: cpu-high\n"},
             headers=ALERTING_HEADERS,
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_create_template_returns_none_on_empty_response(
@@ -117,7 +159,6 @@ class TestCreateTemplate:
         result = await pmm_remote_api.create_template("name: cpu-high\n")
 
         assert result is None
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestListTemplates:
@@ -174,7 +215,6 @@ class TestListTemplates:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_list_templates_returns_empty_list_when_no_templates(
@@ -190,7 +230,6 @@ class TestListTemplates:
         result = await pmm_remote_api.list_templates()
 
         assert result == []
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestTemplateExists:
@@ -305,7 +344,6 @@ class TestCreateRule:
             },
             headers=ALERTING_HEADERS,
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_create_rule_with_params(
@@ -336,7 +374,6 @@ class TestCreateRule:
 
         call_json = mock_request.call_args.kwargs["json"]
         assert call_json["params"] == params
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_create_rule_omits_none_labels_and_params(
@@ -366,7 +403,27 @@ class TestCreateRule:
         call_json = mock_request.call_args.kwargs["json"]
         assert "labels" not in call_json
         assert "params" not in call_json
-        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_create_rule_returns_none_on_empty_response(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test create_rule returns ``None`` when PMM v3 returns an empty dict."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {}
+
+        result = await pmm_remote_api.create_rule(
+            name="High CPU",
+            template_name="cpu-high",
+            folder_uid="folder-1",
+            for_duration="300s",
+            group="infra-alerts",
+        )
+
+        assert result is None
 
 
 class TestListRules:
@@ -488,30 +545,51 @@ class TestDeleteRule:
 
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_delete_rule_raises_http_exception_on_error_response(
+        self, mocker, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test delete_rule maps an upstream error to ``HTTPException``."""
+        error_status = HTTP_404_NOT_FOUND
+        mock_response = MagicMock(spec=ClientResponse)
+        mock_response.raise_for_status = MagicMock(
+            side_effect=_client_response_error(error_status)
+        )
+
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.delete_rule("missing-uid")
+
+        assert exc_info.value.status_code == error_status
+
 
 class TestUpdateRule:
     """Test the update_rule method."""
 
     @pytest.mark.asyncio
     async def test_update_rule_calls_delete_then_create_in_order(
-        self, mocker, pmm_remote_api: PMMRemoteAPI
+        self,
+        captured_requests: tuple[list[dict], MagicMock],
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
     ) -> None:
         """Test update_rule deletes the old rule then creates the new one, in order."""
-        expected_rule = AlertRule(
-            uid="new-uid",
-            title="Updated Rule",
-            labels={},
-            annotations={},
-            data=[],
+        captured, mock_response = captured_requests
+        mock_get_version.return_value = "3.0.0"
+        mock_response.json = AsyncMock(
+            return_value={
+                "uid": "new-uid",
+                "title": "Updated Rule",
+                "labels": {},
+                "annotations": {},
+                "data": [],
+            }
         )
-        manager = MagicMock()
-        delete_mock = AsyncMock()
-        create_mock = AsyncMock(return_value=expected_rule)
-        manager.attach_mock(delete_mock, "delete_rule")
-        manager.attach_mock(create_mock, "create_rule")
-
-        mocker.patch.object(PMMRemoteAPI, "delete_rule", delete_mock)
-        mocker.patch.object(PMMRemoteAPI, "create_rule", create_mock)
 
         result = await pmm_remote_api.update_rule(
             uid="old-uid",
@@ -524,18 +602,49 @@ class TestUpdateRule:
 
         assert isinstance(result, AlertRule)
         assert result.uid == "new-uid"
-        assert manager.mock_calls == [
-            call.delete_rule("old-uid"),
-            call.create_rule(
-                name="Updated Rule",
-                template_name="tmpl",
-                folder_uid="folder-1",
-                for_duration="10m",
-                group="group-1",
-                labels=None,
-                params=None,
-            ),
-        ]
+
+        # The delete-then-create ordering invariant is derived from the ordered
+        # sequence of real ``_request`` calls, not from patched subject methods.
+        expected_request_count = 2
+        assert len(captured) == expected_request_count
+
+        assert captured[0]["method"] == "DELETE"
+        assert captured[0]["path"] == "/graph/api/v1/provisioning/alert-rules/old-uid"
+        assert captured[0]["kwargs"].get("headers") == ALERTING_HEADERS
+
+        assert captured[1]["method"] == "POST"
+        assert captured[1]["path"] == "/v1/alerting/rules"
+        assert captured[1]["kwargs"].get("headers") == ALERTING_HEADERS
+        assert captured[1]["kwargs"].get("json") == {
+            "name": "Updated Rule",
+            "template_name": "tmpl",
+            "folder_uid": "folder-1",
+            "for": "10m",
+            "group": "group-1",
+        }
+
+    @pytest.mark.asyncio
+    async def test_update_rule_returns_none_when_recreate_yields_empty(
+        self,
+        captured_requests: tuple[list[dict], MagicMock],
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test update_rule returns ``None`` when the recreate step gets no data."""
+        captured, mock_response = captured_requests
+        mock_get_version.return_value = "3.0.0"
+        mock_response.json = AsyncMock(return_value={})
+
+        result = await pmm_remote_api.update_rule(
+            uid="old-uid",
+            name="Updated Rule",
+            template_name="tmpl",
+            folder_uid="folder-1",
+            for_duration="10m",
+            group="group-1",
+        )
+
+        assert result is None
 
 
 class TestListFolders:
@@ -563,6 +672,17 @@ class TestListFolders:
         mock_request.assert_awaited_once_with(
             "GET", "/graph/api/folders/", headers=ALERTING_HEADERS
         )
+
+    @pytest.mark.asyncio
+    async def test_list_folders_returns_empty_list_when_no_folders(
+        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test list_folders returns an empty list when the API returns an empty list."""
+        mock_request.return_value = []
+
+        result = await pmm_remote_api.list_folders()
+
+        assert result == []
 
 
 class TestCreateFolder:
@@ -594,6 +714,19 @@ class TestCreateFolder:
             headers=ALERTING_HEADERS,
         )
 
+    @pytest.mark.asyncio
+    async def test_create_folder_propagates_http_exception_on_error(
+        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test create_folder propagates an ``HTTPException`` from the API."""
+        error_status = HTTP_500_INTERNAL_SERVER_ERROR
+        mock_request.side_effect = HTTPException(status_code=error_status)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.create_folder("SEP Alerts")
+
+        assert exc_info.value.status_code == error_status
+
 
 class TestListContactPoints:
     """Test the list_contact_points method."""
@@ -624,6 +757,17 @@ class TestListContactPoints:
             "/graph/api/v1/provisioning/contact-points/",
             headers=ALERTING_HEADERS,
         )
+
+    @pytest.mark.asyncio
+    async def test_list_contact_points_returns_empty_list_when_none(
+        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test list_contact_points returns an empty list when the API returns an empty list."""
+        mock_request.return_value = []
+
+        result = await pmm_remote_api.list_contact_points()
+
+        assert result == []
 
 
 class TestCreateContactPoint:
@@ -661,25 +805,35 @@ class TestCreateContactPoint:
             headers=ALERTING_HEADERS,
         )
 
+    @pytest.mark.asyncio
+    async def test_create_contact_point_propagates_http_exception_on_error(
+        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test create_contact_point propagates an ``HTTPException`` from the API."""
+        error_status = HTTP_500_INTERNAL_SERVER_ERROR
+        mock_request.side_effect = HTTPException(status_code=error_status)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.create_contact_point(
+                name="Email",
+                type_="email",
+                settings={"addresses": "admin@example.com"},
+            )
+
+        assert exc_info.value.status_code == error_status
+
 
 class TestUpdateContactPoint:
     """Test the update_contact_point method."""
 
     @pytest.mark.asyncio
     async def test_update_contact_point_puts_to_provisioning_endpoint(
-        self, mocker, pmm_remote_api: PMMRemoteAPI
+        self,
+        captured_requests: tuple[list[dict], MagicMock],
+        pmm_remote_api: PMMRemoteAPI,
     ) -> None:
         """Test update_contact_point sends a PUT with uid and alerting headers."""
-        mock_response = MagicMock(spec=ClientResponse)
-        mock_response.raise_for_status = MagicMock()
-        captured = []
-
-        @asynccontextmanager
-        async def fake_request(self_arg, method: str, path: str, **kwargs):
-            captured.append({"method": method, "path": path, "kwargs": kwargs})
-            yield mock_response
-
-        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+        captured, mock_response = captured_requests
 
         await pmm_remote_api.update_contact_point(
             uid="cp-123",
@@ -699,6 +853,29 @@ class TestUpdateContactPoint:
         }
         assert captured[0]["kwargs"].get("headers") == ALERTING_HEADERS
         mock_response.raise_for_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_contact_point_raises_http_exception_on_error(
+        self,
+        captured_requests: tuple[list[dict], MagicMock],
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test update_contact_point maps an upstream error to ``HTTPException``."""
+        error_status = HTTP_409_CONFLICT
+        _captured, mock_response = captured_requests
+        mock_response.raise_for_status = MagicMock(
+            side_effect=_client_response_error(error_status)
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.update_contact_point(
+                uid="cp-123",
+                name="Updated Email",
+                type_="email",
+                settings={"addresses": "new@example.com"},
+            )
+
+        assert exc_info.value.status_code == error_status
 
 
 class TestDeleteContactPoint:
@@ -749,6 +926,28 @@ class TestDeleteContactPoint:
 
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_delete_contact_point_raises_http_exception_on_error(
+        self, mocker, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test delete_contact_point maps an upstream error to ``HTTPException``."""
+        error_status = HTTP_404_NOT_FOUND
+        mock_response = MagicMock(spec=ClientResponse)
+        mock_response.raise_for_status = MagicMock(
+            side_effect=_client_response_error(error_status)
+        )
+
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.delete_contact_point("missing-cp")
+
+        assert exc_info.value.status_code == error_status
+
 
 class TestGetNotificationPolicy:
     """Test the get_notification_policy method."""
@@ -774,6 +973,19 @@ class TestGetNotificationPolicy:
             "GET", "/graph/api/v1/provisioning/policies", headers=ALERTING_HEADERS
         )
 
+    @pytest.mark.asyncio
+    async def test_get_notification_policy_propagates_http_exception_on_error(
+        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test get_notification_policy propagates an ``HTTPException`` from the API."""
+        error_status = HTTP_502_BAD_GATEWAY
+        mock_request.side_effect = HTTPException(status_code=error_status)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.get_notification_policy()
+
+        assert exc_info.value.status_code == error_status
+
 
 class TestUpdateNotificationPolicy:
     """Test the update_notification_policy method."""
@@ -796,6 +1008,20 @@ class TestUpdateNotificationPolicy:
             json=policy.model_dump(exclude_none=True),
             headers=ALERTING_HEADERS,
         )
+
+    @pytest.mark.asyncio
+    async def test_update_notification_policy_propagates_http_exception_on_error(
+        self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test update_notification_policy propagates an ``HTTPException`` from the API."""
+        error_status = HTTP_500_INTERNAL_SERVER_ERROR
+        mock_request.side_effect = HTTPException(status_code=error_status)
+        policy = NotificationPolicy(receiver="slack")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.update_notification_policy(policy)
+
+        assert exc_info.value.status_code == error_status
 
 
 class TestGetAdvisorChecks:
@@ -848,7 +1074,6 @@ class TestGetAdvisorChecks:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_advisor_checks_returns_empty_list_when_no_checks(
@@ -864,7 +1089,6 @@ class TestGetAdvisorChecks:
         result = await pmm_remote_api.get_advisor_checks()
 
         assert result == []
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestGetFailedAdvisorChecks:
@@ -918,7 +1142,6 @@ class TestGetFailedAdvisorChecks:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_failed_advisor_checks_returns_empty_list_when_no_results(
@@ -934,7 +1157,6 @@ class TestGetFailedAdvisorChecks:
         result = await pmm_remote_api.get_failed_advisor_checks()
 
         assert result == []
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestStartAdvisorChecks:
@@ -963,7 +1185,6 @@ class TestStartAdvisorChecks:
         await pmm_remote_api.start_advisor_checks()
 
         mock_request.assert_awaited_once_with("POST", expected_path, json={})
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_start_advisor_checks_passes_names_when_provided(
@@ -983,7 +1204,6 @@ class TestStartAdvisorChecks:
             "/v1/advisors/checks:start",
             json={"names": ["mysql_version"]},
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_start_advisor_checks_sends_empty_payload_when_names_is_none(
@@ -1000,7 +1220,23 @@ class TestStartAdvisorChecks:
 
         call_json = mock_request.call_args.kwargs["json"]
         assert call_json == {}
-        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_start_advisor_checks_propagates_http_exception_on_error(
+        self,
+        mock_request: AsyncMock,
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test start_advisor_checks propagates an ``HTTPException`` from the API."""
+        error_status = HTTP_503_SERVICE_UNAVAILABLE
+        mock_get_version.return_value = "3.6.0"
+        mock_request.side_effect = HTTPException(status_code=error_status)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.start_advisor_checks()
+
+        assert exc_info.value.status_code == error_status
 
 
 class TestGetGrafanaAnnotations:
@@ -1274,7 +1510,6 @@ class TestGetInventoryServicesWithAgents:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_inventory_services_with_agents_returns_empty_list(
@@ -1290,4 +1525,3 @@ class TestGetInventoryServicesWithAgents:
         result = await pmm_remote_api.get_inventory_services_with_agents()
 
         assert result == []
-        pmm_remote_api.is_older_than_v3.cache_clear()

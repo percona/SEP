@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.orm import undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -133,6 +134,31 @@ class TestTransformPayload:
 
         assert result == expected
 
+    @pytest.mark.asyncio
+    async def test_propagates_parse_error(self, executor: ConcreteExecutor):
+        """Assert transform_payload propagates a parse failure without validating."""
+        mock_validate = AsyncMock()
+        with (
+            patch.object(ConcreteExecutor, "validate_job", mock_validate),
+            pytest.raises(ValueError, match="unsupported format"),
+        ):
+            await executor.transform_payload("{}", "xml")
+
+        mock_validate.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_propagates_validate_error(self, executor: ConcreteExecutor):
+        """Assert transform_payload propagates a validate_job failure."""
+        with (
+            patch.object(
+                ConcreteExecutor,
+                "validate_job",
+                AsyncMock(side_effect=ValueError("invalid job")),
+            ),
+            pytest.raises(ValueError, match="invalid job"),
+        ):
+            await executor.transform_payload("{}", "json")
+
 
 class TestParsePayload:
     """Test BaseExecutor.parse_payload."""
@@ -149,171 +175,239 @@ class TestParsePayload:
         mock_parse.assert_called_once_with('{"parsed": true}', "json")
         assert result == {"parsed": True}
 
+    @pytest.mark.asyncio
+    async def test_raises_on_unsupported_format(self, executor: ConcreteExecutor):
+        """Assert parse_payload raises ValueError for an unsupported format."""
+        with pytest.raises(ValueError, match="unsupported format"):
+            await executor.parse_payload("{}", "xml")
+
 
 class TestStopTask:
-    """Test BaseExecutor.stop_task."""
+    """Test BaseExecutor.stop_task against the real async session.
+
+    Exercises the real ``TaskHistoryManager.save`` / ``session.refresh``
+    lifecycle (the SEP-1017 ``MissingGreenlet`` regression class). Patches only
+    boundaries: ``_stop_task``, ``_sync_task_history``, ``schedule_annotation``.
+    """
+
+    @staticmethod
+    async def _persist_history(
+        session: AsyncSession,
+        status: TaskHistoryStatusEnum,
+        name: str,
+    ) -> TaskHistory:
+        """Create and persist a real ``TaskHistory`` in the given status.
+
+        :param session: The async session fixture to persist against.
+        :type session: AsyncSession
+        :param status: The initial status of the record.
+        :type status: TaskHistoryStatusEnum
+        :param name: The task name (unique within the test DB).
+        :type name: str
+        :return: The persisted record with ``task`` and ``execution_request`` loaded.
+        :rtype: TaskHistory
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name=name,
+                    backend=TaskBackendEnum.NOMAD,
+                    alert_on_fail=False,
+                )
+            ),
+        )
+        queue_item = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"_service_names": ["svc1"]},
+            ),
+            status=status,
+            executed_by="test-user",
+        )
+        saved = await TaskHistoryManager.save(session, queue_item)
+        # ``save`` re-defers ``task``/``execution_request``; eager-load them so
+        # ``sync_task_history`` reads ``task.alert_on_fail`` without a lazy load
+        # (identity map holds only weak refs → ``Task`` else collectible).
+        return await TaskHistoryManager.get_or_404(
+            session,
+            select_related=(TaskHistory.task,),
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=saved.id,
+        )
 
     @pytest.mark.asyncio
     async def test_sets_stopped_status_and_finished_at(
-        self, executor: ConcreteExecutor
+        self, executor: ConcreteExecutor, session: AsyncSession
     ):
-        """Assert stop_task sets status to STOPPED and sets finished_at."""
-        queue_item = MagicMock(spec=TaskHistory)
-        queue_item.status = TaskHistoryStatusEnum.RUNNING
-        queue_item.task = MagicMock()
-        queue_item.task.alert_on_fail = False
-        session = AsyncMock()
-        mock_stop = AsyncMock()
-        mock_sync = AsyncMock(return_value=queue_item)
+        """Assert stop_task sets status to STOPPED, sets finished_at, and persists."""
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.RUNNING, "stop-task-1"
+        )
+
+        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
+            return item
 
         with (
-            patch.object(ConcreteExecutor, "_stop_task", mock_stop),
-            patch.object(ConcreteExecutor, "_sync_task_history", mock_sync),
-            patch(
-                "app.tasks.execution.models.TaskHistoryManager.save",
-                new_callable=AsyncMock,
-                return_value=queue_item,
-            ) as mock_save,
+            patch.object(ConcreteExecutor, "_stop_task", AsyncMock()) as mock_stop,
+            patch.object(
+                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
+            ),
             patch("app.tasks.execution.models.schedule_annotation"),
         ):
-            result = await executor.stop_task(session, queue_item)
+            result = await executor.stop_task(session, saved_history)
 
-        mock_stop.assert_awaited_once_with(queue_item)
-        assert queue_item.status == TaskHistoryStatusEnum.STOPPED
-        assert queue_item.finished_at is not None
-        mock_save.assert_awaited_once_with(session, queue_item)
-        assert result is queue_item
+        mock_stop.assert_awaited_once_with(saved_history)
+        assert result.status == TaskHistoryStatusEnum.STOPPED
+        assert result.finished_at is not None
+        result_id = result.id
+
+        # Prove the change persisted across a transaction boundary, not just in
+        # the identity map: rollback discards uncommitted state (the committed
+        # save survives), then refetch forces a fresh read from the DB. Capture
+        # the id first — rollback expires ``result``, so a later attribute read
+        # would trigger a sync lazy-load.
+        await session.rollback()
+        refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
+        assert refetched.status == TaskHistoryStatusEnum.STOPPED
+        assert refetched.finished_at is not None
 
     @pytest.mark.asyncio
-    async def test_calls_sync_task_history(self, executor: ConcreteExecutor):
-        """Assert stop_task calls sync_task_history before setting status."""
-        queue_item = MagicMock(spec=TaskHistory)
-        queue_item.status = TaskHistoryStatusEnum.RUNNING
-        queue_item.task = MagicMock()
-        queue_item.task.alert_on_fail = False
-        session = AsyncMock()
-        mock_sync = AsyncMock(return_value=queue_item)
+    async def test_calls_sync_task_history(
+        self, executor: ConcreteExecutor, session: AsyncSession
+    ):
+        """Assert stop_task drives sync_task_history (via its _sync boundary)."""
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.RUNNING, "stop-task-2"
+        )
+
+        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
+            return item
+
+        mock_sync = AsyncMock(side_effect=fake_sync)
 
         with (
             patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
             patch.object(ConcreteExecutor, "_sync_task_history", mock_sync),
-            patch(
-                "app.tasks.execution.models.TaskHistoryManager.save",
-                new_callable=AsyncMock,
-                return_value=queue_item,
-            ),
             patch("app.tasks.execution.models.schedule_annotation"),
         ):
-            await executor.stop_task(session, queue_item)
+            await executor.stop_task(session, saved_history)
 
-        mock_sync.assert_awaited_once()
+        mock_sync.assert_awaited_once_with(saved_history, writer_session=None)
 
     @pytest.mark.asyncio
     async def test_emits_stopped_annotation_when_sync_still_running(
-        self, executor: ConcreteExecutor
+        self, executor: ConcreteExecutor, session: AsyncSession
     ):
         """Assert STOPPED annotation is emitted when sync returns still-RUNNING."""
-        queue_item = MagicMock(spec=TaskHistory)
-        queue_item.status = TaskHistoryStatusEnum.RUNNING
-        queue_item.task = MagicMock()
-        queue_item.task.alert_on_fail = False
-        session = AsyncMock()
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.RUNNING, "stop-task-3"
+        )
 
-        synced_item = MagicMock(spec=TaskHistory)
-        synced_item.status = TaskHistoryStatusEnum.RUNNING
-        synced_item.task = MagicMock()
-        synced_item.task.alert_on_fail = False
+        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
+            return item
 
         with (
             patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
             patch.object(
-                ConcreteExecutor,
-                "_sync_task_history",
-                AsyncMock(return_value=synced_item),
-            ),
-            patch(
-                "app.tasks.execution.models.TaskHistoryManager.save",
-                new_callable=AsyncMock,
-                return_value=synced_item,
+                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
             ),
             patch(
                 "app.tasks.execution.models.schedule_annotation",
             ) as mock_schedule,
         ):
-            await executor.stop_task(session, queue_item)
+            result = await executor.stop_task(session, saved_history)
 
-        mock_schedule.assert_called_once_with(synced_item, "STOPPED")
+        mock_schedule.assert_called_once_with(result, "STOPPED")
 
     @pytest.mark.asyncio
     async def test_does_not_double_emit_when_sync_already_stopped(
-        self, executor: ConcreteExecutor
+        self, executor: ConcreteExecutor, session: AsyncSession
     ):
-        """Assert STOPPED annotation is not re-emitted when sync already emitted it."""
-        queue_item = MagicMock(spec=TaskHistory)
-        queue_item.status = TaskHistoryStatusEnum.RUNNING
-        queue_item.task = MagicMock()
-        queue_item.task.alert_on_fail = False
-        session = AsyncMock()
+        """Assert STOPPED annotation is emitted exactly once, not re-emitted.
 
-        async def fake_sync(item: TaskHistory) -> TaskHistory:
+        ``_sync_task_history`` transitions RUNNING -> STOPPED, so the real
+        ``sync_task_history`` emits once; ``stop_task`` must detect that and
+        skip its own emit.
+        """
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.RUNNING, "stop-task-4"
+        )
+
+        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
             item.status = TaskHistoryStatusEnum.STOPPED
             return item
 
         with (
             patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
             patch.object(
-                ConcreteExecutor,
-                "sync_task_history",
-                side_effect=fake_sync,
-            ),
-            patch(
-                "app.tasks.execution.models.TaskHistoryManager.save",
-                new_callable=AsyncMock,
-                return_value=queue_item,
+                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
             ),
             patch(
                 "app.tasks.execution.models.schedule_annotation",
             ) as mock_schedule,
         ):
-            await executor.stop_task(session, queue_item)
+            await executor.stop_task(session, saved_history)
 
-        mock_schedule.assert_not_called()
+        mock_schedule.assert_called_once_with(saved_history, "STOPPED")
 
     @pytest.mark.asyncio
     async def test_emits_stopped_annotation_when_not_running_initially(
-        self, executor: ConcreteExecutor
+        self, executor: ConcreteExecutor, session: AsyncSession
     ):
         """Assert STOPPED annotation is emitted when task was not RUNNING before sync."""
-        queue_item = MagicMock(spec=TaskHistory)
-        queue_item.status = TaskHistoryStatusEnum.PENDING
-        queue_item.task = MagicMock()
-        queue_item.task.alert_on_fail = False
-        session = AsyncMock()
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.PENDING, "stop-task-5"
+        )
 
-        synced_item = MagicMock(spec=TaskHistory)
-        synced_item.status = TaskHistoryStatusEnum.PENDING
-        synced_item.task = MagicMock()
-        synced_item.task.alert_on_fail = False
+        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
+            return item
 
         with (
             patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
             patch.object(
-                ConcreteExecutor,
-                "_sync_task_history",
-                AsyncMock(return_value=synced_item),
-            ),
-            patch(
-                "app.tasks.execution.models.TaskHistoryManager.save",
-                new_callable=AsyncMock,
-                return_value=synced_item,
+                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
             ),
             patch(
                 "app.tasks.execution.models.schedule_annotation",
             ) as mock_schedule,
         ):
-            await executor.stop_task(session, queue_item)
+            result = await executor.stop_task(session, saved_history)
 
-        mock_schedule.assert_called_once_with(synced_item, "STOPPED")
+        mock_schedule.assert_called_once_with(result, "STOPPED")
+
+    @pytest.mark.asyncio
+    async def test_emits_once_when_not_running_but_sync_returns_terminal(
+        self, executor: ConcreteExecutor, session: AsyncSession
+    ):
+        """Assert a single STOPPED emit when not RUNNING but sync returns terminal.
+
+        ``was_running`` is False, so the real ``sync_task_history`` does not
+        emit even though it returns STOPPED; ``stop_task`` owns the single emit.
+        """
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.PENDING, "stop-task-6"
+        )
+
+        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
+            item.status = TaskHistoryStatusEnum.STOPPED
+            return item
+
+        with (
+            patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
+            patch.object(
+                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
+            ),
+            patch(
+                "app.tasks.execution.models.schedule_annotation",
+            ) as mock_schedule,
+        ):
+            result = await executor.stop_task(session, saved_history)
+
+        mock_schedule.assert_called_once_with(result, "STOPPED")
 
 
 class TestSyncTaskHistory:
@@ -332,6 +426,20 @@ class TestSyncTaskHistory:
 
         mock_sync.assert_awaited_once_with(queue_item, writer_session=None)
         assert result is queue_item
+
+    @pytest.mark.asyncio
+    async def test_forwards_writer_session(self, executor: ConcreteExecutor):
+        """Assert sync_task_history forwards a writer_session to _sync_task_history."""
+        queue_item = MagicMock(spec=TaskHistory)
+        queue_item.task = MagicMock()
+        queue_item.task.alert_on_fail = False
+        writer_session = MagicMock(spec=AsyncSession)
+        mock_sync = AsyncMock(return_value=queue_item)
+
+        with patch.object(ConcreteExecutor, "_sync_task_history", mock_sync):
+            await executor.sync_task_history(queue_item, writer_session)
+
+        mock_sync.assert_awaited_once_with(queue_item, writer_session=writer_session)
 
     @pytest.mark.asyncio
     async def test_alerts_when_alert_on_fail_is_true(self, executor: ConcreteExecutor):
@@ -518,6 +626,22 @@ class TestDefaultWaitInterval:
     def test_default_wait_interval(self, executor: ConcreteExecutor):
         """Assert default wait_interval is 5 seconds."""
         assert executor.wait_interval == _DEFAULT_WAIT_INTERVAL
+
+
+class TestGetEvents:
+    """Test BaseExecutor.get_events default behaviour."""
+
+    def test_default_returns_empty_list(self, executor: ConcreteExecutor):
+        """Assert the base get_events returns an empty list."""
+        assert executor.get_events(MagicMock(spec=TaskHistory)) == []
+
+
+class TestPreflightStreamLogs:
+    """Test BaseExecutor.preflight_stream_logs default behaviour."""
+
+    def test_default_is_noop(self, executor: ConcreteExecutor):
+        """Assert the base preflight_stream_logs is a no-op returning None."""
+        assert executor.preflight_stream_logs(MagicMock(spec=TaskHistory)) is None
 
 
 class TestStopTaskRegression:

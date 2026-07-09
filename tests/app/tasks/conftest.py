@@ -27,20 +27,15 @@ from sqlmodel.pool import StaticPool
 from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
 from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.deps import get_executor, get_session
+from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.main import tasks_app
-from app.tasks.models import (
-    TaskExecutionRequest,
-    TaskHistory,
-    TaskHistoryStatusEnum,
-    TaskWrite,
-)
-from tests.app.factories import TaskFactory
+from app.tasks.models import TaskHistory, TaskWrite
+from tests.app.factories import build_task_history, TaskFactory
 
 
 @pytest_asyncio.fixture(name="session")
@@ -76,7 +71,7 @@ def test_client(
     """Create an authenticated test client for the app."""
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+    tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app)
     tasks_app.dependency_overrides = {}
 
@@ -90,19 +85,7 @@ async def created_task_with_history(session: AsyncSession) -> TaskHistory:
     )
     task.output_files_path = "/output"
     task = await TaskManager.save(session, task)
-    history = TaskHistory(
-        task_id=task.id,
-        task=task,
-        execution_request=TaskExecutionRequest(
-            task=task.name,
-            target="node1",
-            meta={"target": "node1"},
-            tracking={"evaluation_id": "", "allocation_id": None},
-        ),
-        status=TaskHistoryStatusEnum.SUCCESS,
-        executed_by="test-user",
-    )
-    saved = await TaskHistoryManager.save(session, history)
+    saved = await TaskHistoryManager.save(session, build_task_history(task))
     return await TaskHistoryManager.get_or_404(
         session,
         select_related=(TaskHistory.task,),

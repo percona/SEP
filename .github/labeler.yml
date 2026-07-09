@@ -21,3 +21,5 @@ skip-test:
       - 'README.md'
       - '.gitignore'
       - 'dist/**'
+- head-branch:
+  - '^dependabot/'

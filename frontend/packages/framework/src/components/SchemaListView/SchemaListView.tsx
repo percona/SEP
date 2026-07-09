@@ -23,21 +23,67 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
 import type { ListColumn, ListView } from '@sep/api';
 import { SEP_TABLE_CLASS } from '../../constants';
+import { ScheduleCell } from '../ScheduleCell';
+import {
+  selectSchedule,
+  useScheduledTasksForApp,
+  type PeriodicTaskResponse,
+} from '../ScheduledTasksPanel';
+
+/** Argument bag handed to a {@link RenderListColumnOverride}. */
+export interface RenderListColumnArgs {
+  /** The matched column's `key`. */
+  columnKey: string;
+  /** The raw cell value for this column. */
+  value: unknown;
+  /** The full row record. */
+  row: Record<string, unknown>;
+}
+
+/**
+ * Per-cell list column override for {@link SchemaListView}.
+ *
+ * Called for every non-`actions` cell. Return custom UI to render that cell, or
+ * return `undefined` to fall back to the framework's `formatCellValue`. Keying
+ * is the override's own concern: branch on `args.columnKey` and return
+ * `undefined` for columns it does not handle. The `actions` column (bespoke
+ * row-delete control) is never routed through this override.
+ */
+export type RenderListColumnOverride = (args: RenderListColumnArgs) => ReactNode;
 
 interface SchemaListViewProps {
   listView: ListView;
   data: Record<string, unknown>[];
   isLoading?: boolean;
+  /**
+   * Owning plugin name. Required for `schedule`-format columns: the schedule
+   * fetch and the client-side task-name join only run when this is set and the
+   * list view declares a schedule column, so plugins without one issue no
+   * periodic-tasks request.
+   */
+  pluginName?: string;
+  /** Disable schedule-list polling. Used by stories/tests. */
+  disableSchedulePolling?: boolean;
   onRowClick?: (row: Record<string, unknown>) => void;
   /** When set, ``format: 'actions'`` columns render a delete control for that row. */
   onDeleteRow?: (row: Record<string, unknown>) => void;
   /** Row id currently being deleted (disables that row's button). */
   deletingRowId?: string | null;
+  /**
+   * Optional per-cell override for non-`actions` columns. Returns custom UI for
+   * a cell or `undefined` to fall back to `formatCellValue`. See
+   * {@link RenderListColumnOverride}.
+   */
+  renderListColumn?: RenderListColumnOverride;
 }
 
 function formatCellValue(value: unknown, format: ListColumn['format']): ReactNode {
-  if (value === null) {
-    return '—';
+  if (value === null || value === undefined) {
+    // Time-based columns render an absent value as an empty cell — a
+    // never-executed task has no Last Executed time, and an em-dash there would
+    // read as a misleading placeholder. Other formats keep the em-dash to
+    // signal "no value".
+    return format === 'relative' || format === 'date' ? null : '—';
   }
   const str = String(value);
 
@@ -89,17 +135,107 @@ function formatCellValue(value: unknown, format: ListColumn['format']): ReactNod
   }
 }
 
-export function SchemaListView({
+/** Stable empty lookup so plugins without a schedule column never re-key. */
+const EMPTY_SCHEDULE = new Map<string, PeriodicTaskResponse>();
+
+/**
+ * SchemaListView entry point.
+ *
+ * The schedule fetch and the client-side task-name join only happen when the
+ * list view declares a `schedule`-format column and a plugin name is provided.
+ * In that case rendering is delegated to {@link ScheduleJoinedListView}, which
+ * is the only place that mounts `useScheduledTasksForApp` — so plugins
+ * without a schedule column issue no periodic-tasks request (and need no
+ * QueryClient).
+ */
+export function SchemaListView(props: SchemaListViewProps) {
+  const { listView, pluginName } = props;
+  const hasScheduleColumn = listView.columns.some((c) => c.format === 'schedule');
+  if (hasScheduleColumn && pluginName) {
+    return <ScheduleJoinedListView {...props} pluginName={pluginName} />;
+  }
+  return <SchemaListViewCore {...props} scheduleByTask={EMPTY_SCHEDULE} />;
+}
+
+/**
+ * Fetches the plugin's periodic tasks, builds the by-name lookup, and renders
+ * the table. Isolated from {@link SchemaListView} so the schedule hook is only
+ * mounted when a schedule column is actually present.
+ */
+function ScheduleJoinedListView(props: SchemaListViewProps & { pluginName: string }) {
+  const { pluginName, disableSchedulePolling = false } = props;
+  const { periodicTasks, isLoading: scheduleLoading } = useScheduledTasksForApp(pluginName, {
+    disablePolling: disableSchedulePolling,
+  });
+
+  const scheduleByTask = useMemo(() => {
+    // A task may own several periodic schedules; group by task name and pick a
+    // single one with the same rule the detail summary uses, so the list cell
+    // and the summary never disagree.
+    const grouped = new Map<string, PeriodicTaskResponse[]>();
+    for (const task of periodicTasks) {
+      const existing = grouped.get(task.task);
+      if (existing) {
+        existing.push(task);
+      } else {
+        grouped.set(task.task, [task]);
+      }
+    }
+    const selected = new Map<string, PeriodicTaskResponse>();
+    for (const [name, candidates] of grouped) {
+      const pick = selectSchedule(candidates);
+      if (pick) {
+        selected.set(name, pick);
+      }
+    }
+    return selected;
+  }, [periodicTasks]);
+
+  return (
+    <SchemaListViewCore
+      {...props}
+      scheduleByTask={scheduleByTask}
+      scheduleLoading={scheduleLoading}
+    />
+  );
+}
+
+function SchemaListViewCore({
   listView,
   data,
   isLoading = false,
   onRowClick,
   onDeleteRow,
   deletingRowId,
-}: SchemaListViewProps) {
+  renderListColumn,
+  scheduleByTask,
+  scheduleLoading = false,
+}: SchemaListViewProps & {
+  scheduleByTask: Map<string, PeriodicTaskResponse>;
+  scheduleLoading?: boolean;
+}) {
   const columns = useMemo<MRT_ColumnDef<Record<string, unknown>>[]>(
     () =>
       listView.columns.map((col) => {
+        if (col.format === 'schedule') {
+          return {
+            id: col.key,
+            accessorKey: col.key,
+            header: col.label,
+            enableSorting: col.sortable ?? false,
+            Cell: ({ row }) => {
+              const name = row.original.name;
+              // Trim to match how the detail summary derives its lookup key
+              // (AppDetailPage trims `task.name`), so the list cell and the
+              // summary join to the same schedule even with stray whitespace.
+              const matched =
+                name === undefined || name === null
+                  ? undefined
+                  : scheduleByTask.get(String(name).trim());
+              return <ScheduleCell task={matched} isLoading={scheduleLoading} />;
+            },
+          };
+        }
         if (col.format === 'actions') {
           return {
             id: col.key,
@@ -134,10 +270,28 @@ export function SchemaListView({
           accessorKey: col.key,
           header: col.label,
           enableSorting: col.sortable ?? true,
-          Cell: ({ cell }) => formatCellValue(cell.getValue(), col.format),
+          Cell: ({ cell, row }) => {
+            const value = cell.getValue();
+            const overridden = renderListColumn?.({
+              columnKey: col.key,
+              value,
+              row: row.original,
+            });
+            // `undefined` is the "no override" sentinel (override absent, or it
+            // declined this column); `null` is honored so an override can
+            // intentionally render an empty cell.
+            return overridden === undefined ? formatCellValue(value, col.format) : overridden;
+          },
         };
       }),
-    [deletingRowId, listView.columns, onDeleteRow],
+    [
+      deletingRowId,
+      listView.columns,
+      onDeleteRow,
+      renderListColumn,
+      scheduleByTask,
+      scheduleLoading,
+    ],
   );
 
   return (

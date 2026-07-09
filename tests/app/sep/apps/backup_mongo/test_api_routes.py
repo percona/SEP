@@ -1,0 +1,651 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Tests for the backup_mongo plugin JSON API routes under /api/apps/backup_mongo/."""
+
+from typing import Any
+from unittest.mock import AsyncMock, call
+
+import pytest
+from fastapi import HTTPException, status
+
+from app.core.exceptions import HTTPNotFoundException
+from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.backup_mongo.models import BackupType, OWNER
+from app.sep.inventory import CreatedService
+from app.tasks.models import TaskBackendEnum
+from tests.app.factories import TaskFactory
+
+API_BASE = "/api/apps/backup_mongo"
+EXPECTED_CASCADE_POSTS = 4
+DEFAULT_PAGE_LIMIT = 50
+THREE_PARENT_FIXTURE_TOTAL = 3
+TWO_PARENT_FIXTURE_TOTAL = 2
+TWO_DERIVED_SIBLINGS = 2
+
+
+def build_backup_task(name: str = "mongo-backup-task", **overrides: Any) -> dict:
+    """Build a fake backup_mongo task payload for route tests.
+
+    :param name: The task name to embed in the payload.
+    :type name: str
+    :param overrides: Field overrides passed to ``TaskFactory.build``.
+    :type overrides: Any
+    :return: A task payload shaped like the Tasks API response.
+    :rtype: dict
+    """
+    data_overrides = overrides.pop("data", {})
+    backup_type = data_overrides.pop("backup_type", BackupType.PBM_CONFIG.value)
+    parent = data_overrides.pop("parent", None)
+    task = TaskFactory.build(
+        name=name,
+        owner="BACKUP_MONGO",
+        backend=TaskBackendEnum.PROXY,
+        **overrides,
+    )
+    payload = task.model_dump(mode="json")
+    payload["data"] = {
+        "task": "run-python",
+        "meta": {
+            "target": "mongo-host",
+            "config": "storage:\n  type: filesystem\n",
+            "requirements": "packaging\nPyYAML",
+        },
+        "payload": f"file:///plugins/backup_mongo/{backup_type}_payload",
+        "backup_type": backup_type,
+        **data_overrides,
+    }
+    if parent is not None:
+        payload["data"]["parent"] = parent
+    return payload
+
+
+def build_backup_write_body(
+    task_name: str = "mongo-backup-task",
+    hostname: str = "mongo-host",
+    service_id: int = 1,
+    **kwargs: Any,
+) -> dict:
+    """Build a valid BackupTaskWrite-compatible request body."""
+    return {
+        "task_name": task_name,
+        "hostname": hostname,
+        "service_id": service_id,
+        "storage_type": "filesystem",
+        "storage_filesystem_path": "/var/backups/mongo",
+        "pitr_compression": "snappy",
+        **kwargs,
+    }
+
+
+def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
+    """Return a path-keyed ``tasks_api.get`` mock safe for parallel fetches."""
+
+    async def _mock_get(path: str, **kwargs: Any) -> Any:
+        if path.endswith("/history/"):
+            return {"items": []}
+        if path in tasks_by_path:
+            return tasks_by_path[path]
+        raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+    return AsyncMock(side_effect=_mock_get)
+
+
+class TestBackupMongoAppSchemaEndpoint:
+    """Tests for GET /api/apps/backup_mongo/schema."""
+
+    def test_schema_returns_200(self, test_client):
+        """Ensure the schema endpoint returns HTTP 200 with JSON content."""
+        response = test_client.get(f"{API_BASE}/schema")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "application/json" in response.headers["content-type"]
+
+    def test_schema_declares_derived_cascade(self, test_client):
+        """Ensure the schema exposes the three derived backup legs."""
+        response = test_client.get(f"{API_BASE}/schema")
+
+        derived = response.json()["derived"]
+        assert [item["name_suffix"] for item in derived] == [
+            "-logical",
+            "-physical",
+            "-status",
+        ]
+
+    def test_schema_storage_fields_use_forbidden_gates(self, test_client):
+        """Storage sub-fields hide via forbidden gates keyed on storage_type."""
+        response = test_client.get(f"{API_BASE}/schema")
+        storage = next(
+            section
+            for section in response.json()["forms"]
+            if section["title"] == "Storage"
+        )
+        fields = {field["name"]: field for field in storage["fields"]}
+
+        assert fields["storage_type"]["default"] == "s3"
+        assert fields["storage_s3_bucket"]["forbidden"] == [
+            {"when": {"not_equals": {"storage_type": "s3"}}}
+        ]
+        assert fields["storage_filesystem_path"]["forbidden"] == [
+            {"when": {"not_equals": {"storage_type": "filesystem"}}}
+        ]
+
+
+def build_execute_response(
+    task_id: int | None = 99, task_name: str = "mongo-backup-task"
+) -> dict:
+    """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests."""
+    return {
+        "id": task_id,
+        "execution_request": {"task": task_name, "target": "mongo-host"},
+        "task": {**build_backup_task(task_name), "deleted_at": None},
+    }
+
+
+class TestBackupMongoApiList:
+    """Tests for GET /api/apps/backup_mongo/."""
+
+    def test_list_returns_parent_tasks_only(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """List parent config tasks via upstream filters and batch status lookup."""
+        parent = build_backup_task("parent-backup")
+        mock_task_api_dep.get = AsyncMock(
+            return_value={"items": [parent], "total": 1, "offset": 0, "limit": 50}
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"parent-backup": {"status": "success", "finished_at": None}},
+        )
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert body["offset"] == 0
+        assert body["limit"] == DEFAULT_PAGE_LIMIT
+        assert len(body["items"]) == 1
+        row = body["items"][0]
+        assert row["name"] == "parent-backup"
+        assert row["status"] == "success"
+        assert row["service_type"] == ServiceTypeEnum.MONGODB.value
+        assert "anonymize_mask" in row
+        assert "anonymized_entities" in row
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/",
+            params={
+                "owner": "BACKUP_MONGO",
+                "parent_is_null": "true",
+                "backup_type": BackupType.PBM_CONFIG.value,
+                "offset": 0,
+                "limit": DEFAULT_PAGE_LIMIT,
+            },
+        )
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest",
+            json={"names": ["parent-backup"]},
+        )
+
+    def test_list_paginates_with_offset_and_limit(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Pass offset and limit to the upstream filtered task list."""
+        parent_page = build_backup_task("parent-backup-b")
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [parent_page],
+                "total": THREE_PARENT_FIXTURE_TOTAL,
+                "offset": 1,
+                "limit": 1,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"parent-backup-b": {"status": "running", "finished_at": None}}
+        )
+
+        response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == THREE_PARENT_FIXTURE_TOTAL
+        assert body["offset"] == 1
+        assert body["limit"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["name"] == "parent-backup-b"
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/",
+            params={
+                "owner": "BACKUP_MONGO",
+                "parent_is_null": "true",
+                "backup_type": BackupType.PBM_CONFIG.value,
+                "offset": 1,
+                "limit": 1,
+            },
+        )
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest",
+            json={"names": ["parent-backup-b"]},
+        )
+
+    def test_list_tolerates_batch_status_fetch_failure(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 200 with unknown status when batch latest-status lookup fails."""
+        parent_a = build_backup_task("parent-backup-a")
+        parent_b = build_backup_task("parent-backup-b")
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [parent_a, parent_b],
+                "total": TWO_PARENT_FIXTURE_TOTAL,
+                "offset": 0,
+                "limit": DEFAULT_PAGE_LIMIT,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(side_effect=HTTPNotFoundException)
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == TWO_PARENT_FIXTURE_TOTAL
+        assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
+        by_name = {item["name"]: item for item in body["items"]}
+        assert by_name["parent-backup-a"]["status"] is None
+        assert by_name["parent-backup-b"]["status"] is None
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest",
+            json={"names": ["parent-backup-a", "parent-backup-b"]},
+        )
+
+    def test_list_with_status_filter_uses_bounded_limit(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """When ``status`` is set, fetch parents with bounded limit (not 0)."""
+        parent_a = build_backup_task("parent-backup-a")
+        parent_b = build_backup_task("parent-backup-b")
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [parent_a, parent_b],
+                "total": TWO_PARENT_FIXTURE_TOTAL,
+                "offset": 0,
+                "limit": MAX_PAGINATION_LIMIT,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={
+                "parent-backup-a": {"status": "success", "finished_at": None},
+                "parent-backup-b": {"status": "running", "finished_at": None},
+            },
+        )
+
+        response = test_client.get(f"{API_BASE}/?status=success")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["name"] == "parent-backup-a"
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/",
+            params={
+                "owner": OWNER,
+                "parent_is_null": "true",
+                "backup_type": BackupType.PBM_CONFIG.value,
+                "offset": 0,
+                "limit": DEFAULT_PAGE_LIMIT,
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "query",
+        ["limit=0", "limit=-1", f"limit={MAX_PAGINATION_LIMIT + 1}"],
+    )
+    def test_list_rejects_invalid_limit(
+        self, test_client, mock_task_api_dep, query: str
+    ) -> None:
+        """List endpoint returns 422 for invalid limits."""
+        response = test_client.get(f"{API_BASE}/?{query}")
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
+
+
+class TestBackupMongoApiCreate:
+    """Tests for POST /api/apps/backup_mongo/."""
+
+    def test_create_posts_parent_and_derived_tasks(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """POST creates the parent and three derived tasks via cascade."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.post = AsyncMock(
+            side_effect=[
+                build_backup_task("mongo-backup-task"),
+                build_backup_task(
+                    "mongo-backup-task-logical",
+                    data={
+                        "backup_type": BackupType.PBM_LOGICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                build_backup_task(
+                    "mongo-backup-task-physical",
+                    data={
+                        "backup_type": BackupType.PBM_PHYSICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                build_backup_task(
+                    "mongo-backup-task-status",
+                    data={
+                        "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+            ]
+        )
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/mongo-backup-task": build_backup_task("mongo-backup-task"),
+                "/mongo-backup-task-logical": build_backup_task(
+                    "mongo-backup-task-logical",
+                    data={
+                        "backup_type": BackupType.PBM_LOGICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                "/mongo-backup-task-physical": build_backup_task(
+                    "mongo-backup-task-physical",
+                    data={
+                        "backup_type": BackupType.PBM_PHYSICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                "/mongo-backup-task-status": build_backup_task(
+                    "mongo-backup-task-status",
+                    data={
+                        "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+            }
+        )
+
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(service_id=mongo_service.id),
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        create_body = response.json()
+        assert create_body["service_type"] == ServiceTypeEnum.MONGODB.value
+        assert "anonymize_mask" in create_body
+        assert "anonymized_entities" in create_body
+        assert "connectivity_warning" in create_body
+        assert mock_task_api_dep.post.await_count == EXPECTED_CASCADE_POSTS
+        first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
+        assert first_post["owner"] == "BACKUP_MONGO"
+        assert first_post["data"]["backup_type"] == BackupType.PBM_CONFIG.value
+        logical_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
+        assert logical_post["data"]["payload"].endswith("pbm_logical_payload")
+        assert logical_post["data"]["parent"] == "mongo-backup-task"
+
+    def test_create_rolls_back_on_mid_chain_failure(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Rollback DELETEs created tasks when a derived POST fails."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.post = AsyncMock(
+            side_effect=[
+                build_backup_task("mongo-backup-task"),
+                build_backup_task(
+                    "mongo-backup-task-logical",
+                    data={
+                        "backup_type": BackupType.PBM_LOGICAL.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR),
+            ]
+        )
+        mock_task_api_dep.delete = AsyncMock(return_value=None)
+
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(service_id=mongo_service.id),
+        )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert mock_task_api_dep.delete.await_args_list == [
+            call("/mongo-backup-task-logical"),
+            call("/mongo-backup-task"),
+        ]
+
+    def test_create_rejects_malformed_priority_yaml(self, test_client) -> None:
+        """Reject malformed Node Priority YAML with 422 before touching the APIs."""
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(
+                backup_priority='"h1:27018": 2 "h2:27018": 2',
+            ),
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestBackupMongoApiDetail:
+    """Tests for GET /api/apps/backup_mongo/{task_name}."""
+
+    def test_detail_includes_derived_tasks(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Detail aggregates derived sibling statuses."""
+        parent = build_backup_task("parent-backup")
+        logical = build_backup_task(
+            "parent-backup-logical",
+            data={
+                "backup_type": BackupType.PBM_LOGICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        physical = build_backup_task(
+            "parent-backup-physical",
+            data={
+                "backup_type": BackupType.PBM_PHYSICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        status_task = build_backup_task(
+            "parent-backup-status",
+            data={
+                "backup_type": BackupType.PBM_STATUS.value,
+                "parent": "parent-backup",
+            },
+        )
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/parent-backup": parent,
+                "/parent-backup-logical": logical,
+                "/parent-backup-physical": physical,
+                "/parent-backup-status": status_task,
+            }
+        )
+
+        response = test_client.get(f"{API_BASE}/parent-backup")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["name"] == "parent-backup"
+        assert body["service_type"] == ServiceTypeEnum.MONGODB.value
+        assert "anonymize_mask" in body
+        assert "anonymized_entities" in body
+        derived_names = {item["name"] for item in body["derived_tasks"]}
+        assert derived_names == {
+            "parent-backup-logical",
+            "parent-backup-physical",
+            "parent-backup-status",
+        }
+
+    def test_detail_tolerates_history_fetch_failure_for_one_derived(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 200 when one derived history fetch fails."""
+        parent = build_backup_task("parent-backup")
+        logical = build_backup_task(
+            "parent-backup-logical",
+            data={
+                "backup_type": BackupType.PBM_LOGICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        physical = build_backup_task(
+            "parent-backup-physical",
+            data={
+                "backup_type": BackupType.PBM_PHYSICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        status_task = build_backup_task(
+            "parent-backup-status",
+            data={
+                "backup_type": BackupType.PBM_STATUS.value,
+                "parent": "parent-backup",
+            },
+        )
+        history_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        tasks_by_path = {
+            "/parent-backup": parent,
+            "/parent-backup-logical": logical,
+            "/parent-backup-physical": physical,
+            "/parent-backup-status": status_task,
+        }
+
+        async def _mock_get(path: str, **kwargs: Any) -> Any:
+            if path == "/parent-backup-physical/history/":
+                raise history_exc
+            if path.endswith("/history/"):
+                return {"items": []}
+            if path in tasks_by_path:
+                return tasks_by_path[path]
+            raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+
+        response = test_client.get(f"{API_BASE}/parent-backup")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert len(body["derived_tasks"]) == TWO_DERIVED_SIBLINGS
+        derived_names = {item["name"] for item in body["derived_tasks"]}
+        assert derived_names == {
+            "parent-backup-logical",
+            "parent-backup-status",
+        }
+
+
+class TestBackupMongoApiDelete:
+    """Tests for DELETE /api/apps/backup_mongo/{task_name}."""
+
+    def test_delete_removes_parent_and_all_derived_tasks(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """DELETE cascades to every derived sibling before the parent."""
+        parent = build_backup_task("parent-backup")
+        mock_task_api_dep.get = AsyncMock(return_value=parent)
+        mock_task_api_dep.delete = AsyncMock(return_value=None)
+
+        response = test_client.delete(f"{API_BASE}/parent-backup")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert mock_task_api_dep.delete.await_args_list == [
+            call("/parent-backup-logical"),
+            call("/parent-backup-physical"),
+            call("/parent-backup-status"),
+            call("/parent-backup"),
+        ]
+
+    def test_delete_returns_500_when_cascade_delete_partially_fails(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 500 when a derived sibling DELETE fails with a non-404 error."""
+        parent = build_backup_task("parent-backup")
+        mock_task_api_dep.get = AsyncMock(return_value=parent)
+        derived_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        async def _delete(path: str) -> None:
+            if path == "/parent-backup-physical":
+                raise derived_exc
+
+        mock_task_api_dep.delete = AsyncMock(side_effect=_delete)
+
+        response = test_client.delete(f"{API_BASE}/parent-backup")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "parent-backup-physical" in response.json()["detail"]
+
+
+class TestBackupMongoApiExecute:
+    """Tests for POST /api/apps/backup_mongo/{task_name}/execute."""
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_201_with_task_name_and_id(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Executing a backup task returns 201 with task_name and task_id."""
+        expected_task_id = 42
+        task = build_backup_task("mongo-backup-task")
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.post = AsyncMock(
+            return_value=build_execute_response(expected_task_id)
+        )
+
+        response = test_client.post(f"{API_BASE}/mongo-backup-task/execute", json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["task_name"] == "mongo-backup-task"
+        assert data["task_id"] == expected_task_id
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/execute/mongo-backup-task", json={}
+        )
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_404_for_unknown_task(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Executing an unknown task name returns 404."""
+        mock_task_api_dep.get = AsyncMock(side_effect=HTTPNotFoundException())
+
+        response = test_client.post(f"{API_BASE}/ghost-task/execute", json={})
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestBackupMongoApiAuth:
+    """Tests for API authentication."""
+
+    def test_unauthenticated_list_returns_401(self, unauthenticated_client) -> None:
+        """Reject unauthenticated access to the backup_mongo API."""
+        response = unauthenticated_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED

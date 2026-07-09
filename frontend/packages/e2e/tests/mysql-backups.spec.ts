@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── Mock stubs ────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ const MOCK_SCHEMA = {
       title: 'Task',
       fields: [
         { type: 'string', name: 'task_name', label: 'Task Name', required: true },
-        { type: 'host', name: 'hostname', label: 'Executor Host', required: true },
+        { type: 'host', name: 'hostname', label: 'Execution Host', required: true },
         {
           type: 'service',
           name: 'service_id',
@@ -64,7 +65,7 @@ const MOCK_SCHEMA = {
       title: 'Upload',
       fields: [
         {
-          type: 'multichoice',
+          type: 'multi_choice',
           name: 'upload',
           label: 'Upload providers',
           required: true,
@@ -127,13 +128,17 @@ async function mockMysqlBackupsRoutes(page: Page, overrides: MockOverrides = {})
     const req = route.request();
     const { pathname } = new URL(req.url());
 
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
+    }
+
     if (pathname.includes('/oauth/refresh')) {
       return route.fulfill({ json: MOCK_TOKEN });
     }
     if (pathname.includes('/users/me')) {
       return route.fulfill({ json: MOCK_USER });
     }
-    if (pathname === '/api/plugins/mysql_backups/schema') {
+    if (pathname === '/api/apps/mysql_backups/schema') {
       if (overrides.schemaStatus) {
         return route.fulfill({
           status: overrides.schemaStatus,
@@ -143,12 +148,12 @@ async function mockMysqlBackupsRoutes(page: Page, overrides: MockOverrides = {})
       }
       return route.fulfill({ json: MOCK_SCHEMA });
     }
-    if (pathname === '/api/plugins/mysql_backups/' && req.method() === 'GET') {
+    if (pathname === '/api/apps/mysql_backups/' && req.method() === 'GET') {
       return route.fulfill({
         json: { items: tasks, total: tasks.length, offset: 0, limit: 50 },
       });
     }
-    if (pathname === '/api/plugins/mysql_backups/' && req.method() === 'POST') {
+    if (pathname === '/api/apps/mysql_backups/' && req.method() === 'POST') {
       const auth = req.headers()['authorization'] ?? '';
       if (!auth.toLowerCase().startsWith('bearer ')) {
         return route.fulfill({
@@ -177,7 +182,7 @@ async function mockMysqlBackupsRoutes(page: Page, overrides: MockOverrides = {})
       });
       return route.fulfill({ status: 201, json: tasks[tasks.length - 1] });
     }
-    const historyMatch = pathname.match(/^\/api\/plugins\/mysql_backups\/[^/]+\/history\/?$/);
+    const historyMatch = pathname.match(/^\/api\/apps\/mysql_backups\/[^/]+\/history\/?$/);
     if (historyMatch) {
       return route.fulfill({
         json: {
@@ -221,8 +226,8 @@ test.describe('MySQL Backups smoke', () => {
     await mockMysqlBackupsRoutes(page);
   });
 
-  test('loads list page and renders schema-driven plugin', async ({ page }) => {
-    await page.goto('/plugins/mysql_backups');
+  test('loads list page and renders schema-driven app', async ({ page }) => {
+    await page.goto('/apps/mysql_backups');
     await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
       timeout: 30_000,
     });
@@ -236,7 +241,7 @@ test.describe('MySQL Backups smoke', () => {
     test(`creates a ${label} (${value}) task and surfaces it in the list view`, async ({
       page,
     }) => {
-      await page.goto('/plugins/mysql_backups');
+      await page.goto('/apps/mysql_backups');
       await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
         timeout: 30_000,
       });
@@ -253,7 +258,7 @@ test.describe('MySQL Backups smoke', () => {
       await page.getByLabel('Task Name').fill(taskName);
 
       // Fill required host + service Autocompletes (RHF blocks submit otherwise).
-      await page.getByLabel('Executor Host').click();
+      await page.getByLabel('Execution Host').click();
       await page.getByRole('option', { name: 'host1' }).click();
 
       await page.getByLabel('Database Host').click();
@@ -285,12 +290,12 @@ test.describe('MySQL Backups smoke', () => {
 
 // ── Unhappy-path coverage ─────────────────────────────────────────────────────
 //
-// These tests lock in the SchemaDrivenPlugin contract under failure conditions:
+// These tests lock in the SchemaDrivenApp contract under failure conditions:
 // backend 5xx on schema/create, validation gating, double-submit guard, and the
 // forbidden-gate field-strip behaviour from the contains-tightening commit.
 
 async function openCreateFormAndFillRequired(page: Page, taskName: string) {
-  await page.goto('/plugins/mysql_backups');
+  await page.goto('/apps/mysql_backups');
   await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
     timeout: 30_000,
   });
@@ -300,7 +305,7 @@ async function openCreateFormAndFillRequired(page: Page, taskName: string) {
     .click();
 
   await page.getByLabel('Task Name').fill(taskName);
-  await page.getByLabel('Executor Host').click();
+  await page.getByLabel('Execution Host').click();
   await page.getByRole('option', { name: 'host1' }).click();
   await page.getByLabel('Database Host').click();
   await page.getByRole('option', { name: 'svc1 (mysql)' }).click();
@@ -310,6 +315,176 @@ async function openCreateFormAndFillRequired(page: Page, taskName: string) {
   await page.keyboard.press('Escape');
 }
 
+// ── Section-visibility schema used only by the section-gate suite ────────────
+//
+// Extends MOCK_SCHEMA with the three mode sections that carry ``forbidden``
+// gates mirroring the real ``mysql_backups_schema``. Each section has one
+// representative field so the test can assert presence/absence without
+// knowing every field the real app exposes.
+const MOCK_SCHEMA_WITH_SECTION_GATES = {
+  ...MOCK_SCHEMA,
+  forms: [
+    ...MOCK_SCHEMA.forms,
+    {
+      title: 'Mydumper',
+      forbidden: [{ when: { not_equals: { backup_type: 'M' } } }],
+      fields: [{ type: 'integer', name: 'mydumper_threads', label: 'Mydumper threads' }],
+    },
+    {
+      title: 'XtraBackup',
+      forbidden: [{ when: { not_equals: { backup_type: 'X' } } }],
+      fields: [{ type: 'integer', name: 'xtrabackup_parallel', label: 'XtraBackup parallel' }],
+    },
+    {
+      title: 'Binlog',
+      forbidden: [{ when: { not_equals: { backup_type: 'B' } } }],
+      fields: [{ type: 'string', name: 'binlog_start_position', label: 'Binlog start position' }],
+    },
+  ],
+};
+
+// ── Section-visibility gate smoke tests ───────────────────────────────────────
+//
+// Guards the ``useConditionalSection`` + ``SectionRenderer`` contract:
+// mode sections appear/disappear based on ``backup_type`` and stale child
+// values are not included in the submit payload.
+
+test.describe('MySQL Backups – section-visibility gates', () => {
+  test.beforeEach(async ({ page }) => {
+    tasks.length = 0;
+    await mockMysqlBackupsRoutes(page, {});
+    // Override schema to include mode sections with forbidden gates.
+    await page.route('**/api/apps/mysql_backups/schema', (route) =>
+      route.fulfill({ json: MOCK_SCHEMA_WITH_SECTION_GATES }),
+    );
+  });
+
+  test('no mode section visible before backup_type is selected', async ({ page }) => {
+    await page.goto('/apps/mysql_backups');
+    await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await page
+      .getByRole('button', { name: /^New (MySQL Backups|task)/i })
+      .first()
+      .click();
+
+    // None of the three mode-section headings should be present yet.
+    await expect(page.getByRole('heading', { name: 'Mydumper' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'XtraBackup' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Binlog' })).toHaveCount(0);
+
+    await page.screenshot({
+      path: 'test-results/screenshots/section-gates-no-type-selected.png',
+    });
+  });
+
+  // Each tuple: [radio label, backup_type value, own field label, sib-A field label, sib-B field label]
+  for (const [label, value, ownField, sibAField, sibBField] of [
+    ['Mydumper', 'M', 'Mydumper threads', 'XtraBackup parallel', 'Binlog start position'],
+    ['XtraBackup', 'X', 'XtraBackup parallel', 'Mydumper threads', 'Binlog start position'],
+    ['Binlog', 'B', 'Binlog start position', 'Mydumper threads', 'XtraBackup parallel'],
+  ] as const) {
+    test(`selecting ${label} shows its section and hides the others`, async ({ page }) => {
+      await page.goto('/apps/mysql_backups');
+      await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
+        timeout: 30_000,
+      });
+      await page
+        .getByRole('button', { name: /^New (MySQL Backups|task)/i })
+        .first()
+        .click();
+
+      await page.getByRole('radio', { name: label }).check();
+
+      // Verify via the section's representative child field.
+      await expect(page.getByLabel(ownField)).toBeVisible({ timeout: 5_000 });
+      // Sibling section fields must not be present.
+      await expect(page.getByLabel(sibAField)).toHaveCount(0);
+      await expect(page.getByLabel(sibBField)).toHaveCount(0);
+
+      await page.screenshot({
+        path: `test-results/screenshots/section-gates-${value.toLowerCase()}-selected.png`,
+      });
+    });
+  }
+
+  test('mode switch strips stale section fields from the submit payload', async ({ page }) => {
+    const posts: Array<Record<string, unknown>> = [];
+    // Capture POSTs by routing the create endpoint specifically; beforeEach already
+    // wired up the schema override and base routes.
+    await page.route('**/api/apps/mysql_backups/', async (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        const body = req.postDataJSON() as Record<string, unknown>;
+        posts.push(body);
+        tasks.push({
+          name: body.task_name as string,
+          backup_type: body.backup_type as string,
+          status: null,
+          data: {},
+        });
+        return route.fulfill({ status: 201, json: tasks[tasks.length - 1] });
+      }
+      return route.fulfill({
+        json: { items: tasks, total: tasks.length, offset: 0, limit: 50 },
+      });
+    });
+
+    await page.goto('/apps/mysql_backups');
+    await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await page
+      .getByRole('button', { name: /^New (MySQL Backups|task)/i })
+      .first()
+      .click();
+
+    await page.getByLabel('Task Name').fill('mode-switch-payload');
+    await page.getByLabel('Execution Host').click();
+    await page.getByRole('option', { name: 'host1' }).click();
+    await page.getByLabel('Database Host').click();
+    await page.getByRole('option', { name: 'svc1 (mysql)' }).click();
+
+    // 1. Select Binlog and fill its field.
+    await page.getByRole('radio', { name: 'Binlog' }).check();
+    await expect(page.getByLabel('Binlog start position')).toBeVisible({ timeout: 5_000 });
+    await page.getByLabel('Binlog start position').fill('mysql-bin.000001:4');
+
+    // 2. Switch to Mydumper — Binlog section (and its field) must disappear.
+    await page.getByRole('radio', { name: 'Mydumper' }).check();
+    await expect(page.getByLabel('Binlog start position')).toHaveCount(0, { timeout: 5_000 });
+
+    await page.screenshot({
+      path: 'test-results/screenshots/section-gates-after-mode-switch.png',
+    });
+
+    // 3. Fill upload and submit.
+    await page.locator('#mui-component-select-upload').click();
+    await page.getByRole('option', { name: 'S3' }).click();
+    await page.keyboard.press('Escape');
+    await page.getByLabel('S3 bucket').fill('test-bucket');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByRole('row', { name: /mode-switch-payload/ })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Binlog field must not appear in the payload after switching away.
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).not.toHaveProperty('binlog_start_position');
+    expect(posts[0]).toMatchObject({ backup_type: 'M' });
+
+    await page.screenshot({
+      path: 'test-results/screenshots/section-gates-submit-success.png',
+    });
+  });
+});
+
 test.describe('MySQL Backups – unhappy paths', () => {
   test.beforeEach(() => {
     tasks.length = 0;
@@ -317,10 +492,10 @@ test.describe('MySQL Backups – unhappy paths', () => {
 
   test('schema-fetch 503 renders an error state instead of a blank page', async ({ page }) => {
     await mockMysqlBackupsRoutes(page, { schemaStatus: 503 });
-    await page.goto('/plugins/mysql_backups');
+    await page.goto('/apps/mysql_backups');
 
-    // SchemaDrivenPlugin surfaces "Failed to load plugin schema" on fetch failure.
-    await expect(page.getByText(/Failed to load plugin schema/i)).toBeVisible({
+    // SchemaDrivenApp surfaces "Failed to load app schema" on fetch failure.
+    await expect(page.getByText(/Failed to load app schema/i)).toBeVisible({
       timeout: 30_000,
     });
     // List heading must not appear — the page should not silently render an empty UI.
@@ -337,7 +512,7 @@ test.describe('MySQL Backups – unhappy paths', () => {
       .last()
       .click();
 
-    // PluginCreatePage surfaces error via notistack snackbar.
+    // AppCreatePage surfaces error via notistack snackbar.
     await expect(page.getByText(/create blew up|failed to create/i)).toBeVisible({
       timeout: 15_000,
     });
@@ -351,7 +526,7 @@ test.describe('MySQL Backups – unhappy paths', () => {
   test('validation blocks empty submit – no POST fires', async ({ page }) => {
     const posts: Array<Record<string, unknown>> = [];
     await mockMysqlBackupsRoutes(page, { capturePosts: posts });
-    await page.goto('/plugins/mysql_backups');
+    await page.goto('/apps/mysql_backups');
     await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
       timeout: 30_000,
     });
@@ -494,5 +669,61 @@ test.describe('MySQL Backups – unhappy paths', () => {
     });
     expect(posts).toHaveLength(1);
     expect(posts[0]).not.toHaveProperty('skip_s3_safety_check');
+  });
+});
+
+// ── multi_choice POST body regression (SEP-1293) ──────────────────────────────
+//
+// Guards the full data flow: schema → render → user interaction → POST body.
+// If the `multi_choice` discriminator breaks again the control won't render,
+// the user can't select a value, required validation blocks submit, and these
+// tests fail at the explicit `posts[0].upload` assertion — making the root
+// cause obvious rather than surfacing as a "row not visible" timeout.
+
+test.describe('MySQL Backups — multi_choice POST body (SEP-1293 regression)', () => {
+  test.beforeEach(() => {
+    tasks.length = 0;
+  });
+
+  test('multi_choice: single selection reaches the POST body', async ({ page }) => {
+    const posts: Array<Record<string, unknown>> = [];
+    await mockMysqlBackupsRoutes(page, { capturePosts: posts });
+    await openCreateFormAndFillRequired(page, 'mc-single');
+    await page.getByLabel('S3 bucket').fill('my-bucket');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByRole('row', { name: /mc-single/ })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(posts).toHaveLength(1);
+    expect(posts[0].upload).toEqual(['S3']);
+    expect(posts[0]).toHaveProperty('s3_bucket', 'my-bucket');
+  });
+
+  test('multi_choice: multiple selections all reach the POST body', async ({ page }) => {
+    const posts: Array<Record<string, unknown>> = [];
+    await mockMysqlBackupsRoutes(page, { capturePosts: posts });
+    // openCreateFormAndFillRequired already selects S3; add Rsync on top.
+    await openCreateFormAndFillRequired(page, 'mc-multi');
+    await page.locator('#mui-component-select-upload').click();
+    await page.getByRole('option', { name: 'Rsync' }).click();
+    await page.keyboard.press('Escape');
+    await page.getByLabel('S3 bucket').fill('my-bucket');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByRole('row', { name: /mc-multi/ })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(posts).toHaveLength(1);
+    expect(posts[0].upload).toContain('S3');
+    expect(posts[0].upload).toContain('RSYNC');
   });
 });

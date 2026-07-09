@@ -21,7 +21,7 @@ from annotated_types import Ge
 from pydantic import ConfigDict, Field, model_validator
 
 from app.core.models import BaseLowercaseModel
-from app.core.utils.fields import StrAnyUrl, StrDatabaseUrl, StrRelativePath
+from app.core.utils.fields import StrCredentialAnyUrl, StrDatabaseUrl, StrRelativePath
 
 
 class CeleryOptions(BaseLowercaseModel):
@@ -30,11 +30,11 @@ class CeleryOptions(BaseLowercaseModel):
     Any extra fields passed to this model will be used for configuring Celery.
 
     :param broker_url: The URL of the message broker.
-    :type broker_url: StrAnyUrl
+    :type broker_url: StrCredentialAnyUrl
     :param task_track_started: Whether to track when tasks start. Defaults to True.
     :type task_track_started: bool
     :param result_backend: The URL of the result backend. Defaults to None.
-    :type result_backend: StrAnyUrl | None
+    :type result_backend: StrCredentialAnyUrl | None
     :param beat_dburi: The database URI for storing scheduled tasks. Defaults to
         `"sqlite:///schedule.db"`.
     :type beat_dburi: StrDatabaseUrl
@@ -49,9 +49,9 @@ class CeleryOptions(BaseLowercaseModel):
     """
 
     model_config = ConfigDict(extra="allow")
-    broker_url: StrAnyUrl
+    broker_url: StrCredentialAnyUrl
     task_track_started: bool = True
-    result_backend: StrAnyUrl | None = None
+    result_backend: StrCredentialAnyUrl | None = None
     beat_dburi: StrDatabaseUrl = "sqlite:///schedule.db"
     worker_state_db: StrRelativePath = Field(
         ".celery_worker_state", validate_default=True
@@ -81,5 +81,6 @@ class CeleryOptions(BaseLowercaseModel):
         self.include = [
             "app.tasks.celery",
             "app.sep.celery",
+            "app.sep.apps.report.celery",
         ]
         return self

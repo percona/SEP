@@ -24,7 +24,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
-from async_lru import alru_cache
 from pydantic import Field
 
 from app.inventory.models import ServiceTypeEnum
@@ -39,7 +38,6 @@ from app.sep.inventory import (
     Table,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.sync.exceptions import ExecutorHostNotFoundError
 from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
 
 GZIP_WBITS = 16 + zlib.MAX_WBITS
@@ -334,49 +332,6 @@ class MySQLSyncer(BaseTaskSyncer):
                 yield json.loads(line)
             except json.JSONDecodeError:
                 logger.exception("Failed to decode JSON line: %s", line[:200])
-
-    @alru_cache
-    async def get_task_target(self, host: str, name: str | None = None) -> str:
-        """Return the target host for the task from the host.
-
-        This method returns `self.force_executor_host` if set. Otherwise, it tries to
-        find a target with the same address as ``host`` or the same name. If no match is
-        found and ``strict_executor_matching`` is enabled, raise
-        ``ExecutorHostNotFoundError``. Otherwise, return ``default_executor_host`` if
-        set, or the first available host.
-
-        :param host: The target host.
-        :type host: str
-        :param name: The target name. Defaults to ``None``.
-        :type name: str | None
-        :return: The target host for the task.
-        :rtype: str
-        :raises ExecutorHostNotFoundError: If ``strict_executor_matching`` is enabled and
-            no executor host matches the node's name or address.
-        """
-        if self.force_executor_host:
-            return self.force_executor_host
-        available_hosts = await self.get_available_hosts()
-        if name and name in available_hosts:
-            return name
-        for target, address in available_hosts.items():
-            if address == host:
-                return target
-        if self.strict_executor_matching:
-            raise ExecutorHostNotFoundError(name, host, available_hosts)
-        if not available_hosts:
-            raise ValueError(
-                "No executor hosts available from /hosts/; cannot determine task target."
-            )
-        if self.default_executor_host and self.default_executor_host in available_hosts:
-            return self.default_executor_host
-        if self.default_executor_host:
-            logger.warning(
-                "default_executor_host %r not in available hosts %s; using first available",
-                self.default_executor_host,
-                list(available_hosts),
-            )
-        return next(iter(available_hosts))
 
     def build_script_config(
         self,

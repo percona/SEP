@@ -20,9 +20,15 @@ from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
+from app.core.utils.path import PayloadReferenceError
+from app.sep.apps.archives.alerts import (
+    ALERT_DETAIL_BUILDER,
+    ARCHIVER_TRACE_PLACEHOLDER,
+)
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import (
     _encode_anonymize_mask,
@@ -38,7 +44,7 @@ from app.tasks.models import (
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskLogType,
-    TaskOwner,
+    TaskResponse,
     TaskStats,
     TransformPayloadRequest,
 )
@@ -138,25 +144,6 @@ class TestTaskHistoryStatusEnum:
     def test_is_terminal_false(self, status: TaskHistoryStatusEnum) -> None:
         """Assert is_terminal returns False for active statuses."""
         assert status.is_terminal() is False
-
-
-class TestTaskOwner:
-    """Test TaskOwner enum values."""
-
-    def test_all_values_exist(self) -> None:
-        """Assert all nine owner values exist."""
-        expected = {
-            "ANY",
-            "ALTERS",
-            "ARCHIVER",
-            "BACKUPS",
-            "RESTORES",
-            "CHECKSUMS",
-            "BACKUP_MONGO",
-            "RESTORE_MONGO",
-            "BACKUP_PG",
-        }
-        assert {o.name for o in TaskOwner} == expected
 
 
 class TestTaskLogType:
@@ -282,11 +269,54 @@ class TestTask:
         """Assert anonymized_entities falls back to anonymizer_settings defaults."""
         default_entities = {PIIEntity.EMAIL_ADDRESS, PIIEntity.PHONE_NUMBER}
         mock_defaults = defaultdict(lambda: default_entities)
-        task = TaskFactory.build(anonymize_mask=None, owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(anonymize_mask=None, owner="BACKUPS")
         with patch("app.tasks.models.anonymizer_settings") as mock_settings:
             mock_settings.DEFAULT_ENTITIES = mock_defaults
             result = task.anonymized_entities
         assert result == default_entities
+
+
+class TestTaskResponseAnonymizedEntities:
+    """Test the anonymized_entities computed field on TaskResponse."""
+
+    BASE_FIELDS: dict = {
+        "id": 1,
+        "name": "test-task",
+        "data": {},
+        "deleted_at": None,
+        "created_by": None,
+        "last_updated_by": None,
+    }
+
+    def test_explicit_mask_returns_sorted_entity_names(self) -> None:
+        """Explicit anonymize_mask decodes to a sorted list of PIIEntity name strings."""
+        mask = int(PIIEntity.CREDIT_CARD | PIIEntity.EMAIL_ADDRESS)
+        response = TaskResponse.model_validate(
+            {**self.BASE_FIELDS, "anonymize_mask": mask}
+        )
+        assert response.anonymized_entities == ["CREDIT_CARD", "EMAIL_ADDRESS"]
+
+    def test_zero_mask_returns_empty_list(self) -> None:
+        """anonymize_mask=0 decodes to an empty list (no entities set)."""
+        response = TaskResponse.model_validate(
+            {**self.BASE_FIELDS, "anonymize_mask": 0}
+        )
+        assert response.anonymized_entities == []
+
+    def test_none_mask_falls_back_to_owner_defaults(self) -> None:
+        """anonymize_mask=None falls back to anonymizer_settings.DEFAULT_ENTITIES[owner]."""
+        default_entities = {PIIEntity.EMAIL_ADDRESS, PIIEntity.PHONE_NUMBER}
+        mock_defaults = defaultdict(lambda: default_entities)
+        fields = {
+            **self.BASE_FIELDS,
+            "owner": "CHECKSUMS",
+            "anonymize_mask": None,
+        }
+        with patch("app.tasks.models.anonymizer_settings") as mock_settings:
+            mock_settings.DEFAULT_ENTITIES = mock_defaults
+            response = TaskResponse.model_validate(fields)
+            result = response.anonymized_entities
+        assert result == sorted(e.name for e in default_entities)
 
 
 class TestTaskExecutionRequest:
@@ -312,12 +342,13 @@ class TestTaskExecutionRequest:
         )
         assert req.payload_content == '{"key": "value"}'
 
-    def test_payload_content_file_path_nonexistent(self) -> None:
-        """Assert payload_content returns payload string for non-existent file."""
+    def test_payload_content_unresolvable_file_raises(self) -> None:
+        """Assert payload_content raises for an unresolvable file:// reference."""
         req = TaskExecutionRequest(
             task="t", target="n", payload="file:///nonexistent/path.json"
         )
-        assert req.payload_content == "file:///nonexistent/path.json"
+        with pytest.raises(PayloadReferenceError):
+            _ = req.payload_content
 
     def test_payload_content_none(self) -> None:
         """Assert payload_content returns None when payload is None."""
@@ -635,6 +666,224 @@ class TestTaskHistory:
             resolved_keys = [call.args[0] for call in mock_resolve.call_args_list]
             assert trigger_dedup in resolved_keys
 
+    @staticmethod
+    def _archiver_task(*, with_node: bool = True) -> Task:
+        """Return an ARCHIVER task with archiver config in its payload meta."""
+        meta = {
+            "config": yaml.dump(
+                {
+                    "PURGE_LIST": [
+                        {
+                            "SOURCE_DB": "sbtest",
+                            "SOURCE_TABLE": "sbtest2",
+                            "WHERE": "k <= 2000",
+                            "DEST_DB": "sbtest_archived",
+                            "DEST_TABLE": "sbtest2",
+                            "SWAP_DROP": 0,
+                        }
+                    ],
+                }
+            ),
+            "target": "executor-host",
+        }
+        if with_node:
+            meta["_pmm_node_name"] = "mvc-lab2-db1"
+        return TaskFactory.build(
+            id=1,
+            name="test-task",
+            owner="ARCHIVER",
+            alert_detail_builder=ALERT_DETAIL_BUILDER,
+            anonymize_mask=None,
+            data={"task": "run-python", "meta": meta},
+        )
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_failed_archiver(
+        self, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """Use the source node in the summary and attach custom_details on failure."""
+        history = TaskHistory(
+            id=1075,
+            task_id=1,
+            task=self._archiver_task(),
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mocker.patch(
+            "app.sep.apps.archives.alerts._read_last_stderr",
+            new=AsyncMock(return_value="2026 ERROR: pt-archiver Purge Failed"),
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            # Source node in the summary, not the executor target.
+            assert "mvc-lab2-db1" in alert_data["summary"]
+            assert "failed" in alert_data["summary"]
+            # dedup_key and source stay keyed on the executor target.
+            assert alert_data["dedup_key"] == "task:test-task:node-1"
+            assert alert_data["source"] == "test-task:1075:node-1"
+            # Combined detail block carried in custom_details.
+            desc = alert_data["custom_details"]["description"]
+            assert "=== ERROR DETAILS ===" in desc
+            assert "Purge Failed" in desc
+            assert "Source: sbtest.sbtest2" in desc
+            assert "Condition: k <= 2000" in desc
+            assert "Target: sbtest_archived.sbtest2" in desc
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_failed_archiver_pmm_node_name_fallback(
+        self, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """Fall back to the target in the summary without ``_pmm_node_name``."""
+        history = TaskHistory(
+            id=1075,
+            task_id=1,
+            task=self._archiver_task(with_node=False),
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mocker.patch(
+            "app.sep.apps.archives.alerts._read_last_stderr",
+            new=AsyncMock(return_value="ERROR: boom"),
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            assert "node-1" in alert_data["summary"]
+            assert "custom_details" in alert_data
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_failed_archiver_empty_trace_placeholder(
+        self, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """Render the placeholder for a missing STDERR trace, never an empty block."""
+        history = TaskHistory(
+            id=1075,
+            task_id=1,
+            task=self._archiver_task(),
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mocker.patch(
+            "app.sep.apps.archives.alerts._read_last_stderr",
+            new=AsyncMock(return_value=None),
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            desc = mock_trigger.call_args[0][0]["custom_details"]["description"]
+            assert ARCHIVER_TRACE_PLACEHOLDER in desc
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_failed_non_archiver_unchanged(
+        self, task_instance: Task, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """Give non-archiver failures no custom_details and keep the target summary."""
+        read_spy = mocker.patch(
+            "app.sep.apps.archives.alerts._read_last_stderr",
+            new=AsyncMock(return_value="x"),
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            assert "custom_details" not in alert_data
+            assert "node-1" in alert_data["summary"]
+        read_spy.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_lost_archiver_unchanged(
+        self, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """Leave Archiver LOST unchanged: no custom_details, no source-node summary."""
+        read_spy = mocker.patch(
+            "app.sep.apps.archives.alerts._read_last_stderr",
+            new=AsyncMock(return_value="x"),
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=1,
+            task=self._archiver_task(),
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.LOST,
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            assert "custom_details" not in alert_data
+            assert alert_data["class"] == "task_lost"
+            assert "node-1" in alert_data["summary"]
+            assert "mvc-lab2-db1" not in alert_data["summary"]
+        read_spy.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_archiver_uses_execution_snapshot_meta(
+        self, mocker
+    ) -> None:
+        """Describe the failed execution's config, not a later-edited task.
+
+        ``task.data["meta"]`` is mutable after dispatch, while
+        ``execution_request.meta`` is the snapshot captured at dispatch. The
+        failure alert must reflect the snapshot (source node + config).
+        """
+        snapshot_request = TaskExecutionRequest(
+            task="test-task",
+            target="node-1",
+            meta={
+                "config": yaml.dump(
+                    {
+                        "PURGE_LIST": [
+                            {
+                                "SOURCE_DB": "snap_db",
+                                "SOURCE_TABLE": "snap_table",
+                                "WHERE": "id < 10",
+                                "DEST_DB": "snap_archived",
+                                "DEST_TABLE": "snap_table",
+                                "SWAP_DROP": 0,
+                            }
+                        ],
+                    }
+                ),
+                "_pmm_node_name": "snapshot-node",
+            },
+            tracking={"allocation_id": None, "evaluation_id": None},
+        )
+        # ``_archiver_task`` carries the (now edited) live config/node.
+        history = TaskHistory(
+            id=1075,
+            task_id=1,
+            task=self._archiver_task(),
+            execution_request=snapshot_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mocker.patch(
+            "app.sep.apps.archives.alerts._read_last_stderr",
+            new=AsyncMock(return_value="ERROR: boom"),
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            desc = alert_data["custom_details"]["description"]
+            # Snapshot config wins.
+            assert "snapshot-node" in alert_data["summary"]
+            assert "Source: snap_db.snap_table" in desc
+            assert "Condition: id < 10" in desc
+            assert "Target: snap_archived.snap_table" in desc
+            # Edited live task config must not leak in.
+            assert "mvc-lab2-db1" not in alert_data["summary"]
+            assert "sbtest" not in desc
+
 
 class TestTaskHistoryResponse:
     """Test ``TaskHistoryResponse`` serialization of the ``has_logs`` attribute."""
@@ -692,6 +941,142 @@ class TestTaskHistoryResponse:
         response = TaskHistoryResponse.model_validate(history)
 
         assert response.has_logs is True
+
+
+class TestTaskHistoryResponseDisplayName:
+    """Test ``TaskHistoryResponse.display_name`` derivation."""
+
+    @pytest.fixture
+    def normal_task(self) -> Task:
+        """Return a Task with a plain user-defined name."""
+        return TaskFactory.build(id=1, name="backup-task", data={"key": "val"})
+
+    @pytest.fixture
+    def run_python_task(self) -> Task:
+        """Return a run-python generic executor Task."""
+        return TaskFactory.build(id=2, name="run-python", data={"key": "val"})
+
+    @pytest.fixture
+    def exec_artifact_task(self) -> Task:
+        """Return an exec-artifact generic executor Task."""
+        return TaskFactory.build(id=3, name="exec-artifact", data={"key": "val"})
+
+    def _history(
+        self, task: Task, execution_request: TaskExecutionRequest
+    ) -> TaskHistoryResponse:
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        return TaskHistoryResponse.model_validate(history)
+
+    def test_normal_task_returns_task_name(self, normal_task: Task) -> None:
+        """Assert a regular task returns its ``task.name`` as the display label."""
+        req = TaskExecutionRequest(task="backup-task", target="node-1")
+        assert self._history(normal_task, req).display_name == "backup-task"
+
+    def test_generic_executor_uses_underscore_snippet_filename_from_meta(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert ``_snippet_filename`` drives the label as ``<dir>/<file> on <target>``."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="node-1",
+            meta={"_snippet_filename": "diag/slow-query.sh"},
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "diag/slow-query.sh on node-1"
+        )
+
+    def test_generic_executor_uses_legacy_snippet_filename_key(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert bare ``snippet_filename`` key is accepted when underscore variant absent."""
+        req = TaskExecutionRequest(
+            task="run-python", target="node-1", meta={"snippet_filename": "legacy.sh"}
+        )
+        assert self._history(run_python_task, req).display_name == "legacy.sh on node-1"
+
+    def test_generic_executor_fallback_to_task_on_target(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert the fallback label is ``<task> on <target>`` when no snippet filename."""
+        req = TaskExecutionRequest(task="run-python", target="node-1")
+        assert (
+            self._history(run_python_task, req).display_name == "run-python on node-1"
+        )
+
+    def test_generic_executor_file_payload_uses_source_dir_and_basename(
+        self, exec_artifact_task: Task
+    ) -> None:
+        """Assert a ``file://`` payload yields ``<dir>/<file> on <target>``."""
+        req = TaskExecutionRequest(
+            task="exec-artifact",
+            target="node-1",
+            payload="file:///plugins/backup/script.sh",
+        )
+        assert (
+            self._history(exec_artifact_task, req).display_name
+            == "backup/script.sh on node-1"
+        )
+
+    def test_generic_executor_system_payload_without_snippet_filename(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert a system ``file://`` payload surfaces its owning directory."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="db-1",
+            payload="file://app/tasks/connectivity/payload.py",
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "connectivity/payload.py on db-1"
+        )
+
+    def test_generic_executor_bare_snippet_borrows_source_dir_from_payload(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert a bare snippet filename borrows its directory from the payload path."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="db-2",
+            meta={"_snippet_filename": "payload.py"},
+            payload="file://app/sep/sync/syncers/system_facts/payload.py",
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "system_facts/payload.py on db-2"
+        )
+
+    def test_generic_executor_non_file_payload_falls_back_to_task_on_target(
+        self, exec_artifact_task: Task
+    ) -> None:
+        """Assert a non-file:// payload is ignored for basename derivation."""
+        req = TaskExecutionRequest(
+            task="exec-artifact", target="node-1", payload="inline-value"
+        )
+        assert (
+            self._history(exec_artifact_task, req).display_name
+            == "exec-artifact on node-1"
+        )
+
+    def test_empty_meta_does_not_crash(self, run_python_task: Task) -> None:
+        """Assert an empty meta dict falls back gracefully without raising."""
+        req = TaskExecutionRequest(task="run-python", target="node-1", meta={})
+        result = self._history(run_python_task, req).display_name
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_none_meta_does_not_crash(self, run_python_task: Task) -> None:
+        """Assert a None meta falls back gracefully without raising."""
+        req = TaskExecutionRequest(task="run-python", target="node-1", meta=None)
+        result = self._history(run_python_task, req).display_name
+        assert isinstance(result, str)
 
 
 class TestTaskStats:

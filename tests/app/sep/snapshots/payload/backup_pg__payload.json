@@ -1,0 +1,71 @@
+{
+  "all_pgbackrest_options": {
+    "alert_detail_builder": null,
+    "alert_on_fail": true,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 5432,
+        "_connectivity_service_type": "postgresql",
+        "_service_name": "svc-backup-pg",
+        "config": "ALL_SERVERS:\n  BACKUP_DIR: /srv/backups\n  LOGGING_DIR: /var/log/pgbackrest\n  PGBACKREST_BACKUP_TYPE: diff\n  PGBACKREST_BIN: /usr/local/bin/pgbackrest\n  PGBACKREST_CONFIG_FILE: /etc/pgbackrest/pgbackrest.conf\n  PGBACKREST_DATADIR: /var/lib/postgresql/16/main\n  PGBACKREST_INCREMENTAL_CYCLE: daily\n  PGBACKREST_RETENTION_ARCHIVE: 8\n  PGBACKREST_RETENTION_FULL: 4\nSERVER_LIST:\n- ALIAS: prod-main\n  BACKUP_TYPE: P\n  HOST: localhost\n",
+        "requirements": "packaging\nPyYAML",
+        "target": "executor-host"
+      },
+      "payload": "file://app/sep/apps/backup_pg/payload",
+      "task": "run-python"
+    },
+    "is_template": false,
+    "name": "backup-pg-golden",
+    "owner": "BACKUP_PG",
+    "protected": false
+  },
+  "defaults_minimal": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 5432,
+        "_connectivity_service_type": "postgresql",
+        "_service_name": "svc-backup-pg",
+        "config": "ALL_SERVERS:\n  BACKUP_DIR: /var/lib/pgbackrest\nSERVER_LIST:\n- ALIAS: sep-test\n  BACKUP_TYPE: P\n  HOST: localhost\n",
+        "requirements": "packaging\nPyYAML",
+        "target": "executor-host"
+      },
+      "payload": "file://app/sep/apps/backup_pg/payload",
+      "task": "run-python"
+    },
+    "is_template": false,
+    "name": "backup-pg-golden",
+    "owner": "BACKUP_PG",
+    "protected": false
+  },
+  "port_none_omits_server_port": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_connectivity_host": "localhost",
+        "_connectivity_port": 5432,
+        "_connectivity_service_type": "postgresql",
+        "_service_name": "svc-local",
+        "config": "ALL_SERVERS:\n  BACKUP_DIR: /var/lib/pgbackrest\nSERVER_LIST:\n- ALIAS: local-stanza\n  BACKUP_TYPE: P\n  HOST: localhost\n",
+        "requirements": "packaging\nPyYAML",
+        "target": "executor-host"
+      },
+      "payload": "file://app/sep/apps/backup_pg/payload",
+      "task": "run-python"
+    },
+    "is_template": false,
+    "name": "backup-pg-golden",
+    "owner": "BACKUP_PG",
+    "protected": false
+  }
+}

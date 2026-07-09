@@ -1,0 +1,25 @@
+{
+  "description": "Browse alerts grouped by service type and run diagnostic snippets against registered executor hosts.",
+  "detail_view": {
+    "sections": []
+  },
+  "display_name": "Alert Troubleshooting",
+  "forms": [],
+  "list_view": {
+    "columns": [
+      {
+        "key": "service_type",
+        "label": "Service Type",
+        "sortable": true
+      },
+      {
+        "key": "label",
+        "label": "Label",
+        "sortable": true
+      }
+    ],
+    "default_sort": "service_type",
+    "overview_hidden_fields": []
+  },
+  "name": "alert_troubleshooting"
+}

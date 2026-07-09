@@ -1,0 +1,60 @@
+{
+  "display_name": "One Of Fixture",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "branches": [
+            {
+              "fields": [
+                {
+                  "default": "",
+                  "label": "Source Schema",
+                  "name": "source.source_db_id",
+                  "required": false,
+                  "type": "string"
+                }
+              ],
+              "label": "Schema",
+              "value": "schema"
+            },
+            {
+              "fields": [
+                {
+                  "default": "",
+                  "label": "Source Query",
+                  "name": "source.source_query",
+                  "required": false,
+                  "type": "string"
+                }
+              ],
+              "label": "Query",
+              "value": "query"
+            }
+          ],
+          "default": "schema",
+          "description": "Choose how to specify source rows.",
+          "discriminator": "source.mode",
+          "label": "Source",
+          "name": "source",
+          "type": "one_of"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Source"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "one_of_fixture"
+}

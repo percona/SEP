@@ -1,0 +1,330 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define tests for the app.sep.apps.backup_mongo.restore.deps module."""
+
+from collections.abc import Awaitable, Callable
+
+import pytest
+import yaml
+
+from app.core.exceptions import HTTPNotFoundException
+from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.backup_mongo.models import BackupType
+from app.sep.apps.backup_mongo.restore.deps import (
+    _backup_type_from_parent,
+    _resolve_service_name,
+    build_pbm_force_resync_task_payload,
+    build_pbm_list_task_payload,
+    build_restore_config_task_payload,
+    build_restore_task_group,
+    build_restore_task_group_from_body,
+    build_restore_task_payload,
+    build_restore_tasks,
+    build_restore_update_form_from_body,
+)
+from app.sep.apps.backup_mongo.restore.models import RestoreCreate, RestoreTaskWrite
+from app.sep.inventory import CreatedService
+from app.sep.models import SyncInventoryEntityTypeEnum
+from app.tasks.models import Task, TaskBackendEnum, TaskWrite
+from tests.app.factories import TaskFactory
+
+EXPECTED_PHYSICAL_RESTORE_TUPLE_LEN = 4
+
+DispatchFn = Callable[[RestoreCreate, object], Awaitable[TaskWrite]]
+DISPATCH_FUNCTIONS: list[DispatchFn] = [
+    build_restore_config_task_payload,
+    build_restore_task_payload,
+    build_pbm_list_task_payload,
+    build_pbm_force_resync_task_payload,
+]
+
+
+def _restore_parent_task(*, config: str) -> Task:
+    task = TaskFactory.build(
+        name="restore-parent",
+        owner="RESTORE_MONGO",
+        backend=TaskBackendEnum.PROXY,
+    )
+    return task.model_copy(
+        update={"data": {**task.data, "meta": {"config": config}}},
+    )
+
+
+def test_backup_type_from_parent_returns_backup_type() -> None:
+    """Parse backupType from the parent restore config YAML."""
+    config = yaml.dump({"backupType": BackupType.PBM_LOGICAL.value})
+    assert _backup_type_from_parent(_restore_parent_task(config=config)) == (
+        BackupType.PBM_LOGICAL
+    )
+
+
+def test_backup_type_from_parent_raises_when_backup_type_missing() -> None:
+    """Return 404 instead of KeyError when backupType is absent from config."""
+    with pytest.raises(HTTPNotFoundException) as exc_info:
+        _backup_type_from_parent(_restore_parent_task(config=yaml.dump({})))
+
+    assert exc_info.value.detail == "Task 'restore-parent' has no backupType in config"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dispatch", DISPATCH_FUNCTIONS)
+async def test_dispatch_includes_service_name_when_service_id_set(
+    dispatch: DispatchFn,
+    mocker,
+    mock_remote_api,
+    restore_create: RestoreCreate,
+    mongo_service: CreatedService,
+):
+    """Inject _service_name into meta when service_id is set across restore dispatch functions."""
+    mocker.patch(
+        "app.sep.apps.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
+    )
+
+    task_payload = await dispatch(restore_create, mock_remote_api)
+
+    assert task_payload.data["meta"]["_service_name"] == mongo_service.name
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dispatch", DISPATCH_FUNCTIONS)
+async def test_dispatch_omits_service_name_when_service_id_unset(
+    dispatch: DispatchFn,
+    mocker,
+    mock_remote_api,
+    restore_create_no_service: RestoreCreate,
+):
+    """All four dispatch functions skip the lookup and meta key when service_id is None."""
+    get_created_entity = mocker.patch(
+        "app.sep.apps.backup_mongo.restore.deps.get_created_entity",
+    )
+
+    task_payload = await dispatch(restore_create_no_service, mock_remote_api)
+
+    assert "_service_name" not in task_payload.data["meta"]
+    get_created_entity.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_service_name_returns_none_when_service_id_missing(
+    mock_remote_api,
+    restore_create_no_service: RestoreCreate,
+):
+    """_resolve_service_name returns None when the form has no service_id."""
+    assert (
+        await _resolve_service_name(restore_create_no_service, mock_remote_api) is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_service_name_returns_none_on_stale_service_id(
+    mocker,
+    mock_remote_api,
+    restore_create: RestoreCreate,
+):
+    """Return None when the inventory lookup 404s so a stale service_id degrades.
+
+    ``RemoteAPI.get`` raises the project's ``HTTPNotFoundException`` on 404, which
+    the narrowed handler swallows to fall back to a node-only PMM annotation.
+    """
+    mocker.patch(
+        "app.sep.apps.backup_mongo.restore.deps.get_created_entity",
+        side_effect=HTTPNotFoundException(),
+    )
+
+    assert await _resolve_service_name(restore_create, mock_remote_api) is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_service_name_returns_service_name_when_service_id_present(
+    mocker,
+    mock_remote_api,
+    restore_create: RestoreCreate,
+    mongo_service: CreatedService,
+):
+    """_resolve_service_name returns service.name and queries with the MONGODB type."""
+    get_created_entity = mocker.patch(
+        "app.sep.apps.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
+    )
+
+    result = await _resolve_service_name(restore_create, mock_remote_api)
+
+    assert result == mongo_service.name
+    get_created_entity.assert_awaited_once_with(
+        mock_remote_api,
+        SyncInventoryEntityTypeEnum.SERVICE,
+        restore_create.service_id,
+        type=ServiceTypeEnum.MONGODB,
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_restore_tasks_threads_inventory_api_to_all_dispatch_fns(
+    mocker,
+    mock_remote_api,
+    mongo_service: CreatedService,
+):
+    """build_restore_tasks returns a 4-tuple with _service_name set on every sub-task for physical restores.
+
+    Also asserts the inventory lookup is performed only once across all four
+    sub-tasks — the four builders share the resolved name rather than each
+    re-querying the Inventory API for the same ``service_id``.
+    """
+    get_created_entity = mocker.patch(
+        "app.sep.apps.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
+    )
+    physical_form = RestoreCreate(
+        hostname="mongo-restore-host",
+        task_name="mongo-restore-task",
+        service_id=str(mongo_service.id),
+        backup_type=BackupType.PBM_PHYSICAL,
+        backup_source="2026-04-29T10:00:00",
+    )
+
+    tasks = await build_restore_tasks(physical_form, mock_remote_api)
+
+    assert len(tasks) == EXPECTED_PHYSICAL_RESTORE_TUPLE_LEN
+    assert all(task is not None for task in tasks)
+    for task in tasks:
+        assert task.data["meta"]["_service_name"] == mongo_service.name
+    get_created_entity.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_build_restore_tasks_logical_omits_force_resync(
+    mocker,
+    mock_remote_api,
+    restore_create: RestoreCreate,
+    mongo_service: CreatedService,
+):
+    """Logical restores skip the force-resync sub-task (last tuple element is None)."""
+    mocker.patch(
+        "app.sep.apps.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
+    )
+
+    tasks = await build_restore_tasks(restore_create, mock_remote_api)
+
+    assert len(tasks) == EXPECTED_PHYSICAL_RESTORE_TUPLE_LEN
+    *populated_tasks, force_resync = tasks
+    assert force_resync is None
+    for task in populated_tasks:
+        assert task.data["meta"]["_service_name"] == mongo_service.name
+
+
+@pytest.mark.asyncio
+async def test_restore_task_group_yaml_golden_strings(
+    mocker,
+    mock_remote_api,
+    mongo_service: CreatedService,
+) -> None:
+    """Keep per-leg meta.config YAML byte-identical."""
+    mocker.patch(
+        "app.sep.apps.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
+    )
+    form = RestoreCreate(
+        hostname="mongo-restore-host",
+        task_name="mongo-restore-task",
+        service_id=str(mongo_service.id),
+        backup_type=BackupType.PBM_PHYSICAL,
+        backup_source="2026-04-29T10:00:00",
+        restore_batch_size=500,
+        restore_num_insertion_workers=10,
+        restore_mongod_location="custom/mongod",
+        restore_mongod_location_map="node1: /usr/bin/mongod\n",
+        credentials_path="/tmp/creds.yaml",
+    )
+
+    (
+        config_task,
+        restore_task,
+        pbm_list_task,
+        force_resync_task,
+    ) = await build_restore_task_group(form, mock_remote_api)
+
+    assert (
+        config_task.data["meta"]["config"] == "backupSource: '2026-04-29T10:00:00'\n"
+        "backupType: pbm_physical\n"
+        "credentials_path: /tmp/creds.yaml\n"
+        "restore:\n"
+        "  batchSize: 500\n"
+        "  downloadChunkMb: 32\n"
+        "  mongodLocation: custom/mongod\n"
+        "  mongodLocationMap:\n"
+        "    node1: /usr/bin/mongod\n"
+        "  numInsertionWorkers: 10\n"
+    )
+    assert (
+        restore_task.data["meta"]["config"] == "backupSource: '2026-04-29T10:00:00'\n"
+        "backupType: pbm_physical\n"
+        "credentials_path: /tmp/creds.yaml\n"
+    )
+    assert pbm_list_task.data["meta"]["config"] == "credentials_path: /tmp/creds.yaml\n"
+    assert force_resync_task is not None
+    assert (
+        force_resync_task.data["meta"]["config"]
+        == "credentials_path: /tmp/creds.yaml\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_restore_task_group_from_body_matches_form_path(
+    mocker,
+    mock_remote_api,
+    restore_create: RestoreCreate,
+    restore_task_write: RestoreTaskWrite,
+    mongo_service: CreatedService,
+) -> None:
+    """JSON body composer produces the same payloads as the form path."""
+    mocker.patch(
+        "app.sep.apps.backup_mongo.restore.deps.get_created_entity",
+        return_value=mongo_service,
+    )
+
+    from_body = await build_restore_task_group_from_body(
+        restore_task_write,
+        mock_remote_api,
+    )
+    from_form = await build_restore_task_group(restore_create, mock_remote_api)
+
+    assert from_body == from_form
+    assert from_body.config_task.name == restore_create.task_name
+    assert from_body.force_resync_task is None
+
+
+def test_build_restore_update_form_from_body_pins_parent_identity(
+    restore_task_write: RestoreTaskWrite,
+) -> None:
+    """Update composer keeps path parent task_name and backup_type."""
+    parent_task = _restore_parent_task(
+        config=yaml.dump({"backupType": BackupType.PBM_LOGICAL.value}),
+    )
+    body = restore_task_write.model_copy(
+        update={
+            "task_name": "wrong-name",
+            "backup_type": BackupType.PBM_PHYSICAL,
+        },
+    )
+
+    result = build_restore_update_form_from_body(body, parent_task)
+
+    assert result.task_name == parent_task.name
+    assert result.backup_type == BackupType.PBM_LOGICAL
+    assert result.hostname == body.hostname
+    assert result.backup_source == body.backup_source

@@ -29,6 +29,7 @@ export function TableField({ field }: TableFieldProps) {
       label={field.label}
       required={field.required}
       dependsOn={field.depends_on}
+      allowCustom={field.allow_custom}
     />
   );
 }

@@ -18,7 +18,7 @@
 These constants live in their own module to avoid the import cycle that
 would otherwise form when both ``app.sep.routes.artifacts`` and a plugin's
 ``deps.py`` need them: ``artifacts.py`` imports plugin-side constants
-(for example, :data:`app.sep.plugins.dipper.constants.DIPPER_PAYLOADS_DIR`),
+(for example, :data:`app.sep.apps.dipper.constants.DIPPER_PAYLOADS_DIR`),
 while plugin ``deps.py`` modules import the artifact constants here.
 """
 

@@ -50,6 +50,21 @@ def test_empty_snapshot_delegates_to_factory(
     assert proxy.count == 1
 
 
+def test_get_snapshot_starts_empty(
+    proxy: OverridableSettingsProxy[_Sample],
+) -> None:
+    """A fresh proxy exposes an empty snapshot mapping."""
+    assert dict(proxy.get_snapshot()) == {}
+
+
+def test_get_snapshot_reflects_published_mapping(
+    proxy: OverridableSettingsProxy[_Sample],
+) -> None:
+    """``get_snapshot`` returns the mapping most recently published."""
+    proxy._set_snapshot({"name": "override-name"})
+    assert dict(proxy.get_snapshot()) == {"name": "override-name"}
+
+
 def test_snapshot_intercepts_named_attribute(
     proxy: OverridableSettingsProxy[_Sample],
 ) -> None:
@@ -124,6 +139,22 @@ def test_missing_attribute_raises_attribute_error(
     """Unknown attributes still raise ``AttributeError`` from the wrapped instance."""
     with pytest.raises(AttributeError):
         proxy.does_not_exist  # noqa: B018
+
+
+def test_snapshot_returns_premerged_nested_model(
+    proxy: OverridableSettingsProxy[_Sample],
+) -> None:
+    """A pre-merged nested model stored in the snapshot is returned verbatim.
+
+    Confirms the proxy needs no nested-awareness: the snapshot-time merge
+    stores the merged Pydantic copy under the top-level key, and the existing
+    ``if name in snapshot`` read path returns it directly.
+    """
+    expected_count = 99
+    merged = _Sample(name="merged", count=expected_count)
+    proxy._set_snapshot({"name": merged})
+    assert proxy.name is merged
+    assert proxy.name.count == expected_count
 
 
 def test_per_class_isolation_with_unknown_field() -> None:

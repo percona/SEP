@@ -14,6 +14,77 @@ via `make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="..."` where
 See `changelog.d/README.md` for the full workflow.
 -->
 
+## [v0.13.1] - 2026-07-08
+
+### Changed
+
+- SEP-1474: Periodically purge aged task-execution logs (taskhistory_log) to bound SEP database growth
+- SEP-1486: Bound per-execution task log growth: a rolling per-stream byte cap drops the oldest captured-log chunks so a long-running execution's logs no longer grow without limit; capped streams keep a bounded recent tail.
+
+### Configuration Changes
+
+- SEP-1474: Add tasks settings LOG_RETENTION_DAYS (runtime-overridable, default 90, max 365), LOG_PURGE_BATCH_SIZE (default 10000), and LOG_PURGE_INTERVAL (default daily)
+- SEP-1486: Add LOG_STREAM_CAP_BYTES and LOG_STREAM_EVICTION_MAX_ROWS (tasks) to bound retained captured-log bytes per (task_history, source, stream) and per-flush eviction work.
+
+### Fixed
+
+- SEP-1297: PostgreSQL Backup stanza field: expose required pgBackRest stanza on the create form so backups run with the correct --stanza value instead of the node IP
+- SEP-1490: Task logs are no longer duplicated or lost when the Nomad log fetch cursor moves between worker processes (the raw fetch frontier is now persisted per allocation).
+- SEP-1490: The settings export endpoint no longer returns a 500 error when a URL-typed setting (such as the base URL) has a value; URL settings now serialize to their string form.
+- SEP-1492: Backup tasks created before the v0.13.0 plugin rename no longer fail with a Python SyntaxError after upgrade; orphaned payload references are healed by a data migration and resolved via a relocation-stable relative reference.
+- SEP-1544: Fixed PostgreSQL Config File Collector snippet failing to collect postgresql.auto.conf due to permission errors when the file is postgres-owned mode 0600.
+
+## [v0.13.0] - 2026-06-09
+
+### Added
+
+- SEP-432: MongoDB query tuning snippet
+- SEP-433: MongoDB pt-pmp snippet for collecting aggregated stack traces from an unresponsive mongod, defaulting to the eu-stack (pteu) dumper
+- SEP-434: MongoDB "blocked writes" diagnostics snippet (`mongodb_blocked_writes_check.sh`) that periodically samples `pt-summary`, MongoDB internals (`serverStatus`, `currentOp`, `mongostat`) and OS metrics (`vmstat`, `iostat`, `mpstat`, `sar`, `top`) into a destination directory; stop early by creating an `exit-percona-monitor` marker file.
+- SEP-448: MHA diagnostic snippets to collect MHA configuration files (`mha_config_files.sh`) and extract MHA manager/node log files (`mha_logs_extractor.sh`).
+- SEP-1022: SEP now runs a Celery beat check on the configured Nomad TLS files (CA and client PEM) and opens or resolves PagerDuty alerts (via `ALERTING.PROVIDERS`) when a certificate is inside the configured warning window before `not_valid_after` (default: 7 days). The threshold is set with `TASKS.NOMAD.CERT_EXPIRY_WARN_DAYS` in `settings.yaml`. The beat schedule defaults to once per day and is controlled by `TASKS.NOMAD.CHECK_CERT_EXPIRY_INTERVAL` (set to `null` to disable the periodic task).
+- SEP-1026: PostgreSQL config file collector snippet (postgresql.conf, postgresql.auto.conf, includes) with optional masking of sensitive values
+- SEP-1033: Add support for `gcloud storage` uploads in Backups
+- SEP-1045: Archives plugin now supports remote `pt-archiver` destinations: pick a destination MySQL service from inventory or enter a host/port/database manually, and the detail page displays the resolved destination. Existing same-server tasks are unaffected.
+
+### Changed
+
+- SEP-1102: Rename MySQL backups plugin identifiers from backup/backups to mysql_backups (module, URI path, templates, CSS, route names)
+- SEP-1226: Accept legacy backup / backups values for plugin MODULE_NAME and remap them to mysql_backups with a deprecation warning. The legacy aliases will be removed in the next release; update settings.yaml overrides accordingly.
+
+### Breaking Changes
+
+- SEP-1102: The `/backups/*` URL path is removed — bookmarks, dashboards, and scripts referencing it will 404; `settings.yaml` deployment overrides `MODULE_NAME: backup` / `URI_PATH: /backups` must be changed to `mysql_backups` / `/mysql_backups`.
+
+### Fixed
+
+- SEP-879: pcs-collect-pmm-mysql.py now verifies SSL certificates by default; pass --insecure to disable for self-signed cert environments
+- SEP-999: make checkmigrations no longer fails when alerts plugin is enabled; plugin-owned DB tables are now managed through Alembic via plugin-scoped migration directories and branch labels
+- SEP-1108: Inventory connectivity check now resolves the Nomad target by address instead of passing the inventory display name through, fixing failures on hosts where the inventory and Nomad node names differ
+- SEP-1134: Dipper legacy UI now pre-fills the executor host when the inventory display name differs from the Nomad client node name (matching the inventory dropdown's address-based resolution)
+- SEP-1204: PMM STARTED annotation now posts for periodic and chained task dispatches
+- SEP-1207: PostgreSQL Backups plugin no longer crashes with NoMatchFound when mysql_backups is not also enabled
+- SEP-1224: Archives task creation/edit form no longer returns HTTP 422 when optional integer fields (DEST_PORT, LIMIT, SLEEP, etc.) are left empty; form-binding 422s now surface as flash messages on the originating page instead of rendering as a raw JSON blob in the browser
+- SEP-1225: Binlog backup tasks now complete successfully without AttributeError when child process exits
+- SEP-1232: Schema Change (alters) Recursion method dropdown now offers `hosts` instead of the invalid `host`, so `pt-online-schema-change` accepts the value and discovers replicas correctly. A one-shot data migration rewrites any legacy `--recursion-method=host` stored in existing tasks to `hosts`.
+- SEP-1239: Persist and restore the binlog backup task's Alternative Host Address so the edit form pre-populates it correctly.
+- SEP-1254: Executor host lookups against a host-only Nomad endpoint no longer fail with "Executor backend unreachable: Expecting value" (the endpoint's trailing slash is now stripped before the Nomad API call).
+- SEP-1254: Installer compose now runs `alembic upgrade heads` (plural) for every service, so deployments no longer fail to migrate the multi-head `sep` schema.
+- SEP-1260: Tasks API `/hosts/` now returns 502 JSON when the executor backend is unreachable or returns a non-JSON body, so the SEP dashboard banner surfaces the real cause instead of a generic 500.
+- SEP-1286: Round-trip S3, GSUTIL, and RSYNC storage-target fields through the backup task YAML so the edit form pre-populates them consistently.
+- SEP-1302: Archiver: allow entering a destination schema manually when the destination host is the same as source
+- SEP-1304: Legacy Jinja archiver form: the Destination File field is now reachable (visible and submittable) when no destination table is selected, so archiving to a file works again
+- SEP-1305: Archiver task creation now accepts destinations that share only the table name with the source; the same-table check compares full host + schema + table identity instead of the bare table name.
+- SEP-1307: Archiver PMM annotations now attach to the source database node instead of the executor host
+- SEP-1309: PostgreSQL Snippet Manager scripts now accept a configurable target database (dbname parameter, default postgres) and thread it into every psql call, so they connect successfully instead of failing when the connecting OS user has no same-named database.
+- SEP-1312: Archiver: renamed the misleading 'Delete Data' toggle to 'Delete Without Archiving' and clarified its helper text (it purges source rows instead of archiving them).
+
+### Security
+
+- SEP-1130: Upgrade `mako` to remediate a directory-traversal weakness via backslash paths on Windows.
+- SEP-1283: Upgrade Starlette to >=1.0.1 and FastAPI to >=0.136 to remediate CVE-2026-48710 (malformed Host header bypass via request.url).
+- SEP-1285: Upgrade `yarl` to >=1.24.2 to remediate AIKIDO-2026-10912 (URL-parser host confusion via malformed authority/host strings).
+
 ## [v0.12.1] - 2026-05-05
 
 ### Fixed
@@ -259,6 +330,9 @@ See `changelog.d/README.md` for the full workflow.
 - SEP-701: Update `aiohttp` to 3.13.3
 - SEP-728: Update `python-multipart` to 0.0.22
 
+[Unreleased]: https://github.com/percona/SEP/compare/v0.13.1...HEAD
+[v0.13.1]: https://github.com/percona/SEP/compare/v0.13.0...v0.13.1
+[v0.13.0]: https://github.com/percona/SEP/compare/v0.12.1...v0.13.0
 [v0.12.1]: https://github.com/percona/SEP/compare/v0.12.0...v0.12.1
 [v0.12.0]: https://github.com/percona/SEP/compare/v0.11.0...v0.12.0
 [v0.11.0]: https://github.com/percona/SEP/compare/v0.10.3...v0.11.0

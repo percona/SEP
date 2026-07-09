@@ -1,0 +1,363 @@
+{
+  "capabilities": {
+    "alert_on_fail": true,
+    "chaining": true,
+    "pii_anonymization": false,
+    "scheduling": true,
+    "stats": false
+  },
+  "derived": [
+    {
+      "data_overrides": {
+        "backup_type": "pbm_logical"
+      },
+      "name_suffix": "-logical",
+      "parent_link": true,
+      "payload_substitutions": {
+        "pbm_config": "pbm_logical"
+      }
+    },
+    {
+      "data_overrides": {
+        "backup_type": "pbm_physical"
+      },
+      "name_suffix": "-physical",
+      "parent_link": true,
+      "payload_substitutions": {
+        "pbm_config": "pbm_logical",
+        "pbm_logical": "pbm_physical"
+      }
+    },
+    {
+      "data_overrides": {
+        "backup_type": "pbm_status"
+      },
+      "name_suffix": "-status",
+      "parent_link": true,
+      "payload_substitutions": {
+        "pbm_config": "pbm_logical",
+        "pbm_logical": "pbm_status"
+      }
+    }
+  ],
+  "description": "Configure Percona Backup for MongoDB (PBM) and manage logical, physical, and status backup tasks.",
+  "display_name": "MongoDB Backups",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Task Name",
+          "name": "task_name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
+        },
+        {
+          "label": "Database Service",
+          "name": "service_id",
+          "required": true,
+          "service_types": [
+            "mongodb"
+          ],
+          "type": "service"
+        },
+        {
+          "description": "Optional path to MongoDB URI credentials on the Nomad node",
+          "label": "Credentials Path",
+          "name": "credentials_path",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "choices": [
+            {
+              "label": "S3-compatible",
+              "value": "s3"
+            },
+            {
+              "label": "Filesystem",
+              "value": "filesystem"
+            }
+          ],
+          "default": "s3",
+          "label": "Storage Type",
+          "name": "storage_type",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "storage_type": "s3"
+                }
+              }
+            }
+          ],
+          "label": "S3 Region",
+          "name": "storage_s3_region",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "storage_type": "s3"
+                }
+              }
+            }
+          ],
+          "label": "S3 Bucket",
+          "name": "storage_s3_bucket",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "storage_type": "s3"
+                }
+              }
+            }
+          ],
+          "label": "S3 Prefix",
+          "name": "storage_s3_prefix",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "storage_type": "s3"
+                }
+              }
+            }
+          ],
+          "label": "S3 Endpoint URL",
+          "name": "storage_s3_endpoint_url",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "storage_type": "filesystem"
+                }
+              }
+            }
+          ],
+          "label": "Filesystem Path",
+          "name": "storage_filesystem_path",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Storage"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "default": false,
+          "label": "Enable PITR",
+          "name": "pitr_enabled",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "label": "Oplog Span (minutes)",
+          "name": "pitr_oplog_span_min",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "choices": [
+            {
+              "label": "gzip",
+              "value": "gzip"
+            },
+            {
+              "label": "snappy",
+              "value": "snappy"
+            },
+            {
+              "label": "lz4",
+              "value": "lz4"
+            },
+            {
+              "label": "s2",
+              "value": "s2"
+            },
+            {
+              "label": "pgzip",
+              "value": "pgzip"
+            },
+            {
+              "label": "zstd",
+              "value": "zstd"
+            }
+          ],
+          "default": "gzip",
+          "label": "PITR Compression",
+          "name": "pitr_compression",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Point-in-Time Recovery"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "description": "YAML mapping of mongod addresses to backup priority (highest wins). One entry per line, e.g.:\n\"host1:27018\": 2\n\"host2:27018\": 1",
+          "label": "Node Priority (YAML)",
+          "name": "backup_priority",
+          "required": false,
+          "type": "textarea"
+        },
+        {
+          "choices": [
+            {
+              "label": "gzip",
+              "value": "gzip"
+            },
+            {
+              "label": "snappy",
+              "value": "snappy"
+            },
+            {
+              "label": "lz4",
+              "value": "lz4"
+            },
+            {
+              "label": "s2",
+              "value": "s2"
+            },
+            {
+              "label": "pgzip",
+              "value": "pgzip"
+            },
+            {
+              "label": "zstd",
+              "value": "zstd"
+            }
+          ],
+          "default": "s2",
+          "description": "Compression method for backup snapshots. Default: s2",
+          "label": "Backup Compression",
+          "name": "backup_compression",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "label": "Compression Level",
+          "name": "backup_compression_level",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Starting Status Timeout (seconds)",
+          "name": "backup_timeouts_starting_status",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Backup Oplog Span (minutes)",
+          "name": "backup_oplog_span_min",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "label": "Parallel Collections",
+          "name": "backup_num_parallel_collections",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Backup Options"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      },
+      {
+        "key": "hostname",
+        "label": "Execution Host",
+        "sortable": false
+      },
+      {
+        "format": "chip",
+        "key": "backup_type",
+        "label": "Type",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      }
+    ],
+    "default_sort": "name",
+    "overview_hidden_fields": []
+  },
+  "name": "backup_mongo",
+  "related_apps": [
+    {
+      "app_key": "backup_mongo/restore",
+      "label": "Restore",
+      "route_segment": "restores"
+    }
+  ]
+}

@@ -18,6 +18,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from aiohttp import ClientError
 from pydantic import ValidationError
 
 from app.core.alerts.models import Alert, AlertSeverity
@@ -82,6 +83,23 @@ async def test_send_alert_builds_correct_payload(mocker, mock_remote_api, sample
 
 
 @pytest.mark.asyncio
+async def test_send_alert_propagates_transport_error(
+    mocker, mock_remote_api, sample_alert
+):
+    """Verify send_alert lets a transport error from ``post`` propagate."""
+    mock_remote_api.post.side_effect = ClientError("connection reset")
+    mocker.patch.object(
+        PagerDutyEventsAlertProvider,
+        "get_api",
+        new=AsyncMock(return_value=mock_remote_api),
+    )
+    prov = PagerDutyEventsAlertProvider(routing_key="rk1")
+
+    with pytest.raises(ClientError):
+        await prov.send_alert(sample_alert)
+
+
+@pytest.mark.asyncio
 async def test_resolve_alert_builds_correct_payload(mocker, mock_remote_api):
     """Verify that the resolve JSON payload sent to PagerDuty is correct."""
     mock_remote_api.post.return_value = {"success": True}
@@ -103,6 +121,32 @@ async def test_resolve_alert_builds_correct_payload(mocker, mock_remote_api):
     )
 
 
+@pytest.mark.asyncio
+async def test_resolve_alert_rejects_empty_dedup_key(mocker, mock_remote_api):
+    """Verify resolve_alert rejects an empty dedup_key before any API call."""
+    mocker.patch.object(
+        PagerDutyEventsAlertProvider,
+        "get_api",
+        new=AsyncMock(return_value=mock_remote_api),
+    )
+    prov = PagerDutyEventsAlertProvider(routing_key="rk1")
+
+    with pytest.raises(ValidationError):
+        await prov.resolve_alert("")
+
+    mock_remote_api.post.assert_not_awaited()
+
+
+@pytest.mark.parametrize("severity", list(AlertSeverity))
+def test_alert_maps_to_matching_pagerduty_severity(severity):
+    """Verify each AlertSeverity maps to the matching PagerDutyAlertSeverity."""
+    base = Alert(summary="s", source="o", severity=severity)
+
+    pd_alert = PagerDutyAlert.model_validate(base)
+
+    assert pd_alert.severity == PagerDutyAlertSeverity[severity.name]
+
+
 def test_pagerduty_routing_key_masked_in_repr():
     """Test that routing_key is masked in repr output."""
     prov = PagerDutyEventsAlertProvider(routing_key="secret-routing-key")
@@ -118,3 +162,21 @@ def test_pagerduty_alert_extra_ignored_and_validation():
         ValidationError, match="Value and name not found for PagerDutyAlertSeverity"
     ):
         PagerDutyAlert(summary="s", source="o", severity="not-a-sev")
+
+
+def test_pagerduty_alert_promotes_custom_details_extra_from_base_alert():
+    """Promote a base Alert's ``custom_details`` extra into the typed field.
+
+    This is the provider-agnostic seam: ``alert_for_status`` attaches
+    ``custom_details`` as an extra field on the base ``Alert`` (``extra="allow"``)
+    and it surfaces through ``PagerDutyAlert.custom_details`` when the provider
+    re-validates the alert.
+    """
+    base = Alert(
+        summary="s",
+        source="o",
+        severity=AlertSeverity.ERROR,
+        custom_details={"description": "=== ERROR DETAILS ==="},
+    )
+    promoted = PagerDutyAlert.model_validate(base.model_dump())
+    assert promoted.custom_details == {"description": "=== ERROR DETAILS ==="}

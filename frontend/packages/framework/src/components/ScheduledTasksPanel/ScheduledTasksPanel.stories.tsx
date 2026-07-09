@@ -23,12 +23,12 @@ import type { PeriodicTaskResponse } from './hooks';
 
 interface StoryArgs {
   periodicTasks: PeriodicTaskResponse[];
-  pluginTasks: { name: string }[];
+  appTasks: { name: string }[];
 }
 
-const PLUGIN_NAME = 'demo-plugin';
+const APP_NAME = 'demo-plugin';
 
-const PLUGIN_TASKS = [{ name: 'demo-task' }, { name: 'demo-task-other' }];
+const APP_TASKS = [{ name: 'demo-task' }, { name: 'demo-task-other' }];
 
 const NOW = new Date();
 
@@ -82,21 +82,21 @@ const SAMPLE_TASKS: PeriodicTaskResponse[] = [
   },
 ];
 
-function StoryHarness({ periodicTasks, pluginTasks }: StoryArgs) {
+function StoryHarness({ periodicTasks, appTasks }: StoryArgs) {
   const queryClient = useMemo(() => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: Infinity } },
     });
-    qc.setQueryData(['plugins', PLUGIN_NAME, 'tasks'], pluginTasks);
+    qc.setQueryData(['plugins', APP_NAME, 'tasks'], appTasks);
     qc.setQueryData(['periodic'], periodicTasks);
     return qc;
-  }, [periodicTasks, pluginTasks]);
+  }, [periodicTasks, appTasks]);
 
   useEffect(() => () => queryClient.clear(), [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ScheduledTasksPanel pluginName={PLUGIN_NAME} disablePolling />
+      <ScheduledTasksPanel pluginName={APP_NAME} disablePolling />
     </QueryClientProvider>
   );
 }
@@ -111,17 +111,17 @@ export default meta;
 type Story = StoryObj<typeof StoryHarness>;
 
 export const Empty: Story = {
-  args: { periodicTasks: [], pluginTasks: PLUGIN_TASKS },
+  args: { periodicTasks: [], appTasks: APP_TASKS },
 };
 
 export const Populated: Story = {
-  args: { periodicTasks: SAMPLE_TASKS, pluginTasks: PLUGIN_TASKS },
+  args: { periodicTasks: SAMPLE_TASKS, appTasks: APP_TASKS },
 };
 
 export const PopulatedSingle: Story = {
-  args: { periodicTasks: [SAMPLE_TASKS[0]], pluginTasks: PLUGIN_TASKS },
+  args: { periodicTasks: [SAMPLE_TASKS[0]], appTasks: APP_TASKS },
 };
 
-export const NoPluginTasks: Story = {
-  args: { periodicTasks: [], pluginTasks: [] },
+export const NoAppTasks: Story = {
+  args: { periodicTasks: [], appTasks: [] },
 };

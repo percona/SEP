@@ -33,6 +33,11 @@
 #        label: Print to the terminal (default)
 #      - value: file
 #        label: Write the output to a file named by the timestamp
+#  - name: dbname
+#    type: str
+#    label: Target database
+#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    default: postgres
 # atw:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
@@ -44,12 +49,12 @@
 set -euo pipefail
 
 DEFAULT_MINUTES=30
-PSQL="psql"
 
 TIME_ARG=""
 MINUTES_ARG=""
 LOG_FILE_ARG=""
 OUTPUT_MODE="stdout"
+DBNAME_ARG="${PGDATABASE:-postgres}"
 
 usage() {
     local -i exit_code="${1:-0}"
@@ -63,12 +68,13 @@ Options:
   --minutes N                      Minutes before/after to include (default: ${DEFAULT_MINUTES}).
   --log-file <path>                PostgreSQL log file (auto-detected if not provided).
   --output <stdout|file>           Output destination (default: stdout).
+  --dbname <db>                    Target database for psql (default: postgres).
   -h, --help                       Show this help message.
 EOS
     exit "${exit_code}"
 }
 
-if ! OPTS=$(getopt --options h --longoptions 'time:,minutes:,log-file:,output:,help' -- "$@"); then
+if ! OPTS=$(getopt --options h --longoptions 'time:,minutes:,log-file:,output:,dbname:,help' -- "$@"); then
     echo "Error parsing options" >&2
     usage 1
 fi
@@ -93,6 +99,10 @@ while [[ -n $* ]]; do
             OUTPUT_MODE="$2"
             shift 2
             ;;
+        --dbname)
+            DBNAME_ARG="$2"
+            shift 2
+            ;;
         -h | --help) usage ;;
         --)
             shift
@@ -104,6 +114,10 @@ while [[ -n $* ]]; do
             ;;
     esac
 done
+
+export PGDATABASE="${DBNAME_ARG:-postgres}"
+
+PSQL="psql"
 
 if [[ -z $TIME_ARG ]]; then
     echo "Error: --time is required." >&2

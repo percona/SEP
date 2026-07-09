@@ -20,7 +20,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from starlette.status import HTTP_200_OK
+from fastapi import HTTPException
+from starlette.status import HTTP_200_OK, HTTP_503_SERVICE_UNAVAILABLE
 
 from app.core.requests import RemoteAPI
 from app.sep.deps import (
@@ -100,6 +101,56 @@ def test_archives_logs_event_stream(
     )
 
 
+def test_logs_event_stream_emits_sep_error_on_upstream_error(
+    test_client, mock_tasks_client, task_history_response
+):
+    """Assert an upstream error during log streaming is surfaced as a sep-error event."""
+    mock_tasks_client.stream.side_effect = HTTPException(
+        status_code=HTTP_503_SERVICE_UNAVAILABLE
+    )
+
+    response = test_client.get(f"/stream-logs/{task_history_response.id}")
+
+    assert response.status_code == HTTP_200_OK
+    streamed_content = response.content.decode("utf-8")
+    assert "event: sep-error" in streamed_content
+    assert str(HTTP_503_SERVICE_UNAVAILABLE) in streamed_content
+
+
+def test_logs_event_stream_finishes_on_empty_log_stream(
+    test_client, mock_tasks_client, task_history_response
+):
+    """Assert an empty (early-ending) log stream still emits a finish event."""
+    mock_tasks_client.stream.side_effect = lambda *_args, **_kwargs: (
+        mock_stream_logs_generator([])
+    )
+
+    response = test_client.get(f"/stream-logs/{task_history_response.id}")
+
+    assert response.status_code == HTTP_200_OK
+    streamed_content = response.content.decode("utf-8")
+    assert "log line" not in streamed_content
+    assert "event: finish" in streamed_content
+    assert TaskHistoryStatusEnum.SUCCESS.value in streamed_content
+
+
+def test_logs_event_stream_forwards_tail_query_param(
+    mocker, test_client, mock_tasks_client, task_history_response
+):
+    """Assert ``tail`` on the SEP SSE route is passed through to the Tasks API."""
+    response = test_client.get(f"/stream-logs/{task_history_response.id}?tail=1000")
+
+    assert response.status_code == HTTP_200_OK
+    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+    mock_tasks_client.stream.assert_called_once_with(
+        f"/history/{task_history_response.id}/logs/",
+        params=mocker.ANY,
+        timeout=mocker.ANY,
+    )
+    assert mock_tasks_client.stream.call_args.kwargs["params"]["tail"] == "1000"
+
+
 def test_stream_execution_events_event_stream(
     mocker, test_client, mock_tasks_client, task_history_response
 ):
@@ -146,4 +197,22 @@ def test_stream_execution_events_event_stream(
     assert "Received" in streamed_content
     assert "Started" in streamed_content
     assert "event: finish" in streamed_content
-    assert '"status": "failed"' in streamed_content
+    assert f'"status": "{TaskHistoryStatusEnum.FAILED.value}"' in streamed_content
+
+
+def test_execution_events_stream_emits_sep_error_on_upstream_error(
+    test_client, mock_tasks_client, task_history_response
+):
+    """Assert an upstream error during event streaming is surfaced as a sep-error event."""
+    mock_tasks_client.get.side_effect = HTTPException(
+        status_code=HTTP_503_SERVICE_UNAVAILABLE
+    )
+
+    response = test_client.get(
+        f"/stream-logs/{task_history_response.id}/execution-events"
+    )
+
+    assert response.status_code == HTTP_200_OK
+    streamed_content = response.content.decode("utf-8")
+    assert "event: sep-error" in streamed_content
+    assert str(HTTP_503_SERVICE_UNAVAILABLE) in streamed_content

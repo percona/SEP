@@ -15,8 +15,9 @@
 
 """Manage remote API interactions."""
 
-__all__ = ["BaseRemoteAPI", "RemoteAPI"]
+__all__ = ["UPSTREAM_NON_JSON_HEADER", "BaseRemoteAPI", "RemoteAPI"]
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from contextlib import asynccontextmanager, contextmanager
@@ -24,7 +25,7 @@ from contextvars import ContextVar, Token
 from functools import cached_property, lru_cache
 from ssl import create_default_context, SSLContext
 from types import TracebackType
-from typing import Any, NoReturn, Self
+from typing import Any, ClassVar, NoReturn, Self
 from urllib.parse import urljoin
 
 from aiohttp import (
@@ -36,19 +37,125 @@ from aiohttp import (
     TCPConnector,
 )
 from fastapi import HTTPException, status
-from pydantic import computed_field, Field, HttpUrl, PrivateAttr
+from pydantic import computed_field, Field, PrivateAttr
 
-from app.core.exceptions import HTTPGoneException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPBadRequestException,
+    HTTPConflictException,
+    HTTPGoneException,
+    HTTPInternalServerErrorException,
+    HTTPNotFoundException,
+    HTTPServiceUnavailableException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.log import correlation_id_var
 from app.core.models import BaseCaseInsensitiveModel
+from app.core.requests.connectivity import (
+    build_connectivity_result,
+    classify_connectivity_error,
+    ConnectivityResult,
+    ConnectivityStatusEnum,
+    PROBE_TIMEOUT_SECONDS,
+)
 from app.core.utils import json_serializer
-from app.core.utils.fields import NonEmptyStr, RelativeFilePathField
+from app.core.utils.fields import (
+    CredentialHttpUrl,
+    NonEmptyStr,
+    redact_credential_url,
+    RelativeFilePathField,
+)
 
 # Maximum size of a single line yielded by RemoteAPI.stream(). aiohttp's default
 # StreamReader caps lines at ~128 KiB (2 * read_bufsize), which is too small for
 # verbose NDJSON log lines from tasks like xtrabackup. 16 MiB stays well below an
 # OOM threshold while comfortably covering real log chunks.
 _MAX_STREAM_LINE_BYTES = 16 * 1024 * 1024
+
+# Request headers whose values carry credentials and must never reach the logs.
+# Compared case-insensitively.
+_SENSITIVE_HEADERS = frozenset(
+    {"authorization", "x-api-key", "cookie", "proxy-authorization"}
+)
+# Request body fields whose values carry credentials and must never reach the
+# logs. Compared case-insensitively against JSON/form body keys.
+_SENSITIVE_BODY_FIELDS = frozenset({"password", "secret", "token"})
+_REDACTED_VALUE = "****"
+
+# Stamped on the raised ``HTTPException`` when an error response has a non-JSON
+# body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
+# apart from an app-level JSON error at the same status code.
+UPSTREAM_NON_JSON_HEADER = "X-Upstream-Non-JSON"
+
+# Maps an upstream error status to the project exception that represents it, so
+# RemoteAPI raises app/core/exceptions classes instead of a bare HTTPException.
+_HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
+    status.HTTP_400_BAD_REQUEST: HTTPBadRequestException,
+    status.HTTP_404_NOT_FOUND: HTTPNotFoundException,
+    status.HTTP_409_CONFLICT: HTTPConflictException,
+    status.HTTP_410_GONE: HTTPGoneException,
+    status.HTTP_422_UNPROCESSABLE_CONTENT: HTTPUnprocessableEntityException,
+    status.HTTP_500_INTERNAL_SERVER_ERROR: HTTPInternalServerErrorException,
+    status.HTTP_502_BAD_GATEWAY: HTTPBadGatewayException,
+    status.HTTP_503_SERVICE_UNAVAILABLE: HTTPServiceUnavailableException,
+}
+
+
+def _exception_for_status(
+    status_code: int, *, detail: Any, headers: dict[str, str] | None = None
+) -> HTTPException:
+    """Return the project exception mapped to ``status_code``, else a bare HTTPException.
+
+    Fall back to a bare :class:`fastapi.HTTPException` when no project class is
+    mapped, or when ``headers`` are present but the mapped class cannot carry them
+    -- only :class:`HTTPGoneException` accepts headers today, so headers are never
+    dropped.
+
+    :param status_code: The upstream HTTP error status to translate.
+    :param detail: The error detail payload to attach to the exception.
+    :param headers: Optional response headers to preserve (e.g. ``X-Error-Code``).
+    :return: The mapped project exception, or a bare HTTPException.
+    """
+    exc_class = _HTTP_EXCEPTION_BY_STATUS.get(status_code)
+    if exc_class is HTTPGoneException:
+        return exc_class(detail, headers=headers)
+    if exc_class is None or headers:
+        return HTTPException(status_code=status_code, detail=detail, headers=headers)
+    return exc_class(detail)
+
+
+def _sanitize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return a shallow copy of request kwargs with credentials redacted.
+
+    The auth context injects an ``Authorization`` header into ``kwargs`` before
+    the request is logged, and some endpoints post credentials in the request
+    body (a password-login payload, for example); this scrubs both
+    credential-bearing headers and known-sensitive body fields so secrets never
+    reach the debug log. Only the returned copy is masked -- the outgoing
+    request keeps the real values.
+
+    :param kwargs: The request keyword arguments about to be logged.
+    :type kwargs: dict[str, Any]
+    :return: A copy safe to log, with sensitive header and body values masked.
+    :rtype: dict[str, Any]
+    """
+    safe = {**kwargs}
+    headers = kwargs.get("headers")
+    if headers:
+        safe["headers"] = {
+            key: (_REDACTED_VALUE if key.lower() in _SENSITIVE_HEADERS else value)
+            for key, value in headers.items()
+        }
+    for body_key in ("json", "data"):
+        body = kwargs.get(body_key)
+        if isinstance(body, dict):
+            safe[body_key] = {
+                key: (
+                    _REDACTED_VALUE if key.lower() in _SENSITIVE_BODY_FIELDS else value
+                )
+                for key, value in body.items()
+            }
+    return safe
 
 
 def _raise_stream_line_too_big(size: int, path: str) -> NoReturn:
@@ -123,7 +230,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     configurations, and managing request paths and headers.
 
     :param endpoint: The base URL for the external API endpoint.
-    :type endpoint: HttpUrl
+    :type endpoint: CredentialHttpUrl
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
@@ -136,12 +243,18 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     :type logger_name: str
     """
 
-    endpoint: HttpUrl = Field(..., frozen=True)
+    endpoint: CredentialHttpUrl = Field(..., frozen=True)
     verify_ssl: bool = Field(default=True, frozen=True)
     ssl_cafile: RelativeFilePathField | None = Field(None, frozen=True)
     ssl_keyfile: RelativeFilePathField | None = Field(None, frozen=True)
     ssl_certfile: RelativeFilePathField | None = Field(None, frozen=True)
     logger_name: str = __name__
+    #: Lightweight route hit by :meth:`RemoteAPI.check_connectivity` for a
+    #: reachability probe. A ``ClassVar`` (not a model field) so it is purely
+    #: additive: existing subclasses and callers are unaffected, and it never
+    #: enters the client-registry key or model serialization. Override per
+    #: client, or pass an explicit ``path`` to ``check_connectivity``.
+    connectivity_check_path: ClassVar[str] = "/"
     _session: ClientSession | None = None
     _extra_headers: ContextVar[dict[str, str] | None] = PrivateAttr(
         default_factory=lambda: ContextVar("api_extra_headers", default=None)
@@ -394,10 +507,10 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             }
         self.logger.debug(
             "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
-            self.endpoint,
+            redact_credential_url(str(self.endpoint)),
             method,
             path,
-            kwargs,
+            _sanitize_request_kwargs(kwargs),
         )
         async with self._session.request(method, prepared_path, **kwargs) as response:
             yield response
@@ -409,11 +522,14 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         detail: Any,
         headers: dict[str, str] | None = None,
     ) -> NoReturn:
-        """Raise :class:`HTTPGoneException` or :class:`HTTPException` for a failed stream response."""
-        if status_code == status.HTTP_410_GONE:
-            raise HTTPGoneException(detail, headers=headers) from None
-        raise HTTPException(
-            status_code=status_code, detail=detail, headers=headers
+        """Raise the mapped project exception (or bare HTTPException) for a failed stream.
+
+        :param status_code: The upstream HTTP error status.
+        :param detail: The error detail payload for the raised exception.
+        :param headers: Optional response headers to preserve.
+        """
+        raise _exception_for_status(
+            status_code, detail=detail, headers=headers
         ) from None
 
     async def stream_chunks(
@@ -561,7 +677,7 @@ class RemoteAPI(BaseRemoteAPI):
     parsed JSON, or ``None`` when the response has no body (for example HTTP 204).
 
     :param endpoint: The base URL for the external API endpoint.
-    :type endpoint: HttpUrl
+    :type endpoint: CredentialHttpUrl
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
@@ -613,6 +729,39 @@ class RemoteAPI(BaseRemoteAPI):
         ) as api:
             yield api
 
+    async def check_connectivity(
+        self, service: str, *, path: str | None = None
+    ) -> ConnectivityResult:
+        """Probe the endpoint and return a normalized connectivity result.
+
+        Issue a lightweight ``GET`` against ``path`` (or
+        :attr:`connectivity_check_path`) under a short bounded timeout and map
+        the outcome to one of the :class:`ConnectivityStatusEnum` states:
+        reachable, authentication failure, unreachable, SSL verification
+        failure, or timeout. Any failure is captured and classified -- this
+        method never raises -- so a single probe can be fanned out safely
+        alongside others.
+
+        The result carries only fixed, secret-free ``detail`` text; the
+        configured API key and any credentials embedded in the endpoint URL are
+        never echoed.
+
+        :param service: Stable identifier of the probed service (e.g. ``"pmm"``).
+        :type service: str
+        :param path: Optional override for the probe route. Defaults to
+            :attr:`connectivity_check_path`.
+        :type path: str | None
+        :return: The normalized connectivity result.
+        :rtype: ConnectivityResult
+        """
+        probe_path = path if path is not None else self.connectivity_check_path
+        try:
+            async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
+                await self.get(probe_path)
+        except Exception as exc:  # noqa: BLE001 -- classified, never re-raised
+            return build_connectivity_result(service, classify_connectivity_error(exc))
+        return build_connectivity_result(service, ConnectivityStatusEnum.REACHABLE)
+
     async def request(
         self,
         method: str,
@@ -622,15 +771,14 @@ class RemoteAPI(BaseRemoteAPI):
         """Perform an HTTP request and return the JSON response.
 
         :param method: The HTTP method to use for the request.
-        :type method: str
         :param path: The API endpoint path to request.
-        :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
-        :type kwargs: Any
         :return: The JSON response as a Python object, or ``None`` when the
             server returns HTTP 204 No Content (no response body).
-        :rtype: dict[str, Any] | list[dict[str, Any]] | None
-        :raises HTTPException: If the request returns an error response.
+        :raises HTTPException: If the request returns an error response -- the
+            project exception mapped to the status (a subclass of
+            :class:`fastapi.HTTPException`), or a bare :class:`fastapi.HTTPException`
+            when the status is unmapped or carries headers the mapped class cannot.
         """
         async with self._request(method, path, **kwargs) as response:
             if response.status == status.HTTP_204_NO_CONTENT:
@@ -639,7 +787,7 @@ class RemoteAPI(BaseRemoteAPI):
                 response_data = await response.json()
                 self.logger.debug(
                     "RemoteAPI (%s): %s request to %s response (%s): %s",
-                    self.endpoint,
+                    redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,
@@ -650,14 +798,16 @@ class RemoteAPI(BaseRemoteAPI):
                 response_content = response.content
                 self.logger.exception(
                     "RemoteAPI (%s): %s request to %s response content (%s): %s",
-                    self.endpoint,
+                    redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,
                     response_content,
                 )
-                raise HTTPException(
-                    err.status, detail="An unexpected error occurred on the server."
+                raise _exception_for_status(
+                    err.status,
+                    detail="An unexpected error occurred on the server.",
+                    headers={UPSTREAM_NON_JSON_HEADER: "1"},
                 ) from None
             except ClientResponseError as err:
                 error_detail = response_data.get(
@@ -668,8 +818,8 @@ class RemoteAPI(BaseRemoteAPI):
                     error_code := response_data.get(self.error_code_key)
                 ):
                     error_headers = {"X-Error-Code": error_code}
-                raise HTTPException(
-                    status_code=err.status, detail=error_detail, headers=error_headers
+                raise _exception_for_status(
+                    err.status, detail=error_detail, headers=error_headers
                 ) from None
 
             return response_data

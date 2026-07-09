@@ -21,11 +21,17 @@ import { AutoCompleteInput } from '@percona/percona-ui';
 import { useSchemas, type SchemaOption } from '../../hooks/useSchemas';
 import type { ServiceOption } from '../../hooks/useServices';
 import { extractId } from '../../utils/extractId';
+import { FreeSoloSelect } from '../FreeSoloSelect';
+import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 
 const EMPTY_OPTIONS: SchemaOption[] = [];
 
 export interface SchemaSelectorProps {
-  /** react-hook-form field name. Stores a `SchemaOption | null`. */
+  /**
+   * react-hook-form field name. Without `allowCustom`, stores a
+   * `SchemaOption | null`; with `allowCustom`, stores the committed
+   * `number | string | null` (inventory id, free-typed value, or unset).
+   */
   name: string;
   label: string;
   required?: boolean;
@@ -35,9 +41,18 @@ export interface SchemaSelectorProps {
    */
   dependsOn: string;
   disabled?: boolean;
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allowCustom?: boolean;
+  /**
+   * Render a multi-value selector committing a `(number | string)[]`. Combined
+   * with `allowCustom`, yields a free-solo multi-select; otherwise a closed
+   * multi-select combobox.
+   */
+  multiple?: boolean;
 }
 
 const getOptionLabel = (opt: SchemaOption | string) => (typeof opt === 'string' ? opt : opt.name);
+const getOptionName = (opt: SchemaOption) => opt.name;
 
 const isOptionEqualToValue = (a: SchemaOption, b: SchemaOption) => a.id === b.id;
 
@@ -47,23 +62,32 @@ export function SchemaSelector({
   required,
   dependsOn,
   disabled,
+  allowCustom,
+  multiple,
 }: SchemaSelectorProps) {
   const { control, setValue } = useFormContext();
 
   const parent = useWatch({ control, name: dependsOn }) as
     | ServiceOption
     | number
+    | string
     | null
     | undefined;
-  const serviceId = extractId(parent);
+  const parentText = typeof parent === 'string' ? parent.trim() : '';
+  const parentIsCustom = Boolean(allowCustom) && parentText !== '';
+  const serviceId = parentIsCustom ? null : extractId(parent);
+  // A parent that resolves to no inventory id but holds a non-empty string is a
+  // free-typed (custom) parent value, not an absent one. A free-solo child can
+  // still accept a typed value in that case (it just has no options to offer).
+  const parentResetKey = parentIsCustom ? `custom:${parentText}` : `id:${serviceId ?? 'none'}`;
 
-  const prevIdRef = useRef<number | null>(serviceId);
+  const prevParentKeyRef = useRef(parentResetKey);
   useEffect(() => {
-    if (prevIdRef.current !== serviceId) {
-      prevIdRef.current = serviceId;
-      setValue(name, null, { shouldDirty: true, shouldValidate: false });
+    if (prevParentKeyRef.current !== parentResetKey) {
+      prevParentKeyRef.current = parentResetKey;
+      setValue(name, multiple ? [] : null, { shouldDirty: true, shouldValidate: false });
     }
-  }, [serviceId, name, setValue]);
+  }, [parentResetKey, name, setValue, multiple]);
 
   const { data: schemas = EMPTY_OPTIONS, isLoading, isError, error } = useSchemas({ serviceId });
 
@@ -77,6 +101,61 @@ export function SchemaSelector({
       : empty
         ? 'No schemas in this service'
         : undefined;
+
+  // Only a truly absent parent disables the control; a custom (free-typed)
+  // parent keeps it enabled so the user can type a custom schema too.
+  const parentMissing = noService && !parentIsCustom;
+
+  if (multiple) {
+    return (
+      <FreeSoloMultiSelect<SchemaOption>
+        name={name}
+        label={label}
+        options={schemas}
+        getOptionLabel={getOptionName}
+        allowCustom={Boolean(allowCustom)}
+        required={required}
+        disabled={disabled || parentMissing || isError}
+        loading={isLoading}
+        helperText={parentMissing ? 'Select a service first' : isError ? helperText : undefined}
+        error={isError}
+        noOptionsText={
+          parentMissing
+            ? 'Select a service first'
+            : parentIsCustom
+              ? 'Custom service — type a schema name'
+              : isLoading
+                ? 'Loading schemas…'
+                : 'No schemas in this service'
+        }
+      />
+    );
+  }
+
+  if (allowCustom) {
+    return (
+      <FreeSoloSelect<SchemaOption>
+        name={name}
+        label={label}
+        options={schemas}
+        getOptionLabel={getOptionName}
+        required={required}
+        disabled={disabled || parentMissing || isError}
+        loading={isLoading}
+        helperText={parentMissing ? 'Select a service first' : isError ? helperText : undefined}
+        error={isError}
+        noOptionsText={
+          parentMissing
+            ? 'Select a service first'
+            : parentIsCustom
+              ? 'Custom service — type a schema name'
+              : isLoading
+                ? 'Loading schemas…'
+                : 'No schemas in this service'
+        }
+      />
+    );
+  }
 
   return (
     <AutoCompleteInput<SchemaOption>

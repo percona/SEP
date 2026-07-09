@@ -20,6 +20,7 @@ from collections import defaultdict
 import pytest
 from pydantic import ValidationError
 
+from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
 from app.tasks.anonymizer.entities import PIIEntity
 
@@ -97,9 +98,10 @@ class TestAnonymizerSettingsProperties:
         mask = settings.get_anonymize_mask("any_owner")
         assert mask == PIIEntity.encode_selection(set(PIIEntity))
 
-    def test_singleton_is_anonymizer_settings_instance(self):
-        """Assert the module-level singleton is an AnonymizerSettings instance."""
-        assert isinstance(anonymizer_settings, AnonymizerSettings)
+    def test_singleton_is_overridable_proxy_that_resolves_reads(self):
+        """Assert the singleton is an override-aware proxy that resolves reads."""
+        assert isinstance(anonymizer_settings, OverridableSettingsProxy)
+        assert anonymizer_settings.NLP_MODELS == {"en": "en_core_web_sm"}
 
     @pytest.mark.parametrize(
         "nlp_models",

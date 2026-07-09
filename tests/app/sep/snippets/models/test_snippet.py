@@ -16,17 +16,21 @@
 """Tests for BaseSnippet and Snippet models."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, PropertyMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
-    SnippetInterpreterConfig,
     snippets_settings,
     SnippetSudoOption,
 )
-from app.sep.snippets.models.snippet import BaseSnippet, BaseSnippetArgs, Snippet
+from app.sep.snippets.models.snippet import (
+    BaseSnippet,
+    BaseSnippetArgs,
+    EXECUTOR_HOSTS_INPUT_NAME,
+    Snippet,
+)
 
 EXPECTED_PARAM_COUNT = 2
 UPDATED_SIZE = 200
@@ -122,6 +126,21 @@ class TestBaseSnippetProperties:
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
         assert snippet.description == ""
 
+    def test_service_type_from_meta(self):
+        """Verify service_type is extracted from meta."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"service_type": "mysql"},
+        )
+        assert snippet.service_type == "mysql"
+
+    def test_service_type_defaults_to_none(self):
+        """Verify service_type defaults to None when not in meta."""
+        snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        assert snippet.service_type is None
+
     def test_path_property(self):
         """Verify path returns full path based on BASE_DIR."""
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
@@ -202,68 +221,57 @@ class TestBaseSnippetProperties:
         assert snippet.requirements is None
 
 
+@pytest.fixture(autouse=True)
+def _clear_interpreter_config_cache():
+    """Clear the ttl_cache on _get_execution_interpreter_config between tests.
+
+    The cache is keyed by the resolved snippet ``Path`` (which includes
+    ``BASE_DIR``). Same-filename tests share a deterministic bucket, but
+    ``TestFromPath`` mutates ``BASE_DIR``; clearing the cache on teardown keeps
+    cases independent.
+    """
+    yield
+    BaseSnippet._get_execution_interpreter_config.cache_clear()
+
+
 class TestExecutionInterpreter:
-    """Test the execution_interpreter and execution_task_name properties."""
+    """Test the execution_interpreter and execution_task_name properties.
+
+    These tests drive the real ``snippets_settings.INTERPRETERS`` lookup by
+    varying the snippet ``filename`` and ``meta`` — no mocking of the subject
+    under test. ``.sh`` resolves to bash, ``.py`` to python3, and an unmapped
+    extension (``.xyz``) resolves to no interpreter.
+    """
 
     def test_interpreter_found(self):
-        """Verify interpreter command is returned when config matches."""
+        """Verify the real .sh lookup resolves to the bash interpreter."""
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
-        config = SnippetInterpreterConfig(command="bash")
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=config,
-        ):
-            assert snippet.execution_interpreter == "bash"
+        assert snippet.execution_interpreter == "bash"
 
     def test_interpreter_not_found(self):
-        """Verify None is returned when no interpreter config matches."""
+        """Verify an unmapped extension resolves to no interpreter."""
         snippet = BaseSnippet(filename="test.xyz", size=100, md5_digest="a" * 32)
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=None,
-        ):
-            assert snippet.execution_interpreter is None
+        assert snippet.execution_interpreter is None
 
     def test_task_name_default_when_no_interpreter(self):
-        """Verify default task name when no interpreter config found."""
+        """Verify default task name when no interpreter config is found."""
         snippet = BaseSnippet(filename="test.xyz", size=100, md5_digest="a" * 32)
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=None,
-        ):
-            assert snippet.execution_task_name == DEFAULT_SNIPPETS_TASK
+        assert snippet.execution_task_name == DEFAULT_SNIPPETS_TASK
 
     def test_task_name_with_requirements(self):
-        """Verify task_with_requirements is used when snippet has packages."""
+        """Verify task_with_requirements is used when a .py snippet has packages."""
         snippet = BaseSnippet(
             filename="test.py",
             size=100,
             md5_digest="a" * 32,
             meta={"requires_packages": ["requests"]},
         )
-        config = SnippetInterpreterConfig(
-            command="python3", task_with_requirements="exec-python-artifact"
-        )
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=config,
-        ):
-            assert snippet.execution_task_name == "exec-python-artifact"
+        assert snippet.execution_task_name == "exec-python-artifact"
 
     def test_task_name_without_requirements(self):
-        """Verify regular task is used when snippet has no packages."""
+        """Verify the default task is used when a .sh snippet has no packages."""
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
-        config = SnippetInterpreterConfig(command="bash")
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=config,
-        ):
-            assert snippet.execution_task_name == config.task
+        assert snippet.execution_task_name == DEFAULT_SNIPPETS_TASK
 
 
 class TestGetExecutionModel:
@@ -299,6 +307,102 @@ class TestGetExecutionModel:
         model = snippet.get_execution_model()
         instance = model(**{"-hostname-": "server1", "host": "db-host"})
         assert instance.executor_host == "server1"
+
+
+class TestToArgsString:
+    """Test datetime CLI argument serialization via to_args_string."""
+
+    @staticmethod
+    def _snippet_with_parameters(parameters):
+        return BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"parameters": parameters},
+        )
+
+    def test_datetime_serializes_with_t_separator(self):
+        """Verify datetime values render as YYYY-MM-DDTHH:MM:SS in CLI args."""
+        snippet = self._snippet_with_parameters(
+            [{"name": "start", "type": "datetime", "required": False}]
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "start": "2024-06-10T14:30:00",
+            }
+        )
+
+        args = instance.to_args_string()
+
+        assert "--start" in args.split()
+        assert "2024-06-10T14:30:00" in args
+        assert "2024-06-10 14:30:00" not in args
+
+    def test_empty_start_and_end_omitted_from_args(self):
+        """Verify blank optional datetime params are excluded from CLI args."""
+        snippet = self._snippet_with_parameters(
+            [
+                {"name": "start", "type": "datetime", "required": False},
+                {"name": "end", "type": "datetime", "required": False},
+            ]
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "start": "",
+                "end": "",
+            }
+        )
+
+        args = instance.to_args_string()
+
+        assert "--start" not in args
+        assert "--end" not in args
+
+    def test_datetime_without_seconds_serializes_with_zero_seconds(self):
+        """Verify datetime-local input without seconds normalises to :00 in CLI args."""
+        snippet = self._snippet_with_parameters(
+            [{"name": "start", "type": "datetime", "required": False}]
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "start": "2024-06-10T14:30",
+            }
+        )
+
+        args = instance.to_args_string()
+
+        assert "2024-06-10T14:30:00" in args
+
+    def test_positional_datetime_serializes_as_string(self):
+        """Verify positional datetime params use serialize_cli_value, not raw objects."""
+        snippet = self._snippet_with_parameters(
+            [
+                {
+                    "name": "timestamp",
+                    "type": "datetime",
+                    "positional": True,
+                    "required": True,
+                }
+            ]
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "timestamp": "2024-06-10T14:30:00",
+            }
+        )
+
+        args = instance.to_args_string()
+
+        assert args == "2024-06-10T14:30:00"
+        assert "2024-06-10 14:30:00" not in args
 
 
 class TestValidatedParameters:
@@ -343,40 +447,86 @@ class TestValidatedParameters:
         assert len(result.parameters) == 0
         assert len(result.errors) == 0
 
+    def test_visibility_condition_referencing_declared_param(self):
+        """A condition referencing a declared sibling produces no errors."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "list", "type": "bool"},
+                    {"name": "start", "type": "str", "visible_when_not": "list"},
+                ]
+            },
+        )
+        result = snippet.validated_parameters
+        assert len(result.errors) == 0
+        assert len(result.parameters) == EXPECTED_PARAM_COUNT
+
+    def test_visibility_condition_referencing_unknown_param(self):
+        """A condition referencing an undeclared sibling surfaces an error."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "start", "type": "str", "visible_when_not": "nope"},
+                ]
+            },
+        )
+        result = snippet.validated_parameters
+        assert len(result.errors) > 0
+        assert any("nope" in e for e in result.errors)
+
+    def test_visibility_condition_referencing_invalid_declared_param(self):
+        """A reference to a declared-but-invalid sibling is not 'unknown'.
+
+        The sibling fails its own validation, but because it is still declared in
+        the meta the reference must not be misreported as an unknown parameter.
+        """
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "list", "type": "str", "min_length": 0},
+                    {"name": "start", "type": "str", "visible_when_not": "list"},
+                ]
+            },
+        )
+        result = snippet.validated_parameters
+        assert len(result.errors) > 0
+        assert not any("unknown parameter" in e for e in result.errors)
+
 
 class TestCanExecute:
     """Test the can_execute property."""
 
     def test_with_interpreter_and_valid_params(self):
-        """Verify can_execute is True with interpreter and valid params."""
+        """Verify can_execute is True with a real interpreter and valid params."""
         snippet = BaseSnippet(
             filename="test.sh",
             size=100,
             md5_digest="a" * 32,
             meta={"parameters": [{"name": "host", "type": "str"}]},
         )
-        with patch.object(
-            type(snippet),
-            "execution_interpreter",
-            new_callable=PropertyMock,
-            return_value="bash",
-        ):
-            assert snippet.can_execute is True
+        assert snippet.can_execute is True
 
     def test_no_interpreter(self):
-        """Verify can_execute is False when no interpreter is found."""
+        """Verify can_execute is False when no interpreter resolves.
+
+        The snippet has no parameters, so there are no validation errors; a
+        ``False`` result can only stem from the unresolved interpreter.
+        """
         snippet = BaseSnippet(
             filename="test.unknown",
             size=100,
             md5_digest="a" * 32,
         )
-        with patch.object(
-            type(snippet),
-            "execution_interpreter",
-            new_callable=PropertyMock,
-            return_value=None,
-        ):
-            assert snippet.can_execute is False
+        assert snippet.can_execute is False
 
 
 class TestSnippetModel:
@@ -428,20 +578,23 @@ class TestSnippetModel:
         assert snippet.reason == "No longer valid"
 
     def test_can_execute_requires_approval(self):
-        """Verify Snippet.can_execute requires approval on top of base check."""
+        """Verify Snippet.can_execute requires approval on top of base check.
+
+        The base ``BaseSnippet.can_execute`` resolves to ``True`` for this
+        snippet (bash interpreter, no parameter errors), so the unapproved
+        ``Snippet`` returning ``False`` proves the approval gate is what blocks
+        it — not a coincidentally-failing base check.
+        """
+        base = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        assert base.can_execute is True
+
         snippet = Snippet(
             filename="test.sh",
             size=100,
             md5_digest="a" * 32,
             approved_at=None,
         )
-        with patch.object(
-            BaseSnippet,
-            "can_execute",
-            new_callable=PropertyMock,
-            return_value=True,
-        ):
-            assert snippet.can_execute is False
+        assert snippet.can_execute is False
 
     @pytest.mark.asyncio
     async def test_update_from_snippet(self):
@@ -476,28 +629,32 @@ class TestSnippetModel:
 class TestFromPath:
     """Test the from_path class method."""
 
+    @pytest.fixture
+    def base_dir(self, tmp_path, monkeypatch):
+        """Redirect BaseSnippet.BASE_DIR to a tmp_path via a pytest seam."""
+        monkeypatch.setattr(BaseSnippet, "BASE_DIR", tmp_path)
+        return tmp_path
+
     @pytest.mark.asyncio
-    async def test_creates_snippet_from_file(self, tmp_path):
+    async def test_creates_snippet_from_file(self, base_dir):
         """Verify from_path creates a snippet with correct hash and filename."""
-        snippet_file = tmp_path / "hello.sh"
+        snippet_file = base_dir / "hello.sh"
         snippet_file.write_text("echo hello\n")
 
-        with patch.object(BaseSnippet, "BASE_DIR", tmp_path):
-            snippet = await BaseSnippet.from_path("hello.sh")
+        snippet = await BaseSnippet.from_path("hello.sh")
 
         assert snippet.filename == "hello.sh"
         assert len(snippet.md5_digest) == MD5_DIGEST_LENGTH
         assert snippet.size > 0
 
     @pytest.mark.asyncio
-    async def test_from_path_with_update_meta(self, tmp_path):
+    async def test_from_path_with_update_meta(self, base_dir):
         """Verify from_path calls update_meta when flag is True."""
         content = "# ---\n# title: Hello Script\n# ---\necho hello\n"
-        snippet_file = tmp_path / "hello.sh"
+        snippet_file = base_dir / "hello.sh"
         snippet_file.write_text(content)
 
-        with patch.object(BaseSnippet, "BASE_DIR", tmp_path):
-            snippet = await BaseSnippet.from_path("hello.sh", update_meta=True)
+        snippet = await BaseSnippet.from_path("hello.sh", update_meta=True)
 
         assert snippet.meta.get("title") == "Hello Script"
 

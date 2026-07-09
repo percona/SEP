@@ -21,10 +21,11 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
+import { useFormContext } from 'react-hook-form';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import { buildValidationRules, coerceFormValues } from './utils/validationMapper';
 import { evaluatePredicate, isPresent } from './utils/predicateEvaluator';
-import type { FormSection } from './types';
+import type { FormSection, RenderFieldOverride } from './types';
 
 const useAlertConfigMock = vi.fn();
 
@@ -71,9 +72,9 @@ describe('buildValidationRules', () => {
     expect(rules.max).toMatchObject({ value: 5 });
   });
 
-  it('emits a validate fn enforcing minItems/maxItems on multichoice', () => {
+  it('emits a validate fn enforcing minItems/maxItems on multi_choice', () => {
     const rules = buildValidationRules({
-      type: 'multichoice',
+      type: 'multi_choice',
       name: 'tags',
       label: 'Tags',
       choices: [{ label: 'A', value: 'a' }],
@@ -112,6 +113,14 @@ describe('coerceFormValues', () => {
       { type: 'string', name: 'title', label: 'Title' },
     ]);
     expect(out.alert_on_fail).toBe(true);
+  });
+
+  it('coerces nested dotted field paths', () => {
+    const out = coerceFormValues({ source: { source_db_id: '42', source_query: '' } }, [
+      { type: 'integer', name: 'source.source_db_id', label: 'Schema' },
+      { type: 'string', name: 'source.source_query', label: 'Query' },
+    ]);
+    expect(out).toEqual({ source: { source_db_id: 42, source_query: '' } });
   });
 
   it('unwraps option objects from service/schema/table/host fields to scalar ids', () => {
@@ -165,7 +174,7 @@ describe('SchemaFormRenderer — field rendering', () => {
           ],
         },
         {
-          type: 'multichoice',
+          type: 'multi_choice',
           name: 'tags',
           label: 'Tags',
           choices: [
@@ -315,7 +324,7 @@ describe('SchemaFormRenderer — validation + submission', () => {
   });
 });
 
-describe('SchemaFormRenderer — multichoice minItems', () => {
+describe('SchemaFormRenderer — multi_choice minItems', () => {
   it('blocks submission when selection count is below minItems', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
@@ -324,7 +333,7 @@ describe('SchemaFormRenderer — multichoice minItems', () => {
         title: 'Main',
         fields: [
           {
-            type: 'multichoice',
+            type: 'multi_choice',
             name: 'tags',
             label: 'Tags',
             choices: [
@@ -350,8 +359,8 @@ describe('SchemaFormRenderer — multichoice minItems', () => {
   });
 });
 
-describe('SchemaFormRenderer — multichoice required', () => {
-  it('blocks submission when a required multichoice has the default empty array', async () => {
+describe('SchemaFormRenderer — multi_choice required', () => {
+  it('blocks submission when a required multi_choice has the default empty array', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     const sections: FormSection[] = [
@@ -359,7 +368,7 @@ describe('SchemaFormRenderer — multichoice required', () => {
         title: 'Upload',
         fields: [
           {
-            type: 'multichoice',
+            type: 'multi_choice',
             name: 'upload',
             label: 'Upload providers',
             required: true,
@@ -379,6 +388,156 @@ describe('SchemaFormRenderer — multichoice required', () => {
     await waitFor(() =>
       expect(screen.getByTestId('select-input-upload')).toHaveAttribute('aria-invalid', 'true'),
     );
+  });
+});
+
+describe('SchemaFormRenderer — multi_choice empty-state placeholder', () => {
+  it('renders "Select…" placeholder when nothing is selected', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.getByText('Select…')).toBeVisible();
+  });
+
+  it('does NOT render placeholder when at least one value is selected', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={vi.fn()}
+        defaultValues={{ upload: ['S3'] }}
+      />,
+    );
+    expect(screen.queryByText('Select…')).toBeNull();
+    expect(screen.getByText('S3')).toBeVisible();
+  });
+});
+
+describe('SchemaFormRenderer — choice (select mode) empty-state placeholder', () => {
+  it('renders "Select…" when >3 choices and no value is chosen', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'choice',
+            name: 'region',
+            label: 'Region',
+            choices: [
+              { label: 'us-east-1', value: 'us-east-1' },
+              { label: 'us-west-2', value: 'us-west-2' },
+              { label: 'eu-west-1', value: 'eu-west-1' },
+              { label: 'ap-south-1', value: 'ap-south-1' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.getByText('Select…')).toBeVisible();
+  });
+
+  it('radio-mode branch (≤3 choices) does NOT add a placeholder', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'choice',
+            name: 'mode',
+            label: 'Mode',
+            choices: [
+              { label: 'Fast', value: 'fast' },
+              { label: 'Slow', value: 'slow' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.queryByText('Select…')).toBeNull();
+  });
+});
+
+describe('SchemaFormRenderer — multi_choice empty-state label shrink', () => {
+  it('floats the label above when nothing is selected (no overlap with placeholder)', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    // MUI renders the label text in both <label> and the notched <legend>; pick the <label>.
+    const labelRoot = screen.getAllByText('Upload providers')[0].closest('label');
+    expect(labelRoot).toHaveAttribute('data-shrink', 'true');
+    expect(labelRoot).toHaveClass('MuiInputLabel-shrink');
+  });
+});
+
+describe('SchemaFormRenderer — choice (select mode) empty-state label shrink', () => {
+  it('floats the label above on empty >3-choice select', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          {
+            type: 'choice',
+            name: 'region',
+            label: 'Region',
+            choices: [
+              { label: 'us-east-1', value: 'us-east-1' },
+              { label: 'us-west-2', value: 'us-west-2' },
+              { label: 'eu-west-1', value: 'eu-west-1' },
+              { label: 'ap-south-1', value: 'ap-south-1' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    const labelRoot = screen.getAllByText('Region')[0].closest('label');
+    expect(labelRoot).toHaveAttribute('data-shrink', 'true');
+    expect(labelRoot).toHaveClass('MuiInputLabel-shrink');
   });
 });
 
@@ -421,10 +580,10 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
           },
         });
       }
-      if (url === '/inventory-api/services/1/schemas') {
+      if (url === '/sep/services/1/schemas') {
         return Promise.resolve({ data: [{ id: 11, name: 'app_production' }] });
       }
-      if (url === '/inventory-api/services/2/schemas') {
+      if (url === '/sep/services/2/schemas') {
         return Promise.resolve({ data: [{ id: 21, name: 'app_staging' }] });
       }
       return Promise.resolve({ data: [] });
@@ -708,7 +867,7 @@ describe('SchemaFormRenderer — conditional visibility', () => {
       title: 'Upload',
       fields: [
         {
-          type: 'multichoice',
+          type: 'multi_choice',
           name: 'upload',
           label: 'Upload providers',
           choices: [
@@ -1498,5 +1657,544 @@ describe('SchemaFormRenderer — unsaved changes guard', () => {
       router.navigate('/other');
     });
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+});
+
+// ── Section-level visibility gates (SEP-1276) ────────────────────────────
+//
+// Mirrors the MySQL Backups Mydumper/XtraBackup/Binlog regression: a
+// FormSection declares a ``forbidden`` gate keyed off a controller field
+// elsewhere in the form (in production, ``backup_type``). The section,
+// its header, and every child field must disappear from the DOM when the
+// gate fires, and the children must be unregistered from RHF so stale
+// defaults do not ship in the submission payload.
+//
+// Mode-owned bool fields are intentionally not field-gated in the
+// MySQL Backups schema (module docstring): ``_field_is_present(False)``
+// is ``True``, so a per-field ``forbidden=[when != mode]`` would reject
+// the legitimate default-False. The whole point of section-level gating
+// is to cover those bool fields too — the tests below pin that behaviour
+// by hiding a section whose child is a bool with default ``false``.
+
+describe('SchemaFormRenderer — section-level visibility', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Mode',
+      fields: [
+        {
+          type: 'choice',
+          name: 'backup_type',
+          label: 'Backup Type',
+          choices: [
+            { label: 'Mydumper backup', value: 'M' },
+            { label: 'XtraBackup backup', value: 'X' },
+          ],
+        },
+      ],
+    },
+    {
+      title: 'Mydumper',
+      forbidden: [{ when: { not_equals: { backup_type: 'M' } } }],
+      fields: [
+        { type: 'string', name: 'mydumper_extra_args', label: 'Mydumper extra args' },
+        // Mode-owned bool — has no field-level forbidden gate by design.
+        {
+          type: 'bool',
+          name: 'mydumper_dump_triggers',
+          label: 'Dump triggers',
+          default: false,
+        },
+      ],
+    },
+    {
+      title: 'XtraBackup',
+      forbidden: [{ when: { not_equals: { backup_type: 'X' } } }],
+      fields: [
+        { type: 'string', name: 'xtrabackup_extra_args', label: 'XtraBackup extra args' },
+        {
+          type: 'bool',
+          name: 'xtrabackup_kill_queries',
+          label: 'Kill blocking queries',
+          default: false,
+        },
+      ],
+    },
+  ];
+
+  it('hides every mode section when the controller is unset (initial form load)', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.queryByText('Mydumper')).toBeNull();
+    expect(screen.queryByText('XtraBackup')).toBeNull();
+    expect(screen.queryByLabelText('Mydumper extra args')).toBeNull();
+    expect(screen.queryByLabelText('Dump triggers')).toBeNull();
+    expect(screen.queryByLabelText('XtraBackup extra args')).toBeNull();
+    expect(screen.queryByLabelText('Kill blocking queries')).toBeNull();
+  });
+
+  it('shows only the matching mode section after picking a backup type', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    await user.click(screen.getByTestId('radio-option-M'));
+
+    expect(await screen.findByText('Mydumper')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Mydumper extra args')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Dump triggers')).toBeInTheDocument();
+    expect(screen.queryByText('XtraBackup')).toBeNull();
+    expect(screen.queryByLabelText('XtraBackup extra args')).toBeNull();
+    expect(screen.queryByLabelText('Kill blocking queries')).toBeNull();
+  });
+
+  it('excludes hidden-section children (incl. mode-owned bools) from the submit payload', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        defaultValues={{
+          backup_type: 'M',
+          mydumper_extra_args: 'preserved',
+          xtrabackup_extra_args: 'should-not-ship',
+          xtrabackup_kill_queries: true,
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ backup_type: 'M', mydumper_extra_args: 'preserved' });
+    expect(payload).not.toHaveProperty('xtrabackup_extra_args');
+    expect(payload).not.toHaveProperty('xtrabackup_kill_queries');
+  });
+
+  it('drops stale values when the user toggles mode then submits immediately', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    // Pick XtraBackup, type a value, then flip to Mydumper before submitting.
+    await user.click(screen.getByTestId('radio-option-X'));
+    const xtraInput = await screen.findByLabelText('XtraBackup extra args');
+    await user.type(xtraInput, 'leaked');
+    await user.click(screen.getByTestId('radio-option-M'));
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ backup_type: 'M' });
+    expect(payload).not.toHaveProperty('xtrabackup_extra_args');
+    expect(payload).not.toHaveProperty('xtrabackup_kill_queries');
+  });
+
+  it('re-mounts a section with schema defaults after toggling away and back', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    // Show Mydumper, type a value, hide via XtraBackup, then re-show Mydumper.
+    await user.click(screen.getByTestId('radio-option-M'));
+    const mydumperInput = await screen.findByLabelText('Mydumper extra args');
+    await user.type(mydumperInput, 'old-value');
+    await user.click(screen.getByTestId('radio-option-X'));
+    expect(screen.queryByLabelText('Mydumper extra args')).toBeNull();
+    await user.click(screen.getByTestId('radio-option-M'));
+
+    const reshown = await screen.findByLabelText('Mydumper extra args');
+    expect((reshown as HTMLInputElement).value).toBe('');
+  });
+});
+
+// ── multi_choice discriminator regression (SEP-1293) ─────────────────────────
+//
+// Guards against future drift between the hand-maintained `MultiChoiceField.type`
+// literal in app-schema.ts and the switch branches that consume it. A wrong
+// literal silently falls through to `default: return null` — these tests make
+// that failure loud.
+
+describe('SchemaFormRenderer — multi_choice discriminator regression (SEP-1293)', () => {
+  it('renders the multi-select control for type: multi_choice', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [{ label: 'S3', value: 'S3' }],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(document.getElementById('mui-component-select-upload')).not.toBeNull();
+  });
+
+  it('renders nothing for the stale "multichoice" literal (old wrong discriminator)', () => {
+    // Cast bypasses TypeScript: simulates an outdated API response before clients update.
+    const sections = [
+      {
+        title: 'Upload',
+        fields: [{ type: 'multichoice', name: 'upload', label: 'Upload providers', choices: [] }],
+      },
+    ] as unknown as FormSection[];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(document.getElementById('mui-component-select-upload')).toBeNull();
+  });
+});
+
+describe('SchemaFormRenderer — multi_choice maxItems', () => {
+  it('blocks submission when selection count exceeds maxItems', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+              { label: 'GCS', value: 'GSUTIL' },
+            ],
+            max_items: 2,
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        defaultValues={{ upload: ['S3', 'RSYNC', 'GSUTIL'] }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Fix the highlighted fields/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('select-input-upload')).toHaveAttribute('aria-invalid', 'true'),
+    );
+  });
+});
+
+describe('SchemaFormRenderer — multi_choice default value', () => {
+  it('pre-selects a value from the field default', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'Upload',
+        fields: [
+          {
+            type: 'multi_choice',
+            name: 'upload',
+            label: 'Upload providers',
+            default: ['S3'],
+            choices: [
+              { label: 'S3', value: 'S3' },
+              { label: 'Rsync', value: 'RSYNC' },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    expect(screen.queryByText('Select…')).toBeNull();
+    expect(screen.getByText('S3')).toBeVisible();
+  });
+});
+
+// ── renderField override hook (SEP-1355) ──────────────────────────────────
+//
+// A renderField override that writes its value through react-hook-form so the
+// value participates in the rule engines and submission. This is the documented
+// write-through contract.
+function CustomTextWidget({ name }: { name: string }) {
+  const { register } = useFormContext();
+  return <input aria-label={`custom-${name}`} {...register(name)} />;
+}
+
+describe('SchemaFormRenderer — renderField override', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Main',
+      fields: [
+        { type: 'string', name: 'mode', label: 'Mode' },
+        { type: 'string', name: 'title', label: 'Title' },
+      ],
+    },
+  ];
+
+  // Only customizes `mode`; every other field falls back to renderDefault().
+  const renderField: RenderFieldOverride = ({ field, renderDefault }) =>
+    field.name === 'mode' ? <CustomTextWidget name={field.name} /> : renderDefault();
+
+  it('renders the override widget for a matching field', () => {
+    renderWithProviders(
+      <SchemaFormRenderer sections={sections} onSubmit={vi.fn()} renderField={renderField} />,
+    );
+    // Override widget present; the default Mode widget is replaced.
+    expect(screen.getByLabelText('custom-mode')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Mode')).toBeNull();
+  });
+
+  it('falls back to the default widget for a non-matching field', () => {
+    renderWithProviders(
+      <SchemaFormRenderer sections={sections} onSubmit={vi.fn()} renderField={renderField} />,
+    );
+    // `title` is not customized → framework default widget renders.
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+  });
+
+  it('does not call the override for a field hidden by its gate', () => {
+    const gatedSections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          { type: 'bool', name: 'advanced', label: 'Advanced mode' },
+          {
+            type: 'string',
+            name: 'mode',
+            label: 'Mode',
+            forbidden: [{ when: { falsy: 'advanced' } }],
+          },
+        ],
+      },
+    ];
+    const override = vi.fn(renderField);
+    renderWithProviders(
+      <SchemaFormRenderer sections={gatedSections} onSubmit={vi.fn()} renderField={override} />,
+    );
+    // advanced=false (default) → forbidden gate fires → mode hidden → override
+    // never invoked for it, and the override widget is absent.
+    expect(screen.queryByLabelText('custom-mode')).toBeNull();
+    expect(override).not.toHaveBeenCalledWith(
+      expect.objectContaining({ field: expect.objectContaining({ name: 'mode' }) }),
+    );
+  });
+
+  it('passes the gate-resolved required flag to the override', async () => {
+    const user = userEvent.setup();
+    const seenRequired: boolean[] = [];
+    const captureOverride: RenderFieldOverride = ({ field, renderDefault }) => {
+      if (field.name === 'mode') {
+        seenRequired.push(Boolean(field.required));
+        return <CustomTextWidget name={field.name} />;
+      }
+      return renderDefault();
+    };
+    const gatedSections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          { type: 'bool', name: 'advanced', label: 'Advanced mode' },
+          {
+            type: 'string',
+            name: 'mode',
+            label: 'Mode',
+            // becomes required only when `advanced` is truthy
+            requires: [{ when: { truthy: 'advanced' } }],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={gatedSections}
+        onSubmit={vi.fn()}
+        renderField={captureOverride}
+      />,
+    );
+    // advanced=false at mount → resolved required=false
+    expect(seenRequired.at(-1)).toBe(false);
+    // flip advanced → requires gate fires → resolved required=true reaches override
+    await user.click(screen.getByLabelText('Advanced mode'));
+    await waitFor(() => expect(seenRequired.at(-1)).toBe(true));
+  });
+
+  it('write-through: overridden value participates in the fail_when engine', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Main',
+            fail_when: [
+              {
+                fail_when: { truthy: 'mode' },
+                error_fields: ['mode'],
+                message: 'Mode must be empty.',
+              },
+            ],
+            fields: [{ type: 'string', name: 'mode', label: 'Mode' }],
+          },
+        ]}
+        onSubmit={vi.fn()}
+        renderField={renderField}
+      />,
+    );
+    // mode empty at mount → predicate inactive
+    expect(screen.queryByText('Mode must be empty.')).toBeNull();
+    // type into the OVERRIDDEN widget → value reaches RHF watch state → fail_when fires
+    await user.type(screen.getByLabelText('custom-mode'), 'danger');
+    expect(await screen.findByText('Mode must be empty.')).toBeInTheDocument();
+  });
+
+  it('write-through: overridden value is included in the submit payload', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer sections={sections} onSubmit={onSubmit} renderField={renderField} />,
+    );
+    await user.type(screen.getByLabelText('custom-mode'), 'fast');
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ mode: 'fast' }));
+  });
+
+  it('falls back to the default widget when the override returns a nullish value', () => {
+    // Override opts out of every field by returning undefined → defaults render.
+    const optOut: RenderFieldOverride = () => undefined;
+    renderWithProviders(
+      <SchemaFormRenderer sections={sections} onSubmit={vi.fn()} renderField={optOut} />,
+    );
+    expect(screen.getByLabelText('Mode')).toBeInTheDocument();
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+    expect(screen.queryByLabelText('custom-mode')).toBeNull();
+  });
+
+  it('renders identically when no override is supplied (no regression)', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    // Default widgets for both fields; no custom widget.
+    expect(screen.getByLabelText('Mode')).toBeInTheDocument();
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+    expect(screen.queryByLabelText('custom-mode')).toBeNull();
+  });
+});
+
+describe('SchemaFormRenderer — one_of groups', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Source',
+      fields: [
+        {
+          type: 'one_of',
+          name: 'source',
+          label: 'Source',
+          description: 'Choose how to specify source rows.',
+          discriminator: 'source.mode',
+          default: 'schema',
+          branches: [
+            {
+              value: 'schema',
+              label: 'Schema & Table',
+              fields: [
+                {
+                  type: 'string',
+                  name: 'source.source_db_id',
+                  label: 'Source Schema',
+                },
+              ],
+            },
+            {
+              value: 'query',
+              label: 'Custom Query',
+              fields: [
+                {
+                  type: 'string',
+                  name: 'source.source_query',
+                  label: 'Source Query',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+
+  it('renders segmented control, helper text, and the default branch fields', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.getByTestId('one-of-source')).toBeInTheDocument();
+    expect(screen.getByText('Choose how to specify source rows.')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-source.source_db_id')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-source.source_query')).toBeNull();
+  });
+
+  it('swaps visible branch fields and omits inactive values on submit', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByTestId('one-of-option-query'));
+    expect(await screen.findByTestId('text-input-source.source_query')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-source.source_db_id')).toBeNull();
+
+    await user.type(screen.getByTestId('text-input-source.source_query'), 'SELECT 1');
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit).toHaveBeenCalledWith({
+      source: { mode: 'query', source_query: 'SELECT 1' },
+    });
+  });
+
+  it('unregisters one_of discriminator and leaf values when a section becomes hidden', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const gatedSections: FormSection[] = [
+      {
+        title: 'Options',
+        fields: [{ type: 'bool', name: 'include_target', label: 'Include Target', default: true }],
+      },
+      {
+        title: 'Target',
+        forbidden: [{ when: { not_equals: { include_target: true } } }],
+        fields: [
+          {
+            type: 'one_of',
+            name: 'target',
+            label: 'Target',
+            discriminator: 'target_mode',
+            default: 'service',
+            branches: [
+              {
+                value: 'service',
+                label: 'Service',
+                fields: [{ type: 'string', name: 'target', label: 'Service Target' }],
+              },
+              {
+                value: 'schema',
+                label: 'Schema',
+                fields: [{ type: 'string', name: 'target', label: 'Schema Target' }],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={gatedSections}
+        onSubmit={onSubmit}
+        defaultValues={{ include_target: true, target_mode: 'schema', target: 'inventory' }}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Include Target'));
+    await waitFor(() => expect(screen.queryByText('Target')).toBeNull());
+
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ include_target: false });
+    expect(payload).not.toHaveProperty('target');
+    expect(payload).not.toHaveProperty('target_mode');
   });
 });

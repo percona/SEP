@@ -32,11 +32,11 @@ export {
 export { createQueryClient, defaultQueryClientConfig } from './queryClient';
 
 // Errors
-export { ApiError, normalizeAxiosError } from './errors';
-export type { ApiErrorDetails, ApiErrorKind } from './errors';
+export { ApiError, normalizeAxiosError, parseFieldErrors } from './errors';
+export type { ApiErrorDetails, ApiErrorKind, FieldValidationError } from './errors';
 
 // Auth
-export { postLogin, postRefresh, postLogout, fetchCurrentUser } from './auth';
+export { postLogin, postRefresh, postSession, postLogout, fetchCurrentUser } from './auth';
 
 // Types (re-exported from generated OpenAPI schemas)
 export type { OAuthTokenResponse, SPAOAuthTokenResponse, User } from './types/api';
@@ -56,55 +56,104 @@ export type { paths as TasksPaths, components as TasksComponents } from './gener
 export type { paths as SepPaths, components as SepComponents } from './generated/sep';
 
 // Typed request clients (openapi-fetch wrappers sharing interceptors with apiClient)
-export { mainApi, inventoryApi, tasksApi, sepApi, throwOnApiError } from './typed-client';
+export { mainApi, sepApi, throwOnApiError } from './typed-client';
 
 export type {
-  PluginSchema,
-  PluginEntitySchema,
-  PluginField,
+  AppSchema,
+  AppEntitySchema,
+  AppField,
+  SectionField,
+  OneOfBranch,
+  OneOfGroup,
   FormSection,
   ListColumn,
   ListView,
   DetailField,
   DetailSection,
   DetailView,
-  PluginCapabilities,
+  AppCapabilities,
   StringField,
   IntegerField,
   FloatField,
   BoolField,
   ChoiceField,
+  ChoiceOption,
   MultiChoiceField,
   TextAreaField,
   DateTimeField,
   FileField,
   YamlField,
   ServiceField,
+  MultiServiceField,
   SchemaField,
+  MultiSchemaField,
   TableField,
+  MultiTableField,
   HostField,
+  MultiHostField,
   ScriptPreviewField,
   Predicate,
   FieldGate,
   CardinalityRule,
   FailRule,
-} from './types/plugin-schema';
+  RelatedApp,
+} from './types/app-schema';
 
 // Hooks
 export {
   useCurrentUser,
-  usePluginSchema,
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
+  useAppSchema,
+  useAppTasks,
+  useAppTask,
+  useCreateAppTask,
+  useUpdateAppTask,
+  useAppEntityList,
+  useAppEntityDetail,
+  useCreateAppEntity,
+  useUpdateAppEntity,
+  useDeleteAppEntity,
+  useDeleteAppTask,
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
   useDashboardStats,
+  useSettingsList,
+  usePatchSetting,
+  useResetSetting,
+  settingErrorMessage,
+  SETTINGS_QUERY_KEY,
+  REDACTED_SECRET,
+  useEnabledApps,
+  ENABLED_APPS_QUERY_KEY,
+  useAdminApps,
+  useSetAppState,
+  useForceDisableApp,
+  isTransitional,
+  appStateErrorMessage,
+  ADMIN_APPS_QUERY_KEY,
+  ADMIN_APP_MUTATION_KEY,
+  useConfigExport,
+  useConnectivityCheck,
+  CONNECTIVITY_CHECK_PATH,
+  useAppInfo,
+  APP_INFO_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats } from './hooks';
+export type { AlertConfig, DashboardStats, EnabledApp, AppInfo } from './hooks';
+export type { ConnectivityCheckRequest, ConnectivityResult, ConnectivityStatus } from './hooks';
+export type {
+  AdminApp,
+  AppStateResult,
+  AppLifecycleState,
+  TransitionalState,
+  SetAppStateVars,
+  ForceDisableAppVars,
+} from './hooks';
+export type {
+  SettingClass,
+  ReloadClassification,
+  SettingResponse,
+  SettingClassGroup,
+  SettingsListResponse,
+  SettingsPatch,
+  PatchSettingVars,
+  ResetSettingVars,
+} from './hooks';

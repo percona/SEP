@@ -15,15 +15,16 @@
 
 """Define tests for the app.inventory.main module."""
 
-from app.core.config import default_lifespan
+from app.inventory.main import inventory_lifespan
 from app.inventory.main import lifespan as inventory_module_lifespan
 
 
 def test_inventory_app_lifespan_is_always_set():
-    """Assert ``default_lifespan`` is always assigned at module level.
+    """Assert the Inventory lifespan is always assigned at module level.
 
     The lifespan must not be gated behind a ``__name__`` check, because uvicorn
     re-imports the module with ``__name__ == "app.inventory.main"`` rather than
-    ``"__main__"``, which would leave the lifespan as ``None``.
+    ``"__main__"``, which would leave the lifespan as ``None``. The Inventory app
+    now wraps ``default_lifespan`` with the settings-override refresher.
     """
-    assert inventory_module_lifespan is default_lifespan
+    assert inventory_module_lifespan is inventory_lifespan

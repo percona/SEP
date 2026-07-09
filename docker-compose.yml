@@ -56,6 +56,8 @@ services:
       - casdoor
     environment:
       <<: *api-db-environment
+    volumes:
+      - report-artifacts:/home/sep/app/data/health-reports
     extra_hosts:
       - "host.docker.internal:${HOST_IP:-host-gateway}"
 
@@ -117,6 +119,7 @@ services:
       - 9000
     volumes:
       - ./static:/home/sep/app/static
+      - report-artifacts:/home/sep/app/data/health-reports
     depends_on:
       - inventory_api
       - tasks_api
@@ -147,3 +150,4 @@ volumes:
   casdoor-data:
   sep-data:
   celery-beat-data:
+  report-artifacts:

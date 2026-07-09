@@ -18,7 +18,8 @@
 import pytest
 from pydantic import ValidationError
 
-from app.core.models import BaseLowercaseModel, PaginatedResponse
+from app.core.models import BaseLowercaseModel
+from app.core.pagination import PaginatedResponse
 
 TEST_INT_VALUE = 42
 TEST_STRING_VALUE = "value1"

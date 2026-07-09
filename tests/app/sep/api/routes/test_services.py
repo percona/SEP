@@ -21,6 +21,8 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from app.core.pagination import MAX_PAGINATION_LIMIT
+
 
 def _service_payload(service_id: int = 1, name: str = "svc1", type_: str = "mysql"):
     """Build a minimal inventory ``ServiceResponse`` dict for proxy mocks."""
@@ -100,14 +102,17 @@ class TestSepServicesEndpoint:
             "service_type": "mysql",
         }
 
-    @pytest.mark.parametrize("query", ["offset=-1", "limit=-1"])
+    @pytest.mark.parametrize(
+        "query",
+        ["offset=-1", "limit=0", "limit=-1", f"limit={MAX_PAGINATION_LIMIT + 1}"],
+    )
     def test_rejects_negative_pagination(
         self,
         test_client: TestClient,
         mock_inventory_api_dep,
         query: str,
     ) -> None:
-        """Negative pagination values must be rejected with 422."""
+        """Invalid pagination values must be rejected with 422."""
         response = test_client.get(f"/api/sep/services/?{query}")
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_inventory_api_dep.get.assert_not_called()

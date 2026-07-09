@@ -18,7 +18,7 @@
 import datetime
 
 import pytest
-from fastapi import status
+from fastapi import HTTPException, status
 from sqlalchemy_celery_beat import PeriodicTask
 
 from tests.app.factories import PeriodicTaskFactory
@@ -62,6 +62,29 @@ def test_periodic_task_create(test_client, mock_task_api_dep, faker, extra_data)
     assert response.headers["location"] == "/tasks"
 
 
+def test_periodic_task_create_propagates_tasks_api_error(
+    test_client, mock_task_api_dep
+):
+    """Test create propagates an error raised by the Tasks API."""
+    mock_task_api_dep.post.side_effect = HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+    )
+    task_data = {
+        "task": "run-python",
+        "start_time": datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        "enabled": True,
+        "interval_every": 10,
+        "interval_period": "days",
+    }
+
+    response = test_client.post("/periodic/", data=task_data, follow_redirects=False)
+
+    # The HTML proxy route surfaces upstream errors as a flash + redirect to the
+    # request referer (here "/"), distinct from the success redirect to "/tasks".
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == "/"
+
+
 def test_periodic_task_delete(
     test_client,
     created_periodic_task,
@@ -78,6 +101,22 @@ def test_periodic_task_delete(
     )
 
 
+def test_periodic_task_delete_propagates_tasks_api_error(
+    test_client, created_periodic_task, mock_task_api_dep
+):
+    """Test delete propagates an error raised by the Tasks API."""
+    mock_task_api_dep.delete.side_effect = HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+    )
+
+    response = test_client.post(
+        f"/periodic/{created_periodic_task.id}/delete", follow_redirects=False
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == "/"
+
+
 def test_periodic_task_update(test_client, mock_task_api_dep, created_periodic_task):
     """Test updating a periodic task."""
     updated_task_data = {
@@ -90,6 +129,24 @@ def test_periodic_task_update(test_client, mock_task_api_dep, created_periodic_t
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/tasks"
+
+
+def test_periodic_task_update_propagates_tasks_api_error(
+    test_client, mock_task_api_dep, created_periodic_task
+):
+    """Test update propagates an error raised by the Tasks API."""
+    mock_task_api_dep.get.side_effect = HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+    )
+
+    response = test_client.post(
+        f"/periodic/{created_periodic_task.id}/update",
+        data={"enabled": "false"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == "/"
 
 
 def test_periodic_task_update_with_chain_preserves_chain(

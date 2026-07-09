@@ -16,67 +16,27 @@
  */
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import DnsIcon from '@mui/icons-material/Dns';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import CodeIcon from '@mui/icons-material/Code';
-import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import DescriptionIcon from '@mui/icons-material/Description';
-import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
-import StorageIcon from '@mui/icons-material/Storage';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import TableChartIcon from '@mui/icons-material/TableChart';
-import BackupIcon from '@mui/icons-material/Backup';
-import ArchiveIcon from '@mui/icons-material/Archive';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import SupportAgentIcon from '@mui/icons-material/SupportAgent';
-import ScienceIcon from '@mui/icons-material/Science';
-import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
+import { useEnabledApps } from '@sep/api';
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { SvgIconProps } from '@mui/material';
+import { buildNavigationItems } from '../appNavConfig';
+
+// Sidebar tree shape, icons, and React paths live in appNavConfig; labels and
+// visibility come from GET /api/apps/ via buildNavigationItems().
 
 export interface NavItem {
   title: string;
   icon: SvgIconComponent | ((props: SvgIconProps) => React.JSX.Element);
   to?: string;
   children?: NavItem[];
+  /**
+   * Backend app key (the last dotted segment of the app's
+   * ``MODULE_NAME``) used to hide this item when the app is disabled. Items
+   * without an `appKey` — parent groups, the Dashboard root, and the always-on
+   * Inventory app — render unconditionally.
+   */
+  appKey?: string;
 }
-
-// Navigation matching SEP's plugin-based sidebar.
-// Backup sub-items use percona-ui's database-specific icons.
-const defaultNavItems: NavItem[] = [
-  { title: 'Dashboard', icon: DashboardIcon, to: '/' },
-  { title: 'Inventory', icon: DnsIcon, to: '/inventory' },
-  { title: 'Tasks', icon: AssignmentIcon, to: '/tasks' },
-  { title: 'Snippets', icon: CodeIcon, to: '/snippets' },
-  { title: 'Collect Diagnostic Data', icon: SupportAgentIcon, to: '/atw' },
-  {
-    title: 'Alerts',
-    icon: NotificationsActiveIcon,
-    children: [
-      { title: 'Templates', icon: DescriptionIcon, to: '/alerts/templates' },
-      { title: 'Troubleshooting', icon: TroubleshootIcon, to: '/alerts/troubleshooting' },
-    ],
-  },
-  {
-    title: 'Schema Change',
-    icon: StorageIcon,
-    children: [{ title: 'Alters', icon: TableChartIcon, to: '/schema-change/alters' }],
-  },
-  { title: 'Checksums', icon: CheckCircleIcon, to: '/plugins/checksums' },
-  {
-    title: 'Backups',
-    icon: BackupIcon,
-    children: [
-      { title: 'MySQL', icon: MySqlIcon, to: '/backups/mysql' },
-      { title: 'MongoDB', icon: MongoIcon, to: '/backups/mongodb' },
-      { title: 'PostgreSQL', icon: PostgreSqlIcon, to: '/backups/postgresql' },
-    ],
-  },
-  { title: 'Archive', icon: ArchiveIcon, to: '/archive' },
-  { title: 'Dipper Data Collection', icon: ScienceIcon, to: '/dipper' },
-  { title: 'Reports', icon: BarChartIcon, to: '/reports' },
-];
 
 interface NavigationState {
   items: NavItem[];
@@ -87,7 +47,6 @@ interface NavigationState {
 const NavigationContext = createContext<NavigationState | null>(null);
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  const [items] = useState<NavItem[]>(defaultNavItems);
   const [sidebarOpen, setSidebarOpen] = useState(
     () => window.matchMedia('(min-width: 900px)').matches,
   );
@@ -96,7 +55,13 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     setSidebarOpen((prev) => !prev);
   }, []);
 
-  // TODO: fetch from /api/plugins to get enabled plugins
+  // `data` is undefined only on a cold first load/error; after any success
+  // React Query keeps the last-good data across transient refetch errors, so the
+  // derived nav stays rendered. The cold case falls back to static-only
+  // (Dashboard + Inventory) — the full tree can't be rebuilt without the API data.
+  const { data: apps } = useEnabledApps();
+  const items = useMemo<NavItem[]>(() => buildNavigationItems(apps), [apps]);
+
   const value = useMemo<NavigationState>(
     () => ({ items, sidebarOpen, toggleSidebar }),
     [items, sidebarOpen, toggleSidebar],

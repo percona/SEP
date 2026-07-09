@@ -69,6 +69,8 @@ jobs:
               - 'pyproject.toml'
               - 'poetry.lock'
               - 'poetry.toml'
+              - 'settings.yaml'
+              - 'frontend/packages/api/specs/**'
             precommit:
               - '.pre-commit-config.yaml'
             shell:
@@ -245,17 +247,17 @@ jobs:
       - changes
 
   build:
-    # Run when Docker-relevant paths change. Use always() so the job still runs
-    # when `python` is skipped (no .py changes but Containerfile / bundle assets
-    # changed). Any `python` failures will stop the run.
+    # Runs concurrently with the python test matrix — the docker image build
+    # consumes no test output, so it no longer gates on `python`. It starts as
+    # soon as label-gate and changes succeed, while tests are still running.
+    # running. Merge correctness is preserved by ci-success below, which
+    # aggregates python, frontend, and build.
     # `lint-fmt-only`: audit-group deps not in the production image.
     if: >-
       ${{
-        always() &&
         github.event.pull_request.draft == false &&
         needs.label-gate.result == 'success' &&
         needs.changes.result == 'success' &&
-        (needs.python.result == 'success' || needs.python.result == 'skipped') &&
         needs.changes.outputs.docker == 'true' &&
         !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
       }}
@@ -263,7 +265,6 @@ jobs:
     needs:
       - label-gate
       - changes
-      - python
     steps:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

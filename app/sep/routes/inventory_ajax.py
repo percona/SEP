@@ -16,7 +16,7 @@
 """Define legacy AJAX proxy routes for inventory API schema/table data.
 
 Serve dynamic dropdown data to Jinja2 forms that predate the shared
-``/api/plugins/*`` surface. New plugin API endpoints should register under
+``/api/apps/*`` surface. New plugin API endpoints should register under
 ``app/sep/api/router.py`` instead of being added here.
 """
 
@@ -25,12 +25,14 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.core.pagination import fetch_all_dict_items
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.deps import InventoryAPI, IsAuthenticated
 from app.sep.utils.decorators import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["sep", "inventory"])
+router = APIRouter(route_class=DeprecatedJinja2Route)
 
 
 @router.get("/services/{service_id}/schemas", dependencies=[IsAuthenticated])
@@ -42,16 +44,19 @@ async def list_schemas(
     search: str | None = None,
 ) -> JSONResponse:
     """Return schemas for a service as JSON for AJAX dropdowns."""
-    params = {"limit": 0}
-    if search:
-        params["search"] = search
     try:
-        schemas = await inventory_api.get(
-            f"/services/{service_id}/schemas/", params=params
+        items = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                f"/services/{service_id}/schemas/",
+                params={
+                    **pagination.model_dump(),
+                    **({"search": search} if search else {}),
+                },
+            )
         )
     except HTTPException:
         return JSONResponse([])
-    return JSONResponse([{"id": s["id"], "name": s["name"]} for s in schemas["items"]])
+    return JSONResponse([{"id": s["id"], "name": s["name"]} for s in items])
 
 
 @router.get("/schemas/{schema_id}/tables", dependencies=[IsAuthenticated])
@@ -63,11 +68,16 @@ async def list_tables(
     search: str | None = None,
 ) -> JSONResponse:
     """Return tables for a schema as JSON for AJAX dropdowns."""
-    params = {"limit": 0}
-    if search:
-        params["search"] = search
     try:
-        tables = await inventory_api.get(f"/schemas/{schema_id}/tables/", params=params)
+        items = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                f"/schemas/{schema_id}/tables/",
+                params={
+                    **pagination.model_dump(),
+                    **({"search": search} if search else {}),
+                },
+            )
+        )
     except HTTPException:
         return JSONResponse([])
-    return JSONResponse([{"id": t["id"], "name": t["name"]} for t in tables["items"]])
+    return JSONResponse([{"id": t["id"], "name": t["name"]} for t in items])

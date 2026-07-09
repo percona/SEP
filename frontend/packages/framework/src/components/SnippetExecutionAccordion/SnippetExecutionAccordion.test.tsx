@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { SnippetExecutionAccordion } from './SnippetExecutionAccordion';
-import { apiClient, type PluginSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@sep/api';
 import type { TaskHistoryEntry } from '../TaskHistoryTable';
 
 vi.mock('@sep/api', () => ({
@@ -35,8 +35,20 @@ vi.mock('../TaskLogViewer', () => ({
 }));
 
 vi.mock('../TaskHistoryTable', () => ({
-  TaskHistoryTable: ({ data }: { data?: TaskHistoryEntry[] }) => (
-    <div data-testid="task-history-table" data-row-count={data?.length ?? 0} />
+  TaskHistoryTable: ({
+    data,
+    onStopTask,
+  }: {
+    data?: TaskHistoryEntry[];
+    onStopTask?: (entry: TaskHistoryEntry) => void;
+  }) => (
+    <div data-testid="task-history-table" data-row-count={data?.length ?? 0}>
+      {data?.[0] && onStopTask ? (
+        <button type="button" onClick={() => onStopTask(data[0])}>
+          Stop {String(data[0].id)}
+        </button>
+      ) : null}
+    </div>
   ),
 }));
 
@@ -45,9 +57,9 @@ const mockedApi = apiClient as unknown as {
   post: ReturnType<typeof vi.fn>;
 };
 
-type FormSection = NonNullable<PluginSchema['forms']>[number];
+type FormSection = NonNullable<AppSchema['forms']>[number];
 
-function makeSchema(extraFields: FormSection['fields'] = []): PluginSchema {
+function makeSchema(extraFields: FormSection['fields'] = []): AppSchema {
   return {
     name: 'snippets',
     display_name: 'Test Snippet',
@@ -55,7 +67,7 @@ function makeSchema(extraFields: FormSection['fields'] = []): PluginSchema {
       {
         title: 'Execution',
         fields: [
-          { type: 'host', name: 'executor_host', label: 'Executor Host', required: true },
+          { type: 'host', name: 'executor_host', label: 'Execution Host', required: true },
           { type: 'string', name: 'table_name', label: 'Table Name', required: false },
           ...extraFields,
         ],
@@ -130,7 +142,7 @@ describe('SnippetExecutionAccordion', () => {
       expect(screen.getByLabelText(/Table Name/i)).toBeInTheDocument();
     });
 
-    expect(screen.queryByLabelText(/Executor Host/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Execution Host/i)).not.toBeInTheDocument();
   });
 
   it('posts to snippets execute endpoint on submit with executorHost injected', async () => {
@@ -176,10 +188,10 @@ describe('SnippetExecutionAccordion', () => {
     renderWithProviders(<SnippetExecutionAccordion snippetFilename="check.sh" defaultExpanded />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Executor Host/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Execution Host/i)).toBeInTheDocument();
     });
 
-    await user.click(screen.getByLabelText(/Executor Host/i));
+    await user.click(screen.getByLabelText(/Execution Host/i));
     await user.click(await screen.findByRole('option', { name: 'db2' }));
     await user.click(screen.getByRole('button', { name: /execute/i }));
 
@@ -240,8 +252,51 @@ describe('SnippetExecutionAccordion', () => {
       expect(screen.getByTestId('task-history-table')).toBeInTheDocument();
     });
     expect(mockedApi.get).toHaveBeenCalledWith(
-      '/plugins/snippets/snippet/history?snippet_filename=check.sh',
+      '/apps/snippets/snippet/history?snippet_filename=check.sh',
     );
+  });
+
+  it('wires the Stop button to the stop-task endpoint with the row id', async () => {
+    mockedApi.get.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes('/snippet/history')
+          ? {
+              items: [
+                {
+                  id: 99,
+                  status: 'running',
+                  has_logs: false,
+                  execution_request: { task: 's', target: 'h', meta: {}, tracking: {} },
+                  task: { id: 1, name: 's' },
+                },
+              ],
+            }
+          : makeSchema(),
+      }),
+    );
+    mockedApi.post.mockResolvedValue({ data: { id: 99, status: 'stopped' } });
+
+    renderWithProviders(
+      <SnippetExecutionAccordion
+        snippetFilename="check.sh"
+        executorHost="db1"
+        title="Check Script"
+        defaultExpanded
+        showHistory
+      />,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop 99' }));
+
+    await waitFor(() => expect(mockedApi.post).toHaveBeenCalledWith('/sep/task-history/99/stop/'));
+
+    // The stop hook only invalidates ['task-history']; this accordion's history
+    // is keyed under ['snippets', filename, 'history'], so the wired onSuccess
+    // must refetch it directly — assert the history endpoint is hit again.
+    const historyGets = () =>
+      mockedApi.get.mock.calls.filter((call) => String(call[0]).includes('/snippet/history'))
+        .length;
+    await waitFor(() => expect(historyGets()).toBeGreaterThan(1));
   });
 
   it('does not render TaskHistoryTable when showHistory is false', async () => {
@@ -296,7 +351,7 @@ describe('SnippetExecutionAccordion', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Executor Host/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Execution Host/i)).toBeInTheDocument();
     });
   });
 
@@ -307,7 +362,7 @@ describe('SnippetExecutionAccordion', () => {
 
     await waitFor(() =>
       expect(mockedApi.get).toHaveBeenCalledWith(
-        '/plugins/snippets/snippet/schema?snippet_filename=check.sh',
+        '/apps/snippets/snippet/schema?snippet_filename=check.sh',
         {
           params: { execution_only: true },
         },
@@ -331,10 +386,10 @@ describe('SnippetExecutionAccordion', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Executor Host/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Execution Host/i)).toBeInTheDocument();
     });
 
-    await user.click(screen.getByLabelText(/Executor Host/i));
+    await user.click(screen.getByLabelText(/Execution Host/i));
     await user.click(await screen.findByRole('option', { name: 'db2' }));
     await user.click(screen.getByRole('button', { name: /execute/i }));
 

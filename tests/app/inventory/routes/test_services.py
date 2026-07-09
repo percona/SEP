@@ -18,9 +18,14 @@
 from starlette import status
 from starlette.testclient import TestClient
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
-from app.inventory.models import Node, Schema, Service
-from tests.app.factories import SchemaWriteFactory, ServiceWriteFactory
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
+from app.inventory.models import Node, Schema, Service, ServiceSystemObservation
+from tests.app.factories import (
+    NodeWriteFactory,
+    SchemaWriteFactory,
+    ServiceSystemObservationWriteFactory,
+    ServiceWriteFactory,
+)
 
 OFFSET_BEYOND_TOTAL = 999
 
@@ -155,6 +160,88 @@ class TestUpdateService:
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid node_id: 9999"
+
+    def test_update_service_omitting_node_id_preserves_parent(
+        self, test_client: TestClient, service: Service, node: Node
+    ) -> None:
+        """Apply a partial update that omits node_id, leaving the parent unchanged.
+
+        A second node must exist: the omitted FK previously resolved to ``None``,
+        and the parent pre-check drops ``None`` filters and matched every node, so
+        with more than one node it raised ``MultipleResultsFound`` (HTTP 500).
+        """
+        second = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert second.status_code == status.HTTP_201_CREATED
+        body = ServiceWriteFactory.build().model_dump(mode="json", exclude={"node_id"})
+        body["name"] = "renamed-service"
+        assert "node_id" not in body
+        response = test_client.put(f"/services/{service.id}", json=body)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "renamed-service"
+        assert data["node_id"] == node.id
+
+    def test_update_service_change_node_id_to_valid_parent(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Reparent a service to another existing node and return 200."""
+        new_node = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert new_node.status_code == status.HTTP_201_CREATED
+        new_node_id = new_node.json()["id"]
+        payload = ServiceWriteFactory.build(node_id=new_node_id)
+        response = test_client.put(
+            f"/services/{service.id}",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["node_id"] == new_node_id
+
+    def test_update_service_explicit_null_node_id_rejected(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Reject an explicit null node_id (the FK column is non-nullable)."""
+        body = ServiceWriteFactory.build().model_dump(mode="json")
+        body["node_id"] = None
+        response = test_client.put(f"/services/{service.id}", json=body)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid node_id: None"
+
+    def test_update_service_omitting_node_id_preserves_association(
+        self, test_client: TestClient, service: Service, node: Node
+    ) -> None:
+        """Partial update without node_id succeeds and leaves the FK unchanged.
+
+        A second node exists so the omitted-FK path cannot accidentally resolve a
+        single arbitrary parent: the old override skipped the ``id=None`` filter and
+        crashed with ``MultipleResultsFound`` once more than one parent was present.
+        """
+        test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        payload = ServiceWriteFactory.build()
+        body = payload.model_dump(mode="json", exclude={"node_id"})
+        body["name"] = "renamed-without-node-id"
+        response = test_client.put(f"/services/{service.id}", json=body)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "renamed-without-node-id"
+        assert data["node_id"] == node.id
+
+    def test_update_service_explicit_null_node_id(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return 400 when node_id is explicitly null on a non-nullable relationship."""
+        payload = ServiceWriteFactory.build()
+        body = payload.model_dump(mode="json")
+        body["node_id"] = None
+        response = test_client.put(f"/services/{service.id}", json=body)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid node_id: None"
 
 
 class TestDeleteService:
@@ -338,3 +425,137 @@ class TestCreateSchemaForService:
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestRetrieveServiceSystemObservation:
+    """Test GET /services/{service_id}/system-observation endpoint."""
+
+    def test_retrieve_service_system_observation(
+        self,
+        test_client: TestClient,
+        service: Service,
+        service_observation: ServiceSystemObservation,
+    ) -> None:
+        """Return service observation with all fields for a service that has one."""
+        response = test_client.get(f"/services/{service.id}/system-observation")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["service_id"] == service.id
+        assert data["db_engine_version"] == service_observation.db_engine_version
+        assert "observed_at" in data
+        assert "id" in data
+
+    def test_retrieve_service_system_observation_404_when_no_observation(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return 404 when service exists but no observation has been collected yet."""
+        response = test_client.get(f"/services/{service.id}/system-observation")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_service_system_observation_404_when_service_not_found(
+        self, test_client: TestClient
+    ) -> None:
+        """Return 404 when the service ID does not exist."""
+        response = test_client.get("/services/99999/system-observation")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestUpsertServiceSystemObservation:
+    """Test PUT /services/{service_id}/system-observation endpoint."""
+
+    def test_upsert_creates_new_observation(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Create a new observation when none exists and return 200."""
+        payload = ServiceSystemObservationWriteFactory.build()
+        response = test_client.put(
+            f"/services/{service.id}/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["service_id"] == service.id
+        assert data["db_engine_version"] == payload.db_engine_version
+        assert "id" in data
+
+    def test_upsert_updates_existing_observation(
+        self,
+        test_client: TestClient,
+        node: Node,
+        service: Service,
+        service_observation: ServiceSystemObservation,
+    ) -> None:
+        """Update existing observation in place and return 200 with updated fields."""
+        test_client.post(
+            f"/nodes/{node.id}/services/",
+            json=ServiceWriteFactory.build().model_dump(mode="json"),
+        )
+        payload = ServiceSystemObservationWriteFactory.build(db_engine_version="8.4.0")
+        response = test_client.put(
+            f"/services/{service.id}/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["db_engine_version"] == "8.4.0"
+        assert response.json()["id"] == service_observation.id
+
+    def test_upsert_idempotent_no_conflict_on_second_put(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return 200 on a repeat PUT with the same payload (no unique-constraint error)."""
+        payload = ServiceSystemObservationWriteFactory.build()
+        json_payload = payload.model_dump(mode="json")
+        first = test_client.put(
+            f"/services/{service.id}/system-observation", json=json_payload
+        )
+        assert first.status_code == status.HTTP_200_OK
+        second = test_client.put(
+            f"/services/{service.id}/system-observation", json=json_payload
+        )
+        assert second.status_code == status.HTTP_200_OK
+
+    def test_upsert_preserves_same_id_across_updates(
+        self,
+        test_client: TestClient,
+        service: Service,
+        service_observation: ServiceSystemObservation,
+    ) -> None:
+        """Update an existing observation in place on PUT — same DB row, same id."""
+        payload = ServiceSystemObservationWriteFactory.build(db_engine_version="5.7.44")
+        response = test_client.put(
+            f"/services/{service.id}/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["id"] == service_observation.id
+
+    def test_upsert_404_when_service_not_found(self, test_client: TestClient) -> None:
+        """Return 404 when the service ID does not exist."""
+        payload = ServiceSystemObservationWriteFactory.build()
+        response = test_client.put(
+            "/services/99999/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_upsert_422_missing_observed_at(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return 422 when required field observed_at is absent."""
+        data = ServiceSystemObservationWriteFactory.build().model_dump(mode="json")
+        del data["observed_at"]
+        response = test_client.put(
+            f"/services/{service.id}/system-observation", json=data
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_upsert_422_missing_db_engine_version(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return 422 when required field db_engine_version is absent."""
+        data = ServiceSystemObservationWriteFactory.build().model_dump(mode="json")
+        del data["db_engine_version"]
+        response = test_client.put(
+            f"/services/{service.id}/system-observation", json=data
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

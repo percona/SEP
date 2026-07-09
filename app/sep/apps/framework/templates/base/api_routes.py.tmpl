@@ -1,0 +1,49 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define the JSON API router for the << display_name >> app.
+
+Auth is applied at the mount level (``/api/apps`` carries the
+``IsApiAuthenticated`` router guard) and ``schema_endpoint`` pins it on
+``/schema``; the sample list route inherits the router guard.
+"""
+
+from fastapi import APIRouter
+from pydantic import BaseModel
+
+from app.sep.apps.<< name >>.schema import << name >>_schema
+from app.sep.apps.framework.api import schema_endpoint
+
+
+class << class_prefix >>Item(BaseModel):
+    """Represent one << display_name >> list row.
+
+    :param name: The item identifier.
+    """
+
+    name: str
+
+
+router = APIRouter()
+schema_endpoint(router=router, plugin_schema=<< name >>_schema)
+
+
+@router.get("/")
+async def list_<< name >>() -> list[<< class_prefix >>Item]:
+    """List << display_name >> items.
+
+    Replace the empty stub with the app's real listing logic.
+    """
+    return []

@@ -77,6 +77,12 @@ async def _mock_file_stream(chunks):
         yield chunk
 
 
+async def _mock_failing_file_stream():
+    """Yield one chunk then raise, simulating a stream that breaks mid-transfer."""
+    yield b"partial-"
+    raise RuntimeError("upstream stream broke")
+
+
 @pytest.fixture
 def mock_tasks_api_dep(task_history_response):
     """Override the TaskAPI dependency with an AsyncMock."""
@@ -162,9 +168,15 @@ class TestListTaskHistoryFiles:
         assert response.json() == {}
 
     def test_propagates_other_http_exceptions(
-        self, test_client, mock_tasks_api_dep, task_history_response
+        self,
+        mocker,
+        test_client,
+        regular_user,
+        mock_tasks_api_dep,
+        task_history_response,
     ):
         """Assert HTTP errors other than 400/409 are re-raised, not silently returned as {}."""
+        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
         mock_tasks_api_dep.get.side_effect = HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR
         )
@@ -172,6 +184,17 @@ class TestListTaskHistoryFiles:
         response = test_client.get(f"/files/{task_history_response.id}")
 
         assert response.status_code == HTTP_500_INTERNAL_SERVER_ERROR
+
+    def test_returns_empty_dict_when_tasks_api_returns_none(
+        self, test_client, mock_tasks_api_dep, task_history_response
+    ):
+        """Assert a ``None`` response from the Tasks API is normalised to {}."""
+        mock_tasks_api_dep.get.return_value = None
+
+        response = test_client.get(f"/files/{task_history_response.id}")
+
+        assert response.status_code == HTTP_200_OK
+        assert response.json() == {}
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +262,30 @@ class TestDownloadTaskHistoryFile:
             'attachment; filename="unknown.bin"'
         )
         assert response.content == b"fallback-data"
+
+    def test_stream_failure_after_headers(
+        self, test_client, mock_tasks_client_dep, task_history_response
+    ):
+        """Assert a stream that breaks mid-transfer delivers the partial download.
+
+        The download headers (200, Content-Disposition) are committed before the
+        first chunk, so a later upstream failure cannot change the status code; the
+        client receives the bytes produced before the break.
+        """
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_failing_file_stream()
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == HTTP_200_OK
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="backup.sql"'
+        )
+        assert response.content == b"partial-"
 
     def test_no_path_streams_without_headers(
         self, test_client, mock_tasks_client_dep, task_history_response

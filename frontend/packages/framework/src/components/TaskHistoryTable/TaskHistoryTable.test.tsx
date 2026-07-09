@@ -48,6 +48,7 @@ function makeEntry(
   return {
     id,
     status,
+    display_name: `task-${id}`,
     started_at: new Date(Date.UTC(2026, 0, 1, 0, id)).toISOString(),
     finished_at:
       status === 'running' || status === 'pending'
@@ -190,6 +191,38 @@ describe('TaskHistoryTable actions', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Stop' }));
     expect(onStopTask).toHaveBeenCalledOnce();
     expect(onStopTask.mock.calls[0][0].id).toBe(2);
+  });
+
+  it('disables the Stop button when no onStopTask is provided (presentational)', () => {
+    const data = [makeEntry(2, 'running')];
+    render(
+      <Wrapper client={client}>
+        <TaskHistoryTable data={data} disablePolling />
+      </Wrapper>,
+    );
+    expect(screen.getByRole('button', { name: 'Stop task' })).toBeDisabled();
+  });
+
+  it('disables the Stop button while isStopping is true (presentational)', () => {
+    const onStopTask = vi.fn();
+    const data = [makeEntry(2, 'running')];
+    render(
+      <Wrapper client={client}>
+        <TaskHistoryTable data={data} disablePolling onStopTask={onStopTask} isStopping />
+      </Wrapper>,
+    );
+    expect(screen.getByRole('button', { name: 'Stop task' })).toBeDisabled();
+  });
+
+  it('enables the Stop button for running rows when onStopTask is provided and not stopping', () => {
+    const onStopTask = vi.fn();
+    const data = [makeEntry(2, 'running')];
+    render(
+      <Wrapper client={client}>
+        <TaskHistoryTable data={data} disablePolling onStopTask={onStopTask} />
+      </Wrapper>,
+    );
+    expect(screen.getByRole('button', { name: 'Stop task' })).toBeEnabled();
   });
 
   it('skips stop callback when dialog Cancel clicked', async () => {
@@ -341,7 +374,7 @@ describe('TaskHistoryTable connected stop mutation', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Stop' }));
 
     await waitFor(() =>
-      expect(mockedApiClient.post).toHaveBeenCalledWith('/tasks/history/42/stop/'),
+      expect(mockedApiClient.post).toHaveBeenCalledWith('/sep/task-history/42/stop/'),
     );
 
     await waitFor(() => expect(screen.getByText('Stopped')).toBeInTheDocument());

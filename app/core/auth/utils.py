@@ -15,23 +15,21 @@
 
 """Define auth utility functions."""
 
-from app.core.auth.models import BaseUser
-from app.core.config import settings
-from app.core.utils import import_var
+from app.core.auth.config import get_active_auth_provider
+from app.core.auth.models import BaseTokenPayload, BaseUser
 
 
 def get_user_model() -> type[BaseUser]:
-    """Retrieve the user model class as defined in the settings.
+    """Return the user model class of the active authentication provider.
 
-    This function dynamically imports and returns the user model specified in
-    the `settings.AUTH_USER_MODEL` configuration. If no custom user model is
-    specified, it returns the `BaseUser` model by default.
-
-    :return: The user model class, should be a subclass of `BaseUser`.
-    :rtype: type[BaseUser]
-    :raises ImportError: If the module specified in `settings.AUTH_USER_MODEL`
-        cannot be imported.
-    :raises AttributeError: If the model class specified in `settings.AUTH_USER_MODEL`
-        cannot be found in the imported module.
+    :return: The active provider's user model class.
     """
-    return import_var(settings.AUTH_USER_MODEL)
+    return get_active_auth_provider().user_model
+
+
+def get_token_payload_model() -> type[BaseTokenPayload]:
+    """Return the token-payload model class of the active authentication provider.
+
+    :return: The active provider's token-payload model class.
+    """
+    return get_active_auth_provider().token_payload_model

@@ -1,0 +1,1115 @@
+{
+  "components": {
+    "schemas": {
+      "AdvisorCheck": {
+        "description": "A single advisor check definition (enabled only).\n\n:param name: The unique check name.\n:type name: str\n:param description: Human-readable description of what the check tests.\n:type description: str\n:param summary: Short one-line summary of the check.\n:type summary: str\n:param family: The advisor family key this check belongs to, if any.\n:type family: str | None",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "summary"
+        ],
+        "title": "AdvisorCheck",
+        "type": "object"
+      },
+      "AdvisorFamily": {
+        "description": "A group of advisor checks that share the same family.\n\n:param family_key: Internal family key (e.g. ``\"FAMILY_MYSQL\"``).\n:type family_key: str\n:param display_name: Human-readable name shown in the report (e.g. ``\"MySQL\"``).\n:type display_name: str\n:param checks: All enabled checks belonging to this family.\n:type checks: list[AdvisorCheck]\n:param failed: Mapping of check name to its list of failed results.\n:type failed: dict[str, list[FailedCheck]]",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/AdvisorCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "failed": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/FailedCheck"
+              },
+              "type": "array"
+            },
+            "title": "Failed",
+            "type": "object"
+          },
+          "family_key": {
+            "title": "Family Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family_key",
+          "display_name"
+        ],
+        "title": "AdvisorFamily",
+        "type": "object"
+      },
+      "AdvisorSection": {
+        "description": "Aggregated advisor data for the report.\n\n``total_failed`` counts failed advisor results (rows), not distinct check names.",
+        "properties": {
+          "families": {
+            "items": {
+              "$ref": "#/components/schemas/AdvisorFamily"
+            },
+            "title": "Families",
+            "type": "array"
+          },
+          "refresh_issues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Refresh Issues",
+            "type": "array"
+          },
+          "total_checks": {
+            "default": 0,
+            "title": "Total Checks",
+            "type": "integer"
+          },
+          "total_failed": {
+            "default": 0,
+            "title": "Total Failed",
+            "type": "integer"
+          }
+        },
+        "title": "AdvisorSection",
+        "type": "object"
+      },
+      "AlertEntry": {
+        "additionalProperties": true,
+        "description": "A single alert annotation extracted from Grafana.",
+        "properties": {
+          "alertname": {
+            "default": "",
+            "title": "Alertname",
+            "type": "string"
+          },
+          "id": {
+            "default": 0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "node_id": {
+            "default": "",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "node_name": {
+            "default": "",
+            "title": "Node Name",
+            "type": "string"
+          },
+          "service": {
+            "default": "",
+            "title": "Service",
+            "type": "string"
+          },
+          "service_id": {
+            "default": "",
+            "title": "Service Id",
+            "type": "string"
+          },
+          "service_type": {
+            "default": "",
+            "title": "Service Type",
+            "type": "string"
+          },
+          "severity": {
+            "default": "",
+            "title": "Severity",
+            "type": "string"
+          },
+          "time": {
+            "default": 0,
+            "title": "Time",
+            "type": "integer"
+          }
+        },
+        "title": "AlertEntry",
+        "type": "object"
+      },
+      "AlertSection": {
+        "description": "Aggregated alert data for the report.\n\n:param total_alerts: Total number of alert annotations in the period.\n:type total_alerts: int\n:param alerts_per_service: Alert count keyed by service name.\n:type alerts_per_service: dict[str, int]\n:param alerts_per_rule: Alert count keyed by alert rule name.\n:type alerts_per_rule: dict[str, int]\n:param alerts_per_host: Alert count keyed by node name.\n:type alerts_per_host: dict[str, int]\n:param alerts_daily: Alert count keyed by date string (``YYYY-MM-DD``).\n:type alerts_daily: dict[str, int]\n:param alerts_daily_per_host: Daily alert count per host, keyed by date then host.\n:type alerts_daily_per_host: dict[str, dict[str, int]]\n:param alert_history: Full list of individual alert entries.\n:type alert_history: list[AlertEntry]",
+        "properties": {
+          "alert_history": {
+            "items": {
+              "$ref": "#/components/schemas/AlertEntry"
+            },
+            "title": "Alert History",
+            "type": "array"
+          },
+          "alerts_daily": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Alerts Daily",
+            "type": "object"
+          },
+          "alerts_daily_per_host": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "title": "Alerts Daily Per Host",
+            "type": "object"
+          },
+          "alerts_per_host": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Alerts Per Host",
+            "type": "object"
+          },
+          "alerts_per_rule": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Alerts Per Rule",
+            "type": "object"
+          },
+          "alerts_per_service": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Alerts Per Service",
+            "type": "object"
+          },
+          "total_alerts": {
+            "default": 0,
+            "title": "Total Alerts",
+            "type": "integer"
+          }
+        },
+        "title": "AlertSection",
+        "type": "object"
+      },
+      "BackupEntry": {
+        "additionalProperties": true,
+        "description": "A single backup record.\n\n:param id: Unique identifier for this backup entry.\n:type id: str\n:param alias: Human-readable alias for the backup schedule.\n:type alias: str\n:param name: Node name where the backup was taken.\n:type name: str\n:param type: Backup type (e.g. ``\"physical\"``, ``\"logical\"``).\n:type type: str\n:param status: Result status of the backup.\n:type status: BackupStatus\n:param size: Raw backup size value from the metric label, or ``\"0\"`` if unknown.\n:type size: str\n:param estimated_data: ``True`` when the time period or size data is estimated.\n:type estimated_data: bool\n:param enabled: Whether the backup schedule is currently enabled, if available.\n:type enabled: bool | None\n:param encryption: Encryption state label reported by PMM.\n:type encryption: str\n:param period: Dictionary with ``start``, ``end``, and ``duration`` of the backup.\n:type period: dict[str, Any]",
+        "properties": {
+          "alias": {
+            "default": "",
+            "title": "Alias",
+            "type": "string"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "encryption": {
+            "default": "Unknown",
+            "title": "Encryption",
+            "type": "string"
+          },
+          "estimated_data": {
+            "default": true,
+            "title": "Estimated Data",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "object"
+          },
+          "size": {
+            "default": "0",
+            "title": "Size",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BackupStatus",
+            "default": "unknown"
+          },
+          "type": {
+            "default": "",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "BackupEntry",
+        "type": "object"
+      },
+      "BackupSection": {
+        "description": "Aggregated backup data for the report.\n\n:param total_backups: Total number of backup entries collected.\n:type total_backups: int\n:param backups_by_host: Backup count keyed by node name.\n:type backups_by_host: dict[str, int]\n:param backups_by_status: Backup count keyed by status string.\n:type backups_by_status: dict[str, int]\n:param backups_by_type: Backup count keyed by backup type.\n:type backups_by_type: dict[str, int]\n:param failed_backups: Subset of backups with a ``fail`` status.\n:type failed_backups: list[BackupEntry]\n:param all_backups: Complete list of all backup entries.\n:type all_backups: list[BackupEntry]",
+        "properties": {
+          "all_backups": {
+            "items": {
+              "$ref": "#/components/schemas/BackupEntry"
+            },
+            "title": "All Backups",
+            "type": "array"
+          },
+          "backups_by_host": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Backups By Host",
+            "type": "object"
+          },
+          "backups_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Backups By Status",
+            "type": "object"
+          },
+          "backups_by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Backups By Type",
+            "type": "object"
+          },
+          "failed_backups": {
+            "items": {
+              "$ref": "#/components/schemas/BackupEntry"
+            },
+            "title": "Failed Backups",
+            "type": "array"
+          },
+          "total_backups": {
+            "default": 0,
+            "title": "Total Backups",
+            "type": "integer"
+          }
+        },
+        "title": "BackupSection",
+        "type": "object"
+      },
+      "BackupStatus": {
+        "description": "Status values for a backup entry.",
+        "enum": [
+          "pass",
+          "fail",
+          "inactive",
+          "unknown"
+        ],
+        "title": "BackupStatus",
+        "type": "string"
+      },
+      "CheckSeverity": {
+        "description": "Severity levels for advisor check results.",
+        "enum": [
+          "SEVERITY_EMERGENCY",
+          "SEVERITY_ALERT",
+          "SEVERITY_CRITICAL",
+          "SEVERITY_ERROR",
+          "SEVERITY_WARNING",
+          "SEVERITY_NOTICE",
+          "SEVERITY_INFO",
+          "SEVERITY_DEBUG"
+        ],
+        "title": "CheckSeverity",
+        "type": "string"
+      },
+      "DiskUsageEntry": {
+        "description": "Disk usage for a single mountpoint on a node.\n\n:param node_name: Human-readable node hostname.\n:type node_name: str\n:param mountpoint: Filesystem mountpoint path (e.g. ``\"/\"``, ``\"/data\"``).\n:type mountpoint: str\n:param capacity_bytes: Total filesystem capacity in bytes.\n:type capacity_bytes: int\n:param used_start_bytes: Used bytes at the start of the report period.\n:type used_start_bytes: float\n:param used_end_bytes: Used bytes at the end of the report period.\n:type used_end_bytes: float\n:param used_peak_bytes: Peak used bytes observed during the report period.\n:type used_peak_bytes: float\n:param usage_percentage: End-of-period usage as a percentage of total capacity.\n:type usage_percentage: int",
+        "properties": {
+          "capacity_bytes": {
+            "default": 0,
+            "title": "Capacity Bytes",
+            "type": "integer"
+          },
+          "mountpoint": {
+            "title": "Mountpoint",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "usage_percentage": {
+            "default": 0,
+            "title": "Usage Percentage",
+            "type": "integer"
+          },
+          "used_end_bytes": {
+            "default": 0,
+            "title": "Used End Bytes",
+            "type": "number"
+          },
+          "used_peak_bytes": {
+            "default": 0,
+            "title": "Used Peak Bytes",
+            "type": "number"
+          },
+          "used_start_bytes": {
+            "default": 0,
+            "title": "Used Start Bytes",
+            "type": "number"
+          }
+        },
+        "required": [
+          "node_name",
+          "mountpoint"
+        ],
+        "title": "DiskUsageEntry",
+        "type": "object"
+      },
+      "FailedCheck": {
+        "description": "A single failed advisor check result.\n\n:param name: The check name that failed.\n:type name: str\n:param description: Human-readable description of what the check tests.\n:type description: str\n:param summary: Short one-line summary of the check.\n:type summary: str\n:param severity: Severity level of the failure.\n:type severity: CheckSeverity\n:param node_name: Name of the node affected, if applicable.\n:type node_name: str | None\n:param node_id: PMM node ID of the affected node, if applicable.\n:type node_id: str | None\n:param service_name: Name of the service affected, if applicable.\n:type service_name: str | None\n:param service_id: PMM service ID of the affected service, if applicable.\n:type service_id: str | None\n:param read_more_url: URL linking to documentation for this check.\n:type read_more_url: str",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "node_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Name"
+          },
+          "read_more_url": {
+            "default": "",
+            "title": "Read More Url",
+            "type": "string"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          },
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/CheckSeverity"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "summary",
+          "severity"
+        ],
+        "title": "FailedCheck",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InventorySection": {
+        "description": "Aggregated inventory data for the report.",
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/InventoryServiceEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "title": "InventorySection",
+        "type": "object"
+      },
+      "InventoryServiceEntry": {
+        "description": "A monitored service with its agent connectivity status.",
+        "properties": {
+          "node_name": {
+            "default": "",
+            "title": "Node Name",
+            "type": "string"
+          },
+          "service_name": {
+            "title": "Service Name",
+            "type": "string"
+          },
+          "service_type": {
+            "title": "Service Type",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ServiceStatus",
+            "default": "OK"
+          }
+        },
+        "required": [
+          "service_name",
+          "service_type"
+        ],
+        "title": "InventoryServiceEntry",
+        "type": "object"
+      },
+      "MonitoredSummary": {
+        "description": "Summary of monitored nodes and services by type.",
+        "properties": {
+          "services_by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Services By Type",
+            "type": "object"
+          },
+          "total_nodes": {
+            "default": 0,
+            "title": "Total Nodes",
+            "type": "integer"
+          },
+          "total_services": {
+            "default": 0,
+            "title": "Total Services",
+            "type": "integer"
+          }
+        },
+        "title": "MonitoredSummary",
+        "type": "object"
+      },
+      "ReportData": {
+        "description": "Complete report payload ready for rendering.\n\n:param full: When ``True``, all check results and full backup history are included.\n:type full: bool\n:param refresh: When ``True``, advisor checks were refreshed before data collection.\n:type refresh: bool\n:param metadata: Report title, generation timestamp, and period labels.\n:type metadata: ReportMetadata\n:param monitored: Summary counts of monitored nodes and services.\n:type monitored: MonitoredSummary\n:param advisors: Advisor check results grouped by family.\n:type advisors: AdvisorSection\n:param alerts: Alert annotation history and aggregations.\n:type alerts: AlertSection\n:param backups: Backup status entries and aggregations.\n:type backups: BackupSection\n:param storage: Disk usage entries per node mountpoint.\n:type storage: StorageSection\n:param uptime: Service uptime entries for the report period.\n:type uptime: UptimeSection\n:param inventory: Monitored service inventory with connectivity status.\n:type inventory: InventorySection",
+        "properties": {
+          "advisors": {
+            "$ref": "#/components/schemas/AdvisorSection"
+          },
+          "alerts": {
+            "$ref": "#/components/schemas/AlertSection"
+          },
+          "backups": {
+            "$ref": "#/components/schemas/BackupSection"
+          },
+          "full": {
+            "default": true,
+            "title": "Full",
+            "type": "boolean"
+          },
+          "inventory": {
+            "$ref": "#/components/schemas/InventorySection"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ReportMetadata"
+          },
+          "monitored": {
+            "$ref": "#/components/schemas/MonitoredSummary"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/StorageSection"
+          },
+          "uptime": {
+            "$ref": "#/components/schemas/UptimeSection"
+          }
+        },
+        "required": [
+          "metadata"
+        ],
+        "title": "ReportData",
+        "type": "object"
+      },
+      "ReportJobResponse": {
+        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:param status: Lowercase Celery task state.\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:param result: Successful job result payload, if available.\n:param error: Failed job error text, if available.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "pdf_ready": {
+            "default": false,
+            "title": "Pdf Ready",
+            "type": "boolean"
+          },
+          "result": {
+            "additionalProperties": true,
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "ReportJobResponse",
+        "type": "object"
+      },
+      "ReportMetadata": {
+        "description": "Metadata about a generated report.\n\n:param title: Report title string.\n:type title: str\n:param generated_at: Timestamp when the report was generated.\n:type generated_at: datetime\n:param report_week: ISO week label, e.g. ``\"Report 2026 Week 15\"``.\n:type report_week: str\n:param report_interval: Human-readable date range string for the report period.\n:type report_interval: str",
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "report_interval": {
+            "default": "",
+            "title": "Report Interval",
+            "type": "string"
+          },
+          "report_week": {
+            "default": "",
+            "title": "Report Week",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at"
+        ],
+        "title": "ReportMetadata",
+        "type": "object"
+      },
+      "ReportSnapshotWrite": {
+        "description": "Define report snapshot body for PDF/upload jobs.\n\n:param report: Generated report snapshot reused for PDF/upload work.",
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/ReportData"
+          }
+        },
+        "required": [
+          "report"
+        ],
+        "title": "ReportSnapshotWrite",
+        "type": "object"
+      },
+      "ServiceStatus": {
+        "description": "Agent connectivity status for an inventory service.",
+        "enum": [
+          "OK",
+          "Not OK"
+        ],
+        "title": "ServiceStatus",
+        "type": "string"
+      },
+      "StorageSection": {
+        "description": "Aggregated storage data for the report.\n\n:param entries: List of per-mountpoint disk usage entries, sorted by usage descending.\n:type entries: list[DiskUsageEntry]",
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DiskUsageEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "title": "StorageSection",
+        "type": "object"
+      },
+      "UptimeEntry": {
+        "description": "Uptime for a single monitored service.",
+        "properties": {
+          "service_name": {
+            "title": "Service Name",
+            "type": "string"
+          },
+          "since": {
+            "default": "",
+            "title": "Since",
+            "type": "string"
+          },
+          "uptime": {
+            "format": "duration",
+            "title": "Uptime",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_name",
+          "uptime"
+        ],
+        "title": "UptimeEntry",
+        "type": "object"
+      },
+      "UptimeSection": {
+        "description": "Aggregated uptime data for the report.",
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/UptimeEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "title": "UptimeSection",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "paths": {
+    "/api/apps/report/config": {
+      "get": {
+        "description": "Return upload configuration status.\n\n:return: JSON response with ``upload_disabled_reasons``.\n:rtype: JSONResponse",
+        "operationId": "report_report_config_api_apps_report_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Report Config",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/apps/report/generate/json": {
+      "get": {
+        "description": "Generate a report and return as JSON.\n\n:param pmm_api: PMM API client dependency.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force advisor refresh before fetching results.\n:type refresh: bool\n:param sections: Optional list of sections to include.\n:type sections: list[str] | None\n:return: JSON response with full report data.\n:rtype: JSONResponse",
+        "operationId": "report_report_generate_json_api_api_apps_report_generate_json_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "default": "now-7d",
+              "title": "Since",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "default": "now",
+              "title": "Until",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "full",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Full",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sections",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sections"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Generate Json Api",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/apps/report/pdf-jobs": {
+      "post": {
+        "description": "Enqueue PDF rendering from a report JSON snapshot.\n\n:param body: Request body containing the report snapshot.\n:type body: ReportSnapshotWrite\n:return: PDF job status response.\n:rtype: ReportJobResponse",
+        "operationId": "report_report_start_pdf_job_api_api_apps_report_pdf_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportSnapshotWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Start Pdf Job Api",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/apps/report/pdf-jobs/{job_id}": {
+      "get": {
+        "description": "Return PDF job status.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF job status response.\n:rtype: ReportJobResponse",
+        "operationId": "report_report_pdf_job_api_api_apps_report_pdf_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Pdf Job Api",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/apps/report/pdf-jobs/{job_id}/pdf": {
+      "get": {
+        "description": "Download a ready PDF result for a report job.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF file response.\n:rtype: Response\n:raises HTTPInternalServerErrorException: If the Celery job failed.\n:raises HTTPConflictException: If the PDF result is not ready yet.\n:raises HTTPGoneException: If the staged PDF artifact has expired.",
+        "operationId": "report_report_download_pdf_api_api_apps_report_pdf_jobs__job_id__pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Download Pdf Api",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/apps/report/upload-jobs": {
+      "post": {
+        "description": "Enqueue ServiceNow upload from a report JSON snapshot.\n\n:param body: Request body containing the report snapshot.\n:type body: ReportSnapshotWrite\n:return: Upload job status response.\n:rtype: ReportJobResponse\n:raises HTTPServiceUnavailableException: If ServiceNow upload is not configured.",
+        "operationId": "report_report_start_upload_job_api_api_apps_report_upload_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportSnapshotWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Start Upload Job Api",
+        "tags": [
+          "report"
+        ]
+      }
+    },
+    "/api/apps/report/upload-jobs/{job_id}": {
+      "get": {
+        "description": "Return ServiceNow upload job status.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: Upload job status response.\n:rtype: ReportJobResponse",
+        "operationId": "report_report_upload_job_api_api_apps_report_upload_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Upload Job Api",
+        "tags": [
+          "report"
+        ]
+      }
+    }
+  }
+}

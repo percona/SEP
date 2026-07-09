@@ -19,7 +19,9 @@ import uuid
 from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
+from fastapi import HTTPException, status
 from pydantic import PrivateAttr
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -46,7 +48,7 @@ from app.sep.models import (
     SyncStatusEnum,
 )
 from app.sep.sync.exceptions import SyncFailError
-from app.sep.sync.models import BaseSyncer, BaseTaskSyncer
+from app.sep.sync.models import BaseSyncer, BaseTaskSyncer, TaskRunResult
 from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.factories import (
     CreatedNodeFactory,
@@ -339,6 +341,10 @@ async def test_get_children_entities(entity_type, mock_remote_api, created_servi
     if entity_type == SyncInventoryEntityTypeEnum.SERVICE:
         created_entity = created_service
         mock_remote_api.get.side_effect = [created_service.model_dump()]
+    elif entity_type == SyncInventoryEntityTypeEnum.INVENTORY:
+        mock_remote_api.get.side_effect = [
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
     await syncer.get_children_entities(entity_type, created_entity)
 
 
@@ -534,7 +540,7 @@ async def test_delete_node(
     ]
 
     await syncer.delete_node(created_node)
-    mock_remote_api.delete.assert_awaited_once_with(f"/{created_node.id}")
+    mock_remote_api.delete.assert_awaited_once_with(f"/nodes/{created_node.id}")
     mock_remote_api.delete.reset_mock()
     await syncer.delete_service(created_service)
     mock_remote_api.delete.assert_awaited_once_with(f"/services/{created_service.id}")
@@ -560,6 +566,9 @@ async def test_sync_inventory(session: AsyncSession, mock_remote_api):
         inventory_api=mock_remote_api,
         sync_instance=sync_instance,
     )
+    mock_remote_api.get.side_effect = [
+        {"items": [], "total": 0, "offset": 0, "limit": 50},
+    ]
 
     await syncer.sync_inventory()
 
@@ -790,3 +799,111 @@ async def test_wait_for_task_output(session: AsyncSession, mock_remote_api, mock
 
     mock_remote_api.post.assert_awaited_once()
     assert mock_remote_api.get.await_count == expected_call_count
+
+
+async def _empty_stream(*_args, **_kwargs):
+    for _ in ():
+        yield _
+
+
+def _build_task_test_syncer(session, mock_remote_api, **kwargs):
+    class TaskTestSyncer(BaseTaskSyncer):
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.INVENTORY
+
+    return _build_syncer(
+        TaskTestSyncer,
+        session,
+        inventory_api=mock_remote_api,
+        tasks_api=mock_remote_api,
+        **kwargs,
+    )
+
+
+@pytest.mark.asyncio
+async def test_wait_for_task_output_tolerates_http_exception(
+    session: AsyncSession, mock_remote_api, mocker
+):
+    """A transient ``HTTPException`` while polling is tolerated and polling continues."""
+    mock_remote_api.post.side_effect = [
+        {"id": "12345", "status": TaskHistoryStatusEnum.PENDING}
+    ]
+    mock_remote_api.get.side_effect = [
+        HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+        ),
+        {
+            "id": "12345",
+            "status": TaskHistoryStatusEnum.SUCCESS,
+            "execution_request": {"tracking": {}},
+        },
+    ]
+    mock_remote_api.stream = _empty_stream
+    mocker.patch("app.sep.sync.models.asyncio.sleep", new_callable=AsyncMock)
+    log_spy = mocker.patch("app.sep.sync.models.logger.exception")
+
+    task_syncer = _build_task_test_syncer(
+        session, mock_remote_api, tasks_execution_wait_interval=0
+    )
+    result = await task_syncer.wait_for_task_output(
+        task_name="syncing", stdout_step="step"
+    )
+
+    assert isinstance(result, TaskRunResult)
+    log_spy.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_wait_for_task_output_tolerates_client_error(
+    session: AsyncSession, mock_remote_api, mocker
+):
+    """A transient aiohttp ``ClientError`` while polling is tolerated."""
+    mock_remote_api.post.side_effect = [
+        {"id": "12345", "status": TaskHistoryStatusEnum.PENDING}
+    ]
+    mock_remote_api.get.side_effect = [
+        aiohttp.ClientConnectionError("connection blip"),
+        {
+            "id": "12345",
+            "status": TaskHistoryStatusEnum.SUCCESS,
+            "execution_request": {"tracking": {}},
+        },
+    ]
+    mock_remote_api.stream = _empty_stream
+    mocker.patch("app.sep.sync.models.asyncio.sleep", new_callable=AsyncMock)
+    log_spy = mocker.patch("app.sep.sync.models.logger.exception")
+
+    task_syncer = _build_task_test_syncer(
+        session, mock_remote_api, tasks_execution_wait_interval=0
+    )
+    result = await task_syncer.wait_for_task_output(
+        task_name="syncing", stdout_step="step"
+    )
+
+    assert isinstance(result, TaskRunResult)
+    log_spy.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_wait_for_task_output_persistent_error_times_out(
+    session: AsyncSession, mock_remote_api, mocker
+):
+    """A persistent polling error exhausts the timeout window and raises ``TimeoutError``."""
+    mock_remote_api.post.side_effect = [
+        {"id": "12345", "status": TaskHistoryStatusEnum.PENDING}
+    ]
+    mock_remote_api.get.side_effect = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+    )
+    mocker.patch("app.sep.sync.models.asyncio.sleep", new_callable=AsyncMock)
+
+    task_syncer = _build_task_test_syncer(
+        session,
+        mock_remote_api,
+        tasks_execution_wait_interval=1,
+        task_execution_timeout=2,
+    )
+
+    with pytest.raises(TimeoutError):
+        await task_syncer.wait_for_task_output(task_name="syncing", stdout_step="step")

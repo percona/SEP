@@ -32,13 +32,14 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import SettingsIcon from '@mui/icons-material/Settings';
+import AppsIcon from '@mui/icons-material/Apps';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ViewQuiltIcon from '@mui/icons-material/ViewQuilt';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
-import GitHubIcon from '@mui/icons-material/GitHub';
+import { useAppInfo } from '@sep/api';
 import { useNavigation, type NavItem } from '../contexts/navigation';
 
-const DRAWER_WIDTH_EXPANDED = 260;
+const DRAWER_WIDTH_EXPANDED = 270;
 const DRAWER_WIDTH_COLLAPSED = 64;
 
 const PMM_URL = import.meta.env.VITE_PMM_URL;
@@ -212,10 +213,17 @@ function ExternalLink({
   );
 }
 
-function DrawerContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+export function DrawerContent({
+  collapsed,
+  onNavigate,
+}: {
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
   const nav = useNavigation();
   const navigate = useNavigate();
   const location = useLocation();
+  const { data: appInfo } = useAppInfo();
 
   const handleNav = (to: string) => {
     navigate(to);
@@ -239,6 +247,16 @@ function DrawerContent({ collapsed, onNavigate }: { collapsed: boolean; onNaviga
       <Divider />
       <List sx={{ px: 1 }}>
         <ListItemButton
+          selected={isActivePath(location.pathname, '/admin/apps')}
+          onClick={() => handleNav('/admin/apps')}
+          sx={{ borderRadius: 2, justifyContent: collapsed ? 'center' : 'flex-start' }}
+        >
+          <ListItemIcon sx={{ minWidth: collapsed ? 0 : 40, justifyContent: 'center' }}>
+            <AppsIcon />
+          </ListItemIcon>
+          {!collapsed && <ListItemText primary="Apps" />}
+        </ListItemButton>
+        <ListItemButton
           selected={isActivePath(location.pathname, '/settings')}
           onClick={() => handleNav('/settings')}
           sx={{ borderRadius: 2, justifyContent: collapsed ? 'center' : 'flex-start' }}
@@ -254,16 +272,15 @@ function DrawerContent({ collapsed, onNavigate }: { collapsed: boolean; onNaviga
           icon={MenuBookIcon}
           collapsed={collapsed}
         />
-        <ExternalLink
-          href="https://github.com/percona/SEP"
-          title="GitHub"
-          icon={GitHubIcon}
-          collapsed={collapsed}
-        />
       </List>
       {!collapsed && (
         <Box sx={{ px: 2, py: 1.5 }}>
-          <Typography variant="caption" color="text.secondary">
+          {appInfo?.footer_text && (
+            <Typography variant="caption" color="text.secondary" display="block">
+              {appInfo.footer_text}
+            </Typography>
+          )}
+          <Typography variant="caption" color="text.secondary" display="block">
             © {new Date().getFullYear()} Percona LLC
           </Typography>
         </Box>

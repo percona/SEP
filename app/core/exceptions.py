@@ -60,14 +60,33 @@ class HTTPBadRequestException(HTTPException):
 class HTTPUnprocessableEntityException(HTTPException):
     """Define exception raised for unprocessable content (HTTP 422).
 
-    :param detail: A message providing additional details about the exception.
-        Defaults to "Unprocessable Entity".
-    :type detail: str
+    :param detail: A message, list, dict, or other JSON-serializable structure
+        providing additional details about the exception. Defaults to
+        "Unprocessable Entity".
+    :type detail: Any
     """
 
-    def __init__(self, detail: str = "Unprocessable Entity") -> None:
+    def __init__(self, detail: Any = "Unprocessable Entity") -> None:
         super().__init__(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail
+        )
+
+
+class HTTPInternalServerErrorException(HTTPException):
+    """Define exception raised for an internal server error (HTTP 500).
+
+    ``detail`` accepts a string or a JSON-serializable structure, matching
+    :class:`fastapi.HTTPException`, so callers can pass structured payloads
+    (e.g. orphaned-task lists from a partial cascade failure).
+
+    :param detail: Human-readable or structured error payload. Defaults to
+        ``"Internal Server Error"``.
+    :type detail: Any
+    """
+
+    def __init__(self, detail: Any = "Internal Server Error") -> None:
+        super().__init__(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail
         )
 
 

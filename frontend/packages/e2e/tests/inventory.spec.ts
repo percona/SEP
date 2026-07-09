@@ -16,10 +16,11 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const PLUGIN_ROUTE = '/inventory';
+const APP_ROUTE = '/inventory';
 
 const NODE_ID = 1;
 const SERVICE_ID = 10;
@@ -80,7 +81,7 @@ const MOCK_NODE_DETAIL = { ...MOCK_NODE, services: [MOCK_SERVICE] };
 /** Service detail — includes embedded schemas list for drill-down. */
 const MOCK_SERVICE_DETAIL = { ...MOCK_SERVICE, schemas: [MOCK_SCHEMA_ROW] };
 
-// ── Plugin schema ─────────────────────────────────────────────────────────────
+// ── App schema ─────────────────────────────────────────────────────────────
 //
 // Mirrors app/sep/plugins/inventory/schema.py.  All four entities include an
 // _actions column so that allowListEntityDelete wires up the delete button.
@@ -190,6 +191,10 @@ async function mockInventoryApis(page: Page): Promise<void> {
       return route.continue();
     }
 
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
+    }
+
     if (pathname.includes('/oauth/refresh')) {
       return route.fulfill({
         status: 200,
@@ -206,7 +211,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname === '/api/plugins/inventory/schema') {
+    if (pathname === '/api/apps/inventory/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -215,7 +220,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
     }
 
     // SyncControl: available syncers + sync status
-    if (pathname.includes('/plugins/inventory/available-syncers')) {
+    if (pathname.includes('/apps/inventory/available-syncers')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -223,7 +228,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.includes('/plugins/inventory/sync/status')) {
+    if (pathname.includes('/apps/inventory/sync/status')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -233,7 +238,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
 
     // ── Entity detail routes — must come before list routes ────────────────────
 
-    if (req.method() === 'GET' && pathname === `/api/plugins/inventory/nodes/${NODE_ID}`) {
+    if (req.method() === 'GET' && pathname === `/api/apps/inventory/nodes/${NODE_ID}`) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -241,7 +246,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && pathname === `/api/plugins/inventory/services/${SERVICE_ID}`) {
+    if (req.method() === 'GET' && pathname === `/api/apps/inventory/services/${SERVICE_ID}`) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -249,7 +254,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && pathname === `/api/plugins/inventory/schemas/${SCHEMA_ID}`) {
+    if (req.method() === 'GET' && pathname === `/api/apps/inventory/schemas/${SCHEMA_ID}`) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -259,7 +264,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
 
     // ── Entity list routes ─────────────────────────────────────────────────────
 
-    if (req.method() === 'GET' && /^\/api\/plugins\/inventory\/nodes\/?$/.test(pathname)) {
+    if (req.method() === 'GET' && /^\/api\/apps\/inventory\/nodes\/?$/.test(pathname)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -267,7 +272,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && /^\/api\/plugins\/inventory\/services\/?$/.test(pathname)) {
+    if (req.method() === 'GET' && /^\/api\/apps\/inventory\/services\/?$/.test(pathname)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -275,7 +280,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && /^\/api\/plugins\/inventory\/schemas\/?$/.test(pathname)) {
+    if (req.method() === 'GET' && /^\/api\/apps\/inventory\/schemas\/?$/.test(pathname)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -283,7 +288,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && /^\/api\/plugins\/inventory\/tables\/?$/.test(pathname)) {
+    if (req.method() === 'GET' && /^\/api\/apps\/inventory\/tables\/?$/.test(pathname)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -292,7 +297,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
     }
 
     // DELETE: return 204 No Content for any inventory entity delete
-    if (req.method() === 'DELETE' && pathname.startsWith('/api/plugins/inventory/')) {
+    if (req.method() === 'DELETE' && pathname.startsWith('/api/apps/inventory/')) {
       return route.fulfill({ status: 204 });
     }
 
@@ -321,34 +326,34 @@ function isBenignConsoleError(msg: string): boolean {
 
 // ── Page object ───────────────────────────────────────────────────────────────
 
-class InventoryPluginPage {
+class InventoryAppPage {
   readonly heading = (name: string) => this.page.getByRole('heading', { name });
   readonly cell = (name: string) => this.page.getByRole('cell', { name });
 
   constructor(private readonly page: Page) {}
 
   async goto() {
-    await this.page.goto(PLUGIN_ROUTE);
+    await this.page.goto(APP_ROUTE);
   }
 
   async gotoNodeDetail(nodeId: number) {
-    await this.page.goto(`${PLUGIN_ROUTE}/nodes/${nodeId}`);
+    await this.page.goto(`${APP_ROUTE}/nodes/${nodeId}`);
   }
 
   async gotoServiceDetail(serviceId: number) {
-    await this.page.goto(`${PLUGIN_ROUTE}/services/${serviceId}`);
+    await this.page.goto(`${APP_ROUTE}/services/${serviceId}`);
   }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-test.describe('Inventory plugin smoke', () => {
+test.describe('Inventory app smoke', () => {
   test.beforeEach(async ({ page }) => {
     await mockInventoryApis(page);
   });
 
   test('list page mounts and shows fixture node row', async ({ page }) => {
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.goto();
 
     await expect(po.heading('Nodes')).toBeVisible({ timeout: 10_000 });
@@ -356,7 +361,7 @@ test.describe('Inventory plugin smoke', () => {
   });
 
   test('node detail shows embedded services list with fixture row', async ({ page }) => {
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.gotoNodeDetail(NODE_ID);
 
     await expect(page.getByText('Services on this node')).toBeVisible({ timeout: 10_000 });
@@ -373,7 +378,7 @@ test.describe('Inventory plugin smoke', () => {
       }
     });
 
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.gotoNodeDetail(NODE_ID);
 
     await expect(page.getByText('Services on this node')).toBeVisible({ timeout: 10_000 });
@@ -403,7 +408,7 @@ test.describe('Inventory plugin smoke', () => {
       }
     });
 
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.goto();
 
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
@@ -430,7 +435,7 @@ test.describe('Inventory plugin smoke', () => {
       }
     });
 
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.goto();
 
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
@@ -446,11 +451,11 @@ test.describe('Inventory plugin smoke', () => {
 
     await expect
       .poll(() => deleteRequests, { timeout: 5_000 })
-      .toContain(`/api/plugins/inventory/nodes/${NODE_ID}`);
+      .toContain(`/api/apps/inventory/nodes/${NODE_ID}`);
   });
 
   test('flat service detail route renders service name in breadcrumb', async ({ page }) => {
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.gotoServiceDetail(SERVICE_ID);
 
     // Scoped to the breadcrumb nav so the assertion targets the crumb, not a table cell

@@ -1,0 +1,1161 @@
+{
+  "capabilities": {
+    "alert_on_fail": true,
+    "chaining": true,
+    "pii_anonymization": false,
+    "scheduling": true,
+    "stats": false
+  },
+  "description": "Run XtraBackup, Mydumper, and Binlog backups against MySQL hosts.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Execution Host",
+            "path": "data.meta.target"
+          },
+          {
+            "label": "Config (YAML)",
+            "path": "data.meta.config"
+          }
+        ],
+        "title": "Backup Configuration"
+      }
+    ]
+  },
+  "display_name": "MySQL Backups",
+  "fail_when": [
+    {
+      "error_fields": [
+        "mydumper_dump_triggers"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "mydumper_dump_triggers"
+          },
+          {
+            "not_equals": {
+              "backup_type": "M"
+            }
+          }
+        ]
+      },
+      "message": "'mydumper_dump_triggers' must not be set when backup_type is not 'M'."
+    },
+    {
+      "error_fields": [
+        "mydumper_desync_pxc"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "mydumper_desync_pxc"
+          },
+          {
+            "not_equals": {
+              "backup_type": "M"
+            }
+          }
+        ]
+      },
+      "message": "'mydumper_desync_pxc' must not be set when backup_type is not 'M'."
+    },
+    {
+      "error_fields": [
+        "mydumper_use_numa"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "mydumper_use_numa"
+          },
+          {
+            "not_equals": {
+              "backup_type": "M"
+            }
+          }
+        ]
+      },
+      "message": "'mydumper_use_numa' must not be set when backup_type is not 'M'."
+    },
+    {
+      "error_fields": [
+        "xtrabackup_kill_queries"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "xtrabackup_kill_queries"
+          },
+          {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        ]
+      },
+      "message": "'xtrabackup_kill_queries' must not be set when backup_type is not 'X'."
+    },
+    {
+      "error_fields": [
+        "xtrabackup_verify"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "xtrabackup_verify"
+          },
+          {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        ]
+      },
+      "message": "'xtrabackup_verify' must not be set when backup_type is not 'X'."
+    },
+    {
+      "error_fields": [
+        "xtrabackup_prepare"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "xtrabackup_prepare"
+          },
+          {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        ]
+      },
+      "message": "'xtrabackup_prepare' must not be set when backup_type is not 'X'."
+    },
+    {
+      "error_fields": [
+        "xtrabackup_desync_pxc"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "xtrabackup_desync_pxc"
+          },
+          {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        ]
+      },
+      "message": "'xtrabackup_desync_pxc' must not be set when backup_type is not 'X'."
+    },
+    {
+      "error_fields": [
+        "xtrabackup_rsync"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "xtrabackup_rsync"
+          },
+          {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        ]
+      },
+      "message": "'xtrabackup_rsync' must not be set when backup_type is not 'X'."
+    },
+    {
+      "error_fields": [
+        "xtrabackup_replica_info"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "xtrabackup_replica_info"
+          },
+          {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        ]
+      },
+      "message": "'xtrabackup_replica_info' must not be set when backup_type is not 'X'."
+    },
+    {
+      "error_fields": [
+        "xtrabackup_stop_replica"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "xtrabackup_stop_replica"
+          },
+          {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        ]
+      },
+      "message": "'xtrabackup_stop_replica' must not be set when backup_type is not 'X'."
+    },
+    {
+      "error_fields": [
+        "xtrabackup_lock_ddl"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "xtrabackup_lock_ddl"
+          },
+          {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        ]
+      },
+      "message": "'xtrabackup_lock_ddl' must not be set when backup_type is not 'X'."
+    },
+    {
+      "error_fields": [
+        "xtrabackup_quiet"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "xtrabackup_quiet"
+          },
+          {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        ]
+      },
+      "message": "'xtrabackup_quiet' must not be set when backup_type is not 'X'."
+    }
+  ],
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Task Name",
+          "name": "task_name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
+        },
+        {
+          "label": "Database Host",
+          "name": "service_id",
+          "required": true,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        },
+        {
+          "choices": [
+            {
+              "label": "Mydumper",
+              "value": "M"
+            },
+            {
+              "label": "XtraBackup",
+              "value": "X"
+            },
+            {
+              "label": "Binlog",
+              "value": "B"
+            }
+          ],
+          "label": "Backup Type",
+          "name": "backup_type",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "label": "Server Alias",
+          "name": "alias",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
+        {
+          "default": false,
+          "label": "Hardlink full backups",
+          "name": "hardlink",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Compress backup data",
+          "name": "compress",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Check disk space first",
+          "name": "check_disk_space",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Only if running replica",
+          "name": "only_if_running_replica",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Only if read-only",
+          "name": "only_if_read_only",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "FTWRL guardian",
+          "name": "use_ftwrl_guardian",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "label": "Logging directory",
+          "name": "logging_dir",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Backup directory",
+          "name": "backup_dir",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "MySQL defaults file",
+          "name": "defaults_file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "choices": [
+            {
+              "label": "zstd",
+              "value": "zstd"
+            },
+            {
+              "label": "lz4",
+              "value": "lz4"
+            },
+            {
+              "label": "gzip",
+              "value": "gzip"
+            },
+            {
+              "label": "quicklz",
+              "value": "quicklz"
+            }
+          ],
+          "label": "Compression algorithm",
+          "name": "compression_algorithm",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "General"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": true,
+      "fields": [
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "M"
+                }
+              }
+            }
+          ],
+          "label": "Daily purge (days)",
+          "name": "mydumper_daily_purge",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "M"
+                }
+              }
+            }
+          ],
+          "label": "Weekly purge (weeks)",
+          "name": "mydumper_weekly_purge",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "default": false,
+          "label": "Dump triggers",
+          "name": "mydumper_dump_triggers",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Desync PXC node",
+          "name": "mydumper_desync_pxc",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Use NUMA",
+          "name": "mydumper_use_numa",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "M"
+                }
+              }
+            }
+          ],
+          "label": "Extra args",
+          "name": "mydumper_extra_args",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "M"
+                }
+              }
+            }
+          ],
+          "ge": 0,
+          "label": "Verbose level",
+          "le": 3,
+          "name": "mydumper_verbose",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "forbidden": [
+        {
+          "when": {
+            "not_equals": {
+              "backup_type": "M"
+            }
+          }
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Mydumper"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": true,
+      "fields": [
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "Number of backup copies",
+          "name": "xtrabackup_copies",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "default": false,
+          "label": "Kill blocking queries",
+          "name": "xtrabackup_kill_queries",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "Kill-queries timeout (s)",
+          "name": "xtrabackup_kill_queries_timeout",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "choices": [
+            {
+              "label": "SELECT",
+              "value": "select"
+            },
+            {
+              "label": "All",
+              "value": "all"
+            }
+          ],
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "Kill query type",
+          "name": "xtrabackup_kill_query_type",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "default": false,
+          "label": "Verify after backup",
+          "name": "xtrabackup_verify",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Prepare for restore",
+          "name": "xtrabackup_prepare",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "Prepare memory",
+          "name": "xtrabackup_prepare_memory",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "label": "Desync PXC node",
+          "name": "xtrabackup_desync_pxc",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Use rsync",
+          "name": "xtrabackup_rsync",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Include replica info",
+          "name": "xtrabackup_replica_info",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "XtraBackup defaults file",
+          "name": "xtrabackup_defaults_file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "Extra args",
+          "name": "xtrabackup_extra_args",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "choices": [
+            {
+              "label": "Less space",
+              "value": "less_space"
+            },
+            {
+              "label": "Fast restore",
+              "value": "fast_restore"
+            }
+          ],
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "Incremental method",
+          "name": "xtrabackup_incremental_method",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "Daily",
+              "value": "daily"
+            },
+            {
+              "label": "Weekly",
+              "value": "weekly"
+            },
+            {
+              "label": "2 days",
+              "value": "2"
+            },
+            {
+              "label": "3 days",
+              "value": "3"
+            },
+            {
+              "label": "4 days",
+              "value": "4"
+            },
+            {
+              "label": "5 days",
+              "value": "5"
+            },
+            {
+              "label": "6 days",
+              "value": "6"
+            },
+            {
+              "label": "7 days",
+              "value": "7"
+            }
+          ],
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "Incremental cycle",
+          "name": "xtrabackup_incremental_cycle",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "Local SSH destination",
+          "name": "xtrabackup_local_ssh_destination",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "AES-256 key file path",
+          "name": "xtrabackup_aes256_keyfile",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "label": "Stop replica before backup",
+          "name": "xtrabackup_stop_replica",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Lock DDL",
+          "name": "xtrabackup_lock_ddl",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Quiet log (drop per-file copy lines)",
+          "name": "xtrabackup_quiet",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "choices": [
+            {
+              "label": "xtrabackup",
+              "value": "xtrabackup"
+            },
+            {
+              "label": "mariadb-backup",
+              "value": "mariadb-backup"
+            },
+            {
+              "label": "innobackupex",
+              "value": "innobackupex"
+            }
+          ],
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            }
+          ],
+          "label": "Backup binary",
+          "name": "xtrabackup_bin_cmd",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "forbidden": [
+        {
+          "when": {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        }
+      ],
+      "render_after_submit": false,
+      "title": "XtraBackup"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": true,
+      "fields": [
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "B"
+                }
+              }
+            }
+          ],
+          "label": "Binlog prefix",
+          "name": "binlog_prefix",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "B"
+                }
+              }
+            }
+          ],
+          "label": "Purge after (days)",
+          "name": "binlog_purge_days",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "B"
+                }
+              }
+            }
+          ],
+          "label": "Extra args",
+          "name": "binlog_extra_args",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "B"
+                }
+              }
+            }
+          ],
+          "label": "Compress command",
+          "name": "binlog_compress_cmd",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "B"
+                }
+              }
+            }
+          ],
+          "label": "Binlog command",
+          "name": "binlog_cmd",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": true,
+          "label": "Run all binlog backups",
+          "name": "binlog_run_all",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "B"
+                }
+              }
+            }
+          ],
+          "label": "Alternative binlog host",
+          "name": "binlog_alternative_host",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "forbidden": [
+        {
+          "when": {
+            "not_equals": {
+              "backup_type": "B"
+            }
+          }
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Binlog"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": true,
+      "fields": [
+        {
+          "default": false,
+          "label": "Encrypt backup",
+          "name": "encrypt",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Encrypt using tmpdir",
+          "name": "encrypt_using_tmpdir",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Encrypt after backup completes",
+          "name": "post_run_encrypt",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "falsy": "encrypt"
+              }
+            }
+          ],
+          "label": "Encryption recipient",
+          "name": "encryption_recipient",
+          "required": false,
+          "requires": [
+            {
+              "when": {
+                "truthy": "encrypt"
+              }
+            }
+          ],
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Encryption"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": true,
+      "fields": [
+        {
+          "choices": [
+            {
+              "label": "Rsync",
+              "value": "RSYNC"
+            },
+            {
+              "label": "S3",
+              "value": "S3"
+            },
+            {
+              "label": "Google Cloud Storage",
+              "value": "GSUTIL"
+            }
+          ],
+          "label": "Upload providers",
+          "name": "upload",
+          "required": false,
+          "type": "multi_choice"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "contains": {
+                    "upload": "S3"
+                  }
+                }
+              }
+            }
+          ],
+          "label": "S3 bucket",
+          "name": "s3_bucket",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "contains": {
+                    "upload": "S3"
+                  }
+                }
+              }
+            }
+          ],
+          "label": "S3 storage class",
+          "name": "s3_storage_class",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "contains": {
+                    "upload": "S3"
+                  }
+                }
+              }
+            }
+          ],
+          "label": "Skip S3 safety check",
+          "name": "skip_s3_safety_check",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Quiet upload logs",
+          "name": "upload_quiet",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "contains": {
+                    "upload": "S3"
+                  }
+                }
+              }
+            }
+          ],
+          "label": "AWS S3 upload extra args",
+          "name": "awscli_s3_upload_extra_args",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "contains": {
+                    "upload": "GSUTIL"
+                  }
+                }
+              }
+            }
+          ],
+          "label": "Google Cloud Storage bucket",
+          "name": "gs_bucket",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "contains": {
+                    "upload": "RSYNC"
+                  }
+                }
+              }
+            }
+          ],
+          "label": "Rsync destination path",
+          "name": "rsync_path",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Upload"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      },
+      {
+        "format": "chip",
+        "key": "backup_type",
+        "label": "Type",
+        "sortable": false
+      },
+      {
+        "key": "hostname",
+        "label": "Execution Host",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "mysql_backups",
+  "related_apps": [
+    {
+      "app_key": "mysql_backups/restore",
+      "label": "Restore",
+      "route_segment": "restores"
+    }
+  ]
+}

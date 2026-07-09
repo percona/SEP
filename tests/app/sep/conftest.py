@@ -13,117 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define test fixtures for the SEP app."""
+"""Re-export the shared SEP test fixtures for the ``tests/app/sep`` subtree.
 
-from collections import OrderedDict
-from collections.abc import Iterator
-from unittest.mock import AsyncMock, Mock
+These fixtures are defined in the always-loaded ancestor ``tests/app/conftest.py`` so they
+resolve regardless of single-process pytest collection order (SEP-1417). They are re-exported
+here so app-subtree conftests can keep importing them from ``tests.app.sep.conftest``.
+"""
 
-import pytest
-import pytest_asyncio
-from fastapi import Request
-from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
-from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel
-
-from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.requests import RemoteAPI
-from app.core.utils import json_serializer
-from app.models import CasdoorUser
-from app.sep.deps import (
-    get_api_authenticated_user,
-    get_current_user,
-    get_inventory_api,
-    get_tasks_api,
-    validate_csrf,
+from tests.app.conftest import (  # noqa: F401
+    api_admin_client_no_bearer,
+    async_test_client,
+    celery_beat_session_fixture,
+    dummy_request,
+    mock_get_username_mapping,
+    mock_inventory_api_dep,
+    mock_task_api_dep,
+    session_fixture,
+    test_client,
+    unauthenticated_client,
 )
-from app.sep.main import sep_app
-
-
-@pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
-    """Create an async db session for testing."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-    async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
-
-
-@pytest.fixture
-def test_client(regular_user: CasdoorUser) -> TestClient:
-    """Create an authenticated test client for the app."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
-    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
-    yield TestClient(sep_app, raise_server_exceptions=False)
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def unauthenticated_client() -> Iterator[TestClient]:
-    """Yield a test client with authentication dependency overrides cleared."""
-    previous = sep_app.dependency_overrides
-    sep_app.dependency_overrides = {}
-    try:
-        yield TestClient(sep_app, raise_server_exceptions=False)
-    finally:
-        sep_app.dependency_overrides = previous
-
-
-@pytest_asyncio.fixture
-async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
-    """Create an authenticated async test client for the app."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
-    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
-
-    transport = ASGITransport(app=sep_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client
-
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def dummy_request() -> Request:
-    """Create a dummy Request with a messages attribute in its state."""
-    scope = {"type": "http", "headers": [], "client": ("127.0.0.1", "80"), "path": "/"}
-    req = Request(scope)
-    req.state.messages = OrderedDict()
-    return req
-
-
-@pytest.fixture
-def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
-    """Mock the TaskAPI dependency."""
-    mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
-    """Mock the InventoryAPI dependency."""
-    mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_inventory_api] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_get_username_mapping(mocker: MockerFixture) -> Mock:
-    """Mock the TaskDep dependency."""
-    return mocker.patch(
-        "app.sep.deps.get_username_mapping",
-        return_value={"12345678-1234-5678-9abc-123456789012": "test-user"},
-    )

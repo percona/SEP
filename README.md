@@ -130,15 +130,14 @@ These are some, but not all, the possible settings you can have, per app:
 | ALLOWED_HOSTS              | all       | yes      | N/A                                                 | `["localhost", "127.0.0.1"]`                     |
 | ALLOW_CONCURRENT_SESSIONS  | all       | no       | False                                               | False                                            |
 | SSL_CAFILE                 | all       | no       | null                                                | null                                             |
-| CASDOOR__ENDPOINT          | all       | yes      | N/A                                                 | `http://localhost:9999`                          |
-| CASDOOR__FRONT_ENDPOINT    | all       | no       | The same as `CASDOOR__ENDPOINT`                     | `//:9999`                                        |
-| CASDOOR__CERTIFICATE_PATH  | all       | no       | null                                                | null                                             |
-| CASDOOR__ORGANIZATION_NAME | all       | no       | built-in                                            | N/A                                              |
-| CASDOOR__APPLICATION_NAME  | all       | no       | app-built-in                                        | sep-app                                          |
-| CASDOOR__ALLOWED_ISSUERS   | all       | no       | `[CASDOOR__ENDPOINT]`                               | `[http://localhost:9999, http://127.0.0.1:9999]` |
+| AUTH__PROVIDER__CASDOOR__ENDPOINT          | all | yes | N/A                                             | `http://localhost:9999`                          |
+| AUTH__PROVIDER__CASDOOR__FRONT_ENDPOINT    | all | no  | The same as `AUTH__PROVIDER__CASDOOR__ENDPOINT` | `//:9999`                                        |
+| AUTH__PROVIDER__CASDOOR__CERTIFICATE_PATH  | all | no  | null                                            | null                                             |
+| AUTH__PROVIDER__CASDOOR__ORGANIZATION_NAME | all | no  | built-in                                        | N/A                                              |
+| AUTH__PROVIDER__CASDOOR__APPLICATION_NAME  | all | no  | app-built-in                                    | sep-app                                          |
+| AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS   | all | no  | `[<ENDPOINT>]`                                  | `[http://localhost:9999, http://127.0.0.1:9999]` |
 | CELERY__BROKER_URL         | all       | no       | N/A                                                 | filesystem://                                    |
 | CELERY__BEAT_DBURI         | all       | no       | N/A                                                 | sqlite:///schedule.db                            |
-| AUTH_USER_MODEL            | all       | no       | app.core.auth.models.BaseUser                       | app.models.CasdoorUser                           |
 | LOGGING                    | all       | no       | WARNING                                             | N/A                                              |
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000]   |
 | TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                            |
@@ -173,9 +172,21 @@ These are some, but not all, the possible settings you can have, per app:
 | SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
 | ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
 
+The active authentication provider is configured under `AUTH__PROVIDER__<NAME>__*`,
+and **exactly one** provider may be configured. Casdoor is the built-in default,
+shipped as the `AUTH.PROVIDER.casdoor` entry in `settings.yaml`
+(`AUTH__PROVIDER__CASDOOR__*`). To use a different provider, **replace** that
+`casdoor` entry in `settings.yaml` with your provider's entry — configuring a
+second provider (e.g. adding `AUTH__PROVIDER__CUSTOM__*` on top of the shipped
+`casdoor` block) is rejected at startup, since only one provider may be active.
+An out-of-tree provider uses the `CUSTOM` name with `AUTH__PROVIDER__CUSTOM__PROVIDER_CLASS`
+(a dotted import path to a `BaseAuthProvider` subclass) plus that class's own
+fields. The legacy top-level `CASDOOR__*` variables are **deprecated but still
+honored** (a startup warning is logged); migrate to `AUTH__PROVIDER__CASDOOR__*`.
 
-Path settings (`CASDOOR__CERTIFICATE_PATH`, `TEMPLATES_DIR`, `STATIC_DIR`, etc.) may have
-relative or absolute values. Relative paths will be resolved from the project root folder.
+Path settings (`AUTH__PROVIDER__CASDOOR__CERTIFICATE_PATH`, `TEMPLATES_DIR`, `STATIC_DIR`,
+etc.) may have relative or absolute values. Relative paths will be resolved from the
+project root folder.
 
 ### Session Management
 
@@ -303,12 +314,12 @@ Each plugin configuration includes:
 ### Secrets
 
 SEP needs some keys and secrets to interact with Casdoor. They are:
-- `CASDOOR__CLIENT_ID`
-- `CASDOOR__CLIENT_SECRET`
+- `AUTH__PROVIDER__CASDOOR__CLIENT_ID`
+- `AUTH__PROVIDER__CASDOOR__CLIENT_SECRET`
 
 You can create a basic .env file template by running the following command in the project root folder:
 ```shell
-echo -e "CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nCASDOOR__CLIENT_SECRET=YOUR_CASDOOR_CLIENT_SECRET\n" > .env
+echo -e "AUTH__PROVIDER__CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nAUTH__PROVIDER__CASDOOR__CLIENT_SECRET=YOUR_CASDOOR_CLIENT_SECRET\n" > .env
 ```
 
 #### Getting Casdoor's Client ID and Client Secret
@@ -417,18 +428,22 @@ SEP:
   # ...
   SYNCERS:
     - SYNCER: PMMSyncer
-      PMM:
-        ENDPOINT: https://127.0.0.1:8443
-        VERIFY_SSL: false
 ```
 
-Syncers may require additional configuration that can be specifically defined in the `settings.yaml`
-(like the `PMM` section in the example above) or globally defined through the `SEP.SYNCER_EXTRA_KWARGS`
-config (`SEP__SYNCER_EXTRA_KWARGS` for in env settings). Using `SEP__SYNCER_EXTRA_KWARGS`
-is ideal when you have a syncer that needs a secret:
+Some syncers require additional configuration. PMM connection/auth config lives in the
+top-level `PMM` section (not under the syncer entry) — `PMMSyncer` reads it directly:
+```yaml
+PMM:
+  ENDPOINT: https://127.0.0.1:8443
+  VERIFY_SSL: false
 ```
-SEP__SYNCER_EXTRA_KWARGS__PMM__API_KEY=<Your PMM API key)
+The PMM API key is a secret and should be set via an env var rather than `settings.yaml`:
 ```
+PMM__API_KEY=<Your PMM API key>
+```
+
+Other syncers may take extra keyword arguments, defined globally through the
+`SEP.SYNCER_EXTRA_KWARGS` config (`SEP__SYNCER_EXTRA_KWARGS` for env settings).
 
 #### PMMSyncer
 

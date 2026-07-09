@@ -445,9 +445,9 @@ SYSTEM_TASKS = [
         created_by=SYSTEM_USER,
     ),
     Task(
-        name="inventory-sync",  # keep in sync with INVENTORY_SYNC_TASK_NAME in app.sep.plugins.inventory.models
+        name="inventory-sync",  # keep in sync with INVENTORY_SYNC_TASK_NAME in app.sep.apps.inventory.models
         data={
-            "callable": "app.sep.plugins.inventory.sync.run_scheduled_inventory_sync",
+            "callable": "app.sep.apps.inventory.sync.run_scheduled_inventory_sync",
             "target": "local",
         },
         backend=TaskBackendEnum.CELERY,
@@ -478,6 +478,20 @@ if _nomad_cert_schedule is not None:
                 SystemPeriodicTaskData(
                     name="tasks__check_nomad_cert_expiry",
                     task_name="app.tasks.celery.check_nomad_cert_expiry",
+                ),
+            ],
+        ),
+    )
+
+_log_purge_schedule = tasks_settings.LOG_PURGE_INTERVAL
+if _log_purge_schedule is not None:
+    SYSTEM_PERIODIC_TASKS.append(
+        SystemPeriodicTaskSchedule(
+            schedule=_log_purge_schedule,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="tasks__purge_task_history_logs",
+                    task_name="app.tasks.celery.purge_task_history_logs",
                 ),
             ],
         ),
@@ -550,13 +564,13 @@ async def init_tasks_db() -> None:
 async def verify_taskhistory_execution_request_is_jsonb() -> None:
     """Fail fast if ``taskhistory.execution_request`` is not ``jsonb`` on PostgreSQL.
 
-    Defend against a deploy that ships SEP-988's ``@>`` dispatch dedup code
+    Defend against a deploy that ships the ``@>`` dispatch dedup code
     without running the corresponding Alembic migration. ``compare_type``
     intentionally suppresses the ``json``/``jsonb`` diff during autogeneration,
     so ``make checkmigrations`` cannot detect this skew. Without this guard,
     the first dispatch hits ``operator does not exist: json @> jsonb`` at
     runtime; with it, the Tasks app refuses to start until the column is
-    converted. The check is a no-op on SQLite and MySQL, where SEP-988's
+    converted. The check is a no-op on SQLite and MySQL, where the corresponding
     migration is also a no-op.
 
     Use SQLAlchemy's reflection inspector rather than a raw

@@ -15,6 +15,8 @@
 
 """Define the application settings."""
 
+import hashlib
+import hmac
 import logging.config
 import re
 import secrets
@@ -52,7 +54,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import Lifespan
 
 from app import BASE_DIR
-from app.core.auth.providers.casdoor import CasdoorSDK
 from app.core.celery.config import CeleryOptions
 from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
@@ -60,18 +61,42 @@ from app.core.middleware.security_headers import (
 )
 from app.core.models import BaseLowercaseModel
 from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import hot_field
 from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
     LogLevel,
     NonEmptyStr,
+    redact_credential_url,
     RelativeFilePathField,
+    StrCredentialHttpUrl,
     StrHttpUrl,
-    StrImportableAttribute,
     TimedeltaSeconds,
     URL,
 )
-from app.core.utils.lazy import LazyProxy
 from app.core.utils.openapi import generate_tag_prefixed_unique_id
+
+
+def _sanitize_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of remote-API client kwargs safe to log.
+
+    Any value carrying an embedded URL password (e.g. ``endpoint``) is
+    redacted so credentials never reach the debug log. ``SecretStr`` values
+    already mask themselves on ``repr`` and are left untouched.
+
+    :param kwargs: The client construction kwargs about to be logged.
+    :type kwargs: dict[str, Any]
+    :return: A copy with credential URLs redacted.
+    :rtype: dict[str, Any]
+    """
+    safe: dict[str, Any] = {}
+    for key, value in kwargs.items():
+        raw = str(value)
+        redacted = redact_credential_url(raw)
+        safe[key] = redacted if redacted != raw else value
+    return safe
+
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -267,7 +292,7 @@ class PMMSettings(BaseLowercaseModel):
     """Define core PMM connection and authentication configuration.
 
     :param endpoint: The PMM server URL.
-    :type endpoint: StrHttpUrl | None
+    :type endpoint: StrCredentialHttpUrl | None
     :param frontend: The PMM frontend URL.
     :type frontend: StrHttpUrl | None
     :param api_key: API key for PMM authentication.
@@ -283,13 +308,13 @@ class PMMSettings(BaseLowercaseModel):
     :type annotations_timeout: PositiveInt
     """
 
-    endpoint: StrHttpUrl | None = None
-    frontend: StrHttpUrl | None = None
+    endpoint: StrCredentialHttpUrl | None = None
+    frontend: StrHttpUrl | None = hot_field(None, advanced=True)
     api_key: SecretStr | None = None
-    verify_ssl: bool = True
-    execution_target: str | None = None
-    annotations_enabled: bool = False
-    annotations_timeout: PositiveInt = 5
+    verify_ssl: bool = hot_field(default=True, advanced=True)
+    execution_target: str | None = hot_field(None, advanced=True)
+    annotations_enabled: bool = hot_field(default=False, advanced=True)
+    annotations_timeout: PositiveInt = hot_field(5, advanced=True)
 
     @model_validator(mode="after")
     def _default_frontend_to_endpoint(self) -> Self:
@@ -314,27 +339,26 @@ class PMMSettings(BaseLowercaseModel):
         return None
 
 
-class Settings(BaseYamlSettings):
-    """Main application settings class.
+_INTERNAL_TOKEN_LABEL = b"sep-internal-token"
 
-    :param CASDOOR: Casdoor configuration options.
-    :type CASDOOR: CasdoorSDK
+
+class Settings(BaseYamlSettings):
+    """Define the main application settings.
+
     :param CELERY: Celery configuration options.
     :type CELERY: CeleryOptions
-    :param AUTH_USER_MODEL: The full import path of the user model class.
-        Defaults to "app.models.CasdoorUser".
-    :type AUTH_USER_MODEL: StrImportableAttribute
     :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same
         user. Defaults to False, meaning all previous sessions will be invalidated once
         a new one is created.
     :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
         ``secrets.token_urlsafe(32)``.
-    :type SECRET_KEY: str
     :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
         service-to-service authentication (e.g. scheduled inventory sync). When
-        unset, features that depend on it are disabled. Generate with
-        ``openssl rand -hex 32``.
+        unset, it is derived from ``SECRET_KEY`` by ``derive_internal_token`` so
+        every process sharing ``SECRET_KEY`` resolves the identical token.
+        Generate an explicit value with ``openssl rand -hex 32`` to rotate it
+        independently of ``SECRET_KEY``.
     :type SEP_INTERNAL_TOKEN: SecretStr | None
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :type LOGGING: LogLevel
@@ -364,20 +388,18 @@ class Settings(BaseYamlSettings):
     :type SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool
     """
 
-    CASDOOR: CasdoorSDK
     CELERY: CeleryOptions
-    AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
     SEP_INTERNAL_TOKEN: SecretStr | None = None
-    LOGGING: LogLevel = LogLevel.WARNING
+    LOGGING: LogLevel = hot_field(LogLevel.WARNING)
     LOGGING_CONFIG: dict[str, Any] = {}
     SSL_CAFILE: RelativeFilePathField | None = None
     BASE_URL: URL | None = None
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
-    PMM: PMMSettings = PMMSettings()
+    PMM: PMMSettings = hot_field(PMMSettings())
     SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
     SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
@@ -443,6 +465,39 @@ class Settings(BaseYamlSettings):
         self.LOGGING_CONFIG["loggers"]["app"]["level"] = self.LOGGING
         return self
 
+    @model_validator(mode="after")
+    def derive_internal_token(self) -> Self:
+        """Derive ``SEP_INTERNAL_TOKEN`` from ``SECRET_KEY`` when it is unset.
+
+        Every process sharing ``SECRET_KEY`` derives the identical token via
+        HMAC-SHA256, so SEP-internal service-to-service authentication works
+        across the web apps and the lifespan-less Celery worker without
+        persisting or distributing a separate secret. An explicitly configured
+        ``SEP_INTERNAL_TOKEN`` takes precedence so it can be rotated
+        independently.
+
+        :return: Validated settings with ``SEP_INTERNAL_TOKEN`` guaranteed set.
+        :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is unset and ``SECRET_KEY``
+            is empty, so no token can be derived.
+        """
+        if (
+            self.SEP_INTERNAL_TOKEN is not None
+            and self.SEP_INTERNAL_TOKEN.get_secret_value()
+        ):
+            return self
+        secret_key = self.SECRET_KEY.get_secret_value()
+        if not secret_key:
+            raise ValueError(
+                "SECRET_KEY must be set to a non-empty value so SEP_INTERNAL_TOKEN "
+                "can be derived for service-to-service authentication "
+                "(e.g. `openssl rand -hex 32`)."
+            )
+        derived = hmac.new(
+            secret_key.encode(), _INTERNAL_TOKEN_LABEL, hashlib.sha256
+        ).hexdigest()
+        self.SEP_INTERNAL_TOKEN = SecretStr(derived)
+        return self
+
     @validate_call
     async def get_remote_api(
         self,
@@ -461,9 +516,21 @@ class Settings(BaseYamlSettings):
         logger.debug(
             "Getting remote API client from registry for %s with kwargs %s",
             cls.__name__,
-            kwargs,
+            _sanitize_client_kwargs(kwargs),
         )
         return await self._CLIENT_REGISTRY.get(cls, **kwargs)
+
+    async def invalidate_client(self, endpoint: str) -> None:
+        """Evict every cached remote-API client served from ``endpoint``.
+
+        Thin wrapper over :meth:`ClientRegistry.invalidate` used by override
+        rebind callbacks to drop clients (e.g. PMM) whose connection settings
+        changed at runtime, so the next request reconstructs a fresh client.
+
+        :param endpoint: The endpoint URL whose cached clients to evict.
+        :type endpoint: str
+        """
+        await self._CLIENT_REGISTRY.invalidate(endpoint)
 
     async def close_client_registry(self) -> None:
         """Close the client registry and all its managed clients."""
@@ -477,7 +544,9 @@ def _create_settings() -> Settings:
     return s
 
 
-settings: Settings = LazyProxy(_create_settings)
+settings: Settings = OverridableSettingsProxy(
+    _create_settings, setting_class=SettingClassEnum.SETTINGS
+)
 logger = logging.getLogger(__name__)
 
 
@@ -566,15 +635,17 @@ class BaseYamlAppSettings(BaseYamlSettings):
 async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
     """Define the default manager for the application's lifespan.
 
-    Ensures that the CasdoorSDK and any extra client sessions are properly managed
-    during the application's startup and shutdown phases.
+    Ensures that the active auth provider's SDK and any extra client sessions are
+    properly managed during the application's startup and shutdown phases.
 
     :param app: The FastAPI application instance.
-    :type app: FastAPI
     :yield: None
-    :rtype: AsyncGenerator[None, None]
     """
-    async with settings.CASDOOR:
+    # lazy import: auth/config.py imports BaseYamlSettings from this module, so a
+    # module-level import here would cycle
+    from app.core.auth.config import get_active_auth_provider
+
+    async with get_active_auth_provider().lifespan():
         yield
     await settings.close_client_registry()
 

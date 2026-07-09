@@ -19,7 +19,7 @@ import json
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel import SQLModel
@@ -28,12 +28,13 @@ from sqlmodel.pool import StaticPool
 from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
 from app.tasks.deps import get_session as get_tasks_session
 from app.tasks.main import tasks_app
+from tests.app.conftest import postgres_worker_schema
 
 CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
 
@@ -54,6 +55,31 @@ async def celery_beat_session_fixture() -> AsyncSession:
     async_session_maker = get_async_session_maker_from_engine(engine)
     async with async_session_maker() as session:
         yield session
+
+
+@pytest_asyncio.fixture
+async def postgres_celery_beat_session(postgres_engine: AsyncEngine) -> AsyncSession:
+    """Create a real-PostgreSQL session for celery-beat tables.
+
+    Real-PG sibling of ``celery_beat_session``. The celery-beat tables declare a
+    ``celery_schema``; route both it and the default schema into the per-worker
+    schema. ``execution_options`` replaces the engine's translate map wholesale,
+    so the ``None`` key is re-applied alongside ``celery_schema``.
+    """
+    schema = postgres_worker_schema()
+    engine = postgres_engine.execution_options(
+        schema_translate_map={"celery_schema": schema, None: schema}
+    )
+    metadata = PeriodicTask.__table__.metadata
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+    async_session_maker = get_async_session_maker_from_engine(engine)
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        async with engine.begin() as conn:
+            await conn.run_sync(metadata.drop_all)
 
 
 @pytest_asyncio.fixture(name="tasks_session")

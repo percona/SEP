@@ -1,0 +1,179 @@
+{
+  "capabilities": {
+    "alert_on_fail": false,
+    "chaining": true,
+    "pii_anonymization": false,
+    "scheduling": true,
+    "stats": false
+  },
+  "description": "Configure and run Percona Backup for MongoDB (PBM) logical or physical restore operations.",
+  "display_name": "MongoDB Restores",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Task Name",
+          "name": "task_name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
+        },
+        {
+          "label": "Database Service",
+          "name": "service_id",
+          "required": false,
+          "service_types": [
+            "mongodb"
+          ],
+          "type": "service"
+        },
+        {
+          "choices": [
+            {
+              "label": "Logical",
+              "value": "pbm_logical"
+            },
+            {
+              "label": "Physical",
+              "value": "pbm_physical"
+            }
+          ],
+          "label": "Backup Type",
+          "name": "backup_type",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "description": "Backup name or timestamp (e.g. 2025-12-15T19:04:05Z)",
+          "label": "Backup Source",
+          "name": "backup_source",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "Optional path to MongoDB URI credentials on the Nomad node",
+          "label": "Credentials Path",
+          "name": "credentials_path",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Batch Size",
+          "name": "restore_batch_size",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Insertion Workers",
+          "name": "restore_num_insertion_workers",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Parallel Collections",
+          "name": "restore_num_parallel_collections",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Download Workers",
+          "name": "restore_num_download_workers",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Max Download Buffer (MB)",
+          "name": "restore_max_download_buffer_mb",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Download Chunk Size (MB)",
+          "name": "restore_download_chunk_mb",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "label": "Mongod Location",
+          "name": "restore_mongod_location",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Mongod Location Map (YAML)",
+          "name": "restore_mongod_location_map",
+          "required": false,
+          "type": "textarea"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Restore Options"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      },
+      {
+        "key": "hostname",
+        "label": "Execution Host",
+        "sortable": false
+      },
+      {
+        "format": "chip",
+        "key": "backup_type",
+        "label": "Type",
+        "sortable": false
+      },
+      {
+        "key": "backup_source",
+        "label": "Backup Source",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      }
+    ],
+    "default_sort": "name",
+    "overview_hidden_fields": []
+  },
+  "name": "backup_mongo_restores"
+}

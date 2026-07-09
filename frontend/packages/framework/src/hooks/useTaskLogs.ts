@@ -65,8 +65,14 @@ class StreamFatalError extends Error {}
  * Uses @microsoft/fetch-event-source so the Bearer token can be attached as a
  * header — the browser EventSource API has no headers option and could only
  * carry cookies, which are not in scope for the SPA OAuth session.
+ *
+ * @param taskHistoryId - Task history to stream logs for.
+ * @param tail - When set, request only the last N lines per stream from the server.
  */
-export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLogsState {
+export function useTaskLogs(
+  taskHistoryId: number | string | undefined,
+  tail?: number,
+): TaskLogsState {
   const [textByStep, setTextByStep] = useState<Record<string, StepText>>({});
   const [stepOrder, setStepOrder] = useState<string[]>([]);
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('idle');
@@ -82,7 +88,7 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
       return;
     }
 
-    // Reset state on id change
+    // Reset state on id or tail change
     offsetsRef.current = {};
     setTextByStep({});
     setStepOrder([]);
@@ -101,7 +107,11 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
     // shutdown from an unexpected connection drop.
     let terminatedCleanly = false;
 
-    const url = `/stream-logs/${encodeURIComponent(String(taskHistoryId))}`;
+    const baseUrl = `/stream-logs/${encodeURIComponent(String(taskHistoryId))}`;
+    const url =
+      tail !== undefined && tail > 0
+        ? `${baseUrl}?tail=${encodeURIComponent(String(tail))}`
+        : baseUrl;
 
     fetchEventSource(url, {
       signal: ctrl.signal,
@@ -277,7 +287,7 @@ export function useTaskLogs(taskHistoryId: number | string | undefined): TaskLog
       disposed = true;
       ctrl.abort();
     };
-  }, [taskHistoryId]);
+  }, [taskHistoryId, tail]);
 
   return { textByStep, stepOrder, streamStatus, finishStatus, error };
 }

@@ -16,8 +16,9 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-const PLUGIN_ROUTE = '/inventory/nodes';
+const APP_ROUTE = '/inventory/nodes';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -56,6 +57,10 @@ async function mockInventoryApis(page: Page) {
       return route.continue();
     }
 
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
+    }
+
     if (pathname.includes('/oauth/refresh')) {
       return route.fulfill({
         status: 200,
@@ -72,7 +77,7 @@ async function mockInventoryApis(page: Page) {
       });
     }
 
-    if (pathname.endsWith('/plugins/inventory/schema')) {
+    if (pathname.endsWith('/apps/inventory/schema')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -80,7 +85,7 @@ async function mockInventoryApis(page: Page) {
       });
     }
 
-    if (pathname.includes('/plugins/inventory/available-syncers/')) {
+    if (pathname.includes('/apps/inventory/available-syncers/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -88,7 +93,7 @@ async function mockInventoryApis(page: Page) {
       });
     }
 
-    if (pathname.includes('/plugins/inventory/sync/status/')) {
+    if (pathname.includes('/apps/inventory/sync/status/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -96,7 +101,7 @@ async function mockInventoryApis(page: Page) {
       });
     }
 
-    if (pathname === '/api/plugins/inventory/sync/' && route.request().method() === 'POST') {
+    if (pathname === '/api/apps/inventory/sync/' && route.request().method() === 'POST') {
       return route.fulfill({
         status: 202,
         contentType: 'application/json',
@@ -104,7 +109,7 @@ async function mockInventoryApis(page: Page) {
       });
     }
 
-    if (pathname.includes('/plugins/inventory/nodes')) {
+    if (pathname.includes('/apps/inventory/nodes')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -129,12 +134,12 @@ test.describe('Inventory SyncControl smoke', () => {
     const syncRequests: string[] = [];
     page.on('request', (req) => {
       const { pathname } = new URL(req.url());
-      if (pathname === '/api/plugins/inventory/sync/' && req.method() === 'POST') {
+      if (pathname === '/api/apps/inventory/sync/' && req.method() === 'POST') {
         syncRequests.push(req.postData() ?? '');
       }
     });
 
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     const syncAllBtn = page.getByRole('button', { name: /sync all/i });
     await expect(syncAllBtn).toBeVisible({ timeout: 10_000 });
@@ -151,12 +156,12 @@ test.describe('Inventory SyncControl smoke', () => {
     const syncRequests: { body: string }[] = [];
     page.on('request', (req) => {
       const { pathname } = new URL(req.url());
-      if (pathname === '/api/plugins/inventory/sync/' && req.method() === 'POST') {
+      if (pathname === '/api/apps/inventory/sync/' && req.method() === 'POST') {
         syncRequests.push({ body: req.postData() ?? '' });
       }
     });
 
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     await expect(page.getByRole('button', { name: /select a syncer/i })).toBeVisible({
       timeout: 10_000,

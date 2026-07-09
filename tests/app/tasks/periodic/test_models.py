@@ -31,6 +31,42 @@ from app.tasks.periodic.models import (
     PeriodicTaskUpdate,
     PeriodicTaskWrite,
 )
+from tests.app.factories import PeriodicTaskFactory
+
+
+def _periodic_response_data(**overrides):
+    """Build a ``PeriodicTaskResponse`` validate-input dict from the factory plus overrides.
+
+    ``PeriodicTaskFactory`` is a SQLAlchemy factory, so it yields a ``PeriodicTask``
+    ORM instance; this projects its attributes into the dict shape
+    ``PeriodicTaskResponse.model_validate`` expects. ``args`` / ``kwargs`` /
+    ``model_intervalschedule`` are supplied per-test because they ARE the assertion
+    target (the factory's random ``args`` / ``kwargs`` are not valid JSON, the
+    datetime fields default to ``None``, and ``description`` is pinned to ``""``
+    because its ORM column is nullable while the response requires a ``str``); the
+    factory backfills the remaining fields so a ``PeriodicTask`` rename can't leave
+    these tests green.
+
+    :param overrides: Per-test field overrides merged over the factory-derived base.
+    :type overrides: object
+    :return: A dict ready for ``PeriodicTaskResponse.model_validate``.
+    :rtype: dict
+    """
+    pt = PeriodicTaskFactory.build()
+    base = {
+        "id": pt.id,
+        "name": pt.name,
+        "task": pt.task,
+        "start_time": None,
+        "enabled": pt.enabled,
+        "description": "",
+        "last_run_at": None,
+        "total_run_count": pt.total_run_count,
+        "date_changed": None,
+        "args": "[]",
+        "kwargs": "{}",
+    }
+    return {**base, **overrides}
 
 
 class TestPeriodicTaskExecuteRequest:
@@ -110,22 +146,12 @@ class TestPeriodicTaskResponse:
 
     def test_populate_task_data_from_dict_with_kwargs(self):
         """Assert task data is populated from kwargs in a dict."""
-        data = {
-            "id": 1,
-            "name": "test",
-            "task": "original-task",
-            "start_time": None,
-            "enabled": True,
-            "description": "",
-            "last_run_at": None,
-            "total_run_count": 0,
-            "date_changed": None,
-            "args": "[]",
-            "kwargs": json.dumps(
+        data = _periodic_response_data(
+            kwargs=json.dumps(
                 {"task_name": "my-backup", "execution_data": {"meta": {}}}
             ),
-            "model_intervalschedule": IntervalSchedule(every=1, period=Period.HOURS),
-        }
+            model_intervalschedule=IntervalSchedule(every=1, period=Period.HOURS),
+        )
         response = PeriodicTaskResponse.model_validate(data)
         assert response.task == "my-backup"
         assert response.execute_request is not None
@@ -133,20 +159,10 @@ class TestPeriodicTaskResponse:
 
     def test_populate_task_data_from_dict_with_args(self):
         """Assert task data is populated from positional args in a dict."""
-        data = {
-            "id": 1,
-            "name": "test",
-            "task": "original-task",
-            "start_time": None,
-            "enabled": True,
-            "description": "",
-            "last_run_at": None,
-            "total_run_count": 0,
-            "date_changed": None,
-            "args": json.dumps(["my-backup-task", {"meta": {"key": "val"}}]),
-            "kwargs": "{}",
-            "model_intervalschedule": IntervalSchedule(every=1, period=Period.HOURS),
-        }
+        data = _periodic_response_data(
+            args=json.dumps(["my-backup-task", {"meta": {"key": "val"}}]),
+            model_intervalschedule=IntervalSchedule(every=1, period=Period.HOURS),
+        )
         response = PeriodicTaskResponse.model_validate(data)
         assert response.task == "my-backup-task"
         assert response.execute_request is not None
@@ -154,39 +170,21 @@ class TestPeriodicTaskResponse:
 
     def test_populate_task_data_kwargs_overrides_args(self):
         """Assert kwargs take precedence over args for task_name."""
-        data = {
-            "id": 1,
-            "name": "test",
-            "task": "original-task",
-            "start_time": None,
-            "enabled": True,
-            "description": "",
-            "last_run_at": None,
-            "total_run_count": 0,
-            "date_changed": None,
-            "args": json.dumps(["args-task"]),
-            "kwargs": json.dumps({"task_name": "kwargs-task"}),
-            "model_intervalschedule": IntervalSchedule(every=1, period=Period.HOURS),
-        }
+        data = _periodic_response_data(
+            args=json.dumps(["args-task"]),
+            kwargs=json.dumps({"task_name": "kwargs-task"}),
+            model_intervalschedule=IntervalSchedule(every=1, period=Period.HOURS),
+        )
         response = PeriodicTaskResponse.model_validate(data)
         assert response.task == "kwargs-task"
 
     def test_populate_task_data_empty_args_and_kwargs_raises(self):
         """Assert ValidationError when both args and kwargs are empty."""
-        data = {
-            "id": 1,
-            "name": "test",
-            "task": "original-task",
-            "start_time": None,
-            "enabled": True,
-            "description": "",
-            "last_run_at": None,
-            "total_run_count": 0,
-            "date_changed": None,
-            "args": "[]",
-            "kwargs": "{}",
-            "model_intervalschedule": IntervalSchedule(every=1, period=Period.HOURS),
-        }
+        data = _periodic_response_data(
+            args="[]",
+            kwargs="{}",
+            model_intervalschedule=IntervalSchedule(every=1, period=Period.HOURS),
+        )
         with pytest.raises(ValidationError, match="task"):
             PeriodicTaskResponse.model_validate(data)
 

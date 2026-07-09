@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, usePluginTasks, type TasksComponents } from '@sep/api';
+import { apiClient, useAppTasks, type TasksComponents } from '@sep/api';
 
 export type PeriodicTaskResponse = TasksComponents['schemas']['PeriodicTaskResponse'];
 export type PeriodicTaskCreate = TasksComponents['schemas']['PeriodicTaskCreate'];
@@ -28,13 +28,13 @@ export type PeriodicTaskExecuteRequest = TasksComponents['schemas']['PeriodicTas
 const PERIODIC_LIST_KEY = ['periodic'] as const;
 const POLL_INTERVAL_MS = 30_000;
 
-interface PluginTask extends Record<string, unknown> {
+interface AppTask extends Record<string, unknown> {
   name: string;
 }
 
 /**
  * Fetch all periodic tasks and filter to those whose `task` belongs to the
- * given plugin (resolved via `usePluginTasks`). The two queries are kept
+ * given plugin (resolved via `useAppTasks`). The two queries are kept
  * independent so the periodic list can poll on its own cadence for
  * `last_run_at` / `next_run_at` freshness.
  */
@@ -45,18 +45,18 @@ export interface UseScheduledTasksOptions {
   disablePolling?: boolean;
 }
 
-export function useScheduledTasksForPlugin(
+export function useScheduledTasksForApp(
   pluginName: string,
   options: UseScheduledTasksOptions = {},
 ) {
   const { pollingIntervalMs = POLL_INTERVAL_MS, disablePolling = false } = options;
-  const tasksQuery = usePluginTasks<PluginTask>(pluginName);
+  const tasksQuery = useAppTasks<AppTask>(pluginName);
   const pluginTaskNames = tasksQuery.data?.map((t) => t.name) ?? [];
 
   const periodicQuery = useQuery<PeriodicTaskResponse[], Error, PeriodicTaskResponse[]>({
     queryKey: PERIODIC_LIST_KEY,
     queryFn: async () => {
-      const { data } = await apiClient.get<PeriodicTaskResponse[]>('/tasks/periodic/');
+      const { data } = await apiClient.get<PeriodicTaskResponse[]>('/sep/periodic-tasks/');
       return data;
     },
     refetchInterval: disablePolling ? false : pollingIntervalMs,
@@ -71,7 +71,7 @@ export function useScheduledTasksForPlugin(
 
   return {
     periodicTasks: filtered,
-    pluginTasks: tasksQuery.data ?? [],
+    appTasks: tasksQuery.data ?? [],
     isLoading: tasksQuery.isLoading || periodicQuery.isLoading,
     isError: tasksQuery.isError || periodicQuery.isError,
     error: tasksQuery.error ?? periodicQuery.error,
@@ -92,7 +92,7 @@ export function useCreateScheduledTask() {
   return useMutation<PeriodicTaskResponse, Error, CreateVars>({
     mutationFn: async ({ taskName, body }) => {
       const { data } = await apiClient.post<PeriodicTaskResponse>(
-        `/tasks/${encodeURIComponent(taskName)}/periodic/`,
+        `/sep/periodic-tasks/${encodeURIComponent(taskName)}/`,
         body,
       );
       return data;
@@ -112,7 +112,7 @@ export function useUpdateScheduledTask() {
   const queryClient = useQueryClient();
   return useMutation<PeriodicTaskResponse, Error, UpdateVars>({
     mutationFn: async ({ id, body }) => {
-      const { data } = await apiClient.put<PeriodicTaskResponse>(`/tasks/periodic/${id}`, body);
+      const { data } = await apiClient.put<PeriodicTaskResponse>(`/sep/periodic-tasks/${id}`, body);
       return data;
     },
     onSuccess: () => {
@@ -125,7 +125,7 @@ export function useDeleteScheduledTask() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, number>({
     mutationFn: async (id) => {
-      await apiClient.delete(`/tasks/periodic/${id}`);
+      await apiClient.delete(`/sep/periodic-tasks/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PERIODIC_LIST_KEY });

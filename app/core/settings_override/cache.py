@@ -15,36 +15,65 @@
 
 """Build immutable override snapshots for a settings class."""
 
+from __future__ import annotations
+
 __all__ = ["build_snapshot"]
 
 import logging
+from collections import defaultdict
 from types import MappingProxyType
-from typing import Annotated, Any
+from typing import Any, TYPE_CHECKING
 
-from pydantic import TypeAdapter, ValidationError
-from pydantic.fields import FieldInfo
-from sqlmodel.ext.asyncio.session import AsyncSession
+from pydantic import BaseModel, ValidationError
 
-from app.core.config import BaseYamlSettings
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum
-from app.core.settings_override.registry import is_hot_reloadable
-from app.core.utils.pydantic import CustomFieldMetadata
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.registry import (
+    _clear_cached_properties,
+    _resolve_field_in_model,
+    coerce_nested_field_value,
+    is_hot_reloadable,
+    is_nested_overridable_parent,
+    materialize_override_value,
+)
+from app.core.utils.pydantic import annotation_pydantic_class
+
+if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from app.core.config import BaseYamlSettings
 
 logger = logging.getLogger(__name__)
+
+# A sub-chain is the tuple of canonical attribute names *relative to a parent
+# model* (i.e. the resolver's full chain minus its top-level segment).
+SubChainUpdates = dict[tuple[str, ...], Any]
 
 
 async def build_snapshot(
     session: AsyncSession,
     settings_cls: type[BaseYamlSettings],
+    base_settings: BaseModel | None = None,
 ) -> MappingProxyType[str, Any]:
-    """Build a frozen snapshot of active HOT overrides for a settings class.
+    """Build a frozen snapshot of active overrides for a settings class.
 
-    Only rows whose ``is_active`` flag is ``True`` AND whose ``key`` is
-    declared HOT on ``settings_cls`` are considered. Rows with values that
-    fail Pydantic type coercion are logged and skipped; the rest of the
-    snapshot is unaffected. Rows for unknown or NOT_OVERRIDABLE fields are
-    also logged and skipped.
+    Two override shapes are handled:
+
+    * **Top-level** rows (``key`` has no ``__``) override a whole field. Only
+      rows whose ``key`` is declared HOT on ``settings_cls`` are kept; the
+      coerced value is stored under the field name. A row targeting a
+      ``NESTED_ONLY`` (or otherwise non-HOT) parent is logged and skipped.
+    * **Nested** rows (``key`` contains ``__``) override an individual field
+      inside a nested Pydantic-model attribute. Rows are grouped by their
+      top-level prefix; the parent must be nested-overridable (``HOT`` or
+      ``NESTED_ONLY``). Each leaf is coerced via
+      :func:`coerce_nested_field_value` and folded into one
+      ``model_copy(update=...)`` per parent, stored under the top-level key.
+
+    Rows whose values fail Pydantic coercion, target unknown / not-overridable
+    fields, or hit a non-Pydantic intermediate are logged and skipped without
+    affecting their siblings.
 
     The :class:`SettingClassEnum` member used to filter override rows is
     derived from ``settings_cls`` -- each member's value equals the Pydantic
@@ -55,6 +84,12 @@ async def build_snapshot(
     :type session: AsyncSession
     :param settings_cls: The Pydantic settings class being snapshotted.
     :type settings_cls: type[BaseYamlSettings]
+    :param base_settings: The resolved (YAML/env) settings instance whose
+        nested-parent attributes seed each merged copy, so leaves with no
+        override row fall back to their YAML/env values. When ``None``, parent
+        bases are taken from each field's declared default -- sufficient for
+        direct callers that only exercise top-level rows.
+    :type base_settings: BaseModel | None
     :return: An immutable mapping of field name to coerced typed value.
     :rtype: MappingProxyType[str, Any]
     :raises sqlalchemy.exc.SQLAlchemyError: If the database query fails
@@ -67,72 +102,312 @@ async def build_snapshot(
     rows = await SettingsOverrideManager.list(
         session, setting_class=setting_class, is_active=True
     )
-    snapshot: dict[str, Any] = {}
+    snapshot = {}
+    nested_groups = defaultdict(list)
     for row in rows:
-        field_info = settings_cls.model_fields.get(row.key)
-        if field_info is None:
-            logger.warning(
-                "Override for unknown field ignored: %s.%s",
-                setting_class.name,
-                row.key,
-            )
+        if "__" in row.key:
+            # Case-fold the prefix so mixed-case sibling rows for one parent merge
+            # into a single group instead of clobbering each other.
+            nested_groups[row.key.split("__", 1)[0].lower()].append(row)
             continue
-        if not is_hot_reloadable(settings_cls, row.key):
-            logger.warning(
-                "Override for non-HOT field ignored: %s.%s",
-                setting_class.name,
-                row.key,
-            )
-            continue
+        _apply_top_level_row(snapshot, settings_cls, setting_class, row)
+    for prefix, group in nested_groups.items():
+        _apply_nested_group(
+            snapshot, settings_cls, setting_class, prefix, group, base_settings
+        )
+    return MappingProxyType(snapshot)
+
+
+def _apply_top_level_row(
+    snapshot: dict[str, Any],
+    settings_cls: type[BaseYamlSettings],
+    setting_class: SettingClassEnum,
+    row: SettingOverride,
+) -> None:
+    """Coerce and store one whole-field override row into ``snapshot``.
+
+    :param snapshot: The in-progress snapshot mapping, mutated in place.
+    :type snapshot: dict[str, Any]
+    :param settings_cls: The Pydantic settings class being snapshotted.
+    :type settings_cls: type[BaseYamlSettings]
+    :param setting_class: The class identifier, for log messages.
+    :type setting_class: SettingClassEnum
+    :param row: The override row to apply.
+    :type row: SettingOverride
+    """
+    field_info = settings_cls.model_fields.get(row.key)
+    if field_info is None:
+        logger.warning(
+            "Override for unknown field ignored: %s.%s",
+            setting_class.name,
+            row.key,
+        )
+        return
+    if not is_hot_reloadable(settings_cls, row.key):
+        logger.warning(
+            "Override for non-HOT field ignored: %s.%s",
+            setting_class.name,
+            row.key,
+        )
+        return
+    try:
+        snapshot[row.key] = materialize_override_value(
+            settings_cls, row.key, field_info, row.value
+        )
+    except ValueError as exc:
+        logger.warning(
+            "Override for %s.%s failed type coercion: %s",
+            setting_class.name,
+            row.key,
+            exc,
+        )
+
+
+def _apply_nested_group(
+    snapshot: dict[str, Any],
+    settings_cls: type[BaseYamlSettings],
+    setting_class: SettingClassEnum,
+    prefix: str,
+    group: list[SettingOverride],
+    base_settings: BaseModel | None,
+) -> None:
+    """Merge every nested-override row sharing ``prefix`` into one parent copy.
+
+    :param snapshot: The in-progress snapshot mapping, mutated in place.
+    :type snapshot: dict[str, Any]
+    :param settings_cls: The Pydantic settings class being snapshotted.
+    :type settings_cls: type[BaseYamlSettings]
+    :param setting_class: The class identifier, for log messages.
+    :type setting_class: SettingClassEnum
+    :param prefix: The shared top-level field name for this group.
+    :type prefix: str
+    :param group: The nested rows whose key starts with ``prefix__``.
+    :type group: list[SettingOverride]
+    :param base_settings: The resolved settings instance seeding the parent
+        base value, or ``None`` to fall back to the field default.
+    :type base_settings: BaseModel | None
+    """
+    resolved_parent = _resolve_field_in_model(settings_cls, prefix)
+    if resolved_parent is None:
+        logger.warning(
+            "Nested override for unknown parent ignored: %s.%s",
+            setting_class.name,
+            prefix,
+        )
+        return
+    # Use the canonical field name so the snapshot key matches the proxy
+    # attribute the reader looks up.
+    canonical_prefix, field_info = resolved_parent
+    if not is_nested_overridable_parent(settings_cls, canonical_prefix):
+        logger.warning(
+            "Nested override for non-overridable parent ignored: %s.%s",
+            setting_class.name,
+            canonical_prefix,
+        )
+        return
+    parent_cls = annotation_pydantic_class(field_info.annotation)
+    if parent_cls is None:
+        logger.warning(
+            "Nested override for non-model parent ignored: %s.%s",
+            setting_class.name,
+            canonical_prefix,
+        )
+        return
+    sub_updates = {}
+    for row in group:
         try:
-            snapshot[row.key] = _coerce_value(field_info, row.value)
+            chain, value = coerce_nested_field_value(settings_cls, row.key, row.value)
+        except KeyError:
+            logger.warning(
+                "Nested override for unknown or not-overridable field ignored: %s.%s",
+                setting_class.name,
+                row.key,
+            )
+            continue
         except ValidationError as exc:
             logger.warning(
-                "Override for %s.%s failed type coercion: %s",
+                "Nested override for %s.%s failed type coercion: %s",
                 setting_class.name,
                 row.key,
                 exc,
             )
-    return MappingProxyType(snapshot)
-
-
-def _annotated_type(field_info: FieldInfo) -> Any:
-    """Reassemble the constraint-preserving annotated type for a field.
-
-    Constraint metadata attached to the field's annotation (e.g. ``Gt(0)`` from
-    ``PositiveInt``) is preserved by re-assembling an ``Annotated`` type from
-    ``field_info.annotation`` plus every non-:class:`CustomFieldMetadata` item
-    in ``field_info.metadata``. Without this, ``TypeAdapter(field_info.annotation)``
-    would accept values the original settings model rejects -- e.g. a negative
-    integer override for a ``PositiveInt`` field would silently load.
-
-    :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
-    :return: The field's annotation, wrapped in ``Annotated`` together with its
-        preserved constraint metadata when any constraints are present.
-    :rtype: Any
-    """
-    constraints = tuple(
-        item
-        for item in field_info.metadata
-        if not isinstance(item, CustomFieldMetadata)
+            continue
+        # Rows are listed newest-first; keep the first value seen for each
+        # canonical sub-chain so the newest row wins deterministically when two
+        # raw keys resolve to the same leaf (e.g. a legacy non-canonical row
+        # alongside the canonical one).
+        sub_updates.setdefault(chain[1:], value)
+    if not sub_updates:
+        return
+    parent_value = _parent_base_value(
+        snapshot, field_info, canonical_prefix, base_settings
     )
-    if constraints:
-        return Annotated[(field_info.annotation, *constraints)]
-    return field_info.annotation
+    try:
+        merged = _merge_into(parent_value, parent_cls, sub_updates)
+    except ValidationError as exc:
+        logger.warning(
+            "Nested override group for %s.%s failed to build a merged model: %s",
+            setting_class.name,
+            canonical_prefix,
+            exc,
+        )
+        return
+    snapshot[canonical_prefix] = merged
 
 
-def _coerce_value(field_info: FieldInfo, raw: Any) -> Any:
-    """Coerce a raw JSON-decoded value to the field's declared Python type.
+def _parent_base_value(
+    snapshot: dict[str, Any],
+    field_info: FieldInfo,
+    prefix: str,
+    base_settings: BaseModel | None,
+) -> BaseModel | None:
+    """Return the base parent instance to merge nested overrides onto.
 
-    :param field_info: The Pydantic field metadata for the target attribute.
+    Resolution order:
+
+    1. A whole-object override already written to ``snapshot[prefix]`` by
+       :func:`_apply_top_level_row`, so a HOT parent's whole-object override is
+       not silently discarded when nested-leaf rows for the same parent are
+       merged on top of the YAML/env value afterwards.
+    2. The live YAML/env value from ``base_settings`` so leaves with no override
+       row keep their configured values.
+    3. The field's declared default, when no resolved instance is available.
+
+    :param snapshot: The in-progress snapshot mapping; consulted for a
+        whole-object override already stored under ``prefix``.
+    :type snapshot: dict[str, Any]
+    :param field_info: The parent field's metadata.
     :type field_info: FieldInfo
-    :param raw: The JSON-decoded value as stored on the override row.
-    :type raw: Any
-    :return: The validated Python value matching ``field_info.annotation``
-        plus its preserved constraint metadata.
-    :rtype: Any
-    :raises ValidationError: If ``raw`` cannot be coerced to the declared
-        type or violates a preserved constraint. Callers handle and log.
+    :param prefix: The parent field name.
+    :type prefix: str
+    :param base_settings: The resolved settings instance, or ``None``.
+    :type base_settings: BaseModel | None
+    :return: The base parent model, or ``None`` when the parent is unset and
+        must be instantiated from the nested leaves alone.
+    :rtype: BaseModel | None
     """
-    return TypeAdapter(_annotated_type(field_info)).validate_python(raw)
+    stored = snapshot.get(prefix)
+    if isinstance(stored, BaseModel):
+        return stored
+    if base_settings is not None:
+        value = getattr(base_settings, prefix, None)
+        return value if isinstance(value, BaseModel) else None
+    if isinstance(field_info.default, BaseModel):
+        return field_info.default
+    return None
+
+
+def _merge_into(
+    parent_value: BaseModel | None,
+    parent_cls: type[BaseModel],
+    sub_updates: SubChainUpdates,
+) -> BaseModel:
+    """Apply ``sub_updates`` to ``parent_value``, instantiating it when unset.
+
+    :param parent_value: The current parent model, or ``None`` when the parent
+        attribute is unset (e.g. an ``Optional`` field defaulting to ``None``).
+    :type parent_value: BaseModel | None
+    :param parent_cls: The parent model class, used to instantiate when
+        ``parent_value`` is ``None``.
+    :type parent_cls: type[BaseModel]
+    :param sub_updates: Mapping of canonical sub-chain to coerced value.
+    :type sub_updates: SubChainUpdates
+    :return: A merged copy (or fresh instance) of the parent model.
+    :rtype: BaseModel
+    :raises ValidationError: If an unset parent cannot be instantiated from the
+        provided leaves (required fields missing).
+    """
+    if parent_value is None:
+        return _instantiate_from_updates(parent_cls, sub_updates)
+    return _build_nested_update(parent_value, sub_updates)
+
+
+def _build_nested_update(
+    parent: BaseModel,
+    sub_updates: SubChainUpdates,
+) -> BaseModel:
+    """Fold ``sub_updates`` into ``parent`` via one ``model_copy`` per level.
+
+    Updates are grouped by their first sub-segment: single-segment chains
+    become direct leaf updates, while longer chains recurse into the matching
+    child model (instantiating it from defaults when the attribute is unset).
+
+    :param parent: The base parent model to copy.
+    :type parent: BaseModel
+    :param sub_updates: Mapping of canonical sub-chain (relative to ``parent``)
+        to coerced value.
+    :type sub_updates: SubChainUpdates
+    :return: A merged copy of ``parent`` with every leaf applied.
+    :rtype: BaseModel
+    :raises ValidationError: If an unset intermediate cannot be instantiated
+        from the provided leaves.
+    """
+    direct = {}
+    deeper = defaultdict(dict)
+    for chain, value in sub_updates.items():
+        head, *rest = chain
+        if rest:
+            deeper[head][tuple(rest)] = value
+        else:
+            direct[head] = value
+    for head, child_updates in deeper.items():
+        child_cls = annotation_pydantic_class(
+            type(parent).model_fields[head].annotation
+        )
+        if child_cls is None:
+            # Intermediate is not a Pydantic model -- the resolver should have
+            # rejected this path, so treat it defensively as a no-op leaf set.
+            continue
+        # When a whole-child override is present in the same batch, layer the
+        # deeper leaves on top of it instead of the original parent state.
+        child = (
+            direct[head]
+            if isinstance(direct.get(head), BaseModel)
+            else getattr(parent, head, None)
+        )
+        direct[head] = _merge_into(child, child_cls, child_updates)
+    merged = parent.model_copy(update=direct)
+    # ``model_copy`` is shallow and carries over already-evaluated
+    # ``cached_property`` memos from ``parent``; drop them at every level so a
+    # nested child's cached value cannot go stale against its new fields.
+    _clear_cached_properties(merged)
+    return merged
+
+
+def _instantiate_from_updates(
+    model_cls: type[BaseModel],
+    sub_updates: SubChainUpdates,
+) -> BaseModel:
+    """Instantiate ``model_cls`` from nested leaves when no base instance exists.
+
+    Used when an ``Optional`` parent (or intermediate) is ``None`` on the base
+    settings: the model is constructed from the provided leaves plus its own
+    field defaults via ``model_validate`` (so alias-aware / case-insensitive
+    key handling applies).
+
+    :param model_cls: The model class to instantiate.
+    :type model_cls: type[BaseModel]
+    :param sub_updates: Mapping of canonical sub-chain to coerced value.
+    :type sub_updates: SubChainUpdates
+    :return: A freshly-built model instance.
+    :rtype: BaseModel
+    :raises ValidationError: If required fields are missing from the leaves.
+    """
+    fields = {}
+    deeper = defaultdict(dict)
+    for chain, value in sub_updates.items():
+        head, *rest = chain
+        if rest:
+            deeper[head][tuple(rest)] = value
+        else:
+            fields[head] = value
+    for head, child_updates in deeper.items():
+        child_cls = annotation_pydantic_class(model_cls.model_fields[head].annotation)
+        if child_cls is None:
+            continue
+        # Layer deeper leaves on top of a same-batch whole-child override.
+        if isinstance(fields.get(head), BaseModel):
+            fields[head] = _build_nested_update(fields[head], child_updates)
+        else:
+            fields[head] = _instantiate_from_updates(child_cls, child_updates)
+    return model_cls.model_validate(fields)

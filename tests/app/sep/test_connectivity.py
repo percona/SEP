@@ -24,6 +24,7 @@ from fastapi import HTTPException, Request, status
 from starlette.datastructures import FormData
 
 from app.core.requests import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     _fetch_connectivity_result,
     _LATEST_RESULTS,
@@ -99,8 +100,8 @@ class TestFetchConnectivityResult:
             mock_tasks_api, "node1", "10.0.0.1", 3306, "mysql"
         )
 
-        assert first == (True, None)
-        assert second == (True, None)
+        assert first == (True, None, None)
+        assert second == (True, None, None)
         mock_tasks_api.post.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -109,6 +110,7 @@ class TestFetchConnectivityResult:
         mock_tasks_api.post.return_value = {
             "success": False,
             "error": "connection refused",
+            "task_history_id": 42,
         }
 
         first = await _fetch_connectivity_result(
@@ -118,9 +120,35 @@ class TestFetchConnectivityResult:
             mock_tasks_api, "node1", "10.0.0.1", 3306, "mysql"
         )
 
-        assert first == (False, "connection refused")
-        assert second == (False, "connection refused")
+        assert first == (False, "connection refused", 42)
+        assert second == (False, "connection refused", 42)
         mock_tasks_api.post.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_threads_task_history_id_from_response(self, mock_tasks_api):
+        """Carry ``task_history_id`` through from the API response."""
+        mock_tasks_api.post.return_value = {
+            "success": False,
+            "error": "Connectivity check timed out after 30s",
+            "task_history_id": 123,
+        }
+
+        result = await _fetch_connectivity_result(
+            mock_tasks_api, "node1", "10.0.0.1", 3306, "mysql"
+        )
+
+        assert result == (False, "Connectivity check timed out after 30s", 123)
+
+    @pytest.mark.asyncio
+    async def test_task_history_id_is_none_on_transport_error(self, mock_tasks_api):
+        """Return ``task_history_id`` of ``None`` when the API is unreachable."""
+        mock_tasks_api.post.side_effect = ConnectionError("timeout")
+
+        result = await _fetch_connectivity_result(
+            mock_tasks_api, "node1", "10.0.0.1", 3306, "mysql"
+        )
+
+        assert result == (False, "Could not reach the Tasks API", None)
 
 
 class TestCheckAndWarnConnectivity:
@@ -162,6 +190,38 @@ class TestCheckAndWarnConnectivity:
 
         assert _LATEST_RESULTS[("node1", "mysql")] is False
         assert len(dummy_request.state.messages) == 1
+        flashed = next(iter(dummy_request.state.messages))
+        assert "10.0.0.1:3306" in flashed.text
+        assert "mysql" in flashed.text
+        assert "node1" in flashed.text
+        assert "connection refused" in flashed.text
+
+    @pytest.mark.asyncio
+    async def test_failed_check_flash_points_to_log(
+        self, dummy_request, mock_tasks_api
+    ):
+        """Include a task-history pointer in the flash so the log is findable.
+
+        When the API returns a ``task_history_id`` it must appear in the flash
+        text so operators can inspect why the check failed.
+        """
+        mock_tasks_api.post.return_value = {
+            "success": False,
+            "error": "Connectivity check timed out after 30s",
+            "task_history_id": 777,
+        }
+
+        await check_and_warn_connectivity(
+            dummy_request,
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+        flashed = next(iter(dummy_request.state.messages))
+        assert "777" in flashed.text
 
     @pytest.mark.asyncio
     async def test_api_unreachable_warns(self, dummy_request, mock_tasks_api):
@@ -179,6 +239,11 @@ class TestCheckAndWarnConnectivity:
 
         assert _LATEST_RESULTS[("node1", "postgresql")] is False
         assert len(dummy_request.state.messages) == 1
+        flashed = next(iter(dummy_request.state.messages))
+        assert "10.0.0.1:5432" in flashed.text
+        assert "postgresql" in flashed.text
+        assert "node1" in flashed.text
+        assert "Could not reach the Tasks API" in flashed.text
 
     @pytest.mark.asyncio
     async def test_check_sends_correct_payload(self, dummy_request, mock_tasks_api):
@@ -201,7 +266,7 @@ class TestCheckAndWarnConnectivity:
                 "host": "10.0.0.1",
                 "port": 27017,
                 "service_type": "mongodb",
-                "timeout": 10,
+                "timeout": 20,
             },
         )
 
@@ -333,7 +398,7 @@ class TestMaybeCheckConnectivity:
             {
                 "_connectivity_host": "10.0.0.1",
                 "_connectivity_port": 3306,
-                "_connectivity_service_type": "mysql",
+                "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
             },
         ],
     )
@@ -361,7 +426,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(dummy_request, mock_tasks_api, meta)
@@ -387,7 +452,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(
@@ -410,7 +475,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(
@@ -434,7 +499,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(
@@ -455,7 +520,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(
@@ -501,7 +566,7 @@ class TestAnnotateTasksWithConnectivity:
                 "data": {
                     "meta": {
                         "target": "node1",
-                        "_connectivity_service_type": "mysql",
+                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
                     }
                 },
             }
@@ -518,7 +583,7 @@ class TestAnnotateTasksWithConnectivity:
                 "data": {
                     "meta": {
                         "target": "node1",
-                        "_connectivity_service_type": "mysql",
+                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
                     }
                 },
             }
@@ -540,7 +605,7 @@ class TestAnnotateTasksWithConnectivity:
                 "data": {
                     "meta": {
                         "target": "node1",
-                        "_connectivity_service_type": "mysql",
+                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
                     }
                 },
             }
@@ -561,7 +626,7 @@ class TestAnnotateTasksWithConnectivity:
             {
                 "name": "task1",
                 "_connectivity_target": "node1",
-                "_connectivity_service_type": "mysql",
+                "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
             }
         ]
         annotate_tasks_with_connectivity(tasks)

@@ -17,16 +17,18 @@
 
 import logging
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPBadRequestException
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
-from app.inventory.crud import NodeManager, ServiceManager
+from app.inventory.crud import HostSystemObservationManager, NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
 from app.inventory.models import (
+    HostSystemObservationResponse,
+    HostSystemObservationWrite,
     Node,
     NodeResponse,
     NodeWrite,
@@ -39,17 +41,16 @@ from app.inventory.models import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["nodes"])
+router = APIRouter(prefix="/nodes", tags=["nodes"])
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_nodes(
     session: SessionDep,
+    pagination: PaginationDep,
     external_id: NonEmptyStr | None = None,
     source: SourceEnum | None = None,
     node_type: NonEmptyStr | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[NodeResponse]:
     """List Nodes from Inventory."""
     logger.debug(
@@ -60,8 +61,7 @@ async def list_nodes(
     return await NodeManager.list_paginated(
         session,
         select_related=[Node.services],
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
         external_id=external_id,
         source=source,
         type=node_type,
@@ -110,13 +110,37 @@ async def delete_node(session: SessionDep, node: NodeDep) -> None:
     await NodeManager.delete(session, node)
 
 
+@router.get("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def retrieve_host_system_observation(
+    session: SessionDep,
+    node: NodeDep,
+) -> HostSystemObservationResponse:
+    """Retrieve host system observation for a node."""
+    return await HostSystemObservationManager.get_or_404(session, node_id=node.id)
+
+
+@router.put("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def upsert_host_system_observation(
+    session: SessionDep,
+    node: NodeDep,
+    data: HostSystemObservationWrite,
+) -> HostSystemObservationResponse:
+    """Upsert host system observation for a node."""
+    data.node_id = node.id
+    obs, created = await HostSystemObservationManager.get_or_create(
+        session, data, filter_include={"node_id"}
+    )
+    if not created:
+        obs = await HostSystemObservationManager.update(session, obs, data)
+    return obs
+
+
 @router.get("/{node_id}/services/", dependencies=[IsAuthenticatedDep])
 async def list_services_by_node(
     session: SessionDep,
     node: NodeDep,
+    pagination: PaginationDep,
     service_type: ServiceTypeEnum | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services by Node."""
     logger.debug(
@@ -127,8 +151,7 @@ async def list_services_by_node(
     return await ServiceManager.list_paginated(
         session,
         select_related=[Service.schemas],
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
         node_id=node.id,
         type=service_type,
     )

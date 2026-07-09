@@ -15,13 +15,19 @@
 
 """Define database operations for SEP."""
 
+from collections.abc import Collection
 from typing import Any
 
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
+from app.core.exceptions import HTTPConflictException
 from app.sep.models import (
+    AppLifecycleEnum,
+    AppRunningTask,
+    AppState,
+    SEPPluginPeriodicTask,
     SyncInstance,
     SyncInstanceWrite,
     SyncInventoryEntityTypeEnum,
@@ -265,3 +271,138 @@ class SyncInstanceManager(BaseSQLModelManager):
             item.status = SyncStatusEnum.FAILED
         await SyncItemManager.save_batch(session, *hanging_items)
         return hanging_items
+
+
+_ALLOWED_TRANSITIONS: dict[AppLifecycleEnum, frozenset[AppLifecycleEnum]] = {
+    AppLifecycleEnum.ENABLED: frozenset({AppLifecycleEnum.DISABLING}),
+    AppLifecycleEnum.DISABLED: frozenset({AppLifecycleEnum.ENABLING}),
+    AppLifecycleEnum.DISABLING: frozenset({AppLifecycleEnum.DISABLED}),
+    AppLifecycleEnum.ENABLING: frozenset({AppLifecycleEnum.ENABLED}),
+}
+
+
+class AppStateManager(BaseSQLModelManager):
+    """Manage per-app runtime lifecycle state.
+
+    :ivar Model: The SQLModel class this manager is responsible for (``AppState``).
+    :vartype Model: type[AppState]
+    """
+
+    Model = AppState
+
+    @classmethod
+    async def all_lifecycle_states(
+        cls, session: AsyncSession
+    ) -> dict[str, AppLifecycleEnum]:
+        """Return a mapping of ``app_key`` to its lifecycle state for every row.
+
+        :param session: The SQLAlchemy asynchronous session to use for the query.
+        :return: A dictionary mapping each app key to its lifecycle state.
+        """
+        rows = await cls.values_list(session, ["app_key", "lifecycle_state"])
+        return dict(rows)
+
+    @classmethod
+    async def current_lifecycle(
+        cls, session: AsyncSession, app_key: str
+    ) -> AppLifecycleEnum:
+        """Return the current lifecycle state used by the toggle transition gate.
+
+        A missing row reports ``ENABLED``: a configured plugin is active until an
+        operator explicitly transitions it, mirroring :meth:`is_enabled`.
+
+        :param session: The SQLAlchemy asynchronous session to use for the query.
+        :param app_key: The app key to look up.
+        :return: The persisted state, or ``ENABLED`` when no row exists.
+        """
+        row = await cls.first(session, app_key=app_key)
+        return AppLifecycleEnum.ENABLED if row is None else row.lifecycle_state
+
+    @classmethod
+    async def is_enabled(cls, session: AsyncSession, app_key: str) -> bool:
+        """Return whether the named app is currently ``ENABLED``.
+
+        A missing row is treated as enabled: a configured plugin is active until
+        an operator explicitly disables it. Any non-``ENABLED`` state (including
+        the transitional ``ENABLING`` / ``DISABLING``) is not reachable.
+
+        :param session: The SQLAlchemy asynchronous session to use for the query.
+        :param app_key: The app key to look up.
+        :return: ``True`` unless a non-``ENABLED`` row exists for the key.
+        """
+        row = await cls.first(session, app_key=app_key)
+        return True if row is None else row.lifecycle_state == AppLifecycleEnum.ENABLED
+
+    @classmethod
+    async def should_cancel(cls, session: AsyncSession, app_key: str) -> bool:
+        """Return whether a running task for ``app_key`` should cooperatively exit.
+
+        ``True`` iff the app is mid- or post-disable (``DISABLING`` /
+        ``DISABLED``) so a straggler that starts after ``DISABLED`` still
+        self-cancels. A missing row reports ``ENABLED`` (-> ``False``), mirroring
+        :meth:`is_enabled`. This is a pure predicate; the fail-soft on a transient
+        DB error lives in :func:`app.sep.app_drain.should_cancel`, not here.
+
+        :param session: The SQLAlchemy asynchronous session to use for the query.
+        :param app_key: The app key to look up.
+        :return: ``True`` when the app is ``DISABLING`` or ``DISABLED``.
+        """
+        row = await cls.first(session, app_key=app_key)
+        return row is not None and row.lifecycle_state in {
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.DISABLED,
+        }
+
+    @classmethod
+    def assert_transition_allowed(
+        cls, current: AppLifecycleEnum, target: AppLifecycleEnum
+    ) -> None:
+        """Assert that ``current`` -> ``target`` is a reachable lifecycle edge.
+
+        The reachable edges are ``ENABLED`` -> ``DISABLING``, ``DISABLED`` ->
+        ``ENABLING``, ``DISABLING`` -> ``DISABLED`` and ``ENABLING`` ->
+        ``ENABLED``. Same-state, transitional-skipping, and any other move is
+        rejected so idempotent retries do not silently appear to succeed.
+
+        :param current: The app's current lifecycle state.
+        :param target: The requested target lifecycle state.
+        :raises HTTPConflictException: When the edge is not reachable (HTTP 409).
+        """
+        if target not in _ALLOWED_TRANSITIONS.get(current, frozenset()):
+            raise HTTPConflictException(
+                detail=f"Illegal app-state transition {current} -> {target}.",
+            )
+
+
+class AppRunningTaskManager(BaseSQLModelManager):
+    """Manage in-flight SEP-app-owned Celery task rows.
+
+    :ivar Model: The SQLModel class this manager is responsible for
+        (``AppRunningTask``).
+    """
+
+    Model = AppRunningTask
+
+
+class SEPPluginPeriodicTaskManager(BaseSQLModelManager):
+    """Manage the plugin-owned periodic-task gating rows.
+
+    :ivar Model: The SQLModel class this manager is responsible for
+        (``SEPPluginPeriodicTask``).
+    """
+
+    Model = SEPPluginPeriodicTask
+
+    @classmethod
+    async def for_app_keys(
+        cls, session: AsyncSession, app_keys: Collection[str] | None = None
+    ) -> list[SEPPluginPeriodicTask]:
+        """Return wrapper rows, optionally filtered to the given app keys.
+
+        :param session: The SQLAlchemy asynchronous session to use for the query.
+        :param app_keys: The app keys to restrict to, or ``None`` for every row.
+        :return: The matching wrapper rows.
+        """
+        if app_keys is None:
+            return await cls.list(session)
+        return await cls.list(session, col(SEPPluginPeriodicTask.app_key).in_(app_keys))

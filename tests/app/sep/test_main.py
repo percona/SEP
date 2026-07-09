@@ -15,25 +15,56 @@
 
 """Define tests for the app.sep.main module."""
 
+import importlib
 from unittest.mock import Mock
 
 import pytest
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
+import app.sep.main as main_module
 from app.core.auth.exceptions import (
     BaseAuthProviderException,
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
-from app.sep.config import sep_settings
-from app.sep.deps import get_access_token_from_cookie
-from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
+from app.sep.api.router import apps_router
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.config import App, sep_settings
+from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
+from app.sep.exceptions import LoginRedirectException
+from app.sep.main import (
+    _safe_next_path,
+    get_tasks_index_context,
+    sep_app,
+    sep_lifespan,
+    templates,
+    warn_if_ambient_sso_inert,
+)
 from app.sep.main import lifespan as sep_module_lifespan
+from app.sep.models import AppLifecycleEnum, AppState
 from tests.app.factories import OAuthTokenFactory
+
+
+def _route_has_app_guard(route) -> bool:
+    """Return whether a route carries the ``require_app_enabled`` guard.
+
+    The router-level ``Depends(require_app_enabled(<key>))`` injected at mount
+    time surfaces as a sub-dependency of the route's ``dependant`` whose
+    callable is the closure ``require_app_enabled.<locals>._gate``.
+    """
+    dependant = getattr(route, "dependant", None)
+    if dependant is None:
+        return False
+    return any(
+        getattr(sub.call, "__qualname__", "").endswith(
+            "require_app_enabled.<locals>._gate"
+        )
+        for sub in dependant.dependencies
+    )
 
 
 def test_sep_app_lifespan_is_always_set():
@@ -77,6 +108,29 @@ def dummy_access_token() -> str:
     )
     yield fake_access_token
     sep_app.dependency_overrides = {}
+
+
+class TestSafeNextPath:
+    """Define test suite for the ``_safe_next_path`` open-redirect guard."""
+
+    @pytest.mark.parametrize(
+        ("next_path", "expected"),
+        [
+            ("/", "/"),
+            ("/apps/inventory", "/apps/inventory"),
+            ("/settings?tab=1", "/settings?tab=1"),
+            ("http://evil.com/x", "/"),
+            ("https://evil.com/x", "/"),
+            ("//evil.com", "/"),
+            ("//evil.com/path", "/"),
+            ("/\\evil.com", "/"),
+            ("relative/path", "/"),
+            ("", "/"),
+        ],
+    )
+    def test_collapses_unsafe_targets(self, next_path, expected):
+        """Pass through same-origin paths; collapse scheme/protocol-relative targets to ``/``."""
+        assert _safe_next_path(next_path) == expected
 
 
 class TestLogin:
@@ -125,6 +179,8 @@ class TestLogin:
             ("/", "/"),
             ("/fake-page", "/fake-page"),
             ("http://127.0.0.1/fake-page", "/"),
+            ("//evil.com", "/"),
+            ("/\\evil.com", "/"),
         ],
     )
     def test_post_login_success(
@@ -187,6 +243,113 @@ class TestLogin:
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == "/"
+
+    def test_get_login_auto_logs_in_from_ambient_session(
+        self, mocker, test_client, grafana_mock
+    ):
+        """Authenticate on GET /login from a valid ambient Grafana session, skipping the form."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        dumps_patch = mocker.patch(
+            "app.sep.main.crypto_timestamp_serializer.dumps",
+            return_value="serialized_ambient_token",
+        )
+
+        response = test_client.get(
+            "/login?next=/fake-page",
+            cookies={"grafana_session": "ambient"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/fake-page"
+        cookie_header = response.headers.get("set-cookie", "")
+        assert sep_settings.SESSION.COOKIE_NAME in cookie_header
+        assert "serialized_ambient_token" in cookie_header
+        assert dumps_patch.called
+
+    def test_get_login_auto_login_sanitizes_external_next(
+        self, mocker, test_client, grafana_mock
+    ):
+        """Collapse an external ``next`` to ``/`` during ambient auto-login (open-redirect guard)."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        mocker.patch(
+            "app.sep.main.crypto_timestamp_serializer.dumps", return_value="tok"
+        )
+
+        response = test_client.get(
+            "/login?next=http://127.0.0.1/evil",
+            cookies={"grafana_session": "ambient"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/"
+
+    def test_get_login_falls_back_to_form_on_rejected_session(
+        self, mocker, test_client, grafana_mock
+    ):
+        """Render the login form silently when Grafana rejects the ambient session."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        grafana_mock.get_current_user.side_effect = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+        template_patch = mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            return_value=HTMLResponse("<html>form</html>"),
+        )
+
+        response = test_client.get(
+            "/login", cookies={"grafana_session": "stale"}, follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        template_patch.assert_called_once()
+
+    def test_get_login_renders_form_when_toggle_off(
+        self, mocker, test_client, grafana_mock
+    ):
+        """Render the form on GET /login when ambient SSO is disabled, despite a cookie."""
+        template_patch = mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            return_value=HTMLResponse("<html>form</html>"),
+        )
+
+        response = test_client.get(
+            "/login", cookies={"grafana_session": "ambient"}, follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        template_patch.assert_called_once()
+
+
+class TestAmbientSsoStartupWarning:
+    """Test the startup warning for an inert ambient-SSO toggle."""
+
+    def test_warns_when_enabled_under_non_ambient_provider(self, mocker):
+        """Emit a warning when the toggle is on but the active provider can't honor it."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        warning = mocker.patch("app.sep.main.logger.warning")
+
+        warn_if_ambient_sso_inert()
+
+        warning.assert_called_once()
+
+    def test_no_warning_when_provider_supports_ambient(self, mocker, grafana_mock):
+        """Skip the warning when the active provider supports ambient sessions."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        warning = mocker.patch("app.sep.main.logger.warning")
+
+        warn_if_ambient_sso_inert()
+
+        warning.assert_not_called()
+
+    def test_no_warning_when_toggle_off(self, mocker):
+        """Skip the warning when ambient SSO is disabled (default)."""
+        warning = mocker.patch("app.sep.main.logger.warning")
+
+        warn_if_ambient_sso_inert()
+
+        warning.assert_not_called()
 
 
 class TestLogout:
@@ -270,18 +433,9 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     url_for('periodic_task_create') and url_for('stop_task_execution') resolve
     without raising NoMatchFound.
     """
-    import importlib
-
-    import app.sep.main as main_module
-
-    mock_plugin = mocker.MagicMock()
-    mock_plugin.router_path = "app.sep.plugins.backup_pg.router"
-    mock_plugin.uri_path = "/backup_pg"
-    mock_plugin.module_name = "app.sep.plugins.backup_pg"
-
-    original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [mock_plugin])
-    mocker.patch("app.sep.main.import_var", return_value=mocker.MagicMock())
+    original_plugins = sep_settings.APPS
+    mocker.patch.object(sep_settings, "APPS", [App(module_name="backup_pg")])
+    get_app_registry.cache_clear()
 
     try:
         importlib.reload(main_module)
@@ -290,7 +444,8 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
         assert "periodic_task_create" in route_names
         assert "stop_task_execution" in route_names
     finally:
-        sep_settings.PLUGINS = original_plugins
+        sep_settings.APPS = original_plugins
+        get_app_registry.cache_clear()
         importlib.reload(main_module)
 
 
@@ -302,18 +457,9 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
     must be mounted whenever the inventory plugin is enabled even if no task-oriented
     plugin (tasks, backup, checksums, …) is configured.
     """
-    import importlib
-
-    import app.sep.main as main_module
-
-    mock_plugin = mocker.MagicMock()
-    mock_plugin.router_path = "app.sep.plugins.inventory.router"
-    mock_plugin.uri_path = "/inventory"
-    mock_plugin.module_name = "app.sep.plugins.inventory"
-
-    original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [mock_plugin])
-    mocker.patch("app.sep.main.import_var", return_value=mocker.MagicMock())
+    original_plugins = sep_settings.APPS
+    mocker.patch.object(sep_settings, "APPS", [App(module_name="inventory")])
+    get_app_registry.cache_clear()
 
     try:
         importlib.reload(main_module)
@@ -323,7 +469,8 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
         assert "periodic_task_update" in route_names
         assert "periodic_task_delete" in route_names
     finally:
-        sep_settings.PLUGINS = original_plugins
+        sep_settings.APPS = original_plugins
+        get_app_registry.cache_clear()
         importlib.reload(main_module)
 
 
@@ -479,7 +626,7 @@ class TestExceptionHandlers:
             unexpected_exc, limit=-1, chain=False
         )
         get_default_context_patch.assert_called_once_with(
-            mocker.ANY, regular_user, base_uri
+            mocker.ANY, regular_user, base_uri, mocker.ANY
         )
         template_patch.assert_called_with(
             request=mocker.ANY,
@@ -488,10 +635,56 @@ class TestExceptionHandlers:
             context={"exception": formatted_exception, **dummy_context},
         )
 
+    def test_internal_error_handler_redirects_for_stale_session(
+        self,
+        mocker,
+        dummy_context,
+        logger_mock,
+        test_client,
+    ):
+        """Test stale-session 500 handling redirects to login."""
+        unexpected_exc = ValueError("Unexpected error")
+        redirect_exc = LoginRedirectException(
+            Request(
+                {
+                    "type": "http",
+                    "scheme": "http",
+                    "method": "GET",
+                    "path": "/",
+                    "raw_path": b"/",
+                    "query_string": b"",
+                    "headers": [],
+                    "server": ("testserver", 80),
+                    "client": ("testclient", 50000),
+                    "root_path": "",
+                    "app": sep_app,
+                }
+            )
+        )
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=unexpected_exc,
+        )
+        mocker.patch("app.sep.main.get_current_user", side_effect=redirect_exc)
+        messages_error_mock = mocker.patch("app.sep.main.messages.error")
+
+        response = test_client.get("/", follow_redirects=False)
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/login?next=/"
+        assert f'{sep_settings.SESSION.COOKIE_NAME}=""' in response.headers.get(
+            "set-cookie", ""
+        )
+        logger_mock.exception.assert_called_once_with(
+            "Unhandled exception:", exc_info=unexpected_exc
+        )
+        messages_error_mock.assert_not_called()
+
     @pytest.mark.usefixtures("mock_get_username_mapping")
     def test_404_error(self, mocker, regular_user, test_client):
         """Test 404 errors renders the 404 template for authenticated users."""
         mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
+        mocker.patch("app.sep.main.get_default_context", return_value={})
         template_spy = mocker.spy(templates, "TemplateResponse")
 
         response = test_client.get("/non-existent-page")
@@ -546,6 +739,9 @@ class TestExceptionHandlers:
         response = test_client.get(non_existent_path, follow_redirects=False)
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/login?next={non_existent_path}"
+        assert f'{sep_settings.SESSION.COOKIE_NAME}=""' in response.headers.get(
+            "set-cookie", ""
+        )
 
     def test_request_validation_error_handler_redirects_with_flash(
         self, mocker, dummy_context, test_client
@@ -624,3 +820,114 @@ def test_sep_app_keeps_default_docs_urls():
     """
     assert sep_app.docs_url == "/docs"
     assert sep_app.redoc_url == "/redoc"
+
+
+@pytest.fixture
+def guarded_client(test_client: TestClient, session) -> TestClient:
+    """Build an authenticated client whose routes read the in-memory ``session``."""
+    sep_app.dependency_overrides[get_session] = lambda: session
+    yield test_client
+    sep_app.dependency_overrides = {}
+
+
+class TestAppStateGuards:
+    """Integration tests for the per-app enable/disable route guards."""
+
+    @pytest.mark.parametrize(
+        ("plugin_key", "plugin_route"),
+        [("snippets", "/snippets/"), ("checksums", "/checksums/")],
+    )
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_ui_guard_returns_503_for_non_enabled_states(
+        self, guarded_client: TestClient, session, plugin_key, plugin_route, state
+    ) -> None:
+        """A non-protected plugin's UI route 503s whenever it is not ``ENABLED``."""
+        session.add(AppState(app_key=plugin_key, lifecycle_state=state))
+        await session.commit()
+
+        response = guarded_client.get(plugin_route)
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert plugin_key in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_child_ui_route_503s_when_parent_disabled(
+        self, guarded_client: TestClient, session
+    ) -> None:
+        """Return 503 from a child app's UI route when its parent is disabled (gate uses parent_key)."""
+        session.add(
+            AppState(app_key="backup_mongo", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get("/backup_mongo/restores/")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "backup_mongo" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_inventory_ui_route_never_503s(
+        self, guarded_client: TestClient, session
+    ) -> None:
+        """Inventory has no guard, so a disabled row never gates ``/inventory/``."""
+        session.add(
+            AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get("/inventory/")
+
+        assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
+        """Every non-protected UI plugin route carries the app-state guard."""
+        guarded_prefixes = {
+            app.uri_path
+            for app in get_app_registry()
+            if app.key not in PROTECTED_APP_KEYS and app.jinja_router is not None
+        }
+        seen = set()
+        for route in sep_app.routes:
+            path = getattr(route, "path", "")
+            for prefix in guarded_prefixes:
+                if (
+                    path == prefix or path.startswith(f"{prefix}/")
+                ) and _route_has_app_guard(route):
+                    seen.add(prefix)
+        assert guarded_prefixes <= seen
+
+    def test_inventory_ui_routes_are_not_guarded(self) -> None:
+        """The protected ``inventory`` plugin's UI routes carry no app-state guard."""
+        inventory_app = get_app_registry().get("inventory")
+        assert inventory_app is not None
+        inventory_prefix = inventory_app.uri_path
+        for route in sep_app.routes:
+            path = getattr(route, "path", "")
+            if path == inventory_prefix or path.startswith(f"{inventory_prefix}/"):
+                assert not _route_has_app_guard(route)
+
+    def test_json_api_mount_loop_guards_non_protected_plugins(self) -> None:
+        """Every non-protected JSON-API plugin sub-router carries the guard."""
+        guarded_keys = {
+            key
+            for p in sep_settings.APPS
+            if (key := p.module_name.split(".")[-1]) not in PROTECTED_APP_KEYS
+            and p.api_router_path
+        }
+        seen = set()
+        for route in apps_router.routes:
+            path = getattr(route, "path", "")
+            for key in guarded_keys:
+                if (
+                    path.startswith(f"/apps/{key}/") or path == f"/apps/{key}"
+                ) and _route_has_app_guard(route):
+                    seen.add(key)
+        assert guarded_keys <= seen

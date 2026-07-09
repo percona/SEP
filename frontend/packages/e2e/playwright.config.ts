@@ -33,6 +33,10 @@ export default defineConfig({
     : [['html', { open: 'on-failure', outputFolder: 'playwright-report' }]],
   use: {
     baseURL: 'http://localhost:5174',
+    // Pin locale + timezone so date formatting (e.g. `toLocaleString()` in the
+    // alerts app) renders deterministically across local and CI machines.
+    locale: 'en-US',
+    timezoneId: 'UTC',
     // Capture a trace and screenshot only on failure — useful for debugging
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

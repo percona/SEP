@@ -23,7 +23,9 @@ from datetime import datetime, timedelta
 from enum import Enum, IntEnum, StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Self, TypeVar
+from urllib.parse import urlparse, urlunparse
 
+from annotated_types import Ge, Le
 from pydantic import (
     AfterValidator,
     AnyUrl,
@@ -37,6 +39,7 @@ from pydantic import (
     StringConstraints,
     TypeAdapter,
     UrlConstraints,
+    WrapSerializer,
 )
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema, Url
@@ -51,6 +54,32 @@ from app.core.utils.iterators import unique_everseen
 from app.core.utils.path import resolve_relative_path
 
 E = TypeVar("E", bound=Enum)
+
+
+def value_is_present(value: Any) -> bool:
+    """Return whether ``value`` counts as *present* to a presence/forbidden gate.
+
+    Treats ``None``, ``False``, and empty strings/bytes/lists/tuples/sets/dicts
+    as absent. ``0`` counts as present (numeric, just falsy). ``False`` is
+    treated as the unset bool default so ``forbidden=`` ``FieldGate`` entries on
+    a ``BoolField`` fire only on an explicit ``True`` toggle, matching the
+    convention used by ``FailRule`` ``truthy(name)`` checks.
+
+    Shared by the framework's runtime gate evaluation (``_field_is_present``)
+    and authoring-time guards (such as the snippets plugin's meta validation) so
+    the two presence checks cannot drift. It lives here, in the core utilities,
+    rather than the framework package so core models can reuse it without
+    importing the plugin layer.
+
+    :param value: The value to classify.
+    :return: Whether the value is considered present.
+    """
+    if value is None or value is False:
+        return False
+    return not (
+        isinstance(value, str | bytes | list | tuple | set | frozenset | dict)
+        and not value
+    )
 
 
 def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], E]:
@@ -174,10 +203,11 @@ class URL(StarletteURL):
         source_type: Any,
         handler: GetCoreSchemaHandler,
     ) -> core_schema.CoreSchema:
-        """Provide the Pydantic core schema for URL validation.
+        """Provide the Pydantic core schema for URL validation and serialization.
 
-        This method integrates the `validate_url` method into Pydantic's
-        validation schema.
+        Integrate the ``validate_url`` method into Pydantic's validation schema
+        and serialize URL values to their string form in JSON mode, so a
+        ``URL``-typed value round-trips through ``model_dump(mode="json")``.
 
         :param source_type: The source type for validation.
         :type source_type: Any
@@ -186,7 +216,12 @@ class URL(StarletteURL):
         :return: The core schema incorporating the URL validation logic.
         :rtype: core_schema.CoreSchema
         """
-        return core_schema.no_info_plain_validator_function(cls.validate_url)
+        return core_schema.no_info_plain_validator_function(
+            cls.validate_url,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                str, when_used="json"
+            ),
+        )
 
     @classmethod
     def validate_url(cls, url: str) -> Self:
@@ -389,8 +424,38 @@ def database_url_normalized_scheme_field_factory(
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
+StrippedNonEmptyStr = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1)
+]
+"""Define a string field that strips surrounding whitespace and must not be empty."""
+
 EmptyStrToNone = Annotated[None, BeforeValidator(lambda v: None if v == "" else v)]
 """Convert empty strings to None."""
+
+TCP_PORT_MIN = 1
+TCP_PORT_MAX = 65535
+
+TcpPort = Annotated[int, Field(ge=TCP_PORT_MIN, le=TCP_PORT_MAX)]
+"""Define a TCP port number constrained to the valid 1-65535 range."""
+
+
+def bounded_int_from_empty_str_factory(ge: int, le: int | None = None) -> Any:
+    """Build a bounded optional-int field type that coerces ``""`` to ``None``.
+
+    The ``Ge`` / ``Le`` bounds sit at the returned type's outer ``Annotated`` level so
+    that Pydantic applies them only to real integers (not the coerced ``None``) and the
+    form-DSL's outer-metadata bounds scan can still read them. A plain
+    ``int | EmptyStrToNone`` union cannot express this, hence a dedicated factory.
+
+    :param ge: The inclusive lower bound applied to non-empty integer input.
+    :param le: The inclusive upper bound; ``None`` leaves the field unbounded above.
+    :return: An ``Annotated`` optional-int type carrying the bounds and blank coercion.
+    """
+    coerce_blank = BeforeValidator(lambda value: None if value == "" else value)
+    if le is None:
+        return Annotated[int | None, Ge(ge), coerce_blank]
+    return Annotated[int | None, Ge(ge), Le(le), coerce_blank]
+
 
 RelativeFilePathField = Annotated[
     FilePath,
@@ -475,6 +540,145 @@ StrAnyUrl = Annotated[str, AsTypeValidator(AnyUrl, str)]
 """Define a string field representing any valid URL.
 
 This annotated type validates the string as any valid URL without additional processing.
+"""
+
+CREDENTIAL_URL_MASK = "****"
+PRESERVE_CREDENTIALS_CONTEXT: dict[str, bool] = {"preserve_credentials": True}
+
+
+def _netloc_host(netloc: str) -> str:
+    """Return the host portion of a URL netloc, preserving IPv6 bracket notation."""
+    if "@" in netloc:
+        _, host = netloc.rsplit("@", 1)
+        return host
+    return netloc
+
+
+def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
+    """Return ``url`` with any embedded userinfo password replaced by ``mask``.
+
+    Scheme, username, host, port, path, query, and fragment are preserved.
+    URLs without an embedded password are returned unchanged.
+
+    :param url: The URL string to redact.
+    :param mask: The replacement for the password segment.
+    :return: The URL with a redacted password, or ``url`` when none is present.
+    """
+    parsed = urlparse(url)
+    if not parsed.password:
+        return url
+    host = _netloc_host(parsed.netloc)
+    username = parsed.username or ""
+    netloc = f"{username}:{mask}@{host}"
+    return urlunparse(
+        (
+            parsed.scheme,
+            netloc,
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+
+def _credential_url_identity_parts(
+    parsed: Any, *, include_password: bool = True
+) -> tuple[Any, ...]:
+    """Return URL components used to detect an unchanged redacted resubmit."""
+    path = parsed.path or ""
+    if path == "/":
+        path = ""
+    parts: tuple[Any, ...] = (
+        parsed.scheme,
+        parsed.username or "",
+        _netloc_host(parsed.netloc),
+        path,
+        parsed.params,
+        parsed.query,
+        parsed.fragment,
+    )
+    if include_password:
+        return (*parts, parsed.password or "")
+    return parts
+
+
+def preserve_credential_url_password(current: str, incoming: str) -> str:
+    """Keep the stored URL password when a PATCH resubmits the redacted display value.
+
+    When the dashboard saves an endpoint unchanged, the client sends the JSON-redacted
+    URL (``user:****@host``). Substitute the live password so the override row is
+    not corrupted.
+
+    :param current: The effective stored URL string.
+    :param incoming: The URL string submitted in the PATCH body.
+    :return: ``incoming`` unchanged unless it matches ``current`` with only the
+        password masked.
+    """
+    current_str = str(current)
+    incoming_str = str(incoming)
+    current_parsed = urlparse(current_str)
+    incoming_parsed = urlparse(incoming_str)
+    if incoming_parsed.password != CREDENTIAL_URL_MASK:
+        return incoming_str
+    if not current_parsed.password:
+        return incoming_str
+    if _credential_url_identity_parts(current_parsed, include_password=False) != (
+        _credential_url_identity_parts(incoming_parsed, include_password=False)
+    ):
+        return incoming_str
+    return current_str
+
+
+def _credential_url_serializer(
+    value: Any,
+    handler: Callable[[Any], Any],
+    info: Any,
+) -> Any:
+    """Serialize a URL value, redacting embedded passwords unless context opts out."""
+    serialized = handler(value)
+    context = getattr(info, "context", None) or {}
+    if context.get("preserve_credentials"):
+        return serialized
+    return redact_credential_url(str(serialized))
+
+
+_CREDENTIAL_URL_JSON_SERIALIZER = WrapSerializer(
+    _credential_url_serializer,
+    when_used="json",
+)
+
+
+CredentialHttpUrl = Annotated[
+    HttpUrl,
+    _CREDENTIAL_URL_JSON_SERIALIZER,
+]
+"""Define an HTTP URL that redacts embedded userinfo passwords on JSON serialization.
+
+The in-memory / python-mode value retains the real credential for outbound
+requests. Pass :data:`PRESERVE_CREDENTIALS_CONTEXT` when dumping internal
+config fingerprints that must store the full URL.
+"""
+
+StrCredentialHttpUrl = Annotated[
+    str,
+    AsTypeValidator(HttpUrl, lambda v: str(v).rstrip("/")),
+    _CREDENTIAL_URL_JSON_SERIALIZER,
+]
+"""Define a string HTTP URL that redacts embedded passwords on JSON serialization.
+
+Validates as :class:`~pydantic.HttpUrl`, stores as a string with trailing
+slashes stripped, and masks any embedded password in JSON dumps.
+"""
+
+StrCredentialAnyUrl = Annotated[
+    str,
+    AsTypeValidator(AnyUrl, str),
+    _CREDENTIAL_URL_JSON_SERIALIZER,
+]
+"""Define a string URL (any scheme) that redacts embedded passwords on JSON serialization.
+
+Use for broker/backend URLs that may carry credentials in the userinfo segment.
 """
 
 URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]

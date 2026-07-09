@@ -3,7 +3,7 @@
  * Do not edit by hand — regenerate from the source OpenAPI spec.
  */
 export interface paths {
-  '/summary/': {
+  '/admin/settings/': {
     parameters: {
       query?: never;
       header?: never;
@@ -11,10 +11,22 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Get Summary Inventory
-     * @description Retrieve a summary of inventory counts.
+     * List Settings
+     * @description List every exposed settings class with current values and metadata.
+     *
+     *     Local classes are read from their config singletons; remote classes
+     *     (``remote_classes``) are fetched server-side from their owning sub-app
+     *     and appended in declaration order; app-owned classes follow remote
+     *     groups with per-group app metadata. A failed remote fetch fails the
+     *     whole request with ``502`` -- the LIST never silently drops a remote
+     *     group.
+     *
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :return: Grouped responses, one group per configured settings class.
      */
-    get: operations['summary_get_summary_inventory_summary__get'];
+    get: operations['settings_list_settings_admin_settings__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -23,7 +35,113 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/': {
+  '/admin/settings/{setting_class}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Patch Settings
+     * @description Apply a batch of overrides for one settings class atomically.
+     *
+     *     For a remote class the batch is forwarded to the owning sub-app, which
+     *     owns the validation and persistence; the upstream's per-field ``422``
+     *     (and its ``detail``) is preserved so the UI can render inline messages.
+     *
+     *     For a local class: Phase A validates every key in ``body`` (existence on
+     *     the class, HOT classification, type/constraint coercion) and collects
+     *     per-key errors. If any key fails, the whole batch is rejected with a
+     *     structured 422 and nothing is written. Phase B persists every valid entry
+     *     in a single transaction, refreshes the proxy snapshot once, then fires
+     *     the rebind callbacks for any changed keys so a HOT target rebinds without
+     *     waiting for the next background refresh cycle.
+     *
+     *     :param request: The incoming request; its ``app.state`` carries the
+     *         sub-app's rebind-callback registry.
+     *     :param setting_class: The settings class the override targets.
+     *     :param body: The batch of ``{key: value, ...}`` overrides.
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :return: One :class:`SettingResponse` per applied key, in input order.
+     *     :raises HTTPNotFoundException: If the class isn't exposed.
+     *     :raises HTTPUnprocessableEntityException: If any key fails validation;
+     *         no rows are written.
+     */
+    patch: operations['settings_patch_settings_admin_settings__setting_class__patch'];
+    trace?: never;
+  };
+  '/admin/settings/{setting_class}/{key}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Setting
+     * @description Return one field's metadata and current value.
+     *
+     *     :param setting_class: The settings class the field belongs to.
+     *     :param key: The field name on the settings class.
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :return: The structured response for the field.
+     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
+     *         doesn't exist on the class.
+     */
+    get: operations['settings_get_setting_admin_settings__setting_class___key__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete Setting
+     * @description Revert one override row to the field's declared default.
+     *
+     *     For a remote class the DELETE is forwarded to the owning sub-app, which
+     *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
+     *     ``detail`` are preserved through the proxy.
+     *
+     *     For a local class: idempotent -- deleting a (class, key) pair that has no
+     *     override row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE
+     *     field responds 409 -- the field cannot have an override row in the first
+     *     place, so the operator's intent is unsatisfiable.
+     *
+     *     After republishing the snapshot, fires the rebind callbacks for the
+     *     reverted key so a HOT target rebinds to its restored value without
+     *     waiting for the next background refresh cycle.
+     *
+     *     :param request: The incoming request; its ``app.state`` carries the
+     *         sub-app's rebind-callback registry.
+     *     :param setting_class: The settings class the field belongs to.
+     *     :param key: The field name on the settings class.
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
+     *         doesn't exist on the class.
+     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+     *     :raises HTTPUnprocessableEntityException: If ``key`` names a
+     *         ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
+     *         target an individual ``parent__leaf`` instead).
+     *     :raises HTTPBadGatewayException: For a remote class, when the owning
+     *         sub-app returns a server error (status >= 500) or is unreachable.
+     */
+    delete: operations['settings_delete_setting_admin_settings__setting_class___key__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/nodes/': {
     parameters: {
       query?: never;
       header?: never;
@@ -34,20 +152,20 @@ export interface paths {
      * List Nodes
      * @description List Nodes from Inventory.
      */
-    get: operations['nodes_list_nodes__get'];
+    get: operations['nodes_list_nodes_nodes__get'];
     put?: never;
     /**
      * Create Node
      * @description Create Node.
      */
-    post: operations['nodes_create_node__post'];
+    post: operations['nodes_create_node_nodes__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/{node_id}': {
+  '/nodes/{node_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -58,24 +176,24 @@ export interface paths {
      * Retrieve Node
      * @description Retrieve Node from inventory.
      */
-    get: operations['nodes_retrieve_node__node_id__get'];
+    get: operations['nodes_retrieve_node_nodes__node_id__get'];
     /**
      * Update Node
      * @description Update Node.
      */
-    put: operations['nodes_update_node__node_id__put'];
+    put: operations['nodes_update_node_nodes__node_id__put'];
     post?: never;
     /**
      * Delete Node
      * @description Delete Node.
      */
-    delete: operations['nodes_delete_node__node_id__delete'];
+    delete: operations['nodes_delete_node_nodes__node_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/{node_id}/services/': {
+  '/nodes/{node_id}/services/': {
     parameters: {
       query?: never;
       header?: never;
@@ -86,20 +204,20 @@ export interface paths {
      * List Services By Node
      * @description List Services by Node.
      */
-    get: operations['nodes_list_services_by_node__node_id__services__get'];
+    get: operations['nodes_list_services_by_node_nodes__node_id__services__get'];
     put?: never;
     /**
      * Create Service For Node
      * @description Create Service for Node.
      */
-    post: operations['nodes_create_service_for_node__node_id__services__post'];
+    post: operations['nodes_create_service_for_node_nodes__node_id__services__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/services/': {
+  '/nodes/{node_id}/system-observation': {
     parameters: {
       query?: never;
       header?: never;
@@ -107,83 +225,16 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * List Services
-     * @description List Services.
+     * Retrieve Host System Observation
+     * @description Retrieve host system observation for a node.
      */
-    get: operations['services_list_services_services__get'];
-    put?: never;
+    get: operations['nodes_retrieve_host_system_observation_nodes__node_id__system_observation_get'];
+    /**
+     * Upsert Host System Observation
+     * @description Upsert host system observation for a node.
+     */
+    put: operations['nodes_upsert_host_system_observation_nodes__node_id__system_observation_put'];
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/services/{service_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Retrieve Service
-     * @description Retrieve Service.
-     */
-    get: operations['services_retrieve_service_services__service_id__get'];
-    /**
-     * Update Service
-     * @description Update Service.
-     */
-    put: operations['services_update_service_services__service_id__put'];
-    post?: never;
-    /**
-     * Delete Service
-     * @description Delete Service.
-     */
-    delete: operations['services_delete_service_services__service_id__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/services/{service_id}/schemas/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Schemas By Service
-     * @description List Schemas by Service.
-     *
-     *     Return ``SchemaResponse`` (with nested tables) when ``include_tables``
-     *     is set, otherwise return ``SchemaCompactResponse`` (without tables).
-     *
-     *     :param session: The async database session.
-     *     :type session: AsyncSession
-     *     :param service: The resolved service dependency.
-     *     :type service: Service
-     *     :param search: Filter schemas by name using ILIKE matching.
-     *     :type search: str | None
-     *     :param include_tables: Include nested tables in the response when set to
-     *         any non-empty value. Defaults to compact mode (no tables).
-     *     :type include_tables: str | None
-     *     :param offset: The zero-based starting offset for pagination.
-     *     :type offset: int
-     *     :param limit: The maximum number of items to return.
-     *     :type limit: int
-     *     :return: A paginated response of schema responses.
-     *     :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
-     */
-    get: operations['services_list_schemas_by_service_services__service_id__schemas__get'];
-    put?: never;
-    /**
-     * Create Schema For Service
-     * @description Create Schema for Service.
-     */
-    post: operations['services_create_schema_for_service_services__service_id__schemas__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -262,6 +313,139 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/services/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Services
+     * @description List Services.
+     */
+    get: operations['services_list_services_services__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/{service_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Retrieve Service
+     * @description Retrieve Service.
+     */
+    get: operations['services_retrieve_service_services__service_id__get'];
+    /**
+     * Update Service
+     * @description Update Service.
+     */
+    put: operations['services_update_service_services__service_id__put'];
+    post?: never;
+    /**
+     * Delete Service
+     * @description Delete Service.
+     */
+    delete: operations['services_delete_service_services__service_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/{service_id}/schemas/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Schemas By Service
+     * @description List Schemas by Service.
+     *
+     *     Return ``SchemaResponse`` (with nested tables) when ``include_tables``
+     *     is set, otherwise return ``SchemaCompactResponse`` (without tables).
+     *
+     *     :param session: The async database session.
+     *     :type session: AsyncSession
+     *     :param service: The resolved service dependency.
+     *     :type service: Service
+     *     :param search: Filter schemas by name using ILIKE matching.
+     *     :type search: str | None
+     *     :param include_tables: Include nested tables in the response when set to
+     *         any non-empty value. Defaults to compact mode (no tables).
+     *     :type include_tables: str | None
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :type pagination: Pagination
+     *     :return: A paginated response of schema responses.
+     *     :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
+     */
+    get: operations['services_list_schemas_by_service_services__service_id__schemas__get'];
+    put?: never;
+    /**
+     * Create Schema For Service
+     * @description Create Schema for Service.
+     */
+    post: operations['services_create_schema_for_service_services__service_id__schemas__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/{service_id}/system-observation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Retrieve Service System Observation
+     * @description Retrieve service system observation for a service.
+     */
+    get: operations['services_retrieve_service_system_observation_services__service_id__system_observation_get'];
+    /**
+     * Upsert Service System Observation
+     * @description Upsert service system observation for a service.
+     */
+    put: operations['services_upsert_service_system_observation_services__service_id__system_observation_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/summary/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Summary Inventory
+     * @description Retrieve a summary of inventory counts.
+     */
+    get: operations['summary_get_summary_inventory_summary__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/tables/': {
     parameters: {
       query?: never;
@@ -320,6 +504,82 @@ export interface components {
       detail?: components['schemas']['ValidationError'][];
     };
     /**
+     * HostSystemObservationResponse
+     * @description Define the response model for host system observation data.
+     *
+     *     :param id: The primary key of the observation record.
+     *     :type id: int | None
+     *     :param created_at: When the record was created.
+     *     :type created_at: UTCDatetime
+     *     :param updated_at: When the record was last updated.
+     *     :type updated_at: UTCDatetime | None
+     *     :param node_id: The unique identifier of the observed node.
+     *     :type node_id: int
+     *     :param os_version: The observed operating system version.
+     *     :type os_version: str | None
+     *     :param installed_packages: Snapshot of installed packages.
+     *     :type installed_packages: list[dict[str, Any]] | None
+     *     :param config: Snapshot of host configuration.
+     *     :type config: dict[str, Any] | None
+     *     :param observed_at: When this observation was collected.
+     *     :type observed_at: UTCDatetime
+     */
+    HostSystemObservationResponse: {
+      /** Config */
+      config?: Record<string, never> | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Installed Packages */
+      installed_packages?: Record<string, never>[] | null;
+      /** Node Id */
+      node_id: number;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Os Version */
+      os_version?: string | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * HostSystemObservationWrite
+     * @description Define the model for writing host system observation data to the inventory.
+     *
+     *     :param node_id: The foreign key referencing the node. Defaults to None.
+     *     :type node_id: int | None
+     *     :param os_version: The observed operating system version. Defaults to None.
+     *     :type os_version: str | None
+     *     :param installed_packages: Snapshot of installed packages. Defaults to None.
+     *     :type installed_packages: list[dict[str, Any]] | None
+     *     :param config: Snapshot of host configuration. Defaults to None.
+     *     :type config: dict[str, Any] | None
+     *     :param observed_at: When this observation was collected.
+     *     :type observed_at: UTCDatetime
+     */
+    HostSystemObservationWrite: {
+      /** Config */
+      config?: Record<string, never> | null;
+      /** Installed Packages */
+      installed_packages?: Record<string, never>[] | null;
+      /** Node Id */
+      node_id?: number | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Os Version */
+      os_version?: string | null;
+    };
+    JsonValue: unknown;
+    /**
      * Node
      * @description Represent a node in the inventory.
      *
@@ -339,27 +599,27 @@ export interface components {
      *     :type services: list[Service]
      */
     Node: {
-      /** Id */
-      id: number | null;
+      /** Address */
+      address: string;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Address */
-      address: string;
-      /** Name */
-      name: string;
       /** External Id */
       external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
        * @default generic
        */
       type: string;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * NodeResponse
@@ -389,27 +649,27 @@ export interface components {
     NodeResponse: {
       /** Address */
       address: string;
-      /** Name */
-      name: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
       /** External Id */
       external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Services */
+      services: components['schemas']['Service'][];
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
        * @default generic
        */
       type: string;
-      /** Id */
-      id: number | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at?: string;
       /** Updated At */
       updated_at?: string | null;
-      /** Services */
-      services: components['schemas']['Service'][];
     };
     /**
      * NodeWrite
@@ -431,10 +691,10 @@ export interface components {
     NodeWrite: {
       /** Address */
       address: string;
-      /** Name */
-      name: string;
       /** External Id */
       external_id?: string | null;
+      /** Name */
+      name: string;
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
@@ -446,45 +706,45 @@ export interface components {
     PaginatedResponse_NodeResponse_: {
       /** Items */
       items: components['schemas']['NodeResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[SchemaResponse] */
     PaginatedResponse_SchemaResponse_: {
       /** Items */
       items: components['schemas']['SchemaResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[ServiceResponse] */
     PaginatedResponse_ServiceResponse_: {
       /** Items */
       items: components['schemas']['ServiceResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[TableResponse] */
     PaginatedResponse_TableResponse_: {
       /** Items */
       items: components['schemas']['TableResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[Union[SchemaResponse, SchemaCompactResponse]] */
     PaginatedResponse_Union_SchemaResponse__SchemaCompactResponse__: {
@@ -493,13 +753,33 @@ export interface components {
         | components['schemas']['SchemaResponse']
         | components['schemas']['SchemaCompactResponse']
       )[];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
+    /**
+     * ReloadClassification
+     * @description Declare the reload behavior of an overridable settings field.
+     *
+     *     :cvar HOT: Field can be overridden via a DB row and the new value takes
+     *         effect on the next snapshot refresh, without restarting the service.
+     *         For a nested-model field, ``HOT`` permits both whole-object override
+     *         (``PATCH {parent: {...}}``) and per-child override (``parent__leaf``).
+     *     :vartype HOT: str
+     *     :cvar NESTED_ONLY: Nested-model field whose children may be overridden
+     *         (``parent__leaf``) while the parent itself rejects whole-object
+     *         override (``PATCH {parent: {...}}`` → 422). Children default to
+     *         HOT-inherit unless explicitly marked :func:`not_overridable_field`.
+     *     :vartype NESTED_ONLY: str
+     *     :cvar NOT_OVERRIDABLE: Field is not overridable from the database; YAML
+     *         and environment variables remain the only sources of truth.
+     *     :vartype NOT_OVERRIDABLE: str
+     * @enum {string}
+     */
+    ReloadClassification: 'hot' | 'nested_only' | 'not_overridable';
     /**
      * Schema
      * @description Represent a database schema within a service.
@@ -525,17 +805,17 @@ export interface components {
      *     :type tables: list[Table]
      */
     Schema: {
-      /** Name */
-      name: string;
-      /** Service Id */
-      service_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Service Id */
+      service_id: number;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -557,17 +837,17 @@ export interface components {
      *     :type service_id: int
      */
     SchemaCompactResponse: {
-      /** Name */
-      name: string;
-      /** Service Id */
-      service_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Service Id */
+      service_id: number;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -591,22 +871,22 @@ export interface components {
      *     :type service: Service
      */
     SchemaDetailResponse: {
-      /** Name */
-      name: string;
-      /** Service Id */
-      service_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      service: components['schemas']['Service'];
+      /** Service Id */
+      service_id: number;
       /** Tables */
       tables: components['schemas']['Table'][];
-      service: components['schemas']['Service'];
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * SchemaResponse
@@ -628,21 +908,21 @@ export interface components {
      *     :type tables: list[Table]
      */
     SchemaResponse: {
-      /** Name */
-      name: string;
-      /** Service Id */
-      service_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Service Id */
+      service_id: number;
       /** Tables */
       tables: components['schemas']['Table'][];
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * SchemaWrite
@@ -701,30 +981,30 @@ export interface components {
      *     :type schemas: list[Schema]
      */
     Service: {
-      /** External Id */
-      external_id?: string | null;
-      /** Name */
-      name: string;
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Port */
-      port?: number | null;
-      /** Environment */
-      environment?: string | null;
       /** Cluster */
       cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
-      /** Node Id */
-      node_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Custom Labels */
+      custom_labels?: Record<string, never> | null;
+      /** Environment */
+      environment?: string | null;
+      /** External Id */
+      external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Node Id */
+      node_id: number;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
+      type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
     };
@@ -764,35 +1044,35 @@ export interface components {
      *     :type node: Node
      */
     ServiceDetailResponse: {
-      /** External Id */
-      external_id?: string | null;
-      /** Name */
-      name: string;
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Port */
-      port?: number | null;
-      /** Environment */
-      environment?: string | null;
       /** Cluster */
       cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
-      /** Node Id */
-      node_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
+      /** Custom Labels */
+      custom_labels?: Record<string, never> | null;
+      /** Environment */
+      environment?: string | null;
+      /** External Id */
+      external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      node: components['schemas']['Node'];
+      /** Node Id */
+      node_id: number;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
-      node: components['schemas']['Node'];
+      type: components['schemas']['ServiceTypeEnum'];
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * ServiceResponse
@@ -830,39 +1110,98 @@ export interface components {
      *     :type node: Node
      */
     ServiceResponse: {
-      /** External Id */
-      external_id?: string | null;
-      /** Name */
-      name: string;
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Port */
-      port?: number | null;
-      /** Environment */
-      environment?: string | null;
       /** Cluster */
       cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
-      /** Node Id */
-      node_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
+      /** Custom Labels */
+      custom_labels?: Record<string, never> | null;
+      /** Environment */
+      environment?: string | null;
+      /** External Id */
+      external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      node: components['schemas']['Node'];
+      /** Node Id */
+      node_id: number;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
-      node: components['schemas']['Node'];
+      type: components['schemas']['ServiceTypeEnum'];
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * ServiceSystemObservationResponse
+     * @description Define the response model for service system observation data.
+     *
+     *     :param id: The primary key of the observation record.
+     *     :type id: int | None
+     *     :param created_at: When the record was created.
+     *     :type created_at: UTCDatetime
+     *     :param updated_at: When the record was last updated.
+     *     :type updated_at: UTCDatetime | None
+     *     :param service_id: The unique identifier of the observed service.
+     *     :type service_id: int
+     *     :param db_engine_version: The observed database engine version.
+     *     :type db_engine_version: NonEmptyStr
+     *     :param observed_at: When this observation was collected.
+     *     :type observed_at: UTCDatetime
+     */
+    ServiceSystemObservationResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Db Engine Version */
+      db_engine_version: string;
+      /** Id */
+      id: number | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Service Id */
+      service_id: number;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * ServiceSystemObservationWrite
+     * @description Define the model for writing service system observation data to the inventory.
+     *
+     *     :param service_id: The foreign key referencing the service. Defaults to None.
+     *     :type service_id: int | None
+     *     :param db_engine_version: The observed database engine version.
+     *     :type db_engine_version: NonEmptyStr
+     *     :param observed_at: When this observation was collected.
+     *     :type observed_at: UTCDatetime
+     */
+    ServiceSystemObservationWrite: {
+      /** Db Engine Version */
+      db_engine_version: string;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Service Id */
+      service_id?: number | null;
     };
     /**
      * ServiceTypeEnum
-     * @description Enumeration of supported service types.
+     * @description Enumerate the supported service types.
      *
      *     :cvar MYSQL: Represents the MySQL service type.
      *     :vartype MYSQL: str
@@ -876,9 +1215,18 @@ export interface components {
      *     :vartype HAPROXY: str
      *     :cvar EXTERNAL: Represents an external service type.
      *     :vartype EXTERNAL: str
+     *     :cvar VALKEY: Represents the Valkey service type.
+     *     :vartype VALKEY: str
      * @enum {string}
      */
-    ServiceTypeEnum: 'mysql' | 'postgresql' | 'mongodb' | 'proxysql' | 'haproxy' | 'external';
+    ServiceTypeEnum:
+      | 'mysql'
+      | 'postgresql'
+      | 'mongodb'
+      | 'proxysql'
+      | 'haproxy'
+      | 'external'
+      | 'valkey';
     /**
      * ServiceWrite
      * @description Define the model for writing service data to the inventory.
@@ -906,23 +1254,184 @@ export interface components {
      *     :type node_id: int | None
      */
     ServiceWrite: {
+      /** Cluster */
+      cluster?: string | null;
+      /** Custom Labels */
+      custom_labels?: Record<string, never> | null;
+      /** Environment */
+      environment?: string | null;
       /** External Id */
       external_id?: string | null;
       /** Name */
       name: string;
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Port */
-      port?: number | null;
-      /** Environment */
-      environment?: string | null;
-      /** Cluster */
-      cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
       /** Node Id */
       node_id?: number | null;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
+      type: components['schemas']['ServiceTypeEnum'];
+    };
+    /**
+     * SettingClassEnum
+     * @description Enumerate settings classes that may have HOT override rows.
+     *
+     *     The wired classes are ``SEPSettings``, ``TasksSettings``,
+     *     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
+     *     ``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and
+     *     ``InventorySettings``.
+     *
+     *     To wire a new settings class:
+     *
+     *     1. Add a member here whose value matches the Pydantic class ``__name__``.
+     *     2. Generate an Alembic migration on every consumer track that extends the
+     *        ``CHECK`` constraint on ``settingoverride.setting_class``. The column
+     *        uses ``native_enum=False`` so the value list lives in a constraint,
+     *        not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.
+     *        Note that the column and ``CHECK`` constraint persist the enum member
+     *        *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member
+     *        *value* (the Pydantic class name, e.g. ``SEPSettings``).
+     *     3. Wire a ``ProxyEntry`` for the new class in the relevant service's
+     *        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
+     * @enum {string}
+     */
+    SettingClassEnum:
+      | 'SEPSettings'
+      | 'TasksSettings'
+      | 'SnippetsSettings'
+      | 'MessagesSettings'
+      | 'Settings'
+      | 'AlertSettings'
+      | 'AnonymizerSettings'
+      | 'AlertsSettings'
+      | 'InventorySettings';
+    /**
+     * SettingClassGroup
+     * @description One settings-class group in the LIST response.
+     *
+     *     :param setting_class: The settings class this group represents.
+     *     :type setting_class: SettingClassEnum
+     *     :param settings: The fields declared on the settings class, with their
+     *         current values and metadata.
+     *     :type settings: list[SettingResponse]
+     *     :param is_app_owned: Whether this group belongs to a SEP app under
+     *         ``app/sep/apps/`` rather than core SEP wiring.
+     *     :type is_app_owned: bool
+     *     :param app_id: The owning app's registry key when ``is_app_owned`` is
+     *         ``True``; ``None`` for core groups.
+     *     :type app_id: str | None
+     *     :param app_display_name: The owning app's human-facing label when
+     *         ``is_app_owned`` is ``True``; ``None`` for core groups.
+     *     :type app_display_name: str | None
+     *     :param app_enabled: Whether the owning app is currently enabled when
+     *         ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
+     *         apps remain listed so the frontend can hide them without a second
+     *         lookup.
+     *     :type app_enabled: bool | None
+     */
+    SettingClassGroup: {
+      /** App Display Name */
+      app_display_name?: string | null;
+      /** App Enabled */
+      app_enabled?: boolean | null;
+      /** App Id */
+      app_id?: string | null;
+      /**
+       * Is App Owned
+       * @default false
+       */
+      is_app_owned: boolean;
+      setting_class: components['schemas']['SettingClassEnum'];
+      /** Settings */
+      settings: components['schemas']['SettingResponse'][];
+    };
+    /**
+     * SettingResponse
+     * @description Represent a single setting's metadata and current value.
+     *
+     *     :param setting_class: The settings class the field belongs to.
+     *     :param key: The field name on the settings class.
+     *     :param key_path: Carry the canonical key segments for ``key`` such that
+     *         ``"__".join(key_path) == key``.
+     *     :param value: The current value visible through the proxy, dumped to a
+     *         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
+     *         redacted to ``"**********"``.
+     *     :param default_value: The field's declared default value, dumped via the
+     *         same JSON serialiser. ``None`` when no default exists.
+     *     :param type: A human-readable representation of the field's declared
+     *         annotation (for operator visibility; validation uses the actual
+     *         ``FieldInfo``).
+     *     :param reload: The reload classification (HOT or NOT_OVERRIDABLE).
+     *     :param description: The field's free-text description, or ``None``.
+     *     :param is_secret: Whether the field's annotation contains a Pydantic secret
+     *         (``SecretStr`` / ``SecretBytes``) at any depth.
+     *     :param is_complex: Whether the field's annotation is or contains a Pydantic
+     *         ``BaseModel`` subclass (true for nested submodels).
+     *     :param has_override: Whether a row exists in the ``settingoverride`` table
+     *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
+     *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
+     *         present it separately from everyday settings. Display-only:
+     *         it does not affect PATCH/DELETE eligibility.
+     *     :param is_applicable: Whether the setting applies under current runtime state
+     *         (e.g. the active auth provider). ``False`` lets the UI present the field
+     *         as inert. Display-only, like ``is_advanced``: it does not block
+     *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
+     */
+    SettingResponse: {
+      /** Default Value */
+      default_value: unknown;
+      /** Description */
+      description: string | null;
+      /** Has Override */
+      has_override: boolean;
+      /**
+       * Is Advanced
+       * @default false
+       */
+      is_advanced: boolean;
+      /**
+       * Is Applicable
+       * @default true
+       */
+      is_applicable: boolean;
+      /** Is Complex */
+      is_complex: boolean;
+      /** Is Secret */
+      is_secret: boolean;
+      /** Key */
+      key: string;
+      /** Key Path */
+      key_path?: string[];
+      reload: components['schemas']['ReloadClassification'];
+      setting_class: components['schemas']['SettingClassEnum'];
+      /** Type */
+      type: string;
+      /** Value */
+      value: unknown;
+    };
+    /**
+     * SettingsListResponse
+     * @description The LIST endpoint response, grouping settings by class.
+     *
+     *     :param groups: One :class:`SettingClassGroup` per settings class the
+     *         router was configured with.
+     *     :type groups: list[SettingClassGroup]
+     */
+    SettingsListResponse: {
+      /** Groups */
+      groups: components['schemas']['SettingClassGroup'][];
+    };
+    /**
+     * SettingsPatch
+     * @description Batch PATCH payload: a flat ``{field_name: new_value, ...}`` mapping.
+     *
+     *     An empty body is rejected as 422 because a no-op PATCH is a client bug, not
+     *     a valid request. The server coerces each value to the field's declared
+     *     type via :func:`coerce_field_value`; validation is all-or-nothing -- if any
+     *     key fails, nothing is written.
+     */
+    SettingsPatch: {
+      [key: string]: components['schemas']['JsonValue'];
     };
     /**
      * SourceEnum
@@ -958,21 +1467,21 @@ export interface components {
      *     :type database: Schema
      */
     Table: {
-      /** Name */
-      name: string;
       /** Create */
       create: string;
-      /** Schema Id */
-      schema_id: number;
-      /** Keys */
-      keys: Record<string, never>;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Keys */
+      keys: Record<string, never>;
+      /** Name */
+      name: string;
+      /** Schema Id */
+      schema_id: number;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -998,24 +1507,24 @@ export interface components {
      *     :type database: Schema
      */
     TableDetailResponse: {
-      /** Name */
-      name: string;
       /** Create */
       create: string;
-      /** Schema Id */
-      schema_id: number;
-      /** Keys */
-      keys: Record<string, never>;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      database: components['schemas']['Schema'];
+      /** Id */
+      id: number | null;
+      /** Keys */
+      keys: Record<string, never>;
+      /** Name */
+      name: string;
+      /** Schema Id */
+      schema_id: number;
       /** Updated At */
       updated_at?: string | null;
-      database: components['schemas']['Schema'];
     };
     /**
      * TableResponse
@@ -1037,21 +1546,21 @@ export interface components {
      *     :type schema_id: int
      */
     TableResponse: {
-      /** Name */
-      name: string;
       /** Create */
       create: string;
-      /** Schema Id */
-      schema_id: number;
-      /** Keys */
-      keys: Record<string, never>;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Keys */
+      keys: Record<string, never>;
+      /** Name */
+      name: string;
+      /** Schema Id */
+      schema_id: number;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -1067,17 +1576,21 @@ export interface components {
      *     :type schema_id: int | None
      */
     TableWrite: {
-      /** Name */
-      name: string;
       /** Create */
       create: string;
-      /** Schema Id */
-      schema_id?: number | null;
       /** Keys */
       keys: Record<string, never>;
+      /** Name */
+      name: string;
+      /** Schema Id */
+      schema_id?: number | null;
     };
     /** ValidationError */
     ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
       /** Location */
       loc: (string | number)[];
       /** Message */
@@ -1094,7 +1607,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  summary_get_summary_inventory_summary__get: {
+  settings_list_settings_admin_settings__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -1109,14 +1622,109 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: number;
-          };
+          'application/json': components['schemas']['SettingsListResponse'];
         };
       };
     };
   };
-  nodes_list_nodes__get: {
+  settings_patch_settings_admin_settings__setting_class__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SettingsPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  settings_get_setting_admin_settings__setting_class___key__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  settings_delete_setting_admin_settings__setting_class___key__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  nodes_list_nodes_nodes__get: {
     parameters: {
       query?: {
         external_id?: string | null;
@@ -1151,7 +1759,7 @@ export interface operations {
       };
     };
   };
-  nodes_create_node__post: {
+  nodes_create_node_nodes__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -1184,7 +1792,7 @@ export interface operations {
       };
     };
   };
-  nodes_retrieve_node__node_id__get: {
+  nodes_retrieve_node_nodes__node_id__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -1215,7 +1823,7 @@ export interface operations {
       };
     };
   };
-  nodes_update_node__node_id__put: {
+  nodes_update_node_nodes__node_id__put: {
     parameters: {
       query?: never;
       header?: never;
@@ -1250,7 +1858,7 @@ export interface operations {
       };
     };
   };
-  nodes_delete_node__node_id__delete: {
+  nodes_delete_node_nodes__node_id__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -1279,7 +1887,7 @@ export interface operations {
       };
     };
   };
-  nodes_list_services_by_node__node_id__services__get: {
+  nodes_list_services_by_node_nodes__node_id__services__get: {
     parameters: {
       query?: {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -1314,7 +1922,7 @@ export interface operations {
       };
     };
   };
-  nodes_create_service_for_node__node_id__services__post: {
+  nodes_create_service_for_node_nodes__node_id__services__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -1336,6 +1944,269 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Service'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  nodes_retrieve_host_system_observation_nodes__node_id__system_observation_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HostSystemObservationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  nodes_upsert_host_system_observation_nodes__node_id__system_observation_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['HostSystemObservationWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HostSystemObservationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_list_schemas_schemas__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_SchemaResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_retrieve_schema_schemas__schema_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SchemaDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_update_schema_schemas__schema_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SchemaWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Schema'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_delete_schema_schemas__schema_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_list_tables_by_schema_schemas__schema_id__tables__get: {
+    parameters: {
+      query?: {
+        search?: string | null;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_TableResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_create_table_for_schema_schemas__schema_id__tables__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TableWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Table'];
         };
       };
       /** @description Validation Error */
@@ -1548,12 +2419,75 @@ export interface operations {
       };
     };
   };
-  schemas_list_schemas_schemas__get: {
+  services_retrieve_service_system_observation_services__service_id__system_observation_get: {
     parameters: {
-      query?: {
-        offset?: number;
-        limit?: number;
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
       };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ServiceSystemObservationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  services_upsert_service_system_observation_services__service_id__system_observation_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ServiceSystemObservationWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ServiceSystemObservationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  summary_get_summary_inventory_summary__get: {
+    parameters: {
+      query?: never;
       header?: never;
       path?: never;
       cookie?: never;
@@ -1566,181 +2500,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PaginatedResponse_SchemaResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_retrieve_schema_schemas__schema_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SchemaDetailResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_update_schema_schemas__schema_id__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SchemaWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Schema'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_delete_schema_schemas__schema_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_list_tables_by_schema_schemas__schema_id__tables__get: {
-    parameters: {
-      query?: {
-        search?: string | null;
-        offset?: number;
-        limit?: number;
-      };
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_TableResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_create_table_for_schema_schemas__schema_id__tables__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['TableWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Table'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          'application/json': {
+            [key: string]: number;
+          };
         };
       };
     };

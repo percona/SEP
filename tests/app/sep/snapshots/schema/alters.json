@@ -1,0 +1,378 @@
+{
+  "capabilities": {
+    "alert_on_fail": true,
+    "chaining": true,
+    "pii_anonymization": false,
+    "scheduling": true,
+    "stats": true
+  },
+  "derived": [
+    {
+      "arg_substitutions": {
+        "--execute": "--dry-run"
+      },
+      "name_suffix": "-dry-run",
+      "parent_link": true
+    }
+  ],
+  "description": "Run pt-online-schema-change to perform online MySQL schema modifications.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "highlight": "bash",
+            "label": "Command line",
+            "path": "data.meta._command_line"
+          },
+          {
+            "label": "Execution Host",
+            "path": "data.meta.target"
+          },
+          {
+            "label": "Database Host",
+            "path": "data.meta._service_host"
+          },
+          {
+            "label": "Schema",
+            "path": "data.meta._schema_name"
+          },
+          {
+            "label": "Table",
+            "path": "data.meta._table_name"
+          }
+        ],
+        "title": "Execution"
+      }
+    ]
+  },
+  "display_name": "Alters",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Task Name",
+          "name": "task_name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
+        },
+        {
+          "label": "Database Host",
+          "name": "service_id",
+          "required": true,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        },
+        {
+          "default": "~/.my.cnf",
+          "description": "Path on the executor with [client] user/password. Pre-checks always use this path. Execute/dry-run use the same path only when not ~/.my.cnf.",
+          "label": "MySQL Defaults File",
+          "name": "pre_checks_mysql_config_file",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "allow_custom": true,
+          "depends_on": "service_id",
+          "description": "Schema to alter; pick from inventory or type a name.",
+          "label": "Schema",
+          "name": "db_schema",
+          "required": true,
+          "type": "schema"
+        },
+        {
+          "allow_custom": true,
+          "depends_on": "db_schema",
+          "description": "Table to alter; pick from inventory or type a name.",
+          "label": "Table",
+          "name": "db_table",
+          "required": true,
+          "type": "table"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Data"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "description": "Schema modifications excluding ALTER TABLE keywords (e.g. ADD COLUMN new_col INT, DROP COLUMN old_col)",
+          "label": "Alter",
+          "name": "alter",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Alter"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "choices": [
+            {
+              "label": "Processlist",
+              "value": "processlist"
+            },
+            {
+              "label": "Hosts",
+              "value": "hosts"
+            },
+            {
+              "label": "DSN",
+              "value": "dsn"
+            },
+            {
+              "label": "None",
+              "value": "none"
+            }
+          ],
+          "default": "processlist",
+          "label": "Recursion Method",
+          "name": "recursion_method",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "default": "D=percona,t=dsns",
+          "description": "Required when recursion method is 'dsn'",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "recursion_method": "dsn"
+                }
+              }
+            }
+          ],
+          "label": "DSN Table",
+          "name": "dsn_table",
+          "required": false,
+          "requires": [
+            {
+              "when": {
+                "equals": {
+                  "recursion_method": "dsn"
+                }
+              }
+            }
+          ],
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Recursion"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "default": false,
+          "description": "Print SQL statements to STDOUT",
+          "label": "Print",
+          "name": "print_arg",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": "time,10",
+          "description": "Print progress reports to STDERR (e.g. time,10)",
+          "label": "Progress",
+          "name": "progress",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "description": "Simulate without swapping the original and new table",
+          "label": "No Swap Tables",
+          "name": "no_swap_tables",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Keep the original table after rename",
+          "label": "No Drop Old Table",
+          "name": "no_drop_old_table",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Keep the new table if copying the original fails",
+          "label": "No Drop New Table",
+          "name": "no_drop_new_table",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Do not drop triggers on the old table",
+          "label": "No Drop Triggers",
+          "name": "no_drop_triggers",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Flags"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "description": "Execution pauses while this file exists",
+          "label": "Pause File",
+          "name": "pause_file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "New table name before swap (%T includes original name)",
+          "label": "New Table Name",
+          "name": "new_table_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Retries and wait times for critical operations (operation:tries:wait, comma-separated)",
+          "label": "Tries",
+          "name": "tries",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "MySQL variables to set (comma-separated key=value pairs)",
+          "label": "Set Vars",
+          "name": "set_vars",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Abort when GLOBAL STATUS variables exceed thresholds",
+          "label": "Critical Load",
+          "name": "critical_load",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Pause when GLOBAL STATUS variables exceed thresholds",
+          "label": "Max Load",
+          "name": "max_load",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Target execution time per chunk in seconds",
+          "label": "Chunk Time",
+          "name": "chunk_time",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Pause until replica lag falls below this value (seconds)",
+          "label": "Max Lag",
+          "name": "max_lag",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Pause when PXC flow control exceeds this value",
+          "label": "Max Flow Control",
+          "name": "max_flow_ctl",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Additional pt-online-schema-change arguments",
+          "label": "Extra Args",
+          "name": "extra_args",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "description": "When enabled, continue to the run task even if pre-checks fail (overrides the default halt policy)",
+          "label": "Continue on Pre-Check Failure",
+          "name": "continue_on_pre_check_failure",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Advanced"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      },
+      {
+        "format": "chip",
+        "key": "service_type",
+        "label": "Service Type",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "alters",
+  "predecessors": [
+    {
+      "name_suffix": "-pre-checks",
+      "on_failure": "halt",
+      "parent_link": true
+    }
+  ]
+}

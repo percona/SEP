@@ -16,25 +16,37 @@
 """Define tests for base SEP dependencies."""
 
 from collections import OrderedDict
+from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.testclient import TestClient
 from itsdangerous import BadSignature
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
+from app.core.auth.models import OAuthToken
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
     HTTPRedirectException,
+    HTTPServiceUnavailableException,
 )
-from app.models import CasdoorUser
-from app.sep.config import sep_settings
+from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework.registry import build_app_registry
+from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.config import App, sep_settings
+from app.sep.crud import AppStateManager
 from app.sep.deps import (
+    BEARER_REQUIRED_DETAIL,
     check_for_conflicted_running_tasks,
     ExecutorHostsContext,
     get_api_authenticated_admin,
@@ -45,23 +57,33 @@ from app.sep.deps import (
     get_created_schema,
     get_current_admin,
     get_current_user,
+    get_default_context,
     get_executor_hosts,
     get_executor_hosts_context,
     get_inventory_api,
+    get_pmm_api,
     get_task_by_name,
     get_task_history,
     get_tasks_api,
     get_tasks_context,
     get_tasks_index_context,
+    get_toggleable_app_key,
     get_username_mapping,
+    is_bearer_authenticated,
+    PROTECTED_APP_KEYS,
+    protected_task_guard,
+    reject_if_protected,
+    require_app_enabled,
+    require_bearer_for_unsafe_methods,
+    require_pmm_api,
+    resolve_ambient_session_token,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
-from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 from tests.app.factories import (
     CasdoorUserFactory,
@@ -77,9 +99,11 @@ SUCCESS_HISTORY_ID = 12
 EXPECTED_NODE_COUNT = 5
 
 
-def _make_request(authorization: str | None = None) -> Request:
+def _make_request(method: str = "GET", authorization: str | None = None) -> Request:
     """Build a minimal Request with messages state for testing.
 
+    :param method: HTTP method to set on the request scope.
+    :type method: str
     :param authorization: Value for the ``Authorization`` header, if any.
     :type authorization: str | None
     """
@@ -89,6 +113,7 @@ def _make_request(authorization: str | None = None) -> Request:
     scope = {
         "type": "http",
         "headers": headers,
+        "method": method,
         "client": ("127.0.0.1", "80"),
         "path": "/",
         "app": MagicMock(),
@@ -97,6 +122,69 @@ def _make_request(authorization: str | None = None) -> Request:
     req = Request(scope)
     req.state.messages = OrderedDict()
     return req
+
+
+class TestResolveAmbientSessionToken:
+    """Test ``resolve_ambient_session_token`` gating and silent-fallback behavior."""
+
+    @staticmethod
+    def _request(cookies: dict[str, str] | None = None) -> Request:
+        """Build a minimal GET request carrying ``cookies`` in the Cookie header."""
+        headers = []
+        if cookies:
+            joined = "; ".join(f"{name}={value}" for name, value in cookies.items())
+            headers.append((b"cookie", joined.encode()))
+        return Request(
+            {"type": "http", "headers": headers, "method": "GET", "path": "/"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_none_when_toggle_disabled(self, grafana_mock) -> None:
+        """Assert the helper no-ops when the toggle is off, even under Grafana."""
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_session_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_provider_not_grafana(self, mocker) -> None:
+        """Assert a non-Grafana active provider yields ``None`` (AC #7)."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_session_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_cookie_absent(self, grafana_mock, mocker) -> None:
+        """Assert an absent session cookie yields ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request()
+        assert await resolve_ambient_session_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_returns_token_on_happy_path(
+        self, grafana_mock, grafana_user_record, mocker
+    ) -> None:
+        """Assert a valid ambient session mints a token pair through the real model."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "ambient"})
+
+        token = await resolve_ambient_session_token(request)
+
+        assert isinstance(token, OAuthToken)
+        assert token.access_token
+        assert token.refresh_token
+        grafana_mock.get_current_user.assert_awaited_once_with("ambient")
+
+    @pytest.mark.asyncio
+    async def test_operational_failure_logs_and_returns_none(
+        self, grafana_mock, mocker
+    ) -> None:
+        """Assert an operational upstream failure logs a warning and falls back to ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        grafana_mock.get_current_user.side_effect = GrafanaException()
+        warning = mocker.patch("app.sep.deps.logger.warning")
+        request = self._request({"grafana_session": "s"})
+
+        assert await resolve_ambient_session_token(request) is None
+        warning.assert_called_once()
 
 
 class TestGetBaseUrl:
@@ -405,42 +493,46 @@ class TestGetUsernameMapping:
     """Test get_username_mapping dependency."""
 
     @pytest.mark.asyncio
-    async def test_casdoor_failure_returns_empty_dict(self) -> None:
-        """Assert Casdoor API failure returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
-                side_effect=ValueError("connection failed")
-            )
+    async def test_provider_failure_returns_empty_dict(self) -> None:
+        """Assert an auth-provider failure returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=ValueError("connection failed")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_http_exception_returns_empty_dict(self) -> None:
-        """Assert HTTPException from Casdoor returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
-                side_effect=HTTPException(status_code=500, detail="fail")
-            )
+        """Assert an HTTPException from the provider returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=HTTPException(status_code=500, detail="fail")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_key_error_returns_empty_dict(self) -> None:
-        """Assert KeyError from malformed response returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(side_effect=KeyError("missing"))
+        """Assert a KeyError from a malformed response returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=KeyError("missing")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_attribute_error_returns_empty_dict(self) -> None:
         """Assert AttributeError (e.g. session not initialized) returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(
                 side_effect=AttributeError(
                     "'NoneType' object has no attribute 'request'"
                 )
-            )
+            ),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
@@ -485,6 +577,86 @@ class TestGetTasksApi:
         result = await gen.__anext__()
         assert result is mock_authenticated
         mock_client.auth.assert_called_once_with("test-token")
+
+
+class TestGetPmmApi:
+    """Test the ``get_pmm_api`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_endpoint_not_configured(self):
+        """Assert ``None`` is returned when PMM endpoint is not set."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = None
+            mock_settings.PMM.api_key = None
+            result = await get_pmm_api()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_api_key_not_configured(self):
+        """Assert ``None`` is returned when PMM API key is not set."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = None
+            result = await get_pmm_api()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_configured(self):
+        """Assert a ``PMMRemoteAPI`` is returned when PMM is configured."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = True
+            mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            result = await get_pmm_api()
+        assert result is mock_client
+        mock_settings.get_remote_api.assert_awaited_once_with(
+            PMMRemoteAPI,
+            endpoint="https://pmm.example.com",
+            api_key="secret-key",
+            verify_ssl=True,
+            ssl_cafile="/etc/ssl/ca.pem",
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_configured_verify_ssl_false(self) -> None:
+        """Assert ``verify_ssl=False`` is threaded through to ``get_remote_api``."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = False
+            mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            result = await get_pmm_api()
+        assert result is mock_client
+        mock_settings.get_remote_api.assert_awaited_once_with(
+            PMMRemoteAPI,
+            endpoint="https://pmm.example.com",
+            api_key="secret-key",
+            verify_ssl=False,
+            ssl_cafile="/etc/ssl/ca.pem",
+        )
+
+
+class TestRequirePmmApi:
+    """Test the ``require_pmm_api`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_available(self) -> None:
+        """Assert the PMM API client is returned when it is not ``None``."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        result = await require_pmm_api(mock_client)
+        assert result is mock_client
+
+    @pytest.mark.asyncio
+    async def test_raises_service_unavailable_when_none(self) -> None:
+        """Assert ``HTTPServiceUnavailableException`` is raised when PMM is ``None``."""
+        with pytest.raises(HTTPServiceUnavailableException) as exc:
+            await require_pmm_api(None)
+        assert exc.value.detail == "PMM is not configured"
 
 
 class TestGetExecutorHosts:
@@ -533,7 +705,7 @@ class TestGetCreatedNode:
 
         result = await get_created_node(mock_api, node.id)
         assert isinstance(result, CreatedNode)
-        mock_api.get.assert_called_once_with(f"/{node.id}")
+        mock_api.get.assert_called_once_with(f"/nodes/{node.id}")
 
 
 class TestGetCreatedSchema:
@@ -577,21 +749,21 @@ class TestGetTaskByName:
     @pytest.mark.asyncio
     async def test_owner_mismatch_raises_not_found(self) -> None:
         """Assert wrong owner raises 404."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         mock_api = AsyncMock()
         mock_api.get.return_value = task.model_dump(mode="json")
 
         with pytest.raises(HTTPNotFoundException):
-            await get_task_by_name(mock_api, task.name, owner=TaskOwner.ALTERS)
+            await get_task_by_name(mock_api, task.name, owner="ALTERS")
 
     @pytest.mark.asyncio
     async def test_matching_owner_returns_task(self) -> None:
         """Assert correct owner returns the task."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         mock_api = AsyncMock()
         mock_api.get.return_value = task.model_dump(mode="json")
 
-        result = await get_task_by_name(mock_api, task.name, owner=TaskOwner.BACKUPS)
+        result = await get_task_by_name(mock_api, task.name, owner="BACKUPS")
         assert isinstance(result, Task)
         assert result.name == task.name
 
@@ -611,7 +783,7 @@ class TestGetTaskHistory:
     @pytest.mark.asyncio
     async def test_owner_mismatch_raises_not_found(self) -> None:
         """Assert wrong owner raises 404."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         history_data = {
             "id": 1,
             "execution_request": {"tracking": {}},
@@ -626,7 +798,7 @@ class TestGetTaskHistory:
         mock_api.get.return_value = history_data
 
         with pytest.raises(HTTPNotFoundException):
-            await get_task_history(mock_api, 1, owner=TaskOwner.ALTERS)
+            await get_task_history(mock_api, 1, owner="ALTERS")
 
 
 class TestGetTasksContext:
@@ -668,6 +840,7 @@ class TestGetTasksContext:
             mock_remote_api,
             get_task_info,
             executor_hosts_ctx,
+            service_type=ServiceTypeEnum.MYSQL,
         )
         assert context["services"][0]["id"] == created_service.id
         assert context["executor_hosts"] == [
@@ -700,6 +873,7 @@ class TestGetTasksContext:
             mock_api,
             lambda _: {},
             executor_hosts_ctx,
+            service_type=ServiceTypeEnum.MYSQL,
         )
 
         assert context["connectivity_check_default"] is default_value
@@ -747,6 +921,7 @@ class TestGetTasksContext:
             mock_api,
             lambda _: {},
             executor_hosts_ctx,
+            service_type=ServiceTypeEnum.MYSQL,
         )
         assert len(context["pending_tasks"]) == 1
         assert context["pending_tasks"][0]["id"] == PENDING_HISTORY_ID
@@ -754,6 +929,41 @@ class TestGetTasksContext:
         assert context["running_tasks"][0]["id"] == RUNNING_HISTORY_ID
         assert len(context["history_tasks"]) == 1
         assert context["history_tasks"][0]["id"] == SUCCESS_HISTORY_ID
+
+    @pytest.mark.asyncio
+    async def test_service_type_scopes_services_and_owner_filters_tasks(self) -> None:
+        """Assert the ``/services/`` fetch scopes by ``service_type``, tasks by owner.
+
+        Exercises AC6's ``get_tasks_context`` clause: a brand-new owner string no
+        core module knows still round-trips, with the caller-supplied
+        ``service_type`` driving the inventory fetch.
+        """
+        mock_api = AsyncMock()
+        mock_api.get = AsyncMock(
+            side_effect=[
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                [],
+            ]
+        )
+        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
+
+        await get_tasks_context(
+            mock_api,
+            mock_api,
+            lambda _: {},
+            executor_hosts_ctx,
+            owner="CONTRACT_NEW_OWNER",
+            service_type=ServiceTypeEnum.POSTGRESQL,
+        )
+
+        calls = mock_api.get.await_args_list
+        services_call = next(call for call in calls if call.args[0] == "/services/")
+        assert (
+            services_call.kwargs["params"]["service_type"] == ServiceTypeEnum.POSTGRESQL
+        )
+        tasks_call = next(call for call in calls if call.args[0] == "/")
+        assert tasks_call.kwargs["params"]["owner"] == "CONTRACT_NEW_OWNER"
 
 
 class TestGetTasksIndexContext:
@@ -780,7 +990,7 @@ class TestGetTasksIndexContext:
                 },
                 [{"task": "backup-task", "enabled": True}],
                 {
-                    "items": [{"name": "backup-task", "owner": TaskOwner.BACKUPS}],
+                    "items": [{"name": "backup-task", "owner": "BACKUPS"}],
                     "total": 1,
                     "offset": 0,
                     "limit": 50,
@@ -797,7 +1007,7 @@ class TestGetTasksIndexContext:
         )
 
         with patch("app.sep.deps.sep_settings") as mock_sep:
-            mock_sep.PLUGINS = []
+            mock_sep.APPS = []
             context = await get_tasks_index_context(
                 mock_inv_api, mock_tasks_api, default_context, executor_hosts_ctx
             )
@@ -808,7 +1018,7 @@ class TestGetTasksIndexContext:
         assert "is_task_manager_enabled" in context
         assert context["is_task_manager_enabled"] is False
         assert context["nodes"] == EXPECTED_NODE_COUNT
-        assert context["periodic_tasks"][0]["owner"] == TaskOwner.BACKUPS
+        assert context["periodic_tasks"][0]["owner"] == "BACKUPS"
 
     @pytest.mark.asyncio
     async def test_task_manager_enabled(self) -> None:
@@ -830,13 +1040,45 @@ class TestGetTasksIndexContext:
         mock_plugin.sidebar = True
 
         executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
-        with patch("app.sep.deps.sep_settings") as mock_sep:
-            mock_sep.PLUGINS = [mock_plugin]
-            context = await get_tasks_index_context(
-                mock_inv_api, mock_tasks_api, {}, executor_hosts_ctx
-            )
+        # The Task Manager flag now derives from the already-filtered plugin
+        # list carried on the default context, not the raw settings.
+        context = await get_tasks_index_context(
+            mock_inv_api,
+            mock_tasks_api,
+            {"plugins": [mock_plugin]},
+            executor_hosts_ctx,
+        )
 
         assert context["is_task_manager_enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_task_manager_disabled_when_filtered_out(self) -> None:
+        """Report False when Task Manager is absent from the filtered list."""
+        mock_inv_api = AsyncMock()
+        mock_tasks_api = AsyncMock()
+        mock_tasks_api.get = AsyncMock(
+            side_effect=[
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                [],
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+            ]
+        )
+        mock_inv_api.get = AsyncMock(return_value={})
+
+        other_plugin = MagicMock()
+        other_plugin.name = "Snippet Manager"
+        other_plugin.sidebar = True
+
+        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
+        context = await get_tasks_index_context(
+            mock_inv_api,
+            mock_tasks_api,
+            {"plugins": [other_plugin]},
+            executor_hosts_ctx,
+        )
+
+        assert context["is_task_manager_enabled"] is False
 
 
 class TestCheckForConflictedRunningTasks:
@@ -889,6 +1131,106 @@ class TestCheckForConflictedRunningTasks:
             ]
         )
         await check_for_conflicted_running_tasks("test-task", mock_api)
+
+
+class TestRejectIfProtected:
+    """Test the shared reject_if_protected check."""
+
+    def test_protected_task_raises_edit_message(self) -> None:
+        """Assert a protected task raises 409 with the default edit message."""
+        task = TaskFactory.build(owner="BACKUPS", protected=True)
+        with pytest.raises(HTTPConflictException) as exc_info:
+            reject_if_protected(task)
+        assert exc_info.value.detail == "Cannot edit a protected task."
+
+    def test_protected_task_raises_delete_message(self) -> None:
+        """Assert action='delete' yields the delete-specific 409 message."""
+        task = TaskFactory.build(owner="ALTERS", protected=True)
+        with pytest.raises(HTTPConflictException) as exc_info:
+            reject_if_protected(task, action="delete")
+        assert exc_info.value.detail == "Cannot delete a protected task."
+
+    def test_unprotected_task_returns_same_task(self) -> None:
+        """Assert an unprotected task is returned unchanged."""
+        task = TaskFactory.build(owner="BACKUPS", protected=False)
+        assert reject_if_protected(task) is task
+
+    def test_protected_none_returns_task(self) -> None:
+        """Assert a falsy/None protected flag does not raise."""
+        task = TaskFactory.build(owner="BACKUPS")
+        task.protected = None
+        assert reject_if_protected(task, action="delete") is task
+
+
+class TestProtectedTaskGuard:
+    """Test the protected_task_guard dependency factory.
+
+    These exercise the factory through real FastAPI dependency resolution: the
+    built guard is mounted on a probe route so ``Depends(task_dep)`` actually
+    resolves the supplied dependency. This validates that the factory is wired
+    to ``task_dep`` (the mock is awaited), not just that the inner rejection
+    body works.
+    """
+
+    @staticmethod
+    def _build_client(
+        task: Task, *, action: str = "edit"
+    ) -> tuple[TestClient, list[bool]]:
+        """Mount ``protected_task_guard(task_dep)`` on a probe route.
+
+        Builds a real async ``task_dep`` that records each invocation, so the
+        returned ``calls`` list proves FastAPI resolved the guard through
+        ``Depends(task_dep)`` rather than the guard reaching the task by another
+        path.
+
+        :param task: The task the resolved dependency should return.
+        :type task: Task
+        :param action: The action verb forwarded to the guard factory.
+        :type action: str
+        :return: The test client and the per-request invocation record.
+        :rtype: tuple[TestClient, list[bool]]
+        """
+        calls: list[bool] = []
+
+        async def task_dep() -> Task:
+            calls.append(True)
+            return task
+
+        guard = protected_task_guard(task_dep, action=action)
+        app = FastAPI()
+
+        @app.get("/probe")
+        async def _probe(resolved: Annotated[Task, Depends(guard)]) -> dict[str, str]:
+            return {"name": resolved.name}
+
+        return TestClient(app), calls
+
+    def test_guard_rejects_protected_task(self) -> None:
+        """Assert the built dependency resolves task_dep then raises 409."""
+        task = TaskFactory.build(owner="BACKUPS", protected=True)
+        client, calls = self._build_client(task)
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Cannot edit a protected task."
+        assert calls == [True]
+
+    def test_guard_delete_verb(self) -> None:
+        """Assert action='delete' propagates to the built dependency message."""
+        task = TaskFactory.build(owner="ALTERS", protected=True)
+        client, calls = self._build_client(task, action="delete")
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Cannot delete a protected task."
+        assert calls == [True]
+
+    def test_guard_passes_unprotected_task(self) -> None:
+        """Assert the built dependency returns an unprotected task unchanged."""
+        task = TaskFactory.build(owner="BACKUPS", protected=False)
+        client, calls = self._build_client(task)
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"name": task.name}
+        assert calls == [True]
 
 
 class TestExecutorHostsContext:
@@ -1002,7 +1344,9 @@ class TestGetExecutorHostsContext:
         ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "db-replica"
-        mock_inventory_api.get.assert_called_once_with("/", params={"limit": 0})
+        mock_inventory_api.get.assert_called_once_with(
+            "/nodes/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
+        )
 
     @pytest.mark.asyncio
     async def test_returns_fallback_when_inventory_raises(self) -> None:
@@ -1033,3 +1377,425 @@ class TestGetExecutorHostsContext:
         ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "nomad-2"
+
+
+class TestRequireBearerForUnsafeMethods:
+    """Exercise the ``require_bearer_for_unsafe_methods`` dependency."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
+    async def test_safe_methods_pass_without_bearer(self, method: str) -> None:
+        """Safe HTTP methods do not require a Bearer header."""
+        request = _make_request(method=method)
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+    async def test_unsafe_methods_without_bearer_raise_401(self, method: str) -> None:
+        """Mutating methods without an Authorization header raise 401."""
+        request = _make_request(method=method)
+        with pytest.raises(HTTPUnauthorizedException) as exc_info:
+            await require_bearer_for_unsafe_methods(request)
+        assert "Bearer" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+    async def test_unsafe_methods_with_bearer_pass(self, method: str) -> None:
+        """Mutating methods with a Bearer header pass through."""
+        request = _make_request(method=method, authorization="Bearer abc")
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_lowercase_bearer_scheme_passes(self) -> None:
+        """Bearer detection is case-insensitive (existing helper contract)."""
+        request = _make_request(method="POST", authorization="bearer abc")
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_basic_scheme_raises(self) -> None:
+        """Non-Bearer Authorization schemes still raise 401 on mutating methods."""
+        request = _make_request(method="POST", authorization="Basic abc")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_bearer_without_trailing_space_raises(self) -> None:
+        """The helper requires ``Bearer `` (trailing space) to match."""
+        request = _make_request(method="POST", authorization="Bearer")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_empty_authorization_header_raises(self) -> None:
+        """An empty Authorization header is not a valid Bearer credential."""
+        request = _make_request(method="POST", authorization="")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_bearer_with_empty_token_passes_gate(self) -> None:
+        """``Bearer `` (trailing space, no token) passes the prefix-only gate.
+
+        Token validation happens downstream in ``get_current_user``; the gate
+        is intentionally a routing signal, not an auth check.
+        """
+        request = _make_request(method="POST", authorization="Bearer ")
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_safe_method_with_invalid_authorization_still_passes(self) -> None:
+        """Safe methods bypass the gate regardless of Authorization contents."""
+        request = _make_request(method="GET", authorization="garbage")
+        assert await require_bearer_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_lowercase_method_treated_as_unsafe(self) -> None:
+        """Method matching is case-sensitive; ``post`` is not in the safe set."""
+        request = _make_request(method="post")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["TRACE", "CONNECT"])
+    async def test_exotic_methods_are_unsafe(self, method: str) -> None:
+        """Exotic HTTP methods (``TRACE``, ``CONNECT``) are not in the safe whitelist.
+
+        Regression guard: the safe set is an explicit allow-list (GET/HEAD/OPTIONS).
+        ASGI servers can route obscure verbs and a permissive deny-list would
+        leak protocol-level metadata under cookie-only credentials.
+        """
+        request = _make_request(method=method)
+        with pytest.raises(HTTPUnauthorizedException) as exc_info:
+            await require_bearer_for_unsafe_methods(request)
+        assert exc_info.value.detail == BEARER_REQUIRED_DETAIL
+
+    @pytest.mark.asyncio
+    async def test_empty_method_string_raises(self) -> None:
+        """An empty method string is treated as unsafe.
+
+        ASGI guarantees a non-empty method, but the gate must not silently
+        accept an empty string if a future helper path bypasses Starlette.
+        """
+        request = _make_request(method="")
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_bearer_for_unsafe_methods(request)
+
+
+class TestMakeRequestHelper:
+    """Pin invariants of the ``_make_request`` helper so the merge refactor is safe."""
+
+    def test_default_method_is_get(self) -> None:
+        """Calls without ``method`` produce a GET request (existing call-site contract)."""
+        assert _make_request().method == "GET"
+
+    @pytest.mark.parametrize(
+        "method",
+        ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    )
+    def test_explicit_method_set(self, method: str) -> None:
+        """Explicit ``method`` flows through to ``request.method`` verbatim."""
+        assert _make_request(method=method).method == method
+
+    def test_authorization_header_omitted_when_none(self) -> None:
+        """``authorization=None`` produces a request without an Authorization header."""
+        assert "authorization" not in _make_request().headers
+
+    def test_authorization_header_set_when_provided(self) -> None:
+        """``authorization`` value is written verbatim into the header."""
+        assert (
+            _make_request(authorization="Bearer abc").headers["authorization"]
+            == "Bearer abc"
+        )
+
+    def test_empty_string_authorization_set_literally(self) -> None:
+        """``authorization=""`` produces a present-but-empty Authorization header.
+
+        Several existing call sites rely on this boundary to exercise the empty-token
+        rejection path; pin it explicitly.
+        """
+        assert _make_request(authorization="").headers["authorization"] == ""
+
+    def test_state_messages_initialized(self) -> None:
+        """``request.state.messages`` is initialized to an OrderedDict.
+
+        Many call sites consume this state; the refactor must preserve it.
+        """
+        assert isinstance(_make_request().state.messages, OrderedDict)
+
+
+class TestBearerHeaderEdgeCases:
+    """Cover header-parsing edges for ``is_bearer_authenticated`` and the gates that wrap it.
+
+    These tests pin the *current* permissive-prefix contract: the gate is a
+    routing signal, not a credential check. Any future tightening (token shape,
+    DoS bounds) should fail these tests visibly so it can't slip in silently.
+    """
+
+    def test_tab_separator_does_not_match(self) -> None:
+        r"""``Bearer\ttoken`` does not match; the prefix requires a literal space."""
+        request = _make_request(authorization="Bearer\ttoken")
+        assert is_bearer_authenticated(request) is False
+
+    def test_double_space_after_bearer_matches(self) -> None:
+        """``Bearer  token`` (two spaces) still satisfies the prefix check.
+
+        Documents the lenient prefix contract: anything after ``Bearer `` is the
+        token payload — downstream validators (``oauth2_scheme``,
+        ``get_current_user_api``) are responsible for token shape.
+        """
+        request = _make_request(authorization="Bearer  token")
+        assert is_bearer_authenticated(request) is True
+
+    def test_leading_whitespace_in_header_does_not_match(self) -> None:
+        """`` Bearer token`` (leading space) is not a Bearer credential.
+
+        Starlette does not strip leading whitespace from header values; the
+        gate's ``startswith`` check is byte-faithful, so a leading space rejects.
+        """
+        request = _make_request(authorization=" Bearer token")
+        assert is_bearer_authenticated(request) is False
+
+    def test_mixed_case_scheme_matches(self) -> None:
+        """The scheme match is case-insensitive (``BeArEr token`` is valid)."""
+        request = _make_request(authorization="BeArEr token")
+        assert is_bearer_authenticated(request) is True
+
+    def test_very_long_header_does_not_crash(self) -> None:
+        """A 64 KiB Authorization header is parsed without raising or hanging.
+
+        DoS sanity check: the gate is a single ``str.startswith`` — adding token
+        length validation later would need a different shape, so a regression
+        introducing a quadratic scan would fail here.
+        """
+        long_token = "a" * (64 * 1024)
+        request = _make_request(authorization=f"Bearer {long_token}")
+        assert is_bearer_authenticated(request) is True
+
+    def test_null_byte_in_token_passes_gate(self) -> None:
+        r"""``Bearer \x00abc`` passes the gate; null-byte filtering is a downstream concern.
+
+        Pinning permissive behaviour: the routing-signal gate is intentionally
+        thin, so any future "block control characters" change is visible here
+        rather than a silent behaviour shift.
+        """
+        request = _make_request(authorization="Bearer \x00abc")
+        assert is_bearer_authenticated(request) is True
+
+    def test_unicode_nbsp_separator_does_not_match(self) -> None:
+        r"""``Bearer<NBSP>token`` does not match the ASCII prefix.
+
+        Prevents a unicode-confusable bypass: a client crafting
+        ``Bearer<NBSP>...`` cannot trick the gate into accepting a request that
+        Starlette will then route to the safe codepath.
+        """
+        request = _make_request(authorization="Bearer\u00a0token")
+        assert is_bearer_authenticated(request) is False
+
+    def test_only_scheme_no_separator_does_not_match(self) -> None:
+        """``Bearer`` alone (no trailing space) is not a Bearer credential."""
+        request = _make_request(authorization="Bearer")
+        assert is_bearer_authenticated(request) is False
+
+    @pytest.mark.asyncio
+    async def test_unsafe_methods_gate_propagates_nbsp_rejection(self) -> None:
+        """End-to-end: NBSP-spoofed header on POST still 401s through the gate."""
+        request = _make_request(method="POST", authorization="Bearer\u00a0token")
+        with pytest.raises(HTTPUnauthorizedException) as exc_info:
+            await require_bearer_for_unsafe_methods(request)
+        assert exc_info.value.detail == BEARER_REQUIRED_DETAIL
+
+
+class TestRequireAppEnabled:
+    """Test the per-router app-state guard factory."""
+
+    @pytest.mark.asyncio
+    async def test_gate_passes_when_enabled(self, session) -> None:
+        """The gate returns ``None`` when the app is ``ENABLED``."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        await session.commit()
+        gate = require_app_enabled("snippets")
+        assert await gate(session) is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    async def test_gate_raises_503_for_non_enabled_states(self, session, state) -> None:
+        """The gate raises 503 whenever the app is not ``ENABLED``."""
+        session.add(AppState(app_key="snippets", lifecycle_state=state))
+        await session.commit()
+        gate = require_app_enabled("snippets")
+        with pytest.raises(HTTPServiceUnavailableException) as exc_info:
+            await gate(session)
+        assert "snippets" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_gate_passes_when_missing(self, session) -> None:
+        """A missing row is treated as enabled (active until explicitly disabled)."""
+        gate = require_app_enabled("snippets")
+        assert await gate(session) is None
+
+    def test_inventory_is_protected(self) -> None:
+        """``inventory`` is the protected key the mount loops must skip."""
+        assert "inventory" in PROTECTED_APP_KEYS
+
+
+class TestGetToggleableAppKey:
+    """Test app-key resolver used by the app-state toggle endpoint."""
+
+    def test_returns_key_for_toggleable_configured_app(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A configured, non-protected key resolves to itself."""
+        monkeypatch.setattr(
+            "app.sep.apps.framework.registry.get_app_registry",
+            lambda: build_app_registry(
+                [
+                    App(name="Inventory", module_name="inventory"),
+                    App(name="Snippet Manager", module_name="snippets"),
+                ]
+            ),
+        )
+        assert get_toggleable_app_key("snippets") == "snippets"
+
+    def test_protected_key_raises_conflict(self) -> None:
+        """A protected key raises 409 -- it can never be toggled."""
+        with pytest.raises(HTTPConflictException):
+            get_toggleable_app_key("inventory")
+
+    def test_unknown_key_raises_not_found(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An unconfigured key raises 404."""
+        monkeypatch.setattr(
+            "app.sep.apps.framework.registry.get_app_registry",
+            lambda: build_app_registry(
+                [App(name="Snippet Manager", module_name="snippets")]
+            ),
+        )
+        with pytest.raises(HTTPNotFoundException):
+            get_toggleable_app_key("unknown")
+
+
+class TestGetDefaultContextPluginFiltering:
+    """Test that ``get_default_context`` filters the sidebar by app state."""
+
+    @staticmethod
+    def _plugins() -> list[App]:
+        """Build a representative inventory + two non-protected plugins."""
+        return [
+            App(name="Inventory", module_name="inventory"),
+            App(name="Snippet Manager", module_name="snippets"),
+            App(name="Checksums", module_name="checksums"),
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    @pytest.mark.parametrize(
+        "excluded_state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    async def test_enabled_plugin_included_non_enabled_excluded(
+        self, session, dummy_request, regular_user, excluded_state
+    ) -> None:
+        """Only protected apps plus ``ENABLED`` non-protected apps reach the sidebar."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        session.add(AppState(app_key="checksums", lifecycle_state=excluded_state))
+        await session.commit()
+
+        with (
+            patch(
+                "app.sep.apps.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
+            patch("app.sep.deps.settings"),
+        ):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert keys == {"inventory", "snippets"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_inventory_always_present_even_when_row_disabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """A protected app stays in the sidebar regardless of any DB row."""
+        session.add(
+            AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        with (
+            patch(
+                "app.sep.apps.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
+            patch("app.sep.deps.settings"),
+        ):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert "inventory" in keys
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_missing_row_includes_plugin(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """A configured plugin with no DB row is shown (missing -> enabled)."""
+        with (
+            patch(
+                "app.sep.apps.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
+            patch("app.sep.deps.settings"),
+        ):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert keys == {"inventory", "snippets", "checksums"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_db_failure_degrades_to_showing_all_apps(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """A DB read failure shows every app so the page (and error pages) render."""
+        with (
+            patch(
+                "app.sep.apps.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
+            patch("app.sep.deps.settings"),
+            patch.object(
+                AppStateManager,
+                "all_lifecycle_states",
+                side_effect=SQLAlchemyError("db down"),
+            ),
+        ):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert keys == {"inventory", "snippets", "checksums"}

@@ -35,13 +35,12 @@ from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import FileMetadata, TaskHistoryResponse
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["sep", "tasks", "files"])
+router = APIRouter(tags=["tasks"])
 
 
 @router.get(
     "/{task_history_id}",
     dependencies=[IsAuthenticated],
-    response_model=dict[str, FileMetadata],
 )
 @csrf_exempt
 async def list_task_history_files(

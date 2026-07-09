@@ -15,6 +15,7 @@
 
 """Define tests for the app.core.utils.imports module."""
 
+import contextlib
 import sys
 from importlib import util
 
@@ -27,22 +28,39 @@ from app.core.utils.imports import (
 )
 
 
-def test_import_var():
-    """Test import_var utility for dynamic imports."""
+@pytest.fixture
+def temp_module(monkeypatch):
+    """Register a temporary ``temp_module`` in ``sys.modules`` with ``test_var = 42``.
+
+    Uses ``monkeypatch.setitem`` so ``sys.modules`` is restored after each case,
+    preventing state leaking between parametrized cases or into other tests.
+    """
     module_name = "temp_module"
     spec = util.spec_from_loader(module_name, loader=None)
-    temp_module = util.module_from_spec(spec)
-    sys.modules[module_name] = temp_module
-    temp_module.test_var = 42
-    expected_value = 42
+    assert spec is not None
+    module = util.module_from_spec(spec)
+    module.test_var = 42
+    monkeypatch.setitem(sys.modules, module_name, module)
+    return module
 
-    assert import_var("temp_module.test_var") == expected_value
 
-    with pytest.raises(AttributeError):
-        import_var("temp_module.non_existent_var")
-
-    with pytest.raises(ModuleNotFoundError):
-        import_var("nonexistent_module.var")
+@pytest.mark.parametrize(
+    ("path", "expected", "expectation"),
+    [
+        ("temp_module.test_var", 42, contextlib.nullcontext()),
+        (
+            "temp_module.non_existent_var",
+            None,
+            pytest.raises(AttributeError),
+        ),
+        ("nonexistent_module.var", None, pytest.raises(ModuleNotFoundError)),
+    ],
+    ids=["success", "missing-attribute", "missing-module"],
+)
+def test_import_var(temp_module, path, expected, expectation):
+    """Test import_var utility for dynamic imports."""
+    with expectation:
+        assert import_var(path) == expected
 
 
 class TestValidateAttributeIsImportable:

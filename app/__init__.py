@@ -14,7 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 __all__ = ["BASE_DIR", "__summary__", "__version__"]
-__version__ = "v0.14.0.dev0"
+__version__ = "v1.0.0.dev0"
 __summary__ = "Percona Services Enablement Platform"
 
 from pathlib import Path

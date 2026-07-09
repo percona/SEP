@@ -74,10 +74,10 @@ const cascadeFetchResponses: Record<string, unknown> = {
   '/api/sep/services/': SERVICES,
 };
 for (const [serviceId, list] of Object.entries(SCHEMAS_BY_SERVICE)) {
-  cascadeFetchResponses[`/inventory-api/services/${serviceId}/schemas`] = list;
+  cascadeFetchResponses[`/sep/services/${serviceId}/schemas`] = list;
 }
 for (const [schemaId, list] of Object.entries(TABLES_BY_SCHEMA)) {
-  cascadeFetchResponses[`/inventory-api/schemas/${schemaId}/tables`] = list;
+  cascadeFetchResponses[`/sep/schemas/${schemaId}/tables`] = list;
 }
 
 function CurrentValues() {

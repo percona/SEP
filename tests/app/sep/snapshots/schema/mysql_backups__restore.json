@@ -1,0 +1,472 @@
+{
+  "capabilities": {
+    "alert_on_fail": true,
+    "chaining": true,
+    "pii_anonymization": false,
+    "scheduling": true,
+    "stats": false
+  },
+  "description": "Restore MySQL hosts from XtraBackup, Mydumper, and Binlog backups.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Execution Host",
+            "path": "hostname"
+          },
+          {
+            "label": "Destination Host",
+            "path": "host"
+          },
+          {
+            "label": "Destination Port",
+            "path": "port"
+          }
+        ],
+        "title": "Restore Target"
+      }
+    ]
+  },
+  "display_name": "MySQL Restores",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Task Name",
+          "name": "task_name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
+        },
+        {
+          "choices": [
+            {
+              "label": "Mydumper",
+              "value": "M"
+            },
+            {
+              "label": "XtraBackup",
+              "value": "X"
+            },
+            {
+              "label": "Binlog",
+              "value": "B"
+            }
+          ],
+          "label": "Backup Type",
+          "name": "backup_type",
+          "required": true,
+          "type": "choice"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
+        {
+          "label": "Backup Source",
+          "name": "backup_source",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Logging directory",
+          "name": "logging_dir",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Port",
+          "name": "port",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Custom MySQL init command",
+          "name": "custom_mysql_init_command",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": "percona",
+          "label": "SSH user",
+          "name": "ssh_user",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": 22,
+          "label": "SSH port",
+          "name": "ssh_port",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "SSH key name",
+          "name": "ssh_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "choices": [
+            {
+              "label": "s3cmd",
+              "value": "s3cmd"
+            },
+            {
+              "label": "awscli",
+              "value": "awscli"
+            }
+          ],
+          "default": "s3cmd",
+          "label": "S3 tool",
+          "name": "s3_tool",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "label": "GPG password file",
+          "name": "gpg_password_file",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "General"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": true,
+      "fields": [
+        {
+          "allow_custom": true,
+          "label": "Database Host",
+          "name": "service_id",
+          "required": false,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        },
+        {
+          "allow_custom": true,
+          "depends_on": "service_id",
+          "label": "Database",
+          "name": "schema_id",
+          "required": false,
+          "type": "schema"
+        },
+        {
+          "label": "Local path",
+          "name": "local_path",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "label": "Overwrite tables",
+          "name": "overwrite_tables",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": 4,
+          "label": "Myloader threads",
+          "name": "myloader_threads",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Myloader extra args",
+          "name": "myloader_extra_args",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Skip databases",
+          "name": "skip_databases",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Include databases",
+          "name": "include_databases",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Pre-script",
+          "name": "pre_script",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Post-script",
+          "name": "post_script",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "forbidden": [
+        {
+          "when": {
+            "not_equals": {
+              "backup_type": "M"
+            }
+          }
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Mydumper"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": true,
+      "fields": [
+        {
+          "default": false,
+          "label": "Skip incrementals",
+          "name": "skip_incrementals",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "label": "Data directory",
+          "name": "datadir",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "label": "Kill MySQL",
+          "name": "kill_mysql",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "label": "XtraBackup prepare memory",
+          "name": "xb_prepare_memory",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": 4,
+          "label": "XtraBackup parallel",
+          "name": "xb_parallel",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "choices": [
+            {
+              "label": "innobackupex",
+              "value": "innobackupex"
+            },
+            {
+              "label": "xtrabackup",
+              "value": "xtrabackup"
+            },
+            {
+              "label": "mariadb-backup",
+              "value": "mariadb-backup"
+            }
+          ],
+          "label": "XtraBackup binary",
+          "name": "xtrabackup_bin_cmd",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "default": false,
+          "label": "Restore my.cnf",
+          "name": "restore_mycnf",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "label": "Incremental destination path",
+          "name": "incremental_dest_path",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "XtraBackup restore args",
+          "name": "xtrabackup_restore_args",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Keyring file data",
+          "name": "keyring_file_data",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "XtraBackup AES-256 keyfile",
+          "name": "xtrabackup_aes256_keyfile",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "label": "Slave from master",
+          "name": "slave_from_master",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "label": "Wait for catchup",
+          "name": "wait_for_catchup",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "label": "Master IP",
+          "name": "master_ip",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": 3306,
+          "label": "Master port",
+          "name": "master_port",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Master user",
+          "name": "master_user",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Master password",
+          "name": "master_password",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "forbidden": [
+        {
+          "when": {
+            "not_equals": {
+              "backup_type": "X"
+            }
+          }
+        }
+      ],
+      "render_after_submit": false,
+      "title": "XtraBackup"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": true,
+      "fields": [
+        {
+          "label": "Start file",
+          "name": "start_file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Start position",
+          "name": "start_position",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Stop file",
+          "name": "stop_file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Stop position",
+          "name": "stop_position",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Use SQL file",
+          "name": "use_sql_file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Binlog restore extra args",
+          "name": "binlog_restore_extra_args",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "forbidden": [
+        {
+          "when": {
+            "not_equals": {
+              "backup_type": "B"
+            }
+          }
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Binlog"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      },
+      {
+        "format": "chip",
+        "key": "backup_type",
+        "label": "Type",
+        "sortable": false
+      },
+      {
+        "key": "hostname",
+        "label": "Execution Host",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "mysql_backups_restores"
+}

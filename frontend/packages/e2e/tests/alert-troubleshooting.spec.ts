@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── Mock stubs ────────────────────────────────────────────────────────────────
 
@@ -62,7 +63,7 @@ const MOCK_SNIPPET_SCHEMA = {
     {
       title: 'Execution',
       fields: [
-        { type: 'host', name: 'executor_host', label: 'Executor Host', required: true },
+        { type: 'host', name: 'executor_host', label: 'Execution Host', required: true },
         { type: 'integer', name: 'limit', label: 'Row Limit', required: false },
       ],
     },
@@ -80,13 +81,17 @@ async function mockAlertTroubleshootingRoutes(page: Page) {
       return route.continue();
     }
 
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
+    }
+
     if (pathname.includes('/oauth/refresh')) {
       return route.fulfill({ json: MOCK_TOKEN });
     }
     if (pathname.includes('/users/me')) {
       return route.fulfill({ json: MOCK_USER });
     }
-    if (pathname === '/api/plugins/alert_troubleshooting/schema') {
+    if (pathname === '/api/apps/alert_troubleshooting/schema') {
       return route.fulfill({
         json: {
           name: 'alert_troubleshooting',
@@ -96,17 +101,17 @@ async function mockAlertTroubleshootingRoutes(page: Page) {
         },
       });
     }
-    if (pathname === '/api/plugins/alert_troubleshooting/mysql/MySQLSlowQueries') {
+    if (pathname === '/api/apps/alert_troubleshooting/mysql/MySQLSlowQueries') {
       return route.fulfill({ json: MOCK_ALERT_DETAIL });
     }
     if (
       req.method() === 'GET' &&
-      (pathname === '/api/plugins/alert_troubleshooting/' ||
-        pathname === '/api/plugins/alert_troubleshooting')
+      (pathname === '/api/apps/alert_troubleshooting/' ||
+        pathname === '/api/apps/alert_troubleshooting')
     ) {
       return route.fulfill({ json: MOCK_ALERT_GROUPS });
     }
-    if (pathname.includes('/plugins/snippets') && pathname.endsWith('/schema')) {
+    if (pathname.includes('/apps/snippets') && pathname.endsWith('/schema')) {
       return route.fulfill({ json: MOCK_SNIPPET_SCHEMA });
     }
     if (pathname.includes('/sep/hosts/')) {

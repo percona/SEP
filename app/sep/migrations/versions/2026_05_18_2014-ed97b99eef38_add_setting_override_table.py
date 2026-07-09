@@ -26,6 +26,8 @@ import sqlmodel
 from alembic import op
 
 import app.core.db.sql_types
+from app.core.db.utils import acquire_pg_advisory_xact_lock
+from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 
 # revision identifiers, used by Alembic.
 revision = "ed97b99eef38"
@@ -36,6 +38,10 @@ depends_on = None
 
 def upgrade() -> None:
     """Create the ``settingoverride`` table on the SEP database."""
+    bind = op.get_bind()
+    acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    if sa.inspect(bind).has_table("settingoverride"):
+        return
     op.create_table(
         "settingoverride",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -78,6 +84,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop the ``settingoverride`` table from the SEP database."""
+    bind = op.get_bind()
+    acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    if not sa.inspect(bind).has_table("settingoverride"):
+        return
     op.drop_index(
         "ix_settingoverride_setting_class_key", table_name="settingoverride"
     )

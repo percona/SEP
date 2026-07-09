@@ -1,0 +1,38 @@
+{
+  "description": "View task definitions, execution history, and running task logs in one place. Task creation and execution remain on the owning plugins.",
+  "display_name": "Task Manager",
+  "forms": [],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "key": "backend",
+        "label": "Backend",
+        "sortable": true
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      },
+      {
+        "key": "last_updated_by",
+        "label": "Last Updated By",
+        "sortable": false
+      }
+    ],
+    "default_sort": "name",
+    "overview_hidden_fields": []
+  },
+  "name": "tasks"
+}

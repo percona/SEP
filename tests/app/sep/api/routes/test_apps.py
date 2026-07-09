@@ -1,0 +1,191 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Tests for the public navigation app-listing API at ``/api/apps``."""
+
+from collections.abc import AsyncIterator, Iterator
+
+import pytest
+import pytest_asyncio
+from fastapi import status
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import StaticPool
+from sqlmodel import SQLModel
+
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.utils import json_serializer
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.deps import (
+    get_api_authenticated_user,
+    get_current_user,
+    get_session,
+    validate_csrf,
+)
+from app.sep.main import sep_app
+from app.sep.models import AppLifecycleEnum, AppState
+
+
+@pytest_asyncio.fixture(name="override_session")
+async def override_session_fixture() -> AsyncIterator[AsyncSession]:
+    """Provide an in-memory SQLite SEP session pre-loaded with all tables."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    async_session_maker = get_async_session_maker_from_engine(engine)
+    async with async_session_maker() as session:
+        yield session
+
+
+@pytest.fixture(name="api_user_client")
+def api_user_client_fixture(
+    regular_user: CasdoorUser, override_session: AsyncSession
+) -> Iterator[TestClient]:
+    """Yield an authenticated (non-admin) client with the in-memory SEP session."""
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_session] = lambda: override_session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture(name="api_unauthenticated_client")
+def api_unauthenticated_client_fixture(
+    override_session: AsyncSession,
+) -> Iterator[TestClient]:
+    """Yield an unauthenticated client — the listing should 401 (JSON)."""
+    sep_app.dependency_overrides = {}
+    sep_app.dependency_overrides[get_session] = lambda: override_session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.mark.asyncio
+class TestListAppsForNavigation:
+    """Tests for ``GET /api/apps/``."""
+
+    async def test_any_authenticated_user_gets_the_listing(
+        self, api_user_client: TestClient
+    ) -> None:
+        """A non-admin authenticated user receives the public projection."""
+        response = api_user_client.get("/api/apps/")
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == len(get_app_registry().keys())
+        assert set(payload[0]) == {
+            "app_key",
+            "enabled",
+            "sidebar",
+            "uri_path",
+            "display_name",
+            "custom_ui",
+            "group",
+            "nav_order",
+        }
+
+    async def test_additive_fields_carry_registry_values(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Carry ``display_name`` and a boolean ``custom_ui`` flag on every entry."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        for entry in entries.values():
+            assert entry["display_name"]
+            assert isinstance(entry["custom_ui"], bool)
+        assert entries["atw"]["custom_ui"] is True
+
+    async def test_group_and_nav_order_carry_registry_values(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Carry ``group``/``nav_order`` values from the plugin registry."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        registry = get_app_registry()
+
+        for app_key, entry in entries.items():
+            definition = registry.get(app_key)
+            assert entry["group"] == definition.group
+            assert entry["nav_order"] == definition.nav_order
+
+    async def test_child_enabled_follows_parent(
+        self, api_user_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Derive a child app's reported ``enabled`` from the parent's state, not its own key.
+
+        Disabling the parent must flip the child to disabled even though the
+        child's own key never owns a row — a ``key``-based lookup would default it
+        to enabled, so this pins the ``state_key`` derivation on the nav surface.
+        """
+        override_session.add(
+            AppState(app_key="mysql_backups", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["mysql_backups"]["enabled"] is False
+        assert entries["mysql_backups/restore"]["enabled"] is False
+        assert entries["backup_mongo"]["enabled"] is True
+        assert entries["backup_mongo/restore"]["enabled"] is True
+
+    async def test_inventory_reported_enabled(
+        self, api_user_client: TestClient
+    ) -> None:
+        """The protected ``inventory`` app is always reported enabled."""
+        response = api_user_client.get("/api/apps/")
+        inventory = next(e for e in response.json() if e["app_key"] == "inventory")
+        assert inventory["enabled"] is True
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    async def test_non_enabled_plugin_reported_disabled(
+        self,
+        api_user_client: TestClient,
+        override_session: AsyncSession,
+        state: AppLifecycleEnum,
+    ) -> None:
+        """A non-protected plugin in any non-ENABLED state reports ``enabled=False``.
+
+        The public navigation listing keeps its ``enabled``-only shape — it does
+        not surface ``lifecycle_state``.
+        """
+        override_session.add(AppState(app_key="snippets", lifecycle_state=state))
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        snippets = next(e for e in response.json() if e["app_key"] == "snippets")
+        assert snippets["enabled"] is False
+        assert "lifecycle_state" not in snippets
+
+    async def test_unauthenticated_returns_json_401(
+        self, api_unauthenticated_client: TestClient
+    ) -> None:
+        """An unauthenticated GET responds with a JSON 401, not an HTML redirect."""
+        response = api_unauthenticated_client.get("/api/apps/", follow_redirects=False)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.headers["content-type"].startswith("application/json")

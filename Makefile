@@ -29,6 +29,14 @@ endif
 PIP?="${VENV_BIN}/pip"
 APPS=tasks inventory sep
 PYTEST_WORKERS?=auto
+# COV=0 drops --cov=app (and the fail_under coverage gate) so a local run skips
+# the coverage instrumentation tax; CI and coverage-main keep the default COV=1.
+COV?=1
+PYTEST_PATHS?=tests/
+PYTEST_MARKERS?=
+# Pin the hash seed so model-schema/dict ordering is deterministic across xdist
+# workers — an unpinned seed intermittently flakes a 422 in derived one-of routes.
+PYTHONHASHSEED?=0
 
 # WeasyPrint loads native libs (libgobject-2.0, libpango, libcairo) at import
 # time. Homebrew installs them under /opt/homebrew/lib (Apple Silicon) or
@@ -77,6 +85,12 @@ ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
+# Opt-in, local-only static type checking (Astral ty). Deliberately NOT part of `lint`,
+# pre-commit, or CI: a non-zero exit from the existing type-error backlog is expected and
+# must not gate any automated check.
+typecheck: venv
+	@"${VENV_BIN}"/ty check app
+
 djlint: venv
 	@"${VENV_BIN}"/djlint .
 	@"${VENV_BIN}"/djlint . --check
@@ -98,6 +112,10 @@ dev-backend: venv
 # Local development only; production frontend startup stays outside Make.
 dev-frontend:
 	@cd frontend && pnpm dev
+
+# One-time legacy data['_form'] backfill for framework-migrated task apps.
+backfill-legacy-forms: venv
+	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_backfill $(BACKFILL_ARGS)
 
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
@@ -162,7 +180,16 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app tests/
+	@$(DARWIN_DYLD) PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
+
+# Regenerate every derived API/form contract from the live app in one pass:
+# the route GET /schema + OpenAPI snapshot goldens, the synthetic form-DSL
+# goldens, the frontend OpenAPI spec, and the generated TS client. Run after
+# changing an app form model, review the diff, then commit.
+regen-specs: venv
+	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/apps/framework/test_form_dsl_golden.py
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/dump_openapi.py
+	@cd frontend && pnpm --filter @sep/api codegen && pnpm --filter @sep/api exec oxfmt --write src/generated
 
 changelog-add:
 ifndef TICKET
@@ -181,6 +208,15 @@ changelog-check:
 
 changelog-list:
 	@$(PYTHON) scripts/changelog.py list
+
+startapp:
+ifndef NAME
+	$(error NAME is required. Usage: make startapp NAME=myapp [TYPE=task|script|base])
+endif
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py --name "$(NAME)" --type "$(or $(TYPE),task)"
+
+startapp-check:
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/startapp_check.py
 
 SIGN_FLAG := $(if $(SIGN_VIA_API),--sign-via-github-api,)
 PUSH_IMAGE_DOCKER ?= true
@@ -211,11 +247,16 @@ ifndef TAG
 	$(error TAG is required. Usage: make trigger-jenkins TAG=vX.Y.Z [PUSH_IMAGE_DOCKER=false] [WEBHOOK_URL_ENV=... WEBHOOK_AUTH_ENV=...])
 endif
 	@set -euo pipefail; \
+	tag='$(value TAG)'; \
 	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
-		echo "==> Triggering Jenkins release build for $(TAG)..."; \
-		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
+		case "$${tag}" in \
+			v*) jenkins_job="Release" ;; \
+			*) jenkins_job="Build" ;; \
+		esac; \
+		echo "==> Triggering Jenkins $${jenkins_job} build for $${tag}..."; \
+		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
 			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			--data-urlencode "releaseTag=$(TAG)" \
+			--data-urlencode "releaseTag=$${tag}" \
 			--data-urlencode "notifySlack=true" \
 			--data-urlencode "pushImage=true" \
 			--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
@@ -224,7 +265,7 @@ endif
 				$(PYTHON) scripts/post_jira_webhook.py \
 					--url-env "$(WEBHOOK_URL_ENV)" \
 					--auth-env "$(WEBHOOK_AUTH_ENV)" \
-					--version-tag "$(TAG)" || true; \
+					--version-tag "$${tag}" || true; \
 			fi; \
 		else \
 			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
@@ -233,4 +274,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check

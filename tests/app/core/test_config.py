@@ -15,13 +15,17 @@
 
 """Define tests for the app.core.config module."""
 
+import hashlib
+import hmac
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
+from pydantic import SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config import (
+    _sanitize_client_kwargs,
     BaseYamlAppSettings,
     create_app,
     default_lifespan,
@@ -33,6 +37,29 @@ from app.core.config import (
 
 DEFAULT_ANNOTATIONS_TIMEOUT = 5
 CUSTOM_ANNOTATIONS_TIMEOUT = 7
+
+
+def test_sanitize_client_kwargs_redacts_url_password():
+    """``_sanitize_client_kwargs`` masks a password embedded in an endpoint URL."""
+    safe = _sanitize_client_kwargs(
+        {
+            "endpoint": "http://user:hunter2@localhost:8000/",
+            "verify_ssl": False,
+        }
+    )
+    assert "hunter2" not in safe["endpoint"]
+    assert "****" in safe["endpoint"]
+    assert safe["verify_ssl"] is False
+
+
+def test_sanitize_client_kwargs_preserves_credential_free_values():
+    """``_sanitize_client_kwargs`` leaves non-credential values untouched."""
+    api_key = SecretStr("token")
+    safe = _sanitize_client_kwargs(
+        {"endpoint": "http://localhost:8000/", "api_key": api_key}
+    )
+    assert safe["endpoint"] == "http://localhost:8000/"
+    assert safe["api_key"] is api_key
 
 
 class DummySettings(BaseSettings):
@@ -181,21 +208,26 @@ def test_settings_customise_sources(
 
 @pytest.mark.asyncio
 async def test_default_lifespan():
-    """Test default_lifespan manages CASDOOR and closes sessions."""
-    mock_casdoor = AsyncMock()
+    """Verify default_lifespan enters the active provider's lifespan and closes sessions."""
+    mock_lifespan_cm = AsyncMock()
+    mock_provider = MagicMock()
+    mock_provider.lifespan.return_value = mock_lifespan_cm
     mock_close_registry = AsyncMock()
 
     with (
         patch.object(Settings, "close_client_registry", mock_close_registry),
-        patch("app.core.config.settings.CASDOOR", mock_casdoor),
+        patch(
+            "app.core.auth.config.get_active_auth_provider", return_value=mock_provider
+        ),
     ):
         app = FastAPI()
 
         async with default_lifespan(app):
             pass
 
-    mock_casdoor.__aenter__.assert_called_once()
-    mock_casdoor.__aexit__.assert_called_once()
+    mock_provider.lifespan.assert_called_once()
+    mock_lifespan_cm.__aenter__.assert_called_once()
+    mock_lifespan_cm.__aexit__.assert_called_once()
     mock_close_registry.assert_called_once()
 
 
@@ -312,8 +344,6 @@ class TestPMMSettings:
 
 def test_settings_secret_key_is_secretstr():
     """Test that SECRET_KEY is a SecretStr instance and masked in repr."""
-    from pydantic import SecretStr
-
     assert isinstance(settings.SECRET_KEY, SecretStr)
     secret_value = settings.SECRET_KEY.get_secret_value()
     if secret_value:
@@ -339,3 +369,58 @@ def test_create_app_custom_docs_url():
     app = create_app(docs_url="/custom-docs", redoc_url="/custom-redoc")
     assert app.docs_url == "/custom-docs"
     assert app.redoc_url == "/custom-redoc"
+
+
+class TestDeriveInternalToken:
+    """Cover SEP_INTERNAL_TOKEN derivation from SECRET_KEY."""
+
+    @staticmethod
+    def _expected_token(secret_key: str) -> str:
+        return hmac.new(
+            secret_key.encode(), b"sep-internal-token", hashlib.sha256
+        ).hexdigest()
+
+    def test_explicit_token_takes_precedence(self):
+        """An explicitly configured token is used verbatim, never derived."""
+        instance = Settings(
+            SECRET_KEY=SecretStr("any-secret"),
+            SEP_INTERNAL_TOKEN=SecretStr("explicit-token"),
+        )
+        assert instance.SEP_INTERNAL_TOKEN.get_secret_value() == "explicit-token"
+
+    def test_derives_from_secret_key_when_unset(self):
+        """An unset token is derived as HMAC-SHA256 over the secret key."""
+        instance = Settings(
+            SECRET_KEY=SecretStr("derivation-secret"),
+            SEP_INTERNAL_TOKEN=None,
+        )
+        assert instance.SEP_INTERNAL_TOKEN is not None
+        assert instance.SEP_INTERNAL_TOKEN.get_secret_value() == self._expected_token(
+            "derivation-secret"
+        )
+
+    def test_empty_token_is_derived(self):
+        """An empty-string token is treated as unset and derived."""
+        instance = Settings(
+            SECRET_KEY=SecretStr("derivation-secret"),
+            SEP_INTERNAL_TOKEN=SecretStr(""),
+        )
+        assert instance.SEP_INTERNAL_TOKEN.get_secret_value() == self._expected_token(
+            "derivation-secret"
+        )
+
+    def test_derivation_is_identical_across_instances(self):
+        """Two settings sharing a secret key derive the identical token."""
+        first = Settings(SECRET_KEY=SecretStr("shared-secret"), SEP_INTERNAL_TOKEN=None)
+        second = Settings(
+            SECRET_KEY=SecretStr("shared-secret"), SEP_INTERNAL_TOKEN=None
+        )
+        assert (
+            first.SEP_INTERNAL_TOKEN.get_secret_value()
+            == second.SEP_INTERNAL_TOKEN.get_secret_value()
+        )
+
+    def test_empty_secret_key_without_token_raises(self):
+        """An empty secret key with no explicit token fails fast at construction."""
+        with pytest.raises(ValidationError, match="SECRET_KEY must be set"):
+            Settings(SECRET_KEY=SecretStr(""), SEP_INTERNAL_TOKEN=None)

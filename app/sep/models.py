@@ -27,7 +27,7 @@ from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
-from app.core.db.models import BaseUUIDSQLModel
+from app.core.db.models import BaseSQLModel, BaseUUIDSQLModel
 from app.core.utils.fields import NonEmptyStr
 
 
@@ -266,4 +266,125 @@ class SyncItemWrite(SyncItemBase):
     :param sync_instance_id: The foreign key referencing the associated synchronization
         instance.
     :type sync_instance_id: UUID4
+    """
+
+
+class AppLifecycleEnum(StrEnum):
+    """Enumerate the runtime lifecycle states of an app.
+
+    Member names equal their values, so the DB column, its CHECK constraint, the
+    API wire value, and any operator SQL all share one uppercase token. The
+    transitional states ``ENABLING`` and ``DISABLING`` expose an observable
+    window for future machinery to finish in-flight work before an app goes
+    fully offline; the request guard treats every state other than ``ENABLED``
+    as unreachable.
+    """
+
+    ENABLED = "ENABLED"
+    DISABLED = "DISABLED"
+    ENABLING = "ENABLING"
+    DISABLING = "DISABLING"
+
+
+class AppStateBase(SQLModel):
+    """Define the shared fields for :class:`AppState`.
+
+    :param app_key: The plugin's module key (the last dotted segment of its
+        ``module_name``). Unique and indexed for per-request lookups.
+    :param lifecycle_state: The app's runtime lifecycle state. Defaults to
+        ``ENABLED``; the startup seed maps each ``settings.yaml`` flag to
+        ``ENABLED`` or ``DISABLED``.
+    """
+
+    app_key: NonEmptyStr = SQLField(unique=True, index=True)
+    lifecycle_state: AppLifecycleEnum = SQLField(
+        default=AppLifecycleEnum.ENABLED,
+        sa_column=Column(
+            EnumField(AppLifecycleEnum, native_enum=False, create_constraint=True),
+            nullable=False,
+        ),
+    )
+
+
+class AppState(BaseSQLModel, AppStateBase, table=True):
+    """Represent the per-app runtime lifecycle state.
+
+    One row per non-protected plugin in ``settings.yaml SEP.APPS``. Seeded on
+    startup via :func:`app.sep.db.seed.init_sep_db`, mapping each YAML entry's
+    ``enabled`` flag to ``ENABLED`` / ``DISABLED``, and transitioned via the
+    admin REST endpoint at ``PUT /api/admin/apps/{app_key}/state``.
+
+    Protected apps (currently ``inventory``) are never seeded and have no row;
+    the request guard skips injection for them and the toggle endpoint rejects
+    them. A missing row for a configured app is treated as ``ENABLED`` by the
+    guard (a configured plugin is active until explicitly disabled); rows for
+    apps no longer in ``SEP.APPS`` are cleaned up on the next startup seed.
+
+    :param id: The auto-incremented primary key.
+    :param app_key: The plugin's module key. Unique and indexed.
+    :param lifecycle_state: The app's runtime lifecycle state.
+    """
+
+
+class AppStateWrite(SQLModel):
+    """Define the write payload for the app-state toggle endpoint.
+
+    :param lifecycle_state: The requested target lifecycle state.
+    """
+
+    lifecycle_state: AppLifecycleEnum
+
+
+class AppRunningTask(BaseSQLModel, table=True):
+    """Track one in-flight SEP-app-owned Celery task for cooperative drain.
+
+    One row per running task tagged with its owning app key via
+    :func:`app.sep.app_drain.owned_by`, inserted by the ``task_prerun`` receiver
+    and removed by ``task_postrun``. The per-app row
+    count drives the terminal ``DISABLING`` -> ``DISABLED`` transition once an
+    app's running tasks reach zero. ``created_at`` (inherited) is the task start
+    time, used by the reconciler to prune rows orphaned by a worker crash or a
+    force-disable ``revoke(terminate=True)`` (where ``task_postrun`` never runs).
+
+    :param id: The auto-incremented primary key.
+    :param app_key: The owning app's key. Indexed for per-app count and prune
+        queries.
+    :param celery_task_id: The in-flight task's execution id -- a Celery task id,
+        or a synthetic ``manual-<uuid>`` id for non-Celery in-request work tracked
+        via :func:`app.sep.app_drain.track_app_task`. Unique and indexed.
+    """
+
+    app_key: NonEmptyStr = SQLField(index=True)
+    celery_task_id: NonEmptyStr = SQLField(unique=True, index=True)
+
+
+class SEPPluginPeriodicTaskBase(SQLModel):
+    """Define the shared fields for :class:`SEPPluginPeriodicTask`.
+
+    :param periodic_task_name: The library ``PeriodicTask.name`` of the gated
+        schedule. Unique and indexed for write-through lookups.
+    :param app_key: The owning app's key, joined against
+        :class:`AppState.app_key`.
+    :param user_enabled: The per-schedule operator override. ``effective_enabled``
+        is true when the owning app is ``ENABLED`` and ``user_enabled`` is set;
+        defaults to ``True``.
+    """
+
+    periodic_task_name: NonEmptyStr = SQLField(unique=True, index=True)
+    app_key: NonEmptyStr = SQLField(index=True)
+    user_enabled: bool = True
+
+
+class SEPPluginPeriodicTask(BaseSQLModel, SEPPluginPeriodicTaskBase, table=True):
+    """Map a plugin-owned Celery periodic task to its owning app + user override.
+
+    One row per plugin-owned schedule in ``SEP.APPS``. Seeded on startup via
+    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating` and consulted at
+    every :class:`AppState` transition to recompute ``effective_enabled`` and
+    write it through to the library ``PeriodicTask.enabled`` column.
+
+    :param id: The auto-incremented primary key.
+    :param periodic_task_name: The library ``PeriodicTask.name``. Unique and indexed.
+    :param app_key: The owning app's key.
+    :param user_enabled: The per-schedule operator override.
     """

@@ -15,23 +15,54 @@
 
 """Define test fixtures."""
 
+import inspect
+import os
+from collections import OrderedDict
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+import aioresponses.core
 import pytest
+import pytest_asyncio
+from aiohttp import ClientResponse
 from faker import Faker
+from fastapi import Request
+from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from pytest_mock import MockerFixture
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.pool import StaticPool
+from sqlalchemy_celery_beat.models import PeriodicTask
+from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.config import alert_settings
+from app.core.auth.base import BaseAuthProvider
+from app.core.auth.config import get_active_auth_provider
 from app.core.auth.models import OAuthToken
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
+from app.core.utils import json_serializer
 from app.inventory.models import ServiceTypeEnum
-from app.models import CasdoorUser
 from app.sep.config import sep_settings
+from app.sep.deps import (
+    get_api_authenticated_user,
+    get_current_user,
+    get_inventory_api,
+    get_session,
+    get_tasks_api,
+    require_bearer_for_unsafe_methods,
+    validate_csrf,
+)
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
+from app.sep.main import sep_app
 from app.sep.middleware.messages.config import messages_settings
 from app.sep.snippets.config import snippets_settings
+from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from tests.app.factories import (
     CasdoorUserFactory,
@@ -41,6 +72,22 @@ from tests.app.factories import (
     CreatedTableFactory,
     OAuthTokenFactory,
 )
+
+# aiohttp 3.14 made ``stream_writer`` a required arg of ``ClientResponse``, but
+# aioresponses (<=0.7.8) still constructs mocks without it. Default it here until
+# aioresponses ships a fix; guarded on the param so it's a no-op on aiohttp < 3.14.
+if "stream_writer" in inspect.signature(ClientResponse.__init__).parameters:
+
+    class _StubStreamWriter:
+        # aioresponses passes writer=None, so ClientResponse reads output_size.
+        output_size: int = 0
+
+    class _CompatClientResponse(ClientResponse):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            kwargs.setdefault("stream_writer", _StubStreamWriter())
+            super().__init__(*args, **kwargs)
+
+    aioresponses.core.ClientResponse = _CompatClientResponse
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -68,10 +115,13 @@ def _override_snapshot_cleared() -> None:
     ``__getattr__`` falls through to the wrapped Pydantic instance. An active
     snapshot entry would shadow the monkey-patched value and confuse the test.
     """
+    settings._set_snapshot({})  # noqa: SLF001
     sep_settings._set_snapshot({})  # noqa: SLF001
     tasks_settings._set_snapshot({})  # noqa: SLF001
     snippets_settings._set_snapshot({})  # noqa: SLF001
     messages_settings._set_snapshot({})  # noqa: SLF001
+    alert_settings._set_snapshot({})  # noqa: SLF001
+    anonymizer_settings._set_snapshot({})  # noqa: SLF001
 
 
 @pytest.fixture(scope="session")
@@ -161,39 +211,118 @@ def casdoor_mock(
     refresh_token: str,
     casdoor_user_data: dict[str, Any],
     mocker: MockerFixture,
-) -> Mock:
+) -> BaseAuthProvider:
     """Mock CasdoorSDK methods to simulate Casdoor service interactions."""
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.introspect_token",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.introspect_token",
         new=mocker.AsyncMock(return_value=casdoor_token_payload_data),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.get_access_token",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_access_token",
         new=mocker.AsyncMock(return_value=oauth_token.model_dump()),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.refresh_token_request",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.refresh_token_request",
         new=mocker.AsyncMock(return_value=oauth_token.model_dump()),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.get_token",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_token",
         new=mocker.AsyncMock(return_value={"data": {"refreshToken": refresh_token}}),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.get_user",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
         new=mocker.AsyncMock(return_value=casdoor_user_data),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.get_users",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_users",
         new=mocker.AsyncMock(return_value=[casdoor_user_data]),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.delete_token",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.delete_token",
         new=mocker.AsyncMock(return_value=True),
     )
-    from app.core.config import settings
+    return get_active_auth_provider()
 
-    return mocker.patch.object(settings, "CASDOOR", settings.CASDOOR)
+
+@pytest.fixture
+def grafana_service_account_token() -> str:
+    """Provide a fake Grafana service-account token."""
+    return "test-service-account-token"
+
+
+@pytest.fixture
+def grafana_user_record(valid_username: str, faker: Faker) -> dict[str, Any]:
+    """Provide a mock Grafana ``/api/user`` record."""
+    return {
+        "id": faker.random_int(min=1),
+        "login": valid_username,
+        "email": faker.email(),
+        "isGrafanaAdmin": False,
+    }
+
+
+@pytest.fixture
+def grafana_user_orgs() -> list[dict[str, Any]]:
+    """Provide a mock Grafana ``/api/user/orgs`` payload."""
+    return [{"orgId": 1, "name": "Main Org.", "role": "Viewer"}]
+
+
+@pytest.fixture
+def grafana_org_users(valid_username: str, faker: Faker) -> list[dict[str, Any]]:
+    """Provide a mock Grafana ``/api/org/users`` payload."""
+    return [
+        {
+            "userId": faker.random_int(min=1),
+            "login": valid_username,
+            "email": faker.email(),
+            "role": "Viewer",
+        }
+    ]
+
+
+@pytest.fixture
+def grafana_provider(grafana_service_account_token: str) -> GrafanaAuthProvider:
+    """Provide a ``GrafanaAuthProvider`` built with test config."""
+    return GrafanaAuthProvider(
+        endpoint="https://grafana.example.com",
+        service_account_token=grafana_service_account_token,
+    )
+
+
+@pytest.fixture
+def grafana_mock(
+    grafana_provider: GrafanaAuthProvider,
+    grafana_user_record: dict[str, Any],
+    grafana_user_orgs: list[dict[str, Any]],
+    grafana_org_users: list[dict[str, Any]],
+    mocker: MockerFixture,
+) -> GrafanaAuthProvider:
+    """Mock GrafanaSDK methods and pin Grafana as the active auth provider."""
+    mocker.patch(
+        "app.core.auth.config.get_active_auth_provider",
+        return_value=grafana_provider,
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.login",
+        new=mocker.AsyncMock(return_value="grafana-session"),
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.get_current_user",
+        new=mocker.AsyncMock(return_value=grafana_user_record),
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.get_current_user_orgs",
+        new=mocker.AsyncMock(return_value=grafana_user_orgs),
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.get_org_users",
+        new=mocker.AsyncMock(return_value=grafana_org_users),
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.lookup_user",
+        new=mocker.AsyncMock(return_value=grafana_user_record),
+    )
+    return grafana_provider
 
 
 @pytest.fixture
@@ -239,3 +368,224 @@ def created_table() -> CreatedTable:
 def mock_remote_api() -> AsyncMock:
     """Mock a RemoteAPI object."""
     return AsyncMock(spec=RemoteAPI)
+
+
+POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
+
+
+def postgres_worker_schema() -> str:
+    """Return the per-xdist-worker schema name for real-PostgreSQL tests.
+
+    Each xdist worker gets its own schema so parallel workers never collide on
+    ``CREATE``/``DROP`` against a shared database.
+    """
+    return f"sep_test_{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
+
+
+@pytest_asyncio.fixture
+async def postgres_engine() -> AsyncEngine:
+    """Provide a real-PostgreSQL ``AsyncEngine`` for dialect-specific SQL tests.
+
+    Connect through the already-present ``asyncpg`` driver to the DSN in
+    ``$SEP_TEST_POSTGRES_DSN``. This is chosen over ``pytest-postgresql`` or
+    ``testcontainers`` because it adds no dependency and the CI
+    ``services: postgres`` container supplies the server. An unset env var skips
+    the test (local runs without PostgreSQL); a set env var must connect, so a
+    misconfigured CI service fails loudly instead of silently skipping — the
+    connect is deliberately not wrapped in a try/skip.
+
+    Function-scoped to match every other async fixture in the suite: the
+    session-default event-loop scope makes a session-scoped async fixture bind to
+    the wrong loop. Parallel-safe by construction — each xdist worker gets its own
+    schema via ``schema_translate_map``, so reuse under xdist needs no serial-run
+    convention.
+
+    Pair with ``postgres_session`` for a real-PG-bound ``AsyncSession`` — the
+    reusable seam for any code that dispatches on a real PostgreSQL bind.
+    """
+    dsn = os.environ.get(POSTGRES_DSN_ENV)
+    if not dsn:
+        pytest.skip(f"{POSTGRES_DSN_ENV} not set; skipping real-PostgreSQL tests")
+    schema = postgres_worker_schema()
+    base = create_async_engine(dsn, json_serializer=json_serializer)
+    try:
+        async with base.begin() as conn:
+            await conn.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+        yield base.execution_options(schema_translate_map={None: schema})
+    finally:
+        try:
+            async with base.begin() as conn:
+                await conn.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        finally:
+            await base.dispose()
+
+
+@pytest_asyncio.fixture
+async def postgres_session(postgres_engine: AsyncEngine) -> AsyncSession:
+    """Provide a real-PostgreSQL ``AsyncSession`` with the tasks-service tables.
+
+    Create every ``SQLModel`` table (including ``TaskHistory`` with its ``jsonb``
+    ``execution_request``) in the worker schema, yield a session, then drop the
+    tables on teardown. This is the seam reused by the ``func_json_extract``
+    AutoJSON cell and by any test whose subject dispatches on the session bind.
+    """
+    async with postgres_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    async_session_maker = get_async_session_maker_from_engine(postgres_engine)
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        async with postgres_engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.drop_all)
+
+
+# The client/session fixtures below live here — the always-loaded ancestor conftest —
+# rather than in ``tests/app/sep/conftest.py`` so they resolve regardless of single-process
+# collection order. ``tests/app/sep/conftest.py`` re-exports them for the sep
+# subtree; nearer conftests (tasks, inventory, sep/apps/*) still shadow them as before.
+
+
+@pytest_asyncio.fixture(name="session")
+async def session_fixture() -> AsyncSession:
+    """Create an async db session for testing."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    async_session_maker = get_async_session_maker_from_engine(engine)
+    async with async_session_maker() as session:
+        yield session
+
+
+@pytest_asyncio.fixture(name="celery_beat_session")
+async def celery_beat_session_fixture() -> AsyncSession:
+    """Create an async db session backed by the celery-beat tables."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
+    metadata = PeriodicTask.__table__.metadata
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+    async_session_maker = get_async_session_maker_from_engine(engine)
+    async with async_session_maker() as session:
+        yield session
+
+
+@pytest.fixture
+def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
+    """Yield an authenticated cookie-auth TestClient for the SEP app.
+
+    Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
+    mutations under ``/api/apps/*`` are not blocked by the framework
+    Bearer gate. App-local ``test_client`` overrides MUST
+    mirror this override; see :func:`api_admin_client_no_bearer` for the
+    negative-path fixture that leaves the gate intact.
+
+    ``get_session`` is overridden to the in-memory ``session`` so the
+    ``require_app_enabled`` route guard reads an isolated, empty ``appstate``
+    table (no rows -> every app enabled) instead of a shared, order-dependent
+    DB. Tests that exercise the disabled path override ``get_session`` again
+    with a session that carries an ``enabled=False`` row.
+    """
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_session] = lambda: session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def api_admin_client_no_bearer(admin_user: CasdoorUser) -> TestClient:
+    """Yield a cookie-auth admin TestClient with the Bearer gate intact.
+
+    Mirrors :func:`test_client` but deliberately leaves
+    ``require_bearer_for_unsafe_methods`` un-overridden, so cookie-only
+    JSON mutations to ``/api/apps/*`` are rejected by the framework
+    Bearer gate. Use in tests that assert the 401 path.
+    """
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def unauthenticated_client() -> Iterator[TestClient]:
+    """Yield a test client with authentication dependency overrides cleared."""
+    previous = sep_app.dependency_overrides
+    sep_app.dependency_overrides = {}
+    try:
+        yield TestClient(sep_app, raise_server_exceptions=False)
+    finally:
+        sep_app.dependency_overrides = previous
+
+
+@pytest_asyncio.fixture
+async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
+    """Yield an authenticated async cookie-auth client for the SEP app.
+
+    See :func:`test_client` for the Bearer-gate override rationale.
+    """
+    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+
+    transport = ASGITransport(app=sep_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def dummy_request() -> Request:
+    """Create a dummy Request with a messages attribute in its state."""
+    scope = {"type": "http", "headers": [], "client": ("127.0.0.1", "80"), "path": "/"}
+    req = Request(scope)
+    req.state.messages = OrderedDict()
+    return req
+
+
+@pytest.fixture
+def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+    """Mock the TaskAPI dependency."""
+    mock = AsyncMock(spec=RemoteAPI)
+    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
+    yield mock
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+    """Mock the InventoryAPI dependency."""
+    mock = AsyncMock(spec=RemoteAPI)
+    mock.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
+    sep_app.dependency_overrides[get_inventory_api] = lambda: mock
+    yield mock
+    sep_app.dependency_overrides = {}
+
+
+@pytest.fixture
+def mock_get_username_mapping(mocker: MockerFixture) -> Mock:
+    """Mock the TaskDep dependency."""
+    return mocker.patch(
+        "app.sep.deps.get_username_mapping",
+        return_value={"12345678-1234-5678-9abc-123456789012": "test-user"},
+    )

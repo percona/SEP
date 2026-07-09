@@ -15,9 +15,15 @@
 
 """Async refresher that periodically reloads override snapshots from the DB."""
 
+from __future__ import annotations
+
 __all__ = [
+    "CallbackRegistry",
     "ProxyEntry",
     "ProxyRegistry",
+    "RefreshCallback",
+    "fire_change_callbacks",
+    "publish_snapshot",
     "refresh_all",
     "settings_override_refresher",
     "start_refresh_task",
@@ -25,21 +31,60 @@ __all__ = [
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
-from datetime import timedelta
-from typing import NamedTuple
+from typing import NamedTuple, TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.core.config import BaseYamlSettings
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 
+if TYPE_CHECKING:
+    from datetime import timedelta
+
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from app.core.config import BaseYamlSettings
+
 logger = logging.getLogger(__name__)
 
 SessionMakerFactory = Callable[[], async_sessionmaker]
+
+#: A rebind callback fired when a watched ``(setting_class, key)`` override
+#: changes value between refresh cycles. The callback receives the new effective
+#: snapshot mapping for its setting class; any exception it raises is caught and
+#: logged by :func:`refresh_all` so one failing callback cannot break the cycle.
+RefreshCallback = Callable[[Mapping[str, object]], Awaitable[None]]
+CallbackRegistry = dict[tuple[SettingClassEnum, str], RefreshCallback]
+
+
+async def publish_snapshot(
+    proxy: OverridableSettingsProxy,
+    session: AsyncSession,
+    settings_cls: type[BaseYamlSettings],
+) -> None:
+    """Build a fresh snapshot for ``settings_cls`` and publish it through ``proxy``.
+
+    Public seam over :meth:`OverridableSettingsProxy._set_snapshot` so the
+    protected method's "background refresher + per-test fixtures only" contract
+    stays accurate while API handlers and the refresher itself can both publish
+    new snapshots through one named path.
+
+    :param proxy: The proxy whose snapshot is being replaced.
+    :type proxy: OverridableSettingsProxy
+    :param session: The async SQLModel session used to read override rows.
+    :type session: AsyncSession
+    :param settings_cls: The Pydantic settings class being snapshotted.
+    :type settings_cls: type[BaseYamlSettings]
+    """
+    # Resolve the wrapped (YAML/env) instance so nested-field overrides merge
+    # onto current parent values; ``_resolve`` bypasses the snapshot so the
+    # base is never a previously-merged copy.
+    base_settings = proxy._resolve()  # noqa: SLF001
+    snapshot = await build_snapshot(session, settings_cls, base_settings)
+    proxy._set_snapshot(snapshot)  # noqa: SLF001
 
 
 class ProxyEntry(NamedTuple):
@@ -59,9 +104,54 @@ class ProxyEntry(NamedTuple):
 ProxyRegistry = dict[SettingClassEnum, ProxyEntry]
 
 
+async def fire_change_callbacks(
+    callbacks: CallbackRegistry,
+    setting_class: SettingClassEnum,
+    previous: Mapping[str, object],
+    current: Mapping[str, object],
+) -> None:
+    """Fire the registered callback for every key whose snapshot value changed.
+
+    Compares ``previous`` against ``current`` and, for each ``(setting_class,
+    key)`` whose value differs and has a registered callback, awaits the
+    callback. Each callback runs inside its own ``try/except`` so one failure
+    neither aborts the cycle nor blocks the remaining callbacks.
+
+    Shared by the background refresher (:func:`refresh_all`, diffing the snapshot
+    it just rebuilt) and the settings-API PATCH/DELETE handlers (diffing the
+    snapshot they publish inline), so both publish paths deliver the same rebind
+    notifications.
+
+    :param callbacks: The registered rebind callbacks keyed by
+        ``(setting_class, key)``.
+    :type callbacks: CallbackRegistry
+    :param setting_class: The class whose snapshot was just republished.
+    :type setting_class: SettingClassEnum
+    :param previous: The snapshot in effect before the republish.
+    :type previous: Mapping[str, object]
+    :param current: The snapshot now in effect.
+    :type current: Mapping[str, object]
+    """
+    for key in previous.keys() | current.keys():
+        if previous.get(key) == current.get(key):
+            continue
+        callback = callbacks.get((setting_class, key))
+        if callback is None:
+            continue
+        try:
+            await callback(current)
+        except Exception:
+            logger.exception(
+                "Rebind callback for %s.%s failed; keeping previous binding",
+                setting_class.name,
+                key,
+            )
+
+
 async def refresh_all(
     session_maker_factory: SessionMakerFactory,
     proxies: ProxyRegistry,
+    callbacks: CallbackRegistry | None = None,
 ) -> None:
     """Refresh override snapshots for all wired proxies in a single session.
 
@@ -78,12 +168,22 @@ async def refresh_all(
     periodic invocation in a broad ``except`` so transient engine/pool
     errors do not kill the task.
 
+    When ``callbacks`` is supplied, the snapshot in effect before each proxy's
+    republish is diffed against the new one and the registered callback for any
+    changed ``(setting_class, key)`` is fired (see :func:`fire_change_callbacks`).
+    A proxy whose republish failed is skipped without firing callbacks. The
+    initial inline refresh in :func:`start_refresh_task` passes no callbacks, so
+    startup seeding never triggers a rebind.
+
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``. Invoked exactly once per call
         to avoid recreating session makers on each iteration.
     :type session_maker_factory: SessionMakerFactory
     :param proxies: The wired proxy registry keyed by class identifier.
     :type proxies: ProxyRegistry
+    :param callbacks: Optional rebind callbacks fired for changed keys. When
+        ``None``, snapshots are republished without any change detection.
+    :type callbacks: CallbackRegistry | None
     :raises Exception: Re-raises any failure from
         ``session_maker_factory()`` itself (e.g. the factory is misconfigured
         or its engine cannot be constructed). Connection-time failures
@@ -95,8 +195,9 @@ async def refresh_all(
     async_session_maker = session_maker_factory()
     async with async_session_maker() as session:
         for setting_class, entry in proxies.items():
+            previous = entry.proxy.get_snapshot() if callbacks else None
             try:
-                snapshot = await build_snapshot(session, entry.settings_cls)
+                await publish_snapshot(entry.proxy, session, entry.settings_cls)
             except Exception:
                 logger.exception(
                     "Failed to refresh overrides for %s; keeping previous snapshot",
@@ -107,19 +208,28 @@ async def refresh_all(
                 # ``manager.list(...)`` on the shared session.
                 await session.rollback()
                 continue
-            entry.proxy._set_snapshot(snapshot)  # noqa: SLF001
+            if callbacks is not None and previous is not None:
+                await fire_change_callbacks(
+                    callbacks, setting_class, previous, entry.proxy.get_snapshot()
+                )
 
 
 async def start_refresh_task(
     session_maker_factory: SessionMakerFactory,
     proxies: ProxyRegistry,
     interval: timedelta,
+    callbacks: CallbackRegistry | None = None,
 ) -> asyncio.Task:
     """Perform an initial refresh and start a background refresh loop.
 
     The initial refresh awaits inline so the lifespan does not yield until
     the first snapshot has been observed. Subsequent refreshes run inside an
     :func:`asyncio.create_task` that sleeps for ``interval`` between cycles.
+
+    ``callbacks`` are passed only to the periodic loop's :func:`refresh_all`,
+    never to the inline initial refresh -- the startup snapshot seeds the
+    proxies without firing rebind callbacks (long-lived objects are constructed
+    against the effective snapshot directly during lifespan startup).
 
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``.
@@ -130,6 +240,9 @@ async def start_refresh_task(
         positive duration; the :class:`Settings` field validator enforces
         this at construction time.
     :type interval: timedelta
+    :param callbacks: Optional rebind callbacks fired by the periodic loop when
+        a watched override changes. Not applied to the initial refresh.
+    :type callbacks: CallbackRegistry | None
     :return: The background refresh task. Callers must cancel and await this
         task during shutdown to drain pending iterations cleanly.
     :rtype: asyncio.Task
@@ -149,7 +262,7 @@ async def start_refresh_task(
         while True:
             await asyncio.sleep(interval_seconds)
             try:
-                await refresh_all(session_maker_factory, proxies)
+                await refresh_all(session_maker_factory, proxies, callbacks)
             except Exception:
                 logger.exception(
                     "Settings override refresher iteration failed; will retry next cycle"
@@ -165,6 +278,7 @@ async def settings_override_refresher(
     interval: timedelta,
     *,
     enabled: bool,
+    callbacks: CallbackRegistry | None = None,
 ) -> AsyncGenerator[None, None]:
     """Run the background override refresher for the duration of a lifespan.
 
@@ -183,12 +297,18 @@ async def settings_override_refresher(
     :param enabled: Whether to start the background refresher. When ``False``,
         the context manager yields without creating a task.
     :type enabled: bool
+    :param callbacks: Optional rebind callbacks forwarded to
+        :func:`start_refresh_task`, fired by the periodic loop when a watched
+        override changes value.
+    :type callbacks: CallbackRegistry | None
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
     refresher: asyncio.Task | None = None
     if enabled:
-        refresher = await start_refresh_task(session_maker_factory, proxies, interval)
+        refresher = await start_refresh_task(
+            session_maker_factory, proxies, interval, callbacks
+        )
     try:
         yield
     finally:

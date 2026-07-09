@@ -40,11 +40,14 @@ class SystemPeriodicTaskData(NamedTuple):
     :type task_name: str
     :param extra_kwargs: Optional keyword arguments for the periodic task.
     :type extra_kwargs: dict[str, Any] | None
+    :param owner_app_key: Key of the app that owns this schedule, or ``None`` for
+        platform tasks not gated by app state.
     """
 
     name: str
     task_name: str
     extra_kwargs: dict[str, Any] | None = None
+    owner_app_key: str | None = None
 
 
 class SystemPeriodicTaskSchedule(NamedTuple):
@@ -93,7 +96,7 @@ async def init_periodic_tasks_db(
                 created_schedule, _ = await IntervalScheduleManager.get_or_create(
                     celery_beat_session, schedule
                 )
-            for periodic_task_name, task_name, optional_extra_kwargs in tasks:
+            for periodic_task_name, task_name, optional_extra_kwargs, *_ in tasks:
                 extra_kwargs = optional_extra_kwargs or {}
                 system_task_names.append(task_name)
                 seeded_names.append(periodic_task_name)

@@ -1,0 +1,390 @@
+{
+  "capabilities": {
+    "alert_on_fail": true,
+    "chaining": true,
+    "pii_anonymization": false,
+    "scheduling": true,
+    "stats": true
+  },
+  "description": "Run pt-archiver to purge or archive rows from a MySQL table.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Execution Host",
+            "path": "data.meta.target"
+          },
+          {
+            "label": "Config (YAML)",
+            "path": "data.meta.config"
+          }
+        ],
+        "title": "Archive Configuration"
+      }
+    ]
+  },
+  "display_name": "Archives",
+  "fail_when": [
+    {
+      "error_fields": [
+        "swap_drop"
+      ],
+      "fail_when": {
+        "not_equals": {
+          "swap_drop": 0
+        }
+      },
+      "message": "Not available yet. Only Purge Only is currently supported."
+    }
+  ],
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Task Name",
+          "name": "task_name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
+        },
+        {
+          "label": "Source Service",
+          "name": "service_id",
+          "required": true,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "choices": [
+            {
+              "label": "Purge Only",
+              "value": "0"
+            },
+            {
+              "label": "Swap & Drop",
+              "value": "1"
+            },
+            {
+              "label": "Swap Archive & Drop",
+              "value": "2"
+            }
+          ],
+          "default": 0,
+          "label": "Archive Type",
+          "name": "swap_drop",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Archive Type"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "branches": [
+            {
+              "fields": [
+                {
+                  "allow_custom": true,
+                  "depends_on": "service_id",
+                  "description": "Schema holding the source table; pick from inventory or type a name.",
+                  "label": "Source Schema",
+                  "name": "source.source_db",
+                  "required": true,
+                  "type": "schema"
+                },
+                {
+                  "allow_custom": true,
+                  "depends_on": "source.source_db",
+                  "description": "Table whose rows are archived; pick from inventory or type a name.",
+                  "label": "Source Table",
+                  "name": "source.source_table",
+                  "required": true,
+                  "type": "table"
+                }
+              ],
+              "label": "Table",
+              "value": "table"
+            },
+            {
+              "fields": [
+                {
+                  "description": "Custom query defining source rows.",
+                  "label": "Source Query",
+                  "name": "source.source_query",
+                  "required": true,
+                  "type": "string"
+                }
+              ],
+              "label": "Query",
+              "value": "query"
+            }
+          ],
+          "default": "table",
+          "discriminator": "source.mode",
+          "label": "Source",
+          "name": "source",
+          "type": "one_of"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Source"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "branches": [
+            {
+              "fields": [
+                {
+                  "allow_custom": true,
+                  "depends_on": "host.dest_service",
+                  "description": "Destination schema; leave empty to reuse the source schema.",
+                  "label": "Destination Schema",
+                  "name": "destination.dest_db",
+                  "required": false,
+                  "type": "schema"
+                },
+                {
+                  "allow_custom": true,
+                  "depends_on": "destination.dest_db",
+                  "description": "Table the archived rows are written to.",
+                  "label": "Destination Table",
+                  "name": "destination.dest_table",
+                  "required": true,
+                  "type": "table"
+                }
+              ],
+              "label": "Table",
+              "value": "table"
+            },
+            {
+              "fields": [
+                {
+                  "description": "File path for archiving rows instead of a table.",
+                  "label": "Destination File",
+                  "name": "destination.dest_file",
+                  "required": true,
+                  "type": "string"
+                }
+              ],
+              "label": "File",
+              "value": "file"
+            }
+          ],
+          "default": "table",
+          "discriminator": "destination.mode",
+          "label": "Destination",
+          "name": "destination",
+          "type": "one_of"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Destination"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "branches": [
+            {
+              "fields": [
+                {
+                  "description": "Inventory lookup for the destination host and port.",
+                  "label": "Destination Service",
+                  "name": "host.dest_service",
+                  "required": true,
+                  "service_types": [
+                    "mysql"
+                  ],
+                  "type": "service"
+                }
+              ],
+              "label": "Service",
+              "value": "service"
+            },
+            {
+              "fields": [
+                {
+                  "description": "Manual destination host address.",
+                  "label": "Destination Host",
+                  "name": "host.dest_host",
+                  "required": true,
+                  "type": "string"
+                },
+                {
+                  "description": "Destination port (1-65535); defaults to the MySQL port.",
+                  "ge": 1,
+                  "label": "Destination Port",
+                  "le": 65535,
+                  "name": "host.dest_port",
+                  "required": false,
+                  "type": "integer"
+                }
+              ],
+              "label": "Manual",
+              "value": "manual"
+            }
+          ],
+          "default": "service",
+          "discriminator": "host.mode",
+          "label": "Destination Host",
+          "name": "host",
+          "type": "one_of"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Destination Host"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "forbidden": [
+            {
+              "when": {
+                "equals": {
+                  "swap_drop": 1
+                }
+              }
+            }
+          ],
+          "label": "WHERE Clause",
+          "name": "where",
+          "required": false,
+          "requires": [
+            {
+              "when": {
+                "not_equals": {
+                  "swap_drop": 1
+                }
+              }
+            }
+          ],
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Options"
+    },
+    {
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
+        {
+          "label": "Use Index",
+          "name": "use_index",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Extra Args",
+          "name": "extra_args",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": 1000,
+          "ge": 1,
+          "label": "Limit",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "default": 1,
+          "ge": 0,
+          "label": "Sleep (s)",
+          "name": "sleep",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "label": "Disable Binlog",
+          "name": "disable_binlog",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "label": "Disable Bulk Insert",
+          "name": "disable_bulk_insert",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "label": "Delete Without Archiving",
+          "name": "delete_data",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Advanced"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      },
+      {
+        "format": "chip",
+        "key": "service_type",
+        "label": "Service Type",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "archives"
+}

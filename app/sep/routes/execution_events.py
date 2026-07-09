@@ -28,13 +28,12 @@ from app.sep.deps import (
 from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import ExecutionEvent, TaskHistoryResponse
 
-router = APIRouter(tags=["sep", "tasks"])
+router = APIRouter(tags=["tasks"])
 
 
 @router.get(
     "/{task_history_id}",
     dependencies=[IsAuthenticated],
-    response_model=list[ExecutionEvent],
 )
 @csrf_exempt
 async def list_task_execution_events(

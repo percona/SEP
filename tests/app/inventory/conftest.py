@@ -15,8 +15,11 @@
 
 """Define test fixtures for inventory tests."""
 
+import sqlite3
+
 import pytest
 import pytest_asyncio
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -24,16 +27,32 @@ from sqlmodel.pool import StaticPool
 from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
+from app.inventory.crud import (
+    HostSystemObservationManager,
+    NodeManager,
+    SchemaManager,
+    ServiceManager,
+    ServiceSystemObservationManager,
+    TableManager,
+)
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
-from app.inventory.models import Node, Schema, Service, Table
-from app.models import CasdoorUser
+from app.inventory.models import (
+    HostSystemObservation,
+    Node,
+    Schema,
+    Service,
+    ServiceSystemObservation,
+    Table,
+)
 from tests.app.factories import (
+    HostSystemObservationWriteFactory,
     NodeWriteFactory,
     SchemaWriteFactory,
+    ServiceSystemObservationWriteFactory,
     ServiceWriteFactory,
     TableWriteFactory,
 )
@@ -48,6 +67,14 @@ async def session_fixture() -> AsyncSession:
         json_serializer=json_serializer,
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_foreign_keys(
+        dbapi_connection: sqlite3.Connection,
+        _connection_record: object,
+    ) -> None:
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
@@ -103,4 +130,26 @@ async def second_table(session: AsyncSession, schema: Schema, table: Table) -> T
         session,
         TableWriteFactory.build(name="inventory_test_table_two"),
         schema_id=schema.id,
+    )
+
+
+@pytest_asyncio.fixture
+async def host_observation(session: AsyncSession, node: Node) -> HostSystemObservation:
+    """Create a host system observation for the node."""
+    return await HostSystemObservationManager.create(
+        session,
+        HostSystemObservationWriteFactory.build(),
+        node_id=node.id,
+    )
+
+
+@pytest_asyncio.fixture
+async def service_observation(
+    session: AsyncSession, service: Service
+) -> ServiceSystemObservation:
+    """Create a service system observation for the service."""
+    return await ServiceSystemObservationManager.create(
+        session,
+        ServiceSystemObservationWriteFactory.build(),
+        service_id=service.id,
     )

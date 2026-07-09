@@ -36,7 +36,7 @@ import { ScheduledTaskRow } from './ScheduledTaskRow';
 import {
   useCreateScheduledTask,
   useDeleteScheduledTask,
-  useScheduledTasksForPlugin,
+  useScheduledTasksForApp,
   useUpdateScheduledTask,
   type PeriodicTaskCreate,
   type PeriodicTaskResponse,
@@ -65,7 +65,7 @@ export function ScheduledTasksPanel({
   pluginName,
   disablePolling = false,
 }: ScheduledTasksPanelProps) {
-  const { periodicTasks, pluginTasks, isLoading, isError, error } = useScheduledTasksForPlugin(
+  const { periodicTasks, appTasks, isLoading, isError, error } = useScheduledTasksForApp(
     pluginName,
     { disablePolling },
   );
@@ -79,7 +79,7 @@ export function ScheduledTasksPanel({
   const [formError, setFormError] = useState<string | undefined>(undefined);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
 
-  const availableTasks = useMemo(() => pluginTasks.map((t) => ({ name: t.name })), [pluginTasks]);
+  const availableTasks = useMemo(() => appTasks.map((t) => ({ name: t.name })), [appTasks]);
 
   const handleToggleEnabled = async (task: PeriodicTaskResponse, nextEnabled: boolean) => {
     // PeriodicTaskUpdate requires `kwargs` and `description`, but

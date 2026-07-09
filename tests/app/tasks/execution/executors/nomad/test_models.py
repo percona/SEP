@@ -19,6 +19,7 @@ import asyncio
 import json
 from base64 import b64encode
 from binascii import b2a_base64
+from collections import defaultdict
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,6 +32,7 @@ from app.core.exceptions import HTTPBadRequestException
 from app.core.utils import slugify
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.config import tasks_settings
+from app.tasks.crud import TaskHistoryLogManager, TaskHistoryLogStateManager
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
     JobNotFoundError,
@@ -45,6 +47,7 @@ from app.tasks.execution.executors.nomad.models import (
     NomadExecutor,
 )
 from app.tasks.execution.utils import gzip_compress, minify_file_content
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
@@ -52,6 +55,7 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLog,
     TaskLogType,
 )
 
@@ -62,6 +66,21 @@ INITIAL_LOG_OFFSET = 50
 EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP = 2
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
+MULTI_CHUNK_LOG_FIRST_OFFSET = 17
+MULTI_CHUNK_LOG_SECOND_OFFSET = 42
+EXPECTED_MULTI_CHUNK_LOG_COUNT = 2
+SPLIT_FRAME_LOG_OFFSET = 99
+EXPECTED_SINGLE_TASK_LOG_COUNT = 1
+EMPTY_DATA_FRAME_DATA_OFFSET = 10
+EMPTY_DATA_FRAME_OFFSET_ONLY = 25
+RECHECK_LOG_SOCKET_READ_TIMEOUT = 2
+EXPECTED_EMPTY_FRAMES_BEFORE_RECHECK = 3
+RECHECKED_TASK_STATE = "dead"
+ALLOCATION_CREATE_INDEX = 100
+SUPERSEDED_ALLOCATION_EPOCH = 100
+CURRENT_ALLOCATION_EPOCH = 200
+SEED_OFFSET = 3
+LEGACY_SEED_PRODUCER_OFFSET = 5
 
 
 def _build_task(
@@ -301,11 +320,28 @@ class TestBackendProperty:
         _ = executor.backend
         mock_nomad_cls.assert_called_once()
         call_kwargs = mock_nomad_cls.call_args[1]
-        assert str(call_kwargs["address"]) == "http://localhost:4646/"
+        assert call_kwargs["address"] == "http://localhost:4646"
         assert call_kwargs["secure"] is False
         assert call_kwargs["timeout"] == NOMAD_DEFAULT_TIMEOUT
         assert call_kwargs["verify"] is False
         assert call_kwargs["cert"] == ()
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_backend_strips_trailing_slash_from_endpoint(self, mock_nomad_cls):
+        """Strip the trailing slash off a host-only Nomad endpoint.
+
+        ``HttpUrl`` normalises a host-only URL by appending ``/``. python-nomad
+        joins paths as ``f"{address}/v1/..."``, so a trailing slash yields
+        ``//v1/nodes``; Nomad 307-redirects that to an HTML body and python-nomad
+        (no redirect following) calls ``.json()`` on it, raising
+        ``Expecting value: line 1 column 1 (char 0)``. The executor must strip the
+        slash so the request path stays single-slashed.
+        """
+        executor = _build_executor(endpoint="https://nomad.example:4646")
+        _ = executor.backend
+        address = mock_nomad_cls.call_args[1]["address"]
+        assert address == "https://nomad.example:4646"
+        assert not address.endswith("/")
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_backend_ssl_config_certfile_only(self, mock_nomad_cls):
@@ -1631,7 +1667,7 @@ class TestGetLogsForAllocation:
     ):
         """Assert producer offset tracks anonymized bytes, not Nomad bytes.
 
-        Regression test for SEP-817: when anonymization replaces raw bytes
+        Regression test: when anonymization replaces raw bytes
         with a shorter or longer string, the producer-space offset returned
         alongside the delta must track the post-anonymization byte length
         so the writer dedup window does not mix Nomad-space and
@@ -1727,6 +1763,39 @@ class TestNomadLogStreaming:
                 "step1": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
             },
         }
+
+    @staticmethod
+    def _alloc_for_logs_step2():
+        return {
+            "ID": "alloc-stream",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "TaskStates": {
+                "step2": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
+            },
+        }
+
+    @staticmethod
+    def _nomad_log_frame(*, msg: str | None, offset: int) -> bytes:
+        frame: dict = {"Offset": offset}
+        if msg is not None:
+            frame["Data"] = b64encode(msg.encode()).decode()
+        return json.dumps(frame).encode()
+
+    @staticmethod
+    def _make_iter_chunks(chunks: list[bytes]):
+        async def iter_chunks():
+            for chunk in chunks:
+                yield chunk, None
+
+        return iter_chunks
+
+    @staticmethod
+    async def _drain_task_logs(queue: asyncio.Queue) -> list[TaskLog]:
+        logs = []
+        while not queue.empty():
+            logs.append(await queue.get())
+        return logs
 
     @pytest.mark.asyncio
     @patch(
@@ -1920,6 +1989,229 @@ class TestNomadLogStreaming:
         assert out_alloc is alloc
         assert stream_start is not None
 
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_advances_offset_across_chunks(self):
+        """Two data frames advance params offset and enqueue TaskLogs in order (step2)."""
+        chunks = [
+            self._nomad_log_frame(msg="line-one", offset=MULTI_CHUNK_LOG_FIRST_OFFSET),
+            self._nomad_log_frame(msg="line-two", offset=MULTI_CHUNK_LOG_SECOND_OFFSET),
+        ]
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = self._alloc_for_logs_step2()
+        params = {
+            "task": "step2",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_request", return_value=mock_ctx):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step2",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        logs = await self._drain_task_logs(queue)
+
+        assert state == "running"
+        assert out_alloc is alloc
+        assert stream_start is not None
+        assert params["offset"] == MULTI_CHUNK_LOG_SECOND_OFFSET
+        assert len(logs) == EXPECTED_MULTI_CHUNK_LOG_COUNT
+        assert [log.msg for log in logs] == ["line-one", "line-two"]
+        assert [log.offset for log in logs] == [
+            MULTI_CHUNK_LOG_FIRST_OFFSET,
+            MULTI_CHUNK_LOG_SECOND_OFFSET,
+        ]
+        assert all(log.step == "step2" for log in logs)
+        assert all(log.type == TaskLogType.STDOUT for log in logs)
+        offsets = [log.offset for log in logs]
+        assert offsets == sorted(offsets)
+
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_split_frame_reassembly(self):
+        """Split JSON across chunks reassembles via raw_data before json.loads (step2)."""
+        full = self._nomad_log_frame(msg="split-msg", offset=SPLIT_FRAME_LOG_OFFSET)
+        split_at = full.rfind(b"}")
+        assert b"}" not in full[:split_at]
+        chunks = [full[:split_at], full[split_at:]]
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = self._alloc_for_logs_step2()
+        params = {
+            "task": "step2",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_request", return_value=mock_ctx):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step2",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        logs = await self._drain_task_logs(queue)
+
+        assert state == "running"
+        assert out_alloc is alloc
+        assert stream_start is not None
+        assert params["offset"] == SPLIT_FRAME_LOG_OFFSET
+        assert len(logs) == EXPECTED_SINGLE_TASK_LOG_COUNT
+        assert logs[0].msg == "split-msg"
+        assert logs[0].offset == SPLIT_FRAME_LOG_OFFSET
+        assert logs[0].step == "step2"
+        assert logs[0].type == TaskLogType.STDOUT
+
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_empty_data_increments_without_recheck(self):
+        """Data frame then empty frame increments empty_data_count without recheck (step2)."""
+        chunks = [
+            self._nomad_log_frame(msg="has-data", offset=EMPTY_DATA_FRAME_DATA_OFFSET),
+            self._nomad_log_frame(msg=None, offset=EMPTY_DATA_FRAME_OFFSET_ONLY),
+        ]
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = self._alloc_for_logs_step2()
+        params = {
+            "task": "step2",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx),
+            patch.object(
+                NomadExecutor, "get_last_allocation"
+            ) as mock_get_last_allocation,
+        ):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step2",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        logs = await self._drain_task_logs(queue)
+
+        assert state == "running"
+        assert out_alloc is alloc
+        assert stream_start is not None
+        assert params["offset"] == EMPTY_DATA_FRAME_OFFSET_ONLY
+        mock_get_last_allocation.assert_not_called()
+        assert len(logs) == EXPECTED_SINGLE_TASK_LOG_COUNT
+        assert logs[0].msg == "has-data"
+        assert logs[0].offset == EMPTY_DATA_FRAME_DATA_OFFSET
+
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_empty_data_triggers_recheck(self):
+        """Consecutive empty frames trigger get_last_allocation and return task state (step2)."""
+        empty_offsets = list(range(1, EXPECTED_EMPTY_FRAMES_BEFORE_RECHECK + 1))
+        chunks = [
+            self._nomad_log_frame(msg=None, offset=offset) for offset in empty_offsets
+        ]
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor(
+            log_socket_read_timeout=RECHECK_LOG_SOCKET_READ_TIMEOUT
+        )
+        alloc = self._alloc_for_logs_step2()
+        refreshed_alloc = {
+            **alloc,
+            "TaskStates": {
+                "step2": {
+                    "StartedAt": "2024-01-01T00:00:00Z",
+                    "State": RECHECKED_TASK_STATE,
+                },
+            },
+        }
+        params = {
+            "task": "step2",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx),
+            patch.object(
+                NomadExecutor,
+                "get_last_allocation",
+                return_value=refreshed_alloc,
+            ) as mock_get_last_allocation,
+        ):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step2",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        logs = await self._drain_task_logs(queue)
+
+        assert state == RECHECKED_TASK_STATE
+        assert out_alloc is refreshed_alloc
+        assert stream_start is not None
+        mock_get_last_allocation.assert_called_once_with("job-1", "eval-1")
+        assert logs == []
+
 
 class TestListFiles:
     """Test NomadExecutor.list_files."""
@@ -1963,6 +2255,117 @@ class TestListFiles:
         assert ".hidden" not in result
         assert "subdir" in result
         assert result["subdir"].is_dir is True
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_no_filesystem_returns_empty_dict(self, mock_nomad_cls):
+        """Assert list_files returns {} when allocation has no filesystem (prestart 404)."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "ClientStatus": "failed",
+        }
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = status.HTTP_404_NOT_FOUND
+        mock_response.raise_for_status = MagicMock()
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(executor, "_request", return_value=mock_ctx_manager):
+            result = await executor.list_files(queue_item, "/alloc/data")
+
+        assert result == {}
+        mock_response.raise_for_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_404_non_failed_alloc_propagates(self, mock_nomad_cls):
+        """Assert list_files raises on 404 when alloc status is not failed/lost.
+
+        A 404 on a completed allocation means the output path is misconfigured —
+        that error must surface, not be swallowed.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "ClientStatus": "complete",
+        }
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = status.HTTP_404_NOT_FOUND
+        mock_response.raise_for_status = MagicMock(side_effect=ClientError("not found"))
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx_manager),
+            pytest.raises(ClientError),
+        ):
+            await executor.list_files(queue_item, "/alloc/data")
+
+        mock_response.raise_for_status.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error_status",
+        [status.HTTP_500_INTERNAL_SERVER_ERROR, status.HTTP_403_FORBIDDEN],
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_non_404_http_errors_propagate(
+        self, mock_nomad_cls, error_status
+    ):
+        """Assert list_files propagates non-404 HTTP errors (outage/auth errors must surface)."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status = error_status
+        mock_response.raise_for_status = MagicMock(side_effect=ClientError("error"))
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx_manager),
+            pytest.raises(ClientError),
+        ):
+            await executor.list_files(queue_item, "/alloc/data")
 
 
 class TestParsePayload:
@@ -2471,3 +2874,232 @@ class TestNomadTaskStatesToExecutionEvents:
         assert out[0].event_type == "Setup"
         assert "Downloading Artifacts" in out[0].description
         assert out[0].step == "step1"
+
+    def test_prestart_artifact_download_failure_event_extracted(self):
+        """Assert 'Failed Artifact Download' prestart event surfaces as ExecutionEvent."""
+        task_states = {
+            "step1": {
+                "Events": [
+                    {
+                        "Type": "Failed Artifact Download",
+                        "Time": _NS_EARLY,
+                        "DisplayMessage": "Failed to download artifact: connection refused",
+                    },
+                ],
+            },
+        }
+        events = nomad_task_states_to_execution_events(task_states)
+        assert len(events) == 1
+        assert events[0].event_type == "Failed Artifact Download"
+        assert "connection refused" in events[0].description
+        assert events[0].step == "step1"
+
+    def test_prestart_setup_failure_event_extracted(self):
+        """Assert 'Setup Failure' prestart event surfaces as ExecutionEvent."""
+        task_states = {
+            "step1": {
+                "Events": [
+                    {
+                        "Type": "Setup Failure",
+                        "Time": _NS_EARLY,
+                        "DisplayMessage": "failed to setup alloc: artifact download failed",
+                    },
+                ],
+            },
+        }
+        events = nomad_task_states_to_execution_events(task_states)
+        assert len(events) == 1
+        assert events[0].event_type == "Setup Failure"
+        assert "artifact download failed" in events[0].description
+        assert events[0].step == "step1"
+
+
+class TestPersistNomadTaskLogsCursorDurability:
+    """Test durable Nomad fetch-cursor behavior across sync cycles."""
+
+    @staticmethod
+    def _reconstruct_stream(chunks, state) -> str:
+        """Return the ordered persisted-plus-staged content for one stream."""
+        body = "".join(
+            chunk.content for chunk in sorted(chunks, key=lambda c: c.start_offset)
+        )
+        staged = state.staging.decode("utf-8") if state and state.staging else ""
+        return body + staged
+
+    @staticmethod
+    def _offset_aware_stream(raw_logs: dict):
+        """Return a ``stream_logs.stream`` mock that honors the ``offset`` kwarg.
+
+        The mock returns only the raw bytes at or after ``offset`` so a fetch
+        that wrongly restarts from ``0`` re-reads content the caller already
+        persisted — the exact regression the durable cursor prevents.
+        """
+
+        def fake_stream(alloc_id, *, task, type_, offset):
+            content = raw_logs.get((task, type_), "")
+            delta = content[offset:]
+            if not delta:
+                return ""
+            return json.dumps(
+                {"Data": b64encode(delta.encode()).decode(), "Offset": len(content)}
+            )
+
+        return fake_stream
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_cold_worker_second_cycle_resumes_from_db_cursor(
+        self,
+        mock_nomad_cls,
+        mock_anonymize,
+        session,
+        created_task_with_history,
+    ):
+        """Assert a cold second cycle resumes from the DB cursor without re-reading.
+
+        With the process-local fetch-offset dict gone, the ``taskhistory_log_state``
+        row is the only record of the raw Nomad offset. A second sync cycle that
+        lands on a worker without the in-memory cursor must seed from that row;
+        otherwise the anonymized run-script stream re-reads from offset ``0`` and
+        the producer-offset dedup (``skip == 0``) appends the whole file again.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = lambda text, _entities: text.replace(
+            "4111", "[REDACTED]"
+        )
+        raw_logs = {
+            ("prepare", TaskLogType.STDOUT): "prepare-A\n",
+            ("run-script", TaskLogType.STDOUT): "cc 4111 here\n",
+        }
+        mock_backend.client.stream_logs.stream.side_effect = self._offset_aware_stream(
+            raw_logs
+        )
+
+        history = created_task_with_history
+        history.anonymize_mask = PIIEntity.CREDIT_CARD.value
+        alloc = {
+            "ID": "alloc-1",
+            "CreateIndex": ALLOCATION_CREATE_INDEX,
+            "TaskStates": {
+                "prepare": {"StartedAt": "2024-01-01T00:00:00Z"},
+                "run-script": {"StartedAt": "2024-01-01T00:00:00Z"},
+            },
+        }
+        executor = _build_executor()
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=alloc,
+            previous_allocation_id="alloc-1",
+        )
+        raw_logs[("prepare", TaskLogType.STDOUT)] = "prepare-A\nprepare-B\n"
+        raw_logs[("run-script", TaskLogType.STDOUT)] = "cc 4111 here\nsecond\n"
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=alloc,
+            previous_allocation_id="alloc-1",
+        )
+
+        chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
+        chunks_by_stream = defaultdict(list)
+        for chunk in chunks:
+            chunks_by_stream[(chunk.source, chunk.stream)].append(chunk)
+        prepare_state = await TaskHistoryLogStateManager.get_for_stream(
+            session, history.id, "prepare", TaskLogType.STDOUT
+        )
+        run_script_state = await TaskHistoryLogStateManager.get_for_stream(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+
+        assert (
+            self._reconstruct_stream(
+                chunks_by_stream[("prepare", TaskLogType.STDOUT)], prepare_state
+            )
+            == "prepare-A\nprepare-B\n"
+        )
+        assert (
+            self._reconstruct_stream(
+                chunks_by_stream[("run-script", TaskLogType.STDOUT)],
+                run_script_state,
+            )
+            == "cc [REDACTED] here\nsecond\n"
+        )
+
+    @pytest.mark.asyncio
+    async def test_build_initial_log_offsets_skips_superseded_epoch_row(
+        self, session, created_task_with_history
+    ):
+        """Assert a row from a different allocation epoch is not used to seed."""
+        history = created_task_with_history
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"old",
+            force_flush=True,
+            producer_offset_after=SEED_OFFSET,
+            nomad_offset_after=SEED_OFFSET,
+            allocation_epoch=SUPERSEDED_ALLOCATION_EPOCH,
+        )
+
+        offsets = await NomadExecutor._build_initial_log_offsets(
+            session, history.id, current_epoch=CURRENT_ALLOCATION_EPOCH
+        )
+
+        assert "run-script" not in offsets
+
+    @pytest.mark.asyncio
+    async def test_build_initial_log_offsets_seeds_matching_epoch_row(
+        self, session, created_task_with_history
+    ):
+        """Assert a row matching the current epoch seeds both cursors."""
+        history = created_task_with_history
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"cur",
+            force_flush=True,
+            producer_offset_after=SEED_OFFSET,
+            nomad_offset_after=SEED_OFFSET,
+            allocation_epoch=CURRENT_ALLOCATION_EPOCH,
+        )
+
+        offsets = await NomadExecutor._build_initial_log_offsets(
+            session, history.id, current_epoch=CURRENT_ALLOCATION_EPOCH
+        )
+
+        assert offsets["run-script"]["stdout_last_offset"] == SEED_OFFSET
+        assert offsets["run-script"]["stdout_producer_offset"] == SEED_OFFSET
+
+    @pytest.mark.asyncio
+    async def test_build_initial_log_offsets_seeds_legacy_epoch_zero_row(
+        self, session, created_task_with_history
+    ):
+        """Assert a legacy ``allocation_epoch == 0`` row is trusted for seeding."""
+        history = created_task_with_history
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"legacy",
+            force_flush=True,
+            producer_offset_after=LEGACY_SEED_PRODUCER_OFFSET,
+        )
+
+        offsets = await NomadExecutor._build_initial_log_offsets(
+            session, history.id, current_epoch=CURRENT_ALLOCATION_EPOCH
+        )
+
+        assert "run-script" in offsets
+        assert (
+            offsets["run-script"]["stdout_producer_offset"]
+            == LEGACY_SEED_PRODUCER_OFFSET
+        )

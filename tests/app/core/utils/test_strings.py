@@ -17,17 +17,33 @@
 
 from base64 import b64encode
 
+import pytest
+
 from app.core.utils.strings import b64encode_str, slugify
 
 
-def test_slugify():
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Hello, World!", "hello-world"),
+        ("  Python@3.8  ", "python-3-8"),
+        ("Café Münchén", "cafe-munchen"),
+        ("___", ""),
+        ("", ""),
+        ("No_Special-Characters", "no-special-characters"),
+    ],
+    ids=[
+        "hello-world",
+        "strip-and-symbols",
+        "unicode-accents",
+        "only-underscores",
+        "empty",
+        "mixed-separators",
+    ],
+)
+def test_slugify(value, expected):
     """Test slugify utility for various input cases."""
-    assert slugify("Hello, World!") == "hello-world"
-    assert slugify("  Python@3.8  ") == "python-3-8"
-    assert slugify("Café Münchén") == "cafe-munchen"
-    assert slugify("___") == ""
-    assert slugify("") == ""
-    assert slugify("No_Special-Characters") == "no-special-characters"
+    assert slugify(value) == expected
 
 
 def test_b64encode_str():

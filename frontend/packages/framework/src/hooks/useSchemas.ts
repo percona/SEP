@@ -30,7 +30,7 @@ export interface UseSchemasOptions {
 
 /**
  * Fetch schemas for a service via the SEP inventory gateway
- * (`GET /inventory-api/services/{id}/schemas` → `[{id, name}]`).
+ * (`GET /sep/services/{id}/schemas` → `[{id, name}]`).
  *
  * Disabled when `serviceId` is nullish.
  */
@@ -41,9 +41,7 @@ export function useSchemas(options: UseSchemasOptions): UseQueryResult<SchemaOpt
     enabled: enabled && serviceId !== null && serviceId !== undefined,
     staleTime: 60_000,
     queryFn: async () => {
-      const { data } = await apiClient.get<SchemaOption[]>(
-        `/inventory-api/services/${serviceId}/schemas`,
-      );
+      const { data } = await apiClient.get<SchemaOption[]>(`/sep/services/${serviceId}/schemas`);
       return data;
     },
   });

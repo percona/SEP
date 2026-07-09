@@ -16,6 +16,7 @@
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FormProvider, useForm } from 'react-hook-form';
@@ -86,9 +87,7 @@ describe('TableSelector', () => {
         <Harness initialSchema={{ id: 42, name: 'app_prod' }} />
       </Wrapper>,
     );
-    await waitFor(() =>
-      expect(mocked.get).toHaveBeenCalledWith('/inventory-api/schemas/42/tables'),
-    );
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/schemas/42/tables'));
   });
 
   it('resets value when parent schema changes', async () => {
@@ -146,5 +145,237 @@ describe('TableSelector', () => {
       </Wrapper>,
     );
     await screen.findByText('No tables in this schema');
+  });
+
+  describe('allow_custom (free-solo)', () => {
+    // The allow_custom path commits `number | string | null`, not a `TableOption`.
+    interface CustomFormShape {
+      schema: SchemaOption | null;
+      table: number | string | null;
+    }
+
+    function CustomProbe() {
+      const methods = useForm<CustomFormShape>({
+        defaultValues: { schema: { id: 42, name: 'app_prod' }, table: null },
+      });
+      return (
+        <FormProvider {...methods}>
+          <TableSelector name="table" label="Table" dependsOn="schema" allowCustom />
+          <output data-testid="table-value">{JSON.stringify(methods.watch('table'))}</output>
+        </FormProvider>
+      );
+    }
+
+    const value = () => screen.getByTestId('table-value').textContent;
+
+    it('commits the inventory id when a table is picked', async () => {
+      mocked.get.mockResolvedValue({
+        data: [
+          { id: 100, name: 'users' },
+          { id: 101, name: 'orders' },
+        ],
+      });
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.click(screen.getByLabelText('Table'));
+      await user.click(await screen.findByText('orders'));
+      expect(value()).toBe('101');
+    });
+
+    it('commits a typed value as a string', async () => {
+      mocked.get.mockResolvedValue({ data: [{ id: 100, name: 'users' }] });
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.type(screen.getByLabelText('Table'), 'manual_table');
+      expect(value()).toBe('"manual_table"');
+    });
+
+    it('resolves a typed value matching an existing table to its id', async () => {
+      mocked.get.mockResolvedValue({ data: [{ id: 100, name: 'users' }] });
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.type(screen.getByLabelText('Table'), 'users');
+      expect(value()).toBe('100');
+    });
+
+    it('stays enabled and accepts a typed value when the parent schema is custom', async () => {
+      const client = makeClient();
+      const user = userEvent.setup();
+      function CascadeProbe() {
+        // Parent schema holds a free-typed (custom) string, not an inventory id.
+        const methods = useForm<{ schema: unknown; table: unknown }>({
+          defaultValues: { schema: 'custom_schema', table: null },
+        });
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="table" label="Table" dependsOn="schema" allowCustom />
+            <output data-testid="table-value">{JSON.stringify(methods.watch('table'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <CascadeProbe />
+        </Wrapper>,
+      );
+      const input = screen.getByLabelText('Table');
+      expect(input).not.toBeDisabled();
+      // No schema id means no table fetch is issued.
+      expect(mocked.get).not.toHaveBeenCalled();
+      await user.type(input, 'custom_table');
+      expect(screen.getByTestId('table-value').textContent).toBe('"custom_table"');
+    });
+
+    it('treats a numeric custom parent string as custom (not an inventory id)', async () => {
+      const client = makeClient();
+      const user = userEvent.setup();
+      function NumericCustomParentProbe() {
+        const methods = useForm<{ schema: unknown; table: unknown }>({
+          defaultValues: { schema: '42', table: null },
+        });
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="table" label="Table" dependsOn="schema" allowCustom />
+            <output data-testid="table-value">{JSON.stringify(methods.watch('table'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <NumericCustomParentProbe />
+        </Wrapper>,
+      );
+      const input = screen.getByLabelText('Table');
+      expect(input).not.toBeDisabled();
+      expect(mocked.get).not.toHaveBeenCalled();
+      await user.type(input, 'custom_table');
+      expect(screen.getByTestId('table-value').textContent).toBe('"custom_table"');
+    });
+
+    it('clears child value when parent custom value changes', async () => {
+      const client = makeClient();
+      const setSchemaRef: { current: ((value: unknown) => void) | null } = { current: null };
+      function CustomParentChangeProbe() {
+        const methods = useForm<{ schema: unknown; table: unknown }>({
+          defaultValues: { schema: 'custom-schema-a', table: 'child-table' },
+        });
+        setSchemaRef.current = (value) => methods.setValue('schema', value);
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="table" label="Table" dependsOn="schema" allowCustom />
+            <output data-testid="table-value">{JSON.stringify(methods.watch('table'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <CustomParentChangeProbe />
+        </Wrapper>,
+      );
+      expect(screen.getByTestId('table-value').textContent).toBe('"child-table"');
+      await act(async () => {
+        setSchemaRef.current?.('custom-schema-b');
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('table-value').textContent).toBe('null');
+      });
+      expect(mocked.get).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('multiple (multi-value)', () => {
+    it('resets the child to [] when the parent schema changes', async () => {
+      mocked.get.mockResolvedValue({ data: [{ id: 1, name: 't' }] });
+      const client = makeClient();
+      const setSchemaRef: { current: ((s: SchemaOption) => void) | null } = { current: null };
+      function Probe() {
+        const methods = useForm<{ schema: SchemaOption; tables: unknown }>({
+          defaultValues: { schema: { id: 1, name: 's1' }, tables: [100, 101] },
+        });
+        setSchemaRef.current = (s) => methods.setValue('schema', s);
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="tables" label="Tables" dependsOn="schema" multiple />
+            <output data-testid="tables-value">{JSON.stringify(methods.watch('tables'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      expect(screen.getByTestId('tables-value').textContent).toBe('[100,101]');
+      await act(async () => {
+        setSchemaRef.current?.({ id: 2, name: 's2' });
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('tables-value').textContent).toBe('[]');
+      });
+    });
+
+    it('stays enabled for a custom (free-typed) parent', async () => {
+      const client = makeClient();
+      function Probe() {
+        const methods = useForm<{ schema: unknown; tables: unknown }>({
+          defaultValues: { schema: 'custom-schema', tables: [] },
+        });
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="tables" label="Tables" dependsOn="schema" allowCustom multiple />
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      expect(screen.getByLabelText('Tables')).not.toBeDisabled();
+      expect(mocked.get).not.toHaveBeenCalled();
+    });
+  });
+
+  it('back-compat: without allowCustom a typed value is not committed', async () => {
+    mocked.get.mockResolvedValue({ data: [{ id: 100, name: 'users' }] });
+    const client = makeClient();
+    const user = userEvent.setup();
+    function Probe() {
+      const methods = useForm<FormShape>({
+        defaultValues: { schema: { id: 42, name: 'app_prod' }, table: null },
+      });
+      return (
+        <FormProvider {...methods}>
+          <TableSelector name="table" label="Table" dependsOn="schema" />
+          <output data-testid="bc-value">{JSON.stringify(methods.watch('table'))}</output>
+        </FormProvider>
+      );
+    }
+    render(
+      <Wrapper client={client}>
+        <Probe />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+    await user.type(screen.getByLabelText('Table'), 'manual_table');
+    expect(screen.getByTestId('bc-value').textContent).toBe('null');
   });
 });

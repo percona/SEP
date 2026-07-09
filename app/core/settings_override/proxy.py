@@ -65,6 +65,20 @@ class OverridableSettingsProxy(LazyProxy[T]):
             return snapshot[name]
         return super().__getattr__(name)
 
+    def get_snapshot(self) -> Mapping[str, object]:
+        """Return the currently-published override snapshot.
+
+        Exposes the live snapshot reference so the lifecycle layer can diff the
+        previous snapshot against a freshly-built one and fire rebind callbacks
+        only for keys whose value changed. The returned mapping is the same
+        immutable object the refresher published; callers must not mutate it.
+
+        :return: The mapping of field name to typed override value currently in
+            effect (empty when no override is published).
+        :rtype: Mapping[str, object]
+        """
+        return object.__getattribute__(self, "_snapshot")
+
     def _set_snapshot(self, snapshot: Mapping[str, object]) -> None:
         """Replace the snapshot reference atomically.
 
@@ -73,6 +87,10 @@ class OverridableSettingsProxy(LazyProxy[T]):
         :mod:`app.core.settings_override.lifecycle` and per-test fixtures
         that reset state between tests. Other code should read attributes
         normally and let the refresher publish snapshots.
+
+        See :func:`app.core.settings_override.lifecycle.publish_snapshot`
+        for the public seam that API handlers use to build and publish a
+        fresh snapshot in one call.
 
         :param snapshot: The new mapping of field name to typed override
             value. The mapping is treated as immutable -- callers must not

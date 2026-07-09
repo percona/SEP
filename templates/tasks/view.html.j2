@@ -114,20 +114,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 {% include "tasks/partials/running-tasks.html.j2" %}
             </section>
         {% endif %}
-        {% include "tasks/partials/run-python-form.html.j2" %}
-        <h2>Periodic Tasks</h2>
-        {% include "/tasks/partials/scheduled-tasks.html.j2" %}
-    {% endif %}
-    {% if not task.protected %}
-        <form class="delete-form"
-              id="delete-form"
-              data-confirm-message='Are you sure you want to delete task "{{ task.name }}"?'
-              method="post"
-              action="{{ url_for('tasks_delete', task_name=task.name) }}">
-            <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
-        </form>
-    {% endif %}
-    {% if not task.is_template %}
         <section>
             <h2>History</h2>
             {% set history_tasks = history %}

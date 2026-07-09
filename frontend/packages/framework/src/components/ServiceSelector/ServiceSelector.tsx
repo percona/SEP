@@ -15,14 +15,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useServices, type ServiceOption, type ServiceType } from '../../hooks/useServices';
+import { extractId } from '../../utils/extractId';
+import { isHydratedReferenceOption, resolveReferenceOption } from '../../utils/referenceOption';
+import { FreeSoloSelect } from '../FreeSoloSelect';
+import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 
 const EMPTY_OPTIONS: ServiceOption[] = [];
 
 export interface ServiceSelectorProps {
-  /** react-hook-form field name. Stores a `ServiceOption | null`. */
+  /**
+   * react-hook-form field name. Without `allowCustom`, stores a
+   * `ServiceOption | null`; with `allowCustom`, stores the committed
+   * `number | string | null` (inventory id, free-typed value, or unset).
+   */
   name: string;
   label: string;
   required?: boolean;
@@ -30,10 +39,23 @@ export interface ServiceSelectorProps {
   serviceTypes?: readonly ServiceType[];
   disabled?: boolean;
   helperText?: string;
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allowCustom?: boolean;
+  /**
+   * Render a multi-value selector committing a `(number | string)[]`. Combined
+   * with `allowCustom`, yields a free-solo multi-select; otherwise a closed
+   * multi-select combobox.
+   */
+  multiple?: boolean;
 }
 
 const getOptionLabel = (opt: ServiceOption | string) =>
   typeof opt === 'string' ? opt : `${opt.name} (${opt.type})`;
+// Used by the free-solo path. Because the label is `name (type)`, the
+// typed-text-to-id resolution only fires if the user types that exact form;
+// in practice a free-typed service almost always commits as a custom string,
+// while inventory picks resolve to an id through the option-click path.
+const getServiceOptionLabel = (opt: ServiceOption) => `${opt.name} (${opt.type})`;
 
 const isOptionEqualToValue = (a: ServiceOption, b: ServiceOption) => a.id === b.id;
 
@@ -44,8 +66,11 @@ export function ServiceSelector({
   serviceTypes,
   disabled,
   helperText,
+  allowCustom,
+  multiple,
 }: ServiceSelectorProps) {
-  const { control } = useFormContext();
+  const { control, setValue, watch } = useFormContext();
+  const storedValue = watch(name);
 
   const {
     data: services = EMPTY_OPTIONS,
@@ -61,6 +86,55 @@ export function ServiceSelector({
     : empty
       ? 'No services available'
       : helperText;
+
+  useEffect(() => {
+    if (multiple || allowCustom || isHydratedReferenceOption(storedValue)) {
+      return;
+    }
+    const id = extractId(storedValue);
+    if (id === null) {
+      return;
+    }
+    const match = services.find((service) => service.id === id);
+    if (match) {
+      setValue(name, match, { shouldDirty: false, shouldValidate: false });
+    }
+  }, [multiple, allowCustom, storedValue, services, name, setValue]);
+
+  if (multiple) {
+    return (
+      <FreeSoloMultiSelect<ServiceOption>
+        name={name}
+        label={label}
+        options={services}
+        getOptionLabel={getServiceOptionLabel}
+        allowCustom={Boolean(allowCustom)}
+        required={required}
+        disabled={disabled || isError}
+        loading={isLoading}
+        helperText={text}
+        error={isError}
+        noOptionsText={isLoading ? 'Loading services…' : 'No services available'}
+      />
+    );
+  }
+
+  if (allowCustom) {
+    return (
+      <FreeSoloSelect<ServiceOption>
+        name={name}
+        label={label}
+        options={services}
+        getOptionLabel={getServiceOptionLabel}
+        required={required}
+        disabled={disabled || isError}
+        loading={isLoading}
+        helperText={text}
+        error={isError}
+        noOptionsText={isLoading ? 'Loading services…' : 'No services available'}
+      />
+    );
+  }
 
   return (
     <AutoCompleteInput<ServiceOption>
@@ -79,6 +153,7 @@ export function ServiceSelector({
         getOptionLabel,
         isOptionEqualToValue,
         noOptionsText: isLoading ? 'Loading services…' : 'No services available',
+        value: resolveReferenceOption(storedValue, services),
       }}
       textFieldProps={{ helperText: text, error: isError }}
     />

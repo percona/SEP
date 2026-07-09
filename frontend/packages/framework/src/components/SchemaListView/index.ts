@@ -16,3 +16,4 @@
  */
 
 export { SchemaListView } from './SchemaListView';
+export type { RenderListColumnArgs, RenderListColumnOverride } from './SchemaListView';

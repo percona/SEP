@@ -1,0 +1,110 @@
+---
+config:
+  flowchart:
+    defaultRenderer: elk
+    nodeSpacing: 40
+    rankSpacing: 45
+    padding: 10
+  themeVariables:
+    fontSize: 16px
+---
+%% SEP installer-deployed topology (customer security review).
+%% Canonical sources: installer blobs NGINX_CONFIG, SEP_COMPOSE_YAML, SEP_SETTINGS_YAML,
+%% CASDOOR_INIT_JSON_DATA (decoded from sep_installer.sh), the SEP MS Playbook playbook
+%% layered on top of build/ansible/, and the SEP application on origin/main.
+%% Companion data flow: SEP-1215. Audit-log retention + PII handling: SEP-1220.
+%% Nomad driver / sandboxing detail: SEP-1218.
+
+flowchart TB
+    classDef actor fill:#ffffff,stroke:#222,stroke-width:2px,color:#000
+    classDef ingress fill:#fdecef,stroke:#c62828,stroke-width:2px,color:#000
+    classDef sep fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#000
+    classDef bg fill:#fff4d6,stroke:#bf7a04,stroke-width:2px,color:#000
+    classDef store fill:#e6f4ea,stroke:#2e7d32,stroke-width:2px,color:#000
+    classDef external fill:#fff3cd,stroke:#856404,stroke-width:2px,color:#000
+    classDef dbhost fill:#fcefe3,stroke:#a06030,stroke-width:2px,color:#000
+
+    Engineer(["Percona engineer / DBA<br/>browser"]):::actor
+
+    subgraph sep_stack ["SEP stack — compose on the SEP controller host"]
+        direction TB
+        Nginx["Nginx<br/>TLS ingress :8444 (SEP), :9999 (Casdoor)<br/>React SPA static bundle"]:::ingress
+
+        subgraph api_row ["FastAPI services + IdP"]
+            direction LR
+            Casdoor["Casdoor<br/>OAuth 2.0 / OIDC IdP"]:::sep
+            SEPApp["SEP App<br/>:9000"]:::sep
+            InventoryAPI["Inventory API<br/>:9001"]:::sep
+            TasksAPI["Tasks API<br/>:9002"]:::sep
+        end
+
+        subgraph workers ["Background — Celery"]
+            direction LR
+            CeleryBeat["Celery beat<br/>periodic scheduler"]:::bg
+            CeleryWorker["Celery worker<br/>task executor"]:::bg
+        end
+
+        subgraph data_plane ["Data plane"]
+            direction LR
+            Postgres[("PostgreSQL :5432<br/>SEP + beat DB")]:::store
+            Redis[("Redis :6379<br/>Celery broker")]:::store
+        end
+    end
+
+    subgraph external_services ["External services — customer-controlled or Percona-operated"]
+        direction LR
+        PMM(["PMM Server<br/>inventory sync<br/>execution annotations"]):::external
+        NomadCluster(["Nomad cluster<br/>external — customer-provided<br/>HTTPS API"]):::external
+    end
+
+    subgraph db_host_1 ["DB Host 1 (customer)"]
+        direction TB
+        NomadAgent1["Nomad agent<br/>raw_exec driver only"]:::dbhost
+        DB1(["Database service<br/>MySQL / PostgreSQL / MongoDB"]):::dbhost
+    end
+
+    subgraph db_host_2 ["DB Host 2 (customer)"]
+        direction TB
+        NomadAgent2["Nomad agent<br/>raw_exec driver only"]:::dbhost
+        DB2(["Database service<br/>MySQL / PostgreSQL / MongoDB"]):::dbhost
+    end
+
+    %% Engineer ingress
+    Engineer == "HTTPS :8444" ==> Nginx
+    Engineer -. "HTTPS :9999<br/>Casdoor login UI" .-> Nginx
+
+    %% Nginx → upstream
+    Nginx -- "/api/, /legacy/, SSE" --> SEPApp
+    Nginx -- "Casdoor login" --> Casdoor
+
+    %% SEP App auth + API gateway
+    SEPApp -- "OAuth introspect" --> Casdoor
+    SEPApp -- "HTTPS gateway" --> InventoryAPI
+    SEPApp -- "HTTPS gateway" --> TasksAPI
+
+    %% Database access
+    SEPApp -- "psql" --> Postgres
+    InventoryAPI -- "psql" --> Postgres
+    TasksAPI -- "psql" --> Postgres
+    CeleryBeat -- "beat schedule" --> Postgres
+
+    %% Celery broker
+    TasksAPI -- "enqueue" --> Redis
+    CeleryBeat -- "schedule" --> Redis
+    CeleryWorker -- "consume" --> Redis
+
+    %% SEP ↔ Nomad over mTLS
+    CeleryWorker == "mTLS dispatch" ==> NomadCluster
+    TasksAPI == "mTLS read" ==> NomadCluster
+
+    %% PMM integration (HTTPS only)
+    InventoryAPI -. "inventory sync (HTTPS)" .-> PMM
+    CeleryWorker -. "annotations (HTTPS)" .-> PMM
+
+    %% Nomad → DB-host agents
+    NomadCluster -- "Nomad RPC :4647" --> NomadAgent1
+    NomadCluster -- "Nomad RPC :4647" --> NomadAgent2
+
+    %% Nomad agent → local DB
+    NomadAgent1 -. "local raw_exec" .-> DB1
+    NomadAgent2 -. "local raw_exec" .-> DB2

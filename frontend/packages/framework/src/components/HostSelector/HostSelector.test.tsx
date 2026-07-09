@@ -175,6 +175,25 @@ describe('HostSelector', () => {
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ hostId: 'nomad-1' }));
   });
 
+  it('refetches /api/sep/hosts/ when the dropdown is opened', async () => {
+    const hosts = [{ id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' }];
+    mocked.get.mockResolvedValue(makeResponse(hosts));
+
+    const client = makeClient();
+    render(
+      <Wrapper client={client}>
+        <Harness />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(1));
+
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText('Host'));
+
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2));
+  });
+
   it('raises a snackbar when the hosts query fails with an upstream error', async () => {
     mocked.get.mockRejectedValueOnce(
       new ApiError({ kind: 'http', status: 502, message: 'tasks unreachable' }),

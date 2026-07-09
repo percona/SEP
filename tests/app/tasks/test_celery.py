@@ -19,6 +19,7 @@ import asyncio
 from contextlib import contextmanager
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,20 +32,21 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import undefer
-from sqlmodel import SQLModel
+from sqlmodel import col, select, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
 from app.core.alerts.models import AlertService, AlertSeverity
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
-from app.core.utils import json_serializer
+from app.core.utils import json_serializer, utc_now
 from app.tasks import celery as celery_module
 from app.tasks.celery import (
     _check_nomad_cert_expiry,
     _dispatch_chained_task,
     _dispatch_queue_item,
     _MAX_CHAIN_DEPTH,
+    _purge_task_history_logs,
     _raise_if_identical_task_conflict,
     check_nomad_cert_expiry,
     delete_task_history,
@@ -52,6 +54,7 @@ from app.tasks.celery import (
     get_executor_for_task,
     maybe_dispatch_chain,
     prepare_periodic_task_history,
+    purge_task_history_logs,
     sync_queue_item,
     sync_running_items,
     task_revoked_handler,
@@ -66,6 +69,7 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskExecutionRequest,
     TaskHistory,
+    TaskHistoryLog,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskWrite,
@@ -247,7 +251,7 @@ class TestDispatchQueueItem:
 
     @pytest.mark.asyncio
     async def test_await_annotations_flag_propagated_to_internal(self):
-        """Assert ``await_annotations=True`` reaches ``_dispatch_queue_item`` (SEP-1204)."""
+        """Assert ``await_annotations=True`` reaches ``_dispatch_queue_item``."""
         queue_item = _make_history()
         session = _make_session_mock()
         expected = _make_history(status=TaskHistoryStatusEnum.RUNNING)
@@ -607,8 +611,8 @@ class TestRaiseIfIdenticalTaskConflict:
     async def test_pg_bool_scalar_is_type_strict(self):
         """Assert PG bool scalar is rendered as jsonb ``true``, not Python ``"True"``.
 
-        Pin the latent-bug fix documented in the SEP-988 Breaking Changes
-        CHANGELOG entry: the previous text-equality path compared
+        Pin the latent-bug fix for the bool-meta dedup path: the previous
+        text-equality path compared
         ``->>`` output against ``str(True) == "True"``, which never matched
         jsonb's lowercase ``true`` text form, leaving bool-meta dispatches
         un-deduplicated.
@@ -954,6 +958,132 @@ class TestSyncRunningItems:
         mock_sync_task.chunks.assert_not_called()
 
 
+async def _seed_purge_db(num_aged: int, *, chunks_each: int = 1):
+    """Build an in-memory tasks DB with ``num_aged`` aged finished histories.
+
+    Each history is SUCCESS, finished 100 days ago, and carries ``chunks_each``
+    log rows. Returns the session maker so the helper-under-test can be patched
+    onto it.
+    """
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    maker = get_async_session_maker_from_engine(engine)
+    old = utc_now() - timedelta(days=100)
+    async with maker() as session:
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="aged-task", backend=TaskBackendEnum.NOMAD)
+            ),
+        )
+        for _ in range(num_aged):
+            history = await TaskHistoryManager.save(
+                session,
+                TaskHistory(
+                    task_id=task.id,
+                    status=TaskHistoryStatusEnum.SUCCESS,
+                    created_at=old,
+                    finished_at=old,
+                    execution_request={
+                        "task": task.name,
+                        "target": "localhost",
+                        "meta": {},
+                        "tracking": {"allocation_id": None, "evaluation_id": None},
+                    },
+                ),
+            )
+            for offset in range(chunks_each):
+                session.add(
+                    TaskHistoryLog(
+                        task_history_id=history.id,
+                        source="run-python",
+                        stream=TaskLogType.STDOUT,
+                        start_offset=offset * 10,
+                        end_offset=offset * 10 + 10,
+                        content="x" * 10,
+                    )
+                )
+        await session.commit()
+    return maker
+
+
+def _purge_settings(retention_days: int = 90, batch_size: int = 10):
+    """Return a stand-in settings object exposing the purge knobs."""
+    return SimpleNamespace(
+        LOG_RETENTION_DAYS=retention_days, LOG_PURGE_BATCH_SIZE=batch_size
+    )
+
+
+class TestPurgeTaskHistoryLogs:
+    """Test the task-history-log purge helper and Celery wrapper."""
+
+    @pytest.mark.asyncio
+    async def test_purges_all_aged_logs_across_batches(self):
+        """Loop batches until every aged log row is gone; audit rows survive."""
+        maker = await _seed_purge_db(1, chunks_each=5)
+        with (
+            patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+            patch(f"{MODULE}.tasks_settings", _purge_settings(batch_size=2)),
+        ):
+            await _purge_task_history_logs()
+
+        async with maker() as session:
+            logs = await session.exec(select(col(TaskHistoryLog.id)))
+            histories = await session.exec(select(col(TaskHistory.id)))
+        assert len(logs.all()) == 0
+        assert len(histories.all()) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_aged_rows_is_noop(self):
+        """A clean table deletes nothing and raises no error."""
+        maker = await _seed_purge_db(0)
+        with (
+            patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+            patch(f"{MODULE}.tasks_settings", _purge_settings()),
+        ):
+            await _purge_task_history_logs()  # must not raise
+
+    @pytest.mark.asyncio
+    async def test_error_triggers_alert_and_reraises(self):
+        """A delete failure fires a system alert and propagates the exception."""
+        maker = await _seed_purge_db(1)
+        boom = RuntimeError("db exploded")
+        with (
+            patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+            patch(f"{MODULE}.tasks_settings", _purge_settings()),
+            patch(
+                f"{MODULE}.TaskHistoryLogManager.delete_aged_batch",
+                new_callable=AsyncMock,
+                side_effect=boom,
+            ),
+            patch(
+                f"{MODULE}.alert_service.trigger", new_callable=AsyncMock
+            ) as mock_alert,
+            pytest.raises(RuntimeError),
+        ):
+            await _purge_task_history_logs()
+
+        mock_alert.assert_awaited_once()
+        alert = mock_alert.await_args[0][0]
+        assert alert["severity"] == AlertSeverity.ERROR
+        assert alert["dedup_key"] == "purge_task_history_logs"
+
+    def test_wrapper_runs_helper_on_loop(self):
+        """The Celery wrapper drives the async helper via the celery loop."""
+        with patch(f"{MODULE}.celery") as mock_celery:
+            mock_celery.loop.run_until_complete = MagicMock(
+                side_effect=lambda coro: coro.close()
+            )
+            purge_task_history_logs()
+        mock_celery.loop.run_until_complete.assert_called_once()
+
+
 class TestTaskRevokedHandler:
     """Test task_revoked_handler."""
 
@@ -1063,6 +1193,46 @@ class TestExecuteTaskQueue:
         assert isinstance(result, dict)
         assert ("get_task_history", 10) in call_order
         assert ("dispatch_queue_item", queue_item.id, True) in call_order
+
+    def test_unresolvable_payload_fails_terminally_without_dispatch(self, mocker):
+        """Assert an ad-hoc dispatch with an unresolvable payload fails FAILED, never dispatching."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="adhoc-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=True,
+                    data={"task": "wrapped"},
+                )
+            )
+            history = test_loop.run_until_complete(
+                _seed_history(
+                    async_session_maker,
+                    task,
+                    payload="file:///nonexistent/x_payload",
+                )
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            with patch.object(celery_module.celery, "loop", test_loop):
+                result = celery_module.execute_task_queue.__wrapped__(history.id)
+
+            mock_dispatch.assert_not_called()
+            mock_alert.assert_awaited_once()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].id == history.id
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+            assert result["status"] == TaskHistoryStatusEnum.FAILED.value
 
 
 class TestSyncQueueItem:
@@ -1881,6 +2051,33 @@ async def _list_histories(async_session_maker, task_id: int) -> list[TaskHistory
         )
 
 
+async def _seed_history(
+    async_session_maker,
+    task,
+    *,
+    payload: str | None,
+    target: str = "node-1",
+) -> TaskHistory:
+    """Insert a PENDING TaskHistory row for ``task`` and return it with ``id`` loaded."""
+    async with async_session_maker() as session:
+        history = TaskHistory(
+            task_id=task.id,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target=target,
+                meta={"target": target},
+                payload=payload,
+                tracking={"evaluation_id": ""},
+            ),
+            status=TaskHistoryStatusEnum.PENDING,
+            executed_by="test-user",
+        )
+        session.add(history)
+        await session.commit()
+        await session.refresh(history)
+        return history
+
+
 async def _list_log_chunks(async_session_maker, task_history_id: int):
     """Return all TaskHistoryLog chunks for ``task_history_id``."""
     async with async_session_maker() as session:
@@ -2279,9 +2476,9 @@ class TestExecuteTaskByName:
 
 
 class TestExecuteTaskByNamePeriodicAnnotationRegression:
-    """Regression suite for SEP-1204 — periodic dispatch ``STARTED`` annotation.
+    """Regression suite for the periodic dispatch ``STARTED`` annotation.
 
-    Before SEP-1204, ``_dispatch_queue_item`` posted the ``STARTED`` annotation
+    Before this fix, ``_dispatch_queue_item`` posted the ``STARTED`` annotation
     via ``schedule_annotation`` (fire-and-forget ``asyncio.create_task``). When
     called from the Celery worker (``execute_task_by_name`` →
     ``celery.loop.run_until_complete(dispatch_queue_item(...))``), the inner
@@ -2298,7 +2495,7 @@ class TestExecuteTaskByNamePeriodicAnnotationRegression:
     """
 
     def test_started_annotation_reaches_pmm_for_periodic_dispatch(self, mocker):
-        """Assert ``annotate_task_event`` is awaited with ``STARTED`` (SEP-1204)."""
+        """Assert ``annotate_task_event`` is awaited with ``STARTED``."""
         with _sync_db_harness(mocker) as (test_loop, async_session_maker):
             test_loop.run_until_complete(
                 _seed_task(async_session_maker, name="backup_data", alert_on_fail=False)
@@ -2353,11 +2550,11 @@ def _noop_async_session_maker():
 
 
 class TestInternalDispatchQueueItemRegression:
-    """Regression suite for SEP-1017 — real-session ``_dispatch_queue_item``.
+    """Regression suite for the real-session ``_dispatch_queue_item``.
 
     ``TaskHistoryManager.save`` re-defers the ``execution_request``
     ``column_property`` via its internal ``session.refresh(instance)``.
-    Before SEP-1017, ``schedule_annotation(result, "STARTED")`` then
+    Before this fix, ``schedule_annotation(result, "STARTED")`` then
     touched that deferred attribute synchronously and crashed with
     ``MissingGreenlet`` on async drivers (asyncpg, aiosqlite).
 
@@ -2498,14 +2695,14 @@ class _SharedSessionContextManager:
 
 
 class TestSyncQueueItemRegression:
-    """Regression suite for SEP-1017 — real-session ``sync_queue_item``.
+    """Regression suite for the real-session ``sync_queue_item``.
 
     After ``TaskHistoryManager.save`` inside the ``async with
     async_session()`` block, ``saved.execution_request`` is re-deferred
     by the save's internal ``session.refresh(instance)``. Chain-dispatch
     logic reads ``saved.execution_request.meta`` twice **after** the
     ``async with`` exits, at which point ``saved`` is also detached.
-    Before SEP-1017, that read raised ``DetachedInstanceError`` on sync
+    Before this fix, that read raised ``DetachedInstanceError`` on sync
     drivers or ``MissingGreenlet`` on async drivers.
     """
 
@@ -2787,12 +2984,15 @@ class TestCheckNomadCertExpiry:
 
     @pytest.mark.asyncio
     async def test_missing_file_warns_and_skips(self, mocker, tmp_path: Path) -> None:
-        """Assert a missing PEM path logs a warning and does not call the alert service."""
-        mock_nomad = MagicMock()
-        mock_nomad.ssl_cafile = tmp_path / "missing.pem"
-        mock_nomad.ssl_certfile = None
-        mock_nomad.cert_expiry_warn_days = 7
-        mocker.patch("app.tasks.celery.tasks_settings", MagicMock(NOMAD=mock_nomad))
+        """Assert a PEM path missing at read time logs a warning and skips alerting."""
+        ca = tmp_path / "ca.pem"
+        _write_self_signed_pem(
+            ca, not_valid_after=ANCHOR + timedelta(days=30), common_name="ca"
+        )
+        nomad = _nomad_config_for_paths(ca=ca, cert=None, warn_days=7)
+        # Exists at config-load (passes path validation) but gone by read time.
+        ca.unlink()
+        mocker.patch("app.tasks.celery.tasks_settings", MagicMock(NOMAD=nomad))
         mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
         mock_alert = MagicMock()
         mock_alert.trigger = AsyncMock()
@@ -2822,3 +3022,150 @@ class TestCheckNomadCertExpiry:
 
         check_nomad_cert_expiry()
         app_celery.loop.run_until_complete.assert_called_once_with(coro)
+
+
+class TestPreDispatchPayloadCheck:
+    """Test the pre-dispatch payload-resolution gate in ``execute_task_by_name``."""
+
+    _BROKEN_DATA = {"task": "wrapped", "payload": "file:///nonexistent/x_payload"}
+
+    def test_unresolvable_payload_persists_failed_logs_and_alerts(self, mocker):
+        """Assert an unresolvable payload persists FAILED, writes stderr, and alerts."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=True,
+                    data=self._BROKEN_DATA,
+                )
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            result = _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_dispatch.assert_not_called()
+            mock_alert.assert_awaited_once()
+            alert_payload = mock_alert.await_args.args[0]
+            assert alert_payload["class"] == "task_dispatch_failure"
+            assert alert_payload["dedup_key"] == "task:test-task:node-1"
+
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            saved = rows[0]
+            assert saved.status == TaskHistoryStatusEnum.FAILED
+            assert saved.finished_at is not None
+            assert result["status"] == TaskHistoryStatusEnum.FAILED.value
+
+            chunks = test_loop.run_until_complete(
+                _list_log_chunks(async_session_maker, saved.id)
+            )
+            stderr_chunks = [c for c in chunks if c.stream == TaskLogType.STDERR]
+            assert stderr_chunks
+            assert "file:///nonexistent/x_payload" in stderr_chunks[0].content
+
+    def test_unresolvable_payload_no_alert_when_alert_on_fail_false(self, mocker):
+        """Assert the FAILED row and stderr chunk are written but no alert fires."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data=self._BROKEN_DATA,
+                )
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_dispatch.assert_not_called()
+            mock_alert.assert_not_awaited()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+            chunks = test_loop.run_until_complete(
+                _list_log_chunks(async_session_maker, rows[0].id)
+            )
+            assert any(c.stream == TaskLogType.STDERR for c in chunks)
+
+    def test_resolvable_payload_returns_none_to_proceed(self, mocker, tmp_path):
+        """Assert the gate returns None (proceed) for a resolvable payload reference."""
+        payload_file = tmp_path / "payload_script"
+        payload_file.write_text("print('ok')")
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=True,
+                    data={"task": "wrapped", "payload": f"file://{payload_file}"},
+                )
+            )
+            task_history = test_loop.run_until_complete(
+                prepare_periodic_task_history(
+                    "test-task", {"meta": {"target": "node-1"}}
+                )
+            )
+
+            result = test_loop.run_until_complete(
+                celery_module._pre_dispatch_payload_check(
+                    task_history, "test-task", None
+                )
+            )
+
+            assert result is None
+
+    def test_unreadable_payload_persists_failed(self, mocker):
+        """Assert a resolvable-but-unreadable payload (read error) also persists FAILED."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data={
+                        "task": "wrapped",
+                        "payload": "file://app/sep/plugins/mysql_backups/binlog_payload",
+                    },
+                )
+            )
+            unreadable = mocker.MagicMock()
+            unreadable.read_text.side_effect = PermissionError("denied")
+            mocker.patch(
+                "app.tasks.models.resolve_payload_reference", return_value=unreadable
+            )
+            task_history = test_loop.run_until_complete(
+                prepare_periodic_task_history(
+                    "test-task", {"meta": {"target": "node-1"}}
+                )
+            )
+
+            result = test_loop.run_until_complete(
+                celery_module._pre_dispatch_payload_check(
+                    task_history, "test-task", None
+                )
+            )
+
+            assert result is not None
+            assert result.status == TaskHistoryStatusEnum.FAILED

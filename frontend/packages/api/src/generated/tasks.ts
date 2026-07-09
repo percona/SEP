@@ -27,7 +27,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/{task_name}': {
+  '/admin/settings/': {
     parameters: {
       query?: never;
       header?: never;
@@ -35,27 +35,75 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Get Task
-     * @description Retrieve a task by its name.
+     * List Settings
+     * @description List every exposed settings class with current values and metadata.
+     *
+     *     Local classes are read from their config singletons; remote classes
+     *     (``remote_classes``) are fetched server-side from their owning sub-app
+     *     and appended in declaration order; app-owned classes follow remote
+     *     groups with per-group app metadata. A failed remote fetch fails the
+     *     whole request with ``502`` -- the LIST never silently drops a remote
+     *     group.
+     *
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :return: Grouped responses, one group per configured settings class.
      */
-    get: operations['tasks_get_task__task_name__get'];
-    /**
-     * Update Task
-     * @description Update an existing task.
-     */
-    put: operations['tasks_update_task__task_name__put'];
+    get: operations['settings_list_settings_admin_settings__get'];
+    put?: never;
     post?: never;
-    /**
-     * Delete Task
-     * @description Delete a task.
-     */
-    delete: operations['tasks_delete_task__task_name__delete'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/{task_name}/periodic/': {
+  '/admin/settings/{setting_class}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Patch Settings
+     * @description Apply a batch of overrides for one settings class atomically.
+     *
+     *     For a remote class the batch is forwarded to the owning sub-app, which
+     *     owns the validation and persistence; the upstream's per-field ``422``
+     *     (and its ``detail``) is preserved so the UI can render inline messages.
+     *
+     *     For a local class: Phase A validates every key in ``body`` (existence on
+     *     the class, HOT classification, type/constraint coercion) and collects
+     *     per-key errors. If any key fails, the whole batch is rejected with a
+     *     structured 422 and nothing is written. Phase B persists every valid entry
+     *     in a single transaction, refreshes the proxy snapshot once, then fires
+     *     the rebind callbacks for any changed keys so a HOT target rebinds without
+     *     waiting for the next background refresh cycle.
+     *
+     *     :param request: The incoming request; its ``app.state`` carries the
+     *         sub-app's rebind-callback registry.
+     *     :param setting_class: The settings class the override targets.
+     *     :param body: The batch of ``{key: value, ...}`` overrides.
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :return: One :class:`SettingResponse` per applied key, in input order.
+     *     :raises HTTPNotFoundException: If the class isn't exposed.
+     *     :raises HTTPUnprocessableEntityException: If any key fails validation;
+     *         no rows are written.
+     */
+    patch: operations['settings_patch_settings_admin_settings__setting_class__patch'];
+    trace?: never;
+  };
+  '/admin/settings/{setting_class}/{key}': {
     parameters: {
       query?: never;
       header?: never;
@@ -63,16 +111,81 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * List Periodic Tasks By Task Name
-     * @description List periodic tasks by task name.
+     * Get Setting
+     * @description Return one field's metadata and current value.
+     *
+     *     :param setting_class: The settings class the field belongs to.
+     *     :param key: The field name on the settings class.
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :return: The structured response for the field.
+     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
+     *         doesn't exist on the class.
      */
-    get: operations['tasks_list_periodic_tasks_by_task_name__task_name__periodic__get'];
+    get: operations['settings_get_setting_admin_settings__setting_class___key__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete Setting
+     * @description Revert one override row to the field's declared default.
+     *
+     *     For a remote class the DELETE is forwarded to the owning sub-app, which
+     *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
+     *     ``detail`` are preserved through the proxy.
+     *
+     *     For a local class: idempotent -- deleting a (class, key) pair that has no
+     *     override row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE
+     *     field responds 409 -- the field cannot have an override row in the first
+     *     place, so the operator's intent is unsatisfiable.
+     *
+     *     After republishing the snapshot, fires the rebind callbacks for the
+     *     reverted key so a HOT target rebinds to its restored value without
+     *     waiting for the next background refresh cycle.
+     *
+     *     :param request: The incoming request; its ``app.state`` carries the
+     *         sub-app's rebind-callback registry.
+     *     :param setting_class: The settings class the field belongs to.
+     *     :param key: The field name on the settings class.
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
+     *         doesn't exist on the class.
+     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+     *     :raises HTTPUnprocessableEntityException: If ``key`` names a
+     *         ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
+     *         target an individual ``parent__leaf`` instead).
+     *     :raises HTTPBadGatewayException: For a remote class, when the owning
+     *         sub-app returns a server error (status >= 500) or is unreachable.
+     */
+    delete: operations['settings_delete_setting_admin_settings__setting_class___key__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/connectivity-check/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
     put?: never;
     /**
-     * Create Periodic Task For Task Name
-     * @description Create a new periodic task for the specified task name.
+     * Connectivity Check
+     * @description Check database connectivity via a Nomad task.
+     *
+     *     :param session: The async database session.
+     *     :type session: AsyncSession
+     *     :param request: The connectivity check request parameters.
+     *     :type request: ConnectivityCheckWrite
+     *     :return: The connectivity check result.
+     *     :rtype: ConnectivityCheckResponse
      */
-    post: operations['tasks_create_periodic_task_for_task_name__task_name__periodic__post'];
+    post: operations['connectivity_connectivity_check_connectivity_check__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -133,20 +246,20 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/{task}/history/': {
+  '/history/latest': {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /**
-     * Get Task History
-     * @description Retrieve task history by task name.
-     */
-    get: operations['tasks_get_task_history__task__history__get'];
+    get?: never;
     put?: never;
-    post?: never;
+    /**
+     * Latest Task History
+     * @description Return the latest-history projection (status + finished_at) per task name.
+     */
+    post: operations['tasks_latest_task_history_history_latest_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -193,7 +306,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/history/{task_history_id}/logs/': {
+  '/history/{task_history_id}/file/': {
     parameters: {
       query?: never;
       header?: never;
@@ -201,10 +314,10 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Stream Task History Logs
-     * @description Stream a task history's logs.
+     * Stream Task History File
+     * @description Stream a file from a task history.
      */
-    get: operations['tasks_stream_task_history_logs_history__task_history_id__logs__get'];
+    get: operations['tasks_stream_task_history_file_history__task_history_id__file__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -233,7 +346,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/history/{task_history_id}/file/': {
+  '/history/{task_history_id}/logs/': {
     parameters: {
       query?: never;
       header?: never;
@@ -241,10 +354,13 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Stream Task History File
-     * @description Stream a file from a task history.
+     * Stream Task History Logs
+     * @description Stream a task history's logs.
+     *
+     *     ``tail`` limits output to the last N lines per stream for finished histories
+     *     only. It is ignored while the task is ``RUNNING`` (live executor stream).
      */
-    get: operations['tasks_stream_task_history_file_history__task_history_id__file__get'];
+    get: operations['tasks_stream_task_history_logs_history__task_history_id__logs__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -285,28 +401,16 @@ export interface paths {
     /**
      * Sync Task History
      * @description Sync task history with the executor and persist the latest status.
+     *
+     *     Atomically claim the ``sync_in_progress_started_at`` lock before calling
+     *     the executor so the celery ``sync_running_tasks`` periodic and this route
+     *     never both progress past the executor call for the same row. When the
+     *     claim returns no rows — either because another syncer holds the lock or
+     *     because the status has already flipped to terminal — refresh the row
+     *     from the DB and return without re-syncing. The holder (or completed
+     *     syncer) is responsible for dispatching any chained task.
      */
     post: operations['tasks_sync_task_history_history__task_history_id__sync__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/stats/{task}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Task Stats
-     * @description Calculate the statistics for the task.
-     */
-    get: operations['tasks_get_task_stats_stats__task__get'];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -323,30 +427,22 @@ export interface paths {
     /**
      * Get Executor Hosts
      * @description Return the executor hosts from the executor.
+     *
+     *     Wrap the upstream executor call so connection failures or non-JSON
+     *     bodies surface as a 502 JSON response instead of leaking a default
+     *     500 + text/plain that masks the real failure on the dashboard banner.
+     *
+     *     :param executor: The task executor backend used to fetch host metadata.
+     *     :type executor: TaskExecutor
+     *     :return: A mapping of executor node name to network address.
+     *     :rtype: dict[str, str]
+     *     :raises HTTPBadGatewayException: If the executor backend raises a
+     *         ``requests.exceptions.RequestException`` (e.g. a non-JSON response
+     *         body or a connection failure outside the Nomad SDK's own wrapping).
      */
     get: operations['tasks_get_executor_hosts_hosts__get'];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/transform/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Transform Payload
-     * @description Transform a payload string into a dictionary.
-     */
-    post: operations['tasks_transform_payload_transform__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -401,7 +497,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/connectivity-check/': {
+  '/stats/{task}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Task Stats
+     * @description Calculate the statistics for the task.
+     */
+    get: operations['tasks_get_task_stats_stats__task__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/transform/': {
     parameters: {
       query?: never;
       header?: never;
@@ -411,17 +527,82 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Connectivity Check
-     * @description Check database connectivity via a Nomad task.
-     *
-     *     :param session: The async database session.
-     *     :type session: AsyncSession
-     *     :param request: The connectivity check request parameters.
-     *     :type request: ConnectivityCheckWrite
-     *     :return: The connectivity check result.
-     *     :rtype: ConnectivityCheckResponse
+     * Transform Payload
+     * @description Transform a payload string into a dictionary.
      */
-    post: operations['connectivity_connectivity_check_connectivity_check__post'];
+    post: operations['tasks_transform_payload_transform__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Task
+     * @description Retrieve a task by its name.
+     */
+    get: operations['tasks_get_task__task_name__get'];
+    /**
+     * Update Task
+     * @description Update an existing task.
+     */
+    put: operations['tasks_update_task__task_name__put'];
+    post?: never;
+    /**
+     * Delete Task
+     * @description Delete a task.
+     */
+    delete: operations['tasks_delete_task__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/{task_name}/periodic/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Periodic Tasks By Task Name
+     * @description List periodic tasks by task name.
+     */
+    get: operations['tasks_list_periodic_tasks_by_task_name__task_name__periodic__get'];
+    put?: never;
+    /**
+     * Create Periodic Task For Task Name
+     * @description Create a new periodic task for the specified task name.
+     */
+    post: operations['tasks_create_periodic_task_for_task_name__task_name__periodic__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/{task}/history/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Task History
+     * @description Retrieve task history by task name.
+     */
+    get: operations['tasks_get_task_history__task__history__get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -437,17 +618,14 @@ export interface components {
      * @description Represent a connectivity check result.
      *
      *     :param success: Whether the connectivity check succeeded.
-     *     :type success: bool
      *     :param error: Error message if the check failed. Defaults to ``None``.
-     *     :type error: str | None
      *     :param task_history_id: The ID of the task history record for this check.
-     *     :type task_history_id: int
      */
     ConnectivityCheckResponse: {
-      /** Success */
-      success: boolean;
       /** Error */
       error?: string | null;
+      /** Success */
+      success: boolean;
       /** Task History Id */
       task_history_id: number;
     };
@@ -456,24 +634,21 @@ export interface components {
      * @description Represent a connectivity check request payload.
      *
      *     :param target: The Nomad node name to run the check on.
-     *     :type target: str
      *     :param host: The database host address.
-     *     :type host: str
      *     :param port: The database port number.
-     *     :type port: int
      *     :param service_type: The type of database service to check.
-     *     :type service_type: ConnectivityServiceType
-     *     :param timeout: Maximum seconds to wait for the check. Defaults to 30.
-     *     :type timeout: int
+     *     :param timeout: Connect-phase budget in seconds, counted only once the
+     *         ``run-script`` task starts. Total server wait is ``PROVISIONING_TIMEOUT``
+     *         (provisioning phase) plus this value. Defaults to 30.
      */
     ConnectivityCheckWrite: {
-      /** Target */
-      target: string;
       /** Host */
       host: string;
       /** Port */
       port: number;
       service_type: components['schemas']['ConnectivityServiceType'];
+      /** Target */
+      target: string;
       /**
        * Timeout
        * @default 30
@@ -516,25 +691,25 @@ export interface components {
      */
     CrontabSchedule: {
       /**
-       * Minute
+       * Day Of Month
        * @default *
        */
-      minute: string;
-      /**
-       * Hour
-       * @default *
-       */
-      hour: string;
+      day_of_month: string;
       /**
        * Day Of Week
        * @default *
        */
       day_of_week: string;
       /**
-       * Day Of Month
+       * Hour
        * @default *
        */
-      day_of_month: string;
+      hour: string;
+      /**
+       * Minute
+       * @default *
+       */
+      minute: string;
       /**
        * Month Of Year
        * @default *
@@ -560,6 +735,10 @@ export interface components {
      *     :type step: str | None
      */
     ExecutionEvent: {
+      /** Description */
+      description: string;
+      /** Step */
+      step?: string | null;
       /**
        * Timestamp
        * Format: date-time
@@ -567,10 +746,6 @@ export interface components {
       timestamp: string;
       /** Type */
       type: string;
-      /** Description */
-      description: string;
-      /** Step */
-      step?: string | null;
     };
     /**
      * FileMetadata
@@ -578,15 +753,15 @@ export interface components {
      */
     FileMetadata: {
       /**
-       * Size
-       * @default 0
-       */
-      size: number;
-      /**
        * Is Dir
        * @default false
        */
       is_dir: boolean;
+      /**
+       * Size
+       * @default 0
+       */
+      size: number;
     };
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -607,27 +782,28 @@ export interface components {
       every: number;
       period: components['schemas']['Period'];
     };
+    JsonValue: unknown;
     /** PaginatedResponse[TaskHistoryResponse] */
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
       items: components['schemas']['TaskHistoryResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[TaskResponse] */
     PaginatedResponse_TaskResponse_: {
       /** Items */
       items: components['schemas']['TaskResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /**
      * Period
@@ -662,30 +838,30 @@ export interface components {
      *     :type description: str
      */
     PeriodicTaskCreate: {
-      /**
-       * Name
-       * @default
-       */
-      name: string;
-      /** Task */
-      task: string;
-      /** Start Time */
-      start_time?: string | null;
-      /**
-       * Enabled
-       * @default true
-       */
-      enabled: boolean;
+      crontab?: components['schemas']['CrontabSchedule'] | null;
       /**
        * Description
        * @default
        */
       description: string;
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled: boolean;
       execute_request?: components['schemas']['PeriodicTaskExecuteRequest'] | null;
       interval?: components['schemas']['IntervalSchedule'] | null;
-      crontab?: components['schemas']['CrontabSchedule'] | null;
       /** Kwargs */
       kwargs: string;
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /** Start Time */
+      start_time?: string | null;
+      /** Task */
+      task: string;
     };
     /**
      * PeriodicTaskExecuteRequest
@@ -702,6 +878,17 @@ export interface components {
      *     :type eta: datetime | None
      */
     PeriodicTaskExecuteRequest: {
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Chain On Failure
+       * @default false
+       */
+      chain_on_failure: boolean;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
       /**
        * Meta
        * @default {}
@@ -709,17 +896,6 @@ export interface components {
       meta: Record<string, never>;
       /** Payload */
       payload?: string | null;
-      /** Eta */
-      eta?: string | null;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /**
-       * Chain On Failure
-       * @default false
-       */
-      chain_on_failure: boolean;
     };
     /**
      * PeriodicTaskResponse
@@ -756,41 +932,21 @@ export interface components {
      *     :type crontab: CrontabSchedule | None
      */
     PeriodicTaskResponse: {
-      /** Name */
-      name: string;
-      /** Task */
-      task: string;
-      /** Start Time */
-      start_time: string | null;
-      /** Enabled */
-      enabled: boolean;
-      /** Description */
-      description: string;
-      execute_request?: components['schemas']['PeriodicTaskExecuteRequest'] | null;
-      interval?: components['schemas']['IntervalSchedule'] | null;
       crontab?: components['schemas']['CrontabSchedule'] | null;
-      /** Id */
-      id: number;
-      /** Last Run At */
-      last_run_at: string | null;
-      /**
-       * Total Run Count
-       * @default 0
-       */
-      total_run_count: number;
       /** Date Changed */
       date_changed: string | null;
-      /**
-       * Period
-       * @description Get the period string for the periodic task.
-       *
-       *     Returns a string representation of the task's schedule based on whether it uses
-       *     an interval or crontab schedule.
-       *
-       *     :return: A string representing the task's period.
-       *     :rtype: str
-       */
-      readonly period: string;
+      /** Description */
+      description: string;
+      /** Enabled */
+      enabled: boolean;
+      execute_request?: components['schemas']['PeriodicTaskExecuteRequest'] | null;
+      /** Id */
+      id: number;
+      interval?: components['schemas']['IntervalSchedule'] | null;
+      /** Last Run At */
+      last_run_at: string | null;
+      /** Name */
+      name: string;
       /**
        * Next Run At
        * @description Compute the next scheduled execution time.
@@ -806,6 +962,26 @@ export interface components {
        *     :rtype: UTCDatetime | None
        */
       readonly next_run_at: string | null;
+      /**
+       * Period
+       * @description Get the period string for the periodic task.
+       *
+       *     Returns a string representation of the task's schedule based on whether it uses
+       *     an interval or crontab schedule.
+       *
+       *     :return: A string representing the task's period.
+       *     :rtype: str
+       */
+      readonly period: string;
+      /** Start Time */
+      start_time: string | null;
+      /** Task */
+      task: string;
+      /**
+       * Total Run Count
+       * @default 0
+       */
+      total_run_count: number;
     };
     /**
      * PeriodicTaskUpdate
@@ -833,21 +1009,202 @@ export interface components {
      *     :type kwargs: str
      */
     PeriodicTaskUpdate: {
-      /** Name */
-      name: string;
-      /** Task */
-      task: string;
-      /** Start Time */
-      start_time: string | null;
-      /** Enabled */
-      enabled: boolean;
+      crontab?: components['schemas']['CrontabSchedule'] | null;
       /** Description */
       description: string;
+      /** Enabled */
+      enabled: boolean;
       execute_request?: components['schemas']['PeriodicTaskExecuteRequest'] | null;
       interval?: components['schemas']['IntervalSchedule'] | null;
-      crontab?: components['schemas']['CrontabSchedule'] | null;
       /** Kwargs */
       kwargs: string;
+      /** Name */
+      name: string;
+      /** Start Time */
+      start_time: string | null;
+      /** Task */
+      task: string;
+    };
+    /**
+     * ReloadClassification
+     * @description Declare the reload behavior of an overridable settings field.
+     *
+     *     :cvar HOT: Field can be overridden via a DB row and the new value takes
+     *         effect on the next snapshot refresh, without restarting the service.
+     *         For a nested-model field, ``HOT`` permits both whole-object override
+     *         (``PATCH {parent: {...}}``) and per-child override (``parent__leaf``).
+     *     :vartype HOT: str
+     *     :cvar NESTED_ONLY: Nested-model field whose children may be overridden
+     *         (``parent__leaf``) while the parent itself rejects whole-object
+     *         override (``PATCH {parent: {...}}`` → 422). Children default to
+     *         HOT-inherit unless explicitly marked :func:`not_overridable_field`.
+     *     :vartype NESTED_ONLY: str
+     *     :cvar NOT_OVERRIDABLE: Field is not overridable from the database; YAML
+     *         and environment variables remain the only sources of truth.
+     *     :vartype NOT_OVERRIDABLE: str
+     * @enum {string}
+     */
+    ReloadClassification: 'hot' | 'nested_only' | 'not_overridable';
+    /**
+     * SettingClassEnum
+     * @description Enumerate settings classes that may have HOT override rows.
+     *
+     *     The wired classes are ``SEPSettings``, ``TasksSettings``,
+     *     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
+     *     ``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and
+     *     ``InventorySettings``.
+     *
+     *     To wire a new settings class:
+     *
+     *     1. Add a member here whose value matches the Pydantic class ``__name__``.
+     *     2. Generate an Alembic migration on every consumer track that extends the
+     *        ``CHECK`` constraint on ``settingoverride.setting_class``. The column
+     *        uses ``native_enum=False`` so the value list lives in a constraint,
+     *        not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.
+     *        Note that the column and ``CHECK`` constraint persist the enum member
+     *        *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member
+     *        *value* (the Pydantic class name, e.g. ``SEPSettings``).
+     *     3. Wire a ``ProxyEntry`` for the new class in the relevant service's
+     *        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
+     * @enum {string}
+     */
+    SettingClassEnum:
+      | 'SEPSettings'
+      | 'TasksSettings'
+      | 'SnippetsSettings'
+      | 'MessagesSettings'
+      | 'Settings'
+      | 'AlertSettings'
+      | 'AnonymizerSettings'
+      | 'AlertsSettings'
+      | 'InventorySettings';
+    /**
+     * SettingClassGroup
+     * @description One settings-class group in the LIST response.
+     *
+     *     :param setting_class: The settings class this group represents.
+     *     :type setting_class: SettingClassEnum
+     *     :param settings: The fields declared on the settings class, with their
+     *         current values and metadata.
+     *     :type settings: list[SettingResponse]
+     *     :param is_app_owned: Whether this group belongs to a SEP app under
+     *         ``app/sep/apps/`` rather than core SEP wiring.
+     *     :type is_app_owned: bool
+     *     :param app_id: The owning app's registry key when ``is_app_owned`` is
+     *         ``True``; ``None`` for core groups.
+     *     :type app_id: str | None
+     *     :param app_display_name: The owning app's human-facing label when
+     *         ``is_app_owned`` is ``True``; ``None`` for core groups.
+     *     :type app_display_name: str | None
+     *     :param app_enabled: Whether the owning app is currently enabled when
+     *         ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
+     *         apps remain listed so the frontend can hide them without a second
+     *         lookup.
+     *     :type app_enabled: bool | None
+     */
+    SettingClassGroup: {
+      /** App Display Name */
+      app_display_name?: string | null;
+      /** App Enabled */
+      app_enabled?: boolean | null;
+      /** App Id */
+      app_id?: string | null;
+      /**
+       * Is App Owned
+       * @default false
+       */
+      is_app_owned: boolean;
+      setting_class: components['schemas']['SettingClassEnum'];
+      /** Settings */
+      settings: components['schemas']['SettingResponse'][];
+    };
+    /**
+     * SettingResponse
+     * @description Represent a single setting's metadata and current value.
+     *
+     *     :param setting_class: The settings class the field belongs to.
+     *     :param key: The field name on the settings class.
+     *     :param key_path: Carry the canonical key segments for ``key`` such that
+     *         ``"__".join(key_path) == key``.
+     *     :param value: The current value visible through the proxy, dumped to a
+     *         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
+     *         redacted to ``"**********"``.
+     *     :param default_value: The field's declared default value, dumped via the
+     *         same JSON serialiser. ``None`` when no default exists.
+     *     :param type: A human-readable representation of the field's declared
+     *         annotation (for operator visibility; validation uses the actual
+     *         ``FieldInfo``).
+     *     :param reload: The reload classification (HOT or NOT_OVERRIDABLE).
+     *     :param description: The field's free-text description, or ``None``.
+     *     :param is_secret: Whether the field's annotation contains a Pydantic secret
+     *         (``SecretStr`` / ``SecretBytes``) at any depth.
+     *     :param is_complex: Whether the field's annotation is or contains a Pydantic
+     *         ``BaseModel`` subclass (true for nested submodels).
+     *     :param has_override: Whether a row exists in the ``settingoverride`` table
+     *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
+     *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
+     *         present it separately from everyday settings. Display-only:
+     *         it does not affect PATCH/DELETE eligibility.
+     *     :param is_applicable: Whether the setting applies under current runtime state
+     *         (e.g. the active auth provider). ``False`` lets the UI present the field
+     *         as inert. Display-only, like ``is_advanced``: it does not block
+     *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
+     */
+    SettingResponse: {
+      /** Default Value */
+      default_value: unknown;
+      /** Description */
+      description: string | null;
+      /** Has Override */
+      has_override: boolean;
+      /**
+       * Is Advanced
+       * @default false
+       */
+      is_advanced: boolean;
+      /**
+       * Is Applicable
+       * @default true
+       */
+      is_applicable: boolean;
+      /** Is Complex */
+      is_complex: boolean;
+      /** Is Secret */
+      is_secret: boolean;
+      /** Key */
+      key: string;
+      /** Key Path */
+      key_path?: string[];
+      reload: components['schemas']['ReloadClassification'];
+      setting_class: components['schemas']['SettingClassEnum'];
+      /** Type */
+      type: string;
+      /** Value */
+      value: unknown;
+    };
+    /**
+     * SettingsListResponse
+     * @description The LIST endpoint response, grouping settings by class.
+     *
+     *     :param groups: One :class:`SettingClassGroup` per settings class the
+     *         router was configured with.
+     *     :type groups: list[SettingClassGroup]
+     */
+    SettingsListResponse: {
+      /** Groups */
+      groups: components['schemas']['SettingClassGroup'][];
+    };
+    /**
+     * SettingsPatch
+     * @description Batch PATCH payload: a flat ``{field_name: new_value, ...}`` mapping.
+     *
+     *     An empty body is rejected as 422 because a no-op PATCH is a client bug, not
+     *     a valid request. The server coerces each value to the field's declared
+     *     type via :func:`coerce_field_value`; validation is all-or-nothing -- if any
+     *     key fails, nothing is written.
+     */
+    SettingsPatch: {
+      [key: string]: components['schemas']['JsonValue'];
     };
     /**
      * TaskBackendEnum
@@ -885,6 +1242,17 @@ export interface components {
      *     :type chain_on_failure: bool
      */
     TaskExecuteRequest: {
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Chain On Failure
+       * @default false
+       */
+      chain_on_failure: boolean;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
       /**
        * Meta
        * @default {}
@@ -892,17 +1260,6 @@ export interface components {
       meta: Record<string, never>;
       /** Payload */
       payload?: string | null;
-      /** Eta */
-      eta?: string | null;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /**
-       * Chain On Failure
-       * @default false
-       */
-      chain_on_failure: boolean;
     };
     /**
      * TaskExecutionRequest
@@ -922,10 +1279,8 @@ export interface components {
      *     :type tracking: dict | None
      */
     TaskExecutionRequest: {
-      /** Task */
-      task: string;
-      /** Target */
-      target: string;
+      /** Eta */
+      eta?: string | null;
       /**
        * Meta
        * @default {}
@@ -933,13 +1288,15 @@ export interface components {
       meta: Record<string, never> | null;
       /** Payload */
       payload?: string | null;
+      /** Target */
+      target: string;
+      /** Task */
+      task: string;
       /**
        * Tracking
        * @default {}
        */
       tracking: Record<string, never> | null;
-      /** Eta */
-      eta?: string | null;
     } & {
       [key: string]: unknown;
     };
@@ -965,34 +1322,68 @@ export interface components {
      *     :type task: Task
      *     :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
      *     :type sync_in_progress_started_at: UTCDatetime | None
+     *     :param log_allocation_epoch: Task-level high-water mark of the current Nomad
+     *         allocation ``CreateIndex``, stamped whenever the log frontier is reset. The
+     *         log writer consults it on the first-insert path (before any per-stream
+     *         ``TaskHistoryLogState`` row exists) to discard writes from a superseded
+     *         allocation. ``0`` is the legacy/unknown sentinel that is trusted
+     *         unconditionally.
      *     :param executed_by: The user ID of the user who executed the task.
      *     :type executed_by: str | None
      */
     TaskHistory: {
-      /** Id */
-      id: number | null;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
-      execution_request: components['schemas']['TaskExecutionRequest'];
-      /** @default pending */
-      status: components['schemas']['TaskHistoryStatusEnum'];
-      /** Started At */
-      started_at?: string | null;
-      /** Finished At */
-      finished_at?: string | null;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
       /** Executed By */
       executed_by?: string | null;
-      /** Task Id */
-      task_id: number;
+      execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Finished At */
+      finished_at?: string | null;
+      /** Id */
+      id: number | null;
+      /** Log Allocation Epoch */
+      log_allocation_epoch: number;
+      /** Started At */
+      started_at?: string | null;
+      /** @default pending */
+      status: components['schemas']['TaskHistoryStatusEnum'];
       /** Sync In Progress Started At */
       sync_in_progress_started_at?: string | null;
+      /** Task Id */
+      task_id: number;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * TaskHistoryLatestStatus
+     * @description Represent the latest-history projection for a single task.
+     *
+     *     :param status: The latest known execution status, taken from the newest
+     *         history row; ``None`` only when the task has no history rows at all.
+     *     :param finished_at: The most recent ``finished_at`` across all of the task's
+     *         history rows (a ``max``), so a task with an in-progress re-run still
+     *         reports its prior completion; ``None`` when no run has ever finished.
+     */
+    TaskHistoryLatestStatus: {
+      /** Finished At */
+      finished_at?: string | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+    };
+    /**
+     * TaskHistoryLatestStatusRequest
+     * @description Define request body for batch latest-history status lookup.
+     *
+     *     :param names: Task names to resolve latest non-null history statuses for.
+     *     :type names: list[str]
+     */
+    TaskHistoryLatestStatusRequest: {
+      /** Names */
+      names?: string[];
     };
     /**
      * TaskHistoryResponse
@@ -1018,34 +1409,32 @@ export interface components {
      *         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
      *         Populated by list/retrieve routes; defaults to ``False``.
      *     :type has_logs: bool
+     *     :param display_name: A user-meaningful label derived from the task name or
+     *         execution-request metadata. Read-only; computed on serialisation.
      */
     TaskHistoryResponse: {
-      /** Id */
-      id: number | null;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
-      execution_request: components['schemas']['TaskExecutionRequest'];
-      /** @default pending */
-      status: components['schemas']['TaskHistoryStatusEnum'];
-      /** Started At */
-      started_at?: string | null;
-      /** Finished At */
-      finished_at?: string | null;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /** Executed By */
-      executed_by?: string | null;
-      task: components['schemas']['TaskResponse'];
       /**
-       * Has Logs
-       * @default false
+       * Display Name
+       * @description Return a user-meaningful display label for this task history row.
+       *
+       *     For normal tasks, returns ``task.name``. For generic executor templates
+       *     (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
+       *     ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
+       *     are distinguishable: the filename comes from the snippet metadata or the
+       *     ``file://`` payload basename, the source directory from whichever of those
+       *     carries one, and the target from the execution request. Falls back to
+       *     ``"<task> on <target>"`` when no filename is available.
+       *
+       *     :return: The display label for the task history entry.
        */
-      has_logs: boolean;
+      readonly display_name: string;
       /**
        * Duration
        * @description Return the duration of the task execution in seconds.
@@ -1054,6 +1443,25 @@ export interface components {
        *     :rtype: float | None
        */
       readonly duration: number | null;
+      /** Executed By */
+      executed_by?: string | null;
+      execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Finished At */
+      finished_at?: string | null;
+      /**
+       * Has Logs
+       * @default false
+       */
+      has_logs: boolean;
+      /** Id */
+      id: number | null;
+      /** Started At */
+      started_at?: string | null;
+      /** @default pending */
+      status: components['schemas']['TaskHistoryStatusEnum'];
+      task: components['schemas']['TaskResponse'];
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * TaskHistoryStatusEnum
@@ -1085,93 +1493,32 @@ export interface components {
       | 'lost'
       | 'stale';
     /**
-     * TaskOwner
-     * @description Control the choice of task owners.
-     *
-     *     :cvar ANY: Value for tasks without owner restrictions.
-     *     :vartype ANY: str
-     *     :cvar ALTERS: Value for schema change tasks.
-     *     :vartype ALTERS: str
-     *     :cvar ARCHIVER: Value for data archiver tasks.
-     *     :vartype ARCHIVER: str
-     *     :cvar BACKUPS: Value for backup tasks.
-     *     :vartype BACKUPS: str
-     *     :cvar RESTORES: Value for restore tasks.
-     *     :vartype RESTORES: str
-     *     :cvar CHECKSUMS: Value for checksum tasks.
-     *     :vartype CHECKSUMS: str
-     * @enum {string}
-     */
-    TaskOwner:
-      | 'ANY'
-      | 'ALTERS'
-      | 'ARCHIVER'
-      | 'BACKUPS'
-      | 'RESTORES'
-      | 'CHECKSUMS'
-      | 'BACKUP_MONGO'
-      | 'RESTORE_MONGO'
-      | 'BACKUP_PG';
-    /**
      * TaskResponse
      * @description Represent a task API response.
      *
      *     :param name: The name of the task.
-     *     :type name: str
      *     :param data: The task data stored in JSON format.
-     *     :type data: dict
      *     :param backend: The backend used for task execution. Defaults to Nomad.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-     *     :type owner: TaskOwner
+     *     :param owner: The owner of the task. Defaults to ``"ANY"``.
      *     :param is_template: Whether the task is a template. Defaults to False.
-     *     :type is_template: bool
      *     :param protected: Whether the task is protected from deletion. Defaults to False.
-     *     :type protected: bool
      *     :param alert_on_fail: Whether to trigger an alert on task failure and
      *         auto-resolve it on subsequent success. Defaults to False.
-     *     :type alert_on_fail: bool
+     *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
+     *         callable that enriches this task's failure alert, or None.
      *     :param deleted_at: The deletion timestamp, if applicable.
-     *     :type deleted_at: UTCDatetime | None
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the task. Defaults to 0 (no anonymization).
-     *     :type anonymize_mask: int | None
      *     :param created_by: The user ID of the user who created the task.
-     *     :type created_by: str | None
      *     :param last_updated_by: The user ID of the user who last modified the task.
-     *     :type last_updated_by: str | None
+     *     :param anonymized_entities: Sorted list of PII entity names derived from
+     *         ``anonymize_mask`` (or from the owner's configured defaults when the
+     *         mask is ``None``). Each name is the raw ``PIIEntity`` member name
+     *         (e.g. ``"EMAIL_ADDRESS"``). Read-only; computed on serialisation.
      */
     TaskResponse: {
-      /** Id */
-      id: number | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Name */
-      name: string;
-      /** Data */
-      data: Record<string, never>;
-      /** @default nomad */
-      backend: components['schemas']['TaskBackendEnum'];
-      /**
-       * Owner
-       * @default ANY
-       */
-      owner: string;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
+      /** Alert Detail Builder */
+      alert_detail_builder?: string | null;
       /**
        * Alert On Fail
        * @default false
@@ -1179,12 +1526,47 @@ export interface components {
       alert_on_fail: boolean;
       /** Anonymize Mask */
       anonymize_mask?: number | null;
-      /** Deleted At */
-      deleted_at: string | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
+      /** @default nomad */
+      backend: components['schemas']['TaskBackendEnum'];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
       /** Created By */
       created_by: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Deleted At */
+      deleted_at: string | null;
+      /** Id */
+      id: number | null;
+      /**
+       * Is Template
+       * @default false
+       */
+      is_template: boolean;
       /** Last Updated By */
       last_updated_by: string | null;
+      /** Name */
+      name: string;
+      /**
+       * Owner
+       * @default ANY
+       */
+      owner: string;
+      /**
+       * Protected
+       * @default false
+       */
+      protected: boolean;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * TaskStats
@@ -1197,18 +1579,26 @@ export interface components {
      */
     TaskStats: {
       /**
+       * Duration
+       * @description Return the task duration summary.
+       *
+       *     :return: A dictionary summarizing average, last, and total task durations.
+       *     :rtype: dict[str, Any]
+       */
+      readonly duration: Record<string, never>;
+      /**
        * Engine
        * @default nomad
        */
       engine: string;
       /**
-       * Total
-       * @description Return the total number of tasks.
+       * Last Finished At
+       * @description Return the last finished task timestamp.
        *
-       *     :return: The total number of tasks.
-       *     :rtype: int
+       *     :return: The timestamp of the last task finished, or None if not available.
+       *     :rtype: str | None
        */
-      readonly total: number;
+      readonly last_finished_at: string | null;
       /**
        * Status
        * @description Return the task status summary.
@@ -1218,67 +1608,34 @@ export interface components {
        */
       readonly status: Record<string, never>;
       /**
-       * Duration
-       * @description Return the task duration summary.
+       * Total
+       * @description Return the total number of tasks.
        *
-       *     :return: A dictionary summarizing average, last, and total task durations.
-       *     :rtype: dict[str, Any]
+       *     :return: The total number of tasks.
+       *     :rtype: int
        */
-      readonly duration: Record<string, never>;
-      /**
-       * Last Finished At
-       * @description Return the last finished task timestamp.
-       *
-       *     :return: The timestamp of the last task finished, or None if not available.
-       *     :rtype: str | None
-       */
-      readonly last_finished_at: string | null;
+      readonly total: number;
     };
     /**
      * TaskWrite
      * @description Define the model for creating new tasks.
      *
      *     :param name: The name of the task.
-     *     :type name: str
      *     :param data: The task data stored in JSON format.
-     *     :type data: dict
      *     :param backend: The backend used for task execution. Defaults to Nomad.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-     *     :type owner: TaskOwner
+     *     :param owner: The owner of the task. Defaults to ``"ANY"``.
      *     :param is_template: Whether the task is a template. Defaults to False.
-     *     :type is_template: bool
      *     :param protected: Whether the task is protected from deletion. Defaults to False.
-     *     :type protected: bool
      *     :param alert_on_fail: Whether to trigger an alert on task failure and
      *         auto-resolve it on subsequent success. Defaults to False.
-     *     :type alert_on_fail: bool
+     *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
+     *         callable that enriches this task's failure alert, or None.
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the task. Defaults to 0 (no anonymization).
-     *     :type anonymize_mask: int | None
      */
     TaskWrite: {
-      /** Name */
-      name: string;
-      /** Data */
-      data: Record<string, never>;
-      /** @default nomad */
-      backend: components['schemas']['TaskBackendEnum'];
-      /**
-       * Owner
-       * @default ANY
-       */
-      owner: string;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
+      /** Alert Detail Builder */
+      alert_detail_builder?: string | null;
       /**
        * Alert On Fail
        * @default false
@@ -1286,6 +1643,27 @@ export interface components {
       alert_on_fail: boolean;
       /** Anonymize Mask */
       anonymize_mask?: number | null;
+      /** @default nomad */
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Data */
+      data: Record<string, never>;
+      /**
+       * Is Template
+       * @default false
+       */
+      is_template: boolean;
+      /** Name */
+      name: string;
+      /**
+       * Owner
+       * @default ANY
+       */
+      owner: string;
+      /**
+       * Protected
+       * @default false
+       */
+      protected: boolean;
     };
     /**
      * TransformPayloadRequest
@@ -1297,13 +1675,13 @@ export interface components {
      *     :type fmt: Literal["hcl", "json", "yaml"]
      */
     TransformPayloadRequest: {
-      /** Payload */
-      payload: string;
       /**
        * Fmt
        * @enum {string}
        */
       fmt: 'hcl' | 'json' | 'yaml';
+      /** Payload */
+      payload: string;
     };
     /**
      * TransformPayloadResponse
@@ -1317,6 +1695,10 @@ export interface components {
     };
     /** ValidationError */
     ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
       /** Location */
       loc: (string | number)[];
       /** Message */
@@ -1338,6 +1720,9 @@ export interface operations {
       query?: {
         owner?: string | null;
         target?: string | null;
+        parent_is_null?: boolean | null;
+        backup_type?: string | null;
+        self_parent?: boolean | null;
         offset?: number;
         limit?: number;
       };
@@ -1387,6 +1772,753 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  settings_list_settings_admin_settings__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingsListResponse'];
+        };
+      };
+    };
+  };
+  settings_patch_settings_admin_settings__setting_class__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SettingsPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  settings_get_setting_admin_settings__setting_class___key__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  settings_delete_setting_admin_settings__setting_class___key__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  connectivity_connectivity_check_connectivity_check__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConnectivityCheckWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ConnectivityCheckResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_execute_task_name_execute__task_name__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['TaskExecuteRequest'] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskHistoryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_list_task_history_history__get: {
+    parameters: {
+      query?: {
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+        exclude_internal?: boolean;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_TaskHistoryResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_create_task_history_history__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TaskHistory'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskHistoryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_latest_task_history_history_latest_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TaskHistoryLatestStatusRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: components['schemas']['TaskHistoryLatestStatus'] | null;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_retrieve_task_history_history__task_history_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskHistoryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_list_task_history_events_history__task_history_id__events_get: {
+    parameters: {
+      query?: {
+        backend?: components['schemas']['TaskBackendEnum'];
+      };
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ExecutionEvent'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_stream_task_history_file_history__task_history_id__file__get: {
+    parameters: {
+      query: {
+        path: string;
+        backend?: components['schemas']['TaskBackendEnum'];
+      };
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_list_task_history_files_history__task_history_id__files__get: {
+    parameters: {
+      query?: {
+        backend?: components['schemas']['TaskBackendEnum'];
+      };
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: components['schemas']['FileMetadata'];
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_stream_task_history_logs_history__task_history_id__logs__get: {
+    parameters: {
+      query?: {
+        step?: string | null;
+        tail?: number | null;
+        backend?: components['schemas']['TaskBackendEnum'];
+      };
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_stop_task_history_history__task_history_id__stop__post: {
+    parameters: {
+      query?: {
+        backend?: components['schemas']['TaskBackendEnum'];
+      };
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskHistoryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_sync_task_history_history__task_history_id__sync__post: {
+    parameters: {
+      query?: {
+        backend?: components['schemas']['TaskBackendEnum'];
+      };
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskHistoryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_get_executor_hosts_hosts__get: {
+    parameters: {
+      query?: {
+        backend?: components['schemas']['TaskBackendEnum'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: string;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  periodic_list_periodic_tasks_periodic__get: {
+    parameters: {
+      query?: {
+        owner?: string | null;
+        enabled?: boolean | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PeriodicTaskResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  periodic_retrieve_periodic_task_periodic__periodic_task_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        periodic_task_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PeriodicTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  periodic_update_periodic_task_periodic__periodic_task_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        periodic_task_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PeriodicTaskUpdate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PeriodicTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  periodic_delete_periodic_task_periodic__periodic_task_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        periodic_task_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_get_task_stats_stats__task__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskStats'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_transform_payload_transform__post: {
+    parameters: {
+      query?: {
+        backend?: components['schemas']['TaskBackendEnum'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TransformPayloadRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TransformPayloadResponse'];
         };
       };
       /** @description Validation Error */
@@ -1563,107 +2695,6 @@ export interface operations {
       };
     };
   };
-  tasks_execute_task_name_execute__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/json': components['schemas']['TaskExecuteRequest'] | null;
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskHistoryResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_list_task_history_history__get: {
-    parameters: {
-      query?: {
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-        offset?: number;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_TaskHistoryResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_create_task_history_history__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['TaskHistory'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskHistoryResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   tasks_get_task_history__task__history__get: {
     parameters: {
       query?: {
@@ -1687,498 +2718,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PaginatedResponse_TaskHistoryResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_retrieve_task_history_history__task_history_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskHistoryResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_list_task_history_events_history__task_history_id__events_get: {
-    parameters: {
-      query?: {
-        backend?: components['schemas']['TaskBackendEnum'];
-      };
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ExecutionEvent'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_stream_task_history_logs_history__task_history_id__logs__get: {
-    parameters: {
-      query?: {
-        step?: string | null;
-        backend?: components['schemas']['TaskBackendEnum'];
-      };
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_list_task_history_files_history__task_history_id__files__get: {
-    parameters: {
-      query?: {
-        backend?: components['schemas']['TaskBackendEnum'];
-      };
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            [key: string]: components['schemas']['FileMetadata'];
-          };
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_stream_task_history_file_history__task_history_id__file__get: {
-    parameters: {
-      query: {
-        path: string;
-        backend?: components['schemas']['TaskBackendEnum'];
-      };
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_stop_task_history_history__task_history_id__stop__post: {
-    parameters: {
-      query?: {
-        backend?: components['schemas']['TaskBackendEnum'];
-      };
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskHistoryResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_sync_task_history_history__task_history_id__sync__post: {
-    parameters: {
-      query?: {
-        backend?: components['schemas']['TaskBackendEnum'];
-      };
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskHistoryResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_get_task_stats_stats__task__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskStats'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_get_executor_hosts_hosts__get: {
-    parameters: {
-      query?: {
-        backend?: components['schemas']['TaskBackendEnum'];
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            [key: string]: string;
-          };
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_transform_payload_transform__post: {
-    parameters: {
-      query?: {
-        backend?: components['schemas']['TaskBackendEnum'];
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['TransformPayloadRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TransformPayloadResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  periodic_list_periodic_tasks_periodic__get: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-        enabled?: boolean | null;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PeriodicTaskResponse'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  periodic_retrieve_periodic_task_periodic__periodic_task_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        periodic_task_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PeriodicTaskResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  periodic_update_periodic_task_periodic__periodic_task_id__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        periodic_task_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['PeriodicTaskUpdate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PeriodicTaskResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  periodic_delete_periodic_task_periodic__periodic_task_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        periodic_task_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  connectivity_connectivity_check_connectivity_check__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ConnectivityCheckWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ConnectivityCheckResponse'];
         };
       };
       /** @description Validation Error */

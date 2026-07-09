@@ -16,11 +16,11 @@
  */
 
 /**
- * Per-plugin smoke-test template — copy this file and replace every TODO.
+ * Per-app smoke-test template — copy this file and replace every TODO.
  *
  * Usage
  * -----
- * cp tests/_template.spec.ts tests/<plugin-name>.spec.ts
+ * cp tests/_template.spec.ts tests/<app-name>.spec.ts
  *
  * Then work through the TODOs below.  See README.md for the full authoring
  * guide including page-object patterns and fixture conventions.
@@ -31,14 +31,15 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-// ── TODO: update these constants for your plugin ──────────────────────────────
+// ── TODO: update these constants for your app ──────────────────────────────
 
-/** The React Router path that mounts your plugin, e.g. '/schema-change/checksums'. */
-const PLUGIN_ROUTE = '/TODO/plugin-route';
+/** The React Router path that mounts your app, e.g. '/schema-change/checksums'. */
+const APP_ROUTE = '/TODO/app-route';
 
-/** The plugin's displayName from its PluginSchema, e.g. 'Checksums'. */
-const PLUGIN_DISPLAY_NAME = 'TODO Plugin Name';
+/** The app's displayName from its AppSchema, e.g. 'Checksums'. */
+const APP_DISPLAY_NAME = 'TODO App Name';
 
 // ── Auth + API mocks ──────────────────────────────────────────────────────────
 // The helper below is identical to the one in shell.spec.ts.  If you find
@@ -62,7 +63,7 @@ const MOCK_USER = {
  * `/@fs/.../packages/api/src/index.ts`.  Guard against that by checking
  * pathname starts with `/api/` before intercepting.
  *
- * TODO: If your plugin backend IS available (e.g. via docker-compose),
+ * TODO: If your app backend IS available (e.g. via docker-compose),
  * remove this helper and add a `webServer` entry to playwright.config.ts
  * that spins up docker-compose with a known seed instead.
  */
@@ -73,6 +74,10 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
     // Pass through Vite's internal module-serving paths
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     if (pathname.includes('/oauth/refresh')) {
@@ -92,7 +97,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
     }
 
     if (pathname.endsWith('/schema')) {
-      // 404 -> usePluginSchema falls back to its mockSchema prop
+      // 404 -> useAppSchema falls back to its mockSchema prop
       return route.fulfill({
         status: 404,
         contentType: 'application/json',
@@ -100,10 +105,10 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    // TODO: replace the default empty-list response with plugin-specific
+    // TODO: replace the default empty-list response with app-specific
     // fixture data if your assertions need real task rows:
     //
-    // if (pathname.includes('/plugins/your-plugin/')) {
+    // if (pathname.includes('/apps/your-app/')) {
     //   return route.fulfill({
     //     status: 200,
     //     contentType: 'application/json',
@@ -119,22 +124,22 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
   });
 }
 
-// ── Page Object (optional but recommended for complex plugins) ────────────────
+// ── Page Object (optional but recommended for complex apps) ────────────────
 
 /**
- * TODO: expand this class with locators for your plugin's key elements.
- * Delete it entirely if the plugin is simple enough for inline assertions.
+ * TODO: expand this class with locators for your app's key elements.
+ * Delete it entirely if the app is simple enough for inline assertions.
  *
- * Example for a schema-driven plugin with a list + create form:
+ * Example for a schema-driven app with a list + create form:
  *
- * class MyPluginPage {
- *   readonly heading = this.page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME });
+ * class MyAppPage {
+ *   readonly heading = this.page.getByRole('heading', { name: APP_DISPLAY_NAME });
  *   readonly newButton = this.page.getByRole('button', { name: /new .+/i });
  *   readonly table = this.page.getByRole('table');
  *
  *   constructor(private readonly page: Page) {}
  *
- *   async goto() { await this.page.goto(PLUGIN_ROUTE); }
+ *   async goto() { await this.page.goto(APP_ROUTE); }
  *
  *   async openCreateForm() {
  *     await this.newButton.click();
@@ -146,19 +151,19 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
 // ── Smoke tests ───────────────────────────────────────────────────────────────
 // Remove `test.describe.skip` after copying this file and filling in the TODOs.
 
-test.describe.skip(`${PLUGIN_DISPLAY_NAME} plugin smoke`, () => {
+test.describe.skip(`${APP_DISPLAY_NAME} app smoke`, () => {
   test.beforeEach(async ({ page }) => {
     await mockAuthenticatedApis(page);
   });
 
   test('list page mounts', async ({ page }) => {
     // TODO: instantiate your page object here if you created one above.
-    // const pluginPage = new MyPluginPage(page);
-    // await pluginPage.goto();
+    // const appPage = new MyAppPage(page);
+    // await appPage.goto();
 
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
-    await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME })).toBeVisible({
+    await expect(page.getByRole('heading', { name: APP_DISPLAY_NAME })).toBeVisible({
       timeout: 10_000,
     });
 
@@ -167,10 +172,10 @@ test.describe.skip(`${PLUGIN_DISPLAY_NAME} plugin smoke`, () => {
     // await expect(page.getByRole('table')).toBeVisible();
   });
 
-  // TODO: add a test for creating a new task once the plugin backend is available.
+  // TODO: add a test for creating a new task once the app backend is available.
   //
   // test('create task form submits', async ({ page }) => {
-  //   await page.goto(PLUGIN_ROUTE);
+  //   await page.goto(APP_ROUTE);
   //   await page.getByRole('button', { name: /new/i }).click();
   //   // fill fields…
   //   await page.getByRole('button', { name: /submit|run/i }).click();

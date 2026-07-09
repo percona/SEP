@@ -1,0 +1,4 @@
+# Dumped by `python scripts/dump_openapi.py` — canonical JSON guarded by the
+# backend freshness test (tests/app/test_openapi_specs_fresh.py). oxfmt must not
+# reformat these or it would fight that guard.
+packages/api/specs/

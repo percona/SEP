@@ -3,30 +3,29 @@
  * Do not edit by hand — regenerate from the source OpenAPI spec.
  */
 export interface paths {
-  '/api/oauth/token': {
+  '/api/config/alerts': {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    get?: never;
-    put?: never;
     /**
-     * Create Oauth Token
-     * @description Generate an OAuth token for a user from their username and password.
+     * Get Alert Config
+     * @description Report whether at least one alert provider is configured.
      *
-     *     OAuth2-style endpoint kept for non-SPA clients. For the React SPA, use
-     *     ``POST /api/oauth/login`` which returns a slim response body and places
-     *     the refresh token in an ``HttpOnly`` cookie.
+     *     Mirrors the server-side ``bool(alert_settings.PROVIDERS)`` check used by
+     *     the Jinja2 task forms so the React frontend can drive the same
+     *     enabled/disabled behavior of the *Alert on failure* field. The endpoint
+     *     is gated behind authentication so an anonymous probe cannot leak
+     *     whether alerting is wired up on this deployment.
      *
-     *     :param form_data: The form data containing username and password.
-     *     :type form_data: OAuth2PasswordRequestForm
-     *     :return: The OAuth token for the user.
-     *     :rtype: OAuthToken
-     *     :raises InactiveUserException: If the user is not active.
+     *     :return: The alert provider availability flag.
+     *     :rtype: AlertConfigResponse
      */
-    post: operations['oauth_create_oauth_token_api_oauth_token_post'];
+    get: operations['config_get_alert_config_api_config_alerts_get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -60,6 +59,37 @@ export interface paths {
      *     :raises InactiveUserException: If the user is not active.
      */
     post: operations['oauth_spa_login_api_oauth_login_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/oauth/logout': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Spa Logout
+     * @description End the SPA session: revoke the access token and clear the refresh cookie.
+     *
+     *     The SPA authenticates this request via the ``Authorization: Bearer``
+     *     header. Clear the refresh cookie first so a Casdoor revocation failure
+     *     does not leave the browser with a stale cookie, then revoke the access
+     *     token upstream. Swallow ``KeyError`` / ``ValidationError`` from the
+     *     upstream revocation so the client always sees a clean 204.
+     *
+     *     :param user: The authenticated user resolved from the Bearer token.
+     *     :type user: CurrentUser
+     *     :param response: The HTTP response on which to clear the refresh cookie.
+     *     :type response: Response
+     */
+    post: operations['oauth_spa_logout_api_oauth_logout_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -102,7 +132,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/oauth/logout': {
+  '/api/oauth/session': {
     parameters: {
       query?: never;
       header?: never;
@@ -112,21 +142,51 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Spa Logout
-     * @description End the SPA session: revoke the access token and clear the refresh cookie.
+     * Spa Session Login
+     * @description Authenticate the SPA from an ambient Grafana session cookie.
      *
-     *     The SPA authenticates this request via the ``Authorization: Bearer``
-     *     header. Clear the refresh cookie first so a Casdoor revocation failure
-     *     does not leave the browser with a stale cookie, then revoke the access
-     *     token upstream. Swallow ``KeyError`` / ``ValidationError`` from the
-     *     upstream revocation so the client always sees a clean 204.
+     *     Read the ambient Grafana session cookie off the request, validate it against
+     *     Grafana, set the ``HttpOnly`` refresh cookie scoped to ``/api/oauth``, and
+     *     return the slim access assertion in JSON. A ``401`` (no valid ambient
+     *     session) tells the SPA to show its login screen.
      *
-     *     :param user: The authenticated user resolved from the Bearer token.
-     *     :type user: CurrentUser
-     *     :param response: The HTTP response on which to clear the refresh cookie.
-     *     :type response: Response
+     *     :param request: The incoming request, carrying the ambient Grafana session
+     *         cookie.
+     *     :param response: The HTTP response on which to set the refresh cookie.
+     *     :return: The slim OAuth token response for the SPA.
+     *     :raises HTTPUnauthorizedException: If there is no valid ambient session.
      */
-    post: operations['oauth_spa_logout_api_oauth_logout_post'];
+    post: operations['oauth_spa_session_login_api_oauth_session_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/oauth/token': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Oauth Token
+     * @description Generate an OAuth token for a user from their username and password.
+     *
+     *     OAuth2-style endpoint kept for non-SPA clients. For the React SPA, use
+     *     ``POST /api/oauth/login`` which returns a slim response body and places
+     *     the refresh token in an ``HttpOnly`` cookie.
+     *
+     *     :param form_data: The form data containing username and password.
+     *     :type form_data: OAuth2PasswordRequestForm
+     *     :return: The OAuth token for the user.
+     *     :rtype: OAuthToken
+     *     :raises InactiveUserException: If the user is not active.
+     */
+    post: operations['oauth_create_oauth_token_api_oauth_token_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -214,12 +274,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * AlertConfigResponse
+     * @description Represent the response of ``GET /api/config/alerts``.
+     *
+     *     :param available: Whether at least one alert provider is configured.
+     *     :type available: bool
+     */
+    AlertConfigResponse: {
+      /** Available */
+      available: boolean;
+    };
     /** Body_oauth_create_oauth_token_api_oauth_token_post */
     Body_oauth_create_oauth_token_api_oauth_token_post: {
+      /** Client Id */
+      client_id?: string | null;
+      /**
+       * Client Secret
+       * Format: password
+       */
+      client_secret?: string | null;
       /** Grant Type */
       grant_type?: string | null;
-      /** Username */
-      username: string;
       /**
        * Password
        * Format: password
@@ -230,89 +306,42 @@ export interface components {
        * @default
        */
       scope: string;
-      /** Client Id */
-      client_id?: string | null;
-      /**
-       * Client Secret
-       * Format: password
-       */
-      client_secret?: string | null;
+      /** Username */
+      username: string;
     };
     /**
      * CasdoorUser
      * @description Represent a Casdoor user.
      *
      *     :param id: The unique identifier of the user.
-     *     :type id: UUID4
      *     :param email: The email address of the user.
-     *     :type email: EmailStr
      *     :param first_name: The first name of the user.
-     *     :type first_name: str
      *     :param last_name: The last name of the user.
-     *     :type last_name: str
      *     :param is_admin: Whether the user has administrative privileges. Defaults to False.
-     *     :type is_admin: bool
      *     :param created_time: The datetime when the user was created. Defaults to current
      *         datetime.
-     *     :type created_time: datetime | None
      *     :param updated_time: The datetime when the user was last updated. Defaults to
      *         current datetime.
-     *     :type updated_time: datetime | None
      *     :param username: The user's Casdoor username.
-     *     :type username: CasdoorUsernameField
      *     :param owner: The user's Casdoor organization.
-     *     :type owner: str
-     *     :param is_forbidden: Whether the user has the `is_forbidden` attribute set in
+     *     :param is_forbidden: Whether the user has the ``is_forbidden`` attribute set in
      *         Casdoor. Defaults to False.
-     *     :type is_forbidden: bool
-     *     :param is_deleted: Whether the user has the `is_deleted` attribute set in Casdoor.
+     *     :param is_deleted: Whether the user has the ``is_deleted`` attribute set in Casdoor.
      *         Defaults to False.
-     *     :type is_deleted: bool
      */
     CasdoorUser: {
-      /**
-       * Id
-       * Format: uuid4
-       */
-      id: string;
-      /** Username */
-      username: string;
+      /** Createdtime */
+      createdTime?: string | null;
       /**
        * Email
        * @default
        */
-      email: string | '';
+      email: string;
       /**
        * Firstname
        * @default
        */
       firstName: string;
-      /**
-       * Lastname
-       * @default
-       */
-      lastName: string;
-      /**
-       * Isadmin
-       * @default false
-       */
-      isAdmin: boolean;
-      /** Createdtime */
-      createdTime?: string | null;
-      /** Updatedtime */
-      updatedTime?: string | null;
-      /** Owner */
-      owner: string;
-      /**
-       * Isforbidden
-       * @default false
-       */
-      isForbidden: boolean;
-      /**
-       * Isdeleted
-       * @default false
-       */
-      isDeleted: boolean;
       /**
        * Fullname
        * @description The combination of the user's first and last names.
@@ -322,13 +351,43 @@ export interface components {
        */
       readonly fullName: string;
       /**
+       * Id
+       * Format: uuid4
+       */
+      id: string;
+      /**
        * Isactive
        * @description Return True if the user is not forbidden nor deleted.
        *
        *     :return: True if the user is active.
-       *     :rtype: bool
        */
       readonly isActive: boolean;
+      /**
+       * Isadmin
+       * @default false
+       */
+      isAdmin: boolean;
+      /**
+       * Isdeleted
+       * @default false
+       */
+      isDeleted: boolean;
+      /**
+       * Isforbidden
+       * @default false
+       */
+      isForbidden: boolean;
+      /**
+       * Lastname
+       * @default
+       */
+      lastName: string;
+      /** Owner */
+      owner: string;
+      /** Updatedtime */
+      updatedTime?: string | null;
+      /** Username */
+      username: string;
     };
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -356,16 +415,16 @@ export interface components {
     OAuthToken: {
       /** Access Token */
       access_token: string;
+      /** Expires In */
+      expires_in: number;
       /** Id Token */
       id_token: string;
       /** Refresh Token */
       refresh_token: string;
-      /** Token Type */
-      token_type: string;
-      /** Expires In */
-      expires_in: number;
       /** Scope */
       scope: string;
+      /** Token Type */
+      token_type: string;
     };
     /**
      * SPALoginBody
@@ -377,10 +436,10 @@ export interface components {
      *     :type password: str
      */
     SPALoginBody: {
-      /** Username */
-      username: string;
       /** Password */
       password: string;
+      /** Username */
+      username: string;
     };
     /**
      * SPAOAuthTokenResponse
@@ -403,6 +462,10 @@ export interface components {
     };
     /** ValidationError */
     ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
       /** Location */
       loc: (string | number)[];
       /** Message */
@@ -419,18 +482,14 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  oauth_create_oauth_token_api_oauth_token_post: {
+  config_get_alert_config_api_config_alerts_get: {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_oauth_create_oauth_token_api_oauth_token_post'];
-      };
-    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {
@@ -438,16 +497,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['OAuthToken'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          'application/json': components['schemas']['AlertConfigResponse'];
         };
       };
     };
@@ -485,6 +535,24 @@ export interface operations {
       };
     };
   };
+  oauth_spa_logout_api_oauth_logout_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   oauth_refresh_token_api_oauth_refresh_post: {
     parameters: {
       query?: never;
@@ -516,7 +584,7 @@ export interface operations {
       };
     };
   };
-  oauth_spa_logout_api_oauth_logout_post: {
+  oauth_spa_session_login_api_oauth_session_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -526,11 +594,46 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Successful Response */
-      204: {
+      200: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          'application/json': components['schemas']['SPAOAuthTokenResponse'];
+        };
+      };
+    };
+  };
+  oauth_create_oauth_token_api_oauth_token_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_oauth_create_oauth_token_api_oauth_token_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OAuthToken'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
       };
     };
   };

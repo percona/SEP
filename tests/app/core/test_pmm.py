@@ -298,3 +298,72 @@ class TestAnnotateTaskEvent:
         mock_create.assert_awaited_once()
         call_kwargs = mock_create.await_args.kwargs
         assert call_kwargs["service_names"] == []
+
+    @pytest.mark.asyncio
+    async def test_pmm_node_name_overrides_target(self):
+        """Assert ``_pmm_node_name`` overrides ``target`` as the PMM node name."""
+        with patch(
+            "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+        ) as mock_create:
+            await annotate_task_event(
+                task_name="run-python",
+                target="executor-node",
+                meta={"_pmm_node_name": "source-node"},
+                event="STARTED",
+            )
+
+        mock_create.assert_awaited_once()
+        call_kwargs = mock_create.await_args.kwargs
+        assert call_kwargs["node_name"] == "source-node"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_target_without_pmm_node_name(self):
+        """Assert ``target`` is used when ``_pmm_node_name`` is absent."""
+        with patch(
+            "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+        ) as mock_create:
+            await annotate_task_event(
+                task_name="backup_data",
+                target="executor-node",
+                meta={},
+                event="STARTED",
+            )
+
+        mock_create.assert_awaited_once()
+        call_kwargs = mock_create.await_args.kwargs
+        assert call_kwargs["node_name"] == "executor-node"
+
+    @pytest.mark.asyncio
+    async def test_empty_pmm_node_name_falls_back_to_target(self):
+        """Assert an empty ``_pmm_node_name`` falls back to ``target``."""
+        with patch(
+            "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+        ) as mock_create:
+            await annotate_task_event(
+                task_name="backup_data",
+                target="executor-node",
+                meta={"_pmm_node_name": ""},
+                event="STARTED",
+            )
+
+        mock_create.assert_awaited_once()
+        call_kwargs = mock_create.await_args.kwargs
+        assert call_kwargs["node_name"] == "executor-node"
+
+    @pytest.mark.asyncio
+    async def test_pmm_node_name_and_service_names_are_independent(self):
+        """Assert ``_pmm_node_name`` and ``_service_names`` are read independently."""
+        with patch(
+            "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+        ) as mock_create:
+            await annotate_task_event(
+                task_name="run-python",
+                target="executor-node",
+                meta={"_pmm_node_name": "source-node", "_service_names": ["svc1"]},
+                event="COMPLETED",
+            )
+
+        mock_create.assert_awaited_once()
+        call_kwargs = mock_create.await_args.kwargs
+        assert call_kwargs["node_name"] == "source-node"
+        assert call_kwargs["service_names"] == ["svc1"]

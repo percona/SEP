@@ -1,0 +1,109 @@
+{
+  "capabilities": {
+    "alert_on_fail": false,
+    "chaining": false,
+    "pii_anonymization": false,
+    "scheduling": false,
+    "stats": false
+  },
+  "description": "Run diagnostic data collection scripts on managed database hosts.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Command",
+            "path": "data.meta.command"
+          },
+          {
+            "label": "Args",
+            "path": "data.meta.args"
+          },
+          {
+            "label": "Execution Host",
+            "path": "data.meta.target"
+          }
+        ],
+        "title": "Execution"
+      }
+    ]
+  },
+  "display_name": "Collect Diagnostic Data",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Database Service",
+          "name": "service_id",
+          "required": true,
+          "service_types": [
+            "mysql",
+            "mongodb",
+            "postgresql",
+            "valkey"
+          ],
+          "type": "service"
+        },
+        {
+          "choices": [
+            {
+              "label": "Environment",
+              "value": "environment"
+            },
+            {
+              "label": "PMM",
+              "value": "pmm"
+            }
+          ],
+          "default": "environment",
+          "label": "Collector Type",
+          "name": "collector_type",
+          "required": true,
+          "type": "choice"
+        },
+        {
+          "label": "Execution Host",
+          "name": "executor_host",
+          "required": true,
+          "type": "host"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Execution"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "snippet_filename",
+        "label": "Script",
+        "sortable": true
+      },
+      {
+        "key": "collector_type",
+        "label": "Collector",
+        "sortable": true
+      },
+      {
+        "key": "task_name",
+        "label": "Task",
+        "sortable": false
+      },
+      {
+        "key": "task_id",
+        "label": "Task ID",
+        "sortable": false
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "dipper"
+}

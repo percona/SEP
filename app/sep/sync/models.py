@@ -26,14 +26,16 @@ from types import TracebackType
 from typing import Any, ClassVar, NamedTuple, Self
 from uuid import uuid4
 
-from aiohttp import ClientResponseError
+from aiohttp import ClientError
 from async_lru import _LRUCacheWrapper, alru_cache
+from fastapi import HTTPException
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
 from app.core.models import BaseCaseInsensitiveModel
+from app.core.pagination import fetch_all_dict_items
 from app.core.requests import RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
@@ -56,7 +58,11 @@ from app.sep.models import (
     SyncItem,
     SyncItemWrite,
 )
-from app.sep.sync.exceptions import SyncFailError, SyncItemAlreadyInProgressError
+from app.sep.sync.exceptions import (
+    ExecutorHostNotFoundError,
+    SyncFailError,
+    SyncItemAlreadyInProgressError,
+)
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
@@ -516,11 +522,12 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             "node_type": node_type,
         }
         params = {key: value for key, value in params.items() if value is not None}
-        params["limit"] = 0
-        response = await self.inventory_api.get("/", params=params)
-        return [
-            CreatedNode.model_validate(node_data) for node_data in response["items"]
-        ]
+        nodes = await fetch_all_dict_items(
+            lambda pagination: self.inventory_api.get(
+                "/nodes/", params={**params, **pagination.model_dump()}
+            )
+        )
+        return [CreatedNode.model_validate(node_data) for node_data in nodes]
 
     @alru_cache
     async def get_inventory_node(self, node_id: int) -> CreatedNode:
@@ -534,7 +541,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: The retrieved CreatedNode instance.
         :rtype: CreatedNode
         """
-        return CreatedNode.model_validate(await self.inventory_api.get(f"/{node_id}"))
+        return CreatedNode.model_validate(
+            await self.inventory_api.get(f"/nodes/{node_id}")
+        )
 
     @alru_cache
     async def get_inventory_service(self, service_id: int) -> CreatedService:
@@ -600,14 +609,13 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: A list of retrieved CreatedSchema instances.
         :rtype: list[CreatedSchema]
         """
-        response = await self.inventory_api.get(
-            f"/services/{service_id}/schemas/",
-            params={"include_tables": "true", "limit": 0},
+        schema_data = await fetch_all_dict_items(
+            lambda pagination: self.inventory_api.get(
+                f"/services/{service_id}/schemas/",
+                params={"include_tables": "true", **pagination.model_dump()},
+            )
         )
-        return [
-            CreatedSchema.model_validate(schema_data)
-            for schema_data in response["items"]
-        ]
+        return [CreatedSchema.model_validate(schema) for schema in schema_data]
 
     async def delete_node(self, created_node: CreatedNode) -> None:
         """Delete a node from the inventory system.
@@ -623,7 +631,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             SyncInventoryEntityTypeEnum.NODE,
             created_node,
         ):
-            await self.inventory_api.delete(f"/{created_node.id}")
+            await self.inventory_api.delete(f"/nodes/{created_node.id}")
 
     async def delete_service(self, created_service: CreatedService) -> None:
         """Delete a service from the inventory system.
@@ -744,7 +752,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         logger.info("Updating node %s: %r", created_node.id, updated_node)
         return CreatedNode.model_validate(
             await self.inventory_api.put(
-                f"/{created_node.id}",
+                f"/nodes/{created_node.id}",
                 json=updated_node.model_dump(exclude={"services"}),
             ),
         )
@@ -1315,6 +1323,49 @@ class BaseTaskSyncer(BaseSyncer):
         """
         return await self.tasks_api.get("/hosts/")
 
+    @alru_cache
+    async def get_task_target(self, host: str, name: str | None = None) -> str:
+        """Return the target host for the task from the host.
+
+        This method returns `self.force_executor_host` if set. Otherwise, it tries to
+        find a target with the same address as ``host`` or the same name. If no match is
+        found and ``strict_executor_matching`` is enabled, raise
+        ``ExecutorHostNotFoundError``. Otherwise, return ``default_executor_host`` if
+        set, or the first available host.
+
+        :param host: The target host.
+        :type host: str
+        :param name: The target name. Defaults to ``None``.
+        :type name: str | None
+        :return: The target host for the task.
+        :rtype: str
+        :raises ExecutorHostNotFoundError: If ``strict_executor_matching`` is enabled and
+            no executor host matches the node's name or address.
+        """
+        if self.force_executor_host:
+            return self.force_executor_host
+        available_hosts = await self.get_available_hosts()
+        if name and name in available_hosts:
+            return name
+        for target, address in available_hosts.items():
+            if address == host:
+                return target
+        if self.strict_executor_matching:
+            raise ExecutorHostNotFoundError(name, host, available_hosts)
+        if not available_hosts:
+            raise ValueError(
+                "No executor hosts available from /hosts/; cannot determine task target."
+            )
+        if self.default_executor_host and self.default_executor_host in available_hosts:
+            return self.default_executor_host
+        if self.default_executor_host:
+            logger.warning(
+                "default_executor_host %r not in available hosts %s; using first available",
+                self.default_executor_host,
+                list(available_hosts),
+            )
+        return next(iter(available_hosts))
+
     async def wait_for_task_output(
         self,
         task_name: str,
@@ -1358,7 +1409,7 @@ class BaseTaskSyncer(BaseSyncer):
             try:
                 task_history = await self.tasks_api.get(f"/history/{task_history_id}")
                 status = task_history["status"]
-            except ClientResponseError:
+            except (HTTPException, ClientError):
                 logger.exception("Error getting task history")
 
         if status in [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]:

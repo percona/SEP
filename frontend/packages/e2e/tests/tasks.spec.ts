@@ -16,10 +16,11 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-const PLUGIN_ROUTE = '/tasks';
+const APP_ROUTE = '/tasks';
 
-const PLUGIN_DISPLAY_NAME = 'Task Manager';
+const APP_DISPLAY_NAME = 'Task Manager';
 
 const MOCK_TASK_NAME = 'monitor-task';
 
@@ -36,7 +37,7 @@ const MOCK_USER = {
 
 const MOCK_TASKS_SCHEMA = {
   name: 'tasks',
-  display_name: PLUGIN_DISPLAY_NAME,
+  display_name: APP_DISPLAY_NAME,
   description: 'View task definitions and execution history.',
   forms: [],
   list_view: {
@@ -128,7 +129,7 @@ function isBenignConsoleError(msg: string): boolean {
 }
 
 /**
- * Authenticated session plus tasks plugin list, schema, and detail routes.
+ * Authenticated session plus tasks app list, schema, and detail routes.
  */
 async function mockTasksApis(page: Page): Promise<void> {
   await page.route('**/api/**', (route) => {
@@ -137,6 +138,10 @@ async function mockTasksApis(page: Page): Promise<void> {
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     if (pathname.includes('/oauth/refresh')) {
@@ -155,7 +160,7 @@ async function mockTasksApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname === '/api/plugins/tasks/schema') {
+    if (pathname === '/api/apps/tasks/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -165,7 +170,7 @@ async function mockTasksApis(page: Page): Promise<void> {
 
     if (
       req.method() === 'GET' &&
-      (pathname === '/api/plugins/tasks/' || pathname === '/api/plugins/tasks')
+      (pathname === '/api/apps/tasks/' || pathname === '/api/apps/tasks')
     ) {
       return route.fulfill({
         status: 200,
@@ -174,7 +179,7 @@ async function mockTasksApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && pathname === `/api/plugins/tasks/${MOCK_TASK_NAME}`) {
+    if (req.method() === 'GET' && pathname === `/api/apps/tasks/${MOCK_TASK_NAME}`) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -203,9 +208,9 @@ test.describe('Task Manager smoke', () => {
       }
     });
 
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
-    await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME })).toBeVisible({
+    await expect(page.getByRole('heading', { name: APP_DISPLAY_NAME })).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByText(MOCK_TASK_NAME)).toBeVisible({ timeout: 15_000 });
@@ -216,9 +221,9 @@ test.describe('Task Manager smoke', () => {
   });
 
   test('clicking a task row opens the detail page', async ({ page }) => {
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
-    await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME })).toBeVisible({
+    await expect(page.getByRole('heading', { name: APP_DISPLAY_NAME })).toBeVisible({
       timeout: 30_000,
     });
     await page.getByRole('row', { name: new RegExp(MOCK_TASK_NAME) }).click();

@@ -1,0 +1,98 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Smoke-test the derived ``/snippet/*`` routes of the << display_name >> app.
+
+A script app derives the script-centric surface, not the model-first CRUD
+contract, so this mirrors the framework script-source tests (an explicit Tasks-API
+mock and ``snippet_filename`` query param) rather than subclassing
+``DerivedRouterContractTests``.
+"""
+
+from unittest.mock import AsyncMock
+
+from fastapi import status
+
+from app.core.requests.remote_api import RemoteAPI
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.sep.apps.<< name >>.app import app as << name >>_app
+from tests.app.sep.apps.framework.contract_suite import (
+    app_base_url,
+    build_contract_client,
+)
+
+_SAMPLE = "sample.sh"
+
+
+def _tasks_api() -> AsyncMock:
+    """Build a Tasks-API mock routing the script history/execute calls."""
+    api = AsyncMock(spec=RemoteAPI)
+    api.get.return_value = {"items": [], "total": 0}
+    api.post.return_value = {"id": 1}
+    return api
+
+
+def test_schema_200(regular_user: CasdoorUser) -> None:
+    """Serve the plugin-level static schema at ``GET /schema``."""
+    client = build_contract_client(
+        << name >>_app, user=regular_user, tasks_api=_tasks_api()
+    )
+
+    response = client.get(f"{app_base_url(<< name >>_app)}/schema")
+
+    assert response.status_code == status.HTTP_200_OK
+
+
+def test_snippet_schema_200(regular_user: CasdoorUser) -> None:
+    """Return the per-script form schema for the sample script."""
+    client = build_contract_client(
+        << name >>_app, user=regular_user, tasks_api=_tasks_api()
+    )
+
+    response = client.get(
+        f"{app_base_url(<< name >>_app)}/snippet/schema",
+        params={"snippet_filename": _SAMPLE},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+
+def test_snippet_history_200(regular_user: CasdoorUser) -> None:
+    """Proxy the per-script execution history."""
+    client = build_contract_client(
+        << name >>_app, user=regular_user, tasks_api=_tasks_api()
+    )
+
+    response = client.get(
+        f"{app_base_url(<< name >>_app)}/snippet/history",
+        params={"snippet_filename": _SAMPLE},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+
+def test_snippet_execute_201(regular_user: CasdoorUser) -> None:
+    """Validate the args and dispatch the sample script execution."""
+    client = build_contract_client(
+        << name >>_app, user=regular_user, tasks_api=_tasks_api()
+    )
+
+    response = client.post(
+        f"{app_base_url(<< name >>_app)}/snippet/execute",
+        params={"snippet_filename": _SAMPLE},
+        json={"executor_host": "exec-1", "args": {"message": "hi"}},
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED

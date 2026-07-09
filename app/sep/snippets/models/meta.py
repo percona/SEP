@@ -20,12 +20,15 @@ __all__ = [
     "SnippetMetaParameterChoice",
     "SnippetMetaParameterType",
     "SnippetMetaParametersValidationResult",
+    "SnippetVisibilityCondition",
+    "serialize_cli_value",
 ]
 
 import logging
+from collections.abc import Callable
+from datetime import datetime
 from enum import Enum, StrEnum
 from functools import cached_property
-from string import Template
 from typing import Annotated, Any, NamedTuple, NotRequired, Self
 
 from annotated_types import (
@@ -48,13 +51,22 @@ from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandl
 from typing_extensions import TypedDict
 
 from app.core.utils import run_pydantic_type_validator, shorten_text
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.core.utils.cli_args import is_value_arg_template
+from app.core.utils.date_time import make_datetime_utc
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    EnumFieldMixin,
+    NonEmptyStr,
+    UTCDatetime,
+    value_is_present,
+)
 from app.core.utils.pydantic import (
     field_with_metadata,
     loc_to_dot_sep,
 )
 from app.sep.snippets.forms import (
     CheckboxInputElement,
+    DateTimeInputElement,
     FormFieldElement,
     NumberInputElement,
     SelectElement,
@@ -63,7 +75,7 @@ from app.sep.snippets.forms import (
     TextInputHTMLElement,
 )
 
-ParameterType = str | int | float | bool | None
+ParameterType = str | int | float | bool | datetime | None
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +87,28 @@ class SnippetMetaParameterType(EnumFieldMixin, Enum):
     INT = int
     FLOAT = float
     BOOL = bool
+    DATETIME = UTCDatetime
+
+
+_CLI_VALUE_SERIALIZERS: dict[type, Callable[[Any], str]] = {
+    datetime: lambda value: make_datetime_utc(value).strftime("%Y-%m-%dT%H:%M:%S"),
+}
+
+
+def serialize_cli_value(value: Any) -> str:
+    """Serialize a validated parameter value for command-line argument substitution.
+
+    Datetime values are normalized to UTC before formatting as an ISO-8601
+    ``T``-separated form without microseconds.
+    All other types fall back to ``str(value)``.
+
+    :param value: The validated parameter value to serialize.
+    :type value: Any
+    :return: The command-line string representation of ``value``.
+    :rtype: str
+    """
+    serializer = _CLI_VALUE_SERIALIZERS.get(type(value))
+    return serializer(value) if serializer else str(value)
 
 
 class SnippetMetaParametersValidationResult(NamedTuple):
@@ -88,6 +122,46 @@ class SnippetMetaParametersValidationResult(NamedTuple):
 
     parameters: list["SnippetMetaParameter"]
     errors: list[str]
+
+    @property
+    def visible_parameters(self) -> list["SnippetMetaParameter"]:
+        """Return the parameters that are rendered in execution forms.
+
+        Parameters marked ``hidden`` are excluded. They remain in
+        :attr:`parameters` and are still validated normally; only their form
+        rendering is suppressed.
+
+        :return: The non-hidden parameters, in declaration order.
+        :rtype: list[SnippetMetaParameter]
+        """
+        return [param for param in self.parameters if not param.hidden]
+
+
+class SnippetVisibilityCondition(BaseModel):
+    """Reference a sibling parameter for a conditional-visibility rule.
+
+    A condition names one sibling parameter and matches either its truthiness
+    (when ``equals`` is ``None``) or its equality against a literal value.
+
+    .. note::
+        Visibility conditions lower onto the framework's ``forbidden``
+        :class:`~app.sep.apps.framework.rules.FieldGate`. The React renderer
+        evaluates them to hide the field and drop its value from the submitted
+        payload, and both snippet execute paths additionally enforce them
+        server-side: a value submitted directly for a field whose gate fires is
+        rejected (HTTP 422 on the JSON API; flash + redirect on the legacy form),
+        matching ``field_gate_forbidden`` "must be absent" semantics. See
+        :func:`app.sep.apps.snippets.schema.evaluate_visibility_gates`.
+
+    :param parameter: The name of the sibling parameter the rule references.
+    :type parameter: NonEmptyStr
+    :param equals: The literal the referenced parameter must equal for the
+        condition to match. Defaults to ``None``, meaning a truthiness match.
+    :type equals: str | int | float | bool | None
+    """
+
+    parameter: NonEmptyStr
+    equals: ParameterType = None
 
 
 class SnippetMetaParameterChoice(TypedDict):
@@ -109,15 +183,15 @@ class SnippetMetaParameter(BaseModel):
 
     :param name: The name of the parameter.
     :type name: NonEmptyStr
-    :param py_type: The type of the parameter (`str`, `int`, `float`, `bool`). Defaults
-        to `str`. This parameter is validated as "type" in input data.
+    :param py_type: The type of the parameter (``str``, ``int``, ``float``, ``bool``).
+        Defaults to ``str``. This parameter is validated as "type" in input data.
     :type py_type: SnippetMetaParameterType
     :param required: Whether the parameter is required. Defaults to False.
     :type required: bool
     :param positional: Whether the parameter is positional. Defaults to False.
     :type positional: bool
     :param arg_format: The format string for the parameter when used as a command-line
-        argument. Use `${value}` as a placeholder (required for non-flag arguments).
+        argument. Use ``${value}`` as a placeholder (required for non-flag arguments).
         Defaults to None, which uses the default format from the snippets settings.
     :type arg_format: NonEmptyStr | None
     :param description: A description of the parameter. Defaults to None, meaning it
@@ -136,7 +210,7 @@ class SnippetMetaParameter(BaseModel):
     :type group: NonEmptyStr | None
     :param default: The default value for the parameter. Defaults to None, meaning no
         default.
-    :type default: str | int | float | bool | None
+    :type default: str | int | float | bool | datetime | None
     :param choices: A list of choices for the parameter. Each choice can be a string or
         a dictionary with "label" and "value" keys. Defaults to None, meaning it won't
         be used for validation. This parameter is validated as "options" or "choices"
@@ -169,6 +243,23 @@ class SnippetMetaParameter(BaseModel):
         TextInputHTMLElement.TEXT or TextInputHTMLElement.TEXTAREA. Defaults to None,
         which uses TextInputHTMLElement.TEXT.
     :type html_elem: TextInputHTMLElement | None
+    :param visible_when: Hide this parameter unless the referenced sibling
+        condition matches. Accepts a bare parameter name (truthiness match) or a
+        mapping with ``parameter`` and optional ``equals``. Mutually exclusive
+        with ``visible_when_not``. Client-enforced only (see
+        :class:`SnippetVisibilityCondition`). Defaults to None.
+    :type visible_when: SnippetVisibilityCondition | None
+    :param visible_when_not: Hide this parameter when the referenced sibling
+        condition matches. Same grammar as ``visible_when``. Mutually exclusive
+        with ``visible_when``. Client-enforced only. Defaults to None.
+    :type visible_when_not: SnippetVisibilityCondition | None
+    :param hidden: Unconditionally omit this parameter from every rendered
+        execution form -- it is never emitted into the form HTML or form schema
+        at all. It is still validated normally (it stays in
+        ``to_validation_field``), so a value injected server-side -- e.g. the PMM
+        ``apikey`` from ``settings.PMM.api_key`` -- continues to validate without
+        a visible field. Defaults to False.
+    :type hidden: bool
     """
 
     name: NonEmptyStr = Field(
@@ -197,6 +288,71 @@ class SnippetMetaParameter(BaseModel):
     le: ParameterType = None
     step: float | None = None
     html_elem: TextInputHTMLElement | None = None
+    visible_when: SnippetVisibilityCondition | None = None
+    visible_when_not: SnippetVisibilityCondition | None = None
+    hidden: bool = False
+
+    @field_validator("visible_when", "visible_when_not", mode="before")
+    @classmethod
+    def normalize_visibility_condition(cls, value: Any) -> Any:
+        """Normalize a bare string into a truthiness visibility condition.
+
+        :param value: The input value to normalize.
+        :type value: Any
+        :return: A condition mapping when given a bare string, else the input.
+        :rtype: Any
+        """
+        if isinstance(value, str):
+            return {"parameter": value}
+        return value
+
+    @model_validator(mode="after")
+    def validate_visibility_conditions(self) -> Self:
+        """Validate the visible_when / visible_when_not conditions.
+
+        :return: The validated :class:`SnippetMetaParameter` instance.
+        :rtype: SnippetMetaParameter
+        :raises ValueError: If both conditions are declared, a condition
+            references the parameter itself, a condition is combined with
+            ``required=True`` (a hidden field is dropped client-side and would
+            then fail server-side required validation), a condition is combined
+            with a non-empty ``default`` (the dropped field is backfilled with
+            the default, which the server-side forbidden gate then sees as
+            present and rejects — an unsatisfiable trap), or a gated
+            parameter's name or referenced sibling is not a valid Python
+            identifier (the framework conditional-rules engine rejects
+            hyphenated names).
+        """
+        if self.visible_when is not None and self.visible_when_not is not None:
+            raise ValueError("declare only one of 'visible_when' or 'visible_when_not'")
+        condition = self.visible_when or self.visible_when_not
+        if condition is None:
+            return self
+        if condition.parameter == self.name:
+            raise ValueError(
+                "a visibility condition cannot reference the parameter itself"
+            )
+        if self.required:
+            raise ValueError(
+                "a required parameter cannot declare a visibility condition"
+            )
+        if value_is_present(self.default):
+            raise ValueError(
+                "a parameter with a non-empty default cannot declare a "
+                "visibility condition"
+            )
+        if not self.name.isidentifier():
+            raise ValueError(
+                f"a parameter declaring a visibility condition must have a name "
+                f"that is a valid Python identifier (no hyphens); got {self.name!r}"
+            )
+        if not condition.parameter.isidentifier():
+            raise ValueError(
+                f"a visibility condition must reference a parameter whose name is "
+                f"a valid Python identifier (no hyphens); got "
+                f"{condition.parameter!r}"
+            )
+        return self
 
     @model_validator(mode="after")
     def set_default_step(self) -> Self:
@@ -217,7 +373,7 @@ class SnippetMetaParameter(BaseModel):
     def validate_arg_format(self) -> Self:
         """Validate the arg_format for non-flag parameters contains '${value}'.
 
-        :return: The validated `SnippetMetaParameter` instance.
+        :return: The validated ``SnippetMetaParameter`` instance.
         :rtype: SnippetMetaParameter
         :raises ValueError: If arg_format is provided for non-flag parameters but
             does not include '${value}'.
@@ -225,7 +381,7 @@ class SnippetMetaParameter(BaseModel):
         if (
             not self.is_flag
             and self.arg_format is not None
-            and "value" not in Template(self.arg_format).get_identifiers()
+            and not is_value_arg_template(self.arg_format)
         ):
             raise ValueError(
                 "arg_format must include '${value}' for non-flag parameters"
@@ -316,6 +472,8 @@ class SnippetMetaParameter(BaseModel):
             SnippetMetaParameterType.FLOAT,
         ]:
             return NumberInputElement
+        if self.py_type == SnippetMetaParameterType.DATETIME:
+            return DateTimeInputElement
         if self.html_elem == TextInputHTMLElement.TEXTAREA:
             return TextareaElement
         return TextInputElement

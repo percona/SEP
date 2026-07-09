@@ -29,6 +29,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     environment: release
+    env:
+      POETRY: poetry
     steps:
       - name: Restrict to release managers
         if: github.actor != 'yyyyyyyan' && github.actor != 'maxbube'

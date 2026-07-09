@@ -16,3 +16,7 @@
  */
 
 export { ScheduledTasksPanel } from './ScheduledTasksPanel';
+export { useScheduledTasksForApp } from './hooks';
+export type { UseScheduledTasksOptions, PeriodicTaskResponse } from './hooks';
+export { describePeriod, formatRelativeTime, formatAbsoluteTime, selectSchedule } from './periods';
+export type { PeriodDescription } from './periods';

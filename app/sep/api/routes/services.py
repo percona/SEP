@@ -20,22 +20,22 @@ schema-driven service selectors without bypassing the SEP layer (see the
 non-bypass rule in ``app/sep/api/router.py``).
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.inventory.models import ServiceResponse, ServiceTypeEnum
+from app.sep.api.models import InventorySelectorOption, proxy_inventory_selector
 from app.sep.deps import InventoryAPI
 
 router = APIRouter()
 
 
-@router.get("/", response_model=PaginatedResponse[ServiceResponse])
+@router.get("/")
 async def list_services(
     inventory_api: InventoryAPI,
+    pagination: PaginationDep,
     service_type: ServiceTypeEnum | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[ServiceResponse]:
     """Return a paginated list of inventory services via the SEP gateway.
 
@@ -43,15 +43,42 @@ async def list_services(
     :type inventory_api: InventoryAPI
     :param service_type: Optional service type filter forwarded to inventory.
     :type service_type: ServiceTypeEnum | None
-    :param offset: Pagination offset; must be non-negative.
-    :type offset: int
-    :param limit: Pagination limit; must be non-negative.
-    :type limit: int
+    :param pagination: Validated pagination window for this request.
+    :type pagination: Pagination
     :return: Paginated services payload.
     :rtype: PaginatedResponse[ServiceResponse]
     """
-    params: dict[str, int | str] = {"offset": offset, "limit": limit}
+    params: dict[str, int | str] = pagination.model_dump()
     if service_type is not None:
         params["service_type"] = service_type.value
     response = await inventory_api.get("/services/", params=params)
     return PaginatedResponse[ServiceResponse].model_validate(response)
+
+
+@router.get("/{service_id}/schemas")
+async def list_service_schemas(
+    service_id: int,
+    inventory_api: InventoryAPI,
+    search: str | None = None,
+) -> list[InventorySelectorOption]:
+    """Return schemas for a service via the SEP gateway.
+
+    Proxies Inventory ``GET /services/{service_id}/schemas/`` for React
+    ``SchemaSelector`` components. Returns an empty list only when Inventory
+    responds with 404 (missing service); other HTTP errors propagate to the
+    global handler (matches legacy AJAX empty-selector UX for not-found only).
+
+    :param service_id: The inventory service ID whose schemas are listed.
+    :type service_id: int
+    :param inventory_api: The Inventory API client used to proxy the request.
+    :type inventory_api: InventoryAPI
+    :param search: Optional substring filter forwarded to inventory.
+    :type search: str | None
+    :return: Minimal id/name options for each schema on the service.
+    :rtype: list[InventorySelectorOption]
+    """
+    return await proxy_inventory_selector(
+        inventory_api,
+        f"/services/{service_id}/schemas/",
+        search,
+    )

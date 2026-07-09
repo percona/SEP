@@ -39,12 +39,16 @@ from sqlmodel import col, select, SQLModel, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import BaseSQLModel
+from app.core.db.utils import idempotent_insert
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
     HTTPNotFoundException,
 )
-from app.core.models import PaginatedResponse
+from app.core.pagination import (
+    PaginatedResponse,
+    Pagination,
+)
 from app.core.utils.fields import DatabaseDialect
 
 logger = logging.getLogger(__name__)
@@ -97,8 +101,6 @@ def _delete_builder(*args: P.args) -> _QueryBuilder:
 
 
 _DEFAULT_SELECT_QUERY_BUILDER = _select_builder()
-DEFAULT_PAGINATION_OFFSET = 0
-DEFAULT_PAGINATION_LIMIT = 50
 
 
 class BaseManager:
@@ -201,32 +203,16 @@ class BaseManager:
         """Return the ordering for SELECT queries.
 
         :return: The explicit manager ordering or the default ``created_at``
-            descending fallback for ``BaseSQLModel`` models.
+            descending fallback (tie-broken by primary key) for
+            ``BaseSQLModel`` models.
         :rtype: Iterable[ColumnExpressionOrStrLabelArgument] | None
         """
         if cls.ordering is not None:
             return cls.ordering
         if issubclass(cls.Model, BaseSQLModel):
-            return [cls._get_column("created_at").desc()]
+            # Keep fallback ordering deterministic when created_at ties occur.
+            return [cls._get_column("created_at").desc(), cls._get_column("id").desc()]
         return None
-
-    @staticmethod
-    def _validate_pagination(offset: int | None, limit: int | None) -> None:
-        """Validate pagination arguments.
-
-        :param offset: The zero-based starting offset for the query results,
-            or ``None`` when pagination is not requested.
-        :type offset: int | None
-        :param limit: The maximum number of records to return, ``0`` to disable
-            the limit (return all rows), or ``None`` when pagination is not
-            requested.
-        :type limit: int | None
-        :raises ValueError: If ``offset`` or ``limit`` is negative.
-        """
-        if offset is not None and offset < 0:
-            raise ValueError("offset must be greater than or equal to 0")
-        if limit is not None and limit < 0:
-            raise ValueError("limit must be greater than or equal to 0")
 
     @classmethod
     async def _exec(
@@ -248,7 +234,6 @@ class BaseManager:
         limit: int | None = None,
         **equal_filters: Any,
     ) -> TupleResult | ScalarResult:
-        cls._validate_pagination(offset, limit)
         ordering = cls._get_ordering()
         pagination_requested = offset is not None or limit is not None
 
@@ -561,8 +546,7 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         query_options: Sequence = (),
-        offset: int = DEFAULT_PAGINATION_OFFSET,
-        limit: int = DEFAULT_PAGINATION_LIMIT,
+        pagination: Pagination,
         **equal_filters: Any,
     ) -> PaginatedResponse[T]:
         """Return a paginated response for matching records.
@@ -576,33 +560,25 @@ class BaseManager:
         :type select_related: Sequence
         :param query_options: Additional SQLAlchemy query options to apply.
         :type query_options: Sequence
-        :param offset: The zero-based starting offset for the query results.
-        :type offset: int
-        :param limit: The maximum number of records to return.
-        :type limit: int
+        :param pagination: Validated offset/limit window for this page.
+        :type pagination: Pagination
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :type equal_filters: Any
         :return: A paginated response containing matching records and metadata.
         :rtype: PaginatedResponse[T]
         """
-        cls._validate_pagination(offset, limit)
         total = await cls.count(session, *whereclause, **equal_filters)
         items = await cls.list(
             session,
             *whereclause,
             select_related=select_related,
             query_options=query_options,
-            offset=offset,
-            limit=limit,
+            offset=pagination.offset,
+            limit=pagination.limit,
             **equal_filters,
         )
-        return PaginatedResponse(
-            items=items,
-            total=total,
-            offset=offset,
-            limit=limit,
-        )
+        return PaginatedResponse.from_pagination(items, total, pagination)
 
     @classmethod
     async def first(
@@ -812,6 +788,13 @@ class BaseManager:
         in `instance_create` and (optionally) specified in `filter_include`. If such an
         instance exists, it returns it. Otherwise, it creates and saves a new one.
 
+        The creation step is conflict-tolerant: it uses a dialect-aware idempotent
+        insert (``INSERT ... ON CONFLICT DO NOTHING`` / ``INSERT IGNORE``) so that two
+        calls racing to create the same row do not surface a duplicate-key error. The
+        losing call no-ops on the insert and refetches the winning row with
+        ``created=False``. ``created`` is ``True`` only for the call whose insert
+        actually landed.
+
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
         :type session: AsyncSession
@@ -820,18 +803,69 @@ class BaseManager:
         :type instance_create: B
         :param filter_include: The set of fields of `instance_create` to be included in
             the search filter. Use None (default) for all fields.
+        :type filter_include: set[str] | None
         :param extra_fields: Additional fields to be set on the created instance.
         :type extra_fields: Any
         :return: The existing or newly created instance of `cls.Model`, and a bool
             specifying whether a new instance was created.
         :rtype: tuple[T, bool]
+        :raises HTTPBadRequestException: If a ``DatabaseError`` occurs during the
+            insert commit.
+        :raises RuntimeError: If the post-conflict refetch matches no row, meaning
+            ``filter_include`` reaches outside a unique constraint.
         """
         existent_instance = await cls.first(
             session, **instance_create.model_dump(include=filter_include)
         )
         if existent_instance:
             return existent_instance, False
-        return await cls.create(session, instance_create, **extra_fields), True
+
+        # Managers that override create() carry domain guards/side-effects (e.g.
+        # SyncItemManager raises if a matching item is already in progress). The
+        # conflict-tolerant fast path below bypasses create() entirely, so it must
+        # only apply when create() is the inherited base implementation.
+        if cls.create.__func__ is not BaseManager.create.__func__:
+            return await cls.create(session, instance_create, **extra_fields), True
+
+        instance = cls._construct_instance(instance_create, **extra_fields)
+        pk_names = {column.name for column in inspect(cls.Model).primary_key}
+        values = {}
+        for column in cls.Model.__table__.columns:
+            value = getattr(instance, column.name)
+            carries_default = (
+                column.default is not None or column.server_default is not None
+            )
+            # Skip a None whose value the database supplies: any PK column (e.g.
+            # autoincrement) and any column with a SQLAlchemy/server default. Passing
+            # it explicitly would override that default with NULL.
+            if value is None and (column.name in pk_names or carries_default):
+                continue
+            values[column.name] = value
+        statement = idempotent_insert(session.get_bind().name, cls.Model).values(
+            **values
+        )
+        try:
+            result = await cls._exec(session, statement)
+            await session.commit()
+        except DatabaseError:
+            logger.exception(
+                "DatabaseError in get_or_create for %s", cls.Model.__name__
+            )
+            raise HTTPBadRequestException from None
+        created = result.rowcount == 1
+        # A core insert does not populate the constructed instance's PK, so refetch.
+        row = await cls.first(
+            session, **instance_create.model_dump(include=filter_include)
+        )
+        if row is None:
+            # Fail loud rather than return (None, False) and defer a confusing crash
+            # to the caller.
+            raise RuntimeError(
+                f"{cls.Model.__name__}.get_or_create resolved a unique conflict but "
+                f"no row matched filter_include={filter_include!r}; filter_include "
+                f"must be a subset of a unique constraint."
+            )
+        return row, created
 
     @classmethod
     async def update(
@@ -1064,16 +1098,29 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
         :type extra_fields: Any
         :return: The updated and saved child instance.
         :rtype: T
-        :raises HTTPBadRequestException: If the associated parent instance does not
-            exist.
+        :raises HTTPBadRequestException: If the parent foreign key is supplied but the
+            referenced parent instance does not exist. The check is skipped when the
+            foreign key is omitted, preserving the base manager's partial-update
+            (``exclude_unset``) semantics.
         """
-        parent_id = getattr(updated_instance, cls.connected_by, None)
-        try:
-            await cls.ParentManager.get(session, id=parent_id)
-        except NoResultFound:
-            raise HTTPBadRequestException(
-                f"Invalid {cls.connected_by}: {parent_id}",
-            ) from None
+        supplied_fields = updated_instance.model_dump(exclude_unset=True)
+        if cls.connected_by in supplied_fields or cls.connected_by in extra_fields:
+            parent_id = extra_fields.get(
+                cls.connected_by, getattr(updated_instance, cls.connected_by, None)
+            )
+            # An explicitly-supplied null FK cannot persist on the non-nullable parent
+            # column; reject it deterministically rather than delegating to ``get``,
+            # whose ``id=None`` filter is ignored (it would match every parent row).
+            if parent_id is None:
+                raise HTTPBadRequestException(
+                    f"Invalid {cls.connected_by}: {parent_id}"
+                )
+            try:
+                await cls.ParentManager.get(session, id=parent_id)
+            except NoResultFound:
+                raise HTTPBadRequestException(
+                    f"Invalid {cls.connected_by}: {parent_id}",
+                ) from None
         return await super().update(
             session,
             existing_instance,

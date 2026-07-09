@@ -16,10 +16,11 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-const PLUGIN_ROUTE = '/atw';
+const APP_ROUTE = '/atw';
 
-const PLUGIN_DISPLAY_NAME = 'Collect Diagnostic Data';
+const APP_DISPLAY_NAME = 'Collect Diagnostic Data';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -32,7 +33,7 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
-/** Minimal listing row matching ``GET /api/plugins/atw/``. */
+/** Minimal listing row matching ``GET /api/apps/atw/``. */
 const MOCK_ATW_LIST = [
   {
     category_root: 'MySQL',
@@ -51,10 +52,10 @@ const MOCK_ATW_LIST = [
   },
 ];
 
-/** Served at ``GET /api/plugins/atw/schema`` (discovery; page uses listing + per-snippet schema). */
-const MOCK_ATW_PLUGIN_SCHEMA = {
+/** Served at ``GET /api/apps/atw/schema`` (discovery; page uses listing + per-snippet schema). */
+const MOCK_ATW_APP_SCHEMA = {
   name: 'atw',
-  display_name: PLUGIN_DISPLAY_NAME,
+  display_name: APP_DISPLAY_NAME,
   forms: [],
   list_view: { columns: [], default_sort: 'category_root' },
 };
@@ -113,6 +114,10 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       return route.continue();
     }
 
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
+    }
+
     if (pathname.includes('/oauth/refresh')) {
       return route.fulfill({
         status: 200,
@@ -129,7 +134,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (pathname.includes('/plugins/snippets/') && pathname.endsWith('/history')) {
+    if (pathname.includes('/apps/snippets/') && pathname.endsWith('/history')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -137,7 +142,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (pathname.includes('/plugins/snippets/') && pathname.endsWith('/schema')) {
+    if (pathname.includes('/apps/snippets/') && pathname.endsWith('/schema')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -146,7 +151,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
     }
 
     if (
-      pathname.includes('/plugins/snippets/') &&
+      pathname.includes('/apps/snippets/') &&
       pathname.endsWith('/execute') &&
       req.method() === 'POST'
     ) {
@@ -157,10 +162,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (
-      req.method() === 'GET' &&
-      (pathname === '/api/plugins/atw/' || pathname === '/api/plugins/atw')
-    ) {
+    if (req.method() === 'GET' && (pathname === '/api/apps/atw/' || pathname === '/api/apps/atw')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -168,11 +170,11 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (pathname === '/api/plugins/atw/schema') {
+    if (pathname === '/api/apps/atw/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_ATW_PLUGIN_SCHEMA),
+        body: JSON.stringify(MOCK_ATW_APP_SCHEMA),
       });
     }
 
@@ -195,7 +197,7 @@ function isBenignConsoleError(msg: string): boolean {
 }
 
 async function selectAtwSnippetAndOpenForm(page: Page): Promise<void> {
-  await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME })).toBeVisible({
+  await expect(page.getByRole('heading', { name: APP_DISPLAY_NAME })).toBeVisible({
     timeout: 30_000,
   });
 
@@ -228,7 +230,7 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
     });
 
     await mockAtwApis(page);
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     await selectAtwSnippetAndOpenForm(page);
 
@@ -246,7 +248,7 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
       executeStatus: 400,
       executeJson: JSON.stringify({ detail: 'Execute failed (e2e)' }),
     });
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     await selectAtwSnippetAndOpenForm(page);
 

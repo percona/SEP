@@ -18,8 +18,9 @@
 from starlette import status
 from starlette.testclient import TestClient
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
-from app.inventory.models import Schema, Table
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
+from app.inventory.models import Schema, Service, Table
+from tests.app.factories import SchemaWriteFactory, TableWriteFactory
 
 EXPECTED_TABLE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
@@ -101,12 +102,12 @@ class TestUpdateTable:
         self, test_client: TestClient, table: Table, schema: Schema
     ) -> None:
         """Update the table name and return the updated table."""
-        payload = {
-            "name": "updated_table_name",
-            "create": table.create,
-            "keys": table.keys,
-            "schema_id": schema.id,
-        }
+        payload = TableWriteFactory.build(
+            name="updated_table_name",
+            create=table.create,
+            keys=table.keys,
+            schema_id=schema.id,
+        ).model_dump(mode="json")
         response = test_client.put(f"/tables/{table.id}", json=payload)
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -116,12 +117,7 @@ class TestUpdateTable:
         self, test_client: TestClient, schema: Schema
     ) -> None:
         """Return 404 when updating a nonexistent table."""
-        payload = {
-            "name": "ghost_table",
-            "create": "CREATE TABLE ghost (id INT)",
-            "keys": {},
-            "schema_id": schema.id,
-        }
+        payload = TableWriteFactory.build(schema_id=schema.id).model_dump(mode="json")
         response = test_client.put("/tables/99999", json=payload)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -129,14 +125,73 @@ class TestUpdateTable:
         self, test_client: TestClient, table: Table
     ) -> None:
         """Return 400 when schema_id references a nonexistent schema."""
+        payload = TableWriteFactory.build(schema_id=99999).model_dump(mode="json")
+        response = test_client.put(f"/tables/{table.id}", json=payload)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid schema_id: 99999"
+
+    def test_update_table_omitting_schema_id_preserves_parent(
+        self, test_client: TestClient, service: Service, schema: Schema, table: Table
+    ) -> None:
+        """Apply a partial update that omits schema_id, leaving the parent unchanged.
+
+        A second schema must exist so the previously-dropped ``None`` FK filter
+        would match more than one parent (HTTP 500) rather than silently pass.
+        """
+        second = test_client.post(
+            f"/services/{service.id}/schemas/",
+            json=SchemaWriteFactory.build(name=f"second_schema_{schema.id}").model_dump(
+                mode="json"
+            ),
+        )
+        assert second.status_code == status.HTTP_201_CREATED
+        response = test_client.put(
+            f"/tables/{table.id}",
+            json={
+                "name": "renamed_table",
+                "create": table.create,
+                "keys": table.keys,
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "renamed_table"
+        assert data["schema_id"] == schema.id
+
+    def test_update_table_omitting_schema_id_preserves_association(
+        self, test_client: TestClient, table: Table, schema: Schema, service: Service
+    ) -> None:
+        """Partial update without schema_id succeeds and leaves the FK unchanged."""
+        test_client.post(
+            "/schemas/",
+            json=SchemaWriteFactory.build(service_id=service.id).model_dump(
+                mode="json"
+            ),
+        )
+        payload = {
+            "name": "renamed_table",
+            "create": table.create,
+            "keys": table.keys,
+        }
+        response = test_client.put(f"/tables/{table.id}", json=payload)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "renamed_table"
+        assert data["schema_id"] == schema.id
+
+    def test_update_table_explicit_null_schema_id(
+        self, test_client: TestClient, table: Table
+    ) -> None:
+        """Return 400 when schema_id is explicitly null on a non-nullable relationship."""
         payload = {
             "name": table.name,
             "create": table.create,
             "keys": table.keys,
-            "schema_id": 99999,
+            "schema_id": None,
         }
         response = test_client.put(f"/tables/{table.id}", json=payload)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid schema_id: None"
 
 
 class TestDeleteTable:

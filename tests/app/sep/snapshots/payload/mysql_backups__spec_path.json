@@ -1,0 +1,94 @@
+{
+  "binlog_gsutil_alt_host": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_service_name": "svc-backups",
+        "config": "ALL_SERVERS:\n  BINLOG_ALTERNATIVE_HOST: binlog.internal\n  BINLOG_RUN_ALL: true\n  CHECK_DISK_SPACE: false\n  COMPRESS: false\n  COMPRESSION_ALGORITHM: gzip\n  ENCRYPT: false\n  ENCRYPT_USING_TMPDIR: false\n  GS_BUCKET: my-gcs-bucket\n  HARDLINK: false\n  MYDUMPER_DESYNC_PXC: false\n  MYDUMPER_DUMP_TRIGGERS: false\n  MYDUMPER_USE_NUMA: false\n  ONLY_IF_READ_ONLY: false\n  ONLY_IF_RUNNING_REPLICA: false\n  POST_RUN_ENCRYPT: false\n  SKIP_S3_SAFETY_CHECK: false\n  UPLOAD_QUIET: false\n  USE_FTWRL_GUARDIAN: false\n  XTRABACKUP_DESYNC_PXC: false\n  XTRABACKUP_KILL_QUERIES: false\n  XTRABACKUP_LOCK_DDL: false\n  XTRABACKUP_PREPARE: false\n  XTRABACKUP_QUIET: false\n  XTRABACKUP_REPLICA_INFO: false\n  XTRABACKUP_RSYNC: false\n  XTRABACKUP_STOP_REPLICA: false\n  XTRABACKUP_VERIFY: false\nSERVER_LIST:\n- ALIAS: db.internal\n  BACKUP_TYPE: B\n  HOST: binlog.internal\n  PORT: 3306\n  UPLOAD:\n  - gsutil\n",
+        "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
+        "target": "executor-host"
+      },
+      "payload": "file://app/sep/apps/mysql_backups/binlog_payload",
+      "task": "run-python"
+    },
+    "is_template": false,
+    "name": "backups-golden",
+    "owner": "BACKUPS",
+    "protected": false
+  },
+  "binlog_rsync_no_alt": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_service_name": "svc-backups",
+        "config": "ALL_SERVERS:\n  BINLOG_RUN_ALL: true\n  CHECK_DISK_SPACE: false\n  COMPRESS: false\n  ENCRYPT: false\n  ENCRYPT_USING_TMPDIR: false\n  HARDLINK: false\n  MYDUMPER_DESYNC_PXC: false\n  MYDUMPER_DUMP_TRIGGERS: false\n  MYDUMPER_USE_NUMA: false\n  ONLY_IF_READ_ONLY: false\n  ONLY_IF_RUNNING_REPLICA: false\n  POST_RUN_ENCRYPT: false\n  RSYNC_PATH: /data/binlog\n  SKIP_S3_SAFETY_CHECK: false\n  UPLOAD_QUIET: false\n  USE_FTWRL_GUARDIAN: false\n  XTRABACKUP_DESYNC_PXC: false\n  XTRABACKUP_KILL_QUERIES: false\n  XTRABACKUP_LOCK_DDL: false\n  XTRABACKUP_PREPARE: false\n  XTRABACKUP_QUIET: false\n  XTRABACKUP_REPLICA_INFO: false\n  XTRABACKUP_RSYNC: false\n  XTRABACKUP_STOP_REPLICA: false\n  XTRABACKUP_VERIFY: false\nSERVER_LIST:\n- ALIAS: db.internal\n  BACKUP_TYPE: B\n  HOST: db.internal\n  PORT: 3306\n  UPLOAD:\n  - rsync\n",
+        "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
+        "target": "executor-host"
+      },
+      "payload": "file://app/sep/apps/mysql_backups/binlog_payload",
+      "task": "run-python"
+    },
+    "is_template": false,
+    "name": "backups-golden",
+    "owner": "BACKUPS",
+    "protected": false
+  },
+  "mydumper_rsync": {
+    "alert_detail_builder": null,
+    "alert_on_fail": true,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_service_name": "svc-backups",
+        "config": "ALL_SERVERS:\n  BINLOG_RUN_ALL: true\n  CHECK_DISK_SPACE: false\n  COMPRESS: false\n  COMPRESSION_ALGORITHM: gzip\n  ENCRYPT: false\n  ENCRYPT_USING_TMPDIR: false\n  HARDLINK: false\n  MYDUMPER_DESYNC_PXC: false\n  MYDUMPER_DUMP_TRIGGERS: false\n  MYDUMPER_USE_NUMA: false\n  MYDUMPER_VERBOSE: 2\n  ONLY_IF_READ_ONLY: false\n  ONLY_IF_RUNNING_REPLICA: false\n  POST_RUN_ENCRYPT: false\n  RSYNC_PATH: /data/rsync\n  SKIP_S3_SAFETY_CHECK: false\n  UPLOAD_QUIET: false\n  USE_FTWRL_GUARDIAN: false\n  XTRABACKUP_DESYNC_PXC: false\n  XTRABACKUP_KILL_QUERIES: false\n  XTRABACKUP_LOCK_DDL: false\n  XTRABACKUP_PREPARE: false\n  XTRABACKUP_QUIET: false\n  XTRABACKUP_REPLICA_INFO: false\n  XTRABACKUP_RSYNC: false\n  XTRABACKUP_STOP_REPLICA: false\n  XTRABACKUP_VERIFY: false\nSERVER_LIST:\n- ALIAS: primary\n  BACKUP_TYPE: M\n  HOST: db.internal\n  PORT: 3306\n  UPLOAD:\n  - rsync\n",
+        "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
+        "target": "executor-host"
+      },
+      "payload": "file://app/sep/apps/mysql_backups/mydumper_payload",
+      "task": "run-python"
+    },
+    "is_template": false,
+    "name": "backups-golden",
+    "owner": "BACKUPS",
+    "protected": false
+  },
+  "xtrabackup_s3_encrypt": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_service_name": "svc-backups",
+        "config": "ALL_SERVERS:\n  BINLOG_RUN_ALL: true\n  CHECK_DISK_SPACE: false\n  COMPRESS: false\n  COMPRESSION_ALGORITHM: zstd\n  ENCRYPT: true\n  ENCRYPT_USING_TMPDIR: false\n  HARDLINK: false\n  MYDUMPER_DESYNC_PXC: false\n  MYDUMPER_DUMP_TRIGGERS: false\n  MYDUMPER_USE_NUMA: false\n  ONLY_IF_READ_ONLY: false\n  ONLY_IF_RUNNING_REPLICA: false\n  POST_RUN_ENCRYPT: false\n  S3_BUCKET: my-s3-bucket\n  S3_STORAGE_CLASS: STANDARD\n  SKIP_S3_SAFETY_CHECK: false\n  UPLOAD_QUIET: false\n  USE_FTWRL_GUARDIAN: false\n  XTRABACKUP_DESYNC_PXC: false\n  XTRABACKUP_KILL_QUERIES: false\n  XTRABACKUP_LOCK_DDL: false\n  XTRABACKUP_PREPARE: true\n  XTRABACKUP_QUIET: false\n  XTRABACKUP_REPLICA_INFO: false\n  XTRABACKUP_RSYNC: false\n  XTRABACKUP_STOP_REPLICA: false\n  XTRABACKUP_VERIFY: false\nSERVER_LIST:\n- ALIAS: db.internal\n  BACKUP_TYPE: X\n  DIR_ENCRYPT_CONFIG:\n    encryption recipient: ops@example.com\n  HOST: localhost\n  PORT: 3306\n  UPLOAD:\n  - s3\n",
+        "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
+        "target": "executor-host"
+      },
+      "payload": "file://app/sep/apps/mysql_backups/xtrabackup_payload",
+      "task": "run-python"
+    },
+    "is_template": false,
+    "name": "backups-golden",
+    "owner": "BACKUPS",
+    "protected": false
+  }
+}

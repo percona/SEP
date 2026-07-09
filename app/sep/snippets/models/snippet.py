@@ -55,6 +55,7 @@ from app.core.utils import (
     ttl_cache,
     utc_now,
 )
+from app.core.utils.cli_args import render_value_arg
 from app.core.utils.fields import (
     EmptyStrToNone,
     FilePathLike,
@@ -63,6 +64,7 @@ from app.core.utils.fields import (
     UTCDatetime,
 )
 from app.core.utils.pydantic import CustomFieldMetadata
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
     SnippetFilterType,
@@ -82,6 +84,7 @@ from app.sep.snippets.forms import (
     TextInputElement,
 )
 from app.sep.snippets.models.meta import (
+    serialize_cli_value,
     SnippetMetaParameter,
     SnippetMetaParametersValidationResult,
 )
@@ -126,7 +129,7 @@ def get_executor_hosts_fieldset(
         {"value": value, "label": label} for value, label in sorted(executor_hosts)
     ]
     return FieldsetElement(
-        legend="Executor Host",
+        legend=EXECUTION_HOST_LABEL,
         children=[
             SelectElement(
                 children=options,
@@ -141,11 +144,11 @@ def get_executor_hosts_fieldset(
 
 
 class FilePreview(NamedTuple):
-    """A preview of a snippet's content with separated frontmatter.
+    """Represent a preview of a snippet's content with separated frontmatter.
 
     :param preamble: Lines before frontmatter (e.g. shebang).
     :type preamble: str
-    :param frontmatter: Raw frontmatter including `# ---` delimiters.
+    :param frontmatter: Raw frontmatter including ``# ---`` delimiters.
     :type frontmatter: str
     :param content: Code body after frontmatter, limited by preview settings.
     :type content: str
@@ -210,7 +213,7 @@ class FilePreview(NamedTuple):
     ) -> Self:
         """Create a FilePreview from a path.
 
-        Read the file at `path`, split frontmatter from code body, and generate a
+        Read the file at ``path``, split frontmatter from code body, and generate a
         preview limited by character and line counts applied only to the code body.
 
         :param path: The file path to read for generating the preview.
@@ -219,7 +222,7 @@ class FilePreview(NamedTuple):
         :type max_chars: PositiveInt
         :param max_lines: The maximum number of lines to include in the preview.
         :type max_lines: PositiveInt
-        :return: A `FilePreview` instance containing the preview content and whether it
+        :return: A ``FilePreview`` instance containing the preview content and whether it
             is truncated.
         :rtype: FilePreview
         """
@@ -232,15 +235,15 @@ class FilePreview(NamedTuple):
     ) -> tuple[list[str], list[str]]:
         """Read lines from an open file and separate preamble from frontmatter.
 
-        Stop when the closing `# ---` delimiter is found, when a non-comment
+        Stop when the closing ``# ---`` delimiter is found, when a non-comment
         line is encountered before any delimiter, at EOF, or after scanning
-        `max_scan_lines` lines without finding a closing delimiter.
+        ``max_scan_lines`` lines without finding a closing delimiter.
 
         :param f: An open async text file handle positioned at the start.
         :type f: AsyncTextIOWrapper
         :param max_scan_lines: Safety bound on lines to scan for frontmatter.
         :type max_scan_lines: int
-        :return: A `(preamble_lines, frontmatter_lines)` pair.
+        :return: A ``(preamble_lines, frontmatter_lines)`` pair.
         :rtype: tuple[list[str], list[str]]
         """
         meta = snippets_settings.META
@@ -372,16 +375,16 @@ class BaseSnippetArgs(BaseModel):
         """
         field_name, metadata = cls.get_field_metadata(field_identifier)
         if metadata.get("positional"):
-            return [value]
-        arg_template_mapping = {"value": shlex.quote(str(value))}
+            return [serialize_cli_value(value)]
         if (is_flag := metadata.get("is_flag")) and not value:
             return []
         if not (arg_format := metadata.get("arg_format")):
             if is_flag:
                 return [f"--{field_name}"]
-            arg_format = snippets_settings.META.DEFAULT_ARG_FORMAT
-            arg_template_mapping["name"] = field_name
-        return shlex.split(Template(arg_format).safe_substitute(arg_template_mapping))
+            arg_format = Template(
+                snippets_settings.META.DEFAULT_ARG_FORMAT
+            ).safe_substitute(name=field_name)
+        return render_value_arg(arg_format, value, stringify=serialize_cli_value)
 
     @classmethod
     def get_field_metadata(cls, name: str) -> tuple[str, dict]:
@@ -451,10 +454,22 @@ class BaseSnippet(BaseModel):
         return self.meta.get("description", "")
 
     @cached_property
+    def service_type(self) -> str | None:
+        """Get the free-form service type of the snippet.
+
+        :return: The ``service_type`` declared in the snippet metadata (for
+            example ``"mysql"`` or ``"mongodb"``), or ``None`` when the snippet
+            declares no service type. This free-form frontmatter string is
+            distinct from the inventory ``ServiceTypeEnum``.
+        :rtype: str | None
+        """
+        return self.meta.get("service_type")
+
+    @cached_property
     def allow_extra_args(self) -> bool:
         """Determine whether extra arguments are allowed for the snippet.
 
-        :return: `True` if extra arguments are allowed, else `False`. Defaults to the
+        :return: ``True`` if extra arguments are allowed, else ``False``. Defaults to the
             value specified in the snippets settings if not explicitly set in the
             metadata.
         :rtype: bool
@@ -503,7 +518,7 @@ class BaseSnippet(BaseModel):
         interpreter, and either parameter errors are ignored in the settings or there
         are no validation errors in the parameters.
 
-        :return: `True` if the snippet can be executed, else `False`.
+        :return: ``True`` if the snippet can be executed, else ``False``.
         :rtype: bool
         """
         return self.execution_interpreter is not None and (
@@ -515,7 +530,7 @@ class BaseSnippet(BaseModel):
     def validated_parameters(self) -> SnippetMetaParametersValidationResult:
         """Get the validated parameters of the snippet.
 
-        :return: A `SnippetMetaParametersValidationResult` instance containing the list
+        :return: A ``SnippetMetaParametersValidationResult`` instance containing the list
             of valid parameters and any validation errors encountered.
         :rtype: SnippetMetaParametersValidationResult
         """
@@ -735,9 +750,53 @@ class BaseSnippet(BaseModel):
                 errors.extend(
                     SnippetMetaParameter.convert_validation_errors(exc, param)
                 )
+        declared = {
+            name
+            for param in parameters
+            if (name := param.get("name") if isinstance(param, dict) else None)
+            is not None
+        }
+        errors.extend(
+            BaseSnippet._validate_visibility_references(valid_parameters, declared)
+        )
         return SnippetMetaParametersValidationResult(
             parameters=valid_parameters, errors=errors
         )
+
+    @staticmethod
+    def _validate_visibility_references(
+        parameters: list[SnippetMetaParameter],
+        declared: set[str],
+    ) -> list[str]:
+        """Validate that visibility conditions reference declared parameters.
+
+        A ``visible_when`` / ``visible_when_not`` condition may only reference a
+        sibling parameter declared in the same snippet. References to unknown
+        parameters are surfaced as errors consistent with the per-parameter
+        validation output.
+
+        The declared-name set is derived best-effort from the raw parameter
+        declarations so that a sibling which is declared but fails its own
+        validation is not misreported as an "unknown parameter" reference.
+
+        :param parameters: The successfully validated snippet parameters.
+        :type parameters: list[SnippetMetaParameter]
+        :param declared: The set of parameter names declared in the snippet meta,
+            including those whose own validation failed.
+        :type declared: set[str]
+        :return: A list of error messages for unknown references.
+        :rtype: list[str]
+        """
+        errors = []
+        for param in parameters:
+            for attr in ("visible_when", "visible_when_not"):
+                condition = getattr(param, attr)
+                if condition is not None and condition.parameter not in declared:
+                    errors.append(
+                        f"Parameter error ({param.name!r}) at {f'{attr}.parameter'!r}: "
+                        f"references unknown parameter {condition.parameter!r}"
+                    )
+        return errors
 
     @staticmethod
     @validate_call
@@ -757,8 +816,8 @@ class BaseSnippet(BaseModel):
 
         This internal method creates a form with fields based on the snippet's
         parameters and the provided executor hosts. It includes a select element for
-        choosing the executor host and fields for snippet parameters. It is cached for
-        performance.
+        choosing the executor host and fields for snippet parameters. Parameters
+        marked ``hidden`` are omitted from the form. It is cached for performance.
 
         :param parameters_json: A JSON string representing a list of snippet parameters.
         :type parameters_json: str
@@ -790,8 +849,10 @@ class BaseSnippet(BaseModel):
             executor_hosts_fieldset = get_executor_hosts_fieldset(executor_hosts)
             executor_hosts_fieldset.disabled = disabled
             fieldsets.append(executor_hosts_fieldset)
-        parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
-        logger.debug("Snippet params: %s", parameters)
+        parameters = BaseSnippet._get_parameters_from_json(
+            parameters_json
+        ).visible_parameters
+        logger.debug("Snippet params: %s", [param.name for param in parameters])
         groups = {}
         for param in parameters:
             try:
@@ -849,20 +910,23 @@ class BaseSnippet(BaseModel):
         :param parameters_json: A JSON string representing a list of snippet parameters.
         :type parameters_json: str
         :param add_extra_args_field: Whether to include an extra arguments field in the
-            model. Defaults to `False`.
+            model. Defaults to ``False``.
         :type add_extra_args_field: bool
         :param add_sudo_field: Whether to include a sudo field in the model. Defaults to
-            `False`.
+            ``False``.
         :type add_sudo_field: bool
         :param sudo_default: The default value for the sudo field. Only relevant when
-            `add_sudo_field` is `True`. Defaults to `False`.
+            ``add_sudo_field`` is ``True``. Defaults to ``False``.
         :type sudo_default: bool
         :return: A Pydantic model class for validating the snippet's execution
             parameters.
         :rtype: type[BaseSnippetArgs]
         """
         parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
-        logger.debug("Snippet params: %s", parameters)
+        logger.debug(
+            "Snippet params: %s",
+            [param.name for param in parameters if not param.hidden],
+        )
         unique_identifiers = generate_unique_identifiers()
         fields = {}
         positional_fields = {}
@@ -870,7 +934,7 @@ class BaseSnippet(BaseModel):
             field_name = next(unique_identifiers)
             field = (param.validation_type, param.to_validation_field())
             logger.debug(
-                "Generated snippet model field from param %s: %s", param, field
+                "Generated snippet model field from param %s: %s", param.name, field
             )
             if param.positional:
                 positional_fields[field_name] = field
@@ -1003,7 +1067,7 @@ class Snippet(BaseSnippet, BaseSQLModel, table=True):
         interpreter, and either parameter errors are ignored in the settings or there
         are no validation errors in the parameters.
 
-        :return: `True` if the snippet can be executed, else `False`.
+        :return: ``True`` if the snippet can be executed, else ``False``.
         :rtype: bool
         """
         return self.is_approved and super().can_execute

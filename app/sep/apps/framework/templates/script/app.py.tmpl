@@ -1,0 +1,34 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Wire the << display_name >> plugin as a script-backed ``TaskExecutionApp``.
+
+A script-flavored app derives its surface from the ``script_source`` seam: the
+listing, the per-script ``GET /snippet/schema``, the ``POST /snippet/execute``
+delegation, and ``GET /snippet/history``. It declares no model-first CRUD.
+"""
+
+from app.sep.apps.<< name >>.source import << name >>_source
+from app.sep.apps.framework.apps import TaskExecutionApp
+from app.tasks.models import ANY_OWNER
+
+app = TaskExecutionApp(
+    name="<< name >>",
+    display_name="<< display_name >>",
+    uri_path="/<< name >>",
+    description="TODO: describe what the << display_name >> scripts do.",
+    owner=ANY_OWNER,
+    script_source=<< name >>_source,
+)

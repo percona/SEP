@@ -2,23 +2,24 @@ default:
   ALLOWED_HOSTS:
     - "localhost"
     - "127.0.0.1"
-  AUTH_USER_MODEL: app.models.CasdoorUser
   ALLOW_CONCURRENT_SESSIONS: False
-  SECRET_KEY: ""  # Auto-generated if empty
+  SECRET_KEY: "dev-only-not-for-production"  # Dev only; production must override
   LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
   SSL_CAFILE: null
   BASE_URL: null
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
     - http://127.0.0.1:8000
-  CASDOOR:
-    ENDPOINT: http://localhost:9999
-    FRONT_ENDPOINT: //:9999
-    ALLOWED_ISSUERS:
-      - http://localhost:9999
-      - http://127.0.0.1:9999
-    CERTIFICATE_PATH: null  # Path to JWT key certificate
-    APPLICATION_NAME: sep-app
+  AUTH:
+    PROVIDER:
+      casdoor:
+        endpoint: http://localhost:9999
+        front_endpoint: //:9999
+        allowed_issuers:
+          - http://localhost:9999
+          - http://127.0.0.1:9999
+        certificate_path: null  # Path to JWT key certificate
+        application_name: sep-app
   PMM:
     ENDPOINT: https://127.0.0.1:8443
     VERIFY_SSL: true
@@ -55,55 +56,20 @@ default:
       SECURE: False
       SAMESITE: lax
       MAX_AGE: 604800
-    PLUGINS:
-      - NAME: Inventory
-        MODULE_NAME: inventory
-        URI_PATH: /inventory
-        CSS_CLASS: inventory
-      - NAME: Snippet Manager
-        MODULE_NAME: snippets
-        URI_PATH: /snippets
-        CSS_CLASS: snippets
-      - NAME: Collect Diagnostic Data
-        MODULE_NAME: atw
-        URI_PATH: /atw
-        CSS_CLASS: atw
-      - NAME: Schema Change
-        MODULE_NAME: alters
-        URI_PATH: /alters
-        CSS_CLASS: alters
-      - NAME: Archive
-        MODULE_NAME: archives
-        URI_PATH: /archives
-        CSS_CLASS: archive
-      - NAME: MySQL Backups
-        MODULE_NAME: mysql_backups
-        URI_PATH: /mysql_backups
-        CSS_CLASS: mysql_backups
-      - NAME: Checksums
-        MODULE_NAME: checksums
-        URI_PATH: /checksums
-        CSS_CLASS: checksums
-      - NAME: MongoDB Backups
-        MODULE_NAME: backup_mongo
-        URI_PATH: /backup_mongo
-        CSS_CLASS: backup_mongo
-      - NAME: Dipper Data Collection
-        MODULE_NAME: dipper
-        URI_PATH: /dipper
-        CSS_CLASS: dipper
-      - NAME: Alert Templates
-        MODULE_NAME: alerts
-        URI_PATH: /alerts
-        CSS_CLASS: alerts
-      - NAME: Alert Troubleshooting
-        MODULE_NAME: alert_troubleshooting
-        URI_PATH: /alert-troubleshooting
-        CSS_CLASS: alert-troubleshooting
-      - NAME: Health & Security Report
-        MODULE_NAME: report
-        URI_PATH: /report
-        CSS_CLASS: report
+    APPS:
+      - MODULE_NAME: inventory
+      - MODULE_NAME: snippets
+      - MODULE_NAME: atw
+      - MODULE_NAME: alters
+      - MODULE_NAME: archives
+      - MODULE_NAME: mysql_backups
+      - MODULE_NAME: checksums
+      - MODULE_NAME: backup_mongo
+      - MODULE_NAME: backup_pg
+      - MODULE_NAME: dipper
+      - MODULE_NAME: alerts
+      - MODULE_NAME: alert_troubleshooting
+      - MODULE_NAME: report
     HEALTH_REPORT:
       # Periodic report generation - empty by default (no automatic generation).
       # Each entry pairs a SCHEDULE (interval or crontab) with optional params:
@@ -137,6 +103,11 @@ default:
       ENDPOINT:        # ServiceNow upload API URL
       API_KEY:         # API key for authenticating with the upload endpoint
       CLIENT_ID:       # Customer identifier sent with each upload
+      # Rendered PDFs are staged on shared disk keyed by job id (worker writes,
+      # web serves) so only small metadata transits the Celery result backend.
+      ARTIFACT_DIR: data/health-reports  # Shared staging dir (mount in worker + web)
+      ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
+      CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
@@ -152,6 +123,8 @@ default:
           - performance_schema
           - mysql
           - information_schema
+        DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
+      - SYNCER: SystemFactsSyncer
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
     SYNC_REFRESH_TIME: 5  # Browser refresh interval during sync (seconds)
   INVENTORY:
@@ -213,11 +186,8 @@ development:
         - /api/docs
         - /api/inventory/docs
         - /api/tasks/docs
-    PLUGINS:
-      - NAME: Task Manager
-        MODULE_NAME: tasks
-        URI_PATH: /tasks
-        CSS_CLASS: tasks
+    APPS:
+      - MODULE_NAME: tasks
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
@@ -227,8 +197,12 @@ development:
           - mysql
           - information_schema
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
-  CASDOOR:
-    ORGANIZATION_NAME: built-in
+      - SYNCER: SystemFactsSyncer
+        DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
+  AUTH:
+    PROVIDER:
+      casdoor:
+        organization_name: built-in
   CELERY:
     BROKER_URL: "filesystem://"
     BROKER_TRANSPORT_OPTIONS:
@@ -237,6 +211,7 @@ development:
       PROCESSED_FOLDER: data/celery/processed
       CONTROL_FOLDER: data/celery/control
     RESULT_BACKEND: file://data/celery/results
+    RESULT_EXPIRES: 3600
     RESULT_PERSISTENT: True
     BEAT_DBURI: "sqlite:///schedule.db"
   ALERTING:
@@ -246,25 +221,28 @@ production_docker:
   ALLOW_CONCURRENT_SESSIONS: True
   ALLOWED_HOSTS:
     - "*"
-  AUTH_USER_MODEL: app.models.CasdoorUser
   PMM:
     ENDPOINT: https://127.0.0.1
     VERIFY_SSL: false
   BACKEND_CORS_ORIGINS:
     - https://127.0.0.1:8444
-  CASDOOR:
-    ALLOWED_ISSUERS: '*'
-    APPLICATION_NAME: sep-app
-    CERTIFICATE_PATH: /data/certs/casdoor/sep_token_jwt_key.pem
-    CLIENT_ID: redacted_match_casdoor_json
-    CLIENT_SECRET: redacted_match_casdoor_json
-    ENDPOINT: http://127.0.0.1:8000
-    FRONT_ENDPOINT: //:9999
-    ORGANIZATION_NAME: sep
+  AUTH:
+    PROVIDER:
+      casdoor:
+        allowed_issuers: '*'
+        application_name: sep-app
+        certificate_path: /data/certs/casdoor/sep_token_jwt_key.pem
+        client_id: redacted_match_casdoor_json
+        client_secret: redacted_match_casdoor_json
+        endpoint: http://127.0.0.1:8000
+        front_endpoint: //:9999
+        organization_name: sep
   CELERY:
     BEAT_DBURI: postgresql://postgres:xxx@sep-db:5432
     BEAT_SCHEMA: sep
     BROKER_URL: redis://redis:6379/0
+    RESULT_BACKEND: redis://redis:6379/1
+    RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
   DATABASE:
     ENGINE: postgresql
@@ -319,6 +297,8 @@ production_docker:
           - performance_schema
           - mysql
           - information_schema
+        DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
+      - SYNCER: SystemFactsSyncer
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
     TASKS_ENDPOINT: https://127.0.0.1:9002
   SSL_CAFILE: /data/certs/sep-ca.pem

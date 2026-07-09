@@ -16,12 +16,15 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type TasksComponents } from '@sep/api';
+import { apiClient, type SepComponents, type TasksComponents } from '@sep/api';
 
 export type TaskHistoryStatus = TasksComponents['schemas']['TaskHistoryStatusEnum'];
 export type TaskHistoryEntry = TasksComponents['schemas']['TaskHistoryResponse'];
 export type PaginatedTaskHistory =
   TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
+
+/** Optional JSON body for ``POST .../execute`` (chain wiring, schedule ETA, etc.). */
+export type TaskExecuteBody = SepComponents['schemas']['TaskExecuteWrite'];
 
 export const RUNNING_STATUSES: ReadonlySet<TaskHistoryStatus> = new Set(['running', 'pending']);
 
@@ -41,16 +44,24 @@ export interface UseTaskHistoryOptions {
   limit?: number;
   /** Disable the underlying query (no fetch, no polling). */
   enabled?: boolean;
+  /** Exclude internal maintenance task rows before server-side pagination. */
+  excludeInternal?: boolean;
 }
 
 interface ListParams {
   status?: TaskHistoryStatus | null;
   offset?: number;
   limit?: number;
+  excludeInternal?: boolean;
 }
 
-function buildParams({ status, offset, limit }: ListParams): Record<string, string | number> {
-  const params: Record<string, string | number> = {};
+function buildParams({
+  status,
+  offset,
+  limit,
+  excludeInternal,
+}: ListParams): Record<string, string | number | boolean> {
+  const params: Record<string, string | number | boolean> = {};
   if (status) {
     params.status = status;
   }
@@ -59,6 +70,9 @@ function buildParams({ status, offset, limit }: ListParams): Record<string, stri
   }
   if (typeof limit === 'number') {
     params.limit = limit;
+  }
+  if (excludeInternal) {
+    params.exclude_internal = true;
   }
   return params;
 }
@@ -81,9 +95,11 @@ function refetchIntervalFor(
 /**
  * List task history across all tasks.
  *
- * Polling activates only when at least one row is in a running state, matching
- * the legacy Jinja2 page reload behaviour. Server cursor pagination is deferred
- * (SEP-923/924/925); callers paginate client-side for now.
+ * Requests are routed through ``GET /api/sep/task-history/`` (with no
+ * `task_names`) so the browser never calls the Tasks sub-app directly. Polling
+ * activates only when at least one row is in a running state, matching the
+ * legacy Jinja2 page reload behaviour. Server cursor pagination is deferred;
+ * callers paginate client-side for now.
  */
 export function useTaskHistory(options: UseTaskHistoryOptions = {}) {
   const {
@@ -93,13 +109,14 @@ export function useTaskHistory(options: UseTaskHistoryOptions = {}) {
     offset,
     limit,
     enabled = true,
+    excludeInternal = false,
   } = options;
   return useQuery<PaginatedTaskHistory>({
-    queryKey: ['task-history', { status: status ?? null, offset, limit }],
+    queryKey: ['task-history', { status: status ?? null, offset, limit, excludeInternal }],
     enabled,
     queryFn: async () => {
-      const { data } = await apiClient.get<PaginatedTaskHistory>('/tasks/history/', {
-        params: buildParams({ status, offset, limit }),
+      const { data } = await apiClient.get<PaginatedTaskHistory>('/sep/task-history/', {
+        params: buildParams({ status, offset, limit, excludeInternal }),
       });
       return data;
     },
@@ -121,7 +138,7 @@ export function useTaskHistoryByName(
 /**
  * List task history for one or more tasks, merged newest-first.
  *
- * Used by plugins whose detail page represents a task group (parent plus derived
+ * Used by apps whose detail page represents a task group (parent plus derived
  * siblings) while executions are recorded on individual task names. Requests are
  * routed through ``GET /api/sep/task-history/`` so the browser never calls the
  * Tasks sub-app directly.
@@ -167,7 +184,7 @@ export function useStopTaskHistory() {
   return useMutation<TaskHistoryEntry, Error, number>({
     mutationFn: async (taskHistoryId) => {
       const { data } = await apiClient.post<TaskHistoryEntry>(
-        `/tasks/history/${taskHistoryId}/stop/`,
+        `/sep/task-history/${taskHistoryId}/stop/`,
       );
       return data;
     },
@@ -180,21 +197,21 @@ export function useStopTaskHistory() {
 /**
  * Dispatch a saved task for immediate execution.
  *
- * The request is routed through the SEP-level plugin gateway
- * (``POST /api/plugins/{pluginName}/{taskName}/execute``) — the FE must not
+ * The request is routed through the SEP-level app gateway
+ * (``POST /api/apps/{pluginName}/{taskName}/execute``) — the FE must not
  * call ``/api/tasks/*`` directly, as the Tasks sub-app is not exposed to the
- * browser in a production deployment. The plugin-task detail query is also
+ * browser in a production deployment. The app-task detail query is also
  * refreshed so the status chip on the detail page updates immediately after
  * execution.
  */
 export function useExecuteTask(pluginName: string) {
   const queryClient = useQueryClient();
   const pluginPath = pluginName.split('/').map(encodeURIComponent).join('/');
-  return useMutation<unknown, Error, { taskName: string }>({
-    mutationFn: async ({ taskName }) => {
+  return useMutation<unknown, Error, { taskName: string; executeBody?: TaskExecuteBody }>({
+    mutationFn: async ({ taskName, executeBody }) => {
       const { data } = await apiClient.post<unknown>(
-        `/plugins/${pluginPath}/${encodeURIComponent(taskName)}/execute`,
-        {},
+        `/apps/${pluginPath}/${encodeURIComponent(taskName)}/execute`,
+        executeBody ?? {},
       );
       return data;
     },

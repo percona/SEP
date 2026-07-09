@@ -31,22 +31,12 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <div class="form-actions">
                 <form method="post" action="{{ request.url_for('report_generate_pdf') }}">
                     <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
-                    <input type="hidden" name="since" value="{{ report_params.since }}">
-                    <input type="hidden" name="until" value="{{ report_params.until }}">
-                    <input type="hidden" name="full" value="{{ report_params.full | lower }}">
-                    <input type="hidden"
-                           name="refresh"
-                           value="{{ report_params.refresh | lower }}">
+                    <input type="hidden" name="report_json" value="{{ report_json }}">
                     <button type="submit" class="contained large">Download PDF</button>
                 </form>
                 <form method="post" action="{{ request.url_for('report_upload') }}">
                     <input type="hidden" name="csrf-token" value="{{ csrf_token }}">
-                    <input type="hidden" name="since" value="{{ report_params.since }}">
-                    <input type="hidden" name="until" value="{{ report_params.until }}">
-                    <input type="hidden" name="full" value="{{ report_params.full | lower }}">
-                    <input type="hidden"
-                           name="refresh"
-                           value="{{ report_params.refresh | lower }}">
+                    <input type="hidden" name="report_json" value="{{ report_json }}">
                     <button type="submit"
                             class="contained large"
                             {% if upload_disabled_reasons %}disabled title="{{ upload_disabled_reasons | join('; ') }}"{% endif %}>

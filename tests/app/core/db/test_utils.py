@@ -15,15 +15,18 @@
 
 """Define tests for the app.core.db.utils module."""
 
+from contextlib import nullcontext
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import Column, Integer, JSON, MetaData, Table, Text
+import pytest_asyncio
+from sqlalchemy import Column, Integer, JSON, MetaData, select, Table, Text
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.sql import column
 from sqlmodel import col
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.utils import (
     compare_type,
@@ -31,7 +34,9 @@ from app.core.db.utils import (
     get_async_session_maker_from_engine,
     idempotent_insert,
 )
-from app.tasks.models import TaskExecutionRequestJSON, TaskHistory
+from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.models import TaskExecutionRequestJSON, TaskHistory, TaskWrite
+from tests.app.factories import build_task_history, TaskFactory
 
 
 @pytest.mark.asyncio
@@ -56,31 +61,65 @@ def sample_table():
 class TestIdempotentInsert:
     """Test the dialect-aware ``idempotent_insert`` helper."""
 
-    def test_postgresql_returns_on_conflict_insert(self, sample_table):
-        """Assert PostgreSQL dispatch produces an ``ON CONFLICT DO NOTHING`` insert."""
-        stmt = idempotent_insert("postgresql", sample_table)
-        assert isinstance(stmt, postgresql.Insert)
-        compiled = str(stmt.compile(dialect=postgresql.dialect()))
-        assert "ON CONFLICT DO NOTHING" in compiled.upper()
+    @pytest.mark.parametrize(
+        (
+            "dialect_name",
+            "dialect",
+            "expected_cls",
+            "expected_substring",
+            "expectation",
+        ),
+        [
+            (
+                "postgresql",
+                postgresql.dialect(),
+                postgresql.Insert,
+                "ON CONFLICT DO NOTHING",
+                nullcontext(),
+            ),
+            (
+                "sqlite",
+                sqlite.dialect(),
+                sqlite.Insert,
+                "ON CONFLICT DO NOTHING",
+                nullcontext(),
+            ),
+            (
+                "mysql",
+                mysql.dialect(),
+                mysql.Insert,
+                "INSERT IGNORE",
+                nullcontext(),
+            ),
+            (
+                "oracle",
+                None,
+                None,
+                None,
+                pytest.raises(NotImplementedError, match="oracle"),
+            ),
+        ],
+        ids=["postgresql", "sqlite", "mysql", "unknown_dialect_raises"],
+    )
+    def test_idempotent_insert_dispatch(
+        self,
+        sample_table,
+        dialect_name,
+        dialect,
+        expected_cls,
+        expected_substring,
+        expectation,
+    ):
+        """Assert dialect dispatch produces the right idempotent insert, or raises for unknown dialects.
 
-    def test_sqlite_returns_on_conflict_insert(self, sample_table):
-        """Assert SQLite dispatch produces an ``ON CONFLICT DO NOTHING`` insert."""
-        stmt = idempotent_insert("sqlite", sample_table)
-        assert isinstance(stmt, sqlite.Insert)
-        compiled = str(stmt.compile(dialect=sqlite.dialect()))
-        assert "ON CONFLICT DO NOTHING" in compiled.upper()
-
-    def test_mysql_returns_insert_ignore(self, sample_table):
-        """Assert MySQL dispatch produces an ``INSERT IGNORE`` statement."""
-        stmt = idempotent_insert("mysql", sample_table)
-        assert isinstance(stmt, mysql.Insert)
-        compiled = str(stmt.compile(dialect=mysql.dialect()))
-        assert "INSERT IGNORE" in compiled.upper()
-
-    def test_unknown_dialect_raises(self, sample_table):
-        """Assert an unsupported dialect raises ``NotImplementedError``."""
-        with pytest.raises(NotImplementedError, match="oracle"):
-            idempotent_insert("oracle", sample_table)
+        PostgreSQL and SQLite emit ``ON CONFLICT DO NOTHING``; MySQL emits
+        ``INSERT IGNORE``; an unsupported dialect raises ``NotImplementedError``.
+        """
+        with expectation:
+            stmt = idempotent_insert(dialect_name, sample_table)
+            assert isinstance(stmt, expected_cls)
+            compiled = str(stmt.compile(dialect=dialect))
+            assert expected_substring in compiled.upper()
 
 
 def _compile(expr, dialect) -> str:
@@ -93,78 +132,78 @@ def _compile_postcompile(expr, dialect) -> str:
     )
 
 
-def test_func_json_extract_postgresql_single_key_renders_double_arrow():
-    """Render ``execution_request->>'task'`` for a single-element path on PostgreSQL."""
+def _assert_ordered(rendered: str, fragments: list[str]) -> None:
+    """Assert each fragment appears in ``rendered`` in the given left-to-right order.
+
+    :param rendered: the compiled SQL string under inspection.
+    :param fragments: substrings expected to appear in this exact order, each
+        strictly after the previous one.
+    """
+    pos = -1
+    for fragment in fragments:
+        index = rendered.find(fragment, pos + 1)
+        assert index != -1, (
+            f"{fragment!r} not found after position {pos} in {rendered!r}"
+        )
+        pos = index
+
+
+@pytest.mark.parametrize(
+    ("path", "ordered"),
+    [
+        (("task",), ["->>", "'task'"]),
+        (("meta", "key"), ["->", "'meta'", "->>", "'key'"]),
+    ],
+    ids=["single_key", "nested_path"],
+)
+def test_func_json_extract_postgresql_json_column_arrow_chain(path, ordered):
+    """Render the PostgreSQL ``->`` / ``->>`` arrow chain for single and nested paths.
+
+    A single-element path renders ``col ->> 'key'``; a nested path chains
+    ``->`` for the intermediate key then ``->>`` for the leaf. A native
+    ``JSON`` column uses neither ``json_extract_path_text`` nor a ``CAST``
+    wrapper.
+    """
     json_column = column("execution_request", type_=JSON)
 
-    expression = func_json_extract("postgresql", json_column, "task")
+    expression = func_json_extract("postgresql", json_column, *path)
 
     rendered = _compile(expression, postgresql.dialect())
-    assert "->>" in rendered
-    assert "'task'" in rendered
+    _assert_ordered(rendered, ordered)
     assert "json_extract_path_text" not in rendered
     assert "CAST" not in rendered.upper()
 
 
-def test_func_json_extract_postgresql_nested_path_renders_arrow_chain():
-    """Chain ``->`` then ``->>`` for a nested path on PostgreSQL."""
-    json_column = column("execution_request", type_=JSON)
-
-    expression = func_json_extract("postgresql", json_column, "meta", "key")
-
-    rendered = _compile(expression, postgresql.dialect())
-    meta_index = rendered.index("'meta'")
-    key_index = rendered.index("'key'")
-    assert "->" in rendered[:meta_index]
-    assert "->>" in rendered[meta_index:key_index]
-    assert meta_index < key_index
-    assert "json_extract_path_text" not in rendered
-
-
-def test_func_json_extract_postgresql_text_column_wraps_in_cast():
-    """Wrap ``text``-typed columns in ``CAST(... AS JSON)`` on PostgreSQL.
+@pytest.mark.parametrize(
+    ("path", "ordered_upper"),
+    [
+        (("task_name",), ["CAST", "AS JSON", "->>", "'TASK_NAME'"]),
+        (("meta", "key"), ["CAST", "AS JSON", "->", "'META'", "->>", "'KEY'"]),
+    ],
+    ids=["single_key", "nested_path"],
+)
+def test_func_json_extract_postgresql_text_column_wraps_in_cast(path, ordered_upper):
+    """Wrap ``text``-typed columns in ``CAST(... AS JSON)`` before the arrow chain.
 
     PostgreSQL does not define the ``->>`` operator on ``text``, so text
-    columns must be cast to ``json`` before the arrow chain is applied.
-    Without the cast, queries raise ``operator does not exist: text ->>
-    unknown`` at execution time — the exact failure mode this ticket fixes
-    for ``celery_periodictask.kwargs``.
+    columns must be cast to ``json`` first — without it queries raise
+    ``operator does not exist: text ->> unknown`` at execution time, the exact
+    failure mode this ticket fixes for ``celery_periodictask.kwargs``. The cast
+    sits on the root column once; for a nested path ``(a, b)`` the shape is
+    ``(CAST(col AS JSON) -> 'a') ->> 'b'`` so every operator sees a JSON LHS.
     """
     text_column = column("kwargs", type_=Text())
 
-    expression = func_json_extract("postgresql", text_column, "task_name")
+    expression = func_json_extract("postgresql", text_column, *path)
 
-    rendered = _compile(expression, postgresql.dialect())
-    assert "CAST" in rendered.upper()
-    assert "AS JSON" in rendered.upper()
-    assert "->>" in rendered
-    assert "'task_name'" in rendered
-
-
-def test_func_json_extract_postgresql_text_column_nested_path_wraps_in_cast():
-    """Wrap the root column once and chain the arrow operators on top.
-
-    For a nested path ``(a, b)`` on a ``text`` column the expected shape is
-    ``(CAST(col AS JSON) -> 'a') ->> 'b'`` — the cast sits on the root
-    column so every subsequent operator sees a JSON-typed LHS.
-    """
-    text_column = column("kwargs", type_=Text())
-
-    expression = func_json_extract("postgresql", text_column, "meta", "key")
-
-    rendered = _compile(expression, postgresql.dialect())
-    assert "CAST" in rendered.upper()
-    assert "AS JSON" in rendered.upper()
-    meta_index = rendered.index("'meta'")
-    key_index = rendered.index("'key'")
-    assert "->" in rendered[:meta_index]
-    assert "->>" in rendered[meta_index:key_index]
+    rendered = _compile(expression, postgresql.dialect()).upper()
+    _assert_ordered(rendered, ordered_upper)
 
 
 def test_func_json_extract_postgresql_jsonb_column_does_not_wrap_in_cast():
-    """Keep ``jsonb`` columns unwrapped so the SEP-818 expression indexes match.
+    """Keep ``jsonb`` columns unwrapped so the functional expression indexes match.
 
-    ``taskhistory.execution_request`` is ``jsonb`` post SEP-988 and carries
+    ``taskhistory.execution_request`` is ``jsonb`` and carries
     functional expression indexes on ``(execution_request ->> 'task')`` etc.
     Adding a ``CAST`` wrapper would change the expression shape and stop the
     planner from matching those indexes — this test pins that contract.
@@ -197,13 +236,21 @@ def test_func_json_extract_postgresql_auto_json_column_does_not_wrap_in_cast():
     assert "CAST" not in rendered.upper()
 
 
-def test_func_json_extract_sqlite_single_key_renders_json_extract():
-    """Render ``json_extract(col, '$.task')`` on SQLite for a single-element path."""
+@pytest.mark.parametrize(
+    ("dialect_name", "dialect"),
+    [
+        ("sqlite", sqlite.dialect()),
+        ("mysql", mysql.dialect()),
+    ],
+    ids=["sqlite", "mysql"],
+)
+def test_func_json_extract_single_key_renders_json_extract(dialect_name, dialect):
+    """Render ``json_extract(col, '$.task')`` on SQLite and MySQL for a single-element path."""
     json_column = column("execution_request", type_=JSON)
 
-    expression = func_json_extract("sqlite", json_column, "task")
+    expression = func_json_extract(dialect_name, json_column, "task")
 
-    rendered = _compile(expression, sqlite.dialect())
+    rendered = _compile(expression, dialect)
     assert "json_extract" in rendered.lower()
     assert "'$.task'" in rendered
 
@@ -217,17 +264,6 @@ def test_func_json_extract_sqlite_nested_path_renders_dotted_path():
     rendered = _compile(expression, sqlite.dialect())
     assert "json_extract" in rendered.lower()
     assert "'$.meta.key'" in rendered
-
-
-def test_func_json_extract_mysql_single_key_renders_json_extract():
-    """Render ``json_extract(col, '$.task')`` on MySQL for a single-element path."""
-    json_column = column("execution_request", type_=JSON)
-
-    expression = func_json_extract("mysql", json_column, "task")
-
-    rendered = _compile(expression, mysql.dialect())
-    assert "json_extract" in rendered.lower()
-    assert "'$.task'" in rendered
 
 
 def test_func_json_extract_postgresql_mapped_column_binds_path_as_text():
@@ -335,7 +371,7 @@ def test_compare_type_suppresses_diff_for_task_execution_request_json_against_js
 
     Pin the contract that flipping ``TaskExecutionRequestJSON`` to inherit
     from ``AutoJSON`` keeps autogeneration quiet against the ``jsonb`` column
-    that PostgreSQL exposes after the SEP-988 migration runs.
+    that PostgreSQL exposes after the migration runs.
     """
     result = compare_type(
         context=MagicMock(),
@@ -345,3 +381,144 @@ def test_compare_type_suppresses_diff_for_task_execution_request_json_against_js
         metadata_type=TaskExecutionRequestJSON(),
     )
     assert result is False
+
+
+_PROBE_METADATA = MetaData()
+_json_probe = Table(
+    "json_extract_probe",
+    _PROBE_METADATA,
+    Column("id", Integer, primary_key=True),
+    Column("payload_json", JSON),
+    Column("payload_jsonb", JSONB),
+    Column("payload_text", Text),
+)
+
+
+@pytest_asyncio.fixture
+async def json_probe_session(postgres_engine: AsyncEngine) -> AsyncSession:
+    """Create the module-local JSON probe table on real PG and yield a session.
+
+    Layered on the shared ``postgres_engine`` so cells 1-3 exercise
+    ``func_json_extract`` against ``json``/``jsonb``/``text`` columns without
+    depending on the tasks-service schema.
+    """
+    async with postgres_engine.begin() as conn:
+        await conn.run_sync(_PROBE_METADATA.create_all)
+    async_session_maker = get_async_session_maker_from_engine(postgres_engine)
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        async with postgres_engine.begin() as conn:
+            await conn.run_sync(_PROBE_METADATA.drop_all)
+
+
+class TestFuncJsonExtractOnRealPostgres:
+    """Execute ``func_json_extract`` end-to-end against a real PostgreSQL engine.
+
+    Siblings to the compile-only render tests above: those pin the emitted SQL
+    *shape*, these prove the SQL the helper emits actually executes on PostgreSQL
+    and returns the expected scalar. SQLite cannot substitute — its
+    ``json_extract`` accepts ``text``, so the ``text``-to-``CAST`` branch (the
+    text-column regression surface) is untestable there.
+    """
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_json_column_extracts_single_key_scalar(
+        self, json_probe_session: AsyncSession
+    ):
+        """Execute a single-element arrow path against a real ``json`` column."""
+        name = json_probe_session.get_bind().name
+        await json_probe_session.exec(
+            _json_probe.insert().values(id=1, payload_json={"task": "mysqldump"})
+        )
+        await json_probe_session.commit()
+
+        result = await json_probe_session.exec(
+            select(func_json_extract(name, _json_probe.c.payload_json, "task"))
+        )
+        assert result.scalar_one() == "mysqldump"
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_json_column_extracts_nested_key_scalar(
+        self, json_probe_session: AsyncSession
+    ):
+        """Execute a nested arrow chain (``-> ... ->>``) against a real ``json`` column."""
+        name = json_probe_session.get_bind().name
+        await json_probe_session.exec(
+            _json_probe.insert().values(id=1, payload_json={"meta": {"key": "v"}})
+        )
+        await json_probe_session.commit()
+
+        result = await json_probe_session.exec(
+            select(func_json_extract(name, _json_probe.c.payload_json, "meta", "key"))
+        )
+        assert result.scalar_one() == "v"
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_jsonb_column_extracts_scalar(self, json_probe_session: AsyncSession):
+        """Execute the arrow chain against a real ``jsonb`` column."""
+        name = json_probe_session.get_bind().name
+        await json_probe_session.exec(
+            _json_probe.insert().values(id=1, payload_jsonb={"task": "restore-weekly"})
+        )
+        await json_probe_session.commit()
+
+        result = await json_probe_session.exec(
+            select(func_json_extract(name, _json_probe.c.payload_jsonb, "task"))
+        )
+        assert result.scalar_one() == "restore-weekly"
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_text_column_casts_to_json_before_extract(
+        self, json_probe_session: AsyncSession
+    ):
+        """Execute ``CAST(text AS JSON) ->> key`` so the text-column regression bites.
+
+        Without the cast PostgreSQL raises ``operator does not exist: text ->>
+        unknown`` at execution time — the exact failure that shipped in production
+        for ``celery_periodictask.kwargs``. Asserting on the returned scalar turns
+        that execution-time error into a test failure, which the compile-only
+        siblings cannot.
+        """
+        name = json_probe_session.get_bind().name
+        await json_probe_session.exec(
+            _json_probe.insert().values(
+                id=1, payload_text='{"task_name": "backup-daily"}'
+            )
+        )
+        await json_probe_session.commit()
+
+        result = await json_probe_session.exec(
+            select(func_json_extract(name, _json_probe.c.payload_text, "task_name"))
+        )
+        assert result.scalar_one() == "backup-daily"
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_auto_json_column_extracts_scalar(
+        self, postgres_session: AsyncSession
+    ):
+        """Execute the arrow chain against a real ``AutoJSON`` (``jsonb``) column.
+
+        ``TaskHistory.execution_request`` is ``TaskExecutionRequestJSON``, an
+        ``AutoJSON`` ``TypeDecorator`` that resolves to ``jsonb`` on PostgreSQL.
+        The helper must unwrap the decorator and emit the index-compatible arrow
+        chain with no spurious ``CAST``; executing it against a stored row proves
+        the unwrap is correct end-to-end.
+        """
+        task = await TaskManager.create(
+            postgres_session,
+            TaskWrite.model_validate(TaskFactory.build(name="mysqldump")),
+        )
+        await TaskHistoryManager.save(postgres_session, build_task_history(task))
+        name = postgres_session.get_bind().name
+
+        result = await postgres_session.exec(
+            select(func_json_extract(name, col(TaskHistory.execution_request), "task"))
+        )
+        assert result.scalar_one() == "mysqldump"

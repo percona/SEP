@@ -16,19 +16,66 @@
  */
 
 export { useCurrentUser } from './useCurrentUser';
-export { usePluginSchema } from './usePluginSchema';
+export { useAppSchema } from './useAppSchema';
 export {
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
-} from './usePluginTasks';
+  useAppTasks,
+  useAppTask,
+  useCreateAppTask,
+  useUpdateAppTask,
+  useAppEntityList,
+  useAppEntityDetail,
+  useCreateAppEntity,
+  useUpdateAppEntity,
+  useDeleteAppEntity,
+  useDeleteAppTask,
+} from './useAppTasks';
 export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
 export type { AlertConfig } from './useAlertConfig';
 export { useDashboardStats } from './useDashboardStats';
 export type { DashboardStats } from './useDashboardStats';
+export {
+  useSettingsList,
+  usePatchSetting,
+  useResetSetting,
+  settingErrorMessage,
+  SETTINGS_QUERY_KEY,
+  REDACTED_SECRET,
+} from './useSettings';
+export type {
+  SettingClass,
+  ReloadClassification,
+  SettingResponse,
+  SettingClassGroup,
+  SettingsListResponse,
+  SettingsPatch,
+  PatchSettingVars,
+  ResetSettingVars,
+} from './useSettings';
+export { useEnabledApps, ENABLED_APPS_QUERY_KEY } from './useEnabledApps';
+export type { EnabledApp } from './useEnabledApps';
+export {
+  useAdminApps,
+  useSetAppState,
+  useForceDisableApp,
+  isTransitional,
+  appStateErrorMessage,
+  ADMIN_APPS_QUERY_KEY,
+  ADMIN_APP_MUTATION_KEY,
+} from './useAdminApps';
+export type {
+  AdminApp,
+  AppStateResult,
+  AppLifecycleState,
+  TransitionalState,
+  SetAppStateVars,
+  ForceDisableAppVars,
+} from './useAdminApps';
+export { useConfigExport } from './useConfigExport';
+export { useConnectivityCheck, CONNECTIVITY_CHECK_PATH } from './useConnectivityCheck';
+export type {
+  ConnectivityCheckRequest,
+  ConnectivityResult,
+  ConnectivityStatus,
+} from './useConnectivityCheck';
+export { useAppInfo, APP_INFO_QUERY_KEY } from './useAppInfo';
+export type { AppInfo } from './useAppInfo';

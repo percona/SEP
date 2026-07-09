@@ -21,20 +21,31 @@ from app.core.utils import sort_dict
 from app.core.utils.dict import filter_dict, remove_falsy_values_from_dict
 
 
-def test_sort_dict():
+@pytest.mark.parametrize(
+    ("unsorted_dict", "key", "expected_keys"),
+    [
+        (
+            {"banana": 3, "apple": 4, "cherry": 2},
+            lambda item: item[0],
+            ["apple", "banana", "cherry"],
+        ),
+        (
+            {"banana": 3, "apple": 4, "cherry": 2},
+            lambda item: item[1],
+            ["cherry", "banana", "apple"],
+        ),
+        ({3: "three", 1: "one", 2: "two"}, lambda item: item[0], [1, 2, 3]),
+    ],
+    ids=["by-key-string", "by-value", "by-key-int"],
+)
+def test_sort_dict(unsorted_dict, key, expected_keys):
     """Test sort_dict utility for sorting dictionaries."""
-    unsorted_dict = {"banana": 3, "apple": 4, "cherry": 2}
-    sorted_by_key = sort_dict(unsorted_dict, key=lambda item: item[0])
-    assert list(sorted_by_key.keys()) == ["apple", "banana", "cherry"]
+    assert list(sort_dict(unsorted_dict, key=key).keys()) == expected_keys
 
-    sorted_by_value = sort_dict(unsorted_dict, key=lambda item: item[1])
-    assert list(sorted_by_value.keys()) == ["cherry", "banana", "apple"]
 
+def test_sort_dict_empty():
+    """Test sort_dict returns an empty dict for empty input."""
     assert sort_dict({}, key=lambda item: item[0]) == {}
-
-    unsorted_dict = {3: "three", 1: "one", 2: "two"}
-    sorted_dict = sort_dict(unsorted_dict, key=lambda item: item[0])
-    assert list(sorted_dict.keys()) == [1, 2, 3]
 
 
 @pytest.mark.parametrize(
