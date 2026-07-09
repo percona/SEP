@@ -349,8 +349,8 @@ class _OverlayProbe(BaseModel):
     """Define a probe carrying an ``INHERITED_MARKERS`` overlay over otherwise-bare fields.
 
     ``inherited_leaf`` is a plain (unmarked) field promoted purely by the
-    overlay -- the SEP-1511 case. ``plain_leaf`` has no overlay entry and must
-    classify exactly as it would without the mechanism. ``conflicting`` carries
+    overlay, mirroring the inherited-field use case. ``plain_leaf`` has no
+    overlay entry and must classify exactly as it would without the mechanism.
     an explicit ``NOT_OVERRIDABLE`` marker that the overlay must not override.
     """
 
