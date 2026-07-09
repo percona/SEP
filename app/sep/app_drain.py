@@ -25,11 +25,11 @@ transition once the count reaches zero; and a periodic reconciler prunes rows
 orphaned by a worker crash or a force-disable ``revoke(terminate=True)`` (where
 ``task_postrun`` never runs).
 
-This module is imported from :mod:`app.sep.apps.snippets.celery` and
-:mod:`app.sep.apps.alerts.celery` so its Celery task and signal receivers register
-at worker startup — those app ``celery`` modules are in the Celery ``include``
-list, this module is not, so registration rides on their import rather than
-autodiscovery.
+This module is imported from the app-owned Celery modules in the Celery ``include`` list
+(e.g. :mod:`app.sep.apps.snippets.celery`, :mod:`app.sep.apps.alerts.celery`,
+:mod:`app.sep.apps.report.celery`) so its Celery task and signal receivers register
+at worker startup — this module is not included directly, so registration rides on that
+import rather than autodiscovery.
 """
 
 import logging
