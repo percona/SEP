@@ -25,10 +25,11 @@ transition once the count reaches zero; and a periodic reconciler prunes rows
 orphaned by a worker crash or a force-disable ``revoke(terminate=True)`` (where
 ``task_postrun`` never runs).
 
-This module is imported from :mod:`app.sep.celery` so its Celery task and signal
-receivers register at worker startup — ``app.sep.celery`` is in the Celery
-``include`` list, this module is not, so registration rides on that import rather
-than autodiscovery.
+This module is imported from :mod:`app.sep.apps.snippets.celery` and
+:mod:`app.sep.apps.alerts.celery` so its Celery task and signal receivers register
+at worker startup — those app ``celery`` modules are in the Celery ``include``
+list, this module is not, so registration rides on their import rather than
+autodiscovery.
 """
 
 import logging
@@ -159,7 +160,7 @@ async def track_app_task(session: AsyncSession, app_key: str) -> AsyncIterator[N
     """Count a non-Celery, in-request unit of work in the drain counter.
 
     Wraps a direct (non-Celery) call to a drainable coroutine -- e.g. the manual
-    snippet-refresh routes awaiting :func:`app.sep.celery.update_snippets` -- so
+    snippet-refresh routes awaiting :func:`app.sep.apps.snippets.celery.update_snippets` -- so
     it shows up in the per-app :class:`app.sep.models.AppRunningTask` count
     exactly as a Celery task does via the ``task_prerun``/``task_postrun``
     receivers. Without it a concurrent disable would see zero in-flight work and
