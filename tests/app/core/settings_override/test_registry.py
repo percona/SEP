@@ -421,7 +421,7 @@ def test_overlay_does_not_override_explicit_field_metadata() -> None:
 
 
 class _OverlayMaterializerProbe(BaseModel):
-    """Probe whose overlay supplies a materializer for an otherwise-bare field.
+    """Define a probe whose overlay supplies a materializer for an otherwise-bare field.
 
     ``inherited_leaf`` declares no materializer of its own; the overlay attaches
     one. ``own`` declares its own materializer that the overlay must not shadow.
