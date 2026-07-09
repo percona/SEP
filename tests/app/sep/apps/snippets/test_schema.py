@@ -31,7 +31,7 @@ from app.sep.apps.framework.schema import (
 )
 from app.sep.apps.snippets.schema import (
     build_snippet_schema,
-    evaluate_visibility_gates,
+    evaluate_snippet_gates,
     field_for,
     SNIPPETS_PLUGIN_SCHEMA,
 )
@@ -246,7 +246,7 @@ class TestVisibilityGates:
     """Test that field_for lowers visibility conditions onto forbidden gates.
 
     The React renderer hides the field and drops its value; the gates are also
-    enforced server-side on the execute paths (see ``evaluate_visibility_gates``
+    enforced server-side on the execute paths (see ``evaluate_snippet_gates``
     and the execute-path tests), which reject a directly-submitted hidden value.
     """
 
@@ -293,6 +293,97 @@ class TestVisibilityGates:
             )
         )
         assert field.forbidden[0].when.to_dict() == {"truthy": "list"}
+
+
+class TestGateLowering:
+    """field_for lowers bounded requires/forbidden gates onto the gate lists.
+
+    The wire shapes (``{"truthy": ...}`` / ``{"equals": {...}}`` / ``{"not":
+    {...}}``) match those the marker DSL and visibility path emit — parity is the
+    point.
+    """
+
+    def test_requires_when_truthy_lowers_to_requires_gate(self):
+        """requires_when (truthiness) requires the field when the ref is truthy."""
+        field = field_for(
+            SnippetMetaParameter(name="reason", type="str", requires_when="mode")
+        )
+        assert field.requires is not None
+        assert len(field.requires) == 1
+        assert field.requires[0].when.to_dict() == {"truthy": "mode"}
+        assert field.forbidden is None
+
+    def test_requires_when_not_lowers_to_negated_gate(self):
+        """requires_when_not requires the field when the ref is NOT truthy."""
+        field = field_for(
+            SnippetMetaParameter(name="reason", type="str", requires_when_not="mode")
+        )
+        assert field.requires[0].when.to_dict() == {"not": {"truthy": "mode"}}
+
+    def test_requires_when_equals_lowers_to_equals_gate(self):
+        """requires_when with equals requires the field on an equality match."""
+        field = field_for(
+            SnippetMetaParameter(
+                name="reason",
+                type="str",
+                requires_when={"parameter": "mode", "equals": "write"},
+            )
+        )
+        assert field.requires[0].when.to_dict() == {"equals": {"mode": "write"}}
+
+    def test_forbidden_when_lowers_to_forbidden_gate(self):
+        """forbidden_when (truthiness) forbids the field when the ref is truthy."""
+        field = field_for(
+            SnippetMetaParameter(name="reason", type="str", forbidden_when="mode")
+        )
+        assert field.forbidden[0].when.to_dict() == {"truthy": "mode"}
+        assert field.requires is None
+
+    def test_forbidden_when_not_lowers_to_negated_gate(self):
+        """forbidden_when_not forbids the field when the ref is NOT truthy."""
+        field = field_for(
+            SnippetMetaParameter(name="reason", type="str", forbidden_when_not="mode")
+        )
+        assert field.forbidden[0].when.to_dict() == {"not": {"truthy": "mode"}}
+
+    def test_requires_and_forbidden_both_lowered(self):
+        """A parameter can carry both a requires and a forbidden gate."""
+        field = field_for(
+            SnippetMetaParameter(
+                name="reason",
+                type="str",
+                requires_when="write_mode",
+                forbidden_when="read_mode",
+            )
+        )
+        assert field.requires[0].when.to_dict() == {"truthy": "write_mode"}
+        assert field.forbidden[0].when.to_dict() == {"truthy": "read_mode"}
+
+    def test_requires_when_not_equals_lowers_to_negated_equals_gate(self):
+        """The negated-equals branch wraps an equals predicate in ``not``."""
+        field = field_for(
+            SnippetMetaParameter(
+                name="reason",
+                type="str",
+                requires_when_not={"parameter": "mode", "equals": "write"},
+            )
+        )
+        assert field.requires[0].when.to_dict() == {
+            "not": {"equals": {"mode": "write"}}
+        }
+
+    def test_forbidden_when_not_equals_lowers_to_negated_equals_gate(self):
+        """The forbidden negated-equals branch mirrors the requires one."""
+        field = field_for(
+            SnippetMetaParameter(
+                name="note",
+                type="str",
+                forbidden_when_not={"parameter": "mode", "equals": "read"},
+            )
+        )
+        assert field.forbidden[0].when.to_dict() == {
+            "not": {"equals": {"mode": "read"}}
+        }
 
 
 @pytest.mark.asyncio
@@ -370,7 +461,7 @@ def _exec_args(snippet: Snippet, wire: dict):
 class TestEvaluateVisibilityGates:
     """Direct coverage of the server-side gate evaluator.
 
-    ``evaluate_visibility_gates`` is the security backstop: it rejects a value
+    ``evaluate_snippet_gates`` is the security backstop: it rejects a value
     submitted directly for a parameter the client would have hidden. Generated
     execution models name fields with opaque identifiers and expose each
     parameter only through its wire alias, so evaluation MUST run against the
@@ -387,9 +478,7 @@ class TestEvaluateVisibilityGates:
         snippet = _snippet_with_params(
             [{"name": "name", "type": "str", "label": "Name"}]
         )
-        assert (
-            evaluate_visibility_gates(snippet, _exec_args(snippet, {"name": "x"})) == []
-        )
+        assert evaluate_snippet_gates(snippet, _exec_args(snippet, {"name": "x"})) == []
 
     def test_evaluation_runs_against_alias_view(self) -> None:
         """The gate resolves the wire name even though the python attr differs.
@@ -403,13 +492,13 @@ class TestEvaluateVisibilityGates:
 
         assert "start" not in args.model_dump()  # python attr is opaque
         assert "start" in args.model_dump(by_alias=True)
-        assert evaluate_visibility_gates(snippet, args)  # gate fires
+        assert evaluate_snippet_gates(snippet, args)  # gate fires
 
     def test_truthy_gate_not_fired_when_trigger_absent(self) -> None:
         """With the trigger falsy, the gated value is allowed."""
         snippet = _snippet_with_params(self._LIST_START)
         args = _exec_args(snippet, {"start": "2020"})
-        assert evaluate_visibility_gates(snippet, args) == []
+        assert evaluate_snippet_gates(snippet, args) == []
 
     def test_visible_when_negated_gate_fires(self) -> None:
         """``visible_when`` forbids the field while the trigger is NOT truthy."""
@@ -426,7 +515,7 @@ class TestEvaluateVisibilityGates:
         )
         # ``list`` falsy -> field is hidden -> a submitted ``start`` is rejected.
         args = _exec_args(snippet, {"start": "2020"})
-        assert evaluate_visibility_gates(snippet, args)
+        assert evaluate_snippet_gates(snippet, args)
 
     def test_equals_gate_fires(self) -> None:
         """An equals condition rejects the gated value on an equality match."""
@@ -442,7 +531,7 @@ class TestEvaluateVisibilityGates:
             ]
         )
         args = _exec_args(snippet, {"mode": "advanced", "region": "eu"})
-        assert evaluate_visibility_gates(snippet, args)
+        assert evaluate_snippet_gates(snippet, args)
 
     def test_multiple_gates_fire_yield_multiple_messages(self) -> None:
         """Every fired gate contributes a message."""
@@ -465,7 +554,7 @@ class TestEvaluateVisibilityGates:
         )
         args = _exec_args(snippet, {"list": True, "start": "a", "end": "b"})
         expected_failures = 2
-        assert len(evaluate_visibility_gates(snippet, args)) == expected_failures
+        assert len(evaluate_snippet_gates(snippet, args)) == expected_failures
 
     def test_gated_bool_false_is_allowed(self) -> None:
         """A gated bool submitted ``False`` is absent, so the gate does not reject.
@@ -487,8 +576,167 @@ class TestEvaluateVisibilityGates:
         allowed = _exec_args(snippet, {"list": True, "flag": False})
         rejected = _exec_args(snippet, {"list": True, "flag": True})
 
-        assert evaluate_visibility_gates(snippet, allowed) == []
-        assert evaluate_visibility_gates(snippet, rejected)
+        assert evaluate_snippet_gates(snippet, allowed) == []
+        assert evaluate_snippet_gates(snippet, rejected)
+
+
+class TestEvaluateGateEnforcement:
+    """Server-side enforcement of author-declared requires/forbidden gates.
+
+    The ``requires`` direction is the security-critical new behaviour: a
+    parameter omitted while its gate fires must be rejected server-side, not just
+    hidden client-side. These pin both directions and the present/absent
+    convention, mirroring :class:`TestEvaluateVisibilityGates`.
+    """
+
+    _MODE_REASON_REQUIRES = [
+        {"name": "mode", "type": "str", "label": "Mode"},
+        {
+            "name": "reason",
+            "type": "str",
+            "label": "Reason",
+            "requires_when": {"parameter": "mode", "equals": "write"},
+        },
+    ]
+
+    def test_requires_gate_fires_when_field_absent(self) -> None:
+        """A requires gate rejects a submission omitting the required field."""
+        snippet = _snippet_with_params(self._MODE_REASON_REQUIRES)
+        args = _exec_args(snippet, {"mode": "write"})  # reason omitted
+        assert evaluate_snippet_gates(snippet, args)
+
+    def test_requires_gate_passes_when_field_present(self) -> None:
+        """A requires gate is satisfied when the required field is supplied."""
+        snippet = _snippet_with_params(self._MODE_REASON_REQUIRES)
+        args = _exec_args(snippet, {"mode": "write", "reason": "cleanup"})
+        assert evaluate_snippet_gates(snippet, args) == []
+
+    def test_requires_gate_not_fired_when_predicate_false(self) -> None:
+        """With the trigger not matching, the field is not required."""
+        snippet = _snippet_with_params(self._MODE_REASON_REQUIRES)
+        args = _exec_args(snippet, {"mode": "read"})  # reason not required
+        assert evaluate_snippet_gates(snippet, args) == []
+
+    def test_requires_when_not_fires_when_trigger_falsy(self) -> None:
+        """requires_when_not requires the field while the trigger is NOT truthy."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "mode", "type": "bool", "label": "Mode"},
+                {
+                    "name": "reason",
+                    "type": "str",
+                    "label": "Reason",
+                    "requires_when_not": "mode",
+                },
+            ]
+        )
+        args = _exec_args(snippet, {})  # mode falsy -> reason required -> absent
+        assert evaluate_snippet_gates(snippet, args)
+
+    def test_forbidden_when_gate_fires(self) -> None:
+        """A forbidden_when gate rejects a value on an equality match."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "mode", "type": "str", "label": "Mode"},
+                {
+                    "name": "note",
+                    "type": "str",
+                    "label": "Note",
+                    "forbidden_when": {"parameter": "mode", "equals": "read"},
+                },
+            ]
+        )
+        args = _exec_args(snippet, {"mode": "read", "note": "x"})
+        assert evaluate_snippet_gates(snippet, args)
+
+    def test_forbidden_gate_passes_when_field_absent(self) -> None:
+        """A forbidden gate whose predicate fires still passes if no value given.
+
+        Forbidden rejects only a *present* value; omitting the field is always
+        allowed. Pins the pass direction the requires triad has but forbidden
+        lacked.
+        """
+        snippet = _snippet_with_params(
+            [
+                {"name": "mode", "type": "str", "label": "Mode"},
+                {
+                    "name": "note",
+                    "type": "str",
+                    "label": "Note",
+                    "forbidden_when": {"parameter": "mode", "equals": "read"},
+                },
+            ]
+        )
+        args = _exec_args(snippet, {"mode": "read"})  # note omitted
+        assert evaluate_snippet_gates(snippet, args) == []
+
+    def test_forbidden_when_not_fires_when_trigger_truthy(self) -> None:
+        """forbidden_when_not forbids the value while the trigger IS truthy."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "mode", "type": "bool", "label": "Mode"},
+                {
+                    "name": "note",
+                    "type": "str",
+                    "label": "Note",
+                    "forbidden_when_not": "mode",
+                },
+            ]
+        )
+        # ``mode`` truthy -> NOT(truthy) is false -> forbidden does NOT fire.
+        allowed = _exec_args(snippet, {"mode": True, "note": "x"})
+        # ``mode`` falsy -> NOT(truthy) is true -> a submitted ``note`` is rejected.
+        rejected = _exec_args(snippet, {"note": "x"})
+
+        assert evaluate_snippet_gates(snippet, allowed) == []
+        assert evaluate_snippet_gates(snippet, rejected)
+
+    def test_requires_gate_bool_false_is_absent(self) -> None:
+        """A gated bool submitted ``False`` counts as absent for a requires gate.
+
+        ``True`` satisfies presence — locking the ``value_is_present``
+        convention through the requires evaluator too.
+        """
+        snippet = _snippet_with_params(
+            [
+                {"name": "mode", "type": "bool", "label": "Mode"},
+                {
+                    "name": "flag",
+                    "type": "bool",
+                    "label": "Flag",
+                    "requires_when": "mode",
+                },
+            ]
+        )
+        fires = _exec_args(snippet, {"mode": True, "flag": False})
+        passes = _exec_args(snippet, {"mode": True, "flag": True})
+
+        assert evaluate_snippet_gates(snippet, fires)
+        assert evaluate_snippet_gates(snippet, passes) == []
+
+    def test_requires_and_forbidden_yield_multiple_messages(self) -> None:
+        """A fired requires gate and a fired forbidden gate each report."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "mode", "type": "str", "label": "Mode"},
+                {
+                    "name": "reason",
+                    "type": "str",
+                    "label": "Reason",
+                    "requires_when": {"parameter": "mode", "equals": "write"},
+                },
+                {
+                    "name": "note",
+                    "type": "str",
+                    "label": "Note",
+                    "forbidden_when": {"parameter": "mode", "equals": "write"},
+                },
+            ]
+        )
+        # mode=write -> reason required (absent) + note forbidden (present).
+        args = _exec_args(snippet, {"mode": "write", "note": "x"})
+        expected_failures = 2
+        assert len(evaluate_snippet_gates(snippet, args)) == expected_failures
 
 
 def test_field_for_maps_datetime_parameter_to_datetime_field():

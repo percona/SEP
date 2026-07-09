@@ -151,7 +151,7 @@ class SnippetVisibilityCondition(BaseModel):
         server-side: a value submitted directly for a field whose gate fires is
         rejected (HTTP 422 on the JSON API; flash + redirect on the legacy form),
         matching ``field_gate_forbidden`` "must be absent" semantics. See
-        :func:`app.sep.apps.snippets.schema.evaluate_visibility_gates`.
+        :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`.
 
     :param parameter: The name of the sibling parameter the rule references.
     :type parameter: NonEmptyStr
@@ -253,6 +253,30 @@ class SnippetMetaParameter(BaseModel):
         condition matches. Same grammar as ``visible_when``. Mutually exclusive
         with ``visible_when``. Client-enforced only. Defaults to None.
     :type visible_when_not: SnippetVisibilityCondition | None
+    :param requires_when: Require a value for this parameter when the referenced
+        sibling condition matches. Same grammar as ``visible_when``. Mutually
+        exclusive with ``requires_when_not``. Lowered onto a ``requires``
+        :class:`~app.sep.apps.framework.rules.FieldGate` and enforced server-side
+        on the execute paths (see
+        :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`). Defaults to
+        None.
+    :type requires_when: SnippetVisibilityCondition | None
+    :param requires_when_not: Require a value for this parameter when the
+        referenced sibling condition does not match. Same grammar as
+        ``requires_when``. Mutually exclusive with ``requires_when``. Enforced
+        server-side. Defaults to None.
+    :type requires_when_not: SnippetVisibilityCondition | None
+    :param forbidden_when: Forbid a value for this parameter when the referenced
+        sibling condition matches. Same grammar as ``visible_when``. Mutually
+        exclusive with ``forbidden_when_not``. Lowered onto a ``forbidden``
+        :class:`~app.sep.apps.framework.rules.FieldGate` and enforced server-side.
+        Defaults to None.
+    :type forbidden_when: SnippetVisibilityCondition | None
+    :param forbidden_when_not: Forbid a value for this parameter when the
+        referenced sibling condition does not match. Same grammar as
+        ``forbidden_when``. Mutually exclusive with ``forbidden_when``. Enforced
+        server-side. Defaults to None.
+    :type forbidden_when_not: SnippetVisibilityCondition | None
     :param hidden: Unconditionally omit this parameter from every rendered
         execution form -- it is never emitted into the form HTML or form schema
         at all. It is still validated normally (it stays in
@@ -290,9 +314,21 @@ class SnippetMetaParameter(BaseModel):
     html_elem: TextInputHTMLElement | None = None
     visible_when: SnippetVisibilityCondition | None = None
     visible_when_not: SnippetVisibilityCondition | None = None
+    requires_when: SnippetVisibilityCondition | None = None
+    requires_when_not: SnippetVisibilityCondition | None = None
+    forbidden_when: SnippetVisibilityCondition | None = None
+    forbidden_when_not: SnippetVisibilityCondition | None = None
     hidden: bool = False
 
-    @field_validator("visible_when", "visible_when_not", mode="before")
+    @field_validator(
+        "visible_when",
+        "visible_when_not",
+        "requires_when",
+        "requires_when_not",
+        "forbidden_when",
+        "forbidden_when_not",
+        mode="before",
+    )
     @classmethod
     def normalize_visibility_condition(cls, value: Any) -> Any:
         """Normalize a bare string into a truthiness visibility condition.
@@ -353,6 +389,92 @@ class SnippetMetaParameter(BaseModel):
                 f"{condition.parameter!r}"
             )
         return self
+
+    @model_validator(mode="after")
+    def validate_gate_conditions(self) -> Self:
+        """Validate the requires/forbidden field-gate conditions.
+
+        The four gate fields (``requires_when`` / ``requires_when_not`` /
+        ``forbidden_when`` / ``forbidden_when_not``) reuse the visibility-condition
+        shape and lower onto the framework's ``requires`` / ``forbidden``
+        :class:`FieldGate` lists, enforced server-side on the execute paths (see
+        :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`).
+
+        :return: The validated :class:`SnippetMetaParameter` instance.
+        :rtype: SnippetMetaParameter
+        :raises ValueError: If both variants of a kind are declared together; if a
+            gate is declared on a ``hidden`` parameter (hidden parameters are
+            excluded from the form schema, so the gate would never be lowered or
+            enforced — a silent bypass); if a gate is combined with a visibility
+            condition (visibility already emits a forbidden gate — the combination
+            is ambiguous); if a gate is combined with ``required=True`` (``requires``
+            is redundant, ``forbidden`` is unsatisfiable); if a gate is combined
+            with a non-empty ``default`` (the backfilled default makes a
+            ``forbidden`` gate an unsatisfiable trap and a ``requires`` gate a dead
+            rule); or if a gated parameter's name or referenced sibling is not a
+            valid Python identifier.
+        """
+        if self.requires_when is not None and self.requires_when_not is not None:
+            raise ValueError(
+                "declare only one of 'requires_when' or 'requires_when_not'"
+            )
+        if self.forbidden_when is not None and self.forbidden_when_not is not None:
+            raise ValueError(
+                "declare only one of 'forbidden_when' or 'forbidden_when_not'"
+            )
+        requires = (self.requires_when, self.requires_when_not)
+        forbidden = (self.forbidden_when, self.forbidden_when_not)
+        gate_conditions = [c for c in (*requires, *forbidden) if c is not None]
+        if not gate_conditions:
+            return self
+        if self.hidden:
+            raise ValueError(
+                "a hidden parameter cannot declare a requires/forbidden gate "
+                "(hidden parameters are excluded from the form schema, so the "
+                "gate would never be enforced server-side)"
+            )
+        if self.visible_when is not None or self.visible_when_not is not None:
+            raise ValueError(
+                "a parameter cannot combine a requires/forbidden gate with a "
+                "visibility condition"
+            )
+        if self.required and any(c is not None for c in requires):
+            raise ValueError("a required parameter cannot declare a 'requires' gate")
+        if self.required and any(c is not None for c in forbidden):
+            raise ValueError("a required parameter cannot declare a 'forbidden' gate")
+        if value_is_present(self.default):
+            raise ValueError(
+                "a parameter with a non-empty default cannot declare a "
+                "requires/forbidden gate"
+            )
+        if not self.name.isidentifier():
+            raise ValueError(
+                f"a parameter declaring a requires/forbidden gate must have a name "
+                f"that is a valid Python identifier (no hyphens); got {self.name!r}"
+            )
+        self._validate_gate_references(gate_conditions)
+        return self
+
+    def _validate_gate_references(
+        self, conditions: list["SnippetVisibilityCondition"]
+    ) -> None:
+        """Reject gate conditions that self-reference or name a non-identifier.
+
+        :param conditions: The gate conditions declared on this parameter.
+        :raises ValueError: If a condition references the parameter itself or a
+            sibling whose name is not a valid Python identifier.
+        """
+        for condition in conditions:
+            if condition.parameter == self.name:
+                raise ValueError(
+                    "a requires/forbidden gate cannot reference the parameter itself"
+                )
+            if not condition.parameter.isidentifier():
+                raise ValueError(
+                    f"a requires/forbidden gate must reference a parameter whose "
+                    f"name is a valid Python identifier (no hyphens); got "
+                    f"{condition.parameter!r}"
+                )
 
     @model_validator(mode="after")
     def set_default_step(self) -> Self:

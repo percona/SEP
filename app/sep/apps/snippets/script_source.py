@@ -62,7 +62,7 @@ from app.sep.apps.snippets.deps import (
 from app.sep.apps.snippets.models import build_snippet_response, SnippetResponse
 from app.sep.apps.snippets.schema import (
     build_snippet_schema,
-    evaluate_visibility_gates,
+    evaluate_snippet_gates,
     SNIPPETS_PLUGIN_SCHEMA,
 )
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT, ARTIFACT_TYPE_SNIPPET
@@ -225,8 +225,8 @@ def _build_execution_meta(
     :return: The execution meta the framework posts to the Tasks API.
     :raises HTTPForbiddenException: When the snippet is unapproved or otherwise
         not executable.
-    :raises HTTPUnprocessableEntityException: When a conditional-visibility gate
-        rejects the submitted args.
+    :raises HTTPUnprocessableEntityException: When a snippet field gate (visibility,
+        ``requires`` or ``forbidden``) rejects the submitted args.
     """
     snippet = script.snippet
     if not snippet.can_execute:
@@ -243,7 +243,7 @@ def _build_execution_meta(
     execution_args = snippet.get_execution_model().model_construct(
         executor_host=body.executor_host, **construct_args
     )
-    gate_failures = evaluate_visibility_gates(snippet, execution_args)
+    gate_failures = evaluate_snippet_gates(snippet, execution_args)
     if gate_failures:
         raise HTTPUnprocessableEntityException(detail=gate_failures)
     return build_snippet_execution_meta(
