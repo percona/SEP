@@ -226,9 +226,7 @@ def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:
 
     Accepts any Pydantic ``BaseModel`` subclass, not just ``BaseYamlSettings``:
     the nested-override resolver consults this predicate against nested
-    submodels (e.g. ``SessionOptions``) when classifying leaf fields. The
-    field's own metadata is unioned with the class's :data:`INHERITED_MARKERS_ATTR`
-    overlay, so a field promoted only through the overlay still classifies HOT.
+    submodels (e.g. ``SessionOptions``) when classifying leaf fields.
 
     :param settings_cls: The Pydantic model class to inspect.
     :type settings_cls: type[BaseModel]
@@ -262,10 +260,7 @@ def field_reload_classification(
 
     Unlike :func:`is_hot_reloadable` (which takes a settings class plus a field
     name), this operates on a :class:`FieldInfo` directly so callers can
-    classify a nested leaf resolved out of a submodel. When ``owner_cls`` and
-    ``field_name`` are supplied, the owning class's :data:`INHERITED_MARKERS_ATTR`
-    overlay is consulted in addition to ``field.metadata``; omitting them keeps
-    the bare-``FieldInfo`` behaviour unchanged.
+    classify a nested leaf resolved out of a submodel.
 
     :param field_info: The Pydantic field metadata to classify.
     :param owner_cls: The class owning ``field_info``, for overlay lookup.
@@ -293,9 +288,7 @@ def is_explicit_not_overridable(
     but a *nested leaf* under a nested-overridable parent inherits HOT unless it
     is explicitly :func:`not_overridable_field`-marked. This predicate is
     ``True`` only for the explicit marker, so unmarked nested leaves stay
-    overridable. When ``owner_cls`` and ``field_name`` are supplied, the owning
-    class's :data:`INHERITED_MARKERS_ATTR` overlay is consulted in addition to
-    ``field.metadata``.
+    overridable.
 
     :param field_info: The Pydantic field metadata to inspect.
     :param owner_cls: The class owning ``field_info``, for overlay lookup.
@@ -394,10 +387,7 @@ def field_materializer(
     """Return the materializer declared on a field, or ``None`` if none.
 
     Reads the ``"materializer"`` entry attached by :func:`hot_field` through the
-    same custom-metadata channel :func:`is_hot_reloadable` reads ``"reload"``
-    from, unioned with the class's :data:`INHERITED_MARKERS_ATTR` overlay so a
-    materializer supplied for an inherited field via the overlay is honored
-    consistently with ``"reload"`` and ``"advanced"``.
+    same custom-metadata channel :func:`is_hot_reloadable` reads ``"reload"`` from.
 
     :param settings_cls: The Pydantic settings class to inspect.
     :type settings_cls: type[BaseYamlSettings]
@@ -431,9 +421,7 @@ def is_advanced_field(
     UI to group rarely-changed, easy-to-misconfigure settings separately; it does
     not affect override, PATCH, or DELETE eligibility. Operates on a
     :class:`FieldInfo` directly so callers can classify a nested leaf resolved
-    out of a submodel. When ``owner_cls`` and ``field_name`` are supplied, the
-    owning class's :data:`INHERITED_MARKERS_ATTR` overlay is consulted in
-    addition to ``field.metadata``.
+    out of a submodel.
 
     :param field_info: The Pydantic field metadata to inspect.
     :param owner_cls: The class owning ``field_info``, for overlay lookup.
@@ -685,9 +673,8 @@ def _resolve_nested_segments(
     intermediate, or the key is empty. The list preserves order from the
     top-level parent down to the leaf, so callers can inspect intermediate
     fields (e.g. for an explicit ``not_overridable_field`` marker) and not just
-    the leaf. Each entry carries the class that *owns* the segment so classifiers
-    can consult that class's :data:`INHERITED_MARKERS_ATTR` overlay for a leaf
-    resolved out of a submodel.
+    the leaf. Each entry carries its owning class so classifiers can consult that
+    class's :data:`INHERITED_MARKERS_ATTR` overlay.
 
     :param settings_cls: The top-level Pydantic settings class.
     :type settings_cls: type[BaseModel]
