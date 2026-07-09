@@ -42,7 +42,7 @@ from app.sep.apps.framework.form_backfill import (
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner
+from app.tasks.models import Task, TaskBackendEnum
 
 
 def _minimal_task(*, data: dict) -> Task:
@@ -51,7 +51,7 @@ def _minimal_task(*, data: dict) -> Task:
         name="legacy-task",
         data=data,
         backend=TaskBackendEnum.NOMAD,
-        owner=TaskOwner.CHECKSUMS,
+        owner="CHECKSUMS",
         last_updated_by="original-user",
         updated_at=datetime(2024, 1, 1, tzinfo=UTC),
     )
@@ -64,6 +64,8 @@ def _reconstructor_must_not_run(_task: Task, _ctx: FormBackfillContext) -> dict:
 
 # A populated (but empty) lookup so the orchestrator's guard passes to the reconstructor.
 _EMPTY_SERVICE_LOOKUP = ServiceIdLookup.from_services([])
+
+_ARGPARSE_USAGE_ERROR = 2
 
 
 @pytest_asyncio.fixture
@@ -355,3 +357,25 @@ def test_main_cli_help_exits_zero(capsys):
     assert "--dry-run" in help_text
     assert "--owner" in help_text
     assert "--verbose" in help_text
+
+
+@pytest.mark.parametrize(
+    "value", ["archiver", "CHECKSUMS", "backup_pg", "BACKUPS", "restores", "ALTERS"]
+)
+def test_main_accepts_and_normalizes_in_scope_owner(value, monkeypatch):
+    """Accept each in-scope owner, forwarding the normalized value to run_backfill."""
+    run = AsyncMock()
+    monkeypatch.setattr("app.sep.apps.framework.form_backfill.run_backfill", run)
+
+    assert main(["--owner", value, "--dry-run"]) == 0
+    run.assert_awaited_once_with(owners=[value.upper()], dry_run=True)
+
+
+@pytest.mark.parametrize("value", ["ANY", "BACKUP_MONGO", "RESTORE_MONGO", "bogus"])
+def test_main_rejects_owner_outside_the_in_scope_set(value, capsys):
+    """Reject a ``--owner`` naming no in-scope backfill app with an argparse error."""
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--owner", value])
+
+    assert exc_info.value.code == _ARGPARSE_USAGE_ERROR
+    assert "unknown owner" in capsys.readouterr().err

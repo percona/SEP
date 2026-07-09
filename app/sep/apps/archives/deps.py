@@ -33,11 +33,12 @@ from pydantic import Field, ValidationError
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr, TcpPort
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     parse_archiver_purge_config,
 )
-from app.sep.apps.archives.models import ArchivesCreate
+from app.sep.apps.archives.models import ArchivesCreate, OWNER
 from app.sep.apps.archives.spec import build_archives_spec
 from app.sep.apps.framework import make_task_dep
 from app.sep.apps.framework.spec import assemble_envelope, resolve_refs
@@ -48,7 +49,7 @@ from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
-from app.tasks.models import Task, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +222,7 @@ async def build_archives_task_payload(
         build_archives_spec(create, resolved),
         resolved,
         name=create.task_name,
-        owner=TaskOwner.ARCHIVER,
+        owner=OWNER,
         alert_on_fail=create.alert_on_fail,
         alert_detail_builder=ALERT_DETAIL_BUILDER,
     )
@@ -230,7 +231,7 @@ async def build_archives_task_payload(
 ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload)]
 
 
-get_archives_task = make_task_dep(TaskOwner.ARCHIVER)
+get_archives_task = make_task_dep(OWNER)
 
 ArchivesTask = Annotated[Task, Depends(get_archives_task)]
 
@@ -292,7 +293,8 @@ async def get_archives_index_context(
         get_archives_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.ARCHIVER,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
         alert_on_fail_default=True,
     )
 

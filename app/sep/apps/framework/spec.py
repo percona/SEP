@@ -55,7 +55,7 @@ from app.sep.connectivity import (
 from app.sep.deps import get_created_entity, InventoryAPI
 from app.sep.inventory import CreatedEntity, CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskBackendEnum, TaskWrite
 
 __all__ = [
     "RESERVED_FORM_KEY",
@@ -366,7 +366,7 @@ def assemble_envelope(
     resolved: ResolvedEntities,
     *,
     name: str,
-    owner: TaskOwner,
+    owner: str,
     alert_on_fail: bool = False,
     alert_detail_builder: str | None = None,
 ) -> TaskWrite:
@@ -436,7 +436,7 @@ def assemble_envelope(
 def build_run_python_task(
     *,
     name: str,
-    owner: TaskOwner,
+    owner: str,
     target: str,
     config: str,
     requirements: str,

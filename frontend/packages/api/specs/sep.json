@@ -721,7 +721,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -878,7 +879,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -1035,7 +1037,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -2657,7 +2660,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "port": {
             "anyOf": [
@@ -2984,7 +2988,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -3435,7 +3440,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -6452,7 +6458,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -8014,7 +8021,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -8151,7 +8159,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -8472,7 +8481,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "port": {
             "anyOf": [
@@ -9235,7 +9245,7 @@
         "type": "object"
       },
       "SettingResponse": {
-        "description": "Represent a single setting's metadata and current value.\n\n:param setting_class: The settings class the field belongs to.\n:type setting_class: SettingClassEnum\n:param key: The field name on the settings class.\n:type key: str\n:param key_path: Carry the canonical key segments for ``key`` such that\n    ``\"__\".join(key_path) == key``.\n:type key_path: list[str]\n:param value: The current value visible through the proxy, dumped to a\n    JSON-safe shape via the field's annotation. ``SecretStr`` fields are\n    redacted to ``\"**********\"``.\n:type value: Any\n:param default_value: The field's declared default value, dumped via the\n    same JSON serialiser. ``None`` when no default exists.\n:type default_value: Any\n:param type: A human-readable representation of the field's declared\n    annotation (for operator visibility; validation uses the actual\n    ``FieldInfo``).\n:type type: str\n:param reload: The reload classification (HOT or NOT_OVERRIDABLE).\n:type reload: ReloadClassification\n:param description: The field's free-text description, or ``None``.\n:type description: str | None\n:param is_secret: Whether the field's annotation contains a Pydantic secret\n    (``SecretStr`` / ``SecretBytes``) at any depth.\n:type is_secret: bool\n:param is_complex: Whether the field's annotation is or contains a Pydantic\n    ``BaseModel`` subclass (true for nested submodels).\n:type is_complex: bool\n:param has_override: Whether a row exists in the ``settingoverride`` table\n    for this ``(setting_class, key)`` pair, regardless of ``is_active``.\n:type has_override: bool\n:param is_advanced: Whether the setting is flagged ``advanced`` so the UI can\n    present it separately from everyday settings. Display-only:\n    it does not affect PATCH/DELETE eligibility.",
+        "description": "Represent a single setting's metadata and current value.\n\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param key_path: Carry the canonical key segments for ``key`` such that\n    ``\"__\".join(key_path) == key``.\n:param value: The current value visible through the proxy, dumped to a\n    JSON-safe shape via the field's annotation. ``SecretStr`` fields are\n    redacted to ``\"**********\"``.\n:param default_value: The field's declared default value, dumped via the\n    same JSON serialiser. ``None`` when no default exists.\n:param type: A human-readable representation of the field's declared\n    annotation (for operator visibility; validation uses the actual\n    ``FieldInfo``).\n:param reload: The reload classification (HOT or NOT_OVERRIDABLE).\n:param description: The field's free-text description, or ``None``.\n:param is_secret: Whether the field's annotation contains a Pydantic secret\n    (``SecretStr`` / ``SecretBytes``) at any depth.\n:param is_complex: Whether the field's annotation is or contains a Pydantic\n    ``BaseModel`` subclass (true for nested submodels).\n:param has_override: Whether a row exists in the ``settingoverride`` table\n    for this ``(setting_class, key)`` pair, regardless of ``is_active``.\n:param is_advanced: Whether the setting is flagged ``advanced`` so the UI can\n    present it separately from everyday settings. Display-only:\n    it does not affect PATCH/DELETE eligibility.\n:param is_applicable: Whether the setting applies under current runtime state\n    (e.g. the active auth provider). ``False`` lets the UI present the field\n    as inert. Display-only, like ``is_advanced``: it does not block\n    PATCH/DELETE server-side; the runtime gate is the real enforcement.",
         "properties": {
           "default_value": {
             "title": "Default Value"
@@ -9258,6 +9268,11 @@
           "is_advanced": {
             "default": false,
             "title": "Is Advanced",
+            "type": "boolean"
+          },
+          "is_applicable": {
+            "default": true,
+            "title": "Is Applicable",
             "type": "boolean"
           },
           "is_complex": {
@@ -10184,24 +10199,8 @@
         "title": "TaskListResponse",
         "type": "object"
       },
-      "TaskOwner": {
-        "description": "Control the choice of task owners.\n\n:cvar ANY: Value for tasks without owner restrictions.\n:vartype ANY: str\n:cvar ALTERS: Value for schema change tasks.\n:vartype ALTERS: str\n:cvar ARCHIVER: Value for data archiver tasks.\n:vartype ARCHIVER: str\n:cvar BACKUPS: Value for backup tasks.\n:vartype BACKUPS: str\n:cvar RESTORES: Value for restore tasks.\n:vartype RESTORES: str\n:cvar CHECKSUMS: Value for checksum tasks.\n:vartype CHECKSUMS: str",
-        "enum": [
-          "ANY",
-          "ALTERS",
-          "ARCHIVER",
-          "BACKUPS",
-          "RESTORES",
-          "CHECKSUMS",
-          "BACKUP_MONGO",
-          "RESTORE_MONGO",
-          "BACKUP_PG"
-        ],
-        "title": "TaskOwner",
-        "type": "string"
-      },
       "TaskResponse": {
-        "description": "Represent a task API response.\n\n:param name: The name of the task.\n:type name: str\n:param data: The task data stored in JSON format.\n:type data: dict\n:param backend: The backend used for task execution. Defaults to Nomad.\n:type backend: TaskBackendEnum\n:param owner: The owner of the task. Defaults to TaskOwner.ANY.\n:type owner: TaskOwner\n:param is_template: Whether the task is a template. Defaults to False.\n:type is_template: bool\n:param protected: Whether the task is protected from deletion. Defaults to False.\n:type protected: bool\n:param alert_on_fail: Whether to trigger an alert on task failure and\n    auto-resolve it on subsequent success. Defaults to False.\n:type alert_on_fail: bool\n:param alert_detail_builder: The ``\"module:function\"`` path of a plugin\n    callable that enriches this task's failure alert, or None.\n:type alert_detail_builder: str | None\n:param deleted_at: The deletion timestamp, if applicable.\n:type deleted_at: UTCDatetime | None\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the task. Defaults to 0 (no anonymization).\n:type anonymize_mask: int | None\n:param created_by: The user ID of the user who created the task.\n:type created_by: str | None\n:param last_updated_by: The user ID of the user who last modified the task.\n:type last_updated_by: str | None\n:param anonymized_entities: Sorted list of PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the\n    mask is ``None``). Each name is the raw ``PIIEntity`` member name\n    (e.g. ``\"EMAIL_ADDRESS\"``). Read-only; computed on serialisation.\n:type anonymized_entities: list[str]",
+        "description": "Represent a task API response.\n\n:param name: The name of the task.\n:param data: The task data stored in JSON format.\n:param backend: The backend used for task execution. Defaults to Nomad.\n:param owner: The owner of the task. Defaults to ``\"ANY\"``.\n:param is_template: Whether the task is a template. Defaults to False.\n:param protected: Whether the task is protected from deletion. Defaults to False.\n:param alert_on_fail: Whether to trigger an alert on task failure and\n    auto-resolve it on subsequent success. Defaults to False.\n:param alert_detail_builder: The ``\"module:function\"`` path of a plugin\n    callable that enriches this task's failure alert, or None.\n:param deleted_at: The deletion timestamp, if applicable.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the task. Defaults to 0 (no anonymization).\n:param created_by: The user ID of the user who created the task.\n:param last_updated_by: The user ID of the user who last modified the task.\n:param anonymized_entities: Sorted list of PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the\n    mask is ``None``). Each name is the raw ``PIIEntity`` member name\n    (e.g. ``\"EMAIL_ADDRESS\"``). Read-only; computed on serialisation.",
         "properties": {
           "alert_detail_builder": {
             "anyOf": [
@@ -10863,7 +10862,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -11036,7 +11036,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -11245,7 +11246,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "port": {
             "anyOf": [
@@ -11429,7 +11431,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -16120,7 +16123,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/TaskOwner"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -17238,7 +17241,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/TaskOwner"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -17301,7 +17304,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/TaskOwner"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -17364,7 +17367,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/TaskOwner"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -17421,7 +17424,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/TaskOwner"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -17478,7 +17481,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/TaskOwner"
+                  "type": "string"
                 },
                 {
                   "type": "null"

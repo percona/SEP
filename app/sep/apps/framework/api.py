@@ -65,7 +65,6 @@ from app.tasks.models import (
     Task,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
-    TaskOwner,
     TaskWrite,
 )
 
@@ -966,7 +965,7 @@ def _resolve_detail_target(
 def _register_list_route(
     router: APIRouter,
     *,
-    task_owner: TaskOwner,
+    task_owner: str,
     response_builder: TaskResponseBuilder[ListDetailResponseT],
     list_detail_model: type[ListDetailResponseT],
     pagination_dep: PaginationDependency | None,
@@ -1022,7 +1021,7 @@ def _register_list_route(
                 return []
             responses = await build_task_list_responses(
                 tasks_api,
-                owner=task_owner.value,
+                owner=task_owner,
                 response_builder=response_builder,
                 status_filter=filters.status,
                 extra_params=extra_params,
@@ -1049,7 +1048,7 @@ def _register_list_route(
                 return PaginatedResponse.from_pagination([], 0, pagination)
             responses = await build_task_list_responses(
                 tasks_api,
-                owner=task_owner.value,
+                owner=task_owner,
                 response_builder=response_builder,
                 pagination=pagination,
                 status_filter=filters.status,
@@ -1072,7 +1071,7 @@ def _register_list_route(
 def derive_crud_routes(
     plugin_schema: AppSchema,
     *,
-    task_owner: TaskOwner,
+    task_owner: str,
     get_task: Callable[..., Awaitable[Task]],
     response_builder: TaskResponseBuilder[ListDetailResponseT],
     detail_response_builder: TaskResponseBuilder[Any] | None = None,
@@ -1124,7 +1123,7 @@ def derive_crud_routes(
 
         router = derive_crud_routes(
             archives_schema,
-            task_owner=TaskOwner.ARCHIVER,
+            task_owner="ARCHIVER",
             get_task=get_archives_task,
             response_builder=build_archives_api_task_response,
             create_payload=build_archives_api_task_payload,

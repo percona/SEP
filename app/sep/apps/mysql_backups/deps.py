@@ -33,6 +33,7 @@ from app.sep.apps.mysql_backups.models import (
     BackupCreate,
     BackupResponse,
     BackupType,
+    OWNER,
 )
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.deps import (
@@ -42,7 +43,7 @@ from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ async def build_backup_task_payload(
         build_backup_spec(form, resolved),
         resolved,
         name=form.task_name,
-        owner=TaskOwner.BACKUPS,
+        owner=OWNER,
         alert_on_fail=form.alert_on_fail,
     )
 
@@ -117,7 +118,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
 
-get_backups_task = make_task_dep(TaskOwner.BACKUPS)
+get_backups_task = make_task_dep(OWNER)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
@@ -238,7 +239,8 @@ async def get_backups_index_context(
         get_backups_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.BACKUPS,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
         alert_on_fail_default=True,
     )
 

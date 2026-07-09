@@ -18,10 +18,10 @@
 from collections.abc import Awaitable, Callable
 
 from app.sep.deps import get_task_by_name, TaskAPI
-from app.tasks.models import Task, TaskOwner
+from app.tasks.models import Task
 
 
-def make_task_dep(owner: TaskOwner) -> Callable[[str, TaskAPI], Awaitable[Task]]:
+def make_task_dep(owner: str) -> Callable[[str, TaskAPI], Awaitable[Task]]:
     """Build a per-owner task-by-name dependency callable.
 
     Return a freshly-constructed coroutine function delegating to
@@ -31,9 +31,7 @@ def make_task_dep(owner: TaskOwner) -> Callable[[str, TaskAPI], Awaitable[Task]]
     per-request dependency cache scopes exactly as a module-level wrapper would.
 
     :param owner: The task owner the built dependency filters by.
-    :type owner: TaskOwner
     :return: A coroutine function resolving a ``Task`` by name for ``owner``.
-    :rtype: Callable[[str, TaskAPI], Awaitable[Task]]
     """
 
     async def get_task(task_name: str, tasks_api: TaskAPI) -> Task:

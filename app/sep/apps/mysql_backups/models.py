@@ -52,6 +52,8 @@ from app.sep.apps.framework.rules import (
     truthy,
 )
 
+OWNER = "BACKUPS"
+
 
 class SwapDropEnum(IntEnum):
     """Enum for defining types of swap actions for table data handling."""

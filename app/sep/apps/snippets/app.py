@@ -26,9 +26,9 @@ non-derived auxiliary verbs (approval, manual refresh, preview/download) are
 carried as ``extra_routes``. ``GET /capabilities`` is wired through the framework
 ``capabilities_provider`` helper.
 
-``owner=TaskOwner.ANY``: a script app's derived routes never consume the owner
-(it only seeds the unused per-owner task dependency), and snippets has no
-dedicated owner enum member — ``ANY`` is the honest "no owner restriction" value.
+``owner=ANY_OWNER``: a script app's derived routes never consume the owner
+(it only seeds the unused per-owner task dependency), and snippets declares no
+owner of its own — ``ANY`` is the honest "no owner restriction" value.
 """
 
 from app.sep.apps.framework.apps import TaskExecutionApp
@@ -41,7 +41,7 @@ from app.sep.apps.snippets.models import SnippetsCapabilitiesResponse
 from app.sep.apps.snippets.routes import router as jinja_router
 from app.sep.apps.snippets.script_source import snippet_source
 from app.sep.snippets.config import snippets_settings
-from app.tasks.models import TaskOwner
+from app.tasks.models import ANY_OWNER
 
 
 def _snippets_capabilities_provider() -> SnippetsCapabilitiesResponse:
@@ -64,7 +64,7 @@ app = TaskExecutionApp(
     css_class="snippets",
     nav_order=2,
     description="Browse, approve, and execute operational snippets.",
-    owner=TaskOwner.ANY,
+    owner=ANY_OWNER,
     script_source=snippet_source,
     capabilities_provider=_snippets_capabilities_provider,
     extra_routes=(approval_router, maintenance_router, artifact_router),

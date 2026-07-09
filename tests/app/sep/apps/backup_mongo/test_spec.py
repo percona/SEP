@@ -26,7 +26,7 @@ from app.sep.apps.backup_mongo.spec import (
     BackupMongoResolved,
     build_backup_mongo_spec,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskBackendEnum, TaskWrite
 
 PARALLEL_COLLECTIONS = 4
 
@@ -59,7 +59,7 @@ def test_build_spec_envelope_keeps_run_python_shape(backup_create: BackupCreate)
     task = build_backup_mongo_spec(backup_create, BackupMongoResolved())
 
     assert isinstance(task, TaskWrite)
-    assert task.owner == TaskOwner.BACKUP_MONGO
+    assert task.owner == "BACKUP_MONGO"
     assert task.backend == TaskBackendEnum.PROXY
     assert task.name == backup_create.task_name
     assert task.data["task"] == "run-python"

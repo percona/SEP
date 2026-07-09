@@ -30,7 +30,7 @@ from app.sep.apps.framework.form_backfill import (
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner
+from app.tasks.models import Task, TaskBackendEnum
 
 EXPECTED_SERVICE_ID = 7
 
@@ -91,7 +91,7 @@ def _legacy_alters_task(
         name=name,
         data=data,
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.ALTERS,
+        owner="ALTERS",
         alert_on_fail=alert_on_fail,
     )
 
@@ -189,7 +189,7 @@ class TestBackfillSingleTask:
         entry = _BackfillApp(
             app=alters_app,
             reconstructor=reconstruct_alters_form,
-            owner_override=TaskOwner.ALTERS,
+            owner_override="ALTERS",
             create_model_override=AltersCreate,
         )
 

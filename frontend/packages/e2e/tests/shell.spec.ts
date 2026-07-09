@@ -163,6 +163,32 @@ test.describe('shell sanity smoke', () => {
     await expect(page.getByLabel('Password')).toBeVisible();
   });
 
+  test('ambient Grafana session auto-logs-in without showing the login form', async ({ page }) => {
+    await mockAuthenticatedApis(page);
+    // No SEP refresh cookie, but a valid ambient Grafana session: the bootstrap
+    // falls back to POST /api/oauth/session and lands authenticated. Registered
+    // after the catch-all so these specific routes take precedence.
+    await page.route('**/api/oauth/refresh', (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'no valid session' }),
+      }),
+    );
+    await page.route('**/api/oauth/session', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(MOCK_TOKEN),
+      }),
+    );
+
+    await page.goto('/');
+
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(page).not.toHaveURL(/\/login/);
+  });
+
   test('authenticated user sees dashboard with navigation sidebar', async ({ page }) => {
     await mockAuthenticatedApis(page);
     await page.goto('/');

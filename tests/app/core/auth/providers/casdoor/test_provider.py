@@ -19,6 +19,7 @@ from uuid import UUID
 
 import pytest
 
+from app.core.auth.base import BaseAuthProvider
 from app.core.auth.providers.casdoor.models import CasdoorTokenPayload, CasdoorUser
 from app.core.auth.providers.casdoor.provider import CasdoorAuthProvider
 
@@ -44,6 +45,11 @@ class TestCasdoorAuthProviderBundle:
     def test_token_payload_model_wired(self):
         """Verify the provider exposes the Casdoor token-payload model."""
         assert CasdoorAuthProvider.token_payload_model is CasdoorTokenPayload
+
+    def test_does_not_support_ambient_session(self):
+        """Verify Casdoor and the base default do not advertise ambient SSO."""
+        assert CasdoorAuthProvider.supports_ambient_session is False
+        assert BaseAuthProvider.supports_ambient_session is False
 
     def test_provider_is_a_casdoor_sdk(self):
         """Verify the provider carries the flat Casdoor SDK config."""

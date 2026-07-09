@@ -199,6 +199,38 @@ class TestListAggregation:
         # A basic setting stays False.
         assert advanced["SYNC_REFRESH_TIME"] is False
 
+    def test_list_marks_ambient_sso_not_applicable_under_non_grafana(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """Mark AMBIENT_SESSION_SSO_ENABLED not applicable under a non-Grafana provider."""
+        mock_tasks.get.return_value = _tasks_list()
+        response = admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        sep_group = next(
+            g
+            for g in response.json()["groups"]
+            if g["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+        )
+        applicable = {s["key"]: s["is_applicable"] for s in sep_group["settings"]}
+        assert applicable["AMBIENT_SESSION_SSO_ENABLED"] is False
+        # Every other field stays applicable by default.
+        assert applicable["SYNC_REFRESH_TIME"] is True
+
+    def test_list_marks_ambient_sso_applicable_under_grafana(
+        self, admin_client: TestClient, mock_tasks: AsyncMock, grafana_mock
+    ) -> None:
+        """Mark AMBIENT_SESSION_SSO_ENABLED applicable under the Grafana provider."""
+        mock_tasks.get.return_value = _tasks_list()
+        response = admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        sep_group = next(
+            g
+            for g in response.json()["groups"]
+            if g["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+        )
+        applicable = {s["key"]: s["is_applicable"] for s in sep_group["settings"]}
+        assert applicable["AMBIENT_SESSION_SSO_ENABLED"] is True
+
     def test_empty_tasks_group_still_renders(
         self, admin_client: TestClient, mock_tasks: AsyncMock
     ) -> None:
