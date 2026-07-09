@@ -78,9 +78,7 @@ class TestTopologyCollect:
         }
         mock_task_api_dep.post.side_effect = [{"id": 101}, {"id": 102}]
 
-        response = test_client.post(
-            "/api/apps/topology/collect", json={"shards": 2}
-        )
+        response = test_client.post("/api/apps/topology/collect", json={"shards": 2})
 
         expected_shard_count = 2
         expected_host_count = 3
@@ -183,9 +181,7 @@ class TestTopologyResult:
             _topology_history(1, "success", user_id),
             _topology_history(2, "running", user_id),
         ]
-        response = test_client.get(
-            "/api/apps/topology/result", params={"ids": "1,2"}
-        )
+        response = test_client.get("/api/apps/topology/result", params={"ids": "1,2"})
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["status"] == "running"
@@ -202,9 +198,7 @@ class TestTopologyResult:
         )
         mock_task_api_dep.stream = _stdout_stream("")
 
-        response = test_client.get(
-            "/api/apps/topology/result", params={"ids": "9"}
-        )
+        response = test_client.get("/api/apps/topology/result", params={"ids": "9"})
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -231,9 +225,7 @@ class TestTopologyResult:
 
         mock_task_api_dep.stream = _stream
 
-        response = test_client.get(
-            "/api/apps/topology/result", params={"ids": "1,2"}
-        )
+        response = test_client.get("/api/apps/topology/result", params={"ids": "1,2"})
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -244,9 +236,7 @@ class TestTopologyResult:
     def test_rejects_too_many_ids(self, test_client, mock_task_api_dep):
         """Ensure the result endpoint caps task fan-out."""
         ids = ",".join(str(i) for i in range(1, MAX_TOPOLOGY_SHARDS + 2))
-        response = test_client.get(
-            "/api/apps/topology/result", params={"ids": ids}
-        )
+        response = test_client.get("/api/apps/topology/result", params={"ids": ids})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "task history ids are allowed" in response.text
         mock_task_api_dep.get.assert_not_called()
@@ -256,9 +246,7 @@ class TestTopologyResult:
         mock_task_api_dep.get.return_value = _topology_history(
             77, "success", "other-user-id"
         )
-        response = test_client.get(
-            "/api/apps/topology/result", params={"ids": "77"}
-        )
+        response = test_client.get("/api/apps/topology/result", params={"ids": "77"})
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "Task history is not accessible" in response.text
         mock_task_api_dep.stream.assert_not_called()
@@ -270,18 +258,14 @@ class TestTopologyResult:
         history = _topology_history(77, "success", str(regular_user.id))
         history["execution_request"]["meta"]["_job_id_prefix"] = "backup"
         mock_task_api_dep.get.return_value = history
-        response = test_client.get(
-            "/api/apps/topology/result", params={"ids": "77"}
-        )
+        response = test_client.get("/api/apps/topology/result", params={"ids": "77"})
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "Task history is not accessible" in response.text
         mock_task_api_dep.stream.assert_not_called()
 
     def test_invalid_ids_yields_400(self, test_client, mock_task_api_dep):
         """Ensure non-integer ids in the query string return HTTP 400."""
-        response = test_client.get(
-            "/api/apps/topology/result", params={"ids": "abc"}
-        )
+        response = test_client.get("/api/apps/topology/result", params={"ids": "abc"})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_missing_ids_yields_422(self, test_client, mock_task_api_dep):

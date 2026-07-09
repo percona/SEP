@@ -260,9 +260,7 @@ async def _fetch_task_history(
     return await tasks_api.get(f"/history/{task_history_id}")
 
 
-def _is_topology_history(
-    history: dict[str, Any], current_user_id: str
-) -> bool:
+def _is_topology_history(history: dict[str, Any], current_user_id: str) -> bool:
     execution_request = history.get("execution_request") or {}
     meta = execution_request.get("meta") or {}
     return (
