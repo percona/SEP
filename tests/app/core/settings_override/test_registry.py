@@ -346,7 +346,7 @@ def test_is_advanced_field_false_without_metadata() -> None:
 
 
 class _OverlayProbe(BaseModel):
-    """Probe carrying an ``INHERITED_MARKERS`` overlay over otherwise-bare fields.
+    """Define a probe carrying an ``INHERITED_MARKERS`` overlay over otherwise-bare fields.
 
     ``inherited_leaf`` is a plain (unmarked) field promoted purely by the
     overlay -- the SEP-1511 case. ``plain_leaf`` has no overlay entry and must
