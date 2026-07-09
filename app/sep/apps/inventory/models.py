@@ -22,8 +22,7 @@ from pydantic import BaseModel, model_validator
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
-
-INVENTORY_SYNC_TASK_NAME = "inventory-sync"
+from app.tasks.models import INVENTORY_SYNC_TASK_NAME
 
 
 class PluginTaskResponse(BaseModel):
