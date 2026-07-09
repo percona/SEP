@@ -458,7 +458,7 @@ def _exec_args(snippet: Snippet, wire: dict):
     )
 
 
-class TestEvaluateVisibilityGates:
+class TestEvaluateSnippetGates:
     """Direct coverage of the server-side gate evaluator.
 
     ``evaluate_snippet_gates`` is the security backstop: it rejects a value
