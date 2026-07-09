@@ -450,7 +450,7 @@ class _OverlayLeafOwner(BaseModel):
 
 
 class _OverlayParent(BaseModel):
-    """Top-level model nesting an overlay-bearing submodel; carries no overlay itself."""
+    """Define a top-level model nesting an overlay-bearing submodel; carries no overlay itself."""
 
     CHILD: _OverlayLeafOwner = nested_overridable_field(_OverlayLeafOwner())
 
