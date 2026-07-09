@@ -44,7 +44,6 @@ from app.sep.apps.framework.spec import (
     assemble_envelope,
     build_command_args,
     build_run_python_task,
-    parse_server_list_config,
     RESERVED_FORM_KEY,
     resolve_refs,
     ResolvedEntities,
@@ -977,101 +976,3 @@ class TestBuildRunPythonTask:
         """Reject an ``extra_data`` key that collides with a reserved envelope key."""
         with pytest.raises(ValueError, match="reserved"):
             self._write(extra_data={reserved_key: "x"})
-
-
-class TestParseServerListConfig:
-    """Cover the shared SERVER_LIST edit-form backfill helper."""
-
-    @staticmethod
-    def _task(*, name: str = "edit-task", target: str = "host.example.com") -> dict:
-        """Build the minimal task dict the helper reads identity fields from."""
-        return {"name": name, "data": {"meta": {"target": target}}}
-
-    def test_builds_common_base_and_merges_extra_fields(self) -> None:
-        """Build the shared base dict and layer the caller's app-specific keys."""
-        server_config = {"HOST": "10.0.0.5", "BACKUP_TYPE": "pgbackrest"}
-
-        result = parse_server_list_config(
-            self._task(),
-            server_config,
-            {},
-            {"port": 5432, "alias": "db1"},
-        )
-
-        assert result == {
-            "name": "edit-task",
-            "hostname": "host.example.com",
-            "backup_type": "pgbackrest",
-            "service_id": None,
-            "host": "10.0.0.5",
-            "port": 5432,
-            "alias": "db1",
-        }
-
-    def test_extracts_upload_provider_targets(self) -> None:
-        """Build the S3/GSUTIL/RSYNC targets from ALL_SERVERS for the providers."""
-        server_config = {
-            "HOST": "10.0.0.5",
-            "BACKUP_TYPE": "xtrabackup",
-            "UPLOAD": ["s3", "gsutil", "rsync"],
-        }
-        all_servers_config = {
-            "S3_BUCKET": "my-bucket",
-            "S3_STORAGE_CLASS": "STANDARD_IA",
-            "SKIP_S3_SAFETY_CHECK": True,
-            "GS_BUCKET": "my-gs-bucket",
-            "RSYNC_PATH": "/mnt/backups",
-        }
-
-        result = parse_server_list_config(
-            self._task(), server_config, all_servers_config, {}
-        )
-
-        assert result["s3_bucket"] == "my-bucket"
-        assert result["s3_storage_class"] == "STANDARD_IA"
-        assert result["skip_s3_safety_check"] is True
-        assert result["gs_bucket"] == "my-gs-bucket"
-        assert result["rsync_path"] == "/mnt/backups"
-
-    def test_upload_targets_default_when_all_servers_empty(self) -> None:
-        """Cover the None/False defaults for providers with an empty ALL_SERVERS."""
-        server_config = {
-            "HOST": "10.0.0.5",
-            "BACKUP_TYPE": "xtrabackup",
-            "UPLOAD": ["s3"],
-        }
-
-        result = parse_server_list_config(self._task(), server_config, {}, {})
-
-        assert result["s3_bucket"] is None
-        assert result["s3_storage_class"] is None
-        assert result["skip_s3_safety_check"] is False
-
-    def test_lowercases_remaining_all_servers_keys(self) -> None:
-        """Cover the catch-all lowering of leftover ALL_SERVERS keys not yet present."""
-        retention_days = 7
-        server_config = {"HOST": "10.0.0.5", "BACKUP_TYPE": "pgbackrest"}
-        all_servers_config = {"LOGGING_DIR": "/var/log", "RETENTION": retention_days}
-
-        result = parse_server_list_config(
-            self._task(), server_config, all_servers_config, {}
-        )
-
-        assert result["logging_dir"] == "/var/log"
-        assert result["retention"] == retention_days
-
-    def test_explicit_keys_win_over_lowered_all_servers_fallback(self) -> None:
-        """Assert explicit keys win over an ALL_SERVERS key lowering onto them."""
-        explicit_port = 5432
-        server_config = {"HOST": "10.0.0.5", "BACKUP_TYPE": "pgbackrest"}
-        all_servers_config = {"HOST": "should-not-win", "PORT": 9999}
-
-        result = parse_server_list_config(
-            self._task(),
-            server_config,
-            all_servers_config,
-            {"port": explicit_port},
-        )
-
-        assert result["host"] == "10.0.0.5"
-        assert result["port"] == explicit_port

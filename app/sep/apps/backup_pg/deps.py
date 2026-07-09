@@ -25,6 +25,7 @@ from fastapi import Depends, Form, Request
 from app.core.exceptions import HTTPConflictException
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.backup_edit_form import parse_server_list_config
 from app.sep.apps.backup_pg.models import (
     BackupPgForm,
     BackupTaskDetailResponse,
@@ -36,7 +37,6 @@ from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import (
     assemble_envelope,
-    parse_server_list_config,
     resolve_refs,
 )
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
@@ -301,7 +301,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     Extracts configuration from an existing backup task to populate the edit form.
 
     Delegates the shared ``SERVER_LIST`` parsing to
-    :func:`~app.sep.apps.framework.spec.parse_server_list_config`, layering on the
+    :func:`~app.sep.apps.backup_edit_form.parse_server_list_config`, layering on the
     postgres-specific ``port`` fallback (YAML port, then the connectivity-meta
     port, then the default).
 
