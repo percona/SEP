@@ -187,8 +187,7 @@ class TestNomadExecutorTlsClassification:
     """Assert the inherited TLS leaves classify as advanced + HOT via the overlay.
 
     These fields are inherited (frozen) from ``BaseRemoteAPI`` and marked only
-    through ``NomadExecutor.INHERITED_MARKERS`` -- not by redeclaration. See
-    SEP-1511.
+    through ``NomadExecutor.INHERITED_MARKERS`` -- not by redeclaration.
     """
 
     @pytest.mark.parametrize(
