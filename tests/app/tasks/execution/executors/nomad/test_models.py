@@ -27,11 +27,16 @@ import pytest
 from aiohttp import ClientError, ClientTimeout
 from fastapi import status
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
+from pydantic import ValidationError
 
 from app.core.exceptions import HTTPBadRequestException
+from app.core.settings_override.registry import (
+    ReloadClassification,
+    resolve_nested_field_metadata,
+)
 from app.core.utils import slugify
 from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.config import tasks_settings
+from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryLogStateManager
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
@@ -176,6 +181,41 @@ def _build_executor(**kwargs) -> NomadExecutor:
     }
     defaults.update(kwargs)
     return NomadExecutor(**defaults)
+
+
+class TestNomadExecutorTlsClassification:
+    """Assert the inherited TLS leaves classify as advanced + HOT via the overlay.
+
+    These fields are inherited (frozen) from ``BaseRemoteAPI`` and marked only
+    through ``NomadExecutor.INHERITED_MARKERS`` -- not by redeclaration. See
+    SEP-1511.
+    """
+
+    @pytest.mark.parametrize(
+        "leaf", ["VERIFY_SSL", "SSL_CAFILE", "SSL_KEYFILE", "SSL_CERTFILE"]
+    )
+    def test_tls_leaves_are_advanced_and_hot(self, leaf: str) -> None:
+        """Each TLS leaf classifies ``advanced`` + HOT through the settings API."""
+        meta = resolve_nested_field_metadata(TasksSettings, f"NOMAD__{leaf}")
+        assert meta is not None
+        assert meta.is_advanced is True
+        assert meta.reload is ReloadClassification.HOT
+
+    def test_endpoint_stays_unmarked(self) -> None:
+        """The inherited ``endpoint`` has no overlay entry, so it stays non-advanced."""
+        meta = resolve_nested_field_metadata(TasksSettings, "NOMAD__ENDPOINT")
+        assert meta is not None
+        assert meta.is_advanced is False
+
+    def test_tls_leaves_remain_frozen(self) -> None:
+        """Dropping the redeclarations keeps ``frozen=True`` inherited from the base."""
+        executor = _build_executor()
+        with pytest.raises(ValidationError):
+            executor.verify_ssl = True
+
+    def test_hash_is_value_stable(self) -> None:
+        """Two executors with identical config hash equal (identity hash unchanged)."""
+        assert hash(_build_executor()) == hash(_build_executor())
 
 
 class TestNomadAllocStatusEnum:

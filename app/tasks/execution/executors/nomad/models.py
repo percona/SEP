@@ -29,7 +29,7 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from aiohttp import (
     ClientError,
@@ -44,7 +44,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.celery.models import IntervalSchedule
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
-from app.core.settings_override.registry import hot_field, ReloadClassification
+from app.core.settings_override.registry import (
+    hot_field,
+    InheritedMarkers,
+    ReloadClassification,
+)
 from app.core.utils import (
     async_run,
     b64decode_str,
@@ -53,7 +57,6 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
-from app.core.utils.fields import RelativeFilePathField
 from app.core.utils.pydantic import field_with_metadata
 from app.tasks import config as tasks_config
 from app.tasks.anonymizer import anonymize_text
@@ -294,20 +297,19 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :type check_cert_expiry_interval: IntervalSchedule | None
     """
 
-    # TLS leaves are inherited from ``BaseRemoteAPI`` (frozen); redeclared here
-    # solely to attach the display-only ``advanced`` marker per leaf. ``endpoint``
-    # is intentionally left inherited and unmarked. ``frozen=True`` is preserved so
-    # the executor's identity hash is unchanged.
-    verify_ssl: bool = hot_field(default=True, advanced=True, frozen=True)
-    ssl_cafile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
-    ssl_keyfile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
-    ssl_certfile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
+    # TLS leaves are inherited (frozen) from ``BaseRemoteAPI``. Rather than
+    # redeclare each one solely to attach the display-only ``advanced`` + HOT
+    # markers -- which would replace the inherited ``FieldInfo`` and force a
+    # repeated ``frozen=True`` to keep the executor's identity hash stable --
+    # they are marked in-place via this opt-in overlay. ``endpoint`` is
+    # intentionally omitted so it stays inherited and unmarked. The registry
+    # classifiers union this overlay with each field's own metadata.
+    INHERITED_MARKERS: ClassVar[InheritedMarkers] = {
+        "verify_ssl": {"reload": ReloadClassification.HOT, "advanced": True},
+        "ssl_cafile": {"reload": ReloadClassification.HOT, "advanced": True},
+        "ssl_keyfile": {"reload": ReloadClassification.HOT, "advanced": True},
+        "ssl_certfile": {"reload": ReloadClassification.HOT, "advanced": True},
+    }
     secure: bool = hot_field(default=False, advanced=True)
     timeout: int = hot_field(10, advanced=True)
     minify_payload: bool = hot_field(default=True, advanced=True)

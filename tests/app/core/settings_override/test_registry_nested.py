@@ -17,6 +17,7 @@
 
 import functools
 from datetime import timedelta
+from typing import ClassVar
 
 import pytest
 from pydantic import BaseModel, SecretStr, ValidationError
@@ -29,6 +30,7 @@ from app.core.settings_override.registry import (
     _clear_cached_properties,
     _resolve_field_in_model,
     canonical_override_key,
+    chain_has_advanced,
     chain_has_explicit_not_overridable,
     coerce_nested_field_value,
     is_hot_reloadable,
@@ -431,3 +433,40 @@ def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None
     )
     assert response.value is None
     assert response.is_secret is True
+
+
+class _OverlayLeafOwner(BaseModel):
+    """Submodel whose overlay promotes one bare leaf; a sibling stays unmarked.
+
+    Mirrors the SEP-1511 ``NomadExecutor`` case: the overlay lives on the class
+    that *owns* the resolved leaf, not on the top-level settings class.
+    """
+
+    INHERITED_MARKERS: ClassVar[dict[str, dict[str, object]]] = {
+        "MARKED": {"reload": ReloadClassification.HOT, "advanced": True},
+    }
+    MARKED: int = 1
+    PLAIN: int = 2
+
+
+class _OverlayParent(BaseModel):
+    """Top-level model nesting an overlay-bearing submodel; carries no overlay itself."""
+
+    CHILD: _OverlayLeafOwner = nested_overridable_field(_OverlayLeafOwner())
+
+
+def test_nested_leaf_uses_owning_class_overlay() -> None:
+    """Assert a nested leaf is classified against its owning submodel's overlay."""
+    assert chain_has_advanced(_OverlayParent, "CHILD__MARKED") is True
+    meta = resolve_nested_field_metadata(_OverlayParent, "CHILD__MARKED")
+    assert meta is not None
+    assert meta.is_advanced is True
+    assert meta.reload is ReloadClassification.HOT
+
+
+def test_nested_sibling_without_overlay_entry_stays_unmarked() -> None:
+    """Assert a sibling leaf with no overlay entry is not promoted (opt-in per field)."""
+    assert chain_has_advanced(_OverlayParent, "CHILD__PLAIN") is False
+    meta = resolve_nested_field_metadata(_OverlayParent, "CHILD__PLAIN")
+    assert meta is not None
+    assert meta.is_advanced is False
