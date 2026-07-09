@@ -424,8 +424,7 @@ def test_remote_wiring_allows_no_dep_when_no_remote_classes() -> None:
 
 
 class _OverlayFixtureSettings(BaseYamlSettings):
-    """Settings class promoting a bare field via an ``INHERITED_MARKERS`` overlay."""
-
+    """Define a settings class promoting a bare field via an ``INHERITED_MARKERS`` overlay."""
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["OVERLAYFIX"]
     INHERITED_MARKERS: ClassVar[dict[str, dict[str, object]]] = {
         "PROMOTED": {"reload": ReloadClassification.HOT, "advanced": True},
