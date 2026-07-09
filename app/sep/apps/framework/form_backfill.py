@@ -43,6 +43,7 @@ from app.inventory.db import get_async_session_maker as get_inventory_session_ma
 from app.sep.apps.alters.app import app as alters_app
 from app.sep.apps.alters.form_backfill import reconstruct_alters_form
 from app.sep.apps.alters.models import AltersCreate
+from app.sep.apps.alters.models import OWNER as ALTERS_OWNER
 from app.sep.apps.archives.app import app as archives_app
 from app.sep.apps.archives.form_backfill import reconstruct_archives_form
 from app.sep.apps.backup_pg.app import app as backup_pg_app
@@ -66,7 +67,7 @@ from app.sep.apps.mysql_backups.restore.form_backfill import (
 )
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
-from app.tasks.models import Task, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ class AppBackfillStats:
     """
 
     app_name: str
-    owner: TaskOwner
+    owner: str
     stamped: int = 0
     skipped_existing: int = 0
     skipped_unreconstructable: int = 0
@@ -189,7 +190,7 @@ class _BackfillApp:
 
     app: BaseApp
     reconstructor: FormReconstructor
-    owner_override: TaskOwner | None = None
+    owner_override: str | None = None
     create_model_override: type[AppFormModel] | None = None
 
     @property
@@ -198,7 +199,7 @@ class _BackfillApp:
         return self.app.name
 
     @property
-    def owner(self) -> TaskOwner:
+    def owner(self) -> str:
         """Return the task owner the app lists tasks by."""
         return self.owner_override or self.app.owner
 
@@ -226,7 +227,7 @@ def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
         _BackfillApp(
             app=alters_app,
             reconstructor=reconstruct_alters_form,
-            owner_override=TaskOwner.ALTERS,
+            owner_override=ALTERS_OWNER,
             create_model_override=AltersCreate,
         ),
     ]
@@ -438,7 +439,7 @@ async def _backfill_app(
         "[%s] scanning %s active task(s) for owner %s",
         entry.app_name,
         len(tasks),
-        entry.owner.value,
+        entry.owner,
     )
 
     for task in tasks:
@@ -478,7 +479,7 @@ async def _backfill_app(
 
 async def run_backfill(
     *,
-    owners: Sequence[TaskOwner] | None = None,
+    owners: Sequence[str] | None = None,
     dry_run: bool = False,
     log: logging.Logger | None = None,
 ) -> BackfillSummary:
@@ -532,18 +533,20 @@ async def run_backfill(
     return summary
 
 
-def _owner_from_cli(value: str) -> TaskOwner:
-    """Parse a CLI ``--owner`` value into a :class:`TaskOwner`.
+_VALID_OWNERS: frozenset[str] = frozenset(entry.owner for entry in IN_SCOPE_APPS)
 
-    :param value: The owner enum name or value (for example ``CHECKSUMS``).
-    :return: The matching :class:`TaskOwner` member.
-    :raises argparse.ArgumentTypeError: When ``value`` does not name a known owner.
+
+def _owner_from_cli(value: str) -> str:
+    """Parse a CLI ``--owner`` value into an in-scope owner string.
+
+    :param value: The owner string (for example ``CHECKSUMS``), case-insensitive.
+    :return: The normalized (upper-cased) owner string.
+    :raises argparse.ArgumentTypeError: When ``value`` names no in-scope app owner.
     """
     normalized = value.strip().upper()
-    for member in TaskOwner:
-        if normalized in {member.name, member.value}:
-            return member
-    valid = ", ".join(sorted(member.name for member in TaskOwner))
+    if normalized in _VALID_OWNERS:
+        return normalized
+    valid = ", ".join(sorted(_VALID_OWNERS))
     raise argparse.ArgumentTypeError(
         f"unknown owner {value!r}; expected one of: {valid}"
     )

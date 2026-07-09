@@ -28,7 +28,7 @@ from app.sep.apps.mysql_backups.deps import get_backups_task
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.main import sep_app
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 
 BEARER_HEADERS = {"Authorization": "Bearer test-token"}
 
@@ -55,7 +55,7 @@ def build_backup_task(
         "id": 1,
         "name": name,
         "backend": TaskBackendEnum.PROXY,
-        "owner": TaskOwner.BACKUPS,
+        "owner": "BACKUPS",
         "is_template": False,
         "protected": False,
         "alert_on_fail": False,
@@ -164,7 +164,12 @@ class TestListEndpoint:
             return_value={"items": [task], "total": 1, "offset": 0, "limit": 50}
         )
         mock_task_api_dep.post = AsyncMock(
-            return_value={task["name"]: TaskHistoryStatusEnum.SUCCESS.value}
+            return_value={
+                task["name"]: {
+                    "status": TaskHistoryStatusEnum.SUCCESS.value,
+                    "finished_at": None,
+                }
+            }
         )
         response = test_client.get("/api/apps/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK

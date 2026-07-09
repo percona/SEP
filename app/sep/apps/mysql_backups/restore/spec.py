@@ -33,12 +33,13 @@ from app.sep.apps.framework.spec import build_run_python_task
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.models import (
     BaseRestoreConfigServer,
+    OWNER,
     RestoreConfig,
     RestoreConfigAll,
     RestoreConfigServer,
     RestoreCreate,
 )
-from app.tasks.models import TaskOwner, TaskWrite
+from app.tasks.models import TaskWrite
 
 _BACKUP_TYPE_TO_PAYLOAD = {
     BackupType.MYDUMPER: "mydumper_payload",
@@ -107,7 +108,7 @@ def build_restore_spec(form: RestoreCreate, resolved: RestoreResolved) -> TaskWr
 
     return build_run_python_task(
         name=form.task_name,
-        owner=TaskOwner.RESTORES,
+        owner=OWNER,
         target=form.hostname,
         config=yaml.dump(
             jsonable_encoder(restore_config, by_alias=True, exclude_none=True)

@@ -16,6 +16,7 @@
 """Define dependencies for the Backups plugin."""
 
 import logging
+from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
@@ -32,6 +33,7 @@ from app.sep.apps.mysql_backups.models import (
     BackupCreate,
     BackupResponse,
     BackupType,
+    OWNER,
 )
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.deps import (
@@ -41,7 +43,7 @@ from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +73,7 @@ async def build_backup_task_payload(
         build_backup_spec(form, resolved),
         resolved,
         name=form.task_name,
-        owner=TaskOwner.BACKUPS,
+        owner=OWNER,
         alert_on_fail=form.alert_on_fail,
     )
 
@@ -116,7 +118,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
 
-get_backups_task = make_task_dep(TaskOwner.BACKUPS)
+get_backups_task = make_task_dep(OWNER)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
@@ -151,6 +153,8 @@ def _extract_backup_type_from_task(task: Task) -> BackupType | None:  # noqa: PL
 def build_mysql_backups_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
+    *,
+    last_executed_at: datetime | None = None,
 ) -> BackupResponse:
     """Build a ``BackupResponse`` for the JSON API.
 
@@ -158,6 +162,8 @@ def build_mysql_backups_api_task_response(
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :return: A validated backup task API response object.
     :rtype: BackupResponse
     """
@@ -169,6 +175,7 @@ def build_mysql_backups_api_task_response(
         BackupResponse,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "backup_type": _extract_backup_type_from_task(task),
             "hostname": hostname,
@@ -232,7 +239,8 @@ async def get_backups_index_context(
         get_backups_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.BACKUPS,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
         alert_on_fail_default=True,
     )
 

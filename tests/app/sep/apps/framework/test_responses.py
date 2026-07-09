@@ -16,6 +16,7 @@
 """Tests for the shared JSON-API list-pipeline framework helpers."""
 
 from collections import defaultdict
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -31,7 +32,7 @@ from app.sep.apps.framework import (
     derive_create_response_model,
 )
 from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import Task, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
 
 
@@ -42,18 +43,24 @@ class _TaskResponse(BaseModel):
 
     name: str
     status: TaskHistoryStatusEnum | None = None
+    last_executed_at: datetime | None = None
 
 
 def _build_response(
-    task: Task, *, status: TaskHistoryStatusEnum | None = None
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
 ) -> _TaskResponse:
-    """Build a minimal response carrying only the name and resolved status."""
-    return _TaskResponse(name=task.name, status=status)
+    """Build a minimal response carrying name, resolved status and last run."""
+    return _TaskResponse(
+        name=task.name, status=status, last_executed_at=last_executed_at
+    )
 
 
 def _task(name: str) -> Task:
     """Build a validatable archive task with the given name."""
-    return TaskFactory.build(name=name, owner=TaskOwner.ARCHIVER)
+    return TaskFactory.build(name=name, owner="ARCHIVER")
 
 
 def _items(*names: str) -> list[dict]:
@@ -65,17 +72,31 @@ def _mock_tasks_api(
     *,
     items: list[dict],
     statuses: dict[str, str | None],
+    finishes: dict[str, str | None] | None = None,
     total: int | None = None,
 ) -> AsyncMock:
-    """Build a ``RemoteAPI`` mock returning ``items`` and batch ``statuses``."""
+    """Build a ``RemoteAPI`` mock returning ``items`` and batch projections.
+
+    ``statuses`` maps name -> status string (or ``None`` for a name with no
+    history, yielding a ``None`` wire value). ``finishes`` optionally maps
+    name -> ISO ``finished_at`` string carried alongside the status.
+    """
+    finishes = finishes or {}
     payload = {"items": items}
     if total is not None:
         payload["total"] = total
+
+    def _projection(name: str) -> dict | None:
+        status = statuses.get(name)
+        if status is None:
+            return None
+        return {"status": status, "finished_at": finishes.get(name)}
+
     tasks_api = AsyncMock(spec=RemoteAPI)
     tasks_api.get = AsyncMock(return_value=payload)
     tasks_api.post = AsyncMock(
         side_effect=lambda _path, json: {
-            name: statuses.get(name) for name in json["names"]
+            name: _projection(name) for name in json["names"]
         }
     )
     return tasks_api
@@ -94,7 +115,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
         )
 
@@ -113,12 +134,46 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             status_filter=TaskHistoryStatusEnum.SUCCESS,
         )
 
         assert [r.name for r in result] == ["task-a"]
+
+    @pytest.mark.asyncio
+    async def test_last_executed_at_threaded_to_items(self) -> None:
+        """Thread each task's ``finished_at`` onto the built response.
+
+        Covers the in-progress-rerun case: ``task-b`` is RUNNING (so it does not
+        match a SUCCESS filter) yet still carries its prior finish time, and a
+        never-run ``task-c`` renders empty.
+        """
+        tasks_api = _mock_tasks_api(
+            items=_items("task-a", "task-b", "task-c"),
+            statuses={"task-a": "success", "task-b": "running", "task-c": None},
+            finishes={
+                "task-a": "2026-07-07T09:00:00",
+                "task-b": "2026-07-06T12:00:00",
+            },
+        )
+
+        result = await build_task_list_responses(
+            tasks_api,
+            owner="ARCHIVER",
+            response_builder=_build_response,
+        )
+
+        by_name = {r.name: r for r in result}
+        assert by_name["task-a"].last_executed_at == datetime.fromisoformat(
+            "2026-07-07T09:00:00"
+        )
+        assert by_name["task-b"].status == TaskHistoryStatusEnum.RUNNING
+        assert by_name["task-b"].last_executed_at == datetime.fromisoformat(
+            "2026-07-06T12:00:00"
+        )
+        assert by_name["task-c"].status is None
+        assert by_name["task-c"].last_executed_at is None
 
     @pytest.mark.asyncio
     async def test_paginated_no_filter_uses_upstream_total(self) -> None:
@@ -133,7 +188,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
         )
@@ -155,7 +210,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
             status_filter=TaskHistoryStatusEnum.SUCCESS,
@@ -174,7 +229,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             task_filter=lambda task: task.name != "task-b",
         )
@@ -196,7 +251,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
             task_filter=lambda task: task.name != "task-b",
@@ -212,7 +267,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
         )
 
@@ -231,7 +286,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
         )
@@ -250,13 +305,13 @@ class TestBuildTaskListResponses:
 
         await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
         )
 
         tasks_api.get.assert_awaited_once_with(
-            "/", params={"owner": TaskOwner.ARCHIVER.value, "offset": 20, "limit": 5}
+            "/", params={"owner": "ARCHIVER", "offset": 20, "limit": 5}
         )
 
     @pytest.mark.asyncio
@@ -275,14 +330,17 @@ class TestBuildTaskListResponses:
             task: Task,
             *,
             status: TaskHistoryStatusEnum | None = None,
+            last_executed_at: datetime | None = None,
             context: dict | None = None,
         ) -> _TaskResponse:
             seen_contexts.append(context)
-            return _TaskResponse(name=task.name, status=status)
+            return _TaskResponse(
+                name=task.name, status=status, last_executed_at=last_executed_at
+            )
 
         await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_spy_builder,
             context_provider=provider,
         )
@@ -298,7 +356,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             context_provider=provider,
         )
@@ -316,7 +374,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             context_provider=None,
         )
@@ -363,6 +421,28 @@ class TestBuildDefaultTaskResponse:
         result = build_default_task_response(_TaskResponse, task)
 
         assert result.status is None
+
+    def test_injects_last_executed_at(self) -> None:
+        """Inject the supplied ``last_executed_at`` onto the built response."""
+        task = _task("task-a")
+        finished = datetime.fromisoformat("2026-07-07T09:00:00")
+
+        result = build_default_task_response(
+            _TaskResponse,
+            task,
+            TaskHistoryStatusEnum.SUCCESS,
+            last_executed_at=finished,
+        )
+
+        assert result.last_executed_at == finished
+
+    def test_last_executed_at_defaults_to_none_when_omitted(self) -> None:
+        """Default ``last_executed_at`` to ``None`` when not supplied."""
+        task = _task("task-a")
+
+        result = build_default_task_response(_TaskResponse, task)
+
+        assert result.last_executed_at is None
 
 
 class _CreateBase(BaseModel):
@@ -444,7 +524,7 @@ class TestBaseTaskResponse:
 
     BASE_FIELDS: dict = {
         "name": "test-task",
-        "owner": TaskOwner.CHECKSUMS,
+        "owner": "CHECKSUMS",
         "backend": "nomad",
         "data": {},
         "protected": False,
@@ -486,7 +566,7 @@ class TestBaseTaskResponse:
 
     def test_round_trips_task_dump_with_connectivity_warning_default_none(self) -> None:
         """Build from a task dump, defaulting ``connectivity_warning`` to ``None``."""
-        task = TaskFactory.build(name="task-a", owner=TaskOwner.CHECKSUMS)
+        task = TaskFactory.build(name="task-a", owner="CHECKSUMS")
 
         result = build_default_task_response(
             BaseTaskResponse, task, TaskHistoryStatusEnum.SUCCESS

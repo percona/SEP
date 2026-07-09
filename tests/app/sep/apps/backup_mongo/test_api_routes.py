@@ -24,9 +24,9 @@ from fastapi import HTTPException, status
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_mongo.models import BackupType
+from app.sep.apps.backup_mongo.models import BackupType, OWNER
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/backup_mongo"
@@ -52,7 +52,7 @@ def build_backup_task(name: str = "mongo-backup-task", **overrides: Any) -> dict
     parent = data_overrides.pop("parent", None)
     task = TaskFactory.build(
         name=name,
-        owner=TaskOwner.BACKUP_MONGO,
+        owner="BACKUP_MONGO",
         backend=TaskBackendEnum.PROXY,
         **overrides,
     )
@@ -167,7 +167,7 @@ class TestBackupMongoApiList:
             return_value={"items": [parent], "total": 1, "offset": 0, "limit": 50}
         )
         mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-backup": "success"},
+            return_value={"parent-backup": {"status": "success", "finished_at": None}},
         )
 
         response = test_client.get(f"{API_BASE}/")
@@ -187,7 +187,7 @@ class TestBackupMongoApiList:
         mock_task_api_dep.get.assert_awaited_once_with(
             "/",
             params={
-                "owner": TaskOwner.BACKUP_MONGO.value,
+                "owner": "BACKUP_MONGO",
                 "parent_is_null": "true",
                 "backup_type": BackupType.PBM_CONFIG.value,
                 "offset": 0,
@@ -212,7 +212,9 @@ class TestBackupMongoApiList:
                 "limit": 1,
             }
         )
-        mock_task_api_dep.post = AsyncMock(return_value={"parent-backup-b": "running"})
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"parent-backup-b": {"status": "running", "finished_at": None}}
+        )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
 
@@ -226,7 +228,7 @@ class TestBackupMongoApiList:
         mock_task_api_dep.get.assert_awaited_once_with(
             "/",
             params={
-                "owner": TaskOwner.BACKUP_MONGO.value,
+                "owner": "BACKUP_MONGO",
                 "parent_is_null": "true",
                 "backup_type": BackupType.PBM_CONFIG.value,
                 "offset": 1,
@@ -266,6 +268,45 @@ class TestBackupMongoApiList:
         mock_task_api_dep.post.assert_awaited_once_with(
             "/history/latest",
             json={"names": ["parent-backup-a", "parent-backup-b"]},
+        )
+
+    def test_list_with_status_filter_uses_bounded_limit(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """When ``status`` is set, fetch parents with bounded limit (not 0)."""
+        parent_a = build_backup_task("parent-backup-a")
+        parent_b = build_backup_task("parent-backup-b")
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [parent_a, parent_b],
+                "total": TWO_PARENT_FIXTURE_TOTAL,
+                "offset": 0,
+                "limit": MAX_PAGINATION_LIMIT,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={
+                "parent-backup-a": {"status": "success", "finished_at": None},
+                "parent-backup-b": {"status": "running", "finished_at": None},
+            },
+        )
+
+        response = test_client.get(f"{API_BASE}/?status=success")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["name"] == "parent-backup-a"
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/",
+            params={
+                "owner": OWNER,
+                "parent_is_null": "true",
+                "backup_type": BackupType.PBM_CONFIG.value,
+                "offset": 0,
+                "limit": DEFAULT_PAGE_LIMIT,
+            },
         )
 
     @pytest.mark.parametrize(
@@ -359,7 +400,7 @@ class TestBackupMongoApiCreate:
         assert "connectivity_warning" in create_body
         assert mock_task_api_dep.post.await_count == EXPECTED_CASCADE_POSTS
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
-        assert first_post["owner"] == TaskOwner.BACKUP_MONGO.value
+        assert first_post["owner"] == "BACKUP_MONGO"
         assert first_post["data"]["backup_type"] == BackupType.PBM_CONFIG.value
         logical_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
         assert logical_post["data"]["payload"].endswith("pbm_logical_payload")

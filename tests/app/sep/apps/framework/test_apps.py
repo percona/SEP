@@ -245,7 +245,7 @@ def _synth_app(**overrides: object) -> TaskExecutionApp:
 def _task_dict(name: str, *, meta: dict | None = None) -> dict:
     """Return a created-task payload owned by the synthetic owner."""
     return TaskFactory.build(
-        name=name, owner=_OWNER.value, data={"meta": meta or {}}
+        name=name, owner=_OWNER, data={"meta": meta or {}}
     ).model_dump(mode="json")
 
 
@@ -292,7 +292,15 @@ def _make_tasks_api(
     async def _post(path: str, json: dict | None = None) -> dict:
         if path == "/history/latest":
             names = (json or {}).get("names", [])
-            return {name: (latest_statuses or {}).get(name) for name in names}
+            statuses = latest_statuses or {}
+            return {
+                name: (
+                    {"status": status, "finished_at": None}
+                    if (status := statuses.get(name)) is not None
+                    else None
+                )
+                for name in names
+            }
         return created_task if created_task is not None else {}
 
     api.get.side_effect = _get
@@ -1024,7 +1032,7 @@ def _raw_task_dict() -> dict:
     """Return a created-task payload with distinct creator and updater user-ids."""
     return TaskFactory.build(
         name="t-1",
-        owner=_OWNER.value,
+        owner=_OWNER,
         created_by="uid-a",
         last_updated_by="uid-b",
         data={"meta": {}},

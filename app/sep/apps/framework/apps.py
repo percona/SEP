@@ -29,6 +29,7 @@ same ``api_router`` seam with no registry change.
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Self
 
@@ -77,7 +78,7 @@ from app.sep.apps.framework.spec import (
     validate_arg_formats,
 )
 from app.sep.deps import InventoryAPI
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 __all__ = [
     "AppCapabilities",
@@ -359,7 +360,7 @@ class TaskExecutionApp(BaseApp):
         an empty tuple.
     """
 
-    owner: TaskOwner
+    owner: str
     create_model: type[AppFormModel] | None = None
     response_model: type[BaseModel] = BaseTaskResponse
     views: SkipValidation[Views] = Views()
@@ -1023,6 +1024,7 @@ class TaskExecutionApp(BaseApp):
             task: Task,
             *,
             status: TaskHistoryStatusEnum | None = None,
+            last_executed_at: datetime | None = None,
             context: dict[str, str] | None = None,
         ) -> response_model:
             mapping = context or {}
@@ -1030,6 +1032,7 @@ class TaskExecutionApp(BaseApp):
                 response_model,
                 task,
                 status,
+                last_executed_at=last_executed_at,
                 extras={
                     "created_by": mapping.get(task.created_by, task.created_by),
                     "last_updated_by": mapping.get(

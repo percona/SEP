@@ -26,7 +26,7 @@ resolved upstream and passed in; this builder performs no I/O.
 import shlex
 
 from app.inventory.constants import DEFAULT_MYSQL_PORT
-from app.sep.apps.alters.models import AltersCreate
+from app.sep.apps.alters.models import AltersCreate, OWNER
 from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
@@ -34,7 +34,7 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskBackendEnum, TaskWrite
 
 
 def _build_dsn_with_service(
@@ -139,7 +139,7 @@ def build_alters_spec(
 
     args.append("--execute")
     return TaskWrite(
-        owner=TaskOwner.ALTERS,
+        owner=OWNER,
         backend=TaskBackendEnum.PROXY,
         data={
             "task": "run-command",

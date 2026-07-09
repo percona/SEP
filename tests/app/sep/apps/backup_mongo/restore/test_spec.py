@@ -21,7 +21,6 @@ from app.sep.apps.backup_mongo.restore.spec import (
     build_restore_payloads,
     RESTORE_CONFIG_PAYLOAD_MARKER,
 )
-from app.tasks.models import TaskOwner
 
 PARENT_NAME = "mongo-restore"
 
@@ -75,7 +74,7 @@ def test_config_leg_uses_marker_payload_and_restore_owner():
     payloads = build_restore_payloads(_form(), service_name=None)
 
     assert payloads.config_task.data["payload"].endswith(RESTORE_CONFIG_PAYLOAD_MARKER)
-    assert payloads.config_task.owner == TaskOwner.RESTORE_MONGO
+    assert payloads.config_task.owner == "RESTORE_MONGO"
 
 
 def test_service_name_is_threaded_to_every_leg():

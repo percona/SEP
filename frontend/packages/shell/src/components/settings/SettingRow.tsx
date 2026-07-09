@@ -65,6 +65,7 @@ export default function SettingRow({ setting }: SettingRowProps) {
   }, [setting.key, setting.setting_class, JSON.stringify(setting.value)]);
 
   const editable = isEditable(setting);
+  const applicable = setting.is_applicable !== false;
   const fieldError = settingErrorMessage(patch.error, setting.key);
   const canSave = isSaveable(setting, edit) && !patch.isPending;
   const showReset = setting.has_override;
@@ -118,7 +119,7 @@ export default function SettingRow({ setting }: SettingRowProps) {
       container
       spacing={2}
       alignItems="flex-start"
-      sx={{ py: 1.5, borderBottom: 1, borderColor: 'divider' }}
+      sx={{ py: 1.5, borderBottom: 1, borderColor: 'divider', opacity: applicable ? 1 : 0.6 }}
       data-testid={`setting-row-${setting.key}`}
     >
       {/* Key + reload indicator + help */}
@@ -159,7 +160,14 @@ export default function SettingRow({ setting }: SettingRowProps) {
 
       {/* Edit control + actions */}
       <Grid size={{ xs: 12, md: 5 }} sx={{ minWidth: 0 }}>
-        {editable ? (
+        {!applicable ? (
+          // Inert under the current runtime state (e.g. a non-Grafana auth
+          // provider). Show it disabled with the reason rather than hiding it,
+          // so the admin sees the toggle exists and learns why it is inert.
+          <Typography variant="caption" color="text.disabled">
+            Not applicable with the current auth provider
+          </Typography>
+        ) : editable ? (
           <Stack spacing={1}>
             <SettingEditField
               setting={setting}

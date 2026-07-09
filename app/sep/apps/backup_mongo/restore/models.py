@@ -42,7 +42,6 @@ from app.sep.apps.framework.form_dsl import (
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
-    TaskOwner,
     TaskWrite,
 )
 
@@ -69,6 +68,9 @@ def parse_mongod_location_map(location_map_str: str) -> dict[str, Any] | None:
         type(mongod_location_map),
     )
     return None
+
+
+OWNER = "RESTORE_MONGO"
 
 
 class RestoreConfigRestore(BaseCaseInsensitiveModel):
@@ -688,25 +690,22 @@ class RestoreTaskBase(BaseModel):
     """Define the common fields shared across restore task API responses.
 
     :param name: The name of the restore task.
-    :type name: str
     :param owner: The entity or user that owns the task.
-    :type owner: TaskOwner
     :param hostname: The target hostname for the task execution.
-    :type hostname: str | None
     :param status: The current execution status of the task.
-    :type status: TaskHistoryStatusEnum | None
     :param backup_type: The PBM backup type for this restore.
-    :type backup_type: str
     :param backup_source: The backup name or timestamp to restore from.
-    :type backup_source: str
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     """
 
     name: str
-    owner: TaskOwner
+    owner: str
     hostname: str | None = None
     status: TaskHistoryStatusEnum | None = None
     backup_type: str
     backup_source: str
+    last_executed_at: datetime | None = None
 
 
 class RestoreTaskResponse(RestoreTaskBase):

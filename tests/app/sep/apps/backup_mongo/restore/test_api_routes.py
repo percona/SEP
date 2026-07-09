@@ -27,7 +27,7 @@ from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.backup_mongo.restore.spec import RESTORE_CONFIG_PAYLOAD_MARKER
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/backup_mongo/restore"
@@ -71,7 +71,7 @@ def build_restore_task(name: str = "mongo-restore-task", **overrides: Any) -> di
     )
     task = TaskFactory.build(
         name=name,
-        owner=TaskOwner.RESTORE_MONGO,
+        owner="RESTORE_MONGO",
         backend=TaskBackendEnum.PROXY,
         **overrides,
     )
@@ -169,7 +169,14 @@ class TestRestoreMongoApiList:
             raise AssertionError(f"Unexpected list params: {params!r}")
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
-        mock_task_api_dep.post = AsyncMock(return_value={"parent-restore": "success"})
+        mock_task_api_dep.post = AsyncMock(
+            return_value={
+                "parent-restore": {
+                    "status": "success",
+                    "finished_at": "2026-05-01T12:00:00",
+                }
+            }
+        )
 
         response = test_client.get(f"{API_BASE}/")
 
@@ -181,8 +188,10 @@ class TestRestoreMongoApiList:
         assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
         assert body["items"][0]["name"] == "parent-restore"
         assert body["items"][0]["status"] == "success"
+        assert body["items"][0]["last_executed_at"] == "2026-05-01T12:00:00"
         assert body["items"][1]["name"] == "legacy-self-parent-restore"
         assert body["items"][1]["status"] is None
+        assert body["items"][1]["last_executed_at"] is None
         assert mock_task_api_dep.get.await_count == EXPECTED_RESTORE_PARENT_LIST_GETS
         mock_task_api_dep.post.assert_awaited_once_with(
             "/history/latest",
@@ -214,7 +223,9 @@ class TestRestoreMongoApiList:
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
         mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-restore-b": "running"},
+            return_value={
+                "parent-restore-b": {"status": "running", "finished_at": None}
+            },
         )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
@@ -331,7 +342,7 @@ class TestRestoreMongoApiCreate:
         assert response.status_code == status.HTTP_201_CREATED
         assert mock_task_api_dep.post.await_count == EXPECTED_LOGICAL_RESTORE_POSTS
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
-        assert first_post["owner"] == TaskOwner.RESTORE_MONGO.value
+        assert first_post["owner"] == "RESTORE_MONGO"
         assert RESTORE_CONFIG_PAYLOAD_MARKER in first_post["data"]["payload"]
 
     def test_create_physical_posts_four_tasks(

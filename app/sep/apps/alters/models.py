@@ -77,6 +77,9 @@ def reject_multiline_alter(value: str) -> str:
     return value
 
 
+OWNER = "ALTERS"
+
+
 class AltersCreate(AppFormModel):
     """Represent the single model-first declaration of the Alters create form.
 

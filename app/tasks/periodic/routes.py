@@ -30,9 +30,6 @@ from app.tasks.deps import (
     SessionDep,
     validate_chain_task_names,
 )
-from app.tasks.models import (
-    TaskOwner,
-)
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.deps import PeriodicTaskDep
 from app.tasks.periodic.models import (
@@ -55,7 +52,7 @@ logger = logging.getLogger(__name__)
 async def list_periodic_tasks(
     session: CeleryBeatSessionDep,
     tasks_session: SessionDep,
-    owner: TaskOwner | None = None,
+    owner: str | None = None,
     enabled: bool | None = None,
 ) -> list[PeriodicTask]:
     """List all periodic tasks."""

@@ -19,6 +19,7 @@ import copy
 import json
 import logging
 import shlex
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import Depends
@@ -36,6 +37,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.models import (
     AltersCreate,
     AltersTaskResponse,
+    OWNER,
 )
 from app.sep.apps.alters.schema import alters_schema
 from app.sep.apps.alters.spec import build_alters_spec
@@ -67,7 +69,6 @@ from app.sep.deps import (
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
-    TaskOwner,
     TaskWrite,
 )
 
@@ -211,7 +212,7 @@ async def build_alters_task(
     return build_alters_spec(service, schema_name, table_name, body)
 
 
-get_alters_task = make_task_dep(TaskOwner.ALTERS)
+get_alters_task = make_task_dep(OWNER)
 
 AltersTask = Annotated[Task, Depends(get_alters_task)]
 
@@ -818,6 +819,7 @@ def build_alters_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
     *,
+    last_executed_at: datetime | None = None,
     response_model: type[AltersTaskResponse] = AltersTaskResponse,
     connectivity_warning: ConnectivityWarning | None = None,
     username_mapping: dict[str, str] | None = None,
@@ -833,6 +835,8 @@ def build_alters_api_task_response(
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :param response_model: The per-verb response model to build; defaults to the
         list/detail base model.
     :param connectivity_warning: A warning to surface when a connectivity
@@ -859,6 +863,7 @@ def build_alters_api_task_response(
         response_model,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "created_by": mapping.get(task.created_by, task.created_by),
             "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
@@ -873,22 +878,29 @@ def build_alters_api_list_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
     context: dict[str, str] | None = None,
 ) -> AltersTaskResponse:
     """Build an alters list-row response for the derived list route.
 
-    Adapts the framework's ``(task, *, status, context)`` list-builder contract to
-    :func:`build_alters_api_task_response`, threading the once-awaited username map
-    bound as ``context`` into its ``username_mapping`` argument so the derived list
-    rows carry the same command line, service type, and resolved usernames as the
-    detail surface.
+    Adapts the framework's ``(task, *, status, last_executed_at, context)``
+    list-builder contract to :func:`build_alters_api_task_response`, threading the
+    once-awaited username map bound as ``context`` into its ``username_mapping``
+    argument so the derived list rows carry the same command line, service type, and
+    resolved usernames as the detail surface.
 
     :param task: The parent alters task retrieved from the Tasks API.
     :param status: The latest known execution status for the task.
+    :param last_executed_at: The task's most recent finish time, if any.
     :param context: The username map bound by ``response_context_provider``.
     :return: A validated alters task API response for the list surface.
     """
-    return build_alters_api_task_response(task, status, username_mapping=context)
+    return build_alters_api_task_response(
+        task,
+        status,
+        last_executed_at=last_executed_at,
+        username_mapping=context,
+    )
 
 
 async def get_alters_index_context(
@@ -920,7 +932,8 @@ async def get_alters_index_context(
         get_alters_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.ALTERS,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
         alert_on_fail_default=True,
     )
 

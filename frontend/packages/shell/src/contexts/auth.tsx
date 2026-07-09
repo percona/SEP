@@ -28,6 +28,7 @@ import {
 import {
   postLogin,
   postLogout,
+  postSession,
   fetchCurrentUser,
   refreshAccessToken,
   setOnRefreshed,
@@ -136,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOnUnauthorized(() => {
       clearAuth();
       if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
       }
     });
     return () => {
@@ -161,11 +162,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (!token) {
-          clearAuth();
-          return;
+          // No SEP session — try ambient Grafana SSO (PMM auto-login) once
+          // before giving up. The backend is authoritative: it returns 401
+          // when ambient SSO is disabled or the provider isn't Grafana, so
+          // this is a no-op there. Any failure resolves to a null fallback.
+          const ambient = await postSession().catch(() => null);
+          if (cancelled) {
+            return;
+          }
+          if (!ambient) {
+            clearAuth();
+            return;
+          }
+          applyTokens(ambient);
         }
-        // ``setOnRefreshed`` has already synced tokenRef + accessToken
-        // state, so the profile fetch will carry the new Bearer token.
+        // ``setOnRefreshed`` (refresh path) or ``applyTokens`` (ambient path)
+        // has synced tokenRef + accessToken state, so the profile fetch will
+        // carry the new Bearer token.
         const profile = await fetchCurrentUser();
         if (cancelled) {
           return;

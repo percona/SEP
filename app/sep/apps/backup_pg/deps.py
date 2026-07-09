@@ -16,6 +16,7 @@
 """Define dependencies for the Backups plugin."""
 
 import logging
+from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
@@ -29,6 +30,7 @@ from app.sep.apps.backup_pg.models import (
     BackupTaskDetailResponse,
     BackupTaskResponse,
     BackupType,
+    OWNER,
 )
 from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.framework import build_default_task_response, make_task_dep
@@ -46,7 +48,7 @@ from app.sep.deps import (
     protected_task_guard,
     TaskAPI,
 )
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +75,7 @@ async def build_backup_task_payload(
         build_backup_pg_spec(form, resolved),
         resolved,
         name=form.task_name,
-        owner=TaskOwner.BACKUP_PG,
+        owner=OWNER,
         alert_on_fail=form.alert_on_fail,
     )
 
@@ -81,7 +83,7 @@ async def build_backup_task_payload(
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
 
-get_backups_task = make_task_dep(TaskOwner.BACKUP_PG)
+get_backups_task = make_task_dep(OWNER)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
@@ -159,6 +161,7 @@ def build_backup_pg_api_task_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
     server_config: dict[str, Any] | None = None,
 ) -> BackupTaskResponse:
     """Build a backup_pg task response for the JSON API.
@@ -167,6 +170,8 @@ def build_backup_pg_api_task_response(
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :param server_config: Pre-parsed first ``SERVER_LIST`` entry. When ``None``
         (the default) the YAML config is parsed here; callers that already
         parsed it can pass it through to avoid a second ``yaml.safe_load``.
@@ -182,6 +187,7 @@ def build_backup_pg_api_task_response(
         BackupTaskResponse,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "hostname": meta.get("target"),
             "backup_type": backup_type,
@@ -194,22 +200,28 @@ def build_backup_pg_api_detail_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
 ) -> BackupTaskDetailResponse:
     """Build a backup_pg task detail response for the JSON API.
 
-    The latest status is supplied by the framework's detail/create pipeline
-    rather than fetched here, so this builder stays a sync
-    ``(task, *, status) -> BackupTaskDetailResponse`` consumed directly by the
-    derived detail, create, and update routes.
+    The latest status and finish time are supplied by the framework's
+    detail/create pipeline rather than fetched here, so this builder stays a
+    sync ``(task, *, status, last_executed_at) -> BackupTaskDetailResponse``
+    consumed directly by the derived detail, create, and update routes.
 
     :param task: The task to render.
     :param status: The latest known execution status for the task.
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :return: A validated backup_pg task detail API response.
     """
     meta = (task.data or {}).get("meta") or {}
     server_config = _parse_first_server_config(task)
     base = build_backup_pg_api_task_response(
-        task, status=status, server_config=server_config
+        task,
+        status=status,
+        last_executed_at=last_executed_at,
+        server_config=server_config,
     )
     return BackupTaskDetailResponse(
         **base.model_dump(),
@@ -274,7 +286,8 @@ async def get_backups_index_context(
         get_backups_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.BACKUP_PG,
+        OWNER,
+        service_type=ServiceTypeEnum.POSTGRESQL,
         alert_on_fail_default=True,
     )
 

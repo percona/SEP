@@ -32,7 +32,7 @@ from app.sep.connectivity import (
     get_latest_connectivity_result,
 )
 from app.sep.main import sep_app
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedServiceFactory,
@@ -78,7 +78,7 @@ def test_checksums_create_full_form_dependency_chain_without_payload_override(
     mock_task_api_dep.post.assert_awaited_once()
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     assert posted["name"] == "chk_full_chain"
-    assert posted["owner"] == TaskOwner.CHECKSUMS.value
+    assert posted["owner"] == "CHECKSUMS"
 
 
 def test_checksums_create_skips_connectivity_check_when_opted_out(
@@ -90,7 +90,7 @@ def test_checksums_create_skips_connectivity_check_when_opted_out(
     fake_task_write = GeneratedTaskFactory.build(
         name="fake_checksum",
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.CHECKSUMS,
+        owner="CHECKSUMS",
         data={
             "task": "run-command",
             "meta": {
@@ -193,7 +193,7 @@ def test_legacy_update_assembles_exact_args(
 def created_checksums_task():
     """Return a fake Checksums task with renderable detail-page data."""
     return TaskFactory.build(
-        owner=TaskOwner.CHECKSUMS,
+        owner="CHECKSUMS",
         data={
             "meta": {
                 "command": "pt-table-checksum",

@@ -23,6 +23,7 @@ execute-route factory.
 import functools
 import inspect
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated
 from unittest.mock import AsyncMock
 
@@ -99,7 +100,7 @@ from app.sep.deps import (
     IsApiAuthenticated,
     TaskAPI,
 )
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 from tests.app.factories import TaskFactory
 
 _TEST_SCHEMA = AppSchema(
@@ -1087,7 +1088,7 @@ class TestCapabilitiesEndpointRuntime:
 # ── derive_crud_routes() helper ─────────────────────────────────────────
 
 
-_SYNTHETIC_OWNER = TaskOwner.ARCHIVER
+_SYNTHETIC_OWNER = "ARCHIVER"
 _CRUD_PREFIX = "/test-derive-crud"
 _CRUD_BASE_URL = f"/api/apps{_CRUD_PREFIX}"
 
@@ -1118,6 +1119,7 @@ class _SyntheticTaskResponse(BaseModel):
     name: str
     display_label: str = Field(alias="displayLabel")
     status: TaskHistoryStatusEnum | None = None
+    last_executed_at: datetime | None = None
 
 
 class _SyntheticCreateResponse(BaseModel):
@@ -1134,11 +1136,17 @@ class _SyntheticCreate(BaseModel):
 
 
 def _build_synthetic_response(
-    task: Task, status: TaskHistoryStatusEnum | None = None
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+    *,
+    last_executed_at: datetime | None = None,
 ) -> _SyntheticTaskResponse:
     """Build the synthetic list/detail response for ``task``."""
     return _SyntheticTaskResponse(
-        name=task.name, display_label=task.name.upper(), status=status
+        name=task.name,
+        display_label=task.name.upper(),
+        status=status,
+        last_executed_at=last_executed_at,
     )
 
 
@@ -1173,11 +1181,9 @@ async def _synthetic_delete_handler(task_name: str, tasks_api: TaskAPI) -> None:
     await tasks_api.delete(f"/{task.name}")
 
 
-def _task_dict(name: str, owner: TaskOwner = _SYNTHETIC_OWNER) -> dict:
+def _task_dict(name: str, owner: str = _SYNTHETIC_OWNER) -> dict:
     """Return a JSON-serialisable ``Task`` payload for the mock Tasks API."""
-    return TaskFactory.build(name=name, owner=owner.value, data={}).model_dump(
-        mode="json"
-    )
+    return TaskFactory.build(name=name, owner=owner, data={}).model_dump(mode="json")
 
 
 async def _fake_tasks_get(
@@ -1216,7 +1222,14 @@ async def _fake_tasks_post(
         if batch_error is not None:
             raise batch_error
         names = (json or {}).get("names", [])
-        return {name: latest_statuses.get(name) for name in names}
+        return {
+            name: (
+                {"status": status, "finished_at": None}
+                if (status := latest_statuses.get(name)) is not None
+                else None
+            )
+            for name in names
+        }
     if create_error is not None:
         raise create_error
     return created_task if created_task is not None else {}
@@ -1607,7 +1620,7 @@ class TestDeriveCrudRoutesDetail:
     def test_detail_404_on_owner_mismatch(self, regular_user: CasdoorUser) -> None:
         """Assert detail 404s when the resolved task's owner mismatches."""
         tasks_api = _make_tasks_api(
-            detail_task=_task_dict("t1", owner=TaskOwner.BACKUPS),
+            detail_task=_task_dict("t1", owner="BACKUPS"),
         )
         client = _authed_crud_client(_crud_router(), tasks_api, regular_user)
 
@@ -1691,7 +1704,7 @@ _CONNECTIVITY_META = {
 def _task_dict_with_meta(name: str, meta: dict) -> dict:
     """Return a created-task payload whose ``data.meta`` carries ``meta``."""
     return TaskFactory.build(
-        name=name, owner=_SYNTHETIC_OWNER.value, data={"meta": meta}
+        name=name, owner=_SYNTHETIC_OWNER, data={"meta": meta}
     ).model_dump(mode="json")
 
 
@@ -1983,9 +1996,7 @@ class TestDeriveCrudRoutesUpdate:
 
     def test_update_404_on_owner_mismatch(self, regular_user: CasdoorUser) -> None:
         """Assert the update override 404s when the task owner mismatches."""
-        tasks_api = _make_tasks_api(
-            detail_task=_task_dict("t1", owner=TaskOwner.BACKUPS)
-        )
+        tasks_api = _make_tasks_api(detail_task=_task_dict("t1", owner="BACKUPS"))
         router = _crud_router(update_handler=_synthetic_update_handler)
         client = _authed_crud_client(router, tasks_api, regular_user)
 
@@ -2011,9 +2022,7 @@ class TestDeriveCrudRoutesDelete:
 
     def test_delete_404_on_owner_mismatch(self, regular_user: CasdoorUser) -> None:
         """Assert the delete override 404s when the task owner mismatches."""
-        tasks_api = _make_tasks_api(
-            detail_task=_task_dict("t1", owner=TaskOwner.BACKUPS)
-        )
+        tasks_api = _make_tasks_api(detail_task=_task_dict("t1", owner="BACKUPS"))
         router = _crud_router(delete_handler=_synthetic_delete_handler)
         client = _authed_crud_client(router, tasks_api, regular_user)
 
@@ -2131,7 +2140,10 @@ class _SyntheticDetailResponse(BaseModel):
 
 
 def _build_synthetic_detail_response(
-    task: Task, status: TaskHistoryStatusEnum | None = None
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+    *,
+    last_executed_at: datetime | None = None,
 ) -> _SyntheticDetailResponse:
     """Build the distinct synthetic detail response for ``task``."""
     return _SyntheticDetailResponse(name=task.name)
@@ -2154,6 +2166,7 @@ def _build_context_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
     context: dict[str, str] | None = None,
 ) -> _ContextResponse:
     """Resolve ``created_by`` from the bound ``context`` map, falling back to the id."""
@@ -2188,7 +2201,7 @@ def _build_context_create_response(
 def _task_dict_created_by(name: str, created_by: str) -> dict:
     """Return a ``Task`` payload owned by the synthetic owner with a fixed creator."""
     return TaskFactory.build(
-        name=name, owner=_SYNTHETIC_OWNER.value, data={}, created_by=created_by
+        name=name, owner=_SYNTHETIC_OWNER, data={}, created_by=created_by
     ).model_dump(mode="json")
 
 
@@ -2692,7 +2705,7 @@ class TestDeriveExecuteRouteOverHttp:
     def test_execute_404_for_unknown_task(self, regular_user: CasdoorUser) -> None:
         """Assert an owner mismatch on the resolved task yields 404."""
         tasks_api = _make_tasks_api(
-            detail_task=_task_dict("t1", owner=TaskOwner.BACKUPS),
+            detail_task=_task_dict("t1", owner="BACKUPS"),
             history_items=[],
         )
         client = _authed_execute_client(_execute_router(), tasks_api, regular_user)

@@ -3237,22 +3237,6 @@
         "title": "TaskHistoryStatusEnum",
         "type": "string"
       },
-      "TaskOwner": {
-        "description": "Control the choice of task owners.\n\n:cvar ANY: Value for tasks without owner restrictions.\n:vartype ANY: str\n:cvar ALTERS: Value for schema change tasks.\n:vartype ALTERS: str\n:cvar ARCHIVER: Value for data archiver tasks.\n:vartype ARCHIVER: str\n:cvar BACKUPS: Value for backup tasks.\n:vartype BACKUPS: str\n:cvar RESTORES: Value for restore tasks.\n:vartype RESTORES: str\n:cvar CHECKSUMS: Value for checksum tasks.\n:vartype CHECKSUMS: str",
-        "enum": [
-          "ANY",
-          "ALTERS",
-          "ARCHIVER",
-          "BACKUPS",
-          "RESTORES",
-          "CHECKSUMS",
-          "BACKUP_MONGO",
-          "RESTORE_MONGO",
-          "BACKUP_PG"
-        ],
-        "title": "TaskOwner",
-        "type": "string"
-      },
       "TextAreaField": {
         "additionalProperties": false,
         "description": "Represent a multi-line string input field.\n\n:param field_type: The discriminator literal; always ``\"textarea\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"textarea\"]\n:param rows: Optional number of visible text rows. Defaults to ``None``.\n:type rows: int | None\n:param placeholder: Optional placeholder text displayed when the field is\n    empty. Defaults to ``None``.\n:type placeholder: NonEmptyStr | None",
@@ -3644,6 +3628,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -3671,7 +3667,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -3816,6 +3813,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -3832,7 +3841,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",

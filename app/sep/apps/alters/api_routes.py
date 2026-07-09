@@ -51,7 +51,7 @@ from app.sep.apps.alters.models import (
     AltersTaskResponseUpdate,
 )
 from app.sep.apps.framework import (
-    get_task_latest_status,
+    get_task_latest_history,
     maybe_record_connectivity_warning,
 )
 from app.sep.apps.framework.api import derive_execute_route
@@ -74,11 +74,12 @@ async def alters_api_detail(
 ) -> AltersTaskResponse:
     """Retrieve a single parent alters task."""
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
-    task_status = await get_task_latest_status(tasks_api, parent_task.name)
+    latest = await get_task_latest_history(tasks_api, parent_task.name)
     username_mapping = await get_username_mapping()
     return build_alters_api_task_response(
         parent_task,
-        status=task_status,
+        status=latest.status,
+        last_executed_at=latest.finished_at,
         username_mapping=username_mapping,
     )
 
@@ -177,7 +178,7 @@ async def alters_api_update(
         )
 
     updated_task = await get_alters_task(updated_parent.name, tasks_api)
-    task_status = await get_task_latest_status(tasks_api, updated_task.name)
+    latest = await get_task_latest_history(tasks_api, updated_task.name)
     username_mapping = await get_username_mapping()
     connectivity_warning = await maybe_record_connectivity_warning(
         tasks_api,
@@ -186,7 +187,8 @@ async def alters_api_update(
     )
     return build_alters_api_task_response(
         updated_task,
-        status=task_status,
+        status=latest.status,
+        last_executed_at=latest.finished_at,
         response_model=AltersTaskResponseUpdate,
         connectivity_warning=connectivity_warning,
         username_mapping=username_mapping,

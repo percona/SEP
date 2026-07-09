@@ -26,7 +26,7 @@ from app.sep.apps.backup_mongo.restore.deps import get_restores_index_context
 from app.sep.apps.backup_mongo.restore.models import RestoreCreate
 from app.sep.inventory import CreatedService
 from app.sep.main import sep_app
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 EXPECTED_LOGICAL_RESTORE_POSTS = 3
@@ -86,7 +86,7 @@ def test_pbm_restores_detail_tolerates_missing_backup_type(
     """GET detail returns 200 when config has no backupType."""
     task = TaskFactory.build(
         name="mongo-restore-task",
-        owner=TaskOwner.RESTORE_MONGO,
+        owner="RESTORE_MONGO",
         backend=TaskBackendEnum.PROXY,
     ).model_dump(mode="json")
     task["data"] = {
