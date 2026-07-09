@@ -38,6 +38,7 @@ from app.sep.apps.framework.apps import (
     ListFilterConfig,
     TaskExecutionApp,
 )
+from app.sep.apps.nav_icons import NavIcon
 
 app = TaskExecutionApp(
     name="archives",
@@ -45,6 +46,7 @@ app = TaskExecutionApp(
     uri_path="/archives",
     css_class="archive",
     nav_order=11,
+    nav_icon=NavIcon.ARCHIVE,
     description="Run pt-archiver to purge or archive rows from a MySQL table.",
     owner=OWNER,
     create_model=ArchivesCreate,

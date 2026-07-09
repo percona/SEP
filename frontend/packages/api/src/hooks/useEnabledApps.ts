@@ -30,6 +30,10 @@ export interface EnabledApp {
   group: string | null;
   /** Sort position within the sidebar; ``null`` sorts last. */
   nav_order: number | null;
+  /** Canonical React route the shell mounts and links to; always concrete. */
+  react_route: string;
+  /** Sidebar icon key; ``null`` falls back to the shell's default app icon. */
+  nav_icon: string | null;
 }
 
 export const ENABLED_APPS_QUERY_KEY = ['apps'] as const;
