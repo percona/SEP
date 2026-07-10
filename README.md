@@ -85,7 +85,7 @@
 | app/inventory/routes/services.py                                                                                |       52 |        3 |        6 |        0 |     88% |125, 127, 169 |
 | app/inventory/routes/tables.py                                                                                  |       26 |        0 |        0 |        0 |    100% |           |
 | app/inventory/settings/routes.py                                                                                |       10 |        0 |        0 |        0 |    100% |           |
-| app/main.py                                                                                                     |       80 |       27 |        4 |        1 |     64% |184-187, 192-196, 200-254 |
+| app/main.py                                                                                                     |       80 |       25 |        4 |        1 |     67% |197-201, 205-259 |
 | app/sep/api/constants.py                                                                                        |        2 |        0 |        0 |        0 |    100% |           |
 | app/sep/api/host\_resolution.py                                                                                 |        9 |        0 |        4 |        0 |    100% |           |
 | app/sep/api/models.py                                                                                           |       13 |        0 |        0 |        0 |    100% |           |
@@ -105,7 +105,7 @@
 | app/sep/api/routes/task\_history.py                                                                             |       32 |        2 |        4 |        0 |     94% |     87-88 |
 | app/sep/api/routes/task\_stats.py                                                                               |       13 |        0 |        0 |        0 |    100% |           |
 | app/sep/api/task\_history\_merge.py                                                                             |       55 |        4 |       16 |        3 |     90% |57, 61-62, 113, 115-\>117 |
-| app/sep/app\_drain.py                                                                                           |       83 |        2 |       14 |        2 |     96% |135-\>137, 204, 210 |
+| app/sep/app\_drain.py                                                                                           |       83 |        2 |       14 |        2 |     96% |136-\>138, 205, 211 |
 | app/sep/apps/alert\_troubleshooting/api\_routes.py                                                              |       23 |        4 |        2 |        0 |     76% |64-65, 73-80 |
 | app/sep/apps/alert\_troubleshooting/app.py                                                                      |        5 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/alert\_troubleshooting/deps.py                                                                     |      135 |       18 |       46 |        3 |     87% |122, 124-\>126, 237, 259-261, 280, 364, 388-394, 418-420, 444-447, 474 |
@@ -115,6 +115,7 @@
 | app/sep/apps/alerts/api\_routes.py                                                                              |      120 |       16 |       16 |        0 |     85% |181, 197-200, 244-254 |
 | app/sep/apps/alerts/app.py                                                                                      |        5 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/alerts/app\_owned\_settings.py                                                                     |        4 |        0 |        0 |        0 |    100% |           |
+| app/sep/apps/alerts/celery.py                                                                                   |       46 |        1 |       10 |        0 |     98% |        39 |
 | app/sep/apps/alerts/config.py                                                                                   |       14 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/alerts/crud.py                                                                                     |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/alerts/deps.py                                                                                     |       80 |        0 |       16 |        0 |    100% |           |
@@ -244,6 +245,7 @@
 | app/sep/apps/report/routes.py                                                                                   |       46 |        2 |        0 |        0 |     96% |   187-188 |
 | app/sep/apps/report/service.py                                                                                  |      378 |       16 |      132 |       14 |     94% |126, 130, 331, 345-346, 407, 444-445, 447, 451, 452-\>455, 553, 558, 560-\>550, 566, 575, 638, 645 |
 | app/sep/apps/snippets/app.py                                                                                    |       11 |        0 |        0 |        0 |    100% |           |
+| app/sep/apps/snippets/celery.py                                                                                 |       67 |        0 |       26 |        2 |     98% |58-\>54, 76-\>54 |
 | app/sep/apps/snippets/deps.py                                                                                   |      145 |       16 |       44 |        8 |     85% |69, 140-142, 161-\>169, 179, 209, 240, 271, 336-344, 431, 505, 537-544 |
 | app/sep/apps/snippets/extra\_routes.py                                                                          |       66 |        5 |       10 |        0 |     93% |78-80, 167, 198 |
 | app/sep/apps/snippets/models.py                                                                                 |       28 |        0 |        0 |        0 |    100% |           |
@@ -257,7 +259,6 @@
 | app/sep/apps/tasks/routes.py                                                                                    |       32 |        0 |        2 |        1 |     97% |   80-\>87 |
 | app/sep/apps/tasks/schema.py                                                                                    |        2 |        0 |        0 |        0 |    100% |           |
 | app/sep/artifact\_constants.py                                                                                  |        4 |        0 |        0 |        0 |    100% |           |
-| app/sep/celery.py                                                                                               |      107 |        2 |       36 |        3 |     97% |56-\>52, 74-\>52, 115, 153 |
 | app/sep/clients/pmm.py                                                                                          |      261 |        2 |       66 |        2 |     99% |  536, 538 |
 | app/sep/config.py                                                                                               |      248 |       10 |       48 |       10 |     93% |140, 189, 332, 436, 453, 467, 471, 473, 475, 625 |
 | app/sep/connectivity.py                                                                                         |       79 |        1 |       16 |        1 |     98% |       117 |
@@ -390,7 +391,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       55 |        4 |       12 |        3 |     90% |61-65, 108-\>110, 130-133 |
 | app/tasks/routes.py                                                                                             |      227 |       28 |       44 |        2 |     87% |140-144, 201, 222-228, 261, 317, 324, 368-369, 397, 437, 456, 596, 620, 633-634, 642-645, 668, 675, 681, 697-698 |
 | app/tasks/settings/routes.py                                                                                    |       11 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **24814** | **2665** | **5854** |  **582** | **87%** |           |
+| **TOTAL**                                                                                                       | **24820** | **2662** | **5854** |  **581** | **87%** |           |
 
 
 ## Setup coverage badge
