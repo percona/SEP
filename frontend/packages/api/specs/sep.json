@@ -3753,7 +3753,7 @@
         "type": "string"
       },
       "ChecksumsForm": {
-        "description": "Define the model-first create/update body and schema source for Checksums.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the previous hand-written request body; the form-display\ndefaults that differ from the model default are carried on ``Ui(default=...)``.\n\nField declaration order is load-bearing. The framework assembles the\n``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)\nfollowed by all flag args (in field order), and derives the form section order\n(Task, Data, Recursion, Flags, Advanced) from each section's first field — so\nthe order here reproduces the historical arg string byte-for-byte. ``progress``\nis declared last to land at the end of the value args, and ``Ui(order=...)``\npins the Advanced section's display order where it diverges from declaration\norder. The ``task_name`` / ``hostname`` Task-section fields and the\n``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`\n(``alert_on_fail`` is ``Hidden``, off-schema).",
+        "description": "Define the model-first create/update body and schema source for Checksums.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the previous hand-written request body; the form-display\ndefaults that differ from the model default are carried on ``Ui(default=...)``.\n\nField declaration order is load-bearing. The spec builder assembles\n``--databases`` / ``--tables`` from the multi-value reference fields, then the\nframework's ``build_command_args`` emits the remaining ``ArgFormat`` value args\n(in field order) followed by all flag args (in field order). Section order\n(Task, Data, Recursion, Flags, Advanced) follows each section's first field.\n``progress`` is declared last to land at the end of the value args, and\n``Ui(order=...)`` pins the Advanced section's display order where it diverges\nfrom declaration order. The ``task_name`` / ``hostname`` Task-section fields\nand the ``alert_on_fail`` capability control are inherited from\n:class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -3771,9 +3771,19 @@
             "type": "string"
           },
           "databases": {
-            "default": "",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              ]
+            },
             "title": "Databases",
-            "type": "string"
+            "type": "array"
           },
           "dsn_table": {
             "default": "",
@@ -3830,9 +3840,19 @@
             "type": "string"
           },
           "tables": {
-            "default": "",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              ]
+            },
             "title": "Tables",
-            "type": "string"
+            "type": "array"
           },
           "task_name": {
             "minLength": 1,

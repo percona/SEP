@@ -25,10 +25,19 @@ from fastapi import Depends, Form
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm, OWNER
-from app.sep.apps.checksums.spec import build_checksums_arg_prefix
+from app.sep.apps.checksums.spec import (
+    build_checksums_arg_prefix,
+    build_checksums_command_args,
+    build_checksums_spec,
+    resolve_checksums_target_args,
+)
 from app.sep.apps.framework import make_task_dep
 from app.sep.apps.framework.form_dsl import make_arg_parser
-from app.sep.apps.framework.spec import build_command_args
+from app.sep.apps.framework.spec import (
+    assemble_envelope,
+    resolve_refs,
+    stamp_form_input,
+)
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -136,103 +145,38 @@ async def process_schema_and_table_ids(
 
 def assemble_checksum_payload(
     service: CreatedService,
+    form: ChecksumsForm,
     *,
-    task_name: str,
-    hostname: str,
-    recursion_method: str,
-    dsn_table: str,
-    databases: str,
-    tables: str,
-    pause_file: str,
-    binary_index: bool,
-    explain_arg: bool,
-    fail_on_stopped_replication: bool,
-    truncate_replicate_table: bool,
-    progress: str,
-    set_vars: str,
-    max_load: str,
-    chunk_time: str,
-    max_lag: str,
-    alert_on_fail: bool,
+    databases_arg: str,
+    tables_arg: str,
     extra_remaining_args: Iterable[str] = (),
 ) -> TaskWrite:
-    """Assemble a TaskWrite for pt-table-checksum from pre-resolved inputs.
+    """Assemble a TaskWrite for pt-table-checksum from a validated form.
 
     The legacy Jinja form path's envelope builder. Builds the CLI argument string
     from the shared
-    :func:`~app.sep.apps.checksums.spec.build_checksums_arg_prefix` plus the
-    framework's declarative ``build_command_args`` (over a ``ChecksumsForm`` rebuilt
-    from the resolved values) — the same pair the model-first JSON spec builder
-    uses — and assembles the ``TaskWrite`` meta, so a form-created task's Nomad
-    payload stays byte-identical to a JSON-created one.
+    :func:`~app.sep.apps.checksums.spec.build_checksums_arg_prefix` plus
+    :func:`~app.sep.apps.checksums.spec.build_checksums_command_args` — the same
+    pair the model-first JSON path uses — and assembles the ``TaskWrite`` meta, so
+    a form-created task's Nomad payload stays byte-identical to a JSON-created one.
 
     :param service: The validated inventory service instance.
-    :type service: CreatedService
-    :param task_name: The task name.
-    :type task_name: str
-    :param hostname: The executor host.
-    :type hostname: str
-    :param recursion_method: The replica-discovery method (e.g. ``"processlist"``).
-    :type recursion_method: str
-    :param dsn_table: DSN table used when ``recursion_method == "dsn"``.
-    :type dsn_table: str
-    :param databases: Comma-separated database names (pre-resolved).
-    :type databases: str
-    :param tables: Comma-separated ``schema.table`` strings (pre-resolved).
-    :type tables: str
-    :param pause_file: Pause-file path.
-    :type pause_file: str
-    :param binary_index: Enable ``--binary-index`` flag.
-    :type binary_index: bool
-    :param explain_arg: Enable ``--explain`` flag.
-    :type explain_arg: bool
-    :param fail_on_stopped_replication: Enable ``--fail-on-stopped-replication``.
-    :type fail_on_stopped_replication: bool
-    :param truncate_replicate_table: Enable ``--truncate-replicate-table``.
-    :type truncate_replicate_table: bool
-    :param progress: ``--progress`` value.
-    :type progress: str
-    :param set_vars: ``--set-vars`` value.
-    :type set_vars: str
-    :param max_load: ``--max-load`` value.
-    :type max_load: str
-    :param chunk_time: ``--chunk-time`` value.
-    :type chunk_time: str
-    :param max_lag: ``--max-lag`` value.
-    :type max_lag: str
-    :param alert_on_fail: Whether to alert on task failure.
-    :type alert_on_fail: bool
+    :param form: The validated checksums create form.
+    :param databases_arg: Comma-separated database names (pre-resolved).
+    :param tables_arg: Comma-separated ``schema.table`` strings (pre-resolved).
     :param extra_remaining_args: Additional pre-parsed CLI args (form path only).
-    :type extra_remaining_args: Iterable[str]
     :return: A fully constructed ``TaskWrite`` object.
-    :rtype: TaskWrite
     """
-    form = ChecksumsForm(
-        task_name=task_name,
-        hostname=hostname,
-        service_id=service.id,
-        recursion_method=recursion_method,
-        dsn_table=dsn_table,
-        databases=databases,
-        tables=tables,
-        pause_file=pause_file,
-        binary_index=binary_index,
-        explain_arg=explain_arg,
-        fail_on_stopped_replication=fail_on_stopped_replication,
-        truncate_replicate_table=truncate_replicate_table,
-        progress=progress,
-        set_vars=set_vars,
-        max_load=max_load,
-        chunk_time=chunk_time,
-        max_lag=max_lag,
-        alert_on_fail=alert_on_fail,
-    )
     args = build_checksums_arg_prefix(
         service,
-        recursion_method=recursion_method,
-        dsn_table=dsn_table,
+        recursion_method=form.recursion_method,
+        dsn_table=form.dsn_table,
         extra_remaining_args=extra_remaining_args,
-    ) + build_command_args(form)
+    ) + build_checksums_command_args(
+        form,
+        databases_arg=databases_arg,
+        tables_arg=tables_arg,
+    )
 
     return TaskWrite(
         owner=OWNER,
@@ -242,7 +186,7 @@ def assemble_checksum_payload(
             "meta": {
                 "command": "pt-table-checksum",
                 "args": shlex.join(args),
-                "target": hostname,
+                "target": form.hostname,
                 "_service_name": service.name,
                 "_service_host": service.node.address,
                 "_service_port": service.port,
@@ -251,10 +195,42 @@ def assemble_checksum_payload(
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
             },
         },
-        name=task_name,
-        target=hostname,
-        alert_on_fail=alert_on_fail,
+        name=form.task_name,
+        target=form.hostname,
+        alert_on_fail=form.alert_on_fail,
     )
+
+
+async def build_checksums_payload(
+    form: ChecksumsForm,
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build a checksums ``TaskWrite`` from the model-first create form.
+
+    Resolve reference fields and multi-value schema/table targets, assemble the
+    run-command spec, and stamp the validated form body under ``data['_form']``.
+
+    :param form: The validated checksums create form.
+    :param inventory_api: The inventory API client.
+    :return: A fully constructed ``TaskWrite`` object.
+    """
+    resolved = await resolve_refs(form, inventory_api)
+    databases_arg, tables_arg = await resolve_checksums_target_args(form, inventory_api)
+    spec = build_checksums_spec(
+        form,
+        resolved,
+        databases_arg=databases_arg,
+        tables_arg=tables_arg,
+    )
+    write = assemble_envelope(
+        spec,
+        resolved,
+        name=form.task_name,
+        owner=OWNER,
+        alert_on_fail=form.alert_on_fail,
+    )
+    stamp_form_input(write, form)
+    return write
 
 
 async def build_checksums_task_payload(
@@ -283,25 +259,18 @@ async def build_checksums_task_payload(
     await process_schema_and_table_ids(form, inventory_api)
     remaining_args = extract_databases_and_tables_from_extra_args(form)
 
+    checksums_form = ChecksumsForm.model_validate(
+        form.model_dump(exclude={"schema_id", "table_id", "extra_args"})
+    )
+    databases_arg, tables_arg = await resolve_checksums_target_args(
+        checksums_form, inventory_api
+    )
+
     return assemble_checksum_payload(
         service,
-        task_name=form.task_name,
-        hostname=form.hostname,
-        recursion_method=form.recursion_method,
-        dsn_table=form.dsn_table,
-        databases=form.databases,
-        tables=form.tables,
-        pause_file=form.pause_file,
-        binary_index=form.binary_index,
-        explain_arg=form.explain_arg,
-        fail_on_stopped_replication=form.fail_on_stopped_replication,
-        truncate_replicate_table=form.truncate_replicate_table,
-        progress=form.progress,
-        set_vars=form.set_vars,
-        max_load=form.max_load,
-        chunk_time=form.chunk_time,
-        max_lag=form.max_lag,
-        alert_on_fail=form.alert_on_fail,
+        checksums_form,
+        databases_arg=databases_arg,
+        tables_arg=tables_arg,
         extra_remaining_args=remaining_args,
     )
 
