@@ -226,7 +226,8 @@ class TestArchivesUpdateFormChain:
         assert put_payload["owner"] == "ARCHIVER"
         assert put_payload["data"]["meta"]["_service_name"] == created_service.name
         # Submitted ``where`` clause must survive the real form chain into the payload.
-        assert "id > 1" in put_payload["data"]["meta"]["config"]
+        purge_config = yaml.safe_load(put_payload["data"]["meta"]["config"])
+        assert purge_config["PURGE_LIST"][0]["WHERE"] == "id > 1"
 
     def test_forwards_path_name_but_redirects_to_form_name(
         self,
@@ -266,6 +267,32 @@ class TestArchivesUpdateFormChain:
         assert mock_task_api_dep.put.await_args.args[0] == f"/{path_name}"
         assert mock_task_api_dep.put.await_args.kwargs["json"]["name"] == form_name
         assert response.headers["location"].endswith(f"/archives/{form_name}")
+
+    def test_invalid_form_flashes_and_redirects_without_forwarding(
+        self,
+        test_client,
+        mock_task_api_dep,
+    ):
+        """Flash and redirect (never forward) when the update form fails validation."""
+        # ``where`` is required for a Purge Only run, so omitting it fails
+        # ``ArchivesCreate`` validation before any inventory lookup or forward.
+        data = {
+            "alias": "arch_invalid",
+            "hostname": "source_db",
+            "service_id": 1,
+            "source_db_id": 10,
+            "source_table_id": 20,
+            "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+            "delete_data": 1,
+        }
+
+        response = test_client.post(
+            "/archives/arch_invalid/update", data=data, follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/"
+        assert "messages=" in response.headers.get("set-cookie", "")
+        mock_task_api_dep.put.assert_not_awaited()
 
 
 def test_archives_create_accepts_empty_dest_port(
