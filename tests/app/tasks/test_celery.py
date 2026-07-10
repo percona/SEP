@@ -498,61 +498,15 @@ class TestInternalDispatchQueueItem:
 
 
 class TestRaiseIfIdenticalTaskConflict:
-    """Test _raise_if_identical_task_conflict."""
+    """Test _raise_if_identical_task_conflict.
 
-    @pytest.mark.asyncio
-    async def test_no_identical_task_passes(self):
-        """Assert no exception when no identical task exists."""
-        queue_item = _make_history()
-        session = _make_session_mock()
-
-        with patch(
-            "app.tasks.celery.TaskHistoryManager.first",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            await _raise_if_identical_task_conflict(queue_item, session)
-
-    @pytest.mark.asyncio
-    async def test_identical_task_raises_conflict(self):
-        """Assert HTTPConflictException when identical task is found."""
-        queue_item = _make_history()
-        session = _make_session_mock()
-        identical = _make_history(id=99)
-
-        with (
-            patch(
-                "app.tasks.celery.TaskHistoryManager.first",
-                new_callable=AsyncMock,
-                return_value=identical,
-            ),
-            pytest.raises(
-                HTTPConflictException, match="Identical queue item already running"
-            ),
-        ):
-            await _raise_if_identical_task_conflict(queue_item, session)
-
-    @pytest.mark.asyncio
-    async def test_no_meta_passes_empty_clauses(self):
-        """Assert empty meta produces no extra where clauses."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta=None,
-                payload=None,
-            ),
-        )
-        session = _make_session_mock()
-
-        with patch(
-            "app.tasks.celery.TaskHistoryManager.first",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            await _raise_if_identical_task_conflict(queue_item, session)
+    Behavioral coverage (conflict raises, self-exclusion, status/task scoping,
+    jsonb type-strictness, injection-safety) lives in
+    ``TestRaiseIfIdenticalTaskConflictRealPostgres``, which runs the query on a
+    real engine. What remains here is the one dialect-branch shape assertion the
+    end-to-end tests cannot observe: that SQLite still uses the ``json_extract``
+    text-equality loop rather than the PostgreSQL ``@>``/jsonb path.
+    """
 
     @staticmethod
     async def _capture_meta_clauses(queue_item, bind_name):
@@ -585,207 +539,6 @@ class TestRaiseIfIdenticalTaskConflict:
         return meta_clauses, rendered
 
     @pytest.mark.asyncio
-    async def test_pg_scalar_only_meta_emits_single_containment_clause(self):
-        """Assert PG scalar meta produces exactly one ``@>`` containment clause."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"target": "node-1", "priority": 5},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        clause = rendered[0]
-        assert "@>" in clause
-        assert "'meta'" in clause
-        assert '"target": "node-1"' in clause
-        assert '"priority": 5' in clause
-
-    @pytest.mark.asyncio
-    async def test_pg_bool_scalar_is_type_strict(self):
-        """Assert PG bool scalar is rendered as jsonb ``true``, not Python ``"True"``.
-
-        Pin the latent-bug fix for the bool-meta dedup path: the previous
-        text-equality path compared
-        ``->>`` output against ``str(True) == "True"``, which never matched
-        jsonb's lowercase ``true`` text form, leaving bool-meta dispatches
-        un-deduplicated.
-        """
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"flag": True},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        clause = rendered[0]
-        assert "@>" in clause
-        assert '"flag": true' in clause
-        assert '"True"' not in clause
-
-    @pytest.mark.asyncio
-    async def test_pg_none_scalar_is_type_strict(self):
-        """Assert PG None scalar is rendered as jsonb ``null``, not Python ``"None"``.
-
-        Pin the latent-bug fix: the previous text-equality path coerced
-        ``None`` to ``"None"`` via ``str(value)``, which never matched the
-        SQL ``NULL`` produced by ``->>`` on a jsonb null.
-        """
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"key": None},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        clause = rendered[0]
-        assert "@>" in clause
-        assert '"key": null' in clause
-        assert '"None"' not in clause
-
-    @pytest.mark.asyncio
-    async def test_pg_int_vs_string_scalar_is_distinct(self):
-        """Assert PG int and string-of-int scalars compile to distinct clauses.
-
-        Pin the intentional Breaking Changes shift: the previous text-equality
-        path treated ``1`` and ``"1"`` as duplicates because both serialised
-        to the text ``"1"``. The new ``@>`` path is type-strict, so the two
-        should never deduplicate against each other.
-        """
-        task = _make_task()
-        int_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"key": 1},
-                payload=None,
-            ),
-        )
-        str_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"key": "1"},
-                payload=None,
-            ),
-        )
-
-        _, int_rendered = await self._capture_meta_clauses(int_item, "postgresql")
-        _, str_rendered = await self._capture_meta_clauses(str_item, "postgresql")
-
-        assert int_rendered != str_rendered
-        assert '"key": 1' in int_rendered[0]
-        assert '"key": "1"' in str_rendered[0]
-
-    @pytest.mark.asyncio
-    async def test_pg_list_meta_uses_jsonb_equality_per_key(self):
-        """Assert PG list meta items render as per-key jsonb equality clauses."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"_chain_task_names": ["a", "b"]},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        clause = rendered[0]
-        assert "@>" not in clause
-        assert "'_chain_task_names'" in clause
-        assert '["a", "b"]' in clause
-        assert "JSONB" in clause.upper()
-
-    @pytest.mark.asyncio
-    async def test_pg_mixed_meta_uses_both_paths(self):
-        """Assert PG mixed scalar/list meta produces one ``@>`` and one equality clause."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"target": "node-1", "_chain_task_names": ["a"]},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        expected_clause_count = 2
-        assert len(rendered) == expected_clause_count
-        containment = [clause for clause in rendered if "@>" in clause]
-        equality = [clause for clause in rendered if "@>" not in clause]
-        assert len(containment) == 1
-        assert len(equality) == 1
-        assert '"target": "node-1"' in containment[0]
-        assert "'_chain_task_names'" in equality[0]
-        assert '["a"]' in equality[0]
-
-    @pytest.mark.asyncio
-    async def test_pg_scalar_subset_omits_at_clause_when_all_items_are_containers(self):
-        """Assert PG produces no ``@>`` clause when every meta value is a container."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"_chain_task_names": ["a"]},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        assert "@>" not in rendered[0]
-
-    @pytest.mark.asyncio
-    async def test_pg_empty_meta_produces_no_meta_clauses(self):
-        """Assert PG empty-dict meta produces zero meta clauses via the falsy guard."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert rendered == []
-
-    @pytest.mark.asyncio
     async def test_sqlite_keeps_per_key_text_equality_loop(self):
         """Assert SQLite mixed meta still uses ``json_extract`` text equality."""
         task = _make_task()
@@ -806,6 +559,431 @@ class TestRaiseIfIdenticalTaskConflict:
         for clause in rendered:
             assert "json_extract" in clause.lower()
             assert "@>" not in clause
+
+
+async def _create_pg_task(
+    session: AsyncSession,
+    *,
+    name: str = "dedup-task",
+) -> Task:
+    """Persist a parent ``Task`` for real-PostgreSQL dedup tests."""
+    task_data = TaskFactory.build(
+        name=name,
+        backend=TaskBackendEnum.NOMAD,
+        data={"job": "test"},
+    )
+    return await TaskManager.create(session, TaskWrite.model_validate(task_data))
+
+
+async def _seed_pg_history(
+    session: AsyncSession,
+    *,
+    task_id: int,
+    task_name: str,
+    meta: dict | None,
+    status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.PENDING,
+    target: str = "node-1",
+    payload: str | None = None,
+) -> TaskHistory:
+    """Persist a ``TaskHistory`` row as live DB state for the dedup query.
+
+    The row is only ever matched through SQL, never attribute-accessed, so its
+    ``execution_request`` is a plain dict (persisted into the ``jsonb`` column).
+    """
+    row = TaskHistory(
+        task_id=task_id,
+        status=status,
+        execution_request={
+            "task": task_name,
+            "target": target,
+            "meta": meta,
+            "payload": payload,
+        },
+        executed_by="seed-user",
+    )
+    return await TaskHistoryManager.save(session, row)
+
+
+def _pg_queue_item(
+    task: Task,
+    *,
+    meta: dict | None,
+    item_id: int,
+    target: str = "node-1",
+    payload: str | None = None,
+) -> TaskHistory:
+    """Build the in-memory candidate passed to the dedup helper.
+
+    It is never persisted — table models skip validation, so the
+    ``execution_request`` is a real ``TaskExecutionRequest`` to expose the
+    ``.meta``/``.task``/``.target``/``.payload`` attributes the helper reads,
+    and a concrete ``id`` drives the ``id != queue_item.id`` self-exclusion.
+    """
+    return TaskHistory(
+        id=item_id,
+        task_id=task.id,
+        status=TaskHistoryStatusEnum.PENDING,
+        execution_request=TaskExecutionRequest(
+            task=task.name,
+            target=target,
+            meta=meta,
+            payload=payload,
+        ),
+        executed_by="queue-user",
+    )
+
+
+# id guaranteed distinct from any serial-assigned seeded row, so a seeded
+# duplicate is never excluded as "self".
+_UNSEEDED_ITEM_ID = 999_999
+
+
+class TestRaiseIfIdenticalTaskConflictRealPostgres:
+    """Exercise _raise_if_identical_task_conflict end-to-end on a real PostgreSQL engine.
+
+    Each test seeds live ``TaskHistory`` rows and runs the dedup query through an
+    asyncpg-backed session (``session.get_bind().name == "postgresql"``), so the
+    ``jsonb`` containment (``@>``) and per-key equality paths are proven by
+    outcome rather than by compiling SQL strings.
+    """
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_scalar_meta_conflict_raises(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a duplicate PENDING row with scalar meta (``@>`` path) raises conflict."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"target": "node-1", "priority": 5}
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta=meta
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(
+            HTTPConflictException, match="Identical queue item already running"
+        ):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_scalar_meta_only_self_passes(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert the candidate's own row is excluded by ``id != queue_item.id``."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"target": "node-1", "priority": 5}
+        row = await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta=meta
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=row.id)
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_container_meta_conflict_raises(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a duplicate with list meta (per-key jsonb equality) raises conflict."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"_chain_task_names": ["a", "b"]}
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta=meta
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_container_meta_is_exact_match_not_subset(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert list meta uses exact equality: a differing element does not dedup."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"_chain_task_names": ["a", "c"]},
+        )
+        queue_item = _pg_queue_item(
+            task, meta={"_chain_task_names": ["a", "b"]}, item_id=_UNSEEDED_ITEM_ID
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_scalar_containment_is_superset_tolerant(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert ``@>`` matches when the stored meta is a superset of the candidate's."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"target": "node-1", "priority": 5, "extra": "x"},
+        )
+        queue_item = _pg_queue_item(
+            task, meta={"target": "node-1", "priority": 5}, item_id=_UNSEEDED_ITEM_ID
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_finished_status_is_not_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert duplicates in a finished status (not PENDING/RUNNING) never conflict."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"target": "node-1"}
+        for finished in (
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.LOST,
+        ):
+            await _seed_pg_history(
+                postgres_session,
+                task_id=task.id,
+                task_name=task.name,
+                meta=meta,
+                status=finished,
+            )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_running_status_is_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a duplicate in RUNNING (an active status) still conflicts."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"target": "node-1"}
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_different_task_id_is_not_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert dedup is per ``task_id``: an identical request under another task passes."""
+        task = await _create_pg_task(postgres_session, name="task-a")
+        other = await _create_pg_task(postgres_session, name="task-b")
+        meta = {"target": "node-1"}
+        # Same execution_request.task string, but the row belongs to `other`.
+        await _seed_pg_history(
+            postgres_session, task_id=other.id, task_name=task.name, meta=meta
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_different_target_is_not_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a differing execution target passes (no conflict)."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"priority": 5}
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            target="node-2",
+        )
+        queue_item = _pg_queue_item(
+            task, meta=meta, item_id=_UNSEEDED_ITEM_ID, target="node-1"
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_different_payload_is_not_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a differing payload passes (no conflict)."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"priority": 5}
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            payload="echo one",
+        )
+        queue_item = _pg_queue_item(
+            task, meta=meta, item_id=_UNSEEDED_ITEM_ID, payload="echo two"
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_bool_meta_is_type_strict(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert jsonb ``true`` dedups against ``True`` only — not ``False`` or ``"true"``."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"flag": True}
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(task, meta={"flag": True}, item_id=_UNSEEDED_ITEM_ID),
+                postgres_session,
+            )
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"flag": False}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"flag": "true"}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_int_vs_string_meta_is_type_strict(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert jsonb ``1`` dedups against int ``1`` only — not the string ``"1"``."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"key": 1}
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(task, meta={"key": 1}, item_id=_UNSEEDED_ITEM_ID),
+                postgres_session,
+            )
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"key": "1"}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_null_meta_is_type_strict(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert jsonb ``null`` dedups against ``None`` only — not the string ``"None"``."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"key": None}
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(task, meta={"key": None}, item_id=_UNSEEDED_ITEM_ID),
+                postgres_session,
+            )
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"key": "None"}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_empty_meta_does_not_over_constrain(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert empty candidate meta dedups on task/target/payload only."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"x": 1}
+        )
+        queue_item = _pg_queue_item(task, meta={}, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_none_meta_does_not_over_constrain(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert ``meta=None`` behaves like empty meta: dedup on task/target/payload."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"x": 1}
+        )
+        queue_item = _pg_queue_item(task, meta=None, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_meta_value_special_characters_match_exactly(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert quote/SQL-metacharacter meta values are parameterized: exact match only."""
+        malicious = "a\"b'; DROP TABLE taskhistory;--"
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"note": malicious},
+        )
+        # An exact twin still deduplicates (value round-trips through jsonb safely).
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(
+                    task, meta={"note": malicious}, item_id=_UNSEEDED_ITEM_ID
+                ),
+                postgres_session,
+            )
+        # A benign value does not match — no injection widened the comparison.
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"note": "safe"}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_container_key_special_characters_match_exactly(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a container meta key with quotes is safely inlined and matches exactly."""
+        weird_key = "we'ird\"key"
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={weird_key: ["x"]},
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(
+                    task, meta={weird_key: ["x"]}, item_id=_UNSEEDED_ITEM_ID
+                ),
+                postgres_session,
+            )
 
 
 class TestDeleteTaskHistory:
