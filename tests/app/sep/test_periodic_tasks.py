@@ -39,7 +39,7 @@ async def _seed_periodic_task(
     await session.flush()
     task = PeriodicTask(
         name=name,
-        task="app.sep.celery.sync_snippets",
+        task="app.sep.apps.snippets.celery.sync_snippets",
         enabled=enabled,
         schedule_model=schedule,
     )
@@ -57,7 +57,7 @@ def _snippets_schedule() -> list[SystemPeriodicTaskSchedule]:
             tasks=[
                 SystemPeriodicTaskData(
                     name=SNIPPETS_TASK,
-                    task_name="app.sep.celery.sync_snippets",
+                    task_name="app.sep.apps.snippets.celery.sync_snippets",
                     owner_app_key="snippets",
                 ),
             ],

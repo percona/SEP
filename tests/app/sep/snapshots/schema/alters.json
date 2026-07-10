@@ -54,6 +54,7 @@
       "fields": [
         {
           "label": "Task Name",
+          "min_length": 1,
           "name": "task_name",
           "required": true,
           "type": "string"
@@ -118,6 +119,7 @@
         {
           "description": "Schema modifications excluding ALTER TABLE keywords (e.g. ADD COLUMN new_col INT, DROP COLUMN old_col)",
           "label": "Alter",
+          "min_length": 1,
           "name": "alter",
           "required": true,
           "type": "string"

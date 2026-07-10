@@ -19,10 +19,11 @@ from datetime import datetime
 from enum import auto, StrEnum
 from typing import Annotated, ClassVar, Literal
 
+import annotated_types
 import pytest
 from pydantic import BaseModel, create_model, Field, ValidationError
 
-from app.core.utils.fields import EmptyStrToNone
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr, TcpPort
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
@@ -155,6 +156,110 @@ class TestWireTypeInference:
         fields = _fields_by_name(_ScalarModel)
         assert isinstance(fields["note"], TextAreaField)
         assert isinstance(fields["cfg"], YamlField)
+
+
+_RANGED_INT_MIN = 1
+_RANGED_INT_MAX = 10
+_MULTI_GE = 3
+_MULTI_LE = 99
+_OUTER_GE = 100
+_OUTER_LE = 200
+
+
+class _GroupedBoundsModel(AppFormModel):
+    ranged_int: Annotated[
+        int,
+        annotated_types.Interval(ge=_RANGED_INT_MIN, le=_RANGED_INT_MAX),
+        Ui(label="RI", section="s"),
+    ] = _RANGED_INT_MIN
+    ranged_str: Annotated[
+        str,
+        annotated_types.Len(_CODE_MIN_LEN, _CODE_MAX_LEN),
+        Ui(label="RS", section="s"),
+    ] = ""
+    multi_grouped: Annotated[
+        int,
+        annotated_types.Interval(ge=_MULTI_GE),
+        annotated_types.Interval(le=_MULTI_LE),
+        Ui(label="MG", section="s"),
+    ] = _MULTI_GE
+
+
+class _UnionBoundsModel(AppFormModel):
+    port: Annotated[TcpPort | None, Ui(label="P", section="s")] = None
+    name: Annotated[NonEmptyStr | None, Ui(label="N", section="s")] = None
+    plain_opt: Annotated[int | None, Ui(label="PO", section="s")] = None
+    mixed: Annotated[int | NonEmptyStr | None, Ui(label="MX", section="s")] = None
+
+
+class _OuterAndMemberBoundsModel(AppFormModel):
+    port: Annotated[
+        TcpPort | None, Field(ge=_OUTER_GE, le=_OUTER_LE), Ui(label="P", section="s")
+    ] = None
+
+
+class TestGroupedAndUnionBounds:
+    """Cover bounds carried in GroupedMetadata containers and union members.
+
+    The bounds scan must flatten ``annotated_types.GroupedMetadata`` (``Interval`` /
+    ``Len``) and descend into union members so those bounds reach the derived form
+    schema instead of being silently dropped.
+    """
+
+    def test_numeric_grouped_metadata_flattened(self) -> None:
+        """Surface ``Interval`` ge/le onto the derived IntegerField."""
+        field = _fields_by_name(_GroupedBoundsModel)["ranged_int"]
+        assert isinstance(field, IntegerField)
+        assert field.ge == _RANGED_INT_MIN
+        assert field.le == _RANGED_INT_MAX
+
+    def test_string_grouped_metadata_flattened(self) -> None:
+        """Surface ``Len`` min/max onto the derived StringField."""
+        field = _fields_by_name(_GroupedBoundsModel)["ranged_str"]
+        assert isinstance(field, StringField)
+        assert field.min_length == _CODE_MIN_LEN
+        assert field.max_length == _CODE_MAX_LEN
+
+    def test_multiple_grouped_metadata_merged(self) -> None:
+        """Merge bounds spread across two GroupedMetadata containers on one field."""
+        field = _fields_by_name(_GroupedBoundsModel)["multi_grouped"]
+        assert isinstance(field, IntegerField)
+        assert field.ge == _MULTI_GE
+        assert field.le == _MULTI_LE
+
+    def test_numeric_bound_in_union_member(self) -> None:
+        """Descend into ``TcpPort | None`` to expose the port bounds."""
+        field = _fields_by_name(_UnionBoundsModel)["port"]
+        assert isinstance(field, IntegerField)
+        assert field.ge == 1
+        assert field.le == _PORT_MAX
+
+    def test_string_bound_in_union_member(self) -> None:
+        """Descend into ``NonEmptyStr | None`` to expose min_length."""
+        field = _fields_by_name(_UnionBoundsModel)["name"]
+        assert isinstance(field, StringField)
+        assert field.min_length == 1
+
+    def test_plain_optional_without_bounds_is_unbounded(self) -> None:
+        """Leave a bare ``int | None`` unbounded without erroring on the None member."""
+        field = _fields_by_name(_UnionBoundsModel)["plain_opt"]
+        assert isinstance(field, IntegerField)
+        assert field.ge is None
+        assert field.le is None
+
+    def test_mismatched_member_bound_does_not_leak(self) -> None:
+        """Keep a string member's min_length off an int-based field's bounds."""
+        field = _fields_by_name(_UnionBoundsModel)["mixed"]
+        assert isinstance(field, IntegerField)
+        assert field.ge is None
+        assert field.le is None
+
+    def test_outer_bound_wins_over_union_member(self) -> None:
+        """Prefer the outer-level bound when both outer and a member carry one."""
+        field = _fields_by_name(_OuterAndMemberBoundsModel)["port"]
+        assert isinstance(field, IntegerField)
+        assert field.ge == _OUTER_GE
+        assert field.le == _OUTER_LE
 
 
 class _LabelModel(AppFormModel):
