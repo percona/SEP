@@ -23,6 +23,7 @@ import pytest
 from app.sep.apps.checksums.deps import (
     assemble_checksum_payload,
     build_checksums_task_payload,
+    legacy_checksums_create_to_form,
     parse_checksums_task_args,
 )
 from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm
@@ -68,6 +69,43 @@ class TestChecksumsJinjaFormDeps:
         )
         assert recursion_arg
         assert DSN_TABLE_DEFAULT in recursion_arg
+
+
+class TestLegacyChecksumsCreateToForm:
+    """Cover legacy Jinja POST → ChecksumsForm mapping."""
+
+    def test_merges_text_fields_and_extra_args_targets(self) -> None:
+        """Merge databases/tables inputs with matching extra_args tokens."""
+        flat = ChecksumsCreate(
+            task_name="chk",
+            hostname="host1",
+            service_id=1,
+            recursion_method="processlist",
+            databases="db1",
+            tables="db1.t1",
+            extra_args="--databases=db2 --tables=db2.t2 --chunk-time=1",
+        )
+        form, remaining = legacy_checksums_create_to_form(flat)
+
+        assert form.databases == ["db1", "db2"]
+        assert form.tables == ["db1.t1", "db2.t2"]
+        assert remaining == ["--chunk-time=1"]
+
+    def test_merges_legacy_inventory_ids(self) -> None:
+        """Append legacy schema_id / table_id selections as inventory refs."""
+        flat = ChecksumsCreate(
+            task_name="chk",
+            hostname="host1",
+            service_id=1,
+            recursion_method="processlist",
+            schema_id={10, 20},
+            table_id={30},
+        )
+        form, remaining = legacy_checksums_create_to_form(flat)
+
+        assert form.databases == [10, 20]
+        assert form.tables == [30]
+        assert remaining == []
 
 
 class TestChecksumsNomadPayloadParity:

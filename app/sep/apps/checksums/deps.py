@@ -24,7 +24,12 @@ from fastapi import Depends, Form
 
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm, OWNER
+from app.sep.apps.checksums.models import (
+    _coerce_target_list,
+    ChecksumsCreate,
+    ChecksumsForm,
+    OWNER,
+)
 from app.sep.apps.checksums.spec import (
     build_checksums_arg_prefix,
     build_checksums_command_args,
@@ -64,83 +69,50 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 
-def extract_databases_and_tables_from_extra_args(form: ChecksumsCreate) -> list[str]:
-    """Extract --databases and --tables from extra_args and add to form fields.
+def legacy_checksums_create_to_form(
+    flat: ChecksumsCreate,
+) -> tuple[ChecksumsForm, list[str]]:
+    """Map legacy Jinja form POST data to a validated :class:`ChecksumsForm`.
 
-    :param form: The form data for the Checksums creation.
-    :type form: ChecksumsCreate
-    :return: List of remaining arguments (excluding --databases and --tables).
-    :rtype: list[str]
+    Merges comma-separated ``databases`` / ``tables`` fields, legacy inventory
+    ``schema_id`` / ``table_id`` selections, and ``--databases`` / ``--tables``
+    tokens from ``extra_args`` into the model-first target lists. Returns the
+    validated form and any remaining CLI tokens for the legacy path's
+    ``extra_remaining_args`` thread-through.
+
+    :param flat: The legacy HTML form body.
+    :return: ``(form, remaining_args)`` where ``remaining_args`` excludes target
+        ``--databases`` / ``--tables`` tokens.
     """
-    if not form.extra_args:
-        return []
+    databases: list[int | str] = list(_coerce_target_list(flat.databases))
+    tables: list[int | str] = list(_coerce_target_list(flat.tables))
 
-    remaining_args = []
-    for arg in shlex.split(form.extra_args):
-        if arg.startswith("--databases="):
-            value = arg.split("=", 1)[1]
-            form.databases = form.databases + "," + value if form.databases else value
-        elif arg.startswith("--tables="):
-            value = arg.split("=", 1)[1]
-            form.tables = form.tables + "," + value if form.tables else value
-        else:
-            remaining_args.append(arg)
+    if flat.schema_id and -1 not in flat.schema_id:
+        databases.extend(schema_id for schema_id in flat.schema_id if schema_id > 0)
 
-    return remaining_args
+    if flat.table_id:
+        tables.extend(tid for tid in flat.table_id if tid > 0)
 
+    remaining_args: list[str] = []
+    if flat.extra_args:
+        for arg in shlex.split(flat.extra_args):
+            if arg.startswith("--databases="):
+                databases.extend(_coerce_target_list(arg.split("=", 1)[1]))
+            elif arg.startswith("--tables="):
+                tables.extend(_coerce_target_list(arg.split("=", 1)[1]))
+            else:
+                remaining_args.append(arg)
 
-async def process_schema_and_table_ids(
-    form: ChecksumsCreate, inventory_api: InventoryAPI
-) -> None:
-    """Process schema_id and table_id to set databases and tables form fields.
-
-    :param form: The form data for the Checksums creation.
-    :type form: ChecksumsCreate
-    :param inventory_api: The Inventory API to get entities from.
-    :type inventory_api: InventoryAPI
-    """
-    if not form.schema_id or len(form.schema_id) == 0:
-        return
-
-    if -1 in form.schema_id:
-        return
-
-    database_names = []
-    for schema_id in form.schema_id:
-        schema = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            schema_id,
-        )
-        database_names.append(schema.name)
-
-    form.databases = ",".join(database_names)
-
-    if form.table_id and len(form.table_id) > 0:
-        table_entries = []
-        valid_table_ids = [t for t in form.table_id if t > 0]
-
-        for table_id in valid_table_ids:
-            table = await get_created_entity(
-                inventory_api,
-                SyncInventoryEntityTypeEnum.TABLE,
-                table_id,
-            )
-            table_schema = None
-            for schema_id in form.schema_id:
-                schema = await get_created_entity(
-                    inventory_api,
-                    SyncInventoryEntityTypeEnum.SCHEMA,
-                    schema_id,
-                )
-                if schema.id == table.schema_id:
-                    table_schema = schema
-                    break
-
-            if table_schema:
-                table_entries.append(f"{table_schema.name}.{table.name}")
-
-        form.tables = ",".join(table_entries)
+    form = ChecksumsForm.model_validate(
+        {
+            **flat.model_dump(
+                exclude={"schema_id", "table_id", "extra_args", "databases", "tables"}
+            ),
+            "databases": databases,
+            "tables": tables,
+        }
+    )
+    return form, remaining_args
 
 
 def assemble_checksum_payload(
@@ -256,12 +228,7 @@ async def build_checksums_task_payload(
         form.service_id,
         type=ServiceTypeEnum.MYSQL,
     )
-    await process_schema_and_table_ids(form, inventory_api)
-    remaining_args = extract_databases_and_tables_from_extra_args(form)
-
-    checksums_form = ChecksumsForm.model_validate(
-        form.model_dump(exclude={"schema_id", "table_id", "extra_args"})
-    )
+    checksums_form, remaining_args = legacy_checksums_create_to_form(form)
     databases_arg, tables_arg = await resolve_checksums_target_args(
         checksums_form, inventory_api
     )
