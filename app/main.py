@@ -182,7 +182,12 @@ app.mount("/", sep_app)
 def start_celery_worker() -> None:
     """Start the Celery worker process."""
     worker = celery_app.Worker(
-        include=["app.tasks.celery", "app.sep.celery", "app.sep.apps.report.celery"],
+        include=[
+            "app.tasks.celery",
+            "app.sep.apps.snippets.celery",
+            "app.sep.apps.alerts.celery",
+            "app.sep.apps.report.celery",
+        ],
     )
     worker.start()
 
