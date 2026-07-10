@@ -198,6 +198,34 @@ class TestPluginNameOptional:
         assert plugin.css_class == "snippet-manager"
 
 
+class TestPluginNavIcon:
+    """``App.NAV_ICON`` is validated against the closed ``NavIcon`` vocabulary."""
+
+    def test_valid_nav_icon_is_accepted(self) -> None:
+        """Accept a known icon key and round-trip it as its string value."""
+        plugin = App(module_name="backup_pg", nav_icon="postgresql")
+        assert plugin.nav_icon == "postgresql"
+
+    def test_invalid_nav_icon_is_rejected(self) -> None:
+        """Reject an unknown icon key at settings-load validation."""
+        with pytest.raises(ValidationError, match="NAV_ICON"):
+            App(module_name="backup_pg", nav_icon="not-a-real-icon")
+
+
+class TestPluginReactRoute:
+    """``App.REACT_ROUTE`` must be an absolute React route path."""
+
+    def test_absolute_react_route_is_accepted(self) -> None:
+        """Accept a leading-slash route path."""
+        plugin = App(module_name="backup_pg", react_route="/backups/postgresql")
+        assert plugin.react_route == "/backups/postgresql"
+
+    def test_relative_react_route_is_rejected(self) -> None:
+        """Reject a route path that is not absolute."""
+        with pytest.raises(ValidationError, match="REACT_ROUTE"):
+            App(module_name="backup_pg", react_route="backups/postgresql")
+
+
 class TestAppDrainSettings:
     """The drain reconciler settings reject a non-positive stale-task TTL."""
 

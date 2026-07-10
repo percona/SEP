@@ -16,21 +16,25 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import CodeIcon from '@mui/icons-material/Code';
+import ExtensionIcon from '@mui/icons-material/Extension';
 import type { EnabledApp } from '@sep/api';
 import { buildNavigationItems } from './appNavConfig';
 
 function mockApp(overrides: Partial<EnabledApp> & Pick<EnabledApp, 'app_key'>): EnabledApp {
-  const { app_key, display_name, uri_path, ...rest } = overrides;
+  const { app_key, display_name, uri_path, react_route, ...rest } = overrides;
   return {
     enabled: true,
     sidebar: true,
     custom_ui: false,
     group: null,
     nav_order: null,
+    nav_icon: null,
     ...rest,
     app_key,
     uri_path: uri_path ?? `/${app_key}`,
     display_name: display_name ?? app_key,
+    react_route: react_route ?? `/apps/${app_key}`,
   };
 }
 
@@ -191,15 +195,74 @@ describe('buildNavigationItems', () => {
     expect(items.find((item) => item.title === 'Inventory')?.appKey).toBeUndefined();
   });
 
-  it('preserves react routes from appNavConfig', () => {
+  it('derives a schema app leaf `to` from the payload react_route', () => {
     const items = buildNavigationItems([
       mockApp({
-        app_key: 'mysql_backups',
-        group: 'backups',
-        nav_order: 8,
-        display_name: 'MySQL Backups',
+        app_key: 'checksums',
+        nav_order: 7,
+        display_name: 'Checksums',
+        react_route: '/apps/checksums-relocated',
       }),
     ]);
-    expect(findLeaf(items, 'mysql_backups')?.to).toBe('/apps/mysql_backups');
+    expect(findLeaf(items, 'checksums')?.to).toBe('/apps/checksums-relocated');
+  });
+
+  it('keeps a custom app leaf `to` on its registered route, ignoring a divergent payload', () => {
+    const items = buildNavigationItems([
+      mockApp({
+        app_key: 'snippets',
+        nav_order: 2,
+        display_name: 'Snippets',
+        react_route: '/snippets/relocated-by-mistake',
+      }),
+    ]);
+    expect(findLeaf(items, 'snippets')?.to).toBe('/snippets');
+  });
+
+  it('renders an app present only in the payload with no static-map entry', () => {
+    const items = buildNavigationItems([
+      mockApp({
+        app_key: 'synthetic',
+        display_name: 'Synthetic App',
+        react_route: '/apps/synthetic',
+        nav_order: 1,
+      }),
+    ]);
+    const leaf = findLeaf(items, 'synthetic');
+    expect(leaf?.title).toBe('Synthetic App');
+    expect(leaf?.to).toBe('/apps/synthetic');
+    expect(leaf?.icon).toBe(ExtensionIcon);
+  });
+
+  it('resolves the leaf icon from the payload nav_icon', () => {
+    const items = buildNavigationItems([
+      mockApp({
+        app_key: 'synthetic',
+        nav_icon: 'code',
+        react_route: '/apps/synthetic',
+        nav_order: 1,
+      }),
+    ]);
+    expect(findLeaf(items, 'synthetic')?.icon).toBe(CodeIcon);
+  });
+
+  it('falls back to the default icon when nav_icon is null', () => {
+    const items = buildNavigationItems([
+      mockApp({ app_key: 'snippets', nav_icon: null, nav_order: 2 }),
+    ]);
+    expect(findLeaf(items, 'snippets')?.icon).toBe(ExtensionIcon);
+  });
+
+  it('excludes a nested app_key from the top-level sidebar', () => {
+    const items = buildNavigationItems([
+      mockApp({ app_key: 'mysql_backups', group: 'backups', nav_order: 8 }),
+      mockApp({
+        app_key: 'mysql_backups/restore',
+        react_route: '/apps/mysql_backups/restore',
+        nav_order: 8,
+      }),
+    ]);
+    expect(findLeaf(items, 'mysql_backups/restore')).toBeUndefined();
+    expect(findLeaf(items, 'mysql_backups')).toBeDefined();
   });
 });

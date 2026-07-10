@@ -36,6 +36,8 @@ const app = (app_key: string, enabled: boolean): EnabledApp => ({
   custom_ui: false,
   group: null,
   nav_order: null,
+  react_route: `/apps/${app_key}`,
+  nav_icon: null,
 });
 
 /** Flatten leaf titles (parents + children) for assertion convenience. */

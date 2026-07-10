@@ -3576,21 +3576,19 @@ export interface components {
      * @description Represent a minimal per-app entry for the navigation shell.
      *
      *     :param app_key: The plugin module key.
-     *     :type app_key: str
      *     :param enabled: Whether the app is currently enabled.
-     *     :type enabled: bool
      *     :param sidebar: Whether the plugin appears in the sidebar.
-     *     :type sidebar: bool
      *     :param uri_path: The plugin's mount URI path.
-     *     :type uri_path: str
      *     :param display_name: The human-facing label for the app.
-     *     :type display_name: str
      *     :param custom_ui: Whether the app ships a bespoke React UI.
-     *     :type custom_ui: bool
      *     :param group: The nav group key this app nests under; ``None`` when the app
      *         renders as a top-level sidebar entry.
      *     :param nav_order: The app's sort position within the sidebar; ``None`` when
      *         unset.
+     *     :param react_route: The canonical React route the shell mounts and links to;
+     *         always concrete (defaulting to ``/apps/<app_key>``).
+     *     :param nav_icon: The sidebar icon key; ``None`` falls back to the shell's
+     *         default app icon.
      */
     AppKeyResponse: {
       /** App Key */
@@ -3603,8 +3601,11 @@ export interface components {
       enabled: boolean;
       /** Group */
       group: string | null;
+      nav_icon: components['schemas']['NavIcon'] | null;
       /** Nav Order */
       nav_order: number | null;
+      /** React Route */
+      react_route: string;
       /** Sidebar */
       sidebar: boolean;
       /** Uri Path */
@@ -6383,6 +6384,25 @@ export interface components {
       /** Updated At */
       updated_at?: string | null;
     };
+    /**
+     * NavIcon
+     * @description Enumerate the sidebar icon keys the React shell bundles.
+     * @enum {string}
+     */
+    NavIcon:
+      | 'assignment'
+      | 'code'
+      | 'support-agent'
+      | 'description'
+      | 'troubleshoot'
+      | 'table-chart'
+      | 'check-circle'
+      | 'mysql'
+      | 'mongo'
+      | 'postgresql'
+      | 'archive'
+      | 'science'
+      | 'bar-chart';
     /**
      * Node
      * @description Represent a node in the inventory.

@@ -49,6 +49,7 @@ from app.sep.apps.mysql_backups.restore.app import app as restore_app
 from app.sep.apps.mysql_backups.routes import router as jinja_router
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.apps.mysql_backups.views import mysql_backups_views
+from app.sep.apps.nav_icons import NavIcon
 
 MYSQL_BACKUPS_MAX_PAGINATION_LIMIT = 50
 
@@ -59,6 +60,7 @@ app = TaskExecutionApp(
     css_class="mysql_backups",
     group="backups",
     nav_order=8,
+    nav_icon=NavIcon.MYSQL,
     description="Run XtraBackup, Mydumper, and Binlog backups against MySQL hosts.",
     owner=OWNER,
     create_model=BackupCreate,
