@@ -18,6 +18,7 @@
 import { lazy } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { buildAppRoutes } from './appRegistry';
+import { SchemaDrivenAppResolver } from './components/SchemaDrivenAppResolver';
 import RootLayout from './layouts/RootLayout';
 import MainLayout from './layouts/MainLayout';
 import AuthGuard from './components/AuthGuard';
@@ -26,7 +27,6 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const AdminAppsPage = lazy(() => import('./pages/AdminAppsPage'));
-const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 const appRoutes = buildAppRoutes();
 
@@ -50,7 +50,7 @@ export const router = createBrowserRouter([
           ...appRoutes.map(({ path, element }) => ({ path, element })),
           { path: 'settings', element: <SettingsPage /> },
           { path: 'admin/apps', element: <AdminAppsPage /> },
-          { path: '*', element: <NotFoundPage /> },
+          { path: '*', element: <SchemaDrivenAppResolver /> },
         ],
       },
       {
