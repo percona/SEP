@@ -68,6 +68,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -86,28 +87,28 @@ class App(BaseCaseInsensitiveModel):
     :param name: The name of the plugin. Optional: a MODULE_NAME-only entry
         omits it and the :class:`app.sep.apps.framework.registry.AppRegistry`
         derives descriptive metadata from the module basename instead.
-    :type name: str | None
     :param module_name: The name of the module associated with the plugin. This field is
         automatically prefixed with ``app.sep.apps.`` during validation.
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    :type uri_path: HttpUrl | URIPath
     :param css_class: The CSS class associated with the plugin. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    :type css_class: str
     :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
-    :type sidebar: bool
     :param group: The nav group key this plugin nests under (read from YAML as
         ``GROUP``); ``None`` renders it as a top-level sidebar entry.
     :param nav_order: The plugin's sort position within the sidebar (read from
         YAML as ``NAV_ORDER``); ``None`` sorts last.
+    :param react_route: The canonical React route (read from YAML as
+        ``REACT_ROUTE``); ``None`` resolves to ``/apps/<key>`` in the listing.
+    :param nav_icon: The sidebar icon key (read from YAML as ``NAV_ICON``),
+        validated against the :class:`~app.sep.apps.nav_icons.NavIcon` vocabulary;
+        an unknown value fails settings validation at load.
     :param enabled: Whether the plugin ships enabled. Read only at first-startup
         seed time to set the initial :class:`app.sep.models.AppState` row;
         defaults to ``True`` so every plugin already in ``settings.yaml`` keeps
         shipping enabled. Set ``ENABLED: false`` to seed a plugin disabled.
-    :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
         JSON ``APIRouter`` instance (e.g. ``"app.sep.apps.checksums.api_routes.router"``).
         When set, the router is mounted under ``/api/apps/{key}`` by the
@@ -119,7 +120,6 @@ class App(BaseCaseInsensitiveModel):
           imported.
         * **Explicit ``null``** — opt the plugin out of the JSON API mount,
           even if a conventional module exists.
-    :type api_router_path: StrImportableAttribute | None
     """
 
     name: str | None = None
@@ -129,6 +129,8 @@ class App(BaseCaseInsensitiveModel):
     sidebar: bool = True
     group: str | None = None
     nav_order: int | None = None
+    react_route: URIPath | None = None
+    nav_icon: NavIcon | None = None
     enabled: bool = True
     api_router_path: StrImportableAttribute | None = None
 

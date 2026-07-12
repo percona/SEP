@@ -35,70 +35,131 @@ export interface MockEnabledApp {
   custom_ui: boolean;
   group: string | null;
   nav_order: number | null;
+  react_route: string;
+  nav_icon: string | null;
 }
 
 // Registry-driven nav app keys from shell/src/appNavConfig.ts — all enabled so
 // the full sidebar renders. ``display_name`` values mirror backend registry labels.
 // ``custom_ui`` is forced false here — the derived sidebar tree does not branch on
 // it. ``group`` / ``nav_order`` mirror the backend nav_order scale that drives the
-// derived tree.
+// derived tree. ``react_route`` is the sidebar link the tree derives from the
+// payload (it must match the router path); ``nav_icon`` is the backend icon key.
 const NAV_APP_METADATA = {
-  tasks: { display_name: 'Task Manager', uri_path: '/tasks', group: null, nav_order: 1 },
+  tasks: {
+    display_name: 'Task Manager',
+    uri_path: '/tasks',
+    group: null,
+    nav_order: 1,
+    react_route: '/tasks',
+    nav_icon: 'assignment',
+  },
   snippets: {
     display_name: 'Snippet Manager',
     uri_path: '/snippets',
     group: null,
     nav_order: 2,
+    react_route: '/snippets',
+    nav_icon: 'code',
   },
   atw: {
     display_name: 'Collect Diagnostic Data',
     uri_path: '/atw',
     group: 'diagnostics',
     nav_order: 3,
+    react_route: '/atw',
+    nav_icon: 'support-agent',
   },
-  alerts: { display_name: 'Alert Templates', uri_path: '/alerts', group: 'alerts', nav_order: 4 },
+  alerts: {
+    display_name: 'Alert Templates',
+    uri_path: '/alerts',
+    group: 'alerts',
+    nav_order: 4,
+    react_route: '/alerts/templates',
+    nav_icon: 'description',
+  },
   alert_troubleshooting: {
     display_name: 'Alert Troubleshooting',
     uri_path: '/alert-troubleshooting',
     group: 'alerts',
     nav_order: 5,
+    react_route: '/alerts/troubleshooting',
+    nav_icon: 'troubleshoot',
   },
-  alters: { display_name: 'Alters', uri_path: '/alters', group: null, nav_order: 6 },
-  checksums: { display_name: 'Checksums', uri_path: '/checksums', group: null, nav_order: 7 },
+  alters: {
+    display_name: 'Alters',
+    uri_path: '/alters',
+    group: null,
+    nav_order: 6,
+    react_route: '/schema-change/alters',
+    nav_icon: 'table-chart',
+  },
+  checksums: {
+    display_name: 'Checksums',
+    uri_path: '/checksums',
+    group: null,
+    nav_order: 7,
+    react_route: '/apps/checksums',
+    nav_icon: 'check-circle',
+  },
   mysql_backups: {
     display_name: 'MySQL Backups',
     uri_path: '/mysql_backups',
     group: 'backups',
     nav_order: 8,
+    react_route: '/apps/mysql_backups',
+    nav_icon: 'mysql',
   },
   backup_mongo: {
     display_name: 'MongoDB Backups',
     uri_path: '/backup_mongo',
     group: 'backups',
     nav_order: 9,
+    react_route: '/backups/mongodb',
+    nav_icon: 'mongo',
   },
   backup_pg: {
     display_name: 'PostgreSQL Backups',
     uri_path: '/backups/postgresql',
     group: 'backups',
     nav_order: 10,
+    react_route: '/backups/postgresql',
+    nav_icon: 'postgresql',
   },
-  archives: { display_name: 'Archives', uri_path: '/archives', group: null, nav_order: 11 },
+  archives: {
+    display_name: 'Archives',
+    uri_path: '/archives',
+    group: null,
+    nav_order: 11,
+    react_route: '/apps/archives',
+    nav_icon: 'archive',
+  },
   dipper: {
     display_name: 'Dipper Data Collection',
     uri_path: '/dipper',
     group: 'diagnostics',
     nav_order: 12,
+    react_route: '/dipper',
+    nav_icon: 'science',
   },
   report: {
     display_name: 'Health & Security Report',
     uri_path: '/report',
     group: 'diagnostics',
     nav_order: 13,
+    react_route: '/reports',
+    nav_icon: 'bar-chart',
   },
 } as const satisfies Record<
   string,
-  { display_name: string; uri_path: string; group: string | null; nav_order: number }
+  {
+    display_name: string;
+    uri_path: string;
+    group: string | null;
+    nav_order: number;
+    react_route: string;
+    nav_icon: string;
+  }
 >;
 
 export const NAV_APP_KEYS = Object.keys(NAV_APP_METADATA) as (keyof typeof NAV_APP_METADATA)[];

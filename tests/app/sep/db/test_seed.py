@@ -300,7 +300,7 @@ class TestInitSepDbPeriodicTaskGating:
             session.add(
                 PeriodicTask(
                     name=SNIPPETS_TASK,
-                    task="app.sep.celery.sync_snippets",
+                    task="app.sep.apps.snippets.celery.sync_snippets",
                     enabled=True,
                     schedule_model=schedule,
                 )
@@ -330,7 +330,7 @@ class TestInitSepDbPeriodicTaskGating:
                     tasks=[
                         SystemPeriodicTaskData(
                             name=SNIPPETS_TASK,
-                            task_name="app.sep.celery.sync_snippets",
+                            task_name="app.sep.apps.snippets.celery.sync_snippets",
                             owner_app_key="snippets",
                         ),
                     ],

@@ -33,6 +33,7 @@ from sqlmodel import col
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.utils import utc_now
 from app.sep.app_drain import track_app_task
+from app.sep.apps.snippets.celery import update_snippets
 from app.sep.apps.snippets.deps import (
     IsManualSyncEnabled,
     SnippetBatchExistenceDep,
@@ -45,7 +46,6 @@ from app.sep.apps.snippets.models import (
     ScriptPreviewResponse,
     SnippetResponse,
 )
-from app.sep.celery import update_snippets
 from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import Snippet

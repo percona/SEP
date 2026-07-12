@@ -40,6 +40,7 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.utils import utc_now
 from app.sep.app_drain import track_app_task
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
+from app.sep.apps.snippets.celery import update_snippets
 from app.sep.apps.snippets.deps import (
     ApprovedSnippet,
     check_snippet_batch_existence,
@@ -49,7 +50,6 @@ from app.sep.apps.snippets.deps import (
     UnapprovedSnippet,
     ValidatedSnippet,
 )
-from app.sep.celery import update_snippets
 from app.sep.config import sep_settings
 from app.sep.deps import (
     AdminUser,

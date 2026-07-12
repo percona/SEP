@@ -36,6 +36,7 @@
       "fields": [
         {
           "label": "Task Name",
+          "min_length": 1,
           "name": "task_name",
           "required": true,
           "type": "string"

@@ -32,7 +32,7 @@ Three real couplings the synthetic kit deferred are bridged here:
   execute hook re-attaches the real host via ``model_construct``.
 * **The request-less listing.** ``load_script`` / ``list_scripts`` are plain
   callables with no request or session, so they open their own request-less
-  session (mirroring ``app/sep/celery.py``). Only loaded columns and file/meta
+  session (mirroring ``app/sep/apps/snippets/celery.py``). Only loaded columns and file/meta
   ``cached_property`` values are read after it closes — never a lazy relationship.
 * **The request-less artifact URL.** :func:`build_snippet_source` reads
   ``SNIPPETS_BASE_URL`` / ``BASE_URL`` rather than the legacy request-derived
