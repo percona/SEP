@@ -36,6 +36,7 @@
       "fields": [
         {
           "label": "Task Name",
+          "min_length": 1,
           "name": "task_name",
           "required": true,
           "type": "string"
@@ -76,12 +77,14 @@
       "fields": [
         {
           "label": "Backup Source",
+          "min_length": 1,
           "name": "backup_source",
           "required": true,
           "type": "string"
         },
         {
           "label": "Logging directory",
+          "min_length": 1,
           "name": "logging_dir",
           "required": false,
           "type": "string"
@@ -94,6 +97,7 @@
         },
         {
           "label": "Custom MySQL init command",
+          "min_length": 1,
           "name": "custom_mysql_init_command",
           "required": false,
           "type": "string"
@@ -101,6 +105,7 @@
         {
           "default": "percona",
           "label": "SSH user",
+          "min_length": 1,
           "name": "ssh_user",
           "required": false,
           "type": "string"
@@ -114,6 +119,7 @@
         },
         {
           "label": "SSH key name",
+          "min_length": 1,
           "name": "ssh_key",
           "required": false,
           "type": "string"
@@ -137,6 +143,7 @@
         },
         {
           "label": "GPG password file",
+          "min_length": 1,
           "name": "gpg_password_file",
           "required": false,
           "type": "string"
@@ -169,6 +176,7 @@
         },
         {
           "label": "Local path",
+          "min_length": 1,
           "name": "local_path",
           "required": false,
           "type": "string"
@@ -189,30 +197,35 @@
         },
         {
           "label": "Myloader extra args",
+          "min_length": 1,
           "name": "myloader_extra_args",
           "required": false,
           "type": "string"
         },
         {
           "label": "Skip databases",
+          "min_length": 1,
           "name": "skip_databases",
           "required": false,
           "type": "string"
         },
         {
           "label": "Include databases",
+          "min_length": 1,
           "name": "include_databases",
           "required": false,
           "type": "string"
         },
         {
           "label": "Pre-script",
+          "min_length": 1,
           "name": "pre_script",
           "required": false,
           "type": "string"
         },
         {
           "label": "Post-script",
+          "min_length": 1,
           "name": "post_script",
           "required": false,
           "type": "string"
@@ -243,6 +256,7 @@
         },
         {
           "label": "Data directory",
+          "min_length": 1,
           "name": "datadir",
           "required": false,
           "type": "string"
@@ -256,6 +270,7 @@
         },
         {
           "label": "XtraBackup prepare memory",
+          "min_length": 1,
           "name": "xb_prepare_memory",
           "required": false,
           "type": "string"
@@ -296,24 +311,28 @@
         },
         {
           "label": "Incremental destination path",
+          "min_length": 1,
           "name": "incremental_dest_path",
           "required": false,
           "type": "string"
         },
         {
           "label": "XtraBackup restore args",
+          "min_length": 1,
           "name": "xtrabackup_restore_args",
           "required": false,
           "type": "string"
         },
         {
           "label": "Keyring file data",
+          "min_length": 1,
           "name": "keyring_file_data",
           "required": false,
           "type": "string"
         },
         {
           "label": "XtraBackup AES-256 keyfile",
+          "min_length": 1,
           "name": "xtrabackup_aes256_keyfile",
           "required": false,
           "type": "string"
@@ -334,6 +353,7 @@
         },
         {
           "label": "Master IP",
+          "min_length": 1,
           "name": "master_ip",
           "required": false,
           "type": "string"
@@ -347,12 +367,14 @@
         },
         {
           "label": "Master user",
+          "min_length": 1,
           "name": "master_user",
           "required": false,
           "type": "string"
         },
         {
           "label": "Master password",
+          "min_length": 1,
           "name": "master_password",
           "required": false,
           "type": "string"
@@ -376,6 +398,7 @@
       "fields": [
         {
           "label": "Start file",
+          "min_length": 1,
           "name": "start_file",
           "required": false,
           "type": "string"
@@ -388,6 +411,7 @@
         },
         {
           "label": "Stop file",
+          "min_length": 1,
           "name": "stop_file",
           "required": false,
           "type": "string"
@@ -400,12 +424,14 @@
         },
         {
           "label": "Use SQL file",
+          "min_length": 1,
           "name": "use_sql_file",
           "required": false,
           "type": "string"
         },
         {
           "label": "Binlog restore extra args",
+          "min_length": 1,
           "name": "binlog_restore_extra_args",
           "required": false,
           "type": "string"
