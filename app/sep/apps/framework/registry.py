@@ -125,6 +125,8 @@ def _synthesize_legacy_app(plugin: App, auto_key: str) -> BaseApp:
         sidebar=plugin.sidebar,
         group=plugin.group,
         nav_order=plugin.nav_order,
+        react_route=plugin.react_route,
+        nav_icon=plugin.nav_icon,
         enabled=plugin.enabled,
         api_router=api_router,
         jinja_router=import_var(plugin.router_path),
@@ -162,6 +164,10 @@ def _bind_definition(definition: BaseApp, plugin: App, auto_key: str) -> BaseApp
         overrides["group"] = plugin.group
     if "nav_order" in plugin.model_fields_set:
         overrides["nav_order"] = plugin.nav_order
+    if "react_route" in plugin.model_fields_set:
+        overrides["react_route"] = plugin.react_route
+    if "nav_icon" in plugin.model_fields_set:
+        overrides["nav_icon"] = plugin.nav_icon
     return definition.model_copy(update=overrides)
 
 

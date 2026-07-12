@@ -225,11 +225,11 @@ def _dest_port_schema_field() -> Any:
 
 
 def test_dest_port_derived_schema_bounds_preserved() -> None:
-    """Keep the derived ``dest_port`` bounds at 1-65535 after the shared-constant swap.
+    """Keep the derived ``dest_port`` bounds at 1-65535 via the shared ``TcpPort`` type.
 
-    The bounds sit at the field's outer ``Annotated`` level via the shared
-    ``TCP_PORT_MIN`` / ``TCP_PORT_MAX`` constants; substituting a ``TcpPort | None``
-    union would hide them from the form-DSL derivation and silently drop the range.
+    ``dest_port`` reuses ``TcpPort | None`` and carries its bounds inside the union
+    member. The hardened form-DSL bounds scan descends into union members, so the
+    1-65535 range surfaces in the derived schema instead of being silently dropped.
     """
     field = _dest_port_schema_field()
     assert field.ge == TCP_PORT_MIN

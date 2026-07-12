@@ -39,6 +39,8 @@ const app = (overrides: Partial<EnabledApp>): EnabledApp => ({
   custom_ui: false,
   group: null,
   nav_order: null,
+  react_route: '/snippets',
+  nav_icon: null,
   ...overrides,
 });
 

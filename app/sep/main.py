@@ -56,7 +56,7 @@ from app.sep.api.router import api_router
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.apps.framework.registry import get_app_registry
-from app.sep.celery import sync_snippets
+from app.sep.apps.snippets.celery import sync_snippets
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
