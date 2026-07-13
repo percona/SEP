@@ -2002,6 +2002,7 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
         start_time = time.time()
         self.logger.info('>>>>>>>>>>>>>>>>>> Restore started.')
 
+        exit_status = STATUS_OK
         rst = None
         for server_data in servers:
             self.backup_type = server_data.get('BACKUP_TYPE')
@@ -2023,9 +2024,11 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
                     self.logger.error(exc.message)
                     self.logger.error('Restore failed for this host.')
                     rst.notify(STATUS_CRITICAL, exc.message)
+                    exit_status = STATUS_CRITICAL
                 except Exception:
                     self.logger.exception('Unhandled exception occurred.')
                     rst.notify(STATUS_CRITICAL, 'Unhandled exception occurred during restore.')
+                    exit_status = STATUS_CRITICAL
 
         time_spent = time.time() - start_time
         self.logger.info('>>>>>>>>>>>>>>>>>> Restore finished. Total duration: %s.',
@@ -2033,6 +2036,8 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
 
         # Release lock
         lock_file.free_lock()
+
+        return exit_status
 
 class Myloader(Restore):
     """Restore from mydumper for individual server."""
@@ -2124,12 +2129,20 @@ class Myloader(Restore):
             myloader_cmd.extend(self.myloader_extra_args.split(' '))
 
         self.logger.info('Running: %s', ' '.join(myloader_cmd))
-        ml_log_stream = open(self.ml_log_file, 'a')
-        proc = subprocess.Popen(myloader_cmd, stdout=ml_log_stream, stderr=ml_log_stream)
-        proc.communicate()
+        with open(self.ml_log_file, 'a') as ml_log_stream:
+            proc = subprocess.Popen(myloader_cmd,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT)
+            for line in proc.stdout:
+                decoded_line = line.decode('utf-8', errors='replace')
+                ml_log_stream.write(decoded_line)
+                ml_log_stream.flush()
+                sys.stdout.write(decoded_line)
+                sys.stdout.flush()
+            proc.wait()
         if proc.returncode != 0:
-            ml_log_stream = open(self.ml_log_file, 'r')
-            err = ml_log_stream.readlines()[-1]
+            with open(self.ml_log_file, 'r') as ml_log_stream:
+                err = ml_log_stream.readlines()[-1]
             msg = 'myloader failed: %s For more details, see %s' % (err, self.ml_log_file)
             raise BackupError(msg)
 
