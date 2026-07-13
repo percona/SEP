@@ -119,6 +119,7 @@ class AppRegistry:
         self,
         key: str,
         states: Mapping[str, AppLifecycleEnum],
+        memo: dict[str, bool] | None = None,
     ) -> bool:
         """Return whether ``key``'s app is effectively enabled.
 
@@ -132,24 +133,53 @@ class AppRegistry:
         :param key: The registry key of the app to resolve.
         :param states: A ``{state_key: lifecycle}`` map (e.g. from
             :meth:`AppStateManager.all_lifecycle_states`).
+        :param memo: An optional ``{key: bool}`` cache shared across a
+            full-registry projection so shared dependency subtrees are walked
+            once rather than re-walked per app. Only reuse a memo within a
+            single ``states`` snapshot; a fresh ``states`` needs a fresh memo.
         :return: ``True`` when the app and every dependency are enabled.
         """
         app = self._by_key.get(key)
         if app is None:
             return False
-        return self._effective_enabled(app, states, frozenset())
+        return self._effective_enabled(app, states, frozenset(), memo)
 
     def _effective_enabled(
         self,
         app: BaseApp,
         states: Mapping[str, AppLifecycleEnum],
         stack: frozenset[str],
+        memo: dict[str, bool] | None = None,
     ) -> bool:
         """Resolve ``app``'s effective-enabled state along a DFS path.
 
         :param app: The app being resolved.
         :param states: The ``{state_key: lifecycle}`` map.
         :param stack: The keys on the current recursion path (cycle guard).
+        :param memo: An optional ``{key: bool}`` cache; a resolved result is
+            stored under ``app.key`` and reused on the next visit.
+        :return: ``True`` when the app and every dependency are enabled.
+        """
+        if memo is not None and app.key in memo:
+            return memo[app.key]
+        result = self._resolve_effective(app, states, stack, memo)
+        if memo is not None:
+            memo[app.key] = result
+        return result
+
+    def _resolve_effective(
+        self,
+        app: BaseApp,
+        states: Mapping[str, AppLifecycleEnum],
+        stack: frozenset[str],
+        memo: dict[str, bool] | None,
+    ) -> bool:
+        """Compute ``app``'s effective-enabled state (the un-memoized body).
+
+        :param app: The app being resolved.
+        :param states: The ``{state_key: lifecycle}`` map.
+        :param stack: The keys on the current recursion path (cycle guard).
+        :param memo: The projection cache threaded into dependency resolution.
         :return: ``True`` when the app and every dependency are enabled.
         """
         if app.state_key in PROTECTED_APP_KEYS:
@@ -159,12 +189,13 @@ class AppRegistry:
         if not self._own_enabled(app, states):
             return False
         if app.key in stack:
-            # Defensive: the build rejects cycles, so this is unreachable.
-            return True
+            # Defensive: the build rejects cycles, so this is unreachable. Fail
+            # closed -- an unexpected cycle gates the app off, never on.
+            return False
         stack = stack | {app.key}
         for dep_key in app.requires_apps:
             dep = self._by_key.get(dep_key)
-            if dep is None or not self._effective_enabled(dep, states, stack):
+            if dep is None or not self._effective_enabled(dep, states, stack, memo):
                 return False
         return True
 

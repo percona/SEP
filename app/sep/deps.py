@@ -614,8 +614,11 @@ async def get_default_context(
     from app.sep.apps.framework.registry import get_app_registry
 
     registry = get_app_registry()
+    memo: dict[str, bool] = {}
     plugins = [
-        app for app in registry if registry.resolve_effective_enabled(app.key, states)
+        app
+        for app in registry
+        if registry.resolve_effective_enabled(app.key, states, memo)
     ]
     return {
         "user": user,

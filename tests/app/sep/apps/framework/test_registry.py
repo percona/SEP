@@ -927,6 +927,49 @@ class TestEffectiveEnabled:
         )
         assert registry.resolve_effective_enabled("a", {}) is True
 
+    def test_cycle_at_resolve_time_fails_closed(self) -> None:
+        """Gate an app off if a dependency cycle is present at resolve time.
+
+        The build rejects cycles, so this guards the defensive branch against
+        post-build mutation or an unexpected graph shape: a detected cycle must
+        fail closed (gate the app off), never fall through to enabled.
+        """
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        # Inject an ``a -> b -> a`` cycle past the build-time validation.
+        registry._by_key["b"] = registry._by_key["b"].model_copy(
+            update={"requires_apps": ("a",)}
+        )
+        assert registry.resolve_effective_enabled("a", {}) is False
+
+    def test_memo_caches_shared_subtree_across_calls(self) -> None:
+        """Reuse a memoized dependency result across a full-registry projection."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("shared",)),
+                _dep_app("b", requires_apps=("shared",)),
+                _dep_app("shared"),
+            ]
+        )
+        memo: dict[str, bool] = {}
+        assert registry.resolve_effective_enabled("a", {}, memo) is True
+        assert registry.resolve_effective_enabled("b", {}, memo) is True
+        # The shared subtree is resolved once and cached for later reuse.
+        assert memo["shared"] is True
+
+    def test_memo_matches_unmemoized_result_when_dep_disabled(self) -> None:
+        """Produce identical gating with and without a memo for a disabled dep."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("shared",)),
+                _dep_app("b", requires_apps=("shared",)),
+                _dep_app("shared"),
+            ]
+        )
+        states = {"shared": AppLifecycleEnum.DISABLED}
+        memo: dict[str, bool] = {}
+        assert registry.resolve_effective_enabled("a", states, memo) is False
+        assert registry.resolve_effective_enabled("b", states, memo) is False
+
 
 class TestChildApps:
     """Cover ``child_apps`` structural registration in ``build_app_registry``."""

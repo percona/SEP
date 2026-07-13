@@ -99,10 +99,11 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
     """
     states = await AppStateManager.all_lifecycle_states(session)
     registry = get_app_registry()
+    memo: dict[str, bool] = {}
     return [
         AppKeyResponse(
             app_key=app.key,
-            enabled=registry.resolve_effective_enabled(app.key, states),
+            enabled=registry.resolve_effective_enabled(app.key, states, memo),
             sidebar=app.sidebar,
             uri_path=app.uri_path,
             display_name=app.display_name,
