@@ -12,9 +12,7 @@ def _creds_path(config_source: str) -> str:
 
     :param config_source: The config surface named in the error message, either
         ``"backup"`` or ``"restore"``.
-    :type config_source: str
     :return: The credentials-file path (from the config or the ``$HOME`` fallback).
-    :rtype: str
     """
     config_yaml = os.environ.get("NOMAD_META_CONFIG")
     if config_yaml:
@@ -43,12 +41,9 @@ def _creds_path_from_config(config: dict | None, config_source: str = "restore")
     """Resolve the MongoDB URI credentials path from an already-parsed config dict.
 
     :param config: The parsed restore/backup config dict, or ``None`` when absent.
-    :type config: dict | None
     :param config_source: The config surface named in the error message, either
         ``"backup"`` or ``"restore"``.
-    :type config_source: str
     :return: The credentials-file path (from the config or the ``$HOME`` fallback).
-    :rtype: str
     """
     if config:
         path = config.get("credentials_path")
@@ -68,9 +63,7 @@ def pbm_creds(creds_path: str) -> str:
     """Read the MongoDB URI from ``creds_path``, exiting 1 on any read failure.
 
     :param creds_path: The resolved credentials-file path to read.
-    :type creds_path: str
     :return: The stripped MongoDB URI read from the file.
-    :rtype: str
     """
     try:
         with open(creds_path, encoding="utf-8") as fpt:
