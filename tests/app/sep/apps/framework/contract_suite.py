@@ -43,7 +43,7 @@ from polyfactory.factories.pydantic_factory import ModelFactory
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning, TaskExecuteWrite
-from app.sep.apps.framework.apps import TaskExecutionApp
+from app.sep.apps.framework.apps import TaskExecutionApp, UNGUARDED
 from app.sep.apps.framework.conformance import CAPABILITY_RENDERED_CONTROLS
 from app.sep.apps.framework.form_dsl import (
     find_ref_marker,
@@ -849,17 +849,38 @@ class DerivedRouterContractTests:
         if self.remapped_username is not None:
             assert payload["created_by"] == self.remapped_username
 
+    def _valid_update_body(self, *, task_name: str) -> dict[str, Any] | None:
+        """Return a valid derived-PUT body for the guard tests.
+
+        Apps whose per-field gates reject the generic Polyfactory create body (the
+        ``mysql_backups`` / ``restore`` per-``backup_type`` gates) override this so
+        the guard tests exercise the guard rather than 422-ing on body parsing.
+
+        :param task_name: The task name stamped into the body.
+        :return: A valid PUT body, or ``None`` for a ``schema=`` passthrough app
+            with no derivable body.
+        """
+        return build_valid_create_body(self.app_def, task_name=task_name)
+
     def test_update_guard_409(
         self, contract_client: TestClient, mock_task_api: Any
     ) -> None:
-        """Assert an ``update_guard`` dependency rejects the derived PUT with 409.
+        """Assert the derived PUT rejects a running task with 409.
 
-        Seed the *target* task RUNNING so the guard fires whether it checks the
-        single task (a per-task conflict guard) or any owned task.
+        Runs whenever the app derives a PUT (create-mirroring, no
+        ``update_handler``) and has not opted out via :data:`UNGUARDED`, so it
+        covers both the framework default guard and a per-app override. Seed the
+        *target* task RUNNING so the guard fires whether it checks the single task
+        or any owned task.
         """
-        if not getattr(self.app_def, "update_guard", ()):
-            pytest.skip("no update guard")
-        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        if (
+            not self.app_def.capabilities.update
+            or self.app_def.update_handler is not None
+        ):
+            pytest.skip("no derived update route")
+        if self.app_def.update_guard is UNGUARDED:
+            pytest.skip("update guards opted out")
+        body = self._valid_update_body(task_name=SEEDED_TASK_NAME)
         if body is None:
             pytest.skip("no derivable update body (schema= passthrough)")
         mock_task_api.seed_running(SEEDED_TASK_NAME, owner=self.app_def.owner)
@@ -872,14 +893,74 @@ class DerivedRouterContractTests:
     def test_delete_guard_409(
         self, contract_client: TestClient, mock_task_api: Any
     ) -> None:
-        """Assert a ``delete_guard`` dependency rejects the derived DELETE with 409.
+        """Assert the derived DELETE rejects a running task with 409.
 
-        Seed the *target* task RUNNING so the guard fires whether it checks the
-        single task (a per-task conflict guard) or any owned task.
+        Runs whenever the app derives a DELETE (no ``delete_handler``) and has not
+        opted out via :data:`UNGUARDED`. Seed the *target* task RUNNING so the guard
+        fires whether it checks the single task or any owned task.
         """
-        if not getattr(self.app_def, "delete_guard", ()):
-            pytest.skip("no delete guard")
+        if (
+            not self.app_def.capabilities.delete
+            or self.app_def.delete_handler is not None
+        ):
+            pytest.skip("no derived delete route")
+        if self.app_def.delete_guard is UNGUARDED:
+            pytest.skip("delete guards opted out")
         mock_task_api.seed_running(SEEDED_TASK_NAME, owner=self.app_def.owner)
+        base = app_base_url(self.app_def)
+
+        response = contract_client.delete(f"{base}/{SEEDED_TASK_NAME}")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_update_protected_task_409(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert the framework default guard rejects a PUT on a protected task.
+
+        Protected-task rejection is a property of the framework default guards, so
+        this runs only for an app keeping the default (``update_guard == ()``): an
+        :data:`UNGUARDED` opt-out or a per-app override tuple (which need not check
+        protection) is skipped.
+        """
+        if (
+            not self.app_def.capabilities.update
+            or self.app_def.update_handler is not None
+        ):
+            pytest.skip("no derived update route")
+        if self.app_def.update_guard != ():
+            pytest.skip("protected-task rejection is the framework default guard only")
+        body = self._valid_update_body(task_name=SEEDED_TASK_NAME)
+        if body is None:
+            pytest.skip("no derivable update body (schema= passthrough)")
+        mock_task_api.seed_task(
+            SEEDED_TASK_NAME, owner=self.app_def.owner, protected=True
+        )
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_delete_protected_task_409(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert the framework default guard rejects a DELETE on a protected task.
+
+        Protected-task rejection is a property of the framework default guards, so
+        this runs only for an app keeping the default (``delete_guard == ()``): an
+        :data:`UNGUARDED` opt-out or a per-app override tuple is skipped.
+        """
+        if (
+            not self.app_def.capabilities.delete
+            or self.app_def.delete_handler is not None
+        ):
+            pytest.skip("no derived delete route")
+        if self.app_def.delete_guard != ():
+            pytest.skip("protected-task rejection is the framework default guard only")
+        mock_task_api.seed_task(
+            SEEDED_TASK_NAME, owner=self.app_def.owner, protected=True
+        )
         base = app_base_url(self.app_def)
 
         response = contract_client.delete(f"{base}/{SEEDED_TASK_NAME}")
