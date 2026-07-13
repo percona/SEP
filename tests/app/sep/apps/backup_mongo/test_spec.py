@@ -166,7 +166,7 @@ def test_build_spec_forwards_backup_compression_level():
 
 
 def test_build_spec_forwards_selected_pitr_compression():
-    """Forward a selected PITR compression unchanged (config-only PITR path, SEP-1463)."""
+    """Forward a selected PITR compression unchanged (config-only PITR path)."""
     config = _config(
         build_backup_mongo_spec(
             _s3_form(pitr_compression="snappy"),
