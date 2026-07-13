@@ -298,7 +298,18 @@ class RestoreCreate(TaskFormModel):
         Ui(section="Task"),
     ]
 
-    backup_source: Annotated[NonEmptyStr, Ui(section="General")]
+    backup_source: Annotated[
+        NonEmptyStr,
+        Ui(
+            section="General",
+            description=(
+                "Where the backup is stored. Use a local path "
+                "(/backups/mydumper/20240101), a remote host (db01:/path/to/backup), "
+                "s3://bucket/path, or gs://bucket/path. Add /latest to any of these "
+                "to restore the most recent backup. Avoid these characters: $ ; | & ( ) `"
+            ),
+        ),
+    ]
     logging_dir: Annotated[
         NonEmptyStr | EmptyStrToNone, Ui(label="Logging directory", section="General")
     ] = None
@@ -325,12 +336,12 @@ class RestoreCreate(TaskFormModel):
     service_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
-        Ui(label="Database Host", section="Mydumper"),
+        Ui(label="Destination Database Service", section="Mydumper"),
     ] = None
     schema_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         SchemaRef(allow_custom=True),
-        Ui(label="Database", section="Mydumper", depends_on="service_id"),
+        Ui(label="Restore to Database", section="Mydumper", depends_on="service_id", description="--database myloader option (database to restore to)"),
     ] = None
     local_path: Annotated[
         NonEmptyStr | EmptyStrToNone, Ui(label="Local path", section="Mydumper")
