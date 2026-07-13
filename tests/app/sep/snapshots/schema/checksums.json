@@ -65,18 +65,22 @@
       "collapsible": false,
       "fields": [
         {
-          "description": "Comma-separated database names",
+          "allow_custom": true,
+          "depends_on": "service_id",
+          "description": "Schemas to checksum; pick from inventory or type names.",
           "label": "Databases",
           "name": "databases",
           "required": false,
-          "type": "string"
+          "type": "multi_schema"
         },
         {
-          "description": "Comma-separated table names (schema.table format)",
+          "allow_custom": true,
+          "depends_on": "databases",
+          "description": "Tables as schema.table; pick from inventory or type names.",
           "label": "Tables",
           "name": "tables",
           "required": false,
-          "type": "string"
+          "type": "multi_table"
         }
       ],
       "render_after_submit": false,
