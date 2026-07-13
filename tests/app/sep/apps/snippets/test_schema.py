@@ -586,7 +586,7 @@ class TestEvaluateGateEnforcement:
     The ``requires`` direction is the security-critical new behaviour: a
     parameter omitted while its gate fires must be rejected server-side, not just
     hidden client-side. These pin both directions and the present/absent
-    convention, mirroring :class:`TestEvaluateVisibilityGates`.
+    convention, mirroring :class:`TestEvaluateSnippetGates`.
     """
 
     _MODE_REASON_REQUIRES = [
