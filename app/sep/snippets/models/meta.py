@@ -401,7 +401,6 @@ class SnippetMetaParameter(BaseModel):
         :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`).
 
         :return: The validated :class:`SnippetMetaParameter` instance.
-        :rtype: SnippetMetaParameter
         :raises ValueError: If both variants of a kind are declared together; if a
             gate is declared on a ``hidden`` parameter (hidden parameters are
             excluded from the form schema, so the gate would never be lowered or
