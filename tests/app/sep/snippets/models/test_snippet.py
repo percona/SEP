@@ -501,6 +501,43 @@ class TestValidatedParameters:
         assert len(result.errors) > 0
         assert not any("unknown parameter" in e for e in result.errors)
 
+    @pytest.mark.parametrize(
+        "attr",
+        ["requires_when", "requires_when_not", "forbidden_when", "forbidden_when_not"],
+    )
+    def test_gate_referencing_declared_param(self, attr):
+        """A gate referencing a declared sibling produces no errors."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "mode", "type": "bool"},
+                    {"name": "reason", "type": "str", attr: "mode"},
+                ]
+            },
+        )
+        result = snippet.validated_parameters
+        assert len(result.errors) == 0
+        assert len(result.parameters) == EXPECTED_PARAM_COUNT
+
+    @pytest.mark.parametrize(
+        "attr",
+        ["requires_when", "requires_when_not", "forbidden_when", "forbidden_when_not"],
+    )
+    def test_gate_referencing_unknown_param(self, attr):
+        """A gate referencing an undeclared sibling surfaces an error."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"parameters": [{"name": "reason", "type": "str", attr: "nope"}]},
+        )
+        result = snippet.validated_parameters
+        assert len(result.errors) > 0
+        assert any("nope" in e and attr in e for e in result.errors)
+
 
 class TestCanExecute:
     """Test the can_execute property."""

@@ -38,7 +38,7 @@ from app.sep.apps.snippets.models import (
     BatchApprovalErrorResponse,
     SnippetBatchApproveRequest,
 )
-from app.sep.apps.snippets.schema import evaluate_visibility_gates
+from app.sep.apps.snippets.schema import evaluate_snippet_gates
 from app.sep.artifact_constants import (
     ARTIFACT_DOWNLOAD_SALT,
     ARTIFACT_TYPE_SNIPPET,
@@ -317,11 +317,14 @@ async def get_validated_execution_args(
     :type referer: str | None
     :return: The validated execution arguments.
     :rtype: BaseSnippetArgs
-    :raises HTTPRedirectException: When dynamic validation fails, or a value is
-        submitted for a parameter whose conditional-visibility
-        (``visible_when`` / ``visible_when_not``) gate fires given the rest of
-        the submission — the value is rejected rather than silently stripped,
-        matching ``@apply_conditional_rules`` for hand-coded plugins.
+    :raises HTTPRedirectException: When dynamic validation fails, or a snippet
+        field gate fires given the rest of the submission — a value submitted for
+        a parameter whose visibility (``visible_when`` / ``visible_when_not``) or
+        ``forbidden`` (``forbidden_when`` / ``forbidden_when_not``) gate fires, or
+        a parameter omitted while its ``requires`` (``requires_when`` /
+        ``requires_when_not``) gate fires. The submission is rejected rather than
+        silently stripped, matching ``@apply_conditional_rules`` for hand-coded
+        plugins.
     """
     execution_model = snippet.get_execution_model()
     async with request.form() as form:
@@ -343,7 +346,7 @@ async def get_validated_execution_args(
         )
         raise _get_snippet_redirect_exc(request, referer) from None
 
-    gate_failures = evaluate_visibility_gates(snippet, execution_args)
+    gate_failures = evaluate_snippet_gates(snippet, execution_args)
     if gate_failures:
         messages.error(request, "Error executing snippet: " + "; ".join(gate_failures))
         raise _get_snippet_redirect_exc(request, referer)
