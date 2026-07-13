@@ -79,7 +79,7 @@ def build_apps_router(registry: AppRegistry) -> APIRouter:
         plugin_deps = (
             []
             if app.state_key in PROTECTED_APP_KEYS
-            else [Depends(require_app_enabled(app.state_key))]
+            else [Depends(require_app_enabled(app.key))]
         )
         apps_router.include_router(
             app.api_router,

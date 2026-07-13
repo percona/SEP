@@ -402,7 +402,7 @@ for app in get_app_registry():
     plugin_deps = (
         []
         if app.state_key in PROTECTED_APP_KEYS
-        else [Depends(require_app_enabled(app.state_key))]
+        else [Depends(require_app_enabled(app.key))]
     )
     sep_app.include_router(
         app.jinja_router, prefix=app.uri_path, dependencies=plugin_deps

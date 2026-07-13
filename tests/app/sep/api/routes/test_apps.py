@@ -226,6 +226,34 @@ class TestListAppsForNavigation:
         assert snippets["enabled"] is False
         assert "lifecycle_state" not in snippets
 
+    async def test_atw_reported_disabled_when_snippets_disabled(
+        self, api_user_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Atw reports ``enabled=False`` when the ``snippets`` app it requires is disabled.
+
+        This pins the cross-app dependency on the nav surface: atw owns an
+        ``ENABLED`` row (or none) yet is projected disabled because a required
+        app is off, so the shell hides it.
+        """
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["snippets"]["enabled"] is False
+        assert entries["atw"]["enabled"] is False
+
+    async def test_atw_reported_enabled_when_snippets_enabled(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Atw reports ``enabled=True`` when snippets is enabled (no regression)."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["snippets"]["enabled"] is True
+        assert entries["atw"]["enabled"] is True
+
     async def test_unauthenticated_returns_json_401(
         self, api_unauthenticated_client: TestClient
     ) -> None:
