@@ -59,23 +59,16 @@ def coerce_target_list(value: Any) -> list[int | str]:
     :return: A list of inventory ids and/or free-typed names.
     """
     if value is None or value == "":
-        coerced: list[int | str] | Any = []
-    elif isinstance(value, list):
-        coerced = value
-    elif isinstance(value, set):
-        coerced = list(value)
-    elif isinstance(value, int):
-        coerced = [value]
-    elif isinstance(value, str):
-        stripped = value.strip()
-        coerced = (
-            []
-            if not stripped
-            else [part.strip() for part in stripped.split(",") if part.strip()]
-        )
-    else:
-        coerced = value
-    return coerced
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, set):
+        return list(value)
+    if isinstance(value, int):
+        return [value]
+    if isinstance(value, str):
+        return [part.strip() for part in value.strip().split(",") if part.strip()]
+    return value
 
 
 class ChecksumsCreate(BaseModel):
@@ -170,18 +163,6 @@ class ChecksumsForm(TaskFormModel):
     :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).
     """
 
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_legacy_target_fields(cls, data: Any) -> Any:
-        """Accept legacy comma-separated strings for ``databases`` / ``tables``."""
-        if not isinstance(data, dict):
-            return data
-        updated = dict(data)
-        for key in ("databases", "tables"):
-            if key in updated:
-                updated[key] = coerce_target_list(updated[key])
-        return updated
-
     service_id: Annotated[
         int,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
@@ -207,16 +188,6 @@ class ChecksumsForm(TaskFormModel):
             description="Tables as schema.table; pick from inventory or type names.",
         ),
     ] = Field(default_factory=list)
-
-    @field_validator("databases", "tables")
-    @classmethod
-    def _target_dsn_safe(cls, value: list[int | str]) -> list[int | str]:
-        """Reject DSN delimiters in a free-typed schema or table name.
-
-        :param value: The submitted target list (inventory ids and/or names).
-        :return: The value unchanged when no element carries a CLI delimiter.
-        """
-        return [_dsn_safe(item) if isinstance(item, str) else item for item in value]
 
     recursion_method: Annotated[
         str,
@@ -333,3 +304,25 @@ class ChecksumsForm(TaskFormModel):
             description="Print progress reports to STDERR (e.g. time,10)",
         ),
     ] = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_target_fields(cls, data: Any) -> Any:
+        """Accept legacy comma-separated strings for ``databases`` / ``tables``."""
+        if not isinstance(data, dict):
+            return data
+        updated = dict(data)
+        for key in ("databases", "tables"):
+            if key in updated:
+                updated[key] = coerce_target_list(updated[key])
+        return updated
+
+    @field_validator("databases", "tables")
+    @classmethod
+    def _target_dsn_safe(cls, value: list[int | str]) -> list[int | str]:
+        """Reject DSN delimiters in a free-typed schema or table name.
+
+        :param value: The submitted target list (inventory ids and/or names).
+        :return: The value unchanged when no element carries a CLI delimiter.
+        """
+        return [_dsn_safe(item) if isinstance(item, str) else item for item in value]

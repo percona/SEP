@@ -15,6 +15,8 @@
 
 """Tests for the Checksums create form model."""
 
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
@@ -23,8 +25,8 @@ from app.sep.apps.checksums.views import checksums_views
 from app.sep.apps.framework.form_dsl import derive_app_schema
 
 
-def _minimal_body(**overrides) -> dict:
-    """Return a minimal valid ChecksumsForm payload."""
+def _minimal_body(**overrides) -> dict[str, Any]:
+    """Return a minimal valid ``ChecksumsForm`` payload."""
     body = {
         "task_name": "chk",
         "hostname": "executor-1",
@@ -68,7 +70,7 @@ class TestChecksumsFormTargets:
             ChecksumsForm.model_validate(_minimal_body(databases=["bad,name"]))
 
     def test_schema_derivation_emits_multi_value_free_solo_fields(self) -> None:
-        """Derive multi_schema / multi_table fields with allow_custom on GET /schema."""
+        """Derive ``multi_schema`` / ``multi_table`` fields with ``allow_custom`` on ``GET /schema``."""
         schema = derive_app_schema(
             ChecksumsForm,
             checksums_views.layout,

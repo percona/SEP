@@ -72,7 +72,7 @@ class TestChecksumsJinjaFormDeps:
 
 
 class TestLegacyChecksumsCreateToForm:
-    """Cover legacy Jinja POST → ChecksumsForm mapping."""
+    """Cover legacy Jinja POST → ``ChecksumsForm`` mapping."""
 
     def test_merges_text_fields_and_extra_args_targets(self) -> None:
         """Merge databases/tables inputs with matching extra_args tokens."""

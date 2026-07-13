@@ -84,8 +84,8 @@ def legacy_checksums_create_to_form(
     :return: ``(form, remaining_args)`` where ``remaining_args`` excludes target
         ``--databases`` / ``--tables`` tokens.
     """
-    databases: list[int | str] = list(coerce_target_list(flat.databases))
-    tables: list[int | str] = list(coerce_target_list(flat.tables))
+    databases = list(coerce_target_list(flat.databases))
+    tables = list(coerce_target_list(flat.tables))
 
     if flat.schema_id and -1 not in flat.schema_id:
         databases.extend(schema_id for schema_id in flat.schema_id if schema_id > 0)
@@ -93,7 +93,7 @@ def legacy_checksums_create_to_form(
     if flat.table_id:
         tables.extend(tid for tid in flat.table_id if tid > 0)
 
-    remaining_args: list[str] = []
+    remaining_args = []
     if flat.extra_args:
         for arg in shlex.split(flat.extra_args):
             if arg.startswith("--databases="):

@@ -67,10 +67,15 @@ async def _resolve_schema_names(
     values: list[int | str],
     inventory_api: InventoryAPI,
 ) -> str:
-    """Join inventory schema ids and free-typed names into a ``--databases`` value."""
+    """Join inventory schema ids and free-typed names into a ``--databases`` value.
+
+    :param values: The target list of inventory schema ids and/or free-typed names.
+    :param inventory_api: The inventory API client used to resolve ids to names.
+    :return: The comma-separated ``--databases`` value; empty when ``values`` is empty.
+    """
     if not values:
         return ""
-    names: list[str] = []
+    names = []
     for value in values:
         if isinstance(value, int):
             schema = await get_created_entity(
@@ -88,11 +93,17 @@ async def _resolve_table_names(
     values: list[int | str],
     inventory_api: InventoryAPI,
 ) -> str:
-    """Join inventory table ids and free-typed names into a ``--tables`` value."""
+    """Join inventory table ids and free-typed names into a ``--tables`` value.
+
+    :param values: The target list of inventory table ids and/or free-typed
+        ``schema.table`` names.
+    :param inventory_api: The inventory API client used to resolve ids to names.
+    :return: The comma-separated ``--tables`` value; empty when ``values`` is empty.
+    """
     if not values:
         return ""
-    schema_names: dict[int, str] = {}
-    entries: list[str] = []
+    schema_names = {}
+    entries = []
     for value in values:
         if isinstance(value, int):
             table = await get_created_entity(
@@ -131,7 +142,7 @@ def build_checksums_command_args(
     :param tables_arg: The resolved comma-separated ``schema.table`` strings.
     :return: The ordered argument list ready to follow the entity-derived prefix.
     """
-    target_value_args: list[str] = []
+    target_value_args = []
     if databases_arg:
         target_value_args.extend(render_value_arg(_DATABASES_ARG, databases_arg))
     if tables_arg:
