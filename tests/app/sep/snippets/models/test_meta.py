@@ -585,7 +585,7 @@ class TestVisibilityCondition:
 
     The React renderer hides the field and drops its value from the payload; the
     gates are also enforced server-side on the execute paths, which reject a
-    directly-submitted hidden value (see ``evaluate_visibility_gates``).
+    directly-submitted hidden value (see ``evaluate_snippet_gates``).
     """
 
     def test_string_shorthand_normalized_to_condition(self):
@@ -683,6 +683,139 @@ class TestVisibilityCondition:
         """A condition referencing a hyphenated sibling name is rejected."""
         with pytest.raises(ValidationError, match="valid Python identifier"):
             SnippetMetaParameter(name="start", visible_when_not="list-mode")
+
+
+class TestGateCondition:
+    """Test the bounded requires/forbidden field-gate grammar.
+
+    Four fields (``requires_when`` / ``requires_when_not`` / ``forbidden_when`` /
+    ``forbidden_when_not``) reuse the visibility-condition shape and lower onto
+    framework ``requires`` / ``forbidden`` :class:`FieldGate` lists. Negation is
+    expressed by field choice (the ``_when_not`` variants), mirroring visibility.
+    """
+
+    def test_string_shorthand_normalized_on_all_fields(self):
+        """A bare string is truthiness shorthand on every gate field."""
+        for attr in (
+            "requires_when",
+            "requires_when_not",
+            "forbidden_when",
+            "forbidden_when_not",
+        ):
+            param = SnippetMetaParameter(name="field", **{attr: "trigger"})
+            condition = getattr(param, attr)
+            assert isinstance(condition, SnippetVisibilityCondition)
+            assert condition.parameter == "trigger"
+            assert condition.equals is None
+
+    def test_mapping_with_equals(self):
+        """A mapping with equals yields an equality-match gate condition."""
+        param = SnippetMetaParameter(
+            name="reason",
+            requires_when={"parameter": "mode", "equals": "write"},
+        )
+        assert param.requires_when.parameter == "mode"
+        assert param.requires_when.equals == "write"
+
+    def test_no_gate_leaves_fields_none(self):
+        """A parameter without gates keeps all four gate fields as None."""
+        param = SnippetMetaParameter(name="field")
+        assert param.requires_when is None
+        assert param.requires_when_not is None
+        assert param.forbidden_when is None
+        assert param.forbidden_when_not is None
+
+    def test_both_requires_variants_set_raises(self):
+        """Declaring both requires_when and requires_when_not is rejected."""
+        with pytest.raises(ValidationError, match="requires_when"):
+            SnippetMetaParameter(
+                name="reason", requires_when="a", requires_when_not="b"
+            )
+
+    def test_both_forbidden_variants_set_raises(self):
+        """Declaring both forbidden_when and forbidden_when_not is rejected."""
+        with pytest.raises(ValidationError, match="forbidden_when"):
+            SnippetMetaParameter(
+                name="reason", forbidden_when="a", forbidden_when_not="b"
+            )
+
+    def test_requires_and_forbidden_together_allowed(self):
+        """A requires gate and a forbidden gate on one parameter is legitimate."""
+        param = SnippetMetaParameter(
+            name="reason",
+            requires_when="write_mode",
+            forbidden_when="readonly_mode",
+        )
+        assert param.requires_when.parameter == "write_mode"
+        assert param.forbidden_when.parameter == "readonly_mode"
+
+    def test_self_reference_raises(self):
+        """A gate that references the parameter itself is rejected."""
+        with pytest.raises(ValidationError, match="itself|self"):
+            SnippetMetaParameter(name="reason", requires_when="reason")
+
+    def test_required_with_requires_gate_raises(self):
+        """Combining required=True with a requires gate is rejected."""
+        with pytest.raises(ValidationError, match="required"):
+            SnippetMetaParameter(name="reason", required=True, requires_when="mode")
+
+    def test_required_with_forbidden_gate_raises(self):
+        """Combining required=True with a forbidden gate is rejected."""
+        with pytest.raises(ValidationError, match="required"):
+            SnippetMetaParameter(name="reason", required=True, forbidden_when="mode")
+
+    def test_nonempty_default_with_forbidden_gate_raises(self):
+        """A non-empty default + forbidden gate is an unsatisfiable trap."""
+        with pytest.raises(ValidationError, match="default"):
+            SnippetMetaParameter(name="reason", default="x", forbidden_when="mode")
+
+    def test_nonempty_default_with_requires_gate_raises(self):
+        """A non-empty default + requires gate is a dead rule; rejected."""
+        with pytest.raises(ValidationError, match="default"):
+            SnippetMetaParameter(name="reason", default="x", requires_when="mode")
+
+    def test_empty_default_with_gate_allowed(self):
+        """A falsy/empty default (treated as absent) is fine with a gate."""
+        param = SnippetMetaParameter(
+            name="flag", type="bool", default=False, requires_when="mode"
+        )
+        assert param.requires_when.parameter == "mode"
+
+    def test_gate_combined_with_visibility_raises(self):
+        """A gate cannot be combined with a visibility condition on one field."""
+        with pytest.raises(ValidationError, match="visibilit|combine"):
+            SnippetMetaParameter(
+                name="reason", visible_when="mode", requires_when="other"
+            )
+
+    def test_hyphenated_gated_name_raises(self):
+        """A gated parameter whose own name has a hyphen is rejected."""
+        with pytest.raises(ValidationError, match="valid Python identifier"):
+            SnippetMetaParameter(name="ha-name", requires_when="mode")
+
+    def test_hyphenated_referenced_parameter_raises(self):
+        """A gate referencing a hyphenated sibling name is rejected."""
+        with pytest.raises(ValidationError, match="valid Python identifier"):
+            SnippetMetaParameter(name="reason", forbidden_when="list-mode")
+
+    @pytest.mark.parametrize(
+        "gate_field",
+        [
+            "requires_when",
+            "requires_when_not",
+            "forbidden_when",
+            "forbidden_when_not",
+        ],
+    )
+    def test_hidden_with_gate_raises(self, gate_field):
+        """A hidden parameter cannot declare a gate.
+
+        Hidden parameters are excluded from the form schema, so their gates are
+        never lowered and never enforced server-side -- accepting them would be a
+        silent bypass of the ``requires`` / ``forbidden`` enforcement.
+        """
+        with pytest.raises(ValidationError, match="hidden"):
+            SnippetMetaParameter(name="reason", hidden=True, **{gate_field: "mode"})
 
 
 class TestHiddenParameter:
