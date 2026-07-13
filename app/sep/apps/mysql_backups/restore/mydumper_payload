@@ -31,10 +31,6 @@ try:
     MySQLdb.install_as_MySQLdb()
 except ImportError:
     import MySQLdb
-try:
-    import queue as Queue
-except ImportError:
-    import Queue
 
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 CURRENT_USER = os.getenv('PERCONA_BACKUP_USER') or os.getenv('SUDO_USER') or getuser()
@@ -155,57 +151,27 @@ PROC_STAT_STIME_IDX = 14
 
 LOGGING_NAME = {
     'B': 'binlog.log',
-    'G': 'gcesnapshot.log',
-    'L': 'mylvmbackup.log',
     'M': 'mydumper.log',
     'X': 'xtrabackup.log',
-    'T': 'tokudb.log',
-    'R': 'rdssnapshot.log',
-    'MC': 'mongodb_cluster.log',
-    'O': 'mongodb_oplog.log',
-    'H': 'psmdb_hot_backup.log',
-    'P': 'pgbackrest.log',
-    'E': 'ebssnapshot.log'
 }
 BACKUP_TYPES = {
     'B': 'Binlogs',
-    'G': 'GCESnapshot',
-    'L': 'LVMBackup',
     'M': 'Mydumper',
     'X': 'Xtrabackup',
-    'T': 'Tokudb',
-    'R': 'RDSSnapshot',
-    'MC': 'MongoDBCluster',
-    'O': 'Oplog',
-    'H': 'PSMDBHotBackup',
-    'P': 'PgBackRest',
-    'E': 'EBSSnapshot'
 }
 COMPRESSION_ALGORITHMS = {
     'B': ['gzip'],
-    'G': [''],
-    'L': [''],
     'M': ['gzip'],  # TODO: add support for zstd later
     'X': ['quicklz', 'zstd', 'lz4'],
-    'T': [''],
-    'R': [''],
-    'MC': [''],
-    'O': [''],
-    'H': [''],
-    'P': [''],
-    'E': [''],
 }
 BACKUP_DIR_REGEX = {
     'B': r'\.[0-9]{6}',
     'M': '^2[0-9]{7}$',
     'X': '^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$',
     'I': '^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}_incrementals$',
-    'T': '^2[0-9]{7}$',
-    'H': '2[0-9]{7}$',
-    'O': r'[0-9]{10}'
 }
 
-VALID_POLICIES = ["mysql", "mongodb", "postgresql"]
+VALID_POLICIES = ["mysql"]
 
 CFG_PATH = DEFAULT_CFG_DIR + '/dir_encrypt.yml'
 
