@@ -768,12 +768,13 @@ class BaseSnippet(BaseModel):
         parameters: list[SnippetMetaParameter],
         declared: set[str],
     ) -> list[str]:
-        """Validate that visibility conditions reference declared parameters.
+        """Validate that visibility/gate conditions reference declared parameters.
 
-        A ``visible_when`` / ``visible_when_not`` condition may only reference a
-        sibling parameter declared in the same snippet. References to unknown
-        parameters are surfaced as errors consistent with the per-parameter
-        validation output.
+        A ``visible_when`` / ``visible_when_not`` visibility condition or a
+        ``requires_when`` / ``requires_when_not`` / ``forbidden_when`` /
+        ``forbidden_when_not`` gate may only reference a sibling parameter declared
+        in the same snippet. References to unknown parameters are surfaced as
+        errors consistent with the per-parameter validation output.
 
         The declared-name set is derived best-effort from the raw parameter
         declarations so that a sibling which is declared but fails its own
@@ -789,7 +790,14 @@ class BaseSnippet(BaseModel):
         """
         errors = []
         for param in parameters:
-            for attr in ("visible_when", "visible_when_not"):
+            for attr in (
+                "visible_when",
+                "visible_when_not",
+                "requires_when",
+                "requires_when_not",
+                "forbidden_when",
+                "forbidden_when_not",
+            ):
                 condition = getattr(param, attr)
                 if condition is not None and condition.parameter not in declared:
                     errors.append(
