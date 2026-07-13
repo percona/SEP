@@ -49,7 +49,7 @@ def _dsn_safe(value: str) -> str:
     return value
 
 
-def _coerce_target_list(value: Any) -> list[int | str]:
+def coerce_target_list(value: Any) -> list[int | str]:
     """Normalize a legacy or wire-shaped target field into a reference list.
 
     Accepts the new ``list[int | str]`` shape, a legacy comma-separated string,
@@ -179,7 +179,7 @@ class ChecksumsForm(TaskFormModel):
         updated = dict(data)
         for key in ("databases", "tables"):
             if key in updated:
-                updated[key] = _coerce_target_list(updated[key])
+                updated[key] = coerce_target_list(updated[key])
         return updated
 
     service_id: Annotated[

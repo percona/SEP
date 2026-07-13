@@ -25,9 +25,9 @@ from fastapi import Depends, Form
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.models import (
-    _coerce_target_list,
     ChecksumsCreate,
     ChecksumsForm,
+    coerce_target_list,
     OWNER,
 )
 from app.sep.apps.checksums.spec import (
@@ -84,8 +84,8 @@ def legacy_checksums_create_to_form(
     :return: ``(form, remaining_args)`` where ``remaining_args`` excludes target
         ``--databases`` / ``--tables`` tokens.
     """
-    databases: list[int | str] = list(_coerce_target_list(flat.databases))
-    tables: list[int | str] = list(_coerce_target_list(flat.tables))
+    databases: list[int | str] = list(coerce_target_list(flat.databases))
+    tables: list[int | str] = list(coerce_target_list(flat.tables))
 
     if flat.schema_id and -1 not in flat.schema_id:
         databases.extend(schema_id for schema_id in flat.schema_id if schema_id > 0)
@@ -97,9 +97,9 @@ def legacy_checksums_create_to_form(
     if flat.extra_args:
         for arg in shlex.split(flat.extra_args):
             if arg.startswith("--databases="):
-                databases.extend(_coerce_target_list(arg.split("=", 1)[1]))
+                databases.extend(coerce_target_list(arg.split("=", 1)[1]))
             elif arg.startswith("--tables="):
-                tables.extend(_coerce_target_list(arg.split("=", 1)[1]))
+                tables.extend(coerce_target_list(arg.split("=", 1)[1]))
             else:
                 remaining_args.append(arg)
 

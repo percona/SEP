@@ -91,6 +91,7 @@ async def _resolve_table_names(
     """Join inventory table ids and free-typed names into a ``--tables`` value."""
     if not values:
         return ""
+    schema_names: dict[int, str] = {}
     entries: list[str] = []
     for value in values:
         if isinstance(value, int):
@@ -99,12 +100,16 @@ async def _resolve_table_names(
                 SyncInventoryEntityTypeEnum.TABLE,
                 value,
             )
-            schema = await get_created_entity(
-                inventory_api,
-                SyncInventoryEntityTypeEnum.SCHEMA,
-                table.schema_id,
-            )
-            entries.append(f"{schema.name}.{table.name}")
+            schema_name = schema_names.get(table.schema_id)
+            if schema_name is None:
+                schema = await get_created_entity(
+                    inventory_api,
+                    SyncInventoryEntityTypeEnum.SCHEMA,
+                    table.schema_id,
+                )
+                schema_name = schema.name
+                schema_names[table.schema_id] = schema_name
+            entries.append(f"{schema_name}.{table.name}")
         else:
             entries.append(value)
     return ",".join(entries)

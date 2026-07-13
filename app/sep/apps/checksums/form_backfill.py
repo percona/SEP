@@ -21,7 +21,7 @@ from typing import Any, TYPE_CHECKING
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.deps import parse_checksums_task_args
-from app.sep.apps.checksums.models import _coerce_target_list
+from app.sep.apps.checksums.models import coerce_target_list
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 
@@ -106,7 +106,7 @@ def reconstruct_checksums_form(
     parsed.pop("extra_args", None)
     for key in ("databases", "tables"):
         if key in parsed:
-            parsed[key] = _coerce_target_list(parsed[key])
+            parsed[key] = coerce_target_list(parsed[key])
 
     return {
         "task_name": task.name,
