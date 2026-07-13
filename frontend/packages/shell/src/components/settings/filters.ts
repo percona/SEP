@@ -78,7 +78,7 @@ export function filterSettingsGroups(
 }
 
 export interface PartitionedSettingsGroups {
-  /** Core SEP settings groups, rendered in the main region as before. */
+  /** Core SEP settings groups, rendered in the main region. */
   core: SettingClassGroup[];
   /** App-owned groups whose owning app is enabled, rendered under "App settings". */
   appOwned: SettingClassGroup[];
