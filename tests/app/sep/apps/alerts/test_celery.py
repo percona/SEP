@@ -13,15 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.sep.celery module."""
+"""Define tests for the app.sep.apps.alerts.celery module."""
 
-import hashlib
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import app.sep.celery as sep_celery
+import app.sep.apps.alerts.celery as sep_celery
 from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.apps.alerts.crud import AlertBackupManager
 from app.sep.apps.alerts.models import AlertBackup
@@ -35,206 +33,9 @@ from app.sep.clients.pmm import (
 from app.sep.clients.pmm import (
     AlertTemplate as PMMAlertTemplate,
 )
-from app.sep.snippets.config import SnippetFilter, SnippetFilterType, snippets_settings
-from app.sep.snippets.crud import SnippetManager
-from app.sep.snippets.models import Snippet
 
 EXPECTED_BACKUP_COUNT_AFTER_DIFF = 2
-MODULE = "app.sep.celery"
-
-
-class TestShouldSkipSnippet:
-    """Test should_skip_snippet."""
-
-    def test_no_filter_returns_false(self):
-        """Assert no filtering when SYNC_FILTER is None."""
-        from app.sep.celery import should_skip_snippet
-
-        with patch(f"{MODULE}.snippets_settings") as mock_settings:
-            mock_settings.SYNC_FILTER = None
-            result = should_skip_snippet(Path("test.sh"))
-
-        assert result is False
-
-    def test_extension_matches_returns_false(self):
-        """Assert file is not skipped when extension matches filter."""
-        from app.sep.celery import should_skip_snippet
-
-        with (
-            patch(f"{MODULE}.snippets_settings") as mock_settings,
-            patch(f"{MODULE}.guess_mime_type", return_value="text/plain"),
-        ):
-            mock_settings.SYNC_FILTER = {
-                SnippetFilter(".sh", SnippetFilterType.EXTENSION),
-            }
-            result = should_skip_snippet(Path("script.sh"))
-
-        assert result is False
-
-    def test_mime_matches_returns_false(self):
-        """Assert file is not skipped when MIME type matches filter."""
-        from app.sep.celery import should_skip_snippet
-
-        with (
-            patch(f"{MODULE}.snippets_settings") as mock_settings,
-            patch(
-                f"{MODULE}.guess_mime_type", return_value="application/x-shellscript"
-            ),
-        ):
-            mock_settings.SYNC_FILTER = {
-                SnippetFilter("application/x-shellscript", SnippetFilterType.MIME_TYPE),
-            }
-            result = should_skip_snippet(Path("script.bin"))
-
-        assert result is False
-
-    def test_no_match_returns_true(self):
-        """Assert file is skipped when neither extension nor MIME matches."""
-        from app.sep.celery import should_skip_snippet
-
-        with (
-            patch(f"{MODULE}.snippets_settings") as mock_settings,
-            patch(f"{MODULE}.guess_mime_type", return_value="text/plain"),
-        ):
-            mock_settings.SYNC_FILTER = {
-                SnippetFilter(".sh", SnippetFilterType.EXTENSION),
-            }
-            result = should_skip_snippet(Path("readme.txt"))
-
-        assert result is True
-
-
-class TestUpdateSnippets:
-    """Test update_snippets against a real AsyncSession."""
-
-    @staticmethod
-    def _patch_snippets_dir(mocker, tmp_path):
-        """Point snippets_settings.SNIPPETS_DIR and Snippet.BASE_DIR at tmp_path."""
-        mocker.patch.object(snippets_settings, "SNIPPETS_DIR", tmp_path)
-        # BASE_DIR patched alongside SNIPPETS_DIR so Snippet.from_path(...).relative_to(BASE_DIR) resolves under tmp_path.
-        mocker.patch.object(Snippet, "BASE_DIR", tmp_path)
-
-    @pytest.mark.asyncio
-    async def test_creates_new_snippet(self, session, mocker, tmp_path):
-        """Assert a new file on disk creates a corresponding DB row."""
-        _patch_session(mocker, session)
-        self._patch_snippets_dir(mocker, tmp_path)
-        content = b"#!/bin/bash\necho test\n"
-        (tmp_path / "test.sh").write_bytes(content)
-
-        await sep_celery.update_snippets()
-
-        rows = await SnippetManager.list(session, filename="test.sh")
-        assert len(rows) == 1
-        assert rows[0].size == len(content)
-        assert (
-            rows[0].md5_digest
-            == hashlib.md5(content, usedforsecurity=False).hexdigest()
-        )
-
-    @pytest.mark.asyncio
-    async def test_updates_existing_snippet(self, session, mocker, tmp_path):
-        """Assert an existing row is updated when the file content changes."""
-        _patch_session(mocker, session)
-        self._patch_snippets_dir(mocker, tmp_path)
-        await SnippetManager.create(
-            session,
-            Snippet(filename="test.sh", size=1, md5_digest="0" * 32),
-        )
-        content = b"#!/bin/bash\necho updated\n"
-        (tmp_path / "test.sh").write_bytes(content)
-
-        await sep_celery.update_snippets()
-
-        row = await SnippetManager.first(session, filename="test.sh")
-        assert row is not None
-        assert row.md5_digest == hashlib.md5(content, usedforsecurity=False).hexdigest()
-        assert row.size == len(content)
-
-    @pytest.mark.asyncio
-    async def test_skips_filtered_snippet(self, session, mocker, tmp_path):
-        """Assert files filtered out by SYNC_FILTER are not persisted."""
-        _patch_session(mocker, session)
-        self._patch_snippets_dir(mocker, tmp_path)
-        mocker.patch.object(
-            snippets_settings,
-            "SYNC_FILTER",
-            {SnippetFilter(".sh", SnippetFilterType.EXTENSION)},
-        )
-        (tmp_path / "readme.txt").write_text("not a script\n")
-
-        await sep_celery.update_snippets()
-
-        assert len(await SnippetManager.list(session)) == 0
-
-    @pytest.mark.asyncio
-    async def test_deletes_orphaned_snippets(self, session, mocker, tmp_path):
-        """Assert rows for files no longer on disk are deleted."""
-        _patch_session(mocker, session)
-        self._patch_snippets_dir(mocker, tmp_path)
-        # Single batch covers the common path; if delete_where ever chunks, add a >batch_size case.
-        for filename in ("orphan1.sh", "orphan2.sh", "orphan3.sh"):
-            await SnippetManager.create(
-                session,
-                Snippet(filename=filename, size=10, md5_digest="a" * 32),
-            )
-
-        await sep_celery.update_snippets()
-
-        assert len(await SnippetManager.list(session)) == 0
-
-    @pytest.mark.asyncio
-    async def test_batch_saves_modified_snippets(self, session, mocker, tmp_path):
-        """Assert multiple modified rows have their digests updated in one run."""
-        _patch_session(mocker, session)
-        self._patch_snippets_dir(mocker, tmp_path)
-        await SnippetManager.create(
-            session, Snippet(filename="a.sh", size=1, md5_digest="0" * 32)
-        )
-        await SnippetManager.create(
-            session, Snippet(filename="b.sh", size=1, md5_digest="1" * 32)
-        )
-        a_content = b"#!/bin/bash\necho a\n"
-        b_content = b"#!/bin/bash\necho b\n"
-        (tmp_path / "a.sh").write_bytes(a_content)
-        (tmp_path / "b.sh").write_bytes(b_content)
-
-        await sep_celery.update_snippets()
-
-        a_row = await SnippetManager.first(session, filename="a.sh")
-        b_row = await SnippetManager.first(session, filename="b.sh")
-        assert (
-            a_row.md5_digest
-            == hashlib.md5(a_content, usedforsecurity=False).hexdigest()
-        )
-        assert (
-            b_row.md5_digest
-            == hashlib.md5(b_content, usedforsecurity=False).hexdigest()
-        )
-
-
-class TestSyncSnippets:
-    """Test sync_snippets Celery task."""
-
-    def test_calls_update_snippets(self):
-        """Assert sync_snippets runs update_snippets via the event loop."""
-        from app.sep.celery import sync_snippets
-
-        mock_loop = MagicMock()
-        sentinel_coro = MagicMock()
-        mock_update = MagicMock(return_value=sentinel_coro)
-
-        with (
-            patch(f"{MODULE}.celery") as mock_celery,
-            patch(f"{MODULE}.update_snippets", mock_update),
-        ):
-            mock_celery.loop = mock_loop
-
-            sync_snippets()
-
-            mock_update.assert_called_once()
-            mock_loop.run_until_complete.assert_called_once_with(sentinel_coro)
-
+MODULE = "app.sep.apps.alerts.celery"
 
 _MOCK_CONTACT_POINT_COUNT = 2
 
@@ -284,9 +85,7 @@ def _patch_session(mocker, session):
     mock_session_maker = MagicMock()
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=session)
     mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
-    mocker.patch(
-        "app.sep.celery.get_async_session_maker", return_value=mock_session_maker
-    )
+    mocker.patch(f"{MODULE}.get_async_session_maker", return_value=mock_session_maker)
 
 
 class TestBackupAlertConfig:
@@ -329,7 +128,7 @@ class TestBackupAlertConfig:
             "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=None),
         )
-        mock_session_maker = mocker.patch("app.sep.celery.get_async_session_maker")
+        mock_session_maker = mocker.patch(f"{MODULE}.get_async_session_maker")
 
         await sep_celery._backup_alert_config()
 
@@ -346,7 +145,7 @@ class TestBackupAlertConfig:
             "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
-        mock_session_maker = mocker.patch("app.sep.celery.get_async_session_maker")
+        mock_session_maker = mocker.patch(f"{MODULE}.get_async_session_maker")
 
         await sep_celery._backup_alert_config()
 
@@ -399,6 +198,35 @@ class TestBackupAlertConfig:
 
         results = await AlertBackupManager.list(session)
         assert len(results) == retention
+
+    @pytest.mark.asyncio
+    async def test_backup_retention_boundary_keeps_all_at_limit(
+        self, session, mocker
+    ) -> None:
+        """Assert no delete fires when the new backup brings the count to exactly the limit.
+
+        The cleanup guard is ``len(all_backups) > retention``; at ``== retention``
+        it must not delete. Pins the boundary against a ``>=`` off-by-one.
+        """
+        retention = 3
+        for i in range(retention - 1):
+            await AlertBackupManager.save(
+                session, AlertBackup(data={"index": i}, metadata_={"count": i})
+            )
+        mock_api = _mock_pmm_api()
+        _patch_pmm_settings(mocker, retention=retention)
+        mocker.patch(
+            "app.sep.apps.alerts.deps.get_pmm_api",
+            new=AsyncMock(return_value=mock_api),
+        )
+        _patch_session(mocker, session)
+        delete_where = mocker.spy(AlertBackupManager, "delete_where")
+
+        await sep_celery._backup_alert_config()
+
+        results = await AlertBackupManager.list(session)
+        assert len(results) == retention
+        delete_where.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_backup_skips_duplicate(self, session, mocker) -> None:
@@ -479,65 +307,12 @@ class TestBackupAlertConfig:
         assert len(results) == EXPECTED_BACKUP_COUNT_AFTER_DIFF
 
 
-class TestUpdateSnippetsCooperativeCancel:
-    """``update_snippets`` honours the cooperative-cancel safe point."""
-
-    @pytest.mark.asyncio
-    async def test_stops_at_safe_point_preserving_committed_creates(
-        self, session, mocker, tmp_path
-    ):
-        """A mid-loop cancel keeps committed creates and skips post-loop writes."""
-        _patch_session(mocker, session)
-        mocker.patch.object(snippets_settings, "SNIPPETS_DIR", tmp_path)
-        mocker.patch.object(Snippet, "BASE_DIR", tmp_path)
-        (tmp_path / "a.sh").write_bytes(b"#!/bin/bash\necho a\n")
-        (tmp_path / "b.sh").write_bytes(b"#!/bin/bash\necho b\n")
-        mocker.patch(
-            f"{MODULE}.should_cancel", new=AsyncMock(side_effect=[False, True])
-        )
-        save_batch = mocker.spy(SnippetManager, "save_batch")
-        delete_where = mocker.spy(SnippetManager, "delete_where")
-
-        await sep_celery.update_snippets()
-
-        assert len(await SnippetManager.list(session)) == 1
-        save_batch.assert_not_called()
-        delete_where.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_stops_after_loop_skipping_post_loop_writes(
-        self, session, mocker, tmp_path
-    ):
-        """A cancel observed only after the loop skips the batch save and cleanup."""
-        _patch_session(mocker, session)
-        mocker.patch.object(snippets_settings, "SNIPPETS_DIR", tmp_path)
-        mocker.patch.object(Snippet, "BASE_DIR", tmp_path)
-        await SnippetManager.create(
-            session, Snippet(filename="present.sh", size=1, md5_digest="0" * 32)
-        )
-        await SnippetManager.create(
-            session, Snippet(filename="orphan.sh", size=10, md5_digest="a" * 32)
-        )
-        (tmp_path / "present.sh").write_bytes(b"#!/bin/bash\necho present\n")
-        mocker.patch(
-            f"{MODULE}.should_cancel", new=AsyncMock(side_effect=[False, True])
-        )
-        save_batch = mocker.spy(SnippetManager, "save_batch")
-        delete_where = mocker.spy(SnippetManager, "delete_where")
-
-        await sep_celery.update_snippets()
-
-        save_batch.assert_not_called()
-        delete_where.assert_not_called()
-        assert await SnippetManager.first(session, filename="orphan.sh") is not None
-
-
 class TestBackupAlertConfigCooperativeCancel:
     """``_backup_alert_config`` honours the cooperative-cancel safe points."""
 
     @pytest.mark.asyncio
     async def test_stops_before_fetch_on_cancel(self, mocker):
-        """A cancel before the fetch skips the PMM round-trip entirely."""
+        """Skip the PMM round-trip entirely when cancelled before the fetch."""
         mock_api = _mock_pmm_api()
         mocker.patch(
             "app.sep.apps.alerts.deps.get_pmm_api",
@@ -551,7 +326,7 @@ class TestBackupAlertConfigCooperativeCancel:
 
     @pytest.mark.asyncio
     async def test_stops_before_write_on_cancel(self, session, mocker):
-        """A cancel after the fetch skips the backup write, leaving prior data."""
+        """Skip the backup write when cancelled after the fetch, leaving prior data."""
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker)
         mocker.patch(
