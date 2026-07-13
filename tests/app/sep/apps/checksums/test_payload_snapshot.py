@@ -148,8 +148,15 @@ def _spec_envelope(case: dict) -> dict:
         service_id=service.id,
         **case["form"],
     )
+    databases_arg = ",".join(str(value) for value in form.databases)
+    tables_arg = ",".join(str(value) for value in form.tables)
     task = assemble_envelope(
-        build_checksums_spec(form, resolved),
+        build_checksums_spec(
+            form,
+            resolved,
+            databases_arg=databases_arg,
+            tables_arg=tables_arg,
+        ),
         resolved,
         name=_TASK_NAME,
         owner="CHECKSUMS",

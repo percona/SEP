@@ -425,6 +425,25 @@ def test_synth_ui_default_distinct_from_model_default(
     assert SynthForm.model_fields["mode"].default == "body-default"
 
 
+def test_build_valid_create_body_wraps_multi_value_refs() -> None:
+    """Wrap seeded inventory ids in lists when a ref marker declares ``multiple=True``."""
+    from app.sep.apps.checksums.app import app as checksums_app
+    from app.sep.apps.checksums.models import ChecksumsForm
+    from tests.app.factories import (
+        MOCK_CREATED_SCHEMA_ID,
+        MOCK_CREATED_SERVICE_ID,
+        MOCK_CREATED_TABLE_ID,
+    )
+
+    body = build_valid_create_body(checksums_app)
+
+    assert body is not None
+    assert body["service_id"] == MOCK_CREATED_SERVICE_ID
+    assert body["databases"] == [MOCK_CREATED_SCHEMA_ID]
+    assert body["tables"] == [MOCK_CREATED_TABLE_ID]
+    ChecksumsForm.model_validate(body)
+
+
 def test_create_response_builder_pins_stable_component(
     regular_user: CasdoorUser, mocker: Any
 ) -> None:

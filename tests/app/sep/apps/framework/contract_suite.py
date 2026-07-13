@@ -194,7 +194,8 @@ def build_valid_create_body(
     """Build a valid create form body for a model-first ``app_def``.
 
     Generates a body over ``app_def.create_model`` via polyfactory, then overrides
-    each inventory reference field with its seeded ``MOCK_*_ID``, each ``HostRef``
+    each inventory reference field with its seeded ``MOCK_*_ID`` (wrapped in a
+    one-element list when the marker declares ``multiple=True``), each ``HostRef``
     field with ``SYNTH_EXECUTOR_HOST``, and ``task_name`` with a known value.
     Returns ``None`` for a transitional ``schema=`` app, which has no
     ``create_model`` to introspect.
@@ -210,9 +211,11 @@ def build_valid_create_body(
     for name, field in model.model_fields.items():
         ref = find_ref_marker(list(field.metadata))
         if isinstance(ref, HostRef):
-            overrides[name] = SYNTH_EXECUTOR_HOST
+            overrides[name] = (
+                [SYNTH_EXECUTOR_HOST] if ref.multiple else SYNTH_EXECUTOR_HOST
+            )
         elif (mock_id := _REF_MOCK_IDS.get(type(ref))) is not None:
-            overrides[name] = mock_id
+            overrides[name] = [mock_id] if ref.multiple else mock_id
     instance = ModelFactory.create_factory(model).build(**overrides)
     return instance.model_dump(mode="json")
 

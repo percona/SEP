@@ -26,9 +26,9 @@ is threaded explicitly (the registry does not).
 """
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.checksums.deps import build_checksums_payload
 from app.sep.apps.checksums.models import ChecksumsForm, OWNER
 from app.sep.apps.checksums.routes import router as jinja_router
-from app.sep.apps.checksums.spec import build_checksums_spec
 from app.sep.apps.checksums.views import checksums_views
 from app.sep.apps.framework.apps import (
     AppCapabilities,
@@ -49,7 +49,7 @@ app = TaskExecutionApp(
     owner=OWNER,
     create_model=ChecksumsForm,
     views=checksums_views,
-    task_spec_builder=build_checksums_spec,
+    payload_builder=build_checksums_payload,
     capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True, service_type=True),
