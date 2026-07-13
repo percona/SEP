@@ -21,7 +21,7 @@ The hooks are exercised through the public :data:`snippet_source` surface
 framework's own ``test_script_source.py``. ``load_script`` / ``list_scripts`` open
 their own request-less session, so the suite points
 ``script_source.get_async_session_maker`` at the in-memory test session (the same
-pattern ``tests/app/sep/test_celery.py`` uses for the Celery sync task) — the real
+pattern ``tests/app/sep/apps/snippets/test_celery.py`` uses for the Celery sync task) — the real
 session is exercised, never a mocked ``AsyncSession``.
 """
 

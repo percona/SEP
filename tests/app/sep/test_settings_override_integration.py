@@ -310,7 +310,7 @@ async def _seed_snippets_task(
         session.add(
             PeriodicTask(
                 name=SNIPPETS_TASK,
-                task="app.sep.celery.sync_snippets",
+                task="app.sep.apps.snippets.celery.sync_snippets",
                 enabled=enabled,
                 schedule_model=schedule,
             )
@@ -332,7 +332,7 @@ async def _seed_alert_backup_task(
         session.add(
             PeriodicTask(
                 name=ALERT_BACKUP_TASK,
-                task="app.sep.celery.backup_alert_config",
+                task="app.sep.apps.alerts.celery.backup_alert_config",
                 enabled=enabled,
                 schedule_model=schedule,
             )
