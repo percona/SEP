@@ -117,11 +117,14 @@ class TestCompressionFlags:
             {},
             {"backup": {}},
             {"backup": None},
+            {"backup": []},
+            {"backup": ["compression"]},
+            {"backup": "gzip"},
             {"other": {"compression": "gzip"}},
         ],
     )
     def test_no_backup_compression_omits_flags(self, payload: str, config: dict):
-        """Omit all flags when backup compression is absent/empty (PBM keeps its default)."""
+        """Omit all flags when backup compression is absent/empty or non-mapping (PBM keeps its default)."""
         assert _FLAG_BUILDERS[payload](config) == []
 
 

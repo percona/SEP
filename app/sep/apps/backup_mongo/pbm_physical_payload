@@ -71,7 +71,9 @@ def _compression_flags(config):
     Returns [] when no compression is configured so PBM keeps its own default.
     --compression-level is only emitted alongside --compression.
     """
-    backup = config.get('backup') or {}
+    backup = config.get('backup')
+    if not isinstance(backup, dict):
+        return []
     compression = backup.get('compression')
     if not compression:
         return []
