@@ -106,7 +106,6 @@ function AppRow({
         {app.lifecycle_state === 'DISABLING' && (
           <Button
             size="small"
-            color="warning"
             variant="outlined"
             disabled={busy}
             onClick={() => onForceDisable(app)}

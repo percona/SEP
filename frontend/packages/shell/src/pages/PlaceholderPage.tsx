@@ -54,16 +54,16 @@ export default function PlaceholderPage() {
       </Typography>
 
       <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', justifyContent: 'center' }}>
-        <Button variant="contained" color="success" onClick={() => showSuccess('Success toast')}>
+        <Button variant="contained" onClick={() => showSuccess('Success toast')}>
           Show Success
         </Button>
-        <Button variant="contained" color="error" onClick={() => showError('Error toast')}>
+        <Button variant="contained" onClick={() => showError('Error toast')}>
           Show Error
         </Button>
-        <Button variant="contained" color="warning" onClick={() => showWarning('Warning toast')}>
+        <Button variant="contained" onClick={() => showWarning('Warning toast')}>
           Show Warning
         </Button>
-        <Button variant="contained" color="info" onClick={() => showInfo('Info toast')}>
+        <Button variant="contained" onClick={() => showInfo('Info toast')}>
           Show Info
         </Button>
       </Stack>
