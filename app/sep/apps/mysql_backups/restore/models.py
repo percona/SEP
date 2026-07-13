@@ -341,7 +341,12 @@ class RestoreCreate(TaskFormModel):
     schema_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         SchemaRef(allow_custom=True),
-        Ui(label="Restore to Database", section="Mydumper", depends_on="service_id", description="--database myloader option (database to restore to)"),
+        Ui(
+            label="Restore to Database",
+            section="Mydumper",
+            depends_on="service_id",
+            description="--database myloader option (database to restore to)",
+        ),
     ] = None
     local_path: Annotated[
         NonEmptyStr | EmptyStrToNone, Ui(label="Local path", section="Mydumper")
