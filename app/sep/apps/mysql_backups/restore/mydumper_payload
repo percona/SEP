@@ -2180,7 +2180,8 @@ def main():
     options = parse_args()
 
     restore_runner = Restorer(options)
-    restore_runner.run()
+    exit_status = restore_runner.run()
+    sys.exit(exit_status if exit_status is not None else STATUS_OK)
 
 
 def parse_args():
