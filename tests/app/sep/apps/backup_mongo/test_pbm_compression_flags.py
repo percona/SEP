@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the ``pbm backup`` compression-flag builder (SEP-1463).
+"""Tests for the ``pbm backup`` compression-flag builder.
 
 The logical and physical payload scripts cannot be exec'd in the test
 environment (their module-level ``pbm()`` call spawns ``subprocess`` and
