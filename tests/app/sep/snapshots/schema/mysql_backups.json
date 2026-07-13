@@ -753,6 +753,7 @@
         },
         {
           "default": false,
+          "description": "Passes --safe-slave-backup so xtrabackup pauses the replica SQL thread during the backup (required for --slave-info on a multi-threaded replica with GTID off).",
           "label": "Stop replica before backup",
           "name": "xtrabackup_stop_replica",
           "required": false,

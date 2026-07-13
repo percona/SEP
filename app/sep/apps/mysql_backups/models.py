@@ -409,7 +409,16 @@ class BackupCreate(TaskFormModel):
         Ui(label="AES-256 key file path", section="XtraBackup"),
     ] = None
     xtrabackup_stop_replica: Annotated[
-        bool, Ui(label="Stop replica before backup", section="XtraBackup")
+        bool,
+        Ui(
+            label="Stop replica before backup",
+            section="XtraBackup",
+            description=(
+                "Passes --safe-slave-backup so xtrabackup pauses the replica "
+                "SQL thread during the backup (required for --slave-info on a "
+                "multi-threaded replica with GTID off)."
+            ),
+        ),
     ] = False
     xtrabackup_lock_ddl: Annotated[bool, Ui(label="Lock DDL", section="XtraBackup")] = (
         False
