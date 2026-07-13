@@ -53,6 +53,18 @@ _EXPECTED_PAYLOADS = {
     "pbm_restore_config_payload",
 }
 
+_EXPECTED_PBM_URI_CALLS = {
+    "pbm_config_payload": "pbm_creds(_creds_path('backup'))",
+    "pbm_logical_payload": "pbm_creds(_creds_path('backup'))",
+    "pbm_physical_payload": "pbm_creds(_creds_path('backup'))",
+    "pbm_status_payload": "pbm_creds(_creds_path('backup'))",
+    "pbm_force_resync_payload": "pbm_creds(_creds_path('restore'))",
+    "pbm_list_payload": "pbm_creds(_creds_path('restore'))",
+    "pbm_logical_restore_payload": "pbm_creds(_creds_path_from_config(config))",
+    "pbm_physical_restore_payload": "pbm_creds(_creds_path_from_config(config))",
+    "pbm_restore_config_payload": "pbm_creds(_creds_path_from_config(script_config))",
+}
+
 
 def _shipped_payloads() -> list[Path]:
     """Return the opted-in payloads discovered under the real backup_mongo app.
@@ -79,6 +91,20 @@ def _region_of(text: str) -> str:
     return "\n".join(lines[begin + 1 : end]).strip("\n")
 
 
+def _pbm_mongodb_uri_assignment(text: str) -> str:
+    """Return the ``PBM_MONGODB_URI`` assignment line from a payload script.
+
+    :param text: The payload source to scan.
+    :type text: str
+    :return: The stripped assignment line.
+    :rtype: str
+    """
+    for line in text.splitlines():
+        if "PBM_MONGODB_URI" in line and "=" in line:
+            return line.strip()
+    raise AssertionError("no PBM_MONGODB_URI assignment found")
+
+
 class TestInSyncGuard:
     """Assert the shipped payloads match the canonical region (CI drift guard)."""
 
@@ -90,6 +116,7 @@ class TestInSyncGuard:
         """Discover the nine credential-bearing payloads and nothing else."""
         found = {path.name for path in _shipped_payloads()}
         assert found == _EXPECTED_PAYLOADS
+        assert set(_EXPECTED_PBM_URI_CALLS) == _EXPECTED_PAYLOADS
 
     def test_snapshot_payload_is_markerless(self) -> None:
         """``pbm_snapshot_payload`` stays out of scope (no preamble markers)."""
@@ -120,14 +147,17 @@ class TestPerPayloadAssembly:
         )
         assert rendered == current
 
-    def test_stderr_config_source_label_present_per_leg(self) -> None:
-        """Backup legs pass ``'backup'`` and restore legs pass ``'restore'``."""
-        for payload in _shipped_payloads():
-            text = payload.read_text(encoding="utf-8")
-            label = "restore" if "/restore/" in payload.as_posix() else "backup"
-            assert (
-                f"_creds_path('{label}')" in text or "_creds_path_from_config" in text
-            )
+    @pytest.mark.parametrize(
+        ("payload_name", "expected_call"),
+        sorted(_EXPECTED_PBM_URI_CALLS.items()),
+    )
+    def test_pbm_mongodb_uri_cred_call_site(
+        self, payload_name: str, expected_call: str
+    ) -> None:
+        """Assert each payload wires credentials via the expected resolver call."""
+        payload = next(p for p in _shipped_payloads() if p.name == payload_name)
+        assignment = _pbm_mongodb_uri_assignment(payload.read_text(encoding="utf-8"))
+        assert expected_call in assignment
 
 
 class TestCredsPathEnv:
