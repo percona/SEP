@@ -37,6 +37,7 @@ from app.core.settings_override.registry import (
     is_nested_overridable_parent,
     iter_nested_leaf_keys,
     nested_overridable_field,
+    nested_overridable_field_names,
     NESTED_VALUE_MISSING,
     not_overridable_field,
     ReloadClassification,
@@ -470,3 +471,31 @@ def test_nested_sibling_without_overlay_entry_stays_unmarked() -> None:
     meta = resolve_nested_field_metadata(_OverlayParent, "CHILD__PLAIN")
     assert meta is not None
     assert meta.is_advanced is False
+
+
+class _OverlayNestedParent(BaseModel):
+    """Define a model whose overlay promotes a bare submodel field to nested-overridable.
+
+    Exercises the overlay path in :func:`is_nested_overridable_parent` and
+    :func:`nested_overridable_field_names`: a subclass can mark an inherited
+    submodel field ``NESTED_ONLY`` without redeclaring it, and both parent-level
+    classifiers must agree with the overlay-aware reload classification.
+    """
+
+    INHERITED_MARKERS: ClassVar[dict[str, dict[str, object]]] = {
+        "PROMOTED": {"reload": ReloadClassification.NESTED_ONLY},
+    }
+    PROMOTED: _OverlayLeafOwner = _OverlayLeafOwner()
+    UNMARKED: _OverlayLeafOwner = _OverlayLeafOwner()
+
+
+def test_overlay_promotes_field_to_nested_overridable_parent() -> None:
+    """Assert both parent-level classifiers honor an overlay ``NESTED_ONLY`` marker."""
+    assert is_nested_overridable_parent(_OverlayNestedParent, "PROMOTED") is True
+    assert "PROMOTED" in nested_overridable_field_names(_OverlayNestedParent)
+
+
+def test_overlay_nested_parent_leaves_unmarked_field_untouched() -> None:
+    """Assert a submodel field with no overlay entry is not nested-overridable."""
+    assert is_nested_overridable_parent(_OverlayNestedParent, "UNMARKED") is False
+    assert "UNMARKED" not in nested_overridable_field_names(_OverlayNestedParent)

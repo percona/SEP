@@ -194,26 +194,26 @@ class TestNomadExecutorTlsClassification:
         "leaf", ["VERIFY_SSL", "SSL_CAFILE", "SSL_KEYFILE", "SSL_CERTFILE"]
     )
     def test_tls_leaves_are_advanced_and_hot(self, leaf: str) -> None:
-        """Each TLS leaf classifies ``advanced`` + HOT through the settings API."""
+        """Assert each TLS leaf classifies ``advanced`` + HOT through the settings API."""
         meta = resolve_nested_field_metadata(TasksSettings, f"NOMAD__{leaf}")
         assert meta is not None
         assert meta.is_advanced is True
         assert meta.reload is ReloadClassification.HOT
 
     def test_endpoint_stays_unmarked(self) -> None:
-        """The inherited ``endpoint`` has no overlay entry, so it stays non-advanced."""
+        """Assert the inherited ``endpoint`` has no overlay entry, so it stays non-advanced."""
         meta = resolve_nested_field_metadata(TasksSettings, "NOMAD__ENDPOINT")
         assert meta is not None
         assert meta.is_advanced is False
 
     def test_tls_leaves_remain_frozen(self) -> None:
-        """Dropping the redeclarations keeps ``frozen=True`` inherited from the base."""
+        """Assert dropping the redeclarations keeps ``frozen=True`` inherited from the base."""
         executor = _build_executor()
         with pytest.raises(ValidationError):
             executor.verify_ssl = True
 
     def test_hash_is_value_stable(self) -> None:
-        """Two executors with identical config hash equal (identity hash unchanged)."""
+        """Assert two executors with identical config hash equal (identity hash unchanged)."""
         assert hash(_build_executor()) == hash(_build_executor())
 
 

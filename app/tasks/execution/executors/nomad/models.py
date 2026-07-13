@@ -48,6 +48,7 @@ from app.core.settings_override.registry import (
     hot_field,
     InheritedMarkers,
     ReloadClassification,
+    REMOTE_API_TLS_MARKERS,
 )
 from app.core.utils import (
     async_run,
@@ -269,11 +270,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to ``__name__``.
     :type logger_name: str
     :param secure: Whether to use a secure connection. Defaults to False.
@@ -295,16 +293,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         (e.g. once per day). Set to ``None`` to skip registering the periodic task
         in ``app.tasks.db.seed`` (Celery beat will not run the check).
     :type check_cert_expiry_interval: IntervalSchedule | None
+    :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
+        fields (``verify_ssl`` and the ``ssl_*`` paths) HOT and ``advanced``
+        without redeclaring them; set to the shared :data:`REMOTE_API_TLS_MARKERS`.
+    :vartype INHERITED_MARKERS: InheritedMarkers
     """
 
     # Overlay, not redeclaration: redeclaring would drop the inherited frozen
     # ``FieldInfo`` and force ``frozen=True`` repeated. ``endpoint`` left unmarked.
-    INHERITED_MARKERS: ClassVar[InheritedMarkers] = {
-        "verify_ssl": {"reload": ReloadClassification.HOT, "advanced": True},
-        "ssl_cafile": {"reload": ReloadClassification.HOT, "advanced": True},
-        "ssl_keyfile": {"reload": ReloadClassification.HOT, "advanced": True},
-        "ssl_certfile": {"reload": ReloadClassification.HOT, "advanced": True},
-    }
+    # Reuses the shared TLS overlay so every remote-api model marks these the same.
+    INHERITED_MARKERS: ClassVar[InheritedMarkers] = REMOTE_API_TLS_MARKERS
     secure: bool = hot_field(default=False, advanced=True)
     timeout: int = hot_field(10, advanced=True)
     minify_payload: bool = hot_field(default=True, advanced=True)

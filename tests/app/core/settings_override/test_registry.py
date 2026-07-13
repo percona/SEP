@@ -351,7 +351,9 @@ class _OverlayProbe(BaseModel):
     ``inherited_leaf`` is a plain (unmarked) field promoted purely by the
     overlay, mirroring the inherited-field use case. ``plain_leaf`` has no
     overlay entry and must classify exactly as it would without the mechanism.
-    an explicit ``NOT_OVERRIDABLE`` marker that the overlay must not override.
+    ``conflicting`` carries an explicit ``NOT_OVERRIDABLE`` marker that the
+    overlay must not override. ``ghost_field`` is an overlay entry naming a field
+    that does not exist on the model, to prove such entries are safely ignored.
     """
 
     INHERITED_MARKERS: ClassVar[dict[str, dict[str, object]]] = {
@@ -418,6 +420,23 @@ def test_overlay_does_not_override_explicit_field_metadata() -> None:
         info, owner_cls=_OverlayProbe, field_name="conflicting"
     )
     assert is_advanced_field(info, owner_cls=_OverlayProbe, field_name="conflicting")
+
+
+def test_overlay_entry_for_absent_field_is_ignored() -> None:
+    """Assert an overlay entry naming a field absent from the model is harmless.
+
+    ``ghost_field`` has an overlay entry but no matching model field, so no
+    classifier ever resolves it and its presence must not affect the real fields.
+    """
+    assert "ghost_field" not in _OverlayProbe.model_fields
+    assert (
+        is_advanced_field(
+            _OverlayProbe.model_fields["plain_leaf"],
+            owner_cls=_OverlayProbe,
+            field_name="plain_leaf",
+        )
+        is False
+    )
 
 
 class _OverlayMaterializerProbe(BaseModel):

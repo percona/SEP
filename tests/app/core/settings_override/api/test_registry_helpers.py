@@ -436,19 +436,19 @@ class _OverlayFixtureSettings(BaseYamlSettings):
 
 
 def test_iter_class_fields_surfaces_overlay_advanced_and_reload() -> None:
-    """A bare field promoted by the overlay surfaces ``advanced`` + HOT through the API."""
+    """Assert a bare field promoted by the overlay surfaces ``advanced`` + HOT via the API."""
     metas = {meta.key: meta for meta in iter_class_fields(_OverlayFixtureSettings)}
     assert metas["PROMOTED"].is_advanced is True
     assert metas["PROMOTED"].reload is ReloadClassification.HOT
 
 
 def test_iter_class_fields_leaves_non_overlay_field_untouched() -> None:
-    """A field with no overlay entry is unaffected by the overlay mechanism."""
+    """Assert a field with no overlay entry is unaffected by the overlay mechanism."""
     metas = {meta.key: meta for meta in iter_class_fields(_OverlayFixtureSettings)}
     assert metas["PLAIN"].is_advanced is False
 
 
 def test_overlay_promoted_field_bare_call_ignores_overlay() -> None:
-    """The bare ``FieldInfo`` fast path ignores the overlay (backward-compatible)."""
+    """Assert the bare ``FieldInfo`` fast path ignores the overlay (backward-compatible)."""
     field = _OverlayFixtureSettings.model_fields["PROMOTED"]
     assert is_advanced_field(field) is False
