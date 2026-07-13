@@ -23,6 +23,17 @@ form plus resolved entities into a :class:`RunCommandSpec` / :class:`RunPythonSp
 service to a :class:`~app.tasks.models.TaskWrite` whose ``data`` dict is
 byte-uniform with the canonical hand-written envelopes in
 ``checksums/deps.py`` (run-command) and ``backup_pg/spec.py`` (run-python).
+
+A task-app's spec builder implements one of two blessed signatures:
+
+- The canonical ``(form, resolved) -> RunCommandSpec | RunPythonSpec`` feeds
+  :func:`assemble_envelope`, which supplies the executor ``target``,
+  ``_service_name``, and connectivity meta uniformly — used by archives,
+  checksums, backup_pg, mysql_backups, and now alters.
+- The connectivity-free ``(form, resolved) -> TaskWrite`` builds the envelope
+  directly via :func:`build_run_python_task` for the tasks whose payload
+  resolves no ``ServiceRef`` and so carries no connectivity meta — backup_mongo
+  and mysql_backups/restore.
 """
 
 import shlex
@@ -40,9 +51,10 @@ from app.inventory.constants import DEFAULT_MYSQL_PORT, DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
-    ArgFormat,
+    find_arg_format,
     find_ref_marker,
     HostRef,
+    resolve_arg_template,
     SchemaRef,
     ServiceRef,
     TableRef,
@@ -523,43 +535,6 @@ def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:
     write.data[RESERVED_FORM_KEY] = form.model_dump(mode="json")
 
 
-def _find_arg_format(name: str, metadata: list[Any]) -> ArgFormat | None:
-    """Return the field's single :class:`ArgFormat` marker, or ``None``.
-
-    :param name: The field name, used in the error message.
-    :param metadata: The field's ``FieldInfo.metadata`` list.
-    :return: The ``ArgFormat`` marker, or ``None`` when the field declares none.
-    :raises ValueError: When the field declares more than one ``ArgFormat`` marker.
-    """
-    found = [item for item in metadata if isinstance(item, ArgFormat)]
-    if len(found) > 1:
-        raise ValueError(
-            f"field {name!r} declares {len(found)} ArgFormat markers; at most one "
-            "is allowed per field"
-        )
-    return found[0] if found else None
-
-
-def _resolve_arg_template(name: str, annotation: Any, marker: ArgFormat) -> str:
-    """Return the field's explicit ``ArgFormat`` template, or derive it from the name.
-
-    A templateless marker (``template is None``) derives the conventional shape from
-    the field name and type: a non-``bool`` field becomes the value arg
-    ``--<kebab-field-name>=${value}`` and a ``bool`` field becomes the flag
-    ``--<kebab-field-name>``. A field declares an explicit template only when its CLI
-    spelling diverges from its name.
-
-    :param name: The field name, kebab-cased for the derived template.
-    :param annotation: The field's resolved type, selecting the value-vs-flag shape.
-    :param marker: The field's ``ArgFormat`` marker.
-    :return: The explicit template, or the derived default when none was given.
-    """
-    if marker.template is not None:
-        return marker.template
-    flag = "--" + name.replace("_", "-")
-    return flag if annotation is bool else f"{flag}=${{value}}"
-
-
 def build_command_args(form: AppFormModel) -> list[str]:
     """Assemble the run-command argument list from the form's ``ArgFormat`` markers.
 
@@ -581,11 +556,11 @@ def build_command_args(form: AppFormModel) -> list[str]:
     value_args = []
     flag_args = []
     for name, field_info in type(form).model_fields.items():
-        marker = _find_arg_format(name, field_info.metadata)
+        marker = find_arg_format(name, field_info.metadata)
         if marker is None:
             continue
         value = getattr(form, name)
-        resolved = _resolve_arg_template(name, field_info.annotation, marker)
+        resolved = resolve_arg_template(name, field_info.annotation, marker)
         if is_value_arg_template(resolved):
             if value:
                 value_args.extend(render_value_arg(resolved, value))
@@ -613,10 +588,10 @@ def validate_arg_formats(model: type[AppFormModel]) -> None:
         or when a flag template is declared on a non-``bool`` field.
     """
     for name, field_info in model.model_fields.items():
-        marker = _find_arg_format(name, field_info.metadata)
+        marker = find_arg_format(name, field_info.metadata)
         if marker is None:
             continue
-        template = _resolve_arg_template(name, field_info.annotation, marker)
+        template = resolve_arg_template(name, field_info.annotation, marker)
         identifiers = arg_template_identifiers(template)
         unsupported = identifiers - {"value"}
         if unsupported:

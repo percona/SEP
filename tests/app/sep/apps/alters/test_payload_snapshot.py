@@ -31,8 +31,14 @@ import pytest
 
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.alters.deps import build_alters_task
+from app.sep.apps.alters.deps import (
+    AltersLegacyForm,
+    build_alters_task,
+    map_alters_legacy_form,
+)
 from app.sep.apps.alters.models import AltersCreate
+from app.sep.apps.alters.spec import build_alters_spec
+from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
 from app.sep.inventory import CreatedService
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 from tests.app.sep.snapshot_utils import assert_or_update, canonical_json, SNAPSHOTS_DIR
@@ -45,17 +51,15 @@ _LOCAL_SERVICE = {"address": "localhost", "port": None, "name": "svc-local"}
 _TASK_NAME = "alters-golden"
 _HOSTNAME = "executor-host"
 
-# Each case names a slug, the inventory service shape (DSN host/port source), the
-# alters field values folded onto the required base, and the parent task's
-# ``alert_on_fail`` toggle. The db_schema / db_table targets are free-typed names
-# so ``resolve_refs`` fetches only the service (one inventory call), and the DSN
-# derives from ``str(form.db_schema|db_table)``.
+# Each case names a slug, the inventory service shape (DSN host/port source), and
+# the alters field values folded onto the required base. The db_schema / db_table
+# targets are free-typed names so ``resolve_refs`` fetches only the service (one
+# inventory call), and the DSN derives from ``str(form.db_schema|db_table)``.
 _CASES = [
     {
         "slug": "required_minimal",
         "service": _REMOTE_SERVICE,
         "form": {},
-        "alert_on_fail": False,
     },
     {
         "slug": "all_value_args",
@@ -71,7 +75,6 @@ _CASES = [
             "max_lag": "150",
             "max_flow_ctl": "25",
         },
-        "alert_on_fail": True,
     },
     {
         "slug": "all_flags",
@@ -83,49 +86,41 @@ _CASES = [
             "no_drop_new_table": True,
             "no_drop_triggers": True,
         },
-        "alert_on_fail": False,
     },
     {
         "slug": "local_portless_dsn_elision",
         "service": _LOCAL_SERVICE,
         "form": {},
-        "alert_on_fail": False,
     },
     {
         "slug": "dsn_recursion_default_table",
         "service": _REMOTE_SERVICE,
         "form": {"recursion_method": "dsn", "dsn_table": ""},
-        "alert_on_fail": False,
     },
     {
         "slug": "dsn_recursion_custom_table",
         "service": _REMOTE_SERVICE,
         "form": {"recursion_method": "dsn", "dsn_table": "D=mydb,t=custom_dsns"},
-        "alert_on_fail": False,
     },
     {
         "slug": "value_with_space_quoting",
         "service": _REMOTE_SERVICE,
         "form": {"set_vars": "sql_mode='ONLY FULL'"},
-        "alert_on_fail": False,
     },
     {
         "slug": "extra_args_tokens",
         "service": _REMOTE_SERVICE,
         "form": {"extra_args": "--sleep 0.5 --chunk-size 1000"},
-        "alert_on_fail": False,
     },
     {
         "slug": "defaults_file_custom",
         "service": _REMOTE_SERVICE,
         "form": {"pre_checks_mysql_config_file": "/etc/mysql/exec.cnf"},
-        "alert_on_fail": False,
     },
     {
         "slug": "progress_after_flags",
         "service": _REMOTE_SERVICE,
         "form": {"progress": "time,10", "no_swap_tables": True},
-        "alert_on_fail": False,
     },
 ]
 
@@ -160,6 +155,30 @@ def _form(case: dict, service: CreatedService) -> AltersCreate:
     )
 
 
+def _spec_envelope(case: dict) -> dict:
+    """Return the pure ``build_alters_spec`` + ``assemble_envelope`` dump for ``case``.
+
+    Drive the spec path directly with a ``ResolvedEntities`` whose free-typed
+    schema and table resolve to no entity, so the DSN derives from the raw form
+    values — the same shape the task path produces.
+    """
+    service = _service(case)
+    form = _form(case, service)
+    resolved = ResolvedEntities(
+        service=service,
+        entities={"db_schema": None, "db_table": None},
+        executor_host=_HOSTNAME,
+    )
+    task = assemble_envelope(
+        build_alters_spec(form, resolved),
+        resolved,
+        name=_TASK_NAME,
+        owner="ALTERS",
+        alert_on_fail=form.alert_on_fail,
+    )
+    return task.model_dump()
+
+
 async def _task_envelope(case: dict) -> dict:
     """Return the ``build_alters_task`` ``TaskWrite`` dump for ``case``.
 
@@ -172,6 +191,47 @@ async def _task_envelope(case: dict) -> dict:
     inventory.get = AsyncMock(return_value=service.model_dump())
     task = await build_alters_task(_form(case, service), inventory)
     return task.model_dump()
+
+
+async def _legacy_form_envelope(case: dict) -> dict:
+    """Return the legacy flat-form ``TaskWrite`` dump for ``case``.
+
+    Drive the deprecated Jinja path end to end: fold the split legacy form into
+    an ``AltersCreate`` via ``map_alters_legacy_form``, then resolve and assemble
+    through the shared ``build_alters_task`` both create paths funnel into.
+    """
+    service = _service(case)
+    inventory = AsyncMock(spec=RemoteAPI)
+    inventory.get = AsyncMock(return_value=service.model_dump())
+    flat = AltersLegacyForm(
+        task_name=_TASK_NAME,
+        hostname=_HOSTNAME,
+        service_id=service.id,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN new_col INT",
+        recursion_method=case["form"].get("recursion_method", "processlist"),
+        **{
+            key: value
+            for key, value in case["form"].items()
+            if key != "recursion_method"
+        },
+    )
+    task = await build_alters_task(map_alters_legacy_form(flat), inventory)
+    return task.model_dump()
+
+
+def test_spec_path_payload_matrix_matches_golden():
+    """Assert the pure spec path reproduces the frozen envelope matrix."""
+    payloads = {case["slug"]: _spec_envelope(case) for case in _CASES}
+    assert_or_update(PAYLOAD_DIR / "alters__payload.json", canonical_json(payloads))
+
+
+@pytest.mark.asyncio
+async def test_legacy_form_path_payload_matrix_matches_golden():
+    """Assert the legacy Jinja form path reproduces the frozen envelope matrix."""
+    payloads = {case["slug"]: await _legacy_form_envelope(case) for case in _CASES}
+    assert_or_update(PAYLOAD_DIR / "alters__payload.json", canonical_json(payloads))
 
 
 @pytest.mark.asyncio

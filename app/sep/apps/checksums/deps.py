@@ -37,7 +37,10 @@ from app.sep.apps.checksums.spec import (
     resolve_checksums_target_args,
 )
 from app.sep.apps.framework import make_task_dep
-from app.sep.apps.framework.form_dsl import make_arg_parser
+from app.sep.apps.framework.form_dsl import (
+    derive_arg_parser_from_model,
+    make_arg_parser,
+)
 from app.sep.apps.framework.spec import (
     assemble_envelope,
     resolve_refs,
@@ -317,29 +320,19 @@ _CHECKSUMS_DEFAULTS = {
     "extra_args": "",
 }
 
-_CHECKSUMS_ARG_MAPPINGS = {
-    "--recursion-method=": "recursion_method",
-    "--databases=": "databases",
-    "--tables=": "tables",
-    "--pause-file=": "pause_file",
-    "--set-vars=": "set_vars",
-    "--max-load=": "max_load",
-    "--chunk-time=": "chunk_time",
-    "--max-lag=": "max_lag",
-    "--progress=": "progress",
-}
-
-_CHECKSUMS_FLAG_MAPPINGS = {
-    "--binary-index": "binary_index",
-    "--explain": "explain_arg",
-    "--fail-on-stopped-replication": "fail_on_stopped_replication",
-    "--truncate-replicate-table": "truncate_replicate_table",
-}
+_checksums_arg_mappings, _checksums_flag_mappings = derive_arg_parser_from_model(
+    ChecksumsForm,
+    extra_arg_mappings={
+        "--recursion-method=": "recursion_method",
+        "--databases=": "databases",
+        "--tables=": "tables",
+    },
+)
 
 parse_checksums_task_args = make_arg_parser(
     defaults=_CHECKSUMS_DEFAULTS,
-    arg_mappings=_CHECKSUMS_ARG_MAPPINGS,
-    flag_mappings=_CHECKSUMS_FLAG_MAPPINGS,
+    arg_mappings=_checksums_arg_mappings,
+    flag_mappings=_checksums_flag_mappings,
     skip_leading_positional=True,
 )
 

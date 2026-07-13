@@ -20,13 +20,25 @@ values into a stored task's CLI ``args`` string. This module holds the
 reverse-direction counterpart shared by the ``alters``
 (``pt-online-schema-change``) and ``checksums`` (``pt-table-checksum``) apps:
 ``make_arg_parser`` rebuilds a form-value dict from a stored task's ``args``
-string, and ``DSN_TABLE_DEFAULT`` is the single ``D=percona,t=dsns`` DSN-table
-default both apps fall back to.
+string, ``derive_arg_parser_from_model`` derives that parser's value/flag
+mappings from the model's ``ArgFormat`` markers (the same markers the forward
+kernel reads, so the two directions cannot desync), and ``DSN_TABLE_DEFAULT``
+is the single ``D=percona,t=dsns`` DSN-table default both apps fall back to.
 """
 
 import shlex
 from collections.abc import Callable, Mapping
+from string import Template
+from types import MappingProxyType
 from typing import Any
+
+from pydantic import BaseModel
+
+from app.core.utils.cli_args import is_value_arg_template
+from app.sep.apps.framework.form_dsl.markers import (
+    find_arg_format,
+    resolve_arg_template,
+)
 
 DSN_TABLE_DEFAULT = "D=percona,t=dsns"
 
@@ -137,3 +149,48 @@ def make_arg_parser(
         return form_values
 
     return parse_task_args
+
+
+def derive_arg_parser_from_model(
+    model: type[BaseModel],
+    *,
+    extra_arg_mappings: Mapping[str, str] = MappingProxyType({}),
+    extra_flag_mappings: Mapping[str, str] = MappingProxyType({}),
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Derive a reverse parser's ``arg_mappings`` / ``flag_mappings`` from a model.
+
+    Walk ``model``'s fields in declaration order; for each field carrying an
+    :class:`~app.sep.apps.framework.form_dsl.markers.ArgFormat` marker, resolve its
+    template via the same resolver the forward ``build_command_args`` uses and
+    classify it: a value-arg template (``--flag=${value}``) contributes its
+    ``--flag=`` prefix to ``arg_mappings``, and a flag template (``--flag``)
+    contributes its whole token to ``flag_mappings`` — both keyed to the field
+    name. Sharing that resolver makes the ``ArgFormat`` markers the single source
+    of truth for both the forward and reverse directions, so a kebab-spelling
+    change can never desync them. The ``extra_*`` mappings supply the reverse
+    entries for args an app renders outside its ``ArgFormat`` fields (a prefix
+    positional, a multi-value ref rendered from resolved entities); they are
+    merged last, so an explicit extra overrides a derived entry of the same key.
+
+    :param model: The create model whose ``ArgFormat``-marked fields drive the
+        derived mappings.
+    :param extra_arg_mappings: Additional ``--flag=`` prefix to field-name value-arg
+        entries for non-``ArgFormat`` args (merged last). Defaults to empty.
+    :param extra_flag_mappings: Additional ``--flag`` token to field-name flag
+        entries for non-``ArgFormat`` flags (merged last). Defaults to empty.
+    :return: The ``(arg_mappings, flag_mappings)`` pair for :func:`make_arg_parser`.
+    """
+    arg_mappings = {}
+    flag_mappings = {}
+    for name, field_info in model.model_fields.items():
+        marker = find_arg_format(name, list(field_info.metadata))
+        if marker is None:
+            continue
+        template = resolve_arg_template(name, field_info.annotation, marker)
+        if is_value_arg_template(template):
+            arg_mappings[Template(template).safe_substitute(value="")] = name
+        else:
+            flag_mappings[template] = name
+    arg_mappings.update(extra_arg_mappings)
+    flag_mappings.update(extra_flag_mappings)
+    return arg_mappings, flag_mappings
