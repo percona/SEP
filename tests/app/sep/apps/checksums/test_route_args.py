@@ -57,7 +57,7 @@ def test_derived_create_assembles_exact_args(regular_user: CasdoorUser) -> None:
             "hostname": SYNTH_EXECUTOR_HOST,
             "service_id": MOCK_CREATED_SERVICE_ID,
             "recursion_method": "processlist",
-            "databases": "db1,db2",
+            "databases": ["db1", "db2"],
         },
     )
 
@@ -67,6 +67,38 @@ def test_derived_create_assembles_exact_args(regular_user: CasdoorUser) -> None:
     assert (
         meta["args"]
         == f"{_DSN_PREFIX} --recursion-method=processlist --databases=db1,db2"
+    )
+
+
+def test_derived_create_accepts_legacy_comma_separated_targets(
+    regular_user: CasdoorUser,
+) -> None:
+    """Accept legacy comma-separated target strings on the JSON create route."""
+    tasks_api = MockTaskAPI()
+    client = build_contract_client(
+        checksums_app,
+        user=regular_user,
+        tasks_api=tasks_api,
+        inventory_api=MockInventoryAPI(),
+    )
+
+    response = client.post(
+        f"{app_base_url(checksums_app)}/",
+        json={
+            "task_name": "chk-legacy-json",
+            "hostname": SYNTH_EXECUTOR_HOST,
+            "service_id": MOCK_CREATED_SERVICE_ID,
+            "recursion_method": "processlist",
+            "databases": "db1,db2",
+            "tables": "db1.t1",
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    meta = tasks_api.last_create_payload["data"]["meta"]
+    assert (
+        meta["args"] == f"{_DSN_PREFIX} --recursion-method=processlist "
+        "--databases=db1,db2 --tables=db1.t1"
     )
 
 
@@ -88,7 +120,7 @@ def test_derived_update_assembles_exact_args(regular_user: CasdoorUser) -> None:
             "hostname": SYNTH_EXECUTOR_HOST,
             "service_id": MOCK_CREATED_SERVICE_ID,
             "recursion_method": "hosts",
-            "tables": "db.t1",
+            "tables": ["db.t1"],
         },
     )
 
