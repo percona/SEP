@@ -49,6 +49,7 @@ from app.sep.apps.framework.apps import (
     ListFilterConfig,
     TaskExecutionApp,
 )
+from app.sep.apps.nav_icons import NavIcon
 
 app = TaskExecutionApp(
     name="backup_mongo",
@@ -57,6 +58,8 @@ app = TaskExecutionApp(
     css_class="backup_mongo",
     group="backups",
     nav_order=9,
+    react_route="/backups/mongodb",
+    nav_icon=NavIcon.MONGO,
     owner=OWNER,
     schema=backup_mongo_schema,
     response_model=BackupTaskResponse,

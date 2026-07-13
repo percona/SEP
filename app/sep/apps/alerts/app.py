@@ -23,6 +23,7 @@ exposing the same JSON and Jinja routers the registry imports today.
 from app.sep.apps.alerts.api_routes import router as api_router
 from app.sep.apps.alerts.routes import router as jinja_router
 from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.nav_icons import NavIcon
 
 app = BaseApp(
     name="alerts",
@@ -31,6 +32,8 @@ app = BaseApp(
     css_class="alerts",
     group="alerts",
     nav_order=4,
+    react_route="/alerts/templates",
+    nav_icon=NavIcon.DESCRIPTION,
     api_router=api_router,
     jinja_router=jinja_router,
 )

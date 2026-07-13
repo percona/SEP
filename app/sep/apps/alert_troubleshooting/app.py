@@ -28,6 +28,7 @@ apps. The legacy Jinja UI is threaded as ``jinja_router``.
 from app.sep.apps.alert_troubleshooting.api_routes import router as api_router
 from app.sep.apps.alert_troubleshooting.routes import router as jinja_router
 from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.nav_icons import NavIcon
 
 app = BaseApp(
     name="alert_troubleshooting",
@@ -36,6 +37,8 @@ app = BaseApp(
     css_class="alert-troubleshooting",
     group="alerts",
     nav_order=5,
+    react_route="/alerts/troubleshooting",
+    nav_icon=NavIcon.TROUBLESHOOT,
     api_router=api_router,
     jinja_router=jinja_router,
 )

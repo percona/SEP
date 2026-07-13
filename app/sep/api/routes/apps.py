@@ -26,33 +26,34 @@ the admin listing at ``/api/admin/apps/``.
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.utils.fields import URIPath
 from app.sep.apps.framework.registry import get_app_registry
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.crud import AppStateManager
 from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
 from app.sep.models import AppLifecycleEnum
 
 router = APIRouter(tags=["apps"])
+APPS_ROUTE_PREFIX = "/apps"
 
 
 class AppKeyResponse(BaseModel):
     """Represent a minimal per-app entry for the navigation shell.
 
     :param app_key: The plugin module key.
-    :type app_key: str
     :param enabled: Whether the app is currently enabled.
-    :type enabled: bool
     :param sidebar: Whether the plugin appears in the sidebar.
-    :type sidebar: bool
     :param uri_path: The plugin's mount URI path.
-    :type uri_path: str
     :param display_name: The human-facing label for the app.
-    :type display_name: str
     :param custom_ui: Whether the app ships a bespoke React UI.
-    :type custom_ui: bool
     :param group: The nav group key this app nests under; ``None`` when the app
         renders as a top-level sidebar entry.
     :param nav_order: The app's sort position within the sidebar; ``None`` when
         unset.
+    :param react_route: The canonical React route the shell mounts and links to;
+        always concrete (defaulting to ``/apps/<app_key>``).
+    :param nav_icon: The sidebar icon key; ``None`` falls back to the shell's
+        default app icon.
     """
 
     app_key: str
@@ -63,6 +64,23 @@ class AppKeyResponse(BaseModel):
     custom_ui: bool
     group: str | None
     nav_order: int | None
+    react_route: URIPath
+    nav_icon: NavIcon | None
+
+
+def build_navigation_react_route(app_key: str, react_route: URIPath | None) -> URIPath:
+    """Return the canonical navigation route for an app entry.
+
+    :param app_key: The plugin module key.
+    :param react_route: The optional plugin-declared route override.
+    :return: A concrete route under the ``/apps`` namespace.
+    """
+    route_suffix = react_route or f"/{app_key}"
+    if route_suffix == APPS_ROUTE_PREFIX or route_suffix.startswith(
+        f"{APPS_ROUTE_PREFIX}/"
+    ):
+        return route_suffix
+    return f"{APPS_ROUTE_PREFIX}{route_suffix}"
 
 
 @router.get("/")
@@ -91,6 +109,8 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
             custom_ui=app.custom_ui,
             group=app.group,
             nav_order=app.nav_order,
+            react_route=build_navigation_react_route(app.key, app.react_route),
+            nav_icon=app.nav_icon,
         )
         for app in get_app_registry()
     ]
