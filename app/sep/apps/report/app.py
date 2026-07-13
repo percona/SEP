@@ -21,6 +21,7 @@ routers the registry imports today.
 """
 
 from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.report.api_routes import router as api_router
 from app.sep.apps.report.routes import router as jinja_router
 
@@ -31,6 +32,8 @@ app = BaseApp(
     css_class="report",
     group="diagnostics",
     nav_order=13,
+    react_route="/reports",
+    nav_icon=NavIcon.BAR_CHART,
     api_router=api_router,
     jinja_router=jinja_router,
 )

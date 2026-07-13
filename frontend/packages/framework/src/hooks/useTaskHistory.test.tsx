@@ -153,7 +153,7 @@ describe('useStopTaskHistory', () => {
 
 describe('useExecuteTask', () => {
   it('encodes slash-containing plugin names per path segment', async () => {
-    const { result } = renderHook(() => useExecuteTask('backup_mongo/restores'), {
+    const { result } = renderHook(() => useExecuteTask('backup_mongo/restore'), {
       wrapper: wrapper(),
     });
 
@@ -162,7 +162,7 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      '/apps/backup_mongo/restores/my-restore-task/execute',
+      '/apps/backup_mongo/restore/my-restore-task/execute',
       {},
     );
   });
@@ -181,7 +181,7 @@ describe('useExecuteTask', () => {
 
   it('encodes special characters in task names', async () => {
     const taskName = 'weird/name with spaces&q=?';
-    const { result } = renderHook(() => useExecuteTask('backup_mongo/restores'), {
+    const { result } = renderHook(() => useExecuteTask('backup_mongo/restore'), {
       wrapper: wrapper(),
     });
 
@@ -190,7 +190,7 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      `/apps/backup_mongo/restores/${encodeURIComponent(taskName)}/execute`,
+      `/apps/backup_mongo/restore/${encodeURIComponent(taskName)}/execute`,
       {},
     );
   });

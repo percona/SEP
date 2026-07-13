@@ -37,6 +37,8 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 
+OWNER = "BACKUP_PG"
+
 
 class BackupType(EnumFieldMixin, StrEnum):
     """Backup types."""

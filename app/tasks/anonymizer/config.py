@@ -63,10 +63,8 @@ class AnonymizerSettings(BaseYamlSettings):
         """Validate and transform the DEFAULT_ENTITIES field.
 
         :param v: The value to be validated.
-        :type v: Any
-        :return: A defaultdict with TaskOwner keys and sets of PIIEntity as
+        :return: A defaultdict with task-owner keys and sets of PIIEntity as
             values.
-        :rtype: Any
         """
         if v == "*":
             v = list(PIIEntity)

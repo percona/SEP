@@ -23,16 +23,17 @@ import yaml
 from fastapi import Depends, Form
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.backup_edit_form import parse_server_list_config
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import (
     assemble_envelope,
-    parse_server_list_config,
     resolve_refs,
 )
 from app.sep.apps.mysql_backups.models import (
     BackupCreate,
     BackupResponse,
     BackupType,
+    OWNER,
 )
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.deps import (
@@ -42,7 +43,7 @@ from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ async def build_backup_task_payload(
         build_backup_spec(form, resolved),
         resolved,
         name=form.task_name,
-        owner=TaskOwner.BACKUPS,
+        owner=OWNER,
         alert_on_fail=form.alert_on_fail,
     )
 
@@ -83,7 +84,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     Extracts configuration from an existing backup task to populate the edit form.
 
     Delegates the shared ``SERVER_LIST`` parsing to
-    :func:`~app.sep.apps.framework.spec.parse_server_list_config`, layering on the
+    :func:`~app.sep.apps.backup_edit_form.parse_server_list_config`, layering on the
     mysql-specific alias, encryption recipient, and the mydumper / xtrabackup /
     binlog / upload-quiet keys.
 
@@ -117,7 +118,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
 
-get_backups_task = make_task_dep(TaskOwner.BACKUPS)
+get_backups_task = make_task_dep(OWNER)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
@@ -238,7 +239,8 @@ async def get_backups_index_context(
         get_backups_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.BACKUPS,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
         alert_on_fail_default=True,
     )
 

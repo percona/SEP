@@ -32,7 +32,7 @@ from app.sep.apps.framework import (
     derive_create_response_model,
 )
 from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import Task, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
 
 
@@ -60,7 +60,7 @@ def _build_response(
 
 def _task(name: str) -> Task:
     """Build a validatable archive task with the given name."""
-    return TaskFactory.build(name=name, owner=TaskOwner.ARCHIVER)
+    return TaskFactory.build(name=name, owner="ARCHIVER")
 
 
 def _items(*names: str) -> list[dict]:
@@ -115,7 +115,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
         )
 
@@ -134,7 +134,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             status_filter=TaskHistoryStatusEnum.SUCCESS,
         )
@@ -160,7 +160,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
         )
 
@@ -188,7 +188,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
         )
@@ -210,7 +210,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
             status_filter=TaskHistoryStatusEnum.SUCCESS,
@@ -229,7 +229,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             task_filter=lambda task: task.name != "task-b",
         )
@@ -251,7 +251,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
             task_filter=lambda task: task.name != "task-b",
@@ -267,7 +267,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
         )
 
@@ -286,7 +286,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
         )
@@ -305,13 +305,13 @@ class TestBuildTaskListResponses:
 
         await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             pagination=pagination,
         )
 
         tasks_api.get.assert_awaited_once_with(
-            "/", params={"owner": TaskOwner.ARCHIVER.value, "offset": 20, "limit": 5}
+            "/", params={"owner": "ARCHIVER", "offset": 20, "limit": 5}
         )
 
     @pytest.mark.asyncio
@@ -340,7 +340,7 @@ class TestBuildTaskListResponses:
 
         await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_spy_builder,
             context_provider=provider,
         )
@@ -356,7 +356,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             context_provider=provider,
         )
@@ -374,7 +374,7 @@ class TestBuildTaskListResponses:
 
         result = await build_task_list_responses(
             tasks_api,
-            owner=TaskOwner.ARCHIVER.value,
+            owner="ARCHIVER",
             response_builder=_build_response,
             context_provider=None,
         )
@@ -524,7 +524,7 @@ class TestBaseTaskResponse:
 
     BASE_FIELDS: dict = {
         "name": "test-task",
-        "owner": TaskOwner.CHECKSUMS,
+        "owner": "CHECKSUMS",
         "backend": "nomad",
         "data": {},
         "protected": False,
@@ -566,7 +566,7 @@ class TestBaseTaskResponse:
 
     def test_round_trips_task_dump_with_connectivity_warning_default_none(self) -> None:
         """Build from a task dump, defaulting ``connectivity_warning`` to ``None``."""
-        task = TaskFactory.build(name="task-a", owner=TaskOwner.CHECKSUMS)
+        task = TaskFactory.build(name="task-a", owner="CHECKSUMS")
 
         result = build_default_task_response(
             BaseTaskResponse, task, TaskHistoryStatusEnum.SUCCESS

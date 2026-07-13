@@ -16,11 +16,11 @@
 """Define the base authentication-provider interface."""
 
 from abc import ABC
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import ClassVar
 
-from app.core.auth.models import BaseTokenPayload, BaseUser
+from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken
 
 
 class BaseAuthProvider(ABC):
@@ -36,10 +36,14 @@ class BaseAuthProvider(ABC):
     :cvar user_model: The provider's concrete :class:`BaseUser` subclass.
     :cvar token_payload_model: The provider's concrete :class:`BaseTokenPayload`
         subclass.
+    :cvar supports_ambient_session: Whether the provider can sign a caller in
+        from an ambient session cookie already carried on the request. Defaults
+        to ``False``; a provider that validates such a cookie overrides it.
     """
 
     user_model: ClassVar[type[BaseUser]]
     token_payload_model: ClassVar[type[BaseTokenPayload]]
+    supports_ambient_session: ClassVar[bool] = False
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None, None]:
@@ -52,3 +56,21 @@ class BaseAuthProvider(ABC):
         :yield: ``None`` once the provider's resources are ready.
         """
         yield
+
+    async def resolve_ambient_session(
+        self, cookies: Mapping[str, str]
+    ) -> OAuthToken | None:
+        """Mint a SEP token from an ambient session cookie carried on the request.
+
+        A provider that sets ``supports_ambient_session`` overrides this to read
+        its session cookie from ``cookies`` and validate it upstream. The base
+        provider carries no ambient session, so this is never reached under the
+        ``supports_ambient_session`` gate the callers apply.
+
+        :param cookies: The request cookies, keyed by name.
+        :return: A minted :class:`OAuthToken` on a valid ambient session, else
+            ``None``.
+        :raises NotImplementedError: If a provider opts into ambient sessions
+            without overriding this method.
+        """
+        raise NotImplementedError

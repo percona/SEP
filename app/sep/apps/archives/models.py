@@ -24,8 +24,7 @@ from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import (
     EmptyStrToNone,
     NonEmptyStr,
-    TCP_PORT_MAX,
-    TCP_PORT_MIN,
+    TcpPort,
 )
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.archives.constants import SwapDropEnum
@@ -59,6 +58,9 @@ def _dsn_safe(value: str | None) -> str | None:
             "Values cannot contain ',' or '=' characters (DSN delimiters)."
         )
     return value
+
+
+OWNER = "ARCHIVER"
 
 
 class SourceByTable(BaseModel):
@@ -208,8 +210,7 @@ class HostManual(BaseModel):
         ),
     ]
     dest_port: Annotated[
-        int | None,
-        Field(ge=TCP_PORT_MIN, le=TCP_PORT_MAX),
+        TcpPort | None,
         Ui(
             label="Destination Port",
             section="Destination Host",

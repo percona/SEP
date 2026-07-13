@@ -98,6 +98,7 @@ __all__ = [
     "contains",
     "evaluate_conditional_rules",
     "extract_forbidden_field_gate_plan",
+    "extract_required_field_gate_plan",
     "falsy",
     "none_present",
     "not_",
@@ -1535,6 +1536,32 @@ def extract_forbidden_field_gate_plan(
     return RulePlan(
         rules=tuple(
             rule for rule in plan.rules if rule.kind is _RuleKind.FIELD_GATE_FORBIDDEN
+        )
+    )
+
+
+def extract_required_field_gate_plan(
+    schema: AppSchema, *, entity_name: str | None = None
+) -> RulePlan:
+    """Return a :class:`RulePlan` of only the schema's required field gates.
+
+    The ``requires`` counterpart of :func:`extract_forbidden_field_gate_plan`: a
+    public, supported entry point for callers (such as the snippets plugin's
+    server-side gate enforcement) that need just the ``requires=[FieldGate(...)]``
+    rules lowered onto a schema, without depending on the private extraction
+    internals. The returned plan is evaluable with
+    :func:`evaluate_conditional_rules`.
+
+    :param schema: The plugin schema to extract required field gates from.
+    :param entity_name: For multi-entity schemas, the entity segment whose
+        rules to extract; must be ``None`` for task-style schemas. See
+        :func:`_extract_rule_plan`.
+    :return: A frozen plan holding only the ``field_gate_requires`` rules.
+    """
+    plan = _extract_rule_plan(schema, entity_name=entity_name)
+    return RulePlan(
+        rules=tuple(
+            rule for rule in plan.rules if rule.kind is _RuleKind.FIELD_GATE_REQUIRES
         )
     )
 

@@ -24,11 +24,25 @@ from fastapi import Depends, Form
 
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm
-from app.sep.apps.checksums.spec import build_checksums_arg_prefix
+from app.sep.apps.checksums.models import (
+    ChecksumsCreate,
+    ChecksumsForm,
+    coerce_target_list,
+    OWNER,
+)
+from app.sep.apps.checksums.spec import (
+    build_checksums_arg_prefix,
+    build_checksums_command_args,
+    build_checksums_spec,
+    resolve_checksums_target_args,
+)
 from app.sep.apps.framework import make_task_dep
 from app.sep.apps.framework.form_dsl import make_arg_parser
-from app.sep.apps.framework.spec import build_command_args
+from app.sep.apps.framework.spec import (
+    assemble_envelope,
+    resolve_refs,
+    stamp_form_input,
+)
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -49,201 +63,102 @@ from app.tasks.models import (
     Task,
     TaskBackendEnum,
     TaskHistoryStatusEnum,
-    TaskOwner,
     TaskWrite,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def extract_databases_and_tables_from_extra_args(form: ChecksumsCreate) -> list[str]:
-    """Extract --databases and --tables from extra_args and add to form fields.
+def legacy_checksums_create_to_form(
+    flat: ChecksumsCreate,
+) -> tuple[ChecksumsForm, list[str]]:
+    """Map legacy Jinja form POST data to a validated :class:`ChecksumsForm`.
 
-    :param form: The form data for the Checksums creation.
-    :type form: ChecksumsCreate
-    :return: List of remaining arguments (excluding --databases and --tables).
-    :rtype: list[str]
+    Merges comma-separated ``databases`` / ``tables`` fields, legacy inventory
+    ``schema_id`` / ``table_id`` selections, and ``--databases`` / ``--tables``
+    tokens from ``extra_args`` into the model-first target lists. Returns the
+    validated form and any remaining CLI tokens for the legacy path's
+    ``extra_remaining_args`` thread-through.
+
+    :param flat: The legacy HTML form body.
+    :return: ``(form, remaining_args)`` where ``remaining_args`` excludes target
+        ``--databases`` / ``--tables`` tokens.
     """
-    if not form.extra_args:
-        return []
+    databases = list(coerce_target_list(flat.databases))
+    tables = list(coerce_target_list(flat.tables))
+
+    if flat.schema_id and -1 not in flat.schema_id:
+        databases.extend(schema_id for schema_id in flat.schema_id if schema_id > 0)
+
+    if flat.table_id:
+        tables.extend(tid for tid in flat.table_id if tid > 0)
 
     remaining_args = []
-    for arg in shlex.split(form.extra_args):
-        if arg.startswith("--databases="):
-            value = arg.split("=", 1)[1]
-            form.databases = form.databases + "," + value if form.databases else value
-        elif arg.startswith("--tables="):
-            value = arg.split("=", 1)[1]
-            form.tables = form.tables + "," + value if form.tables else value
-        else:
-            remaining_args.append(arg)
+    if flat.extra_args:
+        for arg in shlex.split(flat.extra_args):
+            if arg.startswith("--databases="):
+                databases.extend(coerce_target_list(arg.split("=", 1)[1]))
+            elif arg.startswith("--tables="):
+                tables.extend(coerce_target_list(arg.split("=", 1)[1]))
+            else:
+                remaining_args.append(arg)
 
-    return remaining_args
-
-
-async def process_schema_and_table_ids(
-    form: ChecksumsCreate, inventory_api: InventoryAPI
-) -> None:
-    """Process schema_id and table_id to set databases and tables form fields.
-
-    :param form: The form data for the Checksums creation.
-    :type form: ChecksumsCreate
-    :param inventory_api: The Inventory API to get entities from.
-    :type inventory_api: InventoryAPI
-    """
-    if not form.schema_id or len(form.schema_id) == 0:
-        return
-
-    if -1 in form.schema_id:
-        return
-
-    database_names = []
-    for schema_id in form.schema_id:
-        schema = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            schema_id,
-        )
-        database_names.append(schema.name)
-
-    form.databases = ",".join(database_names)
-
-    if form.table_id and len(form.table_id) > 0:
-        table_entries = []
-        valid_table_ids = [t for t in form.table_id if t > 0]
-
-        for table_id in valid_table_ids:
-            table = await get_created_entity(
-                inventory_api,
-                SyncInventoryEntityTypeEnum.TABLE,
-                table_id,
-            )
-            table_schema = None
-            for schema_id in form.schema_id:
-                schema = await get_created_entity(
-                    inventory_api,
-                    SyncInventoryEntityTypeEnum.SCHEMA,
-                    schema_id,
-                )
-                if schema.id == table.schema_id:
-                    table_schema = schema
-                    break
-
-            if table_schema:
-                table_entries.append(f"{table_schema.name}.{table.name}")
-
-        form.tables = ",".join(table_entries)
+    form = ChecksumsForm.model_validate(
+        {
+            **flat.model_dump(
+                exclude={"schema_id", "table_id", "extra_args", "databases", "tables"}
+            ),
+            "databases": databases,
+            "tables": tables,
+        }
+    )
+    return form, remaining_args
 
 
 def assemble_checksum_payload(
     service: CreatedService,
+    form: ChecksumsForm,
     *,
-    task_name: str,
-    hostname: str,
-    recursion_method: str,
-    dsn_table: str,
-    databases: str,
-    tables: str,
-    pause_file: str,
-    binary_index: bool,
-    explain_arg: bool,
-    fail_on_stopped_replication: bool,
-    truncate_replicate_table: bool,
-    progress: str,
-    set_vars: str,
-    max_load: str,
-    chunk_time: str,
-    max_lag: str,
-    alert_on_fail: bool,
+    databases_arg: str,
+    tables_arg: str,
     extra_remaining_args: Iterable[str] = (),
 ) -> TaskWrite:
-    """Assemble a TaskWrite for pt-table-checksum from pre-resolved inputs.
+    """Assemble a TaskWrite for pt-table-checksum from a validated form.
 
     The legacy Jinja form path's envelope builder. Builds the CLI argument string
     from the shared
-    :func:`~app.sep.apps.checksums.spec.build_checksums_arg_prefix` plus the
-    framework's declarative ``build_command_args`` (over a ``ChecksumsForm`` rebuilt
-    from the resolved values) — the same pair the model-first JSON spec builder
-    uses — and assembles the ``TaskWrite`` meta, so a form-created task's Nomad
-    payload stays byte-identical to a JSON-created one.
+    :func:`~app.sep.apps.checksums.spec.build_checksums_arg_prefix` plus
+    :func:`~app.sep.apps.checksums.spec.build_checksums_command_args` — the same
+    pair the model-first JSON path uses — and assembles the ``TaskWrite`` meta, so
+    a form-created task's Nomad payload stays byte-identical to a JSON-created one.
 
     :param service: The validated inventory service instance.
-    :type service: CreatedService
-    :param task_name: The task name.
-    :type task_name: str
-    :param hostname: The executor host.
-    :type hostname: str
-    :param recursion_method: The replica-discovery method (e.g. ``"processlist"``).
-    :type recursion_method: str
-    :param dsn_table: DSN table used when ``recursion_method == "dsn"``.
-    :type dsn_table: str
-    :param databases: Comma-separated database names (pre-resolved).
-    :type databases: str
-    :param tables: Comma-separated ``schema.table`` strings (pre-resolved).
-    :type tables: str
-    :param pause_file: Pause-file path.
-    :type pause_file: str
-    :param binary_index: Enable ``--binary-index`` flag.
-    :type binary_index: bool
-    :param explain_arg: Enable ``--explain`` flag.
-    :type explain_arg: bool
-    :param fail_on_stopped_replication: Enable ``--fail-on-stopped-replication``.
-    :type fail_on_stopped_replication: bool
-    :param truncate_replicate_table: Enable ``--truncate-replicate-table``.
-    :type truncate_replicate_table: bool
-    :param progress: ``--progress`` value.
-    :type progress: str
-    :param set_vars: ``--set-vars`` value.
-    :type set_vars: str
-    :param max_load: ``--max-load`` value.
-    :type max_load: str
-    :param chunk_time: ``--chunk-time`` value.
-    :type chunk_time: str
-    :param max_lag: ``--max-lag`` value.
-    :type max_lag: str
-    :param alert_on_fail: Whether to alert on task failure.
-    :type alert_on_fail: bool
+    :param form: The validated checksums create form.
+    :param databases_arg: Comma-separated database names (pre-resolved).
+    :param tables_arg: Comma-separated ``schema.table`` strings (pre-resolved).
     :param extra_remaining_args: Additional pre-parsed CLI args (form path only).
-    :type extra_remaining_args: Iterable[str]
     :return: A fully constructed ``TaskWrite`` object.
-    :rtype: TaskWrite
     """
-    form = ChecksumsForm(
-        task_name=task_name,
-        hostname=hostname,
-        service_id=service.id,
-        recursion_method=recursion_method,
-        dsn_table=dsn_table,
-        databases=databases,
-        tables=tables,
-        pause_file=pause_file,
-        binary_index=binary_index,
-        explain_arg=explain_arg,
-        fail_on_stopped_replication=fail_on_stopped_replication,
-        truncate_replicate_table=truncate_replicate_table,
-        progress=progress,
-        set_vars=set_vars,
-        max_load=max_load,
-        chunk_time=chunk_time,
-        max_lag=max_lag,
-        alert_on_fail=alert_on_fail,
-    )
     args = build_checksums_arg_prefix(
         service,
-        recursion_method=recursion_method,
-        dsn_table=dsn_table,
+        recursion_method=form.recursion_method,
+        dsn_table=form.dsn_table,
         extra_remaining_args=extra_remaining_args,
-    ) + build_command_args(form)
+    ) + build_checksums_command_args(
+        form,
+        databases_arg=databases_arg,
+        tables_arg=tables_arg,
+    )
 
     return TaskWrite(
-        owner=TaskOwner.CHECKSUMS,
+        owner=OWNER,
         backend=TaskBackendEnum.PROXY,
         data={
             "task": "run-command",
             "meta": {
                 "command": "pt-table-checksum",
                 "args": shlex.join(args),
-                "target": hostname,
+                "target": form.hostname,
                 "_service_name": service.name,
                 "_service_host": service.node.address,
                 "_service_port": service.port,
@@ -252,10 +167,42 @@ def assemble_checksum_payload(
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
             },
         },
-        name=task_name,
-        target=hostname,
-        alert_on_fail=alert_on_fail,
+        name=form.task_name,
+        target=form.hostname,
+        alert_on_fail=form.alert_on_fail,
     )
+
+
+async def build_checksums_payload(
+    form: ChecksumsForm,
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build a checksums ``TaskWrite`` from the model-first create form.
+
+    Resolve reference fields and multi-value schema/table targets, assemble the
+    run-command spec, and stamp the validated form body under ``data['_form']``.
+
+    :param form: The validated checksums create form.
+    :param inventory_api: The inventory API client.
+    :return: A fully constructed ``TaskWrite`` object.
+    """
+    resolved = await resolve_refs(form, inventory_api)
+    databases_arg, tables_arg = await resolve_checksums_target_args(form, inventory_api)
+    spec = build_checksums_spec(
+        form,
+        resolved,
+        databases_arg=databases_arg,
+        tables_arg=tables_arg,
+    )
+    write = assemble_envelope(
+        spec,
+        resolved,
+        name=form.task_name,
+        owner=OWNER,
+        alert_on_fail=form.alert_on_fail,
+    )
+    stamp_form_input(write, form)
+    return write
 
 
 async def build_checksums_task_payload(
@@ -281,28 +228,16 @@ async def build_checksums_task_payload(
         form.service_id,
         type=ServiceTypeEnum.MYSQL,
     )
-    await process_schema_and_table_ids(form, inventory_api)
-    remaining_args = extract_databases_and_tables_from_extra_args(form)
+    checksums_form, remaining_args = legacy_checksums_create_to_form(form)
+    databases_arg, tables_arg = await resolve_checksums_target_args(
+        checksums_form, inventory_api
+    )
 
     return assemble_checksum_payload(
         service,
-        task_name=form.task_name,
-        hostname=form.hostname,
-        recursion_method=form.recursion_method,
-        dsn_table=form.dsn_table,
-        databases=form.databases,
-        tables=form.tables,
-        pause_file=form.pause_file,
-        binary_index=form.binary_index,
-        explain_arg=form.explain_arg,
-        fail_on_stopped_replication=form.fail_on_stopped_replication,
-        truncate_replicate_table=form.truncate_replicate_table,
-        progress=form.progress,
-        set_vars=form.set_vars,
-        max_load=form.max_load,
-        chunk_time=form.chunk_time,
-        max_lag=form.max_lag,
-        alert_on_fail=form.alert_on_fail,
+        checksums_form,
+        databases_arg=databases_arg,
+        tables_arg=tables_arg,
         extra_remaining_args=remaining_args,
     )
 
@@ -310,7 +245,7 @@ async def build_checksums_task_payload(
 ChecksumsGeneratedTask = Annotated[TaskWrite, Depends(build_checksums_task_payload)]
 
 
-get_checksums_task = make_task_dep(TaskOwner.CHECKSUMS)
+get_checksums_task = make_task_dep(OWNER)
 
 ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
 
@@ -338,7 +273,7 @@ async def get_checksums_task_names_by_status(
     return {
         history["task"]["name"]
         for history in histories
-        if history.get("task", {}).get("owner") == TaskOwner.CHECKSUMS.value
+        if history.get("task", {}).get("owner") == OWNER
     }
 
 
@@ -453,7 +388,8 @@ async def get_checksums_index_context(
         get_checksums_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.CHECKSUMS,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
         alert_on_fail_default=True,
     )
 

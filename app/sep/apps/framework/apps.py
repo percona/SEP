@@ -78,7 +78,7 @@ from app.sep.apps.framework.spec import (
     validate_arg_formats,
 )
 from app.sep.deps import InventoryAPI
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 __all__ = [
     "AppCapabilities",
@@ -360,7 +360,7 @@ class TaskExecutionApp(BaseApp):
         an empty tuple.
     """
 
-    owner: TaskOwner
+    owner: str
     create_model: type[AppFormModel] | None = None
     response_model: type[BaseModel] = BaseTaskResponse
     views: SkipValidation[Views] = Views()

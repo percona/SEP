@@ -48,6 +48,7 @@ from app.sep.apps.backup_pg.models import (
     BackupPgForm,
     BackupTaskDetailResponse,
     BackupTaskResponse,
+    OWNER,
 )
 from app.sep.apps.backup_pg.routes import router as jinja_router
 from app.sep.apps.backup_pg.spec import build_backup_pg_spec
@@ -57,8 +58,8 @@ from app.sep.apps.framework.apps import (
     ListFilterConfig,
     TaskExecutionApp,
 )
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.deps import HasNoConflictedRunningTasks
-from app.tasks.models import TaskOwner
 
 app = TaskExecutionApp(
     name="backup_pg",
@@ -67,11 +68,13 @@ app = TaskExecutionApp(
     css_class="backup_pg",
     group="backups",
     nav_order=10,
+    react_route="/backups/postgresql",
+    nav_icon=NavIcon.POSTGRESQL,
     description=(
         "Configure pgBackRest-based PostgreSQL backups and run incremental "
         "or differential backup tasks against a Percona-managed Postgres host."
     ),
-    owner=TaskOwner.BACKUP_PG,
+    owner=OWNER,
     create_model=BackupPgForm,
     response_model=BackupTaskResponse,
     views=backup_pg_views,

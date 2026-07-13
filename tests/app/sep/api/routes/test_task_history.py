@@ -28,7 +28,7 @@ from app.core.pagination import (
     MAX_PAGINATION_LIMIT,
 )
 from app.sep.main import sep_app
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 TWO_MERGED_HISTORY_ROWS = 2
@@ -43,7 +43,7 @@ def _history_item(*, item_id: int, started_at: str, task_name: str) -> dict[str,
     task = TaskFactory.build(
         id=item_id,
         name=task_name,
-        owner=TaskOwner.BACKUP_MONGO,
+        owner="BACKUP_MONGO",
         backend=TaskBackendEnum.PROXY,
     )
     task_payload = task.model_dump(mode="json")

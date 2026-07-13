@@ -75,6 +75,23 @@ class TestSyntheticContract(DerivedRouterContractTests):
     app_def = synth_app()
 
 
+class TestSyntheticNewOwnerContract(DerivedRouterContractTests):
+    """Cover the full contract for a brand-new owner string no core module knows.
+
+    Proves AC6's seam: a plugin declares its own owner string and service type and
+    round-trips create/list/get with zero edits under ``app/tasks`` or ``app/sep``.
+    ``create_extra_deps`` is dropped because the kit's conflict guard hardcodes the
+    canonical synth owner; the guard is orthogonal to the owner-string seam and is
+    covered by :class:`TestSyntheticContract`.
+    """
+
+    app_def = synth_app(
+        owner="CONTRACT_NEW_OWNER",
+        service_type=ServiceTypeEnum.POSTGRESQL,
+        create_extra_deps=(),
+    )
+
+
 class TestSyntheticReadOnlyContract(DerivedRouterContractTests):
     """Cover the absence cases against a create- and execute-disabled definition."""
 
@@ -301,6 +318,25 @@ def test_synth_ui_default_distinct_from_model_default(
     )
     assert mode_field["default"] == "display-default"
     assert SynthForm.model_fields["mode"].default == "body-default"
+
+
+def test_build_valid_create_body_wraps_multi_value_refs() -> None:
+    """Wrap seeded inventory ids in lists when a ref marker declares ``multiple=True``."""
+    from app.sep.apps.checksums.app import app as checksums_app
+    from app.sep.apps.checksums.models import ChecksumsForm
+    from tests.app.factories import (
+        MOCK_CREATED_SCHEMA_ID,
+        MOCK_CREATED_SERVICE_ID,
+        MOCK_CREATED_TABLE_ID,
+    )
+
+    body = build_valid_create_body(checksums_app)
+
+    assert body is not None
+    assert body["service_id"] == MOCK_CREATED_SERVICE_ID
+    assert body["databases"] == [MOCK_CREATED_SCHEMA_ID]
+    assert body["tables"] == [MOCK_CREATED_TABLE_ID]
+    ChecksumsForm.model_validate(body)
 
 
 def test_create_response_builder_pins_stable_component(

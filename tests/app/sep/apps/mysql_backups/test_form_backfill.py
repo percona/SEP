@@ -34,7 +34,7 @@ from app.sep.apps.mysql_backups.form_backfill import (
 )
 from app.sep.apps.mysql_backups.models import BackupCreate, BackupType
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner
+from app.tasks.models import Task, TaskBackendEnum
 
 
 def _service(
@@ -108,7 +108,7 @@ def _legacy_mysql_backup_task(
             "payload": "file://app/sep/apps/mysql_backups/payload",
         },
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUPS,
+        owner="BACKUPS",
         alert_on_fail=alert_on_fail,
     )
 

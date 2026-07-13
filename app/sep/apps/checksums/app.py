@@ -29,18 +29,20 @@ registry does not).
 from fastapi import Depends
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.checksums.deps import get_unprotected_checksums_task
-from app.sep.apps.checksums.models import ChecksumsForm
+from app.sep.apps.checksums.deps import (
+    build_checksums_payload,
+    get_unprotected_checksums_task,
+)
+from app.sep.apps.checksums.models import ChecksumsForm, OWNER
 from app.sep.apps.checksums.routes import router as jinja_router
-from app.sep.apps.checksums.spec import build_checksums_spec
 from app.sep.apps.checksums.views import checksums_views
 from app.sep.apps.framework.apps import (
     AppCapabilities,
     ListFilterConfig,
     TaskExecutionApp,
 )
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.deps import get_username_mapping, HasNoConflictedRunningTasks
-from app.tasks.models import TaskOwner
 
 app = TaskExecutionApp(
     name="checksums",
@@ -48,11 +50,12 @@ app = TaskExecutionApp(
     uri_path="/checksums",
     css_class="checksums",
     nav_order=7,
+    nav_icon=NavIcon.CHECK_CIRCLE,
     description="Run pt-table-checksum to verify MySQL replication consistency.",
-    owner=TaskOwner.CHECKSUMS,
+    owner=OWNER,
     create_model=ChecksumsForm,
     views=checksums_views,
-    task_spec_builder=build_checksums_spec,
+    payload_builder=build_checksums_payload,
     capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True, service_type=True),

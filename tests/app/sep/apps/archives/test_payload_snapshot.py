@@ -38,7 +38,6 @@ from app.sep.apps.archives.models import ArchivesCreate
 from app.sep.apps.archives.spec import build_archives_spec
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskOwner
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
@@ -85,7 +84,7 @@ def _envelope(form: ArchivesCreate, resolved: ResolvedEntities) -> dict[str, Any
         build_archives_spec(form, resolved),
         resolved,
         name=form.task_name,
-        owner=TaskOwner.ARCHIVER,
+        owner="ARCHIVER",
         alert_on_fail=form.alert_on_fail,
         alert_detail_builder="app.sep.apps.archives.alerts:build_owner_alert_details",
     )

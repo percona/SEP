@@ -68,6 +68,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -86,28 +87,28 @@ class App(BaseCaseInsensitiveModel):
     :param name: The name of the plugin. Optional: a MODULE_NAME-only entry
         omits it and the :class:`app.sep.apps.framework.registry.AppRegistry`
         derives descriptive metadata from the module basename instead.
-    :type name: str | None
     :param module_name: The name of the module associated with the plugin. This field is
         automatically prefixed with ``app.sep.apps.`` during validation.
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    :type uri_path: HttpUrl | URIPath
     :param css_class: The CSS class associated with the plugin. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    :type css_class: str
     :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
-    :type sidebar: bool
     :param group: The nav group key this plugin nests under (read from YAML as
         ``GROUP``); ``None`` renders it as a top-level sidebar entry.
     :param nav_order: The plugin's sort position within the sidebar (read from
         YAML as ``NAV_ORDER``); ``None`` sorts last.
+    :param react_route: The canonical React route (read from YAML as
+        ``REACT_ROUTE``); ``None`` resolves to ``/apps/<key>`` in the listing.
+    :param nav_icon: The sidebar icon key (read from YAML as ``NAV_ICON``),
+        validated against the :class:`~app.sep.apps.nav_icons.NavIcon` vocabulary;
+        an unknown value fails settings validation at load.
     :param enabled: Whether the plugin ships enabled. Read only at first-startup
         seed time to set the initial :class:`app.sep.models.AppState` row;
         defaults to ``True`` so every plugin already in ``settings.yaml`` keeps
         shipping enabled. Set ``ENABLED: false`` to seed a plugin disabled.
-    :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
         JSON ``APIRouter`` instance (e.g. ``"app.sep.apps.checksums.api_routes.router"``).
         When set, the router is mounted under ``/api/apps/{key}`` by the
@@ -119,7 +120,6 @@ class App(BaseCaseInsensitiveModel):
           imported.
         * **Explicit ``null``** — opt the plugin out of the JSON API mount,
           even if a conventional module exists.
-    :type api_router_path: StrImportableAttribute | None
     """
 
     name: str | None = None
@@ -129,6 +129,8 @@ class App(BaseCaseInsensitiveModel):
     sidebar: bool = True
     group: str | None = None
     nav_order: int | None = None
+    react_route: URIPath | None = None
+    nav_icon: NavIcon | None = None
     enabled: bool = True
     api_router_path: StrImportableAttribute | None = None
 
@@ -269,7 +271,7 @@ class SessionOptions(BaseModel):
 def _reject_removed_syncer_pmm(data: Any) -> Any:
     """Reject a removed per-syncer ``pmm`` override key.
 
-    The per-syncer ``pmm:`` override was removed in SEP-1477; PMM synchronizers now
+    The per-syncer ``pmm:`` override was removed; PMM synchronizers now
     read the top-level ``PMM`` section directly. A leftover ``pmm`` key (any case) is
     rejected with a ``ValueError`` -- which pydantic wraps into a ``ValidationError``
     -- so upgraded deployments fail fast at startup instead of silently honoring dead
@@ -516,66 +518,53 @@ class SEPSettings(BaseYamlAppSettings):
 
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
-    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
-    :type UVICORN_PORT: int
     :param SESSION: Session configuration options for the legacy ``authToken``
         cookie used by the Jinja UI.
-    :type SESSION: SessionOptions
     :param SESSION_REFRESH: Session configuration options for the SPA
         ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
         ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
         vars, the value must start with ``/``.
-    :type SESSION_REFRESH: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
         ``Path("templates")``.
-    :type TEMPLATES_DIR: RelativeDirectoryPathField
     :param STATIC_DIR: The directory containing static files. Defaults to
         ``Path("static")``.
-    :type STATIC_DIR: RelativeDirectoryPathField
     :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
         definition files. When ``None``, the bundled ``alert_definitions/`` directory
         inside the alerts plugin is used.
-    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
-    :type INVENTORY_ENDPOINT: CredentialHttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
-    :type TASKS_ENDPOINT: CredentialHttpUrl
     :param APPS: A list of apps used by SEP. Defaults to an empty list with
         duplicates removed.
     :param PROXY_HEADERS: Whether to use proxy headers (like ``X-Forwarded-For``).
         Defaults to ``False``.
-    :type PROXY_HEADERS: bool
     :param DATABASE: The database configuration options.
         Defaults to an SQLite database with the name 'sep.db'.
-    :type DATABASE: DatabaseOptions
     :param SYNCERS: A list of synchronizers used by SEP. Defaults to an empty list with
         duplicates removed.
-    :type SYNCERS: UniqueList[SyncOptions]
     :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
         to an empty mapping.
-    :type SYNCER_EXTRA_KWARGS: SyncerExtraKwargs
     :param SYNC_REFRESH_TIME: The time interval (in seconds) for browser refresh during
         synchronization. Defaults to 5 seconds.
-    :type SYNC_REFRESH_TIME: int
     :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
         Upload is disabled by default.
-    :type HEALTH_REPORT: HealthReportSettings
     :param APP_DRAIN: Operator-tunable settings for the cooperative app-drain
         reconciler (reconcile cadence and stale running-task TTL).
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         ``$summary`` and ``$version`` placeholders. Defaults to ``"$summary $version"``.
-    :type FOOTER_TEMPLATE: Template
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
-    :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
     :param CONNECTIVITY_CHECK_DEFAULT: Initial state of the "Check connectivity"
         checkbox on task creation forms. When ``True``, the checkbox is pre-checked;
         when ``False`` (default), it is unchecked. Because unchecked HTML
         checkboxes submit no field, the route parameter defaults to ``False`` —
         automated clients that omit ``check_connectivity`` will skip the check
         regardless of this setting.
-    :type CONNECTIVITY_CHECK_DEFAULT: bool
+    :param AMBIENT_SESSION_SSO_ENABLED: Whether to sign an unauthenticated caller
+        in automatically from an existing PMM/Grafana session cookie (ambient
+        SSO), skipping SEP's login form. Defaults to ``False`` (opt-in). Takes
+        effect only under the Grafana auth provider and requires SEP and Grafana
+        to be same-site so the browser sends the session cookie to SEP.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -606,6 +595,16 @@ class SEPSettings(BaseYamlAppSettings):
     APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
+    AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(
+        default=False,
+        description=(
+            "Enable ambient Grafana-session SSO: sign an unauthenticated caller "
+            "in automatically from an existing PMM/Grafana session cookie, "
+            "skipping SEP's login form. Off by default; effective only under the "
+            "Grafana auth provider and only when SEP and Grafana are same-site so "
+            "the browser sends the session cookie to SEP."
+        ),
+    )
     FOOTER_TEMPLATE: Template = hot_field(
         Template("$summary $version"),
         materializer=materialize_template,
@@ -739,7 +738,7 @@ class SEPSettings(BaseYamlAppSettings):
     def reject_removed_sep_pmm(cls, data: Any) -> Any:
         """Reject a removed ``SEP.PMM`` section.
 
-        ``SEP.PMM`` was removed in SEP-1477; PMM connection/auth config now lives
+        ``SEP.PMM`` was removed; PMM connection/auth config now lives
         only under the top-level ``PMM`` section, and the alerts fields it used to
         carry moved to the alerts-owned ``SEP.ALERTS`` section. A leftover ``PMM``
         key under ``SEP`` (any case, including the ``SEP__PMM__*`` env-var path) is

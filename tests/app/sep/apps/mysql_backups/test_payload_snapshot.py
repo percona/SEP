@@ -29,7 +29,6 @@ from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
 from app.sep.apps.mysql_backups.models import BackupCreate
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskOwner
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 from tests.app.sep.snapshot_utils import assert_or_update, canonical_json, SNAPSHOTS_DIR
 
@@ -130,7 +129,7 @@ def _spec_envelope(service: CreatedService, case: dict) -> dict:
         build_backup_spec(form, resolved),
         resolved,
         name=_TASK_NAME,
-        owner=TaskOwner.BACKUPS,
+        owner="BACKUPS",
         alert_on_fail=case["alert_on_fail"],
     )
     return _normalize(task.model_dump())

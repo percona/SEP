@@ -25,17 +25,18 @@ from fastapi import Depends, Form, Request
 from app.core.exceptions import HTTPConflictException
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.backup_edit_form import parse_server_list_config
 from app.sep.apps.backup_pg.models import (
     BackupPgForm,
     BackupTaskDetailResponse,
     BackupTaskResponse,
     BackupType,
+    OWNER,
 )
 from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import (
     assemble_envelope,
-    parse_server_list_config,
     resolve_refs,
 )
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
@@ -47,7 +48,7 @@ from app.sep.deps import (
     protected_task_guard,
     TaskAPI,
 )
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ async def build_backup_task_payload(
         build_backup_pg_spec(form, resolved),
         resolved,
         name=form.task_name,
-        owner=TaskOwner.BACKUP_PG,
+        owner=OWNER,
         alert_on_fail=form.alert_on_fail,
     )
 
@@ -82,7 +83,7 @@ async def build_backup_task_payload(
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
 
-get_backups_task = make_task_dep(TaskOwner.BACKUP_PG)
+get_backups_task = make_task_dep(OWNER)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
@@ -285,7 +286,8 @@ async def get_backups_index_context(
         get_backups_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.BACKUP_PG,
+        OWNER,
+        service_type=ServiceTypeEnum.POSTGRESQL,
         alert_on_fail_default=True,
     )
 
@@ -299,7 +301,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     Extracts configuration from an existing backup task to populate the edit form.
 
     Delegates the shared ``SERVER_LIST`` parsing to
-    :func:`~app.sep.apps.framework.spec.parse_server_list_config`, layering on the
+    :func:`~app.sep.apps.backup_edit_form.parse_server_list_config`, layering on the
     postgres-specific ``port`` fallback (YAML port, then the connectivity-meta
     port, then the default).
 

@@ -3382,7 +3382,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -3420,7 +3421,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -3458,7 +3460,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -3573,21 +3576,19 @@ export interface components {
      * @description Represent a minimal per-app entry for the navigation shell.
      *
      *     :param app_key: The plugin module key.
-     *     :type app_key: str
      *     :param enabled: Whether the app is currently enabled.
-     *     :type enabled: bool
      *     :param sidebar: Whether the plugin appears in the sidebar.
-     *     :type sidebar: bool
      *     :param uri_path: The plugin's mount URI path.
-     *     :type uri_path: str
      *     :param display_name: The human-facing label for the app.
-     *     :type display_name: str
      *     :param custom_ui: Whether the app ships a bespoke React UI.
-     *     :type custom_ui: bool
      *     :param group: The nav group key this app nests under; ``None`` when the app
      *         renders as a top-level sidebar entry.
      *     :param nav_order: The app's sort position within the sidebar; ``None`` when
      *         unset.
+     *     :param react_route: The canonical React route the shell mounts and links to;
+     *         always concrete (defaulting to ``/apps/<app_key>``).
+     *     :param nav_icon: The sidebar icon key; ``None`` falls back to the shell's
+     *         default app icon.
      */
     AppKeyResponse: {
       /** App Key */
@@ -3600,8 +3601,11 @@ export interface components {
       enabled: boolean;
       /** Group */
       group: string | null;
+      nav_icon: components['schemas']['NavIcon'] | null;
       /** Nav Order */
       nav_order: number | null;
+      /** React Route */
+      react_route: string;
       /** Sidebar */
       sidebar: boolean;
       /** Uri Path */
@@ -4244,7 +4248,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
@@ -4341,7 +4346,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -4590,7 +4596,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -4811,16 +4818,16 @@ export interface components {
      *     model defaults match the previous hand-written request body; the form-display
      *     defaults that differ from the model default are carried on ``Ui(default=...)``.
      *
-     *     Field declaration order is load-bearing. The framework assembles the
-     *     ``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)
-     *     followed by all flag args (in field order), and derives the form section order
-     *     (Task, Data, Recursion, Flags, Advanced) from each section's first field — so
-     *     the order here reproduces the historical arg string byte-for-byte. ``progress``
-     *     is declared last to land at the end of the value args, and ``Ui(order=...)``
-     *     pins the Advanced section's display order where it diverges from declaration
-     *     order. The ``task_name`` / ``hostname`` Task-section fields and the
-     *     ``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`
-     *     (``alert_on_fail`` is ``Hidden``, off-schema).
+     *     Field declaration order is load-bearing. The spec builder assembles
+     *     ``--databases`` / ``--tables`` from the multi-value reference fields, then the
+     *     framework's ``build_command_args`` emits the remaining ``ArgFormat`` value args
+     *     (in field order) followed by all flag args (in field order). Section order
+     *     (Task, Data, Recursion, Flags, Advanced) follows each section's first field.
+     *     ``progress`` is declared last to land at the end of the value args, and
+     *     ``Ui(order=...)`` pins the Advanced section's display order where it diverges
+     *     from declaration order. The ``task_name`` / ``hostname`` Task-section fields
+     *     and the ``alert_on_fail`` capability control are inherited from
+     *     :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).
      */
     ChecksumsForm: {
       /**
@@ -4838,11 +4845,8 @@ export interface components {
        * @default
        */
       chunk_time: string;
-      /**
-       * Databases
-       * @default
-       */
-      databases: string;
+      /** Databases */
+      databases?: (number | string)[];
       /**
        * Dsn Table
        * @default
@@ -4892,11 +4896,8 @@ export interface components {
        * @default
        */
       set_vars: string;
-      /**
-       * Tables
-       * @default
-       */
-      tables: string;
+      /** Tables */
+      tables?: (number | string)[];
       /** Task Name */
       task_name: string;
       /**
@@ -6368,7 +6369,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -6376,6 +6378,25 @@ export interface components {
       /** Updated At */
       updated_at?: string | null;
     };
+    /**
+     * NavIcon
+     * @description Enumerate the sidebar icon keys the React shell bundles.
+     * @enum {string}
+     */
+    NavIcon:
+      | 'assignment'
+      | 'code'
+      | 'support-agent'
+      | 'description'
+      | 'troubleshoot'
+      | 'table-chart'
+      | 'check-circle'
+      | 'mysql'
+      | 'mongo'
+      | 'postgresql'
+      | 'archive'
+      | 'science'
+      | 'bar-chart';
     /**
      * Node
      * @description Represent a node in the inventory.
@@ -7112,7 +7133,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
@@ -7166,7 +7188,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
@@ -7289,7 +7312,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
@@ -7754,39 +7778,32 @@ export interface components {
      * @description Represent a single setting's metadata and current value.
      *
      *     :param setting_class: The settings class the field belongs to.
-     *     :type setting_class: SettingClassEnum
      *     :param key: The field name on the settings class.
-     *     :type key: str
      *     :param key_path: Carry the canonical key segments for ``key`` such that
      *         ``"__".join(key_path) == key``.
-     *     :type key_path: list[str]
      *     :param value: The current value visible through the proxy, dumped to a
      *         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
      *         redacted to ``"**********"``.
-     *     :type value: Any
      *     :param default_value: The field's declared default value, dumped via the
      *         same JSON serialiser. ``None`` when no default exists.
-     *     :type default_value: Any
      *     :param type: A human-readable representation of the field's declared
      *         annotation (for operator visibility; validation uses the actual
      *         ``FieldInfo``).
-     *     :type type: str
      *     :param reload: The reload classification (HOT or NOT_OVERRIDABLE).
-     *     :type reload: ReloadClassification
      *     :param description: The field's free-text description, or ``None``.
-     *     :type description: str | None
      *     :param is_secret: Whether the field's annotation contains a Pydantic secret
      *         (``SecretStr`` / ``SecretBytes``) at any depth.
-     *     :type is_secret: bool
      *     :param is_complex: Whether the field's annotation is or contains a Pydantic
      *         ``BaseModel`` subclass (true for nested submodels).
-     *     :type is_complex: bool
      *     :param has_override: Whether a row exists in the ``settingoverride`` table
      *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
-     *     :type has_override: bool
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
      *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
+     *     :param is_applicable: Whether the setting applies under current runtime state
+     *         (e.g. the active auth provider). ``False`` lets the UI present the field
+     *         as inert. Display-only, like ``is_advanced``: it does not block
+     *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
      */
     SettingResponse: {
       /** Default Value */
@@ -7800,6 +7817,11 @@ export interface components {
        * @default false
        */
       is_advanced: boolean;
+      /**
+       * Is Applicable
+       * @default true
+       */
+      is_applicable: boolean;
       /** Is Complex */
       is_complex: boolean;
       /** Is Secret */
@@ -8374,69 +8396,28 @@ export interface components {
       name: string;
     };
     /**
-     * TaskOwner
-     * @description Control the choice of task owners.
-     *
-     *     :cvar ANY: Value for tasks without owner restrictions.
-     *     :vartype ANY: str
-     *     :cvar ALTERS: Value for schema change tasks.
-     *     :vartype ALTERS: str
-     *     :cvar ARCHIVER: Value for data archiver tasks.
-     *     :vartype ARCHIVER: str
-     *     :cvar BACKUPS: Value for backup tasks.
-     *     :vartype BACKUPS: str
-     *     :cvar RESTORES: Value for restore tasks.
-     *     :vartype RESTORES: str
-     *     :cvar CHECKSUMS: Value for checksum tasks.
-     *     :vartype CHECKSUMS: str
-     * @enum {string}
-     */
-    TaskOwner:
-      | 'ANY'
-      | 'ALTERS'
-      | 'ARCHIVER'
-      | 'BACKUPS'
-      | 'RESTORES'
-      | 'CHECKSUMS'
-      | 'BACKUP_MONGO'
-      | 'RESTORE_MONGO'
-      | 'BACKUP_PG';
-    /**
      * TaskResponse
      * @description Represent a task API response.
      *
      *     :param name: The name of the task.
-     *     :type name: str
      *     :param data: The task data stored in JSON format.
-     *     :type data: dict
      *     :param backend: The backend used for task execution. Defaults to Nomad.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-     *     :type owner: TaskOwner
+     *     :param owner: The owner of the task. Defaults to ``"ANY"``.
      *     :param is_template: Whether the task is a template. Defaults to False.
-     *     :type is_template: bool
      *     :param protected: Whether the task is protected from deletion. Defaults to False.
-     *     :type protected: bool
      *     :param alert_on_fail: Whether to trigger an alert on task failure and
      *         auto-resolve it on subsequent success. Defaults to False.
-     *     :type alert_on_fail: bool
      *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
      *         callable that enriches this task's failure alert, or None.
-     *     :type alert_detail_builder: str | None
      *     :param deleted_at: The deletion timestamp, if applicable.
-     *     :type deleted_at: UTCDatetime | None
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the task. Defaults to 0 (no anonymization).
-     *     :type anonymize_mask: int | None
      *     :param created_by: The user ID of the user who created the task.
-     *     :type created_by: str | None
      *     :param last_updated_by: The user ID of the user who last modified the task.
-     *     :type last_updated_by: str | None
      *     :param anonymized_entities: Sorted list of PII entity names derived from
      *         ``anonymize_mask`` (or from the owner's configured defaults when the
      *         mask is ``None``). Each name is the raw ``PIIEntity`` member name
      *         (e.g. ``"EMAIL_ADDRESS"``). Read-only; computed on serialisation.
-     *     :type anonymized_entities: list[str]
      */
     TaskResponse: {
       /** Alert Detail Builder */
@@ -8690,7 +8671,8 @@ export interface components {
       latest_pbm_status?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -8734,7 +8716,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -8808,7 +8791,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
@@ -8854,7 +8838,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -12082,7 +12067,7 @@ export interface operations {
   task_manager_tasks_api_detail_api_apps_tasks__task_name__get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12770,7 +12755,7 @@ export interface operations {
   tasks_list_task_execution_events_execution_events__task_history_id__get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12803,7 +12788,7 @@ export interface operations {
   tasks_list_task_history_files_files__task_history_id__get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12838,7 +12823,7 @@ export interface operations {
   tasks_download_task_history_file_files__task_history_id__download_get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12871,7 +12856,7 @@ export interface operations {
   tasks_task_logs_event_stream_stream_logs__task_history_id__get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12904,7 +12889,7 @@ export interface operations {
   tasks_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {

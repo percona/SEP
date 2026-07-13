@@ -302,6 +302,33 @@ describe('TableSelector', () => {
   });
 
   describe('multiple (multi-value)', () => {
+    it('fetches tables when the parent is a multi-schema array', async () => {
+      mocked.get.mockResolvedValueOnce({
+        data: [
+          { id: 100, name: 'users' },
+          { id: 101, name: 'orders' },
+        ],
+      });
+      const client = makeClient();
+      function Probe() {
+        const methods = useForm<{ databases: number[]; tables: unknown }>({
+          defaultValues: { databases: [42], tables: [] },
+        });
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="tables" label="Tables" dependsOn="databases" multiple />
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/schemas/42/tables'));
+      expect(screen.getByLabelText('Tables')).not.toBeDisabled();
+    });
+
     it('resets the child to [] when the parent schema changes', async () => {
       mocked.get.mockResolvedValue({ data: [{ id: 1, name: 't' }] });
       const client = makeClient();

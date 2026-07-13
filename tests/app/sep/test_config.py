@@ -22,9 +22,11 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
+from app.core.settings_override.registry import is_hot_reloadable
 from app.sep.config import (
     App,
     AppDrainSettings,
+    sep_settings,
     SEPSettings,
     SessionOptions,
     SyncerExtraKwargs,
@@ -59,6 +61,18 @@ class TestSessionRefreshDefault:
         assert settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
         assert settings.SESSION_REFRESH.PATH == "/api/oauth"
         assert settings.SESSION.PATH is None
+
+
+class TestAmbientSessionSSO:
+    """Test the ambient Grafana SSO feature toggle."""
+
+    def test_defaults_to_disabled(self):
+        """Verify ambient SSO is opt-in, reading ``False`` through the proxy."""
+        assert sep_settings.AMBIENT_SESSION_SSO_ENABLED is False
+
+    def test_is_hot_reloadable(self):
+        """Verify the toggle is a hot field, so a DB override can enable it live."""
+        assert is_hot_reloadable(SEPSettings, "AMBIENT_SESSION_SSO_ENABLED")
 
 
 class TestFooterTemplate:
@@ -182,6 +196,34 @@ class TestPluginNameOptional:
         plugin = App(name="Snippet Manager", module_name="snippets")
         assert plugin.uri_path == "/snippet-manager"
         assert plugin.css_class == "snippet-manager"
+
+
+class TestPluginNavIcon:
+    """``App.NAV_ICON`` is validated against the closed ``NavIcon`` vocabulary."""
+
+    def test_valid_nav_icon_is_accepted(self) -> None:
+        """Accept a known icon key and round-trip it as its string value."""
+        plugin = App(module_name="backup_pg", nav_icon="postgresql")
+        assert plugin.nav_icon == "postgresql"
+
+    def test_invalid_nav_icon_is_rejected(self) -> None:
+        """Reject an unknown icon key at settings-load validation."""
+        with pytest.raises(ValidationError, match="NAV_ICON"):
+            App(module_name="backup_pg", nav_icon="not-a-real-icon")
+
+
+class TestPluginReactRoute:
+    """``App.REACT_ROUTE`` must be an absolute React route path."""
+
+    def test_absolute_react_route_is_accepted(self) -> None:
+        """Accept a leading-slash route path."""
+        plugin = App(module_name="backup_pg", react_route="/backups/postgresql")
+        assert plugin.react_route == "/backups/postgresql"
+
+    def test_relative_react_route_is_rejected(self) -> None:
+        """Reject a route path that is not absolute."""
+        with pytest.raises(ValidationError, match="REACT_ROUTE"):
+            App(module_name="backup_pg", react_route="backups/postgresql")
 
 
 class TestAppDrainSettings:

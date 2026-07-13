@@ -1123,39 +1123,32 @@ export interface components {
      * @description Represent a single setting's metadata and current value.
      *
      *     :param setting_class: The settings class the field belongs to.
-     *     :type setting_class: SettingClassEnum
      *     :param key: The field name on the settings class.
-     *     :type key: str
      *     :param key_path: Carry the canonical key segments for ``key`` such that
      *         ``"__".join(key_path) == key``.
-     *     :type key_path: list[str]
      *     :param value: The current value visible through the proxy, dumped to a
      *         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
      *         redacted to ``"**********"``.
-     *     :type value: Any
      *     :param default_value: The field's declared default value, dumped via the
      *         same JSON serialiser. ``None`` when no default exists.
-     *     :type default_value: Any
      *     :param type: A human-readable representation of the field's declared
      *         annotation (for operator visibility; validation uses the actual
      *         ``FieldInfo``).
-     *     :type type: str
      *     :param reload: The reload classification (HOT or NOT_OVERRIDABLE).
-     *     :type reload: ReloadClassification
      *     :param description: The field's free-text description, or ``None``.
-     *     :type description: str | None
      *     :param is_secret: Whether the field's annotation contains a Pydantic secret
      *         (``SecretStr`` / ``SecretBytes``) at any depth.
-     *     :type is_secret: bool
      *     :param is_complex: Whether the field's annotation is or contains a Pydantic
      *         ``BaseModel`` subclass (true for nested submodels).
-     *     :type is_complex: bool
      *     :param has_override: Whether a row exists in the ``settingoverride`` table
      *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
-     *     :type has_override: bool
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
      *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
+     *     :param is_applicable: Whether the setting applies under current runtime state
+     *         (e.g. the active auth provider). ``False`` lets the UI present the field
+     *         as inert. Display-only, like ``is_advanced``: it does not block
+     *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
      */
     SettingResponse: {
       /** Default Value */
@@ -1169,6 +1162,11 @@ export interface components {
        * @default false
        */
       is_advanced: boolean;
+      /**
+       * Is Applicable
+       * @default true
+       */
+      is_applicable: boolean;
       /** Is Complex */
       is_complex: boolean;
       /** Is Secret */
@@ -1495,69 +1493,28 @@ export interface components {
       | 'lost'
       | 'stale';
     /**
-     * TaskOwner
-     * @description Control the choice of task owners.
-     *
-     *     :cvar ANY: Value for tasks without owner restrictions.
-     *     :vartype ANY: str
-     *     :cvar ALTERS: Value for schema change tasks.
-     *     :vartype ALTERS: str
-     *     :cvar ARCHIVER: Value for data archiver tasks.
-     *     :vartype ARCHIVER: str
-     *     :cvar BACKUPS: Value for backup tasks.
-     *     :vartype BACKUPS: str
-     *     :cvar RESTORES: Value for restore tasks.
-     *     :vartype RESTORES: str
-     *     :cvar CHECKSUMS: Value for checksum tasks.
-     *     :vartype CHECKSUMS: str
-     * @enum {string}
-     */
-    TaskOwner:
-      | 'ANY'
-      | 'ALTERS'
-      | 'ARCHIVER'
-      | 'BACKUPS'
-      | 'RESTORES'
-      | 'CHECKSUMS'
-      | 'BACKUP_MONGO'
-      | 'RESTORE_MONGO'
-      | 'BACKUP_PG';
-    /**
      * TaskResponse
      * @description Represent a task API response.
      *
      *     :param name: The name of the task.
-     *     :type name: str
      *     :param data: The task data stored in JSON format.
-     *     :type data: dict
      *     :param backend: The backend used for task execution. Defaults to Nomad.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-     *     :type owner: TaskOwner
+     *     :param owner: The owner of the task. Defaults to ``"ANY"``.
      *     :param is_template: Whether the task is a template. Defaults to False.
-     *     :type is_template: bool
      *     :param protected: Whether the task is protected from deletion. Defaults to False.
-     *     :type protected: bool
      *     :param alert_on_fail: Whether to trigger an alert on task failure and
      *         auto-resolve it on subsequent success. Defaults to False.
-     *     :type alert_on_fail: bool
      *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
      *         callable that enriches this task's failure alert, or None.
-     *     :type alert_detail_builder: str | None
      *     :param deleted_at: The deletion timestamp, if applicable.
-     *     :type deleted_at: UTCDatetime | None
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the task. Defaults to 0 (no anonymization).
-     *     :type anonymize_mask: int | None
      *     :param created_by: The user ID of the user who created the task.
-     *     :type created_by: str | None
      *     :param last_updated_by: The user ID of the user who last modified the task.
-     *     :type last_updated_by: str | None
      *     :param anonymized_entities: Sorted list of PII entity names derived from
      *         ``anonymize_mask`` (or from the owner's configured defaults when the
      *         mask is ``None``). Each name is the raw ``PIIEntity`` member name
      *         (e.g. ``"EMAIL_ADDRESS"``). Read-only; computed on serialisation.
-     *     :type anonymized_entities: list[str]
      */
     TaskResponse: {
       /** Alert Detail Builder */
@@ -1664,26 +1621,17 @@ export interface components {
      * @description Define the model for creating new tasks.
      *
      *     :param name: The name of the task.
-     *     :type name: str
      *     :param data: The task data stored in JSON format.
-     *     :type data: dict
      *     :param backend: The backend used for task execution. Defaults to Nomad.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-     *     :type owner: TaskOwner
+     *     :param owner: The owner of the task. Defaults to ``"ANY"``.
      *     :param is_template: Whether the task is a template. Defaults to False.
-     *     :type is_template: bool
      *     :param protected: Whether the task is protected from deletion. Defaults to False.
-     *     :type protected: bool
      *     :param alert_on_fail: Whether to trigger an alert on task failure and
      *         auto-resolve it on subsequent success. Defaults to False.
-     *     :type alert_on_fail: bool
      *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
      *         callable that enriches this task's failure alert, or None.
-     *     :type alert_detail_builder: str | None
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the task. Defaults to 0 (no anonymization).
-     *     :type anonymize_mask: int | None
      */
     TaskWrite: {
       /** Alert Detail Builder */
@@ -2394,7 +2342,7 @@ export interface operations {
   periodic_list_periodic_tasks_periodic__get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
         enabled?: boolean | null;
       };
       header?: never;

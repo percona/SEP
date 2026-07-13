@@ -35,7 +35,6 @@ from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm
 from app.sep.apps.checksums.spec import build_checksums_spec
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskOwner
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 from tests.app.sep.snapshot_utils import assert_or_update, canonical_json, SNAPSHOTS_DIR
 
@@ -149,11 +148,18 @@ def _spec_envelope(case: dict) -> dict:
         service_id=service.id,
         **case["form"],
     )
+    databases_arg = ",".join(str(value) for value in form.databases)
+    tables_arg = ",".join(str(value) for value in form.tables)
     task = assemble_envelope(
-        build_checksums_spec(form, resolved),
+        build_checksums_spec(
+            form,
+            resolved,
+            databases_arg=databases_arg,
+            tables_arg=tables_arg,
+        ),
         resolved,
         name=_TASK_NAME,
-        owner=TaskOwner.CHECKSUMS,
+        owner="CHECKSUMS",
         alert_on_fail=case["alert_on_fail"],
     )
     return task.model_dump()

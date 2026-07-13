@@ -50,6 +50,7 @@ from app.sep.apps.framework.rules import (
     Equals,
     evaluate_conditional_rules,
     extract_forbidden_field_gate_plan,
+    extract_required_field_gate_plan,
     F,
     FailRule,
     Falsy,
@@ -1510,6 +1511,51 @@ class TestExtractForbiddenFieldGatePlan:
             extract_forbidden_field_gate_plan(schema, entity_name="alpha").rules == ()
         )
         assert extract_forbidden_field_gate_plan(schema, entity_name="beta").rules == ()
+
+
+class TestExtractRequiredFieldGatePlan:
+    """``extract_required_field_gate_plan`` isolates only requires gates."""
+
+    def test_returns_only_requires_gates(self) -> None:
+        """Forbidden gates, cardinality and fail rules are filtered out."""
+        schema = _build_schema(
+            StringField(
+                name="x",
+                label="X",
+                requires=[FieldGate(when=truthy("y"))],
+                forbidden=[FieldGate(when=truthy("z"))],
+            ),
+            extra_fields=[
+                StringField(name="y", label="Y"),
+                StringField(name="z", label="Z"),
+            ],
+            section_cardinality=[
+                CardinalityRule(when=truthy("y"), fields=["x"], min=1)
+            ],
+            schema_fail=[FailRule(fail_when=truthy("z"), error_fields=["z"])],
+        )
+
+        plan = extract_required_field_gate_plan(schema)
+
+        assert len(plan.rules) == 1
+        assert all(r.kind == "field_gate_requires" for r in plan.rules)
+
+    def test_gateless_schema_yields_empty_plan(self) -> None:
+        """A schema with no requires gates produces an empty plan."""
+        schema = _build_schema(StringField(name="x", label="X"))
+
+        assert extract_required_field_gate_plan(schema).rules == ()
+
+    def test_scopes_requires_gates_to_named_entity(self) -> None:
+        """The ``entity_name`` argument is honoured for multi-entity schemas."""
+        schema = _multi_entity_two_alpha_beta_schema()
+
+        # alpha declares a requires gate; beta declares none.
+        assert (
+            len(extract_required_field_gate_plan(schema, entity_name="alpha").rules)
+            == 1
+        )
+        assert extract_required_field_gate_plan(schema, entity_name="beta").rules == ()
 
 
 class TestResolveField:

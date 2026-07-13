@@ -366,13 +366,9 @@ class TestBuildOwnerAlertDetails:
     @staticmethod
     def _archiver_history(*, exec_meta, task_data, target="executor-host"):
         """Return a stub ARCHIVER history for the detail builder."""
-        from app.tasks.models import TaskOwner
-
         return SimpleNamespace(
             id=42,
-            task=SimpleNamespace(
-                owner=TaskOwner.ARCHIVER, data=task_data, anonymize_mask=None
-            ),
+            task=SimpleNamespace(owner="ARCHIVER", data=task_data, anonymize_mask=None),
             execution_request=SimpleNamespace(meta=exec_meta, target=target),
             anonymize_mask=None,
         )

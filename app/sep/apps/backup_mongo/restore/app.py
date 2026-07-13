@@ -37,11 +37,10 @@ from app.sep.apps.backup_mongo.restore.deps import (
     build_restore_mongo_api_task_response,
     get_restores_task,
 )
-from app.sep.apps.backup_mongo.restore.models import RestoreTaskResponse
+from app.sep.apps.backup_mongo.restore.models import OWNER, RestoreTaskResponse
 from app.sep.apps.backup_mongo.restore.routes import router as jinja_router
 from app.sep.apps.backup_mongo.restore.schema import restore_mongo_schema
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
-from app.tasks.models import TaskOwner
 
 app = TaskExecutionApp(
     key="backup_mongo/restore",
@@ -53,7 +52,7 @@ app = TaskExecutionApp(
     nav_order=9,
     sidebar=False,
     parent_key="backup_mongo",
-    owner=TaskOwner.RESTORE_MONGO,
+    owner=OWNER,
     schema=restore_mongo_schema,
     response_model=RestoreTaskResponse,
     response_builder=build_restore_mongo_api_task_response,

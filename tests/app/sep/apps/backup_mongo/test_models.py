@@ -27,7 +27,7 @@ from app.sep.apps.backup_mongo.models import (
     parse_backup_priority,
 )
 from app.sep.apps.framework import BaseTaskResponse
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 
 # A well-formed multi-line block mapping of node -> priority.
 _VALID_PRIORITY_YAML = '"h1:27018": 2\n"h2:27018": 1'
@@ -179,7 +179,7 @@ class TestBackupMongoResponseModels:
         """Carry the shared anonymization and connectivity surface from the base."""
         response = BackupTaskResponse(
             name="mongo-backup",
-            owner=TaskOwner.BACKUP_MONGO,
+            owner="BACKUP_MONGO",
             hostname="mongo-host",
             backend=TaskBackendEnum.PROXY,
             backup_type=BackupType.PBM_LOGICAL.value,
@@ -202,7 +202,7 @@ class TestBackupMongoResponseModels:
         """Keep the derived-task extras while inheriting the base response surface."""
         detail = BackupTaskDetailResponse(
             name="mongo-backup",
-            owner=TaskOwner.BACKUP_MONGO,
+            owner="BACKUP_MONGO",
             backend=TaskBackendEnum.PROXY,
             backup_type=BackupType.PBM_CONFIG.value,
             data={},

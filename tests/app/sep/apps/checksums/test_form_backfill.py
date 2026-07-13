@@ -33,7 +33,7 @@ from app.sep.apps.framework.form_backfill import (
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner
+from app.tasks.models import Task, TaskBackendEnum
 
 
 def _service(
@@ -90,7 +90,7 @@ def _legacy_checksums_task(
             },
         },
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.CHECKSUMS,
+        owner="CHECKSUMS",
         alert_on_fail=alert_on_fail,
     )
 
@@ -147,8 +147,8 @@ def test_reconstruct_checksums_form_happy_path():
         "service_id": 42,
         "recursion_method": "processlist",
         "dsn_table": "",
-        "databases": "db1,db2",
-        "tables": "",
+        "databases": ["db1", "db2"],
+        "tables": [],
         "pause_file": "",
         "binary_index": True,
         "explain_arg": False,
@@ -247,4 +247,4 @@ def test_backfill_single_task_stamps_checksums_form():
     assert stamped_form["task_name"] == "chk-stamp"
     assert stamped_form["service_id"] == expected_service_id
     assert stamped_form["recursion_method"] == "hosts"
-    assert stamped_form["tables"] == "db.t1"
+    assert stamped_form["tables"] == ["db.t1"]

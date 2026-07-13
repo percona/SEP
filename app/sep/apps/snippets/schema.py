@@ -26,7 +26,7 @@ frontmatter and served at
 __all__ = [
     "SNIPPETS_PLUGIN_SCHEMA",
     "build_snippet_schema",
-    "evaluate_visibility_gates",
+    "evaluate_snippet_gates",
 ]
 
 from types import SimpleNamespace
@@ -36,9 +36,11 @@ from urllib.parse import urlencode
 from app.sep.apps.framework.rules import (
     evaluate_conditional_rules,
     extract_forbidden_field_gate_plan,
+    extract_required_field_gate_plan,
     F,
     FieldGate,
     Not,
+    Predicate,
     truthy,
 )
 from app.sep.apps.framework.schema import (
@@ -63,6 +65,7 @@ from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
+    SnippetVisibilityCondition,
 )
 from app.sep.snippets.models.snippet import BaseSnippetArgs, Snippet
 
@@ -205,7 +208,7 @@ def _visibility_forbidden(parameter: SnippetMetaParameter) -> list[FieldGate] | 
     .. note::
         The React renderer hides the field and drops its value from the payload.
         The resulting gate is *also* enforced server-side on the execute paths
-        via :func:`evaluate_visibility_gates`, which rejects a value submitted
+        via :func:`evaluate_snippet_gates`, which rejects a value submitted
         directly for a gated-hidden field (matching ``@apply_conditional_rules``
         for hand-coded plugins).
 
@@ -218,23 +221,81 @@ def _visibility_forbidden(parameter: SnippetMetaParameter) -> list[FieldGate] | 
     condition = parameter.visible_when or parameter.visible_when_not
     if condition is None:
         return None
-    if condition.equals is None:
-        predicate = truthy(condition.parameter)
-    else:
-        predicate = F(condition.parameter) == condition.equals
-    gate_predicate = (
-        predicate if parameter.visible_when_not is not None else Not(predicate)
+    predicate = _gate_predicate(condition, negated=parameter.visible_when is not None)
+    return [FieldGate(when=predicate)]
+
+
+def _gate_predicate(
+    condition: SnippetVisibilityCondition, *, negated: bool
+) -> Predicate:
+    """Build the predicate for a bounded gate/visibility condition.
+
+    A condition matches its referenced sibling by truthiness (when ``equals`` is
+    ``None``) or by equality (otherwise); ``negated`` wraps the predicate in
+    ``Not`` so the condition fires on the inverse. The wire shapes produced
+    (``{"truthy": ...}``, ``{"equals": {...}}``, ``{"not": {...}}``) match the
+    marker DSL, keeping the format shared.
+
+    :param condition: The bounded sibling condition to lower.
+    :param negated: Whether to negate the predicate (the ``_when_not`` variants
+        and ``visible_when``).
+    :return: The framework predicate encoding the condition.
+    """
+    base = (
+        truthy(condition.parameter)
+        if condition.equals is None
+        else F(condition.parameter) == condition.equals
     )
-    return [FieldGate(when=gate_predicate)]
+    return Not(base) if negated else base
+
+
+def _requires_gates(parameter: SnippetMetaParameter) -> list[FieldGate] | None:
+    """Lower a parameter's ``requires_when`` / ``requires_when_not`` onto a gate.
+
+    :param parameter: The validated snippet meta parameter.
+    :return: A single-element list with the ``requires`` gate, or ``None`` when
+        the parameter declares no requires gate.
+    """
+    for condition, negated in (
+        (parameter.requires_when, False),
+        (parameter.requires_when_not, True),
+    ):
+        if condition is not None:
+            return [FieldGate(when=_gate_predicate(condition, negated=negated))]
+    return None
+
+
+def _forbidden_gates(parameter: SnippetMetaParameter) -> list[FieldGate] | None:
+    """Lower a parameter's forbidden gate and visibility condition onto gates.
+
+    Both the visibility-derived forbidden gate (see :func:`_visibility_forbidden`)
+    and an explicit ``forbidden_when`` / ``forbidden_when_not`` gate land on the
+    field's ``forbidden`` list. The two sources are mutually exclusive at parse
+    time, but the merge is defensive.
+
+    :param parameter: The validated snippet meta parameter.
+    :return: The combined ``forbidden`` gate list, or ``None`` when the parameter
+        declares neither a visibility condition nor a forbidden gate.
+    """
+    gates = list(_visibility_forbidden(parameter) or [])
+    for condition, negated in (
+        (parameter.forbidden_when, False),
+        (parameter.forbidden_when_not, True),
+    ):
+        if condition is not None:
+            gates.append(FieldGate(when=_gate_predicate(condition, negated=negated)))
+    return gates or None
 
 
 def field_for(parameter: SnippetMetaParameter) -> AnyField:
     """Map a snippet meta parameter to its framework field counterpart.
 
     A parameter declaring ``choices`` always maps to :class:`ChoiceField`
-    regardless of ``py_type``. A parameter declaring ``visible_when`` /
-    ``visible_when_not`` additionally carries a ``forbidden`` gate (see
-    :func:`_visibility_forbidden`).
+    regardless of ``py_type``. A parameter declaring a visibility condition
+    (``visible_when`` / ``visible_when_not``) or a bounded gate (``requires_when``
+    / ``requires_when_not`` / ``forbidden_when`` / ``forbidden_when_not``)
+    additionally carries the corresponding ``requires`` / ``forbidden`` gate lists
+    (see :func:`_requires_gates` / :func:`_forbidden_gates`).
 
     :param parameter: The validated snippet meta parameter.
     :type parameter: SnippetMetaParameter
@@ -245,9 +306,15 @@ def field_for(parameter: SnippetMetaParameter) -> AnyField:
         field = cast(AnyField, _choice_field_for(parameter))
     else:
         field = cast(AnyField, _FIELD_BUILDERS[parameter.py_type](parameter))
-    forbidden = _visibility_forbidden(parameter)
+    update: dict[str, list[FieldGate]] = {}
+    requires = _requires_gates(parameter)
+    if requires is not None:
+        update["requires"] = requires
+    forbidden = _forbidden_gates(parameter)
     if forbidden is not None:
-        field = cast(AnyField, field.model_copy(update={"forbidden": forbidden}))
+        update["forbidden"] = forbidden
+    if update:
+        field = cast(AnyField, field.model_copy(update=update))
     return field
 
 
@@ -341,32 +408,40 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
     )
 
 
-def evaluate_visibility_gates(
+def evaluate_snippet_gates(
     snippet: Snippet, execution_args: BaseSnippetArgs
 ) -> list[str]:
-    """Return failure messages for any forbidden visibility gate that fires.
+    """Return failure messages for any snippet field gate that fires.
 
-    Snippet ``visible_when`` / ``visible_when_not`` conditions are lowered onto
-    ``forbidden=[FieldGate(...)]`` by :func:`field_for`. This reuses the
-    framework ``field_gate_forbidden`` engine to enforce them server-side on the
-    execute paths, matching how ``@apply_conditional_rules`` enforces hand-coded
-    plugins: a value submitted for a parameter whose gate fires (given the rest
-    of the submission) is rejected.
+    Snippet ``visible_when`` / ``visible_when_not`` conditions and bounded
+    ``forbidden_when`` / ``forbidden_when_not`` gates are lowered onto
+    ``forbidden=[FieldGate(...)]``, and ``requires_when`` / ``requires_when_not``
+    gates onto ``requires=[FieldGate(...)]``, by :func:`field_for`. This reuses
+    the framework ``field_gate_forbidden`` / ``field_gate_requires`` engines to
+    enforce them server-side on the execute paths, matching how
+    ``@apply_conditional_rules`` enforces hand-coded plugins: a value submitted
+    for a parameter whose ``forbidden`` gate fires is rejected, and a parameter
+    omitted while its ``requires`` gate fires is rejected (given the rest of the
+    submission).
 
     Gates reference parameters by their wire (alias) name, so evaluation runs
     against the alias-shaped view of the validated args
     (``model_dump(by_alias=True)``), not the model's generated python attribute
     names — otherwise the predicates would silently never resolve.
 
-    :param snippet: The snippet whose visibility gates to enforce.
+    :param snippet: The snippet whose field gates to enforce.
     :param execution_args: The already type/presence-validated execution args.
     :return: One message per fired gate; empty when every gate passes (including
         gateless snippets, which take the identical path to before).
     """
     schema = build_snippet_schema(snippet)
-    plan = extract_forbidden_field_gate_plan(schema)
-    if not plan.rules:
+    forbidden_plan = extract_forbidden_field_gate_plan(schema)
+    required_plan = extract_required_field_gate_plan(schema)
+    if not forbidden_plan.rules and not required_plan.rules:
         return []
     alias_view = SimpleNamespace()
     alias_view.__dict__.update(execution_args.model_dump(by_alias=True))
-    return evaluate_conditional_rules(alias_view, plan)
+    return [
+        *evaluate_conditional_rules(alias_view, forbidden_plan),
+        *evaluate_conditional_rules(alias_view, required_plan),
+    ]

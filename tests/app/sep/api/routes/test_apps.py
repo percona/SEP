@@ -28,6 +28,7 @@ from sqlmodel import SQLModel
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+from app.sep.api.routes.apps import build_navigation_react_route
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.deps import (
     get_api_authenticated_user,
@@ -100,6 +101,8 @@ class TestListAppsForNavigation:
             "custom_ui",
             "group",
             "nav_order",
+            "react_route",
+            "nav_icon",
         }
 
     async def test_additive_fields_carry_registry_values(
@@ -125,6 +128,47 @@ class TestListAppsForNavigation:
             definition = registry.get(app_key)
             assert entry["group"] == definition.group
             assert entry["nav_order"] == definition.nav_order
+
+    async def test_react_route_and_nav_icon_carry_registry_values(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Carry ``react_route`` (concrete default) and ``nav_icon`` per entry."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        registry = get_app_registry()
+
+        for app_key, entry in entries.items():
+            definition = registry.get(app_key)
+            assert entry["react_route"] == build_navigation_react_route(
+                app_key, definition.react_route
+            )
+            assert entry["nav_icon"] == definition.nav_icon
+
+    async def test_default_react_route_emitted_concrete(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Emit ``/apps/<key>`` for an app with no ``react_route`` override."""
+        response = api_user_client.get("/api/apps/")
+        checksums = next(e for e in response.json() if e["app_key"] == "checksums")
+        assert checksums["react_route"] == "/apps/checksums"
+
+    @pytest.mark.parametrize(
+        ("app_key", "expected_route"),
+        [
+            ("tasks", "/apps/tasks"),
+            ("alerts", "/apps/alerts/templates"),
+            ("backup_mongo", "/apps/backups/mongodb"),
+            ("backup_pg", "/apps/backups/postgresql"),
+            ("report", "/apps/reports"),
+        ],
+    )
+    async def test_declared_react_routes_are_normalized_under_apps_namespace(
+        self, api_user_client: TestClient, app_key: str, expected_route: str
+    ) -> None:
+        """Emit declared routes after normalizing them under ``/apps``."""
+        response = api_user_client.get("/api/apps/")
+        entry = next(e for e in response.json() if e["app_key"] == app_key)
+        assert entry["react_route"] == expected_route
 
     async def test_child_enabled_follows_parent(
         self, api_user_client: TestClient, override_session: AsyncSession
