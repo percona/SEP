@@ -194,7 +194,7 @@ export function SnippetExecutionAccordion({
           </Typography>
           {description && (
             <Typography variant="body2" color="text.secondary">
-              ssss
+              {description}
             </Typography>
           )}
         </Box>
