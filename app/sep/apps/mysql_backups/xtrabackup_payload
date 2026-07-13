@@ -49,7 +49,7 @@ _COPY_LINE_RE = re.compile(
 )
 
 
-def _replica_backup_flags(replica_info, stop_replica):
+def _replica_backup_flags(replica_info: bool, stop_replica: bool) -> list[str]:
     """Return the replica-related xtrabackup CLI flags for the given options.
 
     ``--safe-slave-backup`` lets xtrabackup own the replica SQL-thread pause and

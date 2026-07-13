@@ -43,7 +43,7 @@ def _load_replica_backup_flags():
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name == "_replica_backup_flags":
             module = ast.Module(body=[node], type_ignores=[])
-            namespace: dict = {}
+            namespace: dict[str, object] = {}
             exec(compile(module, str(_PAYLOAD_PATH), "exec"), namespace)
             return namespace["_replica_backup_flags"]
     raise RuntimeError(
@@ -72,8 +72,8 @@ class TestReplicaBackupFlags:
     ) -> None:
         """Assert each (replica_info, stop_replica) combination yields the expected flags.
 
-        ``--slave-info`` must keep leading ``--safe-slave-backup`` so the option
-        order (and thus the generated command) stays deterministic.
+        ``--slave-info`` must lead ``--safe-slave-backup`` so the option order
+        (and thus the generated command) stays deterministic.
         """
         assert _replica_backup_flags(replica_info, stop_replica) == expected
 
