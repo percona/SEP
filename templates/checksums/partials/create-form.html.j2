@@ -160,33 +160,34 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 </fieldset>
                 <fieldset style="margin-bottom: 0;">
                     <legend>Data</legend>
-                    <div class="select">
-                        {% set schema_id_title = "Select the database schema on which the task will operate." %}
-                        <label for="schema_id" title="{{ schema_id_title }}">
-                            <span class="material-symbols-outlined">arrow_drop_down</span>
-                            <span class="label">Schema</span>
-                            <select id="schema_id"
-                                    name="schema_id"
-                                    title="{{ schema_id_title }}"
-                                    disabled></select>
-                        </label>
+                    <div class="field">
+                        {% set databases_title = "Comma-separated database names to checksum." %}
+                        <label for="databases" title="{{ databases_title }}">Databases</label>
+                        <input type="text"
+                               id="databases"
+                               name="databases"
+                               class="validate"
+                               title="{{ databases_title }}"
+                               placeholder="db1,db2" />
                     </div>
-                    <div class="select">
-                        {% set schema_id_title = "Select the table within the schema to be altered." %}
-                        <label for="table_id" title="{{ schema_id_title }}">
-                            <span class="material-symbols-outlined">arrow_drop_down</span>
-                            <span class="label">Table</span>
-                            <select id="table_id" name="table_id" title="{{ schema_id_title }}" disabled></select>
-                        </label>
+                    <div class="field">
+                        {% set tables_title = "Comma-separated tables in schema.table format." %}
+                        <label for="tables" title="{{ tables_title }}">Tables</label>
+                        <input type="text"
+                               id="tables"
+                               name="tables"
+                               class="validate"
+                               title="{{ tables_title }}"
+                               placeholder="db1.tbl1,db1.tbl2" />
                     </div>
-                    {% set extra_args_title = "Type optional additional arguments for the checksum task." %}
+                    {% set extra_args_title = "Optional additional pt-table-checksum arguments." %}
                     <label for="extra_args" title="{{ extra_args_title }}">
                         Extra args
                         <input type="text"
                                id="extra_args"
                                name="extra_args"
                                class="validate"
-                               placeholder="--databases=db1,db2 --tables=db1.tb1,db1.tb2"
+                               placeholder="--chunk-time=1"
                                style="width: 25em" />
                     </label>
                     <br>
@@ -345,103 +346,17 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         </footer>
     </dialog>
 </form>
-<script src="{{ url_for('static', path='/js/schema-selector.js') }}"
-        nonce="{{ request.state.csp_nonce }}"></script>
 <script type="text/javascript" nonce="{{ request.state.csp_nonce }}">
-    var serviceSchemas = {};
-    const connectToSelect = document.getElementById('service_id');
-    const schemaSelect = document.getElementById('schema_id');
-    const tableSelect = document.getElementById('table_id');
-    const extra_args = document.getElementById('extra_args');
     const form = document.getElementById('create-checksum-form');
     const createButton = form.querySelector('button[type="submit"]');
-
-    let selectedService = null;
-    let selectedSchema = null;
-    let selectedTable = null;
-
-    async function populateSchemas(serviceId) {
-        populateSelect(schemaSelect, [], {placeholder: "Not selected", emptyPlaceholder: "No schema"});
-        populateSelect(tableSelect, [], {placeholder: "Not selected", emptyPlaceholder: "No table"});
-        selectedSchema = null;
-        selectedTable = null;
-
-        if (!serviceId) return;
-
-        var schemas = serviceSchemas[serviceId];
-        if (!schemas) {
-            var items = await fetchSchemas(serviceId);
-            if (items.length === 0) return;
-            schemas = {};
-            for (var i = 0; i < items.length; i++) {
-                schemas[items[i].id] = {name: items[i].name, tables: {}};
-            }
-            serviceSchemas[serviceId] = schemas;
-        }
-
-        var entries = Object.entries(schemas);
-        var schemaItems = [];
-        for (var j = 0; j < entries.length; j++) {
-            schemaItems.push({id: entries[j][0], name: entries[j][1].name});
-        }
-        populateSelect(schemaSelect, schemaItems, {placeholder: "Not selected", emptyPlaceholder: "No schema"});
-    }
-
-    async function populateTables(serviceId, schemaId) {
-        populateSelect(tableSelect, [], {placeholder: "Not selected", emptyPlaceholder: "No table"});
-        selectedTable = null;
-
-        if (!schemaId || schemaId === "-1") return;
-
-        var cached = serviceSchemas[serviceId] && serviceSchemas[serviceId][schemaId];
-        var tables = cached ? cached.tables : null;
-        if (!tables || Object.keys(tables).length === 0) {
-            var items = await fetchTables(schemaId);
-            if (items.length === 0) return;
-            tables = {};
-            for (var i = 0; i < items.length; i++) {
-                tables[items[i].id] = {name: items[i].name, id: items[i].id};
-            }
-            if (serviceSchemas[serviceId] && serviceSchemas[serviceId][schemaId]) {
-                serviceSchemas[serviceId][schemaId].tables = tables;
-            }
-        }
-
-        var entries = Object.entries(tables);
-        var tableItems = [];
-        for (var j = 0; j < entries.length; j++) {
-            tableItems.push({id: entries[j][0], name: entries[j][1].name});
-        }
-        populateSelect(tableSelect, tableItems, {placeholder: "Not selected", emptyPlaceholder: "No table"});
-    }
+    const recursion_method = document.getElementById('recursion_method');
+    const dsn_table = document.getElementById('dsn_table');
+    const explain_arg = document.getElementById('explain_arg');
+    const truncate_replicate_table = document.getElementById('truncate_replicate_table');
 
     function updateCreateButtonState() {
         createButton.disabled = !form.checkValidity();
     }
-
-    connectToSelect.addEventListener('change', async function () {
-        var hiddenSchemaInput = document.getElementById("schema_id_hidden");
-        if (hiddenSchemaInput && hiddenSchemaInput.parentNode) {
-            hiddenSchemaInput.parentNode.removeChild(hiddenSchemaInput);
-        }
-        selectedService = this.value;
-        await populateSchemas(selectedService);
-    });
-
-    schemaSelect.addEventListener('change', async function() {
-        extra_args.value = ""
-        var hiddenTableInput = document.getElementById("table_id_hidden");
-        if (hiddenTableInput && hiddenTableInput.parentNode) {
-            hiddenTableInput.parentNode.removeChild(hiddenTableInput);
-        }
-        selectedSchema = this.value;
-        await populateTables(selectedService, selectedSchema);
-    });
-
-    extra_args.addEventListener('change', function() {
-        schemaSelect.value = -1;
-        tableSelect.value = -1;
-    })
 
     recursion_method.addEventListener('change', function () {
         if (this.value === 'dsn') {
@@ -453,7 +368,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
     });
 
-    // Flags explain_arg and truncate_replicate_table are mutually exclusive
     explain_arg.addEventListener('change', function () {
         if (this.checked) {
             truncate_replicate_table.checked = false;
@@ -463,8 +377,6 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         }
     });
 
-
-    // Flags explain_arg and truncate_replicate_table are mutually exclusive
     truncate_replicate_table.addEventListener('change', function () {
         if (this.checked) {
             explain_arg.checked = false;
@@ -476,14 +388,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
 
     ['input', 'change'].forEach(event => form.addEventListener(event, updateCreateButtonState));
 
-
-    window.addEventListener('DOMContentLoaded', async function () {
-        if (connectToSelect.options.length === 1) {
-            var singleHost = connectToSelect.options[0].value;
-            selectedService = singleHost;
-            await populateSchemas(singleHost);
-        }
+    window.addEventListener('DOMContentLoaded', function () {
         updateCreateButtonState();
     });
-
 </script>
