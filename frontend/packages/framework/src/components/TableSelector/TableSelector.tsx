@@ -19,8 +19,7 @@ import { useEffect, useRef } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useTables, type TableOption } from '../../hooks/useTables';
-import type { SchemaOption } from '../../hooks/useSchemas';
-import { extractId } from '../../utils/extractId';
+import { parseCascadeParentValue } from '../../utils/parseCascadeParentValue';
 import { FreeSoloSelect } from '../FreeSoloSelect';
 import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 
@@ -67,19 +66,10 @@ export function TableSelector({
 }: TableSelectorProps) {
   const { control, setValue } = useFormContext();
 
-  const parent = useWatch({ control, name: dependsOn }) as
-    | SchemaOption
-    | number
-    | string
-    | null
-    | undefined;
-  const parentText = typeof parent === 'string' ? parent.trim() : '';
-  const parentIsCustom = Boolean(allowCustom) && parentText !== '';
-  const schemaId = parentIsCustom ? null : extractId(parent);
-  // A parent that resolves to no inventory id but holds a non-empty string is a
-  // free-typed (custom) parent value, not an absent one. A free-solo child can
-  // still accept a typed value in that case (it just has no options to offer).
-  const parentResetKey = parentIsCustom ? `custom:${parentText}` : `id:${schemaId ?? 'none'}`;
+  const parent = useWatch({ control, name: dependsOn });
+  const parentState = parseCascadeParentValue(parent, { allowCustom });
+  const parentIsCustom = parentState.isCustomOnly;
+  const parentResetKey = parentState.resetKey;
 
   const prevParentKeyRef = useRef(parentResetKey);
   useEffect(() => {
@@ -89,9 +79,17 @@ export function TableSelector({
     }
   }, [parentResetKey, name, setValue, multiple]);
 
-  const { data: tables = EMPTY_OPTIONS, isLoading, isError, error } = useTables({ schemaId });
+  const {
+    data: tables = EMPTY_OPTIONS,
+    isLoading,
+    isError,
+    error,
+  } = useTables({
+    schemaIds: parentState.ids,
+    enabled: parentState.ids.length > 0,
+  });
 
-  const noSchema = schemaId === null || schemaId === undefined;
+  const noSchema = parentState.ids.length === 0;
   const empty = !noSchema && !isLoading && !isError && tables.length === 0;
 
   const helperText = noSchema
@@ -104,7 +102,7 @@ export function TableSelector({
 
   // Only a truly absent parent disables the control; a custom (free-typed)
   // parent keeps it enabled so the user can type a custom table too.
-  const parentMissing = noSchema && !parentIsCustom;
+  const parentMissing = parentState.isMissing;
 
   if (multiple) {
     return (
