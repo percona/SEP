@@ -966,7 +966,7 @@ class TaskExecutionApp(BaseApp):
             if action == "edit"
             else self.capabilities.delete and self.delete_handler is None
         )
-        if not derives or isinstance(guard, _Unguarded):
+        if not derives or guard is UNGUARDED:
             return ()
         if guard:
             return guard
