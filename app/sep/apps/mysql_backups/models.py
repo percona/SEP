@@ -411,7 +411,7 @@ class BackupCreate(TaskFormModel):
     xtrabackup_stop_replica: Annotated[
         bool,
         Ui(
-            label="Stop replica before backup",
+            label="Safe replica backup",
             section="XtraBackup",
             description=(
                 "Passes --safe-slave-backup so xtrabackup pauses the replica "
