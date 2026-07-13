@@ -201,6 +201,102 @@ def test_backups_create_full_form_dependency_chain_without_payload_override(
     assert posted["data"]["meta"]["_service_name"] == created_service.name
 
 
+class TestBackupsUpdateFormChain:
+    """Exercise the real ``Form()`` dependency chain on POST /mysql_backups/{task_name}/update."""
+
+    def test_full_form_dependency_chain_without_payload_override(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        backup_create,
+        created_service,
+    ):
+        """Forward the submitted body to ``tasks_api.put`` through the real form chain."""
+        backup_create.service_id = created_service.id
+        task_name = backup_create.task_name
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.put.return_value = AsyncMock()
+
+        response = test_client.post(
+            f"/mysql_backups/{task_name}/update",
+            data=backup_create.model_dump(),
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"].endswith(f"/mysql_backups/{task_name}")
+        mock_task_api_dep.put.assert_awaited_once()
+        assert mock_task_api_dep.put.await_args.args[0] == f"/{task_name}"
+        put_payload = mock_task_api_dep.put.await_args.kwargs["json"]
+        assert put_payload["name"] == task_name
+        assert put_payload["owner"] == "BACKUPS"
+        assert put_payload["data"]["meta"]["_service_name"] == created_service.name
+        # Submitted ``backup_type`` must survive the real form chain into the YAML config.
+        server_config = yaml.safe_load(put_payload["data"]["meta"]["config"])[
+            "SERVER_LIST"
+        ][0]
+        assert server_config["BACKUP_TYPE"] == BackupType.MYDUMPER.value
+
+    def test_forwards_path_name_but_redirects_to_form_name(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ):
+        """Forward the path ``task_name`` to put while the form name drives the redirect."""
+        path_name = "backup_url_path"
+        form_name = "backup_form_name"
+        form = BackupCreate(
+            task_name=form_name,
+            hostname="localhost",
+            service_id=created_service.id,
+            backup_type=BackupType.MYDUMPER,
+        )
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.put.return_value = AsyncMock()
+
+        response = test_client.post(
+            f"/mysql_backups/{path_name}/update",
+            data=form.model_dump(),
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert mock_task_api_dep.put.await_args.args[0] == f"/{path_name}"
+        assert mock_task_api_dep.put.await_args.kwargs["json"]["name"] == form_name
+        assert response.headers["location"].endswith(f"/mysql_backups/{form_name}")
+
+    def test_invalid_form_flashes_and_redirects_without_forwarding(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ):
+        """Flash and redirect (never forward) when the update form fails validation."""
+        data = {
+            "task_name": "backup_invalid",
+            "hostname": "localhost",
+            "service_id": created_service.id,
+            # backup_type intentionally omitted
+        }
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        response = test_client.post(
+            "/mysql_backups/backup_invalid/update", data=data, follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/"
+        assert "messages=" in response.headers.get("set-cookie", "")
+        mock_task_api_dep.put.assert_not_awaited()
+
+
 EXPECTED_CONNECTIVITY_POST_CALLS = 2
 
 
