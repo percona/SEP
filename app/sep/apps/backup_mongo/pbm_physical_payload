@@ -12,7 +12,7 @@ def _creds_path():
     if config_yaml:
         try:
             config = yaml.safe_load(config_yaml)
-            if config:
+            if isinstance(config, dict):
                 path = config.get('credentials_path')
                 if path:
                     return path
@@ -44,11 +44,50 @@ def pbm_creds():
         print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
         sys.exit(1)
 
+
+def _load_config():
+    """ Return NOMAD_META_CONFIG parsed as a dict, or {} when absent/invalid/non-mapping.
+
+    A present-but-unparseable or non-mapping config logs to stderr and yields {} so the
+    backup still runs on PBM's default compression rather than aborting.
+    """
+    config_yaml = os.environ.get('NOMAD_META_CONFIG')
+    if not config_yaml:
+        return {}
+    try:
+        config = yaml.safe_load(config_yaml)
+    except yaml.YAMLError as err:
+        print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}. Proceeding without compression flags.', file=sys.stderr)
+        return {}
+    if isinstance(config, dict):
+        return config
+    print('NOMAD_META_CONFIG did not parse to a mapping. Proceeding without compression flags.', file=sys.stderr)
+    return {}
+
+
+def _compression_flags(config):
+    """ Build pbm backup --compression / --compression-level flags from the backup config.
+
+    Returns [] when no compression is configured so PBM keeps its own default.
+    --compression-level is only emitted alongside --compression.
+    """
+    backup = config.get('backup') or {}
+    compression = backup.get('compression')
+    if not compression:
+        return []
+    flags = ['--compression', str(compression)]
+    level = backup.get('compressionLevel')
+    if level is not None:
+        flags += ['--compression-level', str(level)]
+    return flags
+
+
 def pbm():
     """ PBM Physical Payload """
 
     os.environ['PBM_MONGODB_URI'] = pbm_creds()
-    cmd = ['pbm', 'backup', '--type', 'physical', '--wait']
+    config = _load_config()
+    cmd = ['pbm', 'backup', '--type', 'physical', '--wait'] + _compression_flags(config)
 
     try:
         proc = subprocess.Popen(cmd)

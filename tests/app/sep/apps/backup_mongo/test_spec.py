@@ -29,6 +29,7 @@ from app.sep.apps.backup_mongo.spec import (
 from app.tasks.models import TaskBackendEnum, TaskWrite
 
 PARALLEL_COLLECTIONS = 4
+COMPRESSION_LEVEL = 6
 
 
 def _config(task: TaskWrite) -> dict:
@@ -150,3 +151,27 @@ def test_build_spec_forwards_parsed_priority():
     config = _config(build_backup_mongo_spec(form, BackupMongoResolved()))
 
     assert config["backup"]["priority"] == {"h1:27018": 2.0, "h2:27018": 1.0}
+
+
+def test_build_spec_forwards_backup_compression_level():
+    """Forward the selected backup compression level under the camelCase config key."""
+    form = _s3_form(
+        backup_compression="gzip", backup_compression_level=COMPRESSION_LEVEL
+    )
+
+    config = _config(build_backup_mongo_spec(form, BackupMongoResolved()))
+
+    assert config["backup"]["compression"] == "gzip"
+    assert config["backup"]["compressionLevel"] == COMPRESSION_LEVEL
+
+
+def test_build_spec_forwards_selected_pitr_compression():
+    """Forward a selected PITR compression unchanged (config-only PITR path, SEP-1463)."""
+    config = _config(
+        build_backup_mongo_spec(
+            _s3_form(pitr_compression="snappy"),
+            BackupMongoResolved(),
+        )
+    )
+
+    assert config["pitr"]["compression"] == "snappy"
