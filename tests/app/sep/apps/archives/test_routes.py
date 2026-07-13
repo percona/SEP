@@ -181,6 +181,120 @@ def test_archives_create_full_form_dependency_chain_without_payload_override(
     assert posted["data"]["meta"]["_service_name"] == created_service.name
 
 
+class TestArchivesUpdateFormChain:
+    """Exercise the real ``Form()`` dependency chain on POST /archives/{task_name}/update."""
+
+    def test_full_form_dependency_chain_without_payload_override(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        created_schema,
+        created_table,
+    ):
+        """Forward the submitted body to ``tasks_api.put`` through the real form chain."""
+        task_name = "arch_update_full_chain"
+        flat = {
+            "alias": task_name,
+            "hostname": "source_db",
+            "service_id": created_service.id,
+            "source_db_id": created_schema.id,
+            "source_table_id": created_table.id,
+            "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+            "where": "id > 1",
+            "delete_data": 1,
+        }
+        mock_inventory_api_dep.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+            ]
+        )
+        mock_task_api_dep.put.return_value = AsyncMock()
+
+        response = test_client.post(
+            f"/archives/{task_name}/update", data=flat, follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"].endswith(f"/archives/{task_name}")
+        mock_task_api_dep.put.assert_awaited_once()
+        assert mock_task_api_dep.put.await_args.args[0] == f"/{task_name}"
+        put_payload = mock_task_api_dep.put.await_args.kwargs["json"]
+        assert put_payload["name"] == task_name
+        assert put_payload["owner"] == "ARCHIVER"
+        assert put_payload["data"]["meta"]["_service_name"] == created_service.name
+        # Submitted ``where`` clause must survive the real form chain into the payload.
+        purge_config = yaml.safe_load(put_payload["data"]["meta"]["config"])
+        assert purge_config["PURGE_LIST"][0]["WHERE"] == "id > 1"
+
+    def test_forwards_path_name_but_redirects_to_form_name(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        created_schema,
+        created_table,
+    ):
+        """Forward the path ``task_name`` to put while the form alias drives the redirect."""
+        path_name = "arch_url_path"
+        form_name = "arch_form_name"
+        flat = {
+            "alias": form_name,
+            "hostname": "source_db",
+            "service_id": created_service.id,
+            "source_db_id": created_schema.id,
+            "source_table_id": created_table.id,
+            "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+            "where": "id > 1",
+            "delete_data": 1,
+        }
+        mock_inventory_api_dep.get = AsyncMock(
+            side_effect=[
+                created_service.model_dump(),
+                created_schema.model_dump(),
+                created_table.model_dump(),
+            ]
+        )
+        mock_task_api_dep.put.return_value = AsyncMock()
+
+        response = test_client.post(
+            f"/archives/{path_name}/update", data=flat, follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert mock_task_api_dep.put.await_args.args[0] == f"/{path_name}"
+        assert mock_task_api_dep.put.await_args.kwargs["json"]["name"] == form_name
+        assert response.headers["location"].endswith(f"/archives/{form_name}")
+
+    def test_invalid_form_flashes_and_redirects_without_forwarding(
+        self,
+        test_client,
+        mock_task_api_dep,
+    ):
+        """Flash and redirect (never forward) when the update form fails validation."""
+        # ``where`` is required for a Purge Only run, so omitting it fails
+        # ``ArchivesCreate`` validation before any inventory lookup or forward.
+        data = {
+            "alias": "arch_invalid",
+            "hostname": "source_db",
+            "service_id": 1,
+            "source_db_id": 10,
+            "source_table_id": 20,
+            "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+            "delete_data": 1,
+        }
+
+        response = test_client.post(
+            "/archives/arch_invalid/update", data=data, follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/"
+        assert "messages=" in response.headers.get("set-cookie", "")
+        mock_task_api_dep.put.assert_not_awaited()
+
+
 def test_archives_create_accepts_empty_dest_port(
     test_client,
     mock_task_api_dep,
