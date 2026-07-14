@@ -18,7 +18,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SettingClassGroup } from '@sep/api';
 
-import { DEFAULT_SETTINGS_FILTERS, filterSettingsGroups } from '../filters';
+import {
+  DEFAULT_SETTINGS_FILTERS,
+  appLabelFor,
+  filterSettingsGroups,
+  partitionSettingsGroups,
+} from '../filters';
 import { makeSetting } from './fixtures';
 
 const groups: SettingClassGroup[] = [
@@ -123,5 +128,51 @@ describe('filterSettingsGroups', () => {
       search: 'nonexistent',
     });
     expect(result).toHaveLength(0);
+  });
+});
+
+const appGroup = (
+  overrides: Partial<SettingClassGroup> & Pick<SettingClassGroup, 'setting_class'>,
+): SettingClassGroup => ({
+  is_app_owned: true,
+  settings: [makeSetting({ setting_class: overrides.setting_class, key: 'K' })],
+  ...overrides,
+});
+
+describe('partitionSettingsGroups', () => {
+  it('separates core groups from enabled app-owned groups', () => {
+    const enabled = appGroup({
+      setting_class: 'AlertsSettings',
+      app_id: 'alerts',
+      app_display_name: 'Alerts',
+      app_enabled: true,
+    });
+    const { core, appOwned } = partitionSettingsGroups([...groups, enabled]);
+    expect(core.map((g) => g.setting_class)).toEqual(['SEPSettings', 'TasksSettings']);
+    expect(appOwned.map((g) => g.setting_class)).toEqual(['AlertsSettings']);
+  });
+
+  it('drops app-owned groups whose owning app is disabled or unset', () => {
+    const disabled = appGroup({
+      setting_class: 'AlertsSettings',
+      app_id: 'alerts',
+      app_enabled: false,
+    });
+    const unset = appGroup({ setting_class: 'InventorySettings', app_id: 'inventory' });
+    const { core, appOwned } = partitionSettingsGroups([...groups, disabled, unset]);
+    expect(core).toHaveLength(2);
+    expect(appOwned).toHaveLength(0);
+  });
+});
+
+describe('appLabelFor', () => {
+  it('prefers the display name, falling back to the app id then undefined', () => {
+    expect(
+      appLabelFor(appGroup({ setting_class: 'AlertsSettings', app_display_name: 'Alerts' })),
+    ).toBe('Alerts');
+    expect(appLabelFor(appGroup({ setting_class: 'AlertsSettings', app_id: 'alerts' }))).toBe(
+      'alerts',
+    );
+    expect(appLabelFor(appGroup({ setting_class: 'AlertsSettings' }))).toBeUndefined();
   });
 });
