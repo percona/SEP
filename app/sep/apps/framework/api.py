@@ -1537,10 +1537,7 @@ def derive_script_routes(
             total = len(scripts)
             page_scripts = pagination.slice(scripts)
             items = [source.list_response(script) for script in page_scripts]
-            return cast(
-                "PaginatedResponse",
-                PaginatedResponse.from_pagination(items, total, pagination),
-            )
+            return PaginatedResponse.from_pagination(items, total, pagination)
 
         router.add_api_route(
             "/",
