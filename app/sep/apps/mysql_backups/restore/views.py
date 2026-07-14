@@ -25,12 +25,15 @@ mode-specific fields' non-``None`` defaults on a cross-mode restore.
 """
 
 from app.sep.apps.framework.apps import Views
-from app.sep.apps.framework.form_dsl import FormLayout, SectionLayout
+from app.sep.apps.framework.form_dsl import (
+    FormLayout,
+    SectionLayout,
+    TASK_SECTION_LAYOUT,
+)
 from app.sep.apps.framework.rules import F, FieldGate
 from app.sep.apps.framework.schema import (
+    BACKUP_TYPE_COLUMN,
     Capabilities,
-    Column,
-    ColumnFormat,
     default_columns,
     DetailField,
     DetailSection,
@@ -43,7 +46,7 @@ from app.sep.apps.framework.schema import (
 restore_views = Views(
     layout=FormLayout(
         sections=(
-            SectionLayout(key="Task", title="Task"),
+            TASK_SECTION_LAYOUT,
             SectionLayout(
                 key="General",
                 title="General",
@@ -72,7 +75,7 @@ restore_views = Views(
     ),
     list_view=ListView(
         columns=default_columns(
-            Column(key="backup_type", label="Type", format=ColumnFormat.CHIP),
+            BACKUP_TYPE_COLUMN,
             EXECUTOR_HOST_COLUMN,
         ),
     ),

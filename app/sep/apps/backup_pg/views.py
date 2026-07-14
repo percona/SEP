@@ -25,11 +25,14 @@ format is unchanged.
 """
 
 from app.sep.apps.framework.apps import Views
-from app.sep.apps.framework.form_dsl import FormLayout, SectionLayout
+from app.sep.apps.framework.form_dsl import (
+    FormLayout,
+    SectionLayout,
+    TASK_SECTION_LAYOUT,
+)
 from app.sep.apps.framework.schema import (
+    BACKUP_TYPE_COLUMN,
     Capabilities,
-    Column,
-    ColumnFormat,
     default_columns,
     DetailField,
     DetailSection,
@@ -42,14 +45,14 @@ from app.sep.apps.framework.schema import (
 backup_pg_views = Views(
     layout=FormLayout(
         sections=(
-            SectionLayout(key="Task", title="Task"),
+            TASK_SECTION_LAYOUT,
             SectionLayout(key="pgBackRest", title="pgBackRest"),
         )
     ),
     list_view=ListView(
         columns=default_columns(
             EXECUTOR_HOST_COLUMN,
-            Column(key="backup_type", label="Type", format=ColumnFormat.CHIP),
+            BACKUP_TYPE_COLUMN,
         ),
         default_sort="name",
     ),

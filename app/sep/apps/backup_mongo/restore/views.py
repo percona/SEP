@@ -24,11 +24,15 @@ hand-written ``AppSchema`` so the schema wire format is preserved.
 """
 
 from app.sep.apps.framework.apps import Views
-from app.sep.apps.framework.form_dsl import FormLayout, SectionLayout
+from app.sep.apps.framework.form_dsl import (
+    FormLayout,
+    SectionLayout,
+    TASK_SECTION_LAYOUT,
+)
 from app.sep.apps.framework.schema import (
+    BACKUP_TYPE_COLUMN,
     Capabilities,
     Column,
-    ColumnFormat,
     default_columns,
     EXECUTOR_HOST_COLUMN,
     ListView,
@@ -37,14 +41,14 @@ from app.sep.apps.framework.schema import (
 restore_views = Views(
     layout=FormLayout(
         sections=(
-            SectionLayout(key="Task", title="Task"),
+            TASK_SECTION_LAYOUT,
             SectionLayout(key="RestoreOptions", title="Restore Options"),
         )
     ),
     list_view=ListView(
         columns=default_columns(
             EXECUTOR_HOST_COLUMN,
-            Column(key="backup_type", label="Type", format=ColumnFormat.CHIP),
+            BACKUP_TYPE_COLUMN,
             Column(key="backup_source", label="Backup Source"),
         ),
         default_sort="name",
