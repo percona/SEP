@@ -571,21 +571,26 @@ def build_command_args(form: AppFormModel) -> list[str]:
 
 
 def validate_arg_formats(model: type[AppFormModel]) -> None:
-    """Reject an ``ArgFormat`` template :func:`build_command_args` would silently drop.
+    """Reject an ``ArgFormat`` template the forward or reverse arg path can't honour.
 
     Check each field's :class:`ArgFormat` marker against the value-vs-flag contract
-    the assembler enforces: a template may carry only the ``${value}`` placeholder,
-    and a flag template (no placeholder) must sit on a ``bool`` field. A typo'd
-    placeholder or a flag template on a non-``bool`` field would otherwise fall
-    through to the flag branch and be emitted only when the value is ``True`` —
-    dropping the argument with no error — so this surfaces the misconfiguration at
-    app construction instead of silently at task-creation time. A templateless
-    marker derives its template from the field name and type, so it is always
-    well-formed; only an explicit template can violate the contract.
+    both directions share: a template may carry only the ``${value}`` placeholder, a
+    value template must place it in the terminal ``=${value}`` position, and a flag
+    template (no placeholder) must sit on a ``bool`` field. A typo'd placeholder or a
+    flag template on a non-``bool`` field falls through to the flag branch and is
+    emitted only when the value is ``True`` — dropping the argument with no error. A
+    non-terminal ``${value}`` renders forward but breaks
+    :func:`~app.sep.apps.framework.form_dsl.pt_toolkit.derive_arg_parser_from_model`,
+    whose derived ``--flag=`` prefix and first-``=`` value split round-trip only the
+    terminal shape. Surfacing these at app construction beats a silent desync at
+    task-creation time. A templateless marker derives its template from the field name
+    and type, so it is always well-formed; only an explicit template can violate the
+    contract.
 
     :param model: The create model whose fields' ``ArgFormat`` markers are validated.
     :raises ValueError: When a template carries a placeholder other than ``value``,
-        or when a flag template is declared on a non-``bool`` field.
+        when a value template places ``${value}`` outside the terminal ``=${value}``
+        position, or when a flag template is declared on a non-``bool`` field.
     """
     for name, field_info in model.model_fields.items():
         marker = find_arg_format(name, field_info.metadata)
@@ -599,6 +604,13 @@ def validate_arg_formats(model: type[AppFormModel]) -> None:
                 f"field {name!r} ArgFormat template {template!r} uses "
                 f"unsupported placeholder(s) {sorted(unsupported)}; a value arg uses "
                 f"exactly ${{value}} and a flag uses none"
+            )
+        if "value" in identifiers and not template.endswith("=${value}"):
+            raise ValueError(
+                f"field {name!r} ArgFormat template {template!r} places its "
+                "${value} placeholder outside the terminal '=${value}' position; "
+                "the reverse parser derives a value arg by splitting on the first "
+                "'=', so a value arg must be spelled '--flag=${value}'"
             )
         if not identifiers and field_info.annotation is not bool:
             raise ValueError(
