@@ -2107,9 +2107,11 @@ class Myloader(Restore):
                 sys.stdout.flush()
             proc.wait()
         if proc.returncode != 0:
-            with open(self.ml_log_file, 'r') as ml_log_stream:
-                err = ml_log_stream.readlines()[-1]
-            msg = 'myloader failed: %s For more details, see %s' % (err, self.ml_log_file)
+            # myloader is not sending to stderr and pulling it from stdout is not reliable
+            msg = 'myloader failed (exit code %s). Check stdout for more details.' % (
+                proc.returncode)
+            sys.stderr.write(msg + '\n')
+            sys.stderr.flush()
             raise BackupError(msg)
 
         self.logger.info('OK restoring mydumper.')
