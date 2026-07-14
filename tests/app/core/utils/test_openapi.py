@@ -20,9 +20,10 @@ from enum import Enum
 from types import SimpleNamespace
 from typing import Any
 
+import fastapi._compat.v2 as fastapi_compat_v2
 import pytest
 from fastapi import FastAPI
-from pydantic import create_model
+from pydantic import BaseModel, computed_field, create_model
 
 from app.core.pagination.models import PaginatedResponse
 from app.core.utils.openapi import (
@@ -739,6 +740,45 @@ class TestNamespacedOpenapi:
         ]["items"]["items"]["$ref"]
         assert inner == "#/components/schemas/backup_pg__BackupTaskResponse"
 
+    def test_namespaces_dual_mode_app_model(self) -> None:
+        """Namespace an app model used in both request and response modes.
+
+        A model carrying a ``computed_field`` serializes with an extra property it
+        does not validate, so its input and output JSON schemas differ and Pydantic
+        splits it into ``-Input``/``-Output`` variants. Both variants must still be
+        app-namespaced (``backup_pg__DualModel-Input``/``-Output``) — the reason
+        :meth:`_AppNamespacedJsonSchema.get_defs_ref` injects a mode-suffixed
+        preferred name alongside the bare one. ``__module__`` is set in the class
+        body so Pydantic bakes the ``app.sep.apps`` path into the core ref at
+        schema-build time (assigning it after creation is too late).
+        """
+
+        class DualModel(BaseModel):
+            __module__ = "app.sep.apps.backup_pg.models"
+            id: int
+
+            @computed_field
+            @property
+            def doubled(self) -> int:
+                return self.id * 2
+
+        app = FastAPI()
+
+        @app.post("/in")
+        def _in(body: DualModel) -> dict[str, str]:
+            return {}
+
+        @app.get("/out", response_model=DualModel)
+        def _out() -> Any: ...
+
+        schemas = namespaced_openapi(app)["components"]["schemas"]
+
+        assert "backup_pg__DualModel-Input" in schemas
+        assert "backup_pg__DualModel-Output" in schemas
+        assert not [k for k in schemas if k.startswith("app__")]
+        assert "DualModel-Input" not in schemas
+        assert "DualModel-Output" not in schemas
+
     def test_preserves_cached_spec(self) -> None:
         """Leave the app's served ``openapi_schema`` cache untouched."""
         app = FastAPI()
@@ -750,3 +790,31 @@ class TestNamespacedOpenapi:
         assert app.openapi_schema is live
         namespaced_openapi(app)
         assert app.openapi_schema is live
+
+    def test_restores_globals_when_openapi_raises(self) -> None:
+        """Restore the patched generator and spec cache even if ``app.openapi()`` raises.
+
+        ``namespaced_openapi`` swaps a process-global ``GenerateJsonSchema`` and
+        nulls the app's ``openapi_schema`` under a lock, guarded by ``try/finally``.
+        A failure inside the guarded ``app.openapi()`` must not leak the patched
+        class or the nulled cache to the rest of the process.
+        """
+        app = FastAPI()
+
+        @app.get("/x")
+        def _x() -> dict[str, str]: ...
+
+        original_generator = fastapi_compat_v2.GenerateJsonSchema
+        sentinel = {"cached": "spec"}
+        app.openapi_schema = sentinel
+
+        def _boom() -> dict[str, Any]:
+            raise RuntimeError("openapi blew up")
+
+        app.openapi = _boom  # type: ignore[method-assign]
+
+        with pytest.raises(RuntimeError, match="openapi blew up"):
+            namespaced_openapi(app)
+
+        assert fastapi_compat_v2.GenerateJsonSchema is original_generator
+        assert app.openapi_schema is sentinel
