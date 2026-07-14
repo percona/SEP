@@ -24,11 +24,13 @@ previous hand-written ``AppSchema`` so the schema wire format is preserved.
 """
 
 from app.sep.apps.framework.apps import Views
-from app.sep.apps.framework.form_dsl import FormLayout, SectionLayout
+from app.sep.apps.framework.form_dsl import (
+    FormLayout,
+    SectionLayout,
+    TASK_SECTION_LAYOUT,
+)
 from app.sep.apps.framework.schema import (
     Capabilities,
-    Column,
-    ColumnFormat,
     default_columns,
     DetailField,
     DetailHighlightLanguage,
@@ -36,12 +38,13 @@ from app.sep.apps.framework.schema import (
     DetailView,
     EXECUTION_HOST_LABEL,
     ListView,
+    SERVICE_TYPE_COLUMN,
 )
 
 alters_views = Views(
     layout=FormLayout(
         sections=(
-            SectionLayout(key="task", title="Task"),
+            TASK_SECTION_LAYOUT,
             SectionLayout(key="data", title="Data"),
             SectionLayout(key="alter", title="Alter"),
             SectionLayout(key="recursion", title="Recursion"),
@@ -51,7 +54,7 @@ alters_views = Views(
     ),
     list_view=ListView(
         columns=default_columns(
-            Column(key="service_type", label="Service Type", format=ColumnFormat.CHIP),
+            SERVICE_TYPE_COLUMN,
         ),
     ),
     detail_view=DetailView(
