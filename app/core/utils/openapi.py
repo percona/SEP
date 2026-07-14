@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import copy
 import re
+import threading
+from collections import Counter
 from enum import Enum
 from typing import Any, TYPE_CHECKING
 
@@ -241,7 +243,8 @@ def namespace_app_schema_names(doc: dict[str, Any]) -> dict[str, Any]:
 
     targets = list(rename_map.values())
     untouched = set(schemas) - set(rename_map)
-    clashes = {t for t in targets if targets.count(t) > 1} | (set(targets) & untouched)
+    counts = Counter(targets)
+    clashes = {t for t, n in counts.items() if n > 1} | (set(targets) & untouched)
     if clashes:
         raise ValueError(
             "app schema-name namespacing produced colliding target names: "
@@ -341,6 +344,11 @@ class _AppNamespacedJsonSchema(GenerateJsonSchema):
         return result
 
 
+# Serializes the global ``GenerateJsonSchema`` monkey-patch below so concurrent
+# spec generations cannot observe each other's partially patched state.
+_NAMESPACE_PATCH_LOCK = threading.Lock()
+
+
 def namespaced_openapi(app: FastAPI) -> dict[str, Any]:
     """Return ``app``'s OpenAPI document with app schema names app-namespaced.
 
@@ -351,18 +359,24 @@ def namespaced_openapi(app: FastAPI) -> dict[str, Any]:
     owning their wrapped model. The app's cached ``openapi_schema`` is preserved:
     the live spec the app serves is unaffected.
 
+    The class swap mutates process-global FastAPI state, so the patch and the
+    ``app.openapi()`` call it guards are held under a module-level lock; a
+    concurrent generation would otherwise see the patched class or a
+    half-restored global.
+
     :param app: The FastAPI application whose spec to namespace.
     :return: A namespaced OpenAPI document.
     """
-    original = fastapi_compat_v2.GenerateJsonSchema
-    cached = app.openapi_schema
-    fastapi_compat_v2.GenerateJsonSchema = _AppNamespacedJsonSchema
-    app.openapi_schema = None
-    try:
-        doc = app.openapi()
-    finally:
-        app.openapi_schema = cached
-        fastapi_compat_v2.GenerateJsonSchema = original
+    with _NAMESPACE_PATCH_LOCK:
+        original = fastapi_compat_v2.GenerateJsonSchema
+        cached = app.openapi_schema
+        fastapi_compat_v2.GenerateJsonSchema = _AppNamespacedJsonSchema
+        app.openapi_schema = None
+        try:
+            doc = app.openapi()
+        finally:
+            app.openapi_schema = cached
+            fastapi_compat_v2.GenerateJsonSchema = original
     return namespace_app_schema_names(doc)
 
 
