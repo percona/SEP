@@ -40,6 +40,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
+from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
@@ -59,6 +60,7 @@ from app.sep.apps.framework.script_source import (
     ScriptExecutionResponse,
     ScriptSource,
 )
+from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.apps.framework.task_status import get_task_latest_history
 from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
 from app.tasks.models import (
@@ -1462,6 +1464,209 @@ def derive_execute_route(
         response_model=response_model,
         response_model_by_alias=True,
         dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks, *extra_deps],
+    )
+
+
+@dataclass(slots=True)
+class CascadeCreatePlan:
+    """Carry the pieces :func:`derive_cascade_create_route` needs to create a group.
+
+    A plugin's ``create_plan`` dependency returns one of these: the parent
+    :class:`~app.tasks.models.TaskWrite` to stamp and refetch, the validated
+    create ``form`` to persist under ``RESERVED_FORM_KEY``, and a ``cascade``
+    closure that POSTs the parent plus its children (bound to whatever
+    child/derived payloads the app already built). The helper stamps
+    ``parent_write`` *before* invoking ``cascade``, so a closure that
+    re-serialises the parent (``parent_write.model_dump()``) must do so at cascade
+    time to keep the stamp.
+
+    :param parent_write: The parent task envelope, stamped then refetched by name.
+    :param form: The validated create-form body to stamp onto ``parent_write``.
+    :param cascade: An awaitable closure that POSTs the parent and its children.
+    """
+
+    parent_write: TaskWrite
+    form: BaseModel
+    cascade: Callable[[RemoteAPI], Awaitable[None]]
+
+
+def _validate_cascade_create_registration(
+    router: APIRouter,
+    response_model: type[BaseModel],
+    *,
+    connectivity_check: bool,
+) -> None:
+    """Validate the registration-time inputs for ``derive_cascade_create_route``.
+
+    :param router: The plugin router the create route registers on.
+    :param response_model: The create response model.
+    :param connectivity_check: Whether the route attaches a connectivity warning.
+    :raises TypeError: If ``response_model`` is not a :class:`pydantic.BaseModel`
+        subclass, or ``connectivity_check`` is on and ``response_model`` omits a
+        ``connectivity_warning`` field.
+    :raises ValueError: If ``router`` already exposes a ``POST /`` route.
+    """
+    if not (inspect.isclass(response_model) and issubclass(response_model, BaseModel)):
+        raise TypeError(
+            f"derive_cascade_create_route: response_model must be a "
+            f"pydantic.BaseModel subclass; got {response_model!r}"
+        )
+    if (
+        connectivity_check
+        and CONNECTIVITY_WARNING_FIELD not in response_model.model_fields
+    ):
+        raise TypeError(
+            "derive_cascade_create_route: response_model must declare a "
+            "connectivity_warning field when connectivity_check=True, so the "
+            "probe result is attached rather than silently dropped."
+        )
+
+    router_prefix = getattr(router, "prefix", "") or ""
+    expected_path = f"{router_prefix}/"
+    for existing in router.routes:
+        existing_methods = set(getattr(existing, "methods", None) or ())
+        if (
+            getattr(existing, "path", None) == expected_path
+            and "POST" in existing_methods
+        ):
+            raise ValueError(
+                "derive_cascade_create_route: router already has a POST / route; "
+                "call this helper at most once per plugin router"
+            )
+
+
+def derive_cascade_create_route(
+    router: APIRouter,
+    *,
+    create_plan: Any,
+    get_task: Callable[..., Awaitable[Task]],
+    response_builder: Callable[[Task, RemoteAPI], Awaitable[BaseModel]],
+    response_model: type[BaseModel],
+    connectivity_check: bool = False,
+    name: str | None = None,
+    description: str = "",
+    status_code: int = status.HTTP_201_CREATED,
+    extra_deps: Sequence[params.Depends] = (),
+) -> None:
+    """Register a cascade-shaped ``POST /`` create route on ``router``.
+
+    The cascade-shaped sibling of :func:`_register_create_route`: where that
+    helper POSTs a single task, this one creates a parent task plus its children.
+    Each app supplies a ``create_plan`` dependency (the analog of the framework's
+    own ``create_payload`` dependency) that builds its writes and returns a
+    :class:`CascadeCreatePlan`; the helper owns the invariant sequence — stamp the
+    parent form, run the cascade, refetch the canonical parent, build the
+    response, and (when ``connectivity_check`` is on) attach the post-creation
+    connectivity warning via ``model_copy``.
+
+    The generated handler annotates its ``plan`` parameter with ``create_plan``
+    (the plugin's ``Annotated[CascadeCreatePlan, Depends(build_*_cascade_plan)]``
+    alias, whose inner dependency declares the JSON request body). With
+    ``connectivity_check`` on it gains a ``check_connectivity`` query parameter,
+    verbatim from :func:`_register_create_route`.
+
+    Unlike the derived create/execute routes, the migrated cascade create routes
+    carry no per-route guard: authentication is inherited from the ``/api`` mount
+    and the hand-written handlers declared no route dependencies, so the default
+    ``extra_deps=()`` preserves their OpenAPI identity.
+
+    :param router: The plugin's ``APIRouter``.
+    :param create_plan: The plugin's ``Annotated[CascadeCreatePlan, Depends(...)]``
+        dependency alias; its inner dependency declares the JSON request body and
+        builds the parent write, form, and cascade closure.
+    :param get_task: The by-name task getter, called ``get_task(name, tasks_api)``
+        to refetch the canonical parent after the cascade.
+    :param response_builder: An async ``(task, tasks_api) -> BaseModel`` builder
+        rendering the create response from the refetched parent.
+    :param response_model: The create response model; drives the response schema.
+    :param connectivity_check: Whether to add the connectivity probe and the
+        ``check_connectivity`` query parameter. Defaults to ``False``.
+    :param name: The route name; drives the OpenAPI ``operationId`` and
+        ``summary``. ``None`` falls back to the inner handler's ``__name__``.
+    :param description: The OpenAPI operation ``description``; ``""`` falls back to
+        the inner handler's docstring.
+    :param status_code: The success status code. Defaults to ``201``.
+    :param extra_deps: Extra route dependencies. Defaults to ``()`` — no per-route
+        guard, matching the hand-written create handlers.
+    :raises TypeError: If ``response_model`` is not a :class:`pydantic.BaseModel`
+        subclass, or if ``connectivity_check`` is on and ``response_model`` omits a
+        ``connectivity_warning`` field. Raised at registration time.
+    :raises ValueError: If ``router`` already exposes a ``POST /`` route.
+    """
+    _validate_cascade_create_registration(
+        router, response_model, connectivity_check=connectivity_check
+    )
+
+    async def _run(
+        plan: CascadeCreatePlan,
+        tasks_api: RemoteAPI,
+        *,
+        check_connectivity: bool | None,
+    ) -> BaseModel:
+        """Run the stamp, cascade, refetch, and render sequence for the group.
+
+        :param plan: The app-built plan carrying the parent write, form, and cascade.
+        :param tasks_api: The upstream Tasks API client.
+        :param check_connectivity: Whether to run the connectivity probe. ``None``
+            when the probe is disabled for the route.
+        :return: The rendered create response.
+        """
+        logger.debug(
+            "Cascade-create task group (JSON path): %s", plan.parent_write.name
+        )
+        stamp_form_input(plan.parent_write, plan.form)
+        await plan.cascade(tasks_api)
+        task = await get_task(plan.parent_write.name, tasks_api)
+        response = await response_builder(task, tasks_api)
+        if check_connectivity is not None:
+            warning = await maybe_record_connectivity_warning(
+                tasks_api,
+                task.data.get("meta", {}),
+                check_connectivity=check_connectivity,
+            )
+            if warning is not None:
+                response = response.model_copy(
+                    update={CONNECTIVITY_WARNING_FIELD: warning}
+                )
+        return response
+
+    if not connectivity_check:
+
+        async def create(plan: create_plan, tasks_api: TaskAPI) -> BaseModel:
+            """Create the task group from the plan and return the response.
+
+            :param plan: The app-built cascade plan (resolved from ``create_plan``).
+            :param tasks_api: The upstream Tasks API client.
+            :return: The rendered create response.
+            """
+            return await _run(plan, tasks_api, check_connectivity=None)
+    else:
+
+        async def create(
+            plan: create_plan,
+            tasks_api: TaskAPI,
+            *,
+            check_connectivity: Annotated[bool, Query()] = True,
+        ) -> BaseModel:
+            """Create the task group, then probe connectivity on the created parent.
+
+            :param plan: The app-built cascade plan (resolved from ``create_plan``).
+            :param tasks_api: The upstream Tasks API client.
+            :param check_connectivity: Whether to run the post-creation probe.
+            :return: The rendered create response with any connectivity warning.
+            """
+            return await _run(plan, tasks_api, check_connectivity=check_connectivity)
+
+    router.add_api_route(
+        "/",
+        create,
+        methods=["POST"],
+        name=name,
+        description=description,
+        status_code=status_code,
+        response_model=response_model,
+        response_model_by_alias=True,
+        dependencies=[*extra_deps],
     )
 
 

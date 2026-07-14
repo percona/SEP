@@ -26,6 +26,7 @@ from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.backup_mongo.restore.spec import RESTORE_CONFIG_PAYLOAD_MARKER
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
@@ -344,6 +345,9 @@ class TestRestoreMongoApiCreate:
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
         assert first_post["owner"] == "RESTORE_MONGO"
         assert RESTORE_CONFIG_PAYLOAD_MARKER in first_post["data"]["payload"]
+        assert "service_id" in first_post["data"][RESERVED_FORM_KEY]
+        restore_leg_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
+        assert RESERVED_FORM_KEY not in restore_leg_post["data"]
 
     def test_create_physical_posts_four_tasks(
         self,
