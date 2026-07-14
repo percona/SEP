@@ -227,7 +227,7 @@ class TestPluginReactRoute:
 
 
 class TestAppCeleryModulePath:
-    """Cover the ``App.CELERY_MODULE_PATH`` three-state convention (like ``api_router_path``)."""
+    """Cover the ``App.celery_module_path`` three-state convention (like ``api_router_path``)."""
 
     def test_auto_derives_when_app_ships_celery_module(self) -> None:
         """Auto-derive ``<module_name>.celery`` when the app ships a ``celery.py``."""

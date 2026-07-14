@@ -162,9 +162,12 @@ def build_celery_include(plugins: Iterable[App] | None = None) -> list[str]:
     bootstrap (``start_celery_worker``) call, so the two can never drift.
 
     :param plugins: The activation entries to scan. Defaults to ``sep_settings.APPS``.
-    :return: The static service modules followed by the registry-derived app modules.
+    :return: The static service modules followed by the registry-derived app modules,
+        deduplicated while preserving first-seen order.
     """
-    return [*STATIC_CELERY_INCLUDE, *app_celery_module_paths(plugins)]
+    return list(
+        dict.fromkeys([*STATIC_CELERY_INCLUDE, *app_celery_module_paths(plugins)])
+    )
 
 
 def _synthesize_legacy_app(plugin: App, auto_key: str) -> BaseApp:
