@@ -708,7 +708,7 @@ class TaskExecutionApp(BaseApp):
         :param guard: The tri-state ``update_guard`` / ``delete_guard`` value.
         :return: ``True`` for :data:`UNGUARDED` or a non-empty override tuple.
         """
-        return guard is UNGUARDED or bool(guard)
+        return isinstance(guard, _Unguarded) or bool(guard)
 
     def _validate_route_knobs(self) -> None:
         """Validate the detail-path, execute, and update route knobs.
@@ -966,7 +966,7 @@ class TaskExecutionApp(BaseApp):
             if action == "edit"
             else self.capabilities.delete and self.delete_handler is None
         )
-        if not derives or guard is UNGUARDED:
+        if not derives or isinstance(guard, _Unguarded):
             return ()
         if guard:
             return guard
