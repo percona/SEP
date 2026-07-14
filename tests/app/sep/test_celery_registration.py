@@ -15,7 +15,7 @@
 
 """Guard the seed ↔ include ↔ registration invariant for SEP Celery tasks.
 
-The relocation of the app-owned Celery tasks (SEP-1506) split one hazard three
+The relocation of the app-owned Celery tasks split one hazard three
 ways: a task's registered name is its module path, the beat seed hard-codes that
 path as ``task_name``, and two ``include`` lists drive which modules a worker
 imports. If any of those drifts apart, a beat row points at a task no worker
@@ -27,6 +27,10 @@ import importlib
 
 from app.celery import celery
 from app.core.config import settings
+from app.sep.apps.framework.registry import (
+    app_celery_module_paths,
+    build_celery_include,
+)
 
 
 def _seed_task_names() -> set[str]:
@@ -47,9 +51,9 @@ class TestCeleryInclude:
         """Assert ``start_celery_worker`` registers the configured module set.
 
         The worker's ``include`` list (``app/main.py``) and the Celery app's
-        configured ``include`` (``settings.CELERY.include``) are separate
-        literals; a change to one but not the other lets beat schedule against a
-        module the worker never imports.
+        configured ``include`` (``settings.CELERY.include``) both compose
+        ``build_celery_include()``; this pins them equal so beat cannot schedule
+        against a module the worker never imports.
         """
         import app.main
 
@@ -60,6 +64,15 @@ class TestCeleryInclude:
         _, kwargs = worker_cls.call_args
         assert kwargs["include"] == settings.CELERY.include
         worker_cls.return_value.start.assert_called_once()
+
+    def test_configured_include_is_the_derived_single_source(self) -> None:
+        """Assert the configured include equals the registry-derived composition.
+
+        Lockstep is now structural: both the Celery-app assembly and the worker
+        bootstrap compose ``build_celery_include()``, so the configured value must
+        equal a fresh derivation rather than a hand-maintained literal.
+        """
+        assert settings.CELERY.include == build_celery_include()
 
 
 class TestSeedTaskRegistration:
@@ -80,7 +93,7 @@ class TestSeedTaskRegistration:
         assert not missing, f"seeded task_name(s) not registered: {sorted(missing)}"
 
     def test_relocated_tasks_register_under_new_names(self) -> None:
-        """Assert the two SEP-1506 tasks register under their app-owned paths."""
+        """Assert the two relocated tasks register under their app-owned paths."""
         importlib.import_module("app.sep.apps.snippets.celery")
         importlib.import_module("app.sep.apps.alerts.celery")
 
@@ -91,3 +104,23 @@ class TestSeedTaskRegistration:
         """Assert nothing still registers under the deleted ``app.sep.celery``."""
         stale = [name for name in celery.tasks if name.startswith("app.sep.celery.")]
         assert not stale, f"tasks still under retired module: {stale}"
+
+    def test_app_owned_seed_prefixes_track_registry_modules(self) -> None:
+        """Assert every app-owned seed ``task_name`` prefix is registry-derived.
+
+        A module rename now moves the seed prefix and the include entry together
+        (both read ``App.celery_module_path``), so a stale hardcoded seed string
+        would surface here rather than as a silent dead beat row. The core
+        ``app_drain`` task is not a ``SEP.APPS`` app and stays a literal, so it is
+        excluded.
+        """
+        app_modules = set(app_celery_module_paths())
+        core_literals = {"app.sep.app_drain.reconcile_disabling_apps"}
+        for name in _seed_task_names():
+            if name in core_literals:
+                continue
+            prefix = name.rsplit(".", 1)[0]
+            assert prefix in app_modules, (
+                f"seed task_name {name!r} prefix {prefix!r} is not a "
+                f"registry-derived app module {sorted(app_modules)}"
+            )

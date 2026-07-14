@@ -38,6 +38,7 @@ from importlib import import_module
 from fastapi import APIRouter
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.celery.config import STATIC_CELERY_INCLUDE
 from app.core.settings_override.api.models import SettingClassAppMetadata
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.settings_override.models import SettingClassEnum
@@ -56,14 +57,32 @@ class AppRegistry:
 
     :param apps: The mounted apps, in activation order.
     :type apps: list[BaseApp]
+    :param celery_module_paths: The app-owned Celery module import paths, in
+        activation order; defaults to an empty list.
     """
 
-    def __init__(self, apps: list[BaseApp]) -> None:
+    def __init__(
+        self,
+        apps: list[BaseApp],
+        celery_module_paths: list[str] | None = None,
+    ) -> None:
         self._apps = apps
         self._by_key = {app.key: app for app in apps}
+        self._celery_module_paths = celery_module_paths or []
 
     def __iter__(self) -> Iterator[BaseApp]:
         return iter(self._apps)
+
+    @property
+    def celery_module_paths(self) -> list[str]:
+        """Return the app-owned Celery module paths in activation order.
+
+        Derived from each activation entry's ``App.celery_module_path`` (the single
+        source), so a module rename cannot desync the include list from the seed.
+
+        :return: The ordered app Celery module import paths.
+        """
+        return list(self._celery_module_paths)
 
     def keys(self) -> list[str]:
         """Return every app key in activation order.
@@ -97,6 +116,55 @@ def _derive_app_key(module_name: str) -> str:
     :return: The auto-derived scoped app key.
     """
     return module_name.removeprefix("app.sep.apps.").replace(".", "/")
+
+
+def app_celery_module_paths(plugins: Iterable[App] | None = None) -> list[str]:
+    """Return the ordered app-owned Celery module paths for an activation list.
+
+    Read from each entry's ``App.celery_module_path`` (the single, filesystem-derived
+    source). Pure and **import-free** -- it never imports a plugin module, so it is
+    safe to call while the Celery app is being assembled (``app/celery.py``), before
+    the full registry (which imports every plugin) can be built.
+
+    :param plugins: The activation entries to scan. Defaults to ``sep_settings.APPS``.
+    :return: The app Celery module import paths, in activation order.
+    """
+    plugins = sep_settings.APPS if plugins is None else plugins
+    return [p.celery_module_path for p in plugins if p.celery_module_path]
+
+
+def app_celery_module_for(
+    app_key: str,
+    plugins: Iterable[App] | None = None,
+) -> str | None:
+    """Return the Celery module path owned by ``app_key``, or ``None``.
+
+    Keyed by the same scoped key derivation the registry uses
+    (:func:`_derive_app_key`), so the beat seed can source an app-owned
+    ``task_name`` prefix from the identical origin as the include list.
+
+    :param app_key: The scoped app key (e.g. ``"snippets"``).
+    :param plugins: The activation entries to scan. Defaults to ``sep_settings.APPS``.
+    :return: The app's Celery module path, or ``None`` when the app is unknown,
+        ships no ``celery.py``, or opted out.
+    """
+    plugins = sep_settings.APPS if plugins is None else plugins
+    for plugin in plugins:
+        if _derive_app_key(plugin.module_name) == app_key:
+            return plugin.celery_module_path
+    return None
+
+
+def build_celery_include(plugins: Iterable[App] | None = None) -> list[str]:
+    """Compose the full Celery ``include`` list: static base + app modules.
+
+    The single seam both the Celery-app assembly (``app/celery.py``) and the worker
+    bootstrap (``start_celery_worker``) call, so the two can never drift.
+
+    :param plugins: The activation entries to scan. Defaults to ``sep_settings.APPS``.
+    :return: The static service modules followed by the registry-derived app modules.
+    """
+    return [*STATIC_CELERY_INCLUDE, *app_celery_module_paths(plugins)]
 
 
 def _synthesize_legacy_app(plugin: App, auto_key: str) -> BaseApp:
@@ -205,6 +273,7 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
     :return: The ordered registry.
     :rtype: AppRegistry
     """
+    plugins = list(plugins)
     apps = []
     for plugin in plugins:
         auto_key = _derive_app_key(plugin.module_name)
@@ -215,7 +284,7 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
             apps.extend(_bind_child_apps(bound))
         else:
             apps.append(_synthesize_legacy_app(plugin, auto_key))
-    return AppRegistry(apps)
+    return AppRegistry(apps, celery_module_paths=app_celery_module_paths(plugins))
 
 
 @lru_cache(maxsize=1)
