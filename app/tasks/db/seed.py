@@ -35,7 +35,14 @@ from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.db.engine import engine
-from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum
+from app.tasks.models import (
+    CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
+    INVENTORY_SYNC_TASK_NAME,
+    SYNC_RUNNING_TASKS_TASK_NAME,
+    SYSTEM_USER,
+    Task,
+    TaskBackendEnum,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -445,7 +452,7 @@ SYSTEM_TASKS = [
         created_by=SYSTEM_USER,
     ),
     Task(
-        name="inventory-sync",  # keep in sync with INVENTORY_SYNC_TASK_NAME in app.sep.apps.inventory.models
+        name=INVENTORY_SYNC_TASK_NAME,
         data={
             "callable": "app.sep.apps.inventory.sync.run_scheduled_inventory_sync",
             "target": "local",
@@ -461,7 +468,7 @@ SYSTEM_PERIODIC_TASKS = [
         schedule=IntervalSchedule(every=30, period=Period.SECONDS),
         tasks=[
             SystemPeriodicTaskData(
-                name="tasks__sync_running_tasks",
+                name=SYNC_RUNNING_TASKS_TASK_NAME,
                 task_name="app.tasks.celery.sync_running_tasks",
                 extra_kwargs={"expire_seconds": 30},
             ),
@@ -476,7 +483,7 @@ if _nomad_cert_schedule is not None:
             schedule=_nomad_cert_schedule,
             tasks=[
                 SystemPeriodicTaskData(
-                    name="tasks__check_nomad_cert_expiry",
+                    name=CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
                     task_name="app.tasks.celery.check_nomad_cert_expiry",
                 ),
             ],

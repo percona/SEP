@@ -56,12 +56,18 @@ MOCK_DESTINATION_TABLE_ID = 2
 MOCK_OBSERVED_AT = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
 
 
-def build_task_history(task: Task) -> TaskHistory:
-    """Build an unsaved ``TaskHistory`` for ``task`` with a SUCCESS execution request.
+def build_task_history(
+    task: Task, status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.SUCCESS
+) -> TaskHistory:
+    """Build an unsaved ``TaskHistory`` for ``task`` with an execution request.
 
     ``execution_request.task`` mirrors ``task.name`` so JSON-extraction tests can
     assert the stored scalar round-trips. Callers persist it via
     ``TaskHistoryManager.save``.
+
+    :param task: Provide the task that owns the history record.
+    :param status: Set the execution status for the created history record.
+    :return: Return an unsaved task history model.
     """
     return TaskHistory(
         task_id=task.id,
@@ -72,7 +78,7 @@ def build_task_history(task: Task) -> TaskHistory:
             meta={"target": "node1"},
             tracking={"evaluation_id": "", "allocation_id": None},
         ),
-        status=TaskHistoryStatusEnum.SUCCESS,
+        status=status,
         executed_by="test-user",
     )
 

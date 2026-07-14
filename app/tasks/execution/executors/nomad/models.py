@@ -29,7 +29,7 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from aiohttp import (
     ClientError,
@@ -44,7 +44,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.celery.models import IntervalSchedule
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
-from app.core.settings_override.registry import hot_field, ReloadClassification
+from app.core.settings_override.registry import (
+    hot_field,
+    InheritedMarkers,
+    ReloadClassification,
+    REMOTE_API_TLS_MARKERS,
+)
 from app.core.utils import (
     async_run,
     b64decode_str,
@@ -53,7 +58,6 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
-from app.core.utils.fields import RelativeFilePathField
 from app.core.utils.pydantic import field_with_metadata
 from app.tasks import config as tasks_config
 from app.tasks.anonymizer import anonymize_text
@@ -266,11 +270,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to ``__name__``.
     :type logger_name: str
     :param secure: Whether to use a secure connection. Defaults to False.
@@ -292,22 +293,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         (e.g. once per day). Set to ``None`` to skip registering the periodic task
         in ``app.tasks.db.seed`` (Celery beat will not run the check).
     :type check_cert_expiry_interval: IntervalSchedule | None
+    :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
+        fields (``verify_ssl`` and the ``ssl_*`` paths) HOT and ``advanced``
+        without redeclaring them; set to the shared :data:`REMOTE_API_TLS_MARKERS`.
+    :vartype INHERITED_MARKERS: InheritedMarkers
     """
 
-    # TLS leaves are inherited from ``BaseRemoteAPI`` (frozen); redeclared here
-    # solely to attach the display-only ``advanced`` marker per leaf. ``endpoint``
-    # is intentionally left inherited and unmarked. ``frozen=True`` is preserved so
-    # the executor's identity hash is unchanged.
-    verify_ssl: bool = hot_field(default=True, advanced=True, frozen=True)
-    ssl_cafile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
-    ssl_keyfile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
-    ssl_certfile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
+    # Overlay, not redeclaration: redeclaring would drop the inherited frozen
+    # ``FieldInfo`` and force ``frozen=True`` repeated. ``endpoint`` left unmarked.
+    # Reuses the shared TLS overlay so every remote-api model marks these the same.
+    INHERITED_MARKERS: ClassVar[InheritedMarkers] = REMOTE_API_TLS_MARKERS
     secure: bool = hot_field(default=False, advanced=True)
     timeout: int = hot_field(10, advanced=True)
     minify_payload: bool = hot_field(default=True, advanced=True)
