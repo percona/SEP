@@ -24,7 +24,10 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
-from app.core.utils.openapi import generate_tag_prefixed_unique_id
+from app.core.utils.openapi import (
+    generate_tag_prefixed_unique_id,
+    namespaced_openapi,
+)
 from app.sep.api.router import api_router
 from app.sep.apps.framework.registry import get_app_registry
 
@@ -154,7 +157,7 @@ def build_plugins_openapi() -> dict[str, Any]:
     """
     app = FastAPI(generate_unique_id_function=generate_tag_prefixed_unique_id)
     app.include_router(api_router)
-    return app.openapi()
+    return namespaced_openapi(app)
 
 
 def discover_schema_paths(openapi: dict[str, Any], allowed_keys: set[str]) -> list[str]:
