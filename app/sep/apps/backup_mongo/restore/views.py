@@ -30,13 +30,13 @@ from app.sep.apps.framework.form_dsl import (
     TASK_SECTION_LAYOUT,
 )
 from app.sep.apps.framework.schema import (
-    BACKUP_TYPE_COLUMN,
     Capabilities,
     Column,
     default_columns,
     EXECUTOR_HOST_COLUMN,
     ListView,
 )
+from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
 
 restore_views = Views(
     layout=FormLayout(

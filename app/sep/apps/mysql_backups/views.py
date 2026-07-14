@@ -32,7 +32,6 @@ from app.sep.apps.framework.form_dsl import (
 )
 from app.sep.apps.framework.rules import F, FieldGate
 from app.sep.apps.framework.schema import (
-    BACKUP_TYPE_COLUMN,
     Capabilities,
     default_columns,
     DetailField,
@@ -42,6 +41,7 @@ from app.sep.apps.framework.schema import (
     EXECUTOR_HOST_COLUMN,
     ListView,
 )
+from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
 
 mysql_backups_views = Views(
     layout=FormLayout(
