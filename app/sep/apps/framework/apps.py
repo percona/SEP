@@ -993,7 +993,11 @@ class TaskExecutionApp(BaseApp):
         :return: The composed plugin ``APIRouter``.
         """
         if self.script_source is not None:
-            router = derive_script_routes(self.script_source, name=self.name)
+            router = derive_script_routes(
+                self.script_source,
+                name=self.name,
+                pagination_dep=self.pagination,
+            )
             if self.capabilities_provider is not None:
                 capabilities_endpoint(router, self.capabilities_provider)
             for extra in self.extra_routes:
