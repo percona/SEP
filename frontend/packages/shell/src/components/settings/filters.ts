@@ -76,3 +76,34 @@ export function filterSettingsGroups(
     }))
     .filter((group) => group.settings.length > 0);
 }
+
+export interface PartitionedSettingsGroups {
+  /** Core SEP settings groups, rendered in the main region. */
+  core: SettingClassGroup[];
+  /** App-owned groups whose owning app is enabled, rendered under "App settings". */
+  appOwned: SettingClassGroup[];
+}
+
+/**
+ * Split the given groups into core and app-owned regions. App-owned
+ * groups whose owning app is disabled or not enabled are dropped entirely, so the
+ * page never shows settings for apps the admin is not running. Core groups are
+ * always kept regardless of any app metadata.
+ */
+export function partitionSettingsGroups(groups: SettingClassGroup[]): PartitionedSettingsGroups {
+  const core: SettingClassGroup[] = [];
+  const appOwned: SettingClassGroup[] = [];
+  for (const group of groups) {
+    if (!group.is_app_owned) {
+      core.push(group);
+    } else if (group.app_enabled) {
+      appOwned.push(group);
+    }
+  }
+  return { core, appOwned };
+}
+
+/** The display label for an app-owned group's owning app, or `undefined`. */
+export function appLabelFor(group: SettingClassGroup): string | undefined {
+  return group.app_display_name ?? group.app_id ?? undefined;
+}
