@@ -45,7 +45,7 @@ def reraise_upstream_tasks_error(exc: HTTPException | OSError) -> NoReturn:
         isinstance(exc, HTTPException)
         and exc.status_code < status.HTTP_500_INTERNAL_SERVER_ERROR
     ):
-        raise exc
+        raise exc.with_traceback(exc.__traceback__)
     detail = getattr(exc, "detail", str(exc))
     raise HTTPBadGatewayException(detail=str(detail)) from exc
 
