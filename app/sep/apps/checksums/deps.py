@@ -54,7 +54,6 @@ from app.sep.deps import (
     get_created_entity,
     get_tasks_context,
     InventoryAPI,
-    protected_task_guard,
     TaskAPI,
 )
 from app.sep.inventory import CreatedService
@@ -248,11 +247,6 @@ ChecksumsGeneratedTask = Annotated[TaskWrite, Depends(build_checksums_task_paylo
 get_checksums_task = make_task_dep(OWNER)
 
 ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
-
-
-get_unprotected_checksums_task = protected_task_guard(get_checksums_task)
-
-UnprotectedChecksumsTask = Annotated[Task, Depends(get_unprotected_checksums_task)]
 
 
 async def get_checksums_task_names_by_status(
