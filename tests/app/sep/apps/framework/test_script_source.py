@@ -41,6 +41,7 @@ from pydantic import BaseModel, create_model
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPNotFoundException
+from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.framework import ScriptSource, StaticMount, TaskExecutionApp
 from app.sep.apps.framework.conformance import (
@@ -66,6 +67,9 @@ _OWNER = "ARCHIVER"
 _PREFIX = "/fixture-scripts"
 _BASE = f"/api/apps{_PREFIX}"
 _TASK_NAME = "run-bash"
+_PAGE_OFFSET = 1
+_PAGE_LIMIT = 1
+_SCRIPT_TOTAL = 2
 _SCRIPT_PARAMS: dict[str, dict[str, type]] = {
     "report.sh": {"database": str, "count": int},
     "noparams.sh": {},
@@ -374,6 +378,59 @@ class TestDerivedRouteHTTP:
             "noparams.sh",
             "report.sh",
         ]
+
+    def test_list_returns_plain_array_without_pagination(
+        self, source: ScriptSource, regular_user: CasdoorUser
+    ) -> None:
+        """Return a plain JSON array when the app does not opt into pagination."""
+        client = _client(_script_app(source), _make_tasks_api(), regular_user)
+        response = client.get(f"{_BASE}/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert isinstance(body, list)
+        assert sorted(row["filename"] for row in body) == ["noparams.sh", "report.sh"]
+
+
+class TestDerivedRoutePaginatedList:
+    """Exercise the paginated ``GET /`` list route over HTTP."""
+
+    def test_paginated_list_returns_envelope(
+        self, source: ScriptSource, regular_user: CasdoorUser
+    ) -> None:
+        """Assert pagination switches the list to a ``PaginatedResponse`` envelope."""
+        client = _client(
+            _script_app(source, pagination=make_pagination_dep(max_limit=50)),
+            _make_tasks_api(),
+            regular_user,
+        )
+        response = client.get(f"{_BASE}/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert set(body) == {"items", "total", "offset", "limit"}
+        assert sorted(item["filename"] for item in body["items"]) == [
+            "noparams.sh",
+            "report.sh",
+        ]
+
+    def test_paginated_list_slices_by_offset_and_limit(
+        self, source: ScriptSource, regular_user: CasdoorUser
+    ) -> None:
+        """Assert offset/limit slice the discovered scripts client-side."""
+        client = _client(
+            _script_app(source, pagination=make_pagination_dep(max_limit=50)),
+            _make_tasks_api(),
+            regular_user,
+        )
+        response = client.get(
+            f"{_BASE}/",
+            params={"offset": _PAGE_OFFSET, "limit": _PAGE_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["offset"] == _PAGE_OFFSET
+        assert body["limit"] == _PAGE_LIMIT
+        assert body["total"] == _SCRIPT_TOTAL
+        assert [item["filename"] for item in body["items"]] == ["report.sh"]
 
     def test_empty_listing_returns_empty_list(
         self, scripts_dir: Path, regular_user: CasdoorUser
