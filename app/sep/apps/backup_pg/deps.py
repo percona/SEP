@@ -45,7 +45,6 @@ from app.sep.deps import (
     ExecutorHostsCtx,
     get_tasks_context,
     InventoryAPI,
-    protected_task_guard,
     TaskAPI,
 )
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
@@ -86,11 +85,6 @@ BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 get_backups_task = make_task_dep(OWNER)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
-
-
-get_unprotected_backups_task = protected_task_guard(get_backups_task)
-
-UnprotectedBackupsTask = Annotated[Task, Depends(get_unprotected_backups_task)]
 
 
 async def check_create_has_no_conflicted_running_tasks(
