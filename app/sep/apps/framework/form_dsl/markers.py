@@ -428,6 +428,12 @@ class SectionLayout:
             object.__setattr__(self, "forbidden", tuple(self.forbidden))
 
 
+#: Shared Task-section layout adopted by every task app's ``FormLayout`` and the
+#: task scaffold template. Frozen (see :class:`SectionLayout`), so this single
+#: instance is safe to reference directly.
+TASK_SECTION_LAYOUT = SectionLayout(key="Task", title="Task")
+
+
 @dataclass(frozen=True, slots=True)
 class FormLayout:
     """Declare a plugin's create-form sections by key.

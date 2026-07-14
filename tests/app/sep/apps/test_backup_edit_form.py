@@ -13,11 +13,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cover the shared backup edit-form backfill helper in ``backup_edit_form``."""
+"""Cover the shared backup edit-form backfill helper in ``shared.backups.edit_form``."""
 
 import pytest
 
-from app.sep.apps.backup_edit_form import parse_server_list_config
+from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 
 
 class TestParseServerListConfig:

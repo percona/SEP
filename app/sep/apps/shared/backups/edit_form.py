@@ -13,15 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared backup edit-form backfill helper for the backup task apps.
-
-Lives alongside (not inside) :mod:`app.sep.apps.framework` so the backup apps
-(``mysql_backups``, ``backup_pg``) can share this backup-family-specific helper
-without importing ``framework.__init__`` and unrelated SQLModel tables into
-scope. The framework package stays domain-neutral; the S3 / GSUTIL / RSYNC
-upload-key knowledge that this helper carries belongs to the backup family, not
-the framework.
-"""
+"""Define shared backup edit-form backfill helpers for backup task apps."""
 
 from collections.abc import Mapping
 from typing import Any

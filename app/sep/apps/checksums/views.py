@@ -25,23 +25,26 @@ schema wire format is unchanged.
 """
 
 from app.sep.apps.framework.apps import Views
-from app.sep.apps.framework.form_dsl import FormLayout, SectionLayout
+from app.sep.apps.framework.form_dsl import (
+    FormLayout,
+    SectionLayout,
+    TASK_SECTION_LAYOUT,
+)
 from app.sep.apps.framework.schema import (
     Capabilities,
-    Column,
-    ColumnFormat,
     default_columns,
     DetailField,
     DetailSection,
     DetailView,
     EXECUTION_HOST_LABEL,
     ListView,
+    SERVICE_TYPE_COLUMN,
 )
 
 checksums_views = Views(
     layout=FormLayout(
         sections=(
-            SectionLayout(key="Task", title="Task"),
+            TASK_SECTION_LAYOUT,
             SectionLayout(key="Data", title="Data"),
             SectionLayout(key="Recursion", title="Recursion"),
             SectionLayout(key="Flags", title="Flags"),
@@ -50,7 +53,7 @@ checksums_views = Views(
     ),
     list_view=ListView(
         columns=default_columns(
-            Column(key="service_type", label="Service Type", format=ColumnFormat.CHIP),
+            SERVICE_TYPE_COLUMN,
         ),
     ),
     detail_view=DetailView(

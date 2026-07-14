@@ -24,6 +24,7 @@ import functools
 import inspect
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 from unittest.mock import AsyncMock
 
@@ -50,6 +51,7 @@ from app.sep.apps.framework.api import (
     derive_cascade_create_route,
     derive_crud_routes,
     derive_execute_route,
+    derive_script_routes,
     ListFilters,
     make_list_filter_dep,
     schema_endpoint,
@@ -90,6 +92,7 @@ from app.sep.apps.framework.schema import (
     YamlField,
 )
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from app.sep.apps.framework.script_source import ScriptSource
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -1294,6 +1297,64 @@ def _crud_router(**overrides: object) -> APIRouter:
     return derive_crud_routes(_SYNTHETIC_SCHEMA, **kwargs)
 
 
+class _StubScript:
+    """Represent a minimal script for ``derive_script_routes`` introspection tests."""
+
+    def __init__(self, filename: str = "stub.sh") -> None:
+        self.filename = filename
+
+    @property
+    def execution_task_name(self) -> str:
+        """Return a fixed task name."""
+        return "stub-task"
+
+    def get_execution_model(self) -> type[BaseModel]:
+        """Return an empty execution model."""
+        return BaseModel
+
+
+class _ScriptListRow(BaseModel):
+    """Represent the list-row projection used by script-route tests."""
+
+    filename: str
+
+
+def _make_script_source(
+    *,
+    list_response_model: type[BaseModel] | None = None,
+) -> ScriptSource[_StubScript]:
+    """Build a minimal ``ScriptSource`` for ``derive_script_routes`` tests."""
+    script = _StubScript()
+
+    async def _list_scripts() -> list[_StubScript]:
+        return [script]
+
+    async def _load_script(filename: str) -> _StubScript:
+        return _StubScript(filename)
+
+    return ScriptSource(
+        script_dir=Path("/tmp"),
+        load_script=_load_script,
+        list_scripts=_list_scripts,
+        build_form_schema=lambda _: _TEST_SCHEMA,
+        build_execution_meta=lambda _script, _request: BaseModel(),
+        list_response=lambda stub: _ScriptListRow(filename=stub.filename),
+        list_response_model=list_response_model,
+    )
+
+
+def _script_router(**overrides: object) -> APIRouter:
+    """Build a ``derive_script_routes`` router with sane synthetic defaults."""
+    pagination_dep = overrides.pop("pagination_dep", None)
+    list_response_model = overrides.pop("list_response_model", _ScriptListRow)
+    source = _make_script_source(list_response_model=list_response_model)
+    return derive_script_routes(
+        source,
+        name="test-scripts",
+        pagination_dep=pagination_dep,
+    )
+
+
 def _authed_crud_client(
     router: APIRouter, tasks_api: AsyncMock, user: CasdoorUser
 ) -> TestClient:
@@ -1463,6 +1524,33 @@ class TestDeriveCrudRoutesComposition:
 
         with pytest.raises(TypeError, match="sync callable"):
             _crud_router(create_response_builder=_async_create_builder)
+
+
+class TestDeriveScriptRoutes:
+    """Inspect the script-source derived list route in isolation, without HTTP."""
+
+    def test_list_response_model_is_list_of_row_model(self) -> None:
+        """Assert the list route's response model is ``list[<row model>]``."""
+        route = _route_for(_script_router(), "/", "GET")
+
+        assert route.response_model == list[_ScriptListRow]
+
+    def test_paginated_list_response_model_is_paginated(self) -> None:
+        """Assert a pagination dep switches the list model to ``PaginatedResponse``."""
+        router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
+        route = _route_for(router, "/", "GET")
+
+        assert route.response_model == PaginatedResponse[_ScriptListRow]
+
+    def test_paginated_list_untyped_without_response_model(self) -> None:
+        """Assert pagination without ``list_response_model`` uses untyped envelope."""
+        router = _script_router(
+            pagination_dep=make_pagination_dep(max_limit=50),
+            list_response_model=None,
+        )
+        route = _route_for(router, "/", "GET")
+
+        assert route.response_model is PaginatedResponse
 
 
 class TestDeriveCrudRoutesCreateSkip:

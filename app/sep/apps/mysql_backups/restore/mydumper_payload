@@ -31,10 +31,6 @@ try:
     MySQLdb.install_as_MySQLdb()
 except ImportError:
     import MySQLdb
-try:
-    import queue as Queue
-except ImportError:
-    import Queue
 
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 CURRENT_USER = os.getenv('PERCONA_BACKUP_USER') or os.getenv('SUDO_USER') or getuser()
@@ -47,7 +43,7 @@ BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
     / "textfile-collector"
     / "low-resolution",
 )
-DEFAULT_MYCNF = '%s/.my.cnf' % (os.environ.get('HOME'))
+DEFAULT_MYCNF = str(CURRENT_USER_HOME_DIR / ".my.cnf")
 DEFAULT_CFG_DIR = os.getenv('PERCONA_BACKUP_DEFAULT_CFG_DIR', os.path.join(CURRENT_USER_HOME_DIR, '.config/percona/backup'))
 DEFAULT_CFG = DEFAULT_CFG_DIR + '/backup_config.yml'
 DEFAULT_LOGGING_DIR = os.getenv('PERCONA_BACKUP_DEFAULT_LOGGING_DIR',
@@ -155,57 +151,27 @@ PROC_STAT_STIME_IDX = 14
 
 LOGGING_NAME = {
     'B': 'binlog.log',
-    'G': 'gcesnapshot.log',
-    'L': 'mylvmbackup.log',
     'M': 'mydumper.log',
     'X': 'xtrabackup.log',
-    'T': 'tokudb.log',
-    'R': 'rdssnapshot.log',
-    'MC': 'mongodb_cluster.log',
-    'O': 'mongodb_oplog.log',
-    'H': 'psmdb_hot_backup.log',
-    'P': 'pgbackrest.log',
-    'E': 'ebssnapshot.log'
 }
 BACKUP_TYPES = {
     'B': 'Binlogs',
-    'G': 'GCESnapshot',
-    'L': 'LVMBackup',
     'M': 'Mydumper',
     'X': 'Xtrabackup',
-    'T': 'Tokudb',
-    'R': 'RDSSnapshot',
-    'MC': 'MongoDBCluster',
-    'O': 'Oplog',
-    'H': 'PSMDBHotBackup',
-    'P': 'PgBackRest',
-    'E': 'EBSSnapshot'
 }
 COMPRESSION_ALGORITHMS = {
     'B': ['gzip'],
-    'G': [''],
-    'L': [''],
     'M': ['gzip'],  # TODO: add support for zstd later
     'X': ['quicklz', 'zstd', 'lz4'],
-    'T': [''],
-    'R': [''],
-    'MC': [''],
-    'O': [''],
-    'H': [''],
-    'P': [''],
-    'E': [''],
 }
 BACKUP_DIR_REGEX = {
     'B': r'\.[0-9]{6}',
     'M': '^2[0-9]{7}$',
     'X': '^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$',
     'I': '^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}_incrementals$',
-    'T': '^2[0-9]{7}$',
-    'H': '2[0-9]{7}$',
-    'O': r'[0-9]{10}'
 }
 
-VALID_POLICIES = ["mysql", "mongodb", "postgresql"]
+VALID_POLICIES = ["mysql"]
 
 CFG_PATH = DEFAULT_CFG_DIR + '/dir_encrypt.yml'
 
@@ -2002,6 +1968,7 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
         start_time = time.time()
         self.logger.info('>>>>>>>>>>>>>>>>>> Restore started.')
 
+        exit_status = STATUS_OK
         rst = None
         for server_data in servers:
             self.backup_type = server_data.get('BACKUP_TYPE')
@@ -2023,9 +1990,11 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
                     self.logger.error(exc.message)
                     self.logger.error('Restore failed for this host.')
                     rst.notify(STATUS_CRITICAL, exc.message)
+                    exit_status = STATUS_CRITICAL
                 except Exception:
                     self.logger.exception('Unhandled exception occurred.')
                     rst.notify(STATUS_CRITICAL, 'Unhandled exception occurred during restore.')
+                    exit_status = STATUS_CRITICAL
 
         time_spent = time.time() - start_time
         self.logger.info('>>>>>>>>>>>>>>>>>> Restore finished. Total duration: %s.',
@@ -2033,6 +2002,8 @@ class Restorer(object):  # pylint: disable=too-many-instance-attributes
 
         # Release lock
         lock_file.free_lock()
+
+        return exit_status
 
 class Myloader(Restore):
     """Restore from mydumper for individual server."""
@@ -2124,13 +2095,23 @@ class Myloader(Restore):
             myloader_cmd.extend(self.myloader_extra_args.split(' '))
 
         self.logger.info('Running: %s', ' '.join(myloader_cmd))
-        ml_log_stream = open(self.ml_log_file, 'a')
-        proc = subprocess.Popen(myloader_cmd, stdout=ml_log_stream, stderr=ml_log_stream)
-        proc.communicate()
+        with open(self.ml_log_file, 'a') as ml_log_stream:
+            proc = subprocess.Popen(myloader_cmd,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT)
+            for line in proc.stdout:
+                decoded_line = line.decode('utf-8', errors='replace')
+                ml_log_stream.write(decoded_line)
+                ml_log_stream.flush()
+                sys.stdout.write(decoded_line)
+                sys.stdout.flush()
+            proc.wait()
         if proc.returncode != 0:
-            ml_log_stream = open(self.ml_log_file, 'r')
-            err = ml_log_stream.readlines()[-1]
-            msg = 'myloader failed: %s For more details, see %s' % (err, self.ml_log_file)
+            # myloader is not sending to stderr and pulling it from stdout is not reliable
+            msg = 'myloader failed (exit code %s). Check stdout for more details.' % (
+                proc.returncode)
+            sys.stderr.write(msg + '\n')
+            sys.stderr.flush()
             raise BackupError(msg)
 
         self.logger.info('OK restoring mydumper.')
@@ -2167,7 +2148,8 @@ def main():
     options = parse_args()
 
     restore_runner = Restorer(options)
-    restore_runner.run()
+    exit_status = restore_runner.run()
+    sys.exit(exit_status if exit_status is not None else STATUS_OK)
 
 
 def parse_args():

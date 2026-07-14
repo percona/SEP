@@ -1670,7 +1670,12 @@ def derive_cascade_create_route(
     )
 
 
-def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
+def derive_script_routes(
+    source: ScriptSource[Any],
+    *,
+    name: str,
+    pagination_dep: PaginationDependency | None = None,
+) -> APIRouter:
     """Build a plugin router carrying a script source's derived surface.
 
     Register the script-centric surface a script-backed task app exposes, mirroring
@@ -1694,6 +1699,11 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
         execution-meta, list-row, and optional static-schema hooks.
     :param name: The app name seeding each derived route's name (and OpenAPI
         ``operationId``), so two script apps never collide on a generic route name.
+    :param pagination_dep: A ``make_pagination_dep(...)`` dependency callable.
+        When given, the list route takes that dependency (wrapped in
+        ``Annotated[Pagination, Depends(...)]``) and returns a
+        ``PaginatedResponse`` whose ``items`` are a client-side slice of the full
+        discovered script set; when ``None`` the list returns a plain list.
     :return: A plugin ``APIRouter`` carrying the derived script surface.
     """
     router = APIRouter()
@@ -1708,17 +1718,49 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
         else None
     )
 
-    @router.get(
-        "/",
-        name=f"{name}_api_list",
-        summary="List",
-        response_model=list_model,
-        dependencies=[IsApiAuthenticated],
-    )
-    async def list_scripts() -> list[BaseModel]:
-        """List every discovered script as its list-row projection."""
-        scripts = await source.list_scripts()
-        return [source.list_response(script) for script in scripts]
+    if pagination_dep is None:
+
+        async def list_scripts() -> list[BaseModel]:
+            """List every discovered script as its list-row projection."""
+            scripts = await source.list_scripts()
+            return [source.list_response(script) for script in scripts]
+
+        router.add_api_route(
+            "/",
+            list_scripts,
+            methods=["GET"],
+            name=f"{name}_api_list",
+            summary="List",
+            response_model=list_model,
+            dependencies=[IsApiAuthenticated],
+        )
+    else:
+        paginated_param = Annotated[Pagination, Depends(pagination_dep)]
+        paginated_list_model = (
+            PaginatedResponse[source.list_response_model]
+            if source.list_response_model is not None
+            else PaginatedResponse
+        )
+
+        async def list_scripts_paginated(
+            pagination: paginated_param,
+        ) -> PaginatedResponse:
+            """List discovered scripts as a paginated projection."""
+            scripts = await source.list_scripts()
+            total = len(scripts)
+            page_scripts = pagination.slice(scripts)
+            items = [source.list_response(script) for script in page_scripts]
+            return PaginatedResponse.from_pagination(items, total, pagination)
+
+        router.add_api_route(
+            "/",
+            list_scripts_paginated,
+            methods=["GET"],
+            name=f"{name}_api_list",
+            summary="List",
+            response_model=paginated_list_model,
+            dependencies=[IsApiAuthenticated],
+        )
 
     @router.get(
         "/snippet/schema",
