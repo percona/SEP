@@ -43,7 +43,7 @@ BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
     / "textfile-collector"
     / "low-resolution",
 )
-DEFAULT_MYCNF = str(Path.home()/".my.cnf")
+DEFAULT_MYCNF = str(CURRENT_USER_HOME_DIR / ".my.cnf")
 DEFAULT_CFG_DIR = os.getenv('PERCONA_BACKUP_DEFAULT_CFG_DIR', os.path.join(CURRENT_USER_HOME_DIR, '.config/percona/backup'))
 DEFAULT_CFG = DEFAULT_CFG_DIR + '/backup_config.yml'
 DEFAULT_LOGGING_DIR = os.getenv('PERCONA_BACKUP_DEFAULT_LOGGING_DIR',
