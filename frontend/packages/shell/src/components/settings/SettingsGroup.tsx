@@ -34,6 +34,12 @@ export interface SettingsGroupProps {
   defaultExpanded?: boolean;
   /** Whether a key search is active (auto-expands nested groups). */
   searchActive?: boolean;
+  /**
+   * Owning app's display label for app-owned groups. When set, the group is
+   * tagged with the app it belongs to so admins can tell it apart from core
+   * SEP settings.
+   */
+  appLabel?: string;
 }
 
 /** One expandable section per `setting_class`, listing its setting rows. */
@@ -42,6 +48,7 @@ export default function SettingsGroup({
   settings,
   defaultExpanded = true,
   searchActive = false,
+  appLabel,
 }: SettingsGroupProps) {
   const tree = buildSettingTree(settings);
   return (
@@ -52,6 +59,14 @@ export default function SettingsGroup({
             {settingClass}
           </Typography>
           <Chip size="small" label={tree.length} />
+          {appLabel && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label={appLabel}
+              data-testid={`settings-group-app-label-${settingClass}`}
+            />
+          )}
         </Stack>
       </AccordionSummary>
       <AccordionDetails>
