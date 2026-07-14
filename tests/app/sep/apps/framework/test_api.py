@@ -3033,6 +3033,33 @@ class TestDeriveCascadeCreateRouteOverHttp:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["connectivity_warning"] is None
 
+    def test_connectivity_check_populates_warning_on_probe_failure(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Attach the probe warning to the create response when the probe fails."""
+        warning = ConnectivityWarning(
+            target="node-1", service_type="mysql", message="unreachable"
+        )
+        probe = _patch_probe(mocker, warning)
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict_with_meta("t1", _CONNECTIVITY_META),
+            created_task=_task_dict("t1"),
+        )
+        client = _authed_cascade_client(
+            _cascade_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CASCADE_BASE_URL}/", json={"task_name": "t1"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] == {
+            "target": "node-1",
+            "service_type": "mysql",
+            "message": "unreachable",
+            "task_history_id": None,
+        }
+        probe.assert_awaited_once()
+
     def test_create_401_when_unauthenticated(self) -> None:
         """Assert the create route returns a JSON 401 without an auth override."""
         tasks_api = _make_tasks_api(
