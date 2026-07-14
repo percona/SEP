@@ -79,15 +79,26 @@ function FreeSoloAutocomplete<T extends ReferenceOption>({
   const labelOf = (option: T | string): string =>
     typeof option === 'string' ? option : getOptionLabel(option);
 
-  // If a value was typed as a free string before its inventory options had
-  // loaded, resolve it to the matching id once the options arrive — so an exact
-  // label match commits the id, not the string, regardless of load timing.
+  // Resolve a stored string to its inventory id once the options arrive, so it
+  // renders as the option label rather than raw text — regardless of load
+  // timing. Two cases resolve:
+  //   - an exact label match (a value typed before options loaded);
+  //   - a stringified inventory id (e.g. `"4"` persisted in an edit form's
+  //     stored body), which would otherwise show as bare digits.
   const { value: fieldValue, onChange } = field;
   useEffect(() => {
     if (typeof fieldValue === 'string' && fieldValue.trim() !== '') {
-      const match = options.find((o) => getOptionLabel(o) === fieldValue.trim());
-      if (match) {
-        onChange(match.id);
+      const trimmed = fieldValue.trim();
+      const labelMatch = options.find((o) => getOptionLabel(o) === trimmed);
+      if (labelMatch) {
+        onChange(labelMatch.id);
+        return;
+      }
+      if (/^\d+$/.test(trimmed)) {
+        const idMatch = options.find((o) => o.id === Number(trimmed));
+        if (idMatch) {
+          onChange(idMatch.id);
+        }
       }
     }
     // Intentionally keyed on `options` only: re-resolve a stored string when the
