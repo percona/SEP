@@ -28,6 +28,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import BaseTaskResponse, derive_create_response_model
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
+    ArgFormat,
     Choices,
     DSN_TABLE_DEFAULT,
     Forbidden,
@@ -235,6 +236,7 @@ class AltersCreate(AppFormModel):
 
     print_arg: Annotated[
         bool,
+        ArgFormat("--print"),
         Ui(
             label="Print", section="flags", description="Print SQL statements to STDOUT"
         ),
@@ -250,6 +252,7 @@ class AltersCreate(AppFormModel):
     ] = ""
     no_swap_tables: Annotated[
         bool,
+        ArgFormat(),
         Ui(
             label="No Swap Tables",
             section="flags",
@@ -258,6 +261,7 @@ class AltersCreate(AppFormModel):
     ] = False
     no_drop_old_table: Annotated[
         bool,
+        ArgFormat(),
         Ui(
             label="No Drop Old Table",
             section="flags",
@@ -266,6 +270,7 @@ class AltersCreate(AppFormModel):
     ] = False
     no_drop_new_table: Annotated[
         bool,
+        ArgFormat(),
         Ui(
             label="No Drop New Table",
             section="flags",
@@ -274,6 +279,7 @@ class AltersCreate(AppFormModel):
     ] = False
     no_drop_triggers: Annotated[
         bool,
+        ArgFormat(),
         Ui(
             label="No Drop Triggers",
             section="flags",
@@ -283,6 +289,7 @@ class AltersCreate(AppFormModel):
 
     pause_file: Annotated[
         str | None,
+        ArgFormat(),
         Ui(
             label="Pause File",
             section="advanced",
@@ -291,6 +298,7 @@ class AltersCreate(AppFormModel):
     ] = None
     new_table_name: Annotated[
         str | None,
+        ArgFormat(),
         Ui(
             label="New Table Name",
             section="advanced",
@@ -299,6 +307,7 @@ class AltersCreate(AppFormModel):
     ] = None
     tries: Annotated[
         str | None,
+        ArgFormat(),
         Ui(
             label="Tries",
             section="advanced",
@@ -310,6 +319,7 @@ class AltersCreate(AppFormModel):
     ] = None
     set_vars: Annotated[
         str | None,
+        ArgFormat(),
         Ui(
             label="Set Vars",
             section="advanced",
@@ -318,6 +328,7 @@ class AltersCreate(AppFormModel):
     ] = None
     critical_load: Annotated[
         str | None,
+        ArgFormat(),
         Ui(
             label="Critical Load",
             section="advanced",
@@ -326,6 +337,7 @@ class AltersCreate(AppFormModel):
     ] = None
     max_load: Annotated[
         str | None,
+        ArgFormat(),
         Ui(
             label="Max Load",
             section="advanced",
@@ -334,6 +346,7 @@ class AltersCreate(AppFormModel):
     ] = None
     chunk_time: Annotated[
         str | None,
+        ArgFormat(),
         Ui(
             label="Chunk Time",
             section="advanced",
@@ -342,6 +355,7 @@ class AltersCreate(AppFormModel):
     ] = None
     max_lag: Annotated[
         str | None,
+        ArgFormat(),
         Ui(
             label="Max Lag",
             section="advanced",
@@ -350,6 +364,7 @@ class AltersCreate(AppFormModel):
     ] = None
     max_flow_ctl: Annotated[
         str | None,
+        ArgFormat(),
         Ui(
             label="Max Flow Control",
             section="advanced",

@@ -788,6 +788,15 @@ class _FlagOnNonBoolForm(AppFormModel):
     ] = ""
 
 
+class _NonTerminalValueForm(AppFormModel):
+    """Carry a value template whose ``${value}`` is not in the terminal position."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    databases: Annotated[
+        str, ArgFormat("--databases=${value}s"), Ui(label="DB", section="main")
+    ] = ""
+
+
 class TestValidateArgFormats:
     """Cover the construction-time ``ArgFormat`` validation in ``validate_arg_formats``."""
 
@@ -804,6 +813,11 @@ class TestValidateArgFormats:
         """Reject a no-placeholder template on a field that is not ``bool``."""
         with pytest.raises(ValueError, match="bool field"):
             validate_arg_formats(_FlagOnNonBoolForm)
+
+    def test_non_terminal_value_placeholder_raises(self) -> None:
+        """Reject a value template whose ``${value}`` is not terminal (reverse-parse footgun)."""
+        with pytest.raises(ValueError, match="terminal"):
+            validate_arg_formats(_NonTerminalValueForm)
 
 
 class _DefaultArgForm(AppFormModel):
