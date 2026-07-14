@@ -183,7 +183,7 @@ def derive_arg_parser_from_model(
     arg_mappings = {}
     flag_mappings = {}
     for name, field_info in model.model_fields.items():
-        marker = find_arg_format(name, list(field_info.metadata))
+        marker = find_arg_format(name, field_info.metadata)
         if marker is None:
             continue
         template = resolve_arg_template(name, field_info.annotation, marker)
