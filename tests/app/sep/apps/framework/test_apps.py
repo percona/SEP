@@ -29,7 +29,7 @@ import pytest
 from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination.deps import make_pagination_dep
@@ -45,6 +45,7 @@ from app.sep.apps.framework.apps import (
     AppCapabilities,
     ListFilterConfig,
     TaskExecutionApp,
+    UNGUARDED,
     Views,
 )
 from app.sep.apps.framework.form_dsl import (
@@ -847,6 +848,34 @@ class TestDefinitionValidation:
                 payload_builder=_passthrough_payload_builder,
                 create_form_encoded=True,
             )
+
+    def test_unguarded_update_guard_on_non_derived_verb_raises(self) -> None:
+        """Reject an ``UNGUARDED`` opt-out when no PUT is derived (update off)."""
+        with pytest.raises(ValueError, match="update_guard"):
+            _synth_app(update_guard=UNGUARDED)
+
+    def test_unguarded_delete_guard_on_non_derived_verb_raises(self) -> None:
+        """Reject an ``UNGUARDED`` opt-out when no DELETE is derived (delete off)."""
+        with pytest.raises(ValueError, match="delete_guard"):
+            _synth_app(delete_guard=UNGUARDED)
+
+    def test_malformed_guard_value_raises(self) -> None:
+        """Reject a guard knob that is neither a ``Depends`` tuple nor ``UNGUARDED``."""
+        with pytest.raises(ValidationError):
+            _synth_app(update_guard="oops")
+
+    def test_unguarded_opt_out_on_derived_routes_constructs(self) -> None:
+        """Accept ``UNGUARDED`` on a derived PUT/DELETE and still register them."""
+        routes = _routes(
+            _synth_app(
+                capabilities=AppCapabilities(update=True, delete=True),
+                update_guard=UNGUARDED,
+                delete_guard=UNGUARDED,
+            )
+        )
+
+        assert ("/{task_name}", "PUT") in routes
+        assert ("/{task_name}", "DELETE") in routes
 
     def test_detail_suppressed_without_custom_detail_raises(self) -> None:
         """Assert ``capabilities.detail=False`` needs a custom detail extra route."""
