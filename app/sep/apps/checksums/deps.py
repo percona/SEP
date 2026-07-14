@@ -320,7 +320,7 @@ _CHECKSUMS_DEFAULTS = {
     "extra_args": "",
 }
 
-_checksums_arg_mappings, _checksums_flag_mappings = derive_arg_parser_from_model(
+_CHECKSUMS_ARG_MAPPINGS, _CHECKSUMS_FLAG_MAPPINGS = derive_arg_parser_from_model(
     ChecksumsForm,
     extra_arg_mappings={
         "--recursion-method=": "recursion_method",
@@ -331,8 +331,8 @@ _checksums_arg_mappings, _checksums_flag_mappings = derive_arg_parser_from_model
 
 parse_checksums_task_args = make_arg_parser(
     defaults=_CHECKSUMS_DEFAULTS,
-    arg_mappings=_checksums_arg_mappings,
-    flag_mappings=_checksums_flag_mappings,
+    arg_mappings=_CHECKSUMS_ARG_MAPPINGS,
+    flag_mappings=_CHECKSUMS_FLAG_MAPPINGS,
     skip_leading_positional=True,
 )
 

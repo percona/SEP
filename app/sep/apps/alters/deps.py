@@ -410,15 +410,15 @@ def _alters_recursion_handler(arg: str, form_values: dict[str, Any]) -> bool:
     return True
 
 
-_alters_arg_mappings, _alters_flag_mappings = derive_arg_parser_from_model(
+_ALTERS_ARG_MAPPINGS, _ALTERS_FLAG_MAPPINGS = derive_arg_parser_from_model(
     AltersCreate,
     extra_arg_mappings={"--alter=": "alter", "--progress=": "progress"},
 )
 
 parse_alters_task_args = make_arg_parser(
     defaults=_ALTERS_DEFAULTS,
-    arg_mappings=_alters_arg_mappings,
-    flag_mappings=_alters_flag_mappings,
+    arg_mappings=_ALTERS_ARG_MAPPINGS,
+    flag_mappings=_ALTERS_FLAG_MAPPINGS,
     recursion_handler=_alters_recursion_handler,
     drop_shaped_positionals=True,
     collect_extra_args=True,
