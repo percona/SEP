@@ -81,6 +81,102 @@ def test_checksums_create_full_form_dependency_chain_without_payload_override(
     assert posted["owner"] == "CHECKSUMS"
 
 
+class TestChecksumsUpdateFormChain:
+    """Exercise the real ``Form()`` dependency chain on POST /checksums/{task_name}/update."""
+
+    def test_full_form_dependency_chain_without_payload_override(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ):
+        """Forward the submitted body to ``tasks_api.put`` through the real form chain."""
+        task_name = "chk_update_full_chain"
+        checksums_create = ChecksumsCreate(
+            task_name=task_name,
+            hostname="localhost",
+            service_id=created_service.id,
+            recursion_method="processlist",
+        )
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.put.return_value = AsyncMock()
+
+        response = test_client.post(
+            f"/checksums/{task_name}/update",
+            data=checksums_create.model_dump(exclude_none=True),
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"].endswith(f"/checksums/{task_name}")
+        mock_task_api_dep.put.assert_awaited_once()
+        assert mock_task_api_dep.put.await_args.args[0] == f"/{task_name}"
+        put_payload = mock_task_api_dep.put.await_args.kwargs["json"]
+        assert put_payload["name"] == task_name
+        assert put_payload["owner"] == "CHECKSUMS"
+        # Submitted ``recursion_method`` must survive the real form chain into the args.
+        assert "--recursion-method=processlist" in put_payload["data"]["meta"]["args"]
+
+    def test_forwards_path_name_but_redirects_to_form_name(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ):
+        """Forward the path ``task_name`` to put while the form name drives the redirect."""
+        path_name = "chk_url_path"
+        form_name = "chk_form_name"
+        checksums_create = ChecksumsCreate(
+            task_name=form_name,
+            hostname="localhost",
+            service_id=created_service.id,
+            recursion_method="processlist",
+        )
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.put.return_value = AsyncMock()
+
+        response = test_client.post(
+            f"/checksums/{path_name}/update",
+            data=checksums_create.model_dump(exclude_none=True),
+            follow_redirects=False,
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert mock_task_api_dep.put.await_args.args[0] == f"/{path_name}"
+        assert mock_task_api_dep.put.await_args.kwargs["json"]["name"] == form_name
+        assert response.headers["location"].endswith(f"/checksums/{form_name}")
+
+    def test_invalid_form_flashes_and_redirects_without_forwarding(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ):
+        """Flash and redirect (never forward) when the update form fails validation."""
+        data = {
+            "task_name": "chk_invalid",
+            "hostname": "localhost",
+            "service_id": created_service.id,
+            # recursion_method intentionally omitted
+        }
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+
+        response = test_client.post(
+            "/checksums/chk_invalid/update", data=data, follow_redirects=False
+        )
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/"
+        assert "messages=" in response.headers.get("set-cookie", "")
+        mock_task_api_dep.put.assert_not_awaited()
+
+
 def test_checksums_create_skips_connectivity_check_when_opted_out(
     test_client, mock_task_api_dep, checksums_create
 ):

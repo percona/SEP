@@ -69,7 +69,7 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
             tasks=[
                 SystemPeriodicTaskData(
                     name="sep__sync_snippets",
-                    task_name="app.sep.celery.sync_snippets",
+                    task_name="app.sep.apps.snippets.celery.sync_snippets",
                     owner_app_key="snippets",
                 ),
             ],
@@ -85,7 +85,7 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
                 tasks=[
                     SystemPeriodicTaskData(
                         name="sep__backup_alert_config",
-                        task_name="app.sep.celery.backup_alert_config",
+                        task_name="app.sep.apps.alerts.celery.backup_alert_config",
                         owner_app_key="alerts",
                     ),
                 ],

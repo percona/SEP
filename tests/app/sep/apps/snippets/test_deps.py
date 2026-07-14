@@ -92,6 +92,40 @@ async def test_get_validated_execution_args_rejects_gated_hidden_value(mocker):
 
 
 @pytest.mark.asyncio
+async def test_get_validated_execution_args_rejects_missing_required_field(mocker):
+    """The legacy form path flashes + redirects when a requires gate fires."""
+    snippet = Snippet(filename="req.sh", size=20, md5_digest="a" * 32)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [
+            {"name": "mode", "type": "str", "label": "Mode"},
+            {
+                "name": "reason",
+                "type": "str",
+                "label": "Reason",
+                "requires_when": {"parameter": "mode", "equals": "write"},
+            },
+        ],
+    }
+    request = MagicMock()
+    # ``mode == write`` but ``reason`` omitted -> requires gate fires.
+    request.form.return_value = _AsyncForm(
+        {EXECUTOR_HOSTS_INPUT_NAME: "host1", "mode": "write"}
+    )
+    mock_messages = mocker.patch.object(snippets_deps, "messages")
+    mocker.patch.object(
+        snippets_deps,
+        "_get_snippet_redirect_exc",
+        return_value=RuntimeError("redirect"),
+    )
+
+    with pytest.raises(RuntimeError, match="redirect"):
+        await snippets_deps.get_validated_execution_args(request, snippet, referer=None)
+
+    mock_messages.error.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_get_validated_execution_args_allows_when_gate_not_fired(mocker):
     """When the gate does not fire, the legacy path returns the validated args."""
     snippet = _gated_snippet()
