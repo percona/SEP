@@ -13,18 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.sep.apps.alters.spec pure task builder."""
+"""Define tests for the app.sep.apps.alters.spec pure run-command spec builder."""
 
-from app.inventory.constants import DEFAULT_MYSQL_PORT
+import shlex
+
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.alters.spec import build_alters_spec
-from app.sep.connectivity import (
-    CONNECTIVITY_META_HOST_KEY,
-    CONNECTIVITY_META_PORT_KEY,
-    CONNECTIVITY_META_SERVICE_TYPE_KEY,
-)
+from app.sep.apps.framework.spec import ResolvedEntities, RunCommandSpec
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskBackendEnum, TaskWrite
 
 REMOTE_SERVICE_PORT = 3306
 
@@ -38,53 +34,44 @@ def _service_at(service: CreatedService, address: str) -> CreatedService:
 
 def _build_body(**overrides: object) -> AltersCreate:
     """Build a valid manual-target AltersCreate, applying ``overrides``."""
-    fields: dict[str, object] = {
-        "task_name": "my-alter",
-        "hostname": "exec-host",
-        "service_id": 1,
-        "db_schema": "app",
-        "db_table": "users",
-        "alter": "ADD COLUMN x INT",
-        "recursion_method": "processlist",
-    }
-    fields.update(overrides)
-    return AltersCreate(**fields)
+    return AltersCreate(
+        **{
+            "task_name": "my-alter",
+            "hostname": "exec-host",
+            "service_id": 1,
+            "db_schema": "app",
+            "db_table": "users",
+            "alter": "ADD COLUMN x INT",
+            "recursion_method": "processlist",
+            **overrides,
+        }
+    )
 
 
-def test_build_alters_spec_builds_parent_execute_envelope(
-    created_service: CreatedService,
-):
-    """Assemble the run-command pt-osc execute envelope from resolved inputs."""
-    task = build_alters_spec(created_service, "app", "users", _build_body())
-
-    assert isinstance(task, TaskWrite)
-    assert task.owner == "ALTERS"
-    assert task.backend == TaskBackendEnum.PROXY
-    assert task.name == "my-alter"
-
-    meta = task.data["meta"]
-    assert task.data["task"] == "run-command"
-    assert meta["target"] == "exec-host"
-    assert meta["command"] == "pt-online-schema-change"
-    assert "--recursion-method=processlist" in meta["args"]
-    assert "--execute" in meta["args"]
-    assert meta["_schema_name"] == "app"
-    assert meta["_table_name"] == "users"
-    assert meta["_service_name"] == created_service.name
-    assert meta[CONNECTIVITY_META_HOST_KEY] == created_service.node.address
-    assert meta[CONNECTIVITY_META_PORT_KEY]
-    assert meta[CONNECTIVITY_META_SERVICE_TYPE_KEY] == created_service.type.value
+def _resolved(service: CreatedService) -> ResolvedEntities:
+    """Return resolved entities with free-typed (unresolved) schema/table targets."""
+    return ResolvedEntities(
+        service=service,
+        entities={"db_schema": None, "db_table": None},
+        executor_host="exec-host",
+    )
 
 
-def test_build_alters_spec_defaults_connectivity_port_when_service_port_unset(
-    created_service: CreatedService,
-):
-    """Apply the standard MySQL port to the connectivity meta when the service port is unset."""
-    portless = created_service.model_copy(update={"port": None})
+def test_build_alters_spec_builds_run_command_spec(created_service: CreatedService):
+    """Assemble the pt-osc run-command spec with its alters-only meta from the form."""
+    spec = build_alters_spec(_build_body(), _resolved(created_service))
 
-    meta = build_alters_spec(portless, "app", "users", _build_body()).data["meta"]
-
-    assert meta[CONNECTIVITY_META_PORT_KEY] == DEFAULT_MYSQL_PORT
+    assert isinstance(spec, RunCommandSpec)
+    assert spec.command == "pt-online-schema-change"
+    assert "--recursion-method=processlist" in spec.args
+    assert "--execute" in spec.args
+    assert "--alter=" in spec.args
+    assert spec.extra_meta["_schema_name"] == "app"
+    assert spec.extra_meta["_table_name"] == "users"
+    assert spec.extra_meta["_service_host"] == created_service.node.address
+    assert spec.extra_meta["_service_port"] == created_service.port
+    assert spec.extra_meta["_pre_checks_mysql_config_file"] == "~/.my.cnf"
+    assert spec.extra_meta["_command_line"] == f"pt-online-schema-change {spec.args}"
 
 
 def test_build_alters_spec_remote_service_embeds_host_and_port(
@@ -95,9 +82,9 @@ def test_build_alters_spec_remote_service_embeds_host_and_port(
         update={"port": REMOTE_SERVICE_PORT}
     )
 
-    task = build_alters_spec(remote, "app", "users", _build_body())
+    spec = build_alters_spec(_build_body(), _resolved(remote))
 
-    assert "h=10.0.0.5,P=3306,D=app,t=users" in task.data["meta"]["args"]
+    assert "h=10.0.0.5,P=3306,D=app,t=users" in spec.args
 
 
 def test_build_alters_spec_localhost_service_omits_host(
@@ -108,22 +95,38 @@ def test_build_alters_spec_localhost_service_omits_host(
         update={"port": REMOTE_SERVICE_PORT}
     )
 
-    args = build_alters_spec(local, "app", "users", _build_body()).data["meta"]["args"]
+    spec = build_alters_spec(_build_body(), _resolved(local))
 
-    assert "P=3306,D=app,t=users" in args
-    assert "h=localhost" not in args
+    assert "P=3306,D=app,t=users" in spec.args
+    assert "h=localhost" not in spec.args
 
 
-def test_build_alters_spec_emits_progress_without_print(
+def test_build_alters_spec_portless_localhost_elides_dsn_host_and_port(
     created_service: CreatedService,
 ):
-    """Emit --progress whenever progress is set, independent of the print flag."""
-    body = _build_body(progress="time,10", print_arg=False)
+    """Build the DSN without ``h=`` or ``P=`` for a portless localhost service."""
+    portless = _service_at(created_service, "localhost").model_copy(
+        update={"port": None}
+    )
 
-    args = build_alters_spec(created_service, "app", "users", body).data["meta"]["args"]
+    spec = build_alters_spec(_build_body(), _resolved(portless))
 
-    assert "--progress=time,10" in args
-    assert "--print" not in args
+    assert "D=app,t=users" in spec.args
+    assert "h=" not in spec.args
+    assert "P=" not in spec.args
+    assert spec.extra_meta["_service_port"] is None
+
+
+def test_build_alters_spec_emits_progress_after_flags(
+    created_service: CreatedService,
+):
+    """Emit --progress after the flag args and before --execute in the arg order."""
+    body = _build_body(progress="time,10", no_swap_tables=True)
+
+    tokens = shlex.split(build_alters_spec(body, _resolved(created_service)).args)
+
+    assert tokens.index("--no-swap-tables") < tokens.index("--progress=time,10")
+    assert tokens.index("--progress=time,10") < tokens.index("--execute")
 
 
 def test_build_alters_spec_omits_progress_when_unset(
@@ -132,7 +135,7 @@ def test_build_alters_spec_omits_progress_when_unset(
     """Omit --progress when progress is empty, even with the print flag enabled."""
     body = _build_body(progress="", print_arg=True)
 
-    args = build_alters_spec(created_service, "app", "users", body).data["meta"]["args"]
+    args = build_alters_spec(body, _resolved(created_service)).args
 
     assert "--progress" not in args
     assert "--print" in args
@@ -144,18 +147,60 @@ def test_build_alters_spec_dsn_recursion_embeds_dsn_table(
     """Embed the resolved dsn_table in the args for a dsn recursion method."""
     body = _build_body(recursion_method="dsn", dsn_table="D=custom,t=dsns")
 
-    task = build_alters_spec(created_service, "app", "users", body)
+    args = build_alters_spec(body, _resolved(created_service)).args
 
-    assert "--recursion-method=dsn=" in task.data["meta"]["args"]
-    assert "D=custom,t=dsns" in task.data["meta"]["args"]
+    assert "--recursion-method=dsn=" in args
+    assert "D=custom,t=dsns" in args
 
 
-def test_build_alters_spec_dsn_table_prefix_passes_through(
+def test_build_alters_spec_custom_defaults_file_emitted(
     created_service: CreatedService,
 ):
-    """Keep an ``h=``-prefixed dsn_table unmodified in the args."""
-    body = _build_body(recursion_method="dsn", dsn_table="h=custom-host,D=d,t=t")
+    """Emit --defaults-file and stamp the meta for a non-default MySQL config path."""
+    body = _build_body(pre_checks_mysql_config_file="/etc/my.cnf")
 
-    args = build_alters_spec(created_service, "app", "users", body).data["meta"]["args"]
+    spec = build_alters_spec(body, _resolved(created_service))
 
-    assert "--recursion-method=dsn=h=custom-host,D=d,t=t" in args
+    assert "--defaults-file=/etc/my.cnf" in spec.args
+    assert spec.extra_meta["_pre_checks_mysql_config_file"] == "/etc/my.cnf"
+
+
+def test_build_alters_spec_default_defaults_file_suppressed(
+    created_service: CreatedService,
+):
+    """Suppress --defaults-file for the default ~/.my.cnf sentinel path."""
+    spec = build_alters_spec(_build_body(), _resolved(created_service))
+
+    assert "--defaults-file" not in spec.args
+    assert spec.extra_meta["_pre_checks_mysql_config_file"] == "~/.my.cnf"
+
+
+def test_build_alters_spec_quotes_value_with_spaces(
+    created_service: CreatedService,
+):
+    """Keep a whitespace-bearing value arg a single shell token through the round-trip."""
+    body = _build_body(set_vars="sql_mode='ONLY FULL'")
+
+    tokens = shlex.split(build_alters_spec(body, _resolved(created_service)).args)
+
+    assert "--set-vars=sql_mode='ONLY FULL'" in tokens
+
+
+def test_build_alters_spec_uses_resolved_entity_names(
+    created_service: CreatedService, created_schema, created_table
+):
+    """Derive schema/table names from the resolved inventory entities when present."""
+    created_schema.name = "shop"
+    created_table.name = "orders"
+    resolved = ResolvedEntities(
+        service=created_service,
+        entities={"db_schema": created_schema, "db_table": created_table},
+        executor_host="exec-host",
+    )
+    body = _build_body(db_schema=created_schema.id, db_table=created_table.id)
+
+    spec = build_alters_spec(body, resolved)
+
+    assert spec.extra_meta["_schema_name"] == "shop"
+    assert spec.extra_meta["_table_name"] == "orders"
+    assert "D=shop,t=orders" in spec.args
