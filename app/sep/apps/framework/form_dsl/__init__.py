@@ -40,6 +40,7 @@ from app.sep.apps.framework.form_dsl.markers import (
     SectionRules,
     ServiceRef,
     TableRef,
+    TASK_SECTION_LAYOUT,
     Ui,
 )
 from app.sep.apps.framework.form_dsl.model import AppFormModel, TaskFormModel
@@ -51,6 +52,7 @@ from app.sep.apps.framework.form_dsl.pt_toolkit import (
 
 __all__ = [
     "DSN_TABLE_DEFAULT",
+    "TASK_SECTION_LAYOUT",
     "AppFormModel",
     "ArgFormat",
     "Choices",

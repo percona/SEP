@@ -144,20 +144,20 @@ class AltersCreate(AppFormModel):
             return {**data, "dsn_table": DSN_TABLE_DEFAULT}
         return data
 
-    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="task")]
+    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
     hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="task")
+        NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="Task")
     ]
     service_id: Annotated[
         int,
         ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
-        Ui(label="Database Host", section="task"),
+        Ui(label="Database Host", section="Task"),
     ]
     pre_checks_mysql_config_file: Annotated[
         str,
         Ui(
             label="MySQL Defaults File",
-            section="task",
+            section="Task",
             description=(
                 "Path on the executor with [client] user/password. Pre-checks "
                 "always use this path. Execute/dry-run use the same path only "
