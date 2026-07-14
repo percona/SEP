@@ -26,6 +26,7 @@ from app.sep.apps.framework.form_dsl.markers import (
     ArgFormat,
     Choices,
     FieldWidget,
+    find_arg_format,
     Forbidden,
     FormLayout,
     FormRules,
@@ -33,6 +34,7 @@ from app.sep.apps.framework.form_dsl.markers import (
     HostRef,
     Option,
     Requires,
+    resolve_arg_template,
     SchemaRef,
     SectionLayout,
     SectionRules,
@@ -42,6 +44,7 @@ from app.sep.apps.framework.form_dsl.markers import (
 )
 from app.sep.apps.framework.form_dsl.model import AppFormModel, TaskFormModel
 from app.sep.apps.framework.form_dsl.pt_toolkit import (
+    derive_arg_parser_from_model,
     DSN_TABLE_DEFAULT,
     make_arg_parser,
 )
@@ -68,8 +71,11 @@ __all__ = [
     "Ui",
     "check_form_conformance",
     "derive_app_schema",
+    "derive_arg_parser_from_model",
     "derive_form_sections",
+    "find_arg_format",
     "find_ref_marker",
     "iter_service_refs",
     "make_arg_parser",
+    "resolve_arg_template",
 ]
