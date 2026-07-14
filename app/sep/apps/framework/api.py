@@ -1630,17 +1630,7 @@ def derive_cascade_create_route(
                 )
         return response
 
-    if not connectivity_check:
-
-        async def create(plan: create_plan, tasks_api: TaskAPI) -> BaseModel:
-            """Create the task group from the plan and return the response.
-
-            :param plan: The app-built cascade plan (resolved from ``create_plan``).
-            :param tasks_api: The upstream Tasks API client.
-            :return: The rendered create response.
-            """
-            return await _run(plan, tasks_api, check_connectivity=None)
-    else:
+    if connectivity_check:
 
         async def create(
             plan: create_plan,
@@ -1656,6 +1646,16 @@ def derive_cascade_create_route(
             :return: The rendered create response with any connectivity warning.
             """
             return await _run(plan, tasks_api, check_connectivity=check_connectivity)
+    else:
+
+        async def create(plan: create_plan, tasks_api: TaskAPI) -> BaseModel:
+            """Create the task group from the plan and return the response.
+
+            :param plan: The app-built cascade plan (resolved from ``create_plan``).
+            :param tasks_api: The upstream Tasks API client.
+            :return: The rendered create response.
+            """
+            return await _run(plan, tasks_api, check_connectivity=None)
 
     router.add_api_route(
         "/",
