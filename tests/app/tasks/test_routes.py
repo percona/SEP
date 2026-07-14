@@ -30,6 +30,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_user, SERVICE_PRINCIPAL_ID
+from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
@@ -136,6 +137,49 @@ async def test_delete_task_forbidden_when_protected(test_client, session):
 
     resp = test_client.delete(f"/{task_name}")
     assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_delete_running_task_returns_409(test_client, session, created_task):
+    """Assert deleting a task with a running execution returns 409, not 500.
+
+    ``PeriodicTaskManager.delete_where`` is deliberately left unmocked and its
+    session pointed at the test database, which has no ``celery_periodictask``
+    table: if the running guard failed to short-circuit, the delete would fall
+    through to that call and surface the reported 500. A clean 409 therefore
+    proves the guard fires at the HTTP boundary before any downstream that could
+    raise -- the exact regression SEP-1547 tracks.
+    """
+    tasks_app.dependency_overrides[get_celery_beat_session] = lambda: session
+    await TaskHistoryManager.save(
+        session,
+        build_task_history(created_task, status=TaskHistoryStatusEnum.RUNNING),
+    )
+
+    response = test_client.delete(f"/{created_task.name}")
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert "running" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_pending_task_returns_409(test_client, session, created_task):
+    """Assert deleting a task with a pending execution returns 409, not 500.
+
+    Mirrors :func:`test_delete_running_task_returns_409` for the pending branch:
+    ``delete_where`` is unmocked against the celery-less test database, so a 409
+    (rather than a 500) proves the pending guard short-circuits the delete.
+    """
+    tasks_app.dependency_overrides[get_celery_beat_session] = lambda: session
+    await TaskHistoryManager.save(
+        session,
+        build_task_history(created_task, status=TaskHistoryStatusEnum.PENDING),
+    )
+
+    response = test_client.delete(f"/{created_task.name}")
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert "pending" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
