@@ -91,8 +91,8 @@ from app.sep.apps.framework.schema import (
     TextAreaField,
     YamlField,
 )
-from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.framework.script_source import ScriptSource
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
