@@ -677,8 +677,9 @@ def _register_update_route(
     :param context_provider: A zero-arg async provider whose once-awaited result
         is bound as the active builder's ``context`` keyword. ``None`` leaves the
         builder unbound.
-    :param extra_deps: Extra route dependencies (guards) appended after
-        ``IsApiAuthenticated``, never replacing it.
+    :param extra_deps: Route dependencies (guards) appended after
+        ``IsApiAuthenticated``, never replacing it; the caller may resolve these to
+        a default guard set rather than only per-route extras.
     :raises TypeError: If ``connectivity_check`` is on and an explicit
         ``create_response_builder``'s model omits a ``connectivity_warning`` field.
     """
@@ -789,8 +790,9 @@ def _register_delete_route(
     :param router: The plugin router to register the delete route on.
     :param get_task: The task-by-name dependency owning the path parameter.
     :param detail_path: The ``/{detail}`` route template the DELETE mounts on.
-    :param extra_deps: Extra route dependencies (guards) appended after the auth
-        guard, never replacing it.
+    :param extra_deps: Route dependencies (guards) appended after the auth guard,
+        never replacing it; the caller may resolve these to a default guard set
+        rather than only per-route extras.
     """
 
     async def _delete(
@@ -848,10 +850,12 @@ def _register_mutation_routes(
     :param context_provider: The once-per-request async context provider, or ``None``.
     :param update_enabled: Whether to derive the default PUT when no handler is set.
     :param update_handler: A full PUT override, or ``None`` for the derived default.
-    :param update_extra_deps: Guards appended to the derived PUT after the auth guard.
+    :param update_extra_deps: Guards appended to the derived PUT after the auth
+        guard; the caller may resolve these to a default guard set.
     :param delete_enabled: Whether to derive the default DELETE when no handler is set.
     :param delete_handler: A full DELETE override, or ``None`` for the derived default.
-    :param delete_extra_deps: Guards appended to the derived DELETE after the auth guard.
+    :param delete_extra_deps: Guards appended to the derived DELETE after the auth
+        guard; the caller may resolve these to a default guard set.
     :raises ValueError: If ``update_extra_deps`` / ``delete_extra_deps`` are supplied
         alongside a full ``update_handler`` / ``delete_handler`` or without the matching
         capability; or if the derived PUT is enabled without a ``create_payload`` to
@@ -1202,11 +1206,11 @@ def derive_crud_routes(
         ``HasNoConflictedRunningTasks``) must be declared as one of the handler's
         own signature dependencies, since the handler is passed as a bare callable
         and carries no decorator-level dependencies into the helper.
-    :param update_extra_deps: Extra route dependencies (guards) appended after
-        ``IsApiAuthenticated`` on the *derived* PUT — the handler-less escape hatch
-        for a per-plugin guard (e.g. a protected-task check). Rejected alongside a
-        full ``update_handler`` (declare guards in the handler signature instead)
-        or when the update capability is off. Defaults to ``()``.
+    :param update_extra_deps: Route dependencies (guards) appended after
+        ``IsApiAuthenticated`` on the *derived* PUT. The caller may resolve these to
+        a default guard set or a per-route override (e.g. a protected-task check).
+        Rejected alongside a full ``update_handler`` (declare guards in the handler
+        signature instead) or when the update capability is off. Defaults to ``()``.
     :param delete_enabled: When ``True`` and no ``delete_handler`` is supplied,
         mount the derived default ``DELETE /{detail_path_param}`` route (plain
         fetch-then-delete, ``204``). Defaults to ``False`` (no DELETE).
@@ -1215,6 +1219,10 @@ def derive_crud_routes(
         registered using it, with ``status_code=204``. As with ``update_handler``,
         any extra route guard must be declared as one of the handler's own
         signature dependencies.
+    :param delete_extra_deps: Route dependencies (guards) appended after
+        ``IsApiAuthenticated`` on the *derived* DELETE. The caller may resolve these
+        to a default guard set or a per-route override. Rejected alongside a full
+        ``delete_handler`` or when the delete capability is off. Defaults to ``()``.
     :return: A plugin ``APIRouter`` carrying the schema + CRUD routes.
     :raises TypeError: If ``response_builder``, ``detail_response_builder``, or
         ``create_response_builder`` is an ``async def`` callable (the derived
@@ -1457,7 +1465,12 @@ def derive_execute_route(
     )
 
 
-def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
+def derive_script_routes(
+    source: ScriptSource[Any],
+    *,
+    name: str,
+    pagination_dep: PaginationDependency | None = None,
+) -> APIRouter:
     """Build a plugin router carrying a script source's derived surface.
 
     Register the script-centric surface a script-backed task app exposes, mirroring
@@ -1481,6 +1494,11 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
         execution-meta, list-row, and optional static-schema hooks.
     :param name: The app name seeding each derived route's name (and OpenAPI
         ``operationId``), so two script apps never collide on a generic route name.
+    :param pagination_dep: A ``make_pagination_dep(...)`` dependency callable.
+        When given, the list route takes that dependency (wrapped in
+        ``Annotated[Pagination, Depends(...)]``) and returns a
+        ``PaginatedResponse`` whose ``items`` are a client-side slice of the full
+        discovered script set; when ``None`` the list returns a plain list.
     :return: A plugin ``APIRouter`` carrying the derived script surface.
     """
     router = APIRouter()
@@ -1495,17 +1513,49 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
         else None
     )
 
-    @router.get(
-        "/",
-        name=f"{name}_api_list",
-        summary="List",
-        response_model=list_model,
-        dependencies=[IsApiAuthenticated],
-    )
-    async def list_scripts() -> list[BaseModel]:
-        """List every discovered script as its list-row projection."""
-        scripts = await source.list_scripts()
-        return [source.list_response(script) for script in scripts]
+    if pagination_dep is None:
+
+        async def list_scripts() -> list[BaseModel]:
+            """List every discovered script as its list-row projection."""
+            scripts = await source.list_scripts()
+            return [source.list_response(script) for script in scripts]
+
+        router.add_api_route(
+            "/",
+            list_scripts,
+            methods=["GET"],
+            name=f"{name}_api_list",
+            summary="List",
+            response_model=list_model,
+            dependencies=[IsApiAuthenticated],
+        )
+    else:
+        paginated_param = Annotated[Pagination, Depends(pagination_dep)]
+        paginated_list_model = (
+            PaginatedResponse[source.list_response_model]
+            if source.list_response_model is not None
+            else PaginatedResponse
+        )
+
+        async def list_scripts_paginated(
+            pagination: paginated_param,
+        ) -> PaginatedResponse:
+            """List discovered scripts as a paginated projection."""
+            scripts = await source.list_scripts()
+            total = len(scripts)
+            page_scripts = pagination.slice(scripts)
+            items = [source.list_response(script) for script in page_scripts]
+            return PaginatedResponse.from_pagination(items, total, pagination)
+
+        router.add_api_route(
+            "/",
+            list_scripts_paginated,
+            methods=["GET"],
+            name=f"{name}_api_list",
+            summary="List",
+            response_model=paginated_list_model,
+            dependencies=[IsApiAuthenticated],
+        )
 
     @router.get(
         "/snippet/schema",
