@@ -1321,3 +1321,28 @@ def protected_task_guard(
         return reject_if_protected(task, action=action)
 
     return _guard
+
+
+def make_conflict_guard(
+    task_dep: Callable[..., Awaitable[Task]],
+) -> Callable[..., Awaitable[None]]:
+    """Build a dependency that 409s when the resolved task has a running run.
+
+    Parameterized on the plugin's task-fetch dependency so the conflict check
+    resolves off the fetched ``task.name`` rather than a fixed ``task_name`` path
+    parameter, keeping it decoupled from the route's detail path parameter. Shares
+    the cached ``task_dep`` with the protected-task guard and the route handler, so
+    the task is fetched once per request.
+
+    :param task_dep: The plugin's task-fetch dependency used to resolve the task.
+    :return: A FastAPI dependency that returns ``None`` or raises 409 when a
+        running or pending run exists for the resolved task.
+    """
+
+    async def _guard(
+        task: Annotated[Task, Depends(task_dep)],
+        tasks_api: TaskAPI,
+    ) -> None:
+        await check_for_conflicted_running_tasks(task.name, tasks_api)
+
+    return _guard

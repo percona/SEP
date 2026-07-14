@@ -37,7 +37,10 @@ from app.sep.apps.checksums.spec import (
     resolve_checksums_target_args,
 )
 from app.sep.apps.framework import make_task_dep
-from app.sep.apps.framework.form_dsl import make_arg_parser
+from app.sep.apps.framework.form_dsl import (
+    derive_arg_parser_from_model,
+    make_arg_parser,
+)
 from app.sep.apps.framework.spec import (
     assemble_envelope,
     resolve_refs,
@@ -54,7 +57,6 @@ from app.sep.deps import (
     get_created_entity,
     get_tasks_context,
     InventoryAPI,
-    protected_task_guard,
     TaskAPI,
 )
 from app.sep.inventory import CreatedService
@@ -250,11 +252,6 @@ get_checksums_task = make_task_dep(OWNER)
 ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
 
 
-get_unprotected_checksums_task = protected_task_guard(get_checksums_task)
-
-UnprotectedChecksumsTask = Annotated[Task, Depends(get_unprotected_checksums_task)]
-
-
 async def get_checksums_task_names_by_status(
     tasks_api: TaskAPI,
     status: TaskHistoryStatusEnum,
@@ -317,24 +314,14 @@ _CHECKSUMS_DEFAULTS = {
     "extra_args": "",
 }
 
-_CHECKSUMS_ARG_MAPPINGS = {
-    "--recursion-method=": "recursion_method",
-    "--databases=": "databases",
-    "--tables=": "tables",
-    "--pause-file=": "pause_file",
-    "--set-vars=": "set_vars",
-    "--max-load=": "max_load",
-    "--chunk-time=": "chunk_time",
-    "--max-lag=": "max_lag",
-    "--progress=": "progress",
-}
-
-_CHECKSUMS_FLAG_MAPPINGS = {
-    "--binary-index": "binary_index",
-    "--explain": "explain_arg",
-    "--fail-on-stopped-replication": "fail_on_stopped_replication",
-    "--truncate-replicate-table": "truncate_replicate_table",
-}
+_CHECKSUMS_ARG_MAPPINGS, _CHECKSUMS_FLAG_MAPPINGS = derive_arg_parser_from_model(
+    ChecksumsForm,
+    extra_arg_mappings={
+        "--recursion-method=": "recursion_method",
+        "--databases=": "databases",
+        "--tables=": "tables",
+    },
+)
 
 parse_checksums_task_args = make_arg_parser(
     defaults=_CHECKSUMS_DEFAULTS,

@@ -54,9 +54,15 @@ from app.sep.apps.framework.cascade import (
     CascadeFailure,
     CascadeResult,
 )
-from app.sep.apps.framework.form_dsl import make_arg_parser
+from app.sep.apps.framework.form_dsl import (
+    derive_arg_parser_from_model,
+    make_arg_parser,
+)
 from app.sep.apps.framework.schema import ChainedPredecessor
-from app.sep.apps.framework.spec import resolve_refs
+from app.sep.apps.framework.spec import (
+    assemble_envelope,
+    resolve_refs,
+)
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
     DefaultContext,
@@ -194,7 +200,9 @@ async def build_alters_task(
 
     Resolves the ``service_id`` / ``db_schema`` / ``db_table`` reference fields
     through the framework resolver: an inventory id is fetched to its entity name,
-    while a free-typed name falls back to the raw form value.
+    while a free-typed name falls back to the raw form value. The resolved
+    entities and executor host then drive
+    :func:`~app.sep.apps.alters.spec.build_alters_spec` and ``assemble_envelope``.
 
     :param body: The alters create/write payload.
     :param inventory_api: The Inventory API client.
@@ -202,14 +210,15 @@ async def build_alters_task(
     :raises HTTPBadRequestException: When no MySQL service is resolved.
     """
     resolved = await resolve_refs(body, inventory_api)
-    service = resolved.service
-    if service is None:
+    if resolved.service is None:
         raise HTTPBadRequestException("A MySQL service selection is required.")
-    schema_entity = resolved.entities.get("db_schema")
-    table_entity = resolved.entities.get("db_table")
-    schema_name = schema_entity.name if schema_entity else str(body.db_schema)
-    table_name = table_entity.name if table_entity else str(body.db_table)
-    return build_alters_spec(service, schema_name, table_name, body)
+    return assemble_envelope(
+        build_alters_spec(body, resolved),
+        resolved,
+        name=body.task_name,
+        owner=OWNER,
+        alert_on_fail=body.alert_on_fail,
+    )
 
 
 get_alters_task = make_task_dep(OWNER)
@@ -377,28 +386,6 @@ _ALTERS_DEFAULTS = {
     "extra_args": "",
 }
 
-_ALTERS_ARG_MAPPINGS = {
-    "--alter=": "alter",
-    "--pause-file=": "pause_file",
-    "--new-table-name=": "new_table_name",
-    "--tries=": "tries",
-    "--set-vars=": "set_vars",
-    "--critical-load=": "critical_load",
-    "--max-load=": "max_load",
-    "--chunk-time=": "chunk_time",
-    "--max-lag=": "max_lag",
-    "--max-flow-ctl=": "max_flow_ctl",
-    "--progress=": "progress",
-}
-
-_ALTERS_FLAG_MAPPINGS = {
-    "--print": "print_arg",
-    "--no-swap-tables": "no_swap_tables",
-    "--no-drop-old-table": "no_drop_old_table",
-    "--no-drop-new-table": "no_drop_new_table",
-    "--no-drop-triggers": "no_drop_triggers",
-}
-
 
 def _alters_recursion_handler(arg: str, form_values: dict[str, Any]) -> bool:
     """Split ``--recursion-method=dsn=…`` into ``recursion_method`` and ``dsn_table``.
@@ -422,6 +409,11 @@ def _alters_recursion_handler(arg: str, form_values: dict[str, Any]) -> bool:
         form_values["recursion_method"] = recursion_method
     return True
 
+
+_ALTERS_ARG_MAPPINGS, _ALTERS_FLAG_MAPPINGS = derive_arg_parser_from_model(
+    AltersCreate,
+    extra_arg_mappings={"--alter=": "alter", "--progress=": "progress"},
+)
 
 parse_alters_task_args = make_arg_parser(
     defaults=_ALTERS_DEFAULTS,
