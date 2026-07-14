@@ -31,7 +31,7 @@ from app.sep.apps.framework.spec import (
 )
 from app.sep.apps.mysql_backups.models import (
     BackupCreate,
-    BackupResponse,
+    BackupTaskResponse,
     BackupType,
     OWNER,
 )
@@ -155,8 +155,8 @@ def build_mysql_backups_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     last_executed_at: datetime | None = None,
-) -> BackupResponse:
-    """Build a ``BackupResponse`` for the JSON API.
+) -> BackupTaskResponse:
+    """Build a ``BackupTaskResponse`` for the JSON API.
 
     :param task: The backups task retrieved from the Tasks API.
     :type task: Task
@@ -165,14 +165,14 @@ def build_mysql_backups_api_task_response(
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
     :return: A validated backup task API response object.
-    :rtype: BackupResponse
+    :rtype: BackupTaskResponse
     """
     hostname = None
     if task.data:
         meta = task.data.get("meta") or {}
         hostname = meta.get("target")
     return build_default_task_response(
-        BackupResponse,
+        BackupTaskResponse,
         task,
         status,
         last_executed_at=last_executed_at,

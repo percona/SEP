@@ -42,7 +42,7 @@ from app.sep.apps.framework.schema import RelatedApp
 from app.sep.apps.mysql_backups.deps import build_mysql_backups_api_task_response
 from app.sep.apps.mysql_backups.models import (
     BackupCreate,
-    BackupResponse,
+    BackupTaskResponse,
     OWNER,
 )
 from app.sep.apps.mysql_backups.restore.app import app as restore_app
@@ -64,7 +64,7 @@ app = TaskExecutionApp(
     description="Run XtraBackup, Mydumper, and Binlog backups against MySQL hosts.",
     owner=OWNER,
     create_model=BackupCreate,
-    response_model=BackupResponse,
+    response_model=BackupTaskResponse,
     views=mysql_backups_views,
     task_spec_builder=build_backup_spec,
     response_builder=build_mysql_backups_api_task_response,
