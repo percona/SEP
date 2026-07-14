@@ -75,6 +75,7 @@
       "collapsible": true,
       "fields": [
         {
+          "description": "Where the backup is stored. Use a local path (/backups/mydumper/20240101), a remote host (db01:/path/to/backup), s3://bucket/path, or gs://bucket/path. Add /latest to any of these to restore the most recent backup. Avoid these characters: $ ; | & ( ) `",
           "label": "Backup Source",
           "name": "backup_source",
           "required": true,
@@ -151,7 +152,7 @@
       "fields": [
         {
           "allow_custom": true,
-          "label": "Database Host",
+          "label": "Destination Database Service",
           "name": "service_id",
           "required": false,
           "service_types": [
@@ -162,7 +163,8 @@
         {
           "allow_custom": true,
           "depends_on": "service_id",
-          "label": "Database",
+          "description": "--database myloader option (database to restore to)",
+          "label": "Restore to Database",
           "name": "schema_id",
           "required": false,
           "type": "schema"
