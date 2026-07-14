@@ -741,7 +741,7 @@ class TestNamespacedOpenapi:
         assert inner == "#/components/schemas/backup_pg__BackupTaskResponse"
 
     def test_namespaces_dual_mode_app_model(self) -> None:
-        """Namespace an app model used in both request and response modes.
+        """Namespace both ``-Input`` and ``-Output`` variants of a dual-mode app model.
 
         A model carrying a ``computed_field`` serializes with an extra property it
         does not validate, so its input and output JSON schemas differ and Pydantic
@@ -792,7 +792,7 @@ class TestNamespacedOpenapi:
         assert app.openapi_schema is live
 
     def test_restores_globals_when_openapi_raises(self) -> None:
-        """Restore the patched generator and spec cache even if ``app.openapi()`` raises.
+        """Restore the patched generator and spec cache when ``app.openapi()`` raises mid-patch.
 
         ``namespaced_openapi`` swaps a process-global ``GenerateJsonSchema`` and
         nulls the app's ``openapi_schema`` under a lock, guarded by ``try/finally``.
