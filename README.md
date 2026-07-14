@@ -126,13 +126,13 @@
 | app/sep/apps/alerts/routes.py                                                                                   |      112 |       12 |       16 |        1 |     90% |101-103, 290-291, 331-349 |
 | app/sep/apps/alters/api\_routes.py                                                                              |       53 |        7 |        4 |        1 |     86% |79, 125-130, 173-176, 183-188 |
 | app/sep/apps/alters/app.py                                                                                      |       12 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/alters/deps.py                                                                                     |      258 |       10 |       66 |       10 |     94% |207, 255-\>267, 261-\>260, 265-\>260, 488, 555-556, 640, 663-664, 801, 812, 814, 853-\>857 |
+| app/sep/apps/alters/deps.py                                                                                     |      252 |       10 |       66 |       10 |     94% |214, 264-\>276, 270-\>269, 274-\>269, 480, 547-548, 632, 655-656, 793, 804, 806, 845-\>849 |
 | app/sep/apps/alters/form\_backfill.py                                                                           |       29 |        1 |       10 |        1 |     95% |        98 |
-| app/sep/apps/alters/models.py                                                                                   |       53 |        1 |        8 |        1 |     97% |       138 |
+| app/sep/apps/alters/models.py                                                                                   |       53 |        1 |        8 |        1 |     97% |       139 |
 | app/sep/apps/alters/pre\_checks.py                                                                              |      236 |      236 |       72 |        0 |      0% |    27-638 |
 | app/sep/apps/alters/routes.py                                                                                   |      106 |        2 |        8 |        1 |     97% |   307-310 |
 | app/sep/apps/alters/schema.py                                                                                   |        7 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/alters/spec.py                                                                                     |       42 |        0 |       18 |        0 |    100% |           |
+| app/sep/apps/alters/spec.py                                                                                     |       42 |        1 |       18 |        1 |     97% |        52 |
 | app/sep/apps/alters/views.py                                                                                    |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/archives/alerts.py                                                                                 |      130 |        6 |       40 |        4 |     94% |178, 213, 255, 338-339, 349, 371-\>376 |
 | app/sep/apps/archives/app.py                                                                                    |        9 |        0 |        0 |        0 |    100% |           |
@@ -173,7 +173,7 @@
 | app/sep/apps/backup\_pg/spec.py                                                                                 |       11 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/backup\_pg/views.py                                                                                |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/checksums/app.py                                                                                   |        9 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/checksums/deps.py                                                                                  |       73 |        9 |       14 |        0 |     87% |265-267, 284-289 |
+| app/sep/apps/checksums/deps.py                                                                                  |       72 |        9 |       14 |        0 |     87% |268-270, 287-292 |
 | app/sep/apps/checksums/form\_backfill.py                                                                        |       46 |        4 |       24 |        5 |     87% |54, 62, 69, 90, 108-\>107 |
 | app/sep/apps/checksums/models.py                                                                                |       69 |        4 |       18 |        4 |     91% |66, 68, 71, 313 |
 | app/sep/apps/checksums/routes.py                                                                                |       66 |        7 |        0 |        0 |     89% |142-144, 184-192, 229-230 |
@@ -201,16 +201,16 @@
 | app/sep/apps/framework/form\_backfill\_inventory.py                                                             |      139 |       12 |       52 |       12 |     87% |73, 78-\>exit, 146, 149, 153, 166-\>144, 198, 201-\>214, 218, 251, 269, 282-283, 292-297, 319-\>325 |
 | app/sep/apps/framework/form\_dsl/conformance.py                                                                 |       46 |        9 |       18 |        3 |     75% |65, 69, 85-93 |
 | app/sep/apps/framework/form\_dsl/derivation.py                                                                  |      333 |       21 |      168 |       22 |     91% |248, 265, 441, 456, 462-\>458, 471, 481-\>487, 484-486, 500-\>502, 505, 507-\>502, 509, 526, 532, 547, 550, 558, 564-565, 567, 618, 624, 779 |
-| app/sep/apps/framework/form\_dsl/markers.py                                                                     |      103 |        0 |        8 |        0 |    100% |           |
+| app/sep/apps/framework/form\_dsl/markers.py                                                                     |      113 |        1 |       12 |        1 |     98% |       181 |
 | app/sep/apps/framework/form\_dsl/model.py                                                                       |       17 |        1 |        2 |        1 |     89% |        70 |
-| app/sep/apps/framework/form\_dsl/pt\_toolkit.py                                                                 |       37 |        0 |       20 |        0 |    100% |           |
+| app/sep/apps/framework/form\_dsl/pt\_toolkit.py                                                                 |       56 |        0 |       26 |        0 |    100% |           |
 | app/sep/apps/framework/registry.py                                                                              |       99 |        4 |       44 |        4 |     94% |162, 168, 170, 189 |
 | app/sep/apps/framework/responses.py                                                                             |       72 |        0 |       12 |        0 |    100% |           |
 | app/sep/apps/framework/rules.py                                                                                 |      538 |        7 |      130 |        5 |     98% |323, 328, 333, 545, 861, 1348, 1368 |
 | app/sep/apps/framework/scaffold.py                                                                              |      144 |        8 |       44 |        7 |     92% |152, 240, 243, 263-\>270, 266, 320, 409-410, 421 |
 | app/sep/apps/framework/schema.py                                                                                |      382 |        2 |      114 |        2 |     99% |1249, 1701 |
 | app/sep/apps/framework/script\_source.py                                                                        |       37 |        0 |        4 |        0 |    100% |           |
-| app/sep/apps/framework/spec.py                                                                                  |      152 |        1 |       70 |        1 |     99% |       536 |
+| app/sep/apps/framework/spec.py                                                                                  |      144 |        0 |       68 |        0 |    100% |           |
 | app/sep/apps/framework/task\_status.py                                                                          |       44 |        0 |       14 |        0 |    100% |           |
 | app/sep/apps/inventory/api\_routes.py                                                                           |       64 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/inventory/app.py                                                                                   |        5 |        0 |        0 |        0 |    100% |           |
@@ -310,7 +310,7 @@
 | app/sep/sync/models.py                                                                                          |      368 |       42 |      100 |       20 |     85% |81-90, 102-\>104, 104-\>106, 125, 131-\>133, 134-\>136, 195-\>201, 273-275, 304-\>302, 336, 396-397, 544, 592, 698-\>exit, 716, 730, 750-751, 786-\>exit, 831, 845, 867-868, 904-\>exit, 949, 962, 986-988, 1021-\>exit, 1130-\>exit, 1169, 1313-1315, 1422-1424, 1429-1435, 1439 |
 | app/sep/sync/syncers/mysql/payload.py                                                                           |      175 |       47 |       54 |        5 |     69% |156-\>164, 240-244, 249-254, 267-273, 277-300, 354-\>370, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                            |      222 |        1 |       86 |        8 |     97% |112, 268-\>270, 272-\>274, 586-\>594, 595-\>599, 676-\>687, 762-\>766, 764-\>763 |
-| app/sep/sync/syncers/pmm.py                                                                                     |       85 |       21 |       28 |        6 |     69% |78-82, 102-105, 116, 171-179, 227, 229, 231-247, 286-289 |
+| app/sep/sync/syncers/pmm.py                                                                                     |       85 |       19 |       28 |        6 |     71% |78-82, 102-105, 116, 171-179, 227, 229, 231-247, 285-\>290 |
 | app/sep/sync/syncers/system\_facts/payload.py                                                                   |      235 |       19 |       78 |       12 |     90% |52-\>58, 147-148, 176, 222-224, 231, 233-\>229, 244-251, 261-\>263, 263-\>265, 265-\>267, 282-284, 290-292, 316, 415-\>417, 417-\>419, 522, 533 |
 | app/sep/sync/syncers/system\_facts/syncer.py                                                                    |      118 |        7 |       28 |        3 |     93% |104, 169-170, 245, 256-\>254, 310-311, 350 |
 | app/sep/tasks.py                                                                                                |       31 |        0 |       12 |        1 |     98% |   69-\>84 |
@@ -391,7 +391,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       55 |        4 |       12 |        3 |     90% |61-65, 108-\>110, 130-133 |
 | app/tasks/routes.py                                                                                             |      227 |       28 |       44 |        2 |     87% |140-144, 201, 222-228, 261, 317, 324, 368-369, 397, 437, 456, 596, 620, 633-634, 642-645, 668, 675, 681, 697-698 |
 | app/tasks/settings/routes.py                                                                                    |       11 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **24949** | **2648** | **5920** |  **586** | **87%** |           |
+| **TOTAL**                                                                                                       | **24963** | **2647** | **5928** |  **587** | **87%** |           |
 
 
 ## Setup coverage badge
