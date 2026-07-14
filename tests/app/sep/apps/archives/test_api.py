@@ -22,6 +22,7 @@ overrides only the Tasks-API / Inventory-API boundaries, never the create-body
 dep) with the collapsed one-of create body.
 """
 
+from collections.abc import Sequence
 from typing import Any
 
 import pytest
@@ -31,6 +32,7 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.archives import app as archives_app
 from app.sep.apps.archives.models import ArchivesCreate
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.factories import MOCK_DESTINATION_TABLE_ID
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
@@ -69,6 +71,33 @@ def client(regular_user: CasdoorUser) -> Any:
     """Return an authenticated contract client with a seeded archive task."""
     tasks_api = MockTaskAPI()
     tasks_api.seed_task(_SEEDED, owner="ARCHIVER")
+    return build_contract_client(
+        archives_app,
+        user=regular_user,
+        tasks_api=tasks_api,
+        inventory_api=_inventory(),
+    )
+
+
+def _seeded_client(
+    regular_user: CasdoorUser,
+    *,
+    statuses: Sequence[TaskHistoryStatusEnum] = (),
+    protected: bool = False,
+) -> Any:
+    """Return a contract client whose seeded archive task carries the given state.
+
+    :param regular_user: The authenticated user the client acts as.
+    :param statuses: Execution statuses seeded on the task's history (RUNNING trips
+        the framework default conflict guard).
+    :param protected: Whether the seeded task is protected (trips the default
+        protected-task guard).
+    :return: An authenticated contract client for the archives app.
+    """
+    tasks_api = MockTaskAPI()
+    tasks_api.seed_task(
+        _SEEDED, owner=archives_app.owner, statuses=statuses, protected=protected
+    )
     return build_contract_client(
         archives_app,
         user=regular_user,
@@ -175,3 +204,31 @@ class TestArchivesApiUpdateDelete:
     def test_delete_unknown_returns_404(self, client: Any) -> None:
         """Return 404 when deleting an unknown task."""
         assert client.delete(f"{_BASE}/nope").status_code == status.HTTP_404_NOT_FOUND
+
+    def test_update_running_task_returns_409(self, regular_user: CasdoorUser) -> None:
+        """Reject a PUT that would edit a task with a running execution."""
+        client = _seeded_client(regular_user, statuses=(TaskHistoryStatusEnum.RUNNING,))
+        response = client.put(
+            f"{_BASE}/{_SEEDED}", json=_create_body(task_name=_SEEDED)
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_delete_running_task_returns_409(self, regular_user: CasdoorUser) -> None:
+        """Reject a DELETE of a task with a running execution."""
+        client = _seeded_client(regular_user, statuses=(TaskHistoryStatusEnum.RUNNING,))
+        response = client.delete(f"{_BASE}/{_SEEDED}")
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_update_protected_task_returns_409(self, regular_user: CasdoorUser) -> None:
+        """Reject a PUT that would edit a protected task."""
+        client = _seeded_client(regular_user, protected=True)
+        response = client.put(
+            f"{_BASE}/{_SEEDED}", json=_create_body(task_name=_SEEDED)
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_delete_protected_task_returns_409(self, regular_user: CasdoorUser) -> None:
+        """Reject a DELETE of a protected task."""
+        client = _seeded_client(regular_user, protected=True)
+        response = client.delete(f"{_BASE}/{_SEEDED}")
+        assert response.status_code == status.HTTP_409_CONFLICT

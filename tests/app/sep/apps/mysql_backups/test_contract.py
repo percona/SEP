@@ -88,6 +88,14 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
     app_def = mysql_backups_app
     remapped_username = None
 
+    def _valid_update_body(self, *, task_name: str) -> dict[str, Any] | None:
+        """Return the gated valid PUT body; the generic Polyfactory body 422s here.
+
+        :param task_name: The task name stamped into the body.
+        :return: A valid gated update body resolving against the kit mocks.
+        """
+        return _valid_body(task_name=task_name)
+
     def test_create_201(self, contract_client: Any, mock_task_api: Any) -> None:
         """Create a task via a real JSON POST with a valid gated body, returning 201."""
         base = app_base_url(self.app_def)
