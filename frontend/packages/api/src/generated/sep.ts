@@ -5265,16 +5265,16 @@ export interface components {
      *     model defaults match the previous hand-written request body; the form-display
      *     defaults that differ from the model default are carried on ``Ui(default=...)``.
      *
-     *     Field declaration order is load-bearing. The framework assembles the
-     *     ``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)
-     *     followed by all flag args (in field order), and derives the form section order
-     *     (Task, Data, Recursion, Flags, Advanced) from each section's first field — so
-     *     the order here reproduces the historical arg string byte-for-byte. ``progress``
-     *     is declared last to land at the end of the value args, and ``Ui(order=...)``
-     *     pins the Advanced section's display order where it diverges from declaration
-     *     order. The ``task_name`` / ``hostname`` Task-section fields and the
-     *     ``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`
-     *     (``alert_on_fail`` is ``Hidden``, off-schema).
+     *     Field declaration order is load-bearing. The spec builder assembles
+     *     ``--databases`` / ``--tables`` from the multi-value reference fields, then the
+     *     framework's ``build_command_args`` emits the remaining ``ArgFormat`` value args
+     *     (in field order) followed by all flag args (in field order). Section order
+     *     (Task, Data, Recursion, Flags, Advanced) follows each section's first field.
+     *     ``progress`` is declared last to land at the end of the value args, and
+     *     ``Ui(order=...)`` pins the Advanced section's display order where it diverges
+     *     from declaration order. The ``task_name`` / ``hostname`` Task-section fields
+     *     and the ``alert_on_fail`` capability control are inherited from
+     *     :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).
      */
     checksums__ChecksumsForm: {
       /**
@@ -5292,11 +5292,8 @@ export interface components {
        * @default
        */
       chunk_time: string;
-      /**
-       * Databases
-       * @default
-       */
-      databases: string;
+      /** Databases */
+      databases?: (number | string)[];
       /**
        * Dsn Table
        * @default
@@ -5346,11 +5343,8 @@ export interface components {
        * @default
        */
       set_vars: string;
-      /**
-       * Tables
-       * @default
-       */
-      tables: string;
+      /** Tables */
+      tables?: (number | string)[];
       /** Task Name */
       task_name: string;
       /**
