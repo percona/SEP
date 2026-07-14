@@ -29,7 +29,7 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from aiohttp import (
     ClientError,
@@ -44,7 +44,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.celery.models import IntervalSchedule
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
-from app.core.settings_override.registry import hot_field, ReloadClassification
+from app.core.settings_override.registry import (
+    hot_field,
+    InheritedMarkers,
+    ReloadClassification,
+    REMOTE_API_TLS_MARKERS,
+)
 from app.core.utils import (
     async_run,
     b64decode_str,
@@ -53,7 +58,6 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
-from app.core.utils.fields import RelativeFilePathField
 from app.core.utils.pydantic import field_with_metadata
 from app.tasks import config as tasks_config
 from app.tasks.anonymizer import anonymize_text
@@ -292,22 +296,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         Defaults to 5.
     :param terminal_log_drain_interval: Seconds to wait before each post-terminal
         drain re-fetch, giving ``logmon`` time to flush the tail. Defaults to 0.5.
+    :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
+        fields (``verify_ssl`` and the ``ssl_*`` paths) HOT and ``advanced``
+        without redeclaring them; set to the shared :data:`REMOTE_API_TLS_MARKERS`.
     """
 
-    # TLS leaves are inherited from ``BaseRemoteAPI`` (frozen); redeclared here
-    # solely to attach the display-only ``advanced`` marker per leaf. ``endpoint``
-    # is intentionally left inherited and unmarked. ``frozen=True`` is preserved so
-    # the executor's identity hash is unchanged.
-    verify_ssl: bool = hot_field(default=True, advanced=True, frozen=True)
-    ssl_cafile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
-    ssl_keyfile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
-    ssl_certfile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
+    # Overlay, not redeclaration: redeclaring would drop the inherited frozen
+    # ``FieldInfo`` and force ``frozen=True`` repeated. ``endpoint`` left unmarked.
+    # Reuses the shared TLS overlay so every remote-api model marks these the same.
+    INHERITED_MARKERS: ClassVar[InheritedMarkers] = REMOTE_API_TLS_MARKERS
     secure: bool = hot_field(default=False, advanced=True)
     timeout: int = hot_field(10, advanced=True)
     minify_payload: bool = hot_field(default=True, advanced=True)
