@@ -80,9 +80,18 @@ class AppRegistry:
         """Reject self-dependencies, dangling deps, and cycles at build time.
 
         :raises ValueError: When a ``requires_apps`` entry names the app itself,
-            names an unregistered key, or participates in a dependency cycle.
+            names an unregistered key, participates in a dependency cycle, or is
+            declared alongside ``child_apps`` (unsupported -- children resolve
+            their own state through the parent's ``state_key`` but do not inherit
+            the parent's ``requires_apps``, so gating the parent would leave its
+            children reachable).
         """
         for app in self._apps:
+            if app.child_apps and app.requires_apps:
+                raise ValueError(
+                    f"App {app.key!r} combines child_apps with requires_apps, "
+                    "which is not supported.",
+                )
             for dep_key in app.requires_apps:
                 if dep_key == app.key:
                     raise ValueError(

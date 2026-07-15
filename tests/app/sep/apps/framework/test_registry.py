@@ -858,6 +858,31 @@ class TestRequiresAppsValidation:
         registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
         assert registry.keys() == ["a", "b"]
 
+    def test_child_apps_with_requires_apps_raises(self) -> None:
+        """Reject combining ``child_apps`` with ``requires_apps``.
+
+        A child resolves its own state through the parent's ``state_key`` but does
+        not inherit the parent's ``requires_apps``, so the combination would leave
+        a child reachable while its parent is gated -- reject it until supported.
+        """
+        child = BaseApp(
+            key="parent_app/sub",
+            name="sub",
+            display_name="Sub",
+            uri_path="/parent_app/sub",
+            parent_key="parent_app",
+        )
+        parent = BaseApp(
+            key="parent_app",
+            name="parent_app",
+            display_name="Parent App",
+            uri_path="/parent_app",
+            child_apps=(child,),
+            requires_apps=("dep",),
+        )
+        with pytest.raises(ValueError, match="child_apps"):
+            AppRegistry([parent, _dep_app("dep")])
+
 
 class TestEffectiveEnabled:
     """Cover the centralized effective-enabled resolver."""
