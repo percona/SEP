@@ -29,7 +29,7 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from aiohttp import (
     ClientError,
@@ -44,7 +44,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.celery.models import IntervalSchedule
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
-from app.core.settings_override.registry import hot_field, ReloadClassification
+from app.core.settings_override.registry import (
+    hot_field,
+    InheritedMarkers,
+    ReloadClassification,
+    REMOTE_API_TLS_MARKERS,
+)
 from app.core.utils import (
     async_run,
     b64decode_str,
@@ -53,7 +58,6 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
-from app.core.utils.fields import RelativeFilePathField
 from app.core.utils.pydantic import field_with_metadata
 from app.tasks import config as tasks_config
 from app.tasks.anonymizer import anonymize_text
@@ -260,59 +264,54 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     :param wait_interval: The interval in seconds between status checks.
         Defaults to 5 seconds.
-    :type wait_interval: int
     :param endpoint: The base URL for the external API endpoint.
-    :type endpoint: HttpUrl
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
-    :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to ``__name__``.
-    :type logger_name: str
     :param secure: Whether to use a secure connection. Defaults to False.
-    :type secure: bool
     :param timeout: The timeout in seconds for requests to the Nomad API.
         Defaults to 10 seconds.
-    :type timeout: int
     :param minify_payload: Whether to minify payloads before dispatching Parameterized
         Jobs. Defaults to True.
-    :type minify_payload: bool
     :param log_socket_read_timeout: Socket read timeout in seconds for log streaming.
         Defaults to 10.
-    :type log_socket_read_timeout: int
     :param cert_expiry_warn_days: Number of days before ``not_valid_after`` when
         Nomad TLS cert expiry alerts should fire. Used by the periodic
         ``check_nomad_cert_expiry`` task. Defaults to 7.
-    :type cert_expiry_warn_days: int
     :param check_cert_expiry_interval: Beat schedule for ``check_nomad_cert_expiry``
         (e.g. once per day). Set to ``None`` to skip registering the periodic task
         in ``app.tasks.db.seed`` (Celery beat will not run the check).
-    :type check_cert_expiry_interval: IntervalSchedule | None
+    :param terminal_log_drain_max_attempts: Number of bounded re-fetch attempts
+        after terminal detection to drain any stdout/stderr tail Nomad's
+        ``logmon`` flushes shortly after the task finishes. Each attempt waits
+        ``terminal_log_drain_interval`` seconds, then re-reads from the persisted
+        offsets. Each finishing task adds up to
+        ``terminal_log_drain_max_attempts * terminal_log_drain_interval`` seconds
+        to its terminal sync, run inline within the Celery beat cycle, so lower
+        this for large fleets where many tasks finish in the same beat and the
+        added latency would otherwise approach the beat cadence. Set to ``0`` to
+        disable the drain (behaviour identical to the pre-drain terminal sync).
+        Defaults to 5.
+    :param terminal_log_drain_interval: Seconds to wait before each post-terminal
+        drain re-fetch, giving ``logmon`` time to flush the tail. Defaults to 0.5.
+    :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
+        fields (``verify_ssl`` and the ``ssl_*`` paths) HOT and ``advanced``
+        without redeclaring them; set to the shared :data:`REMOTE_API_TLS_MARKERS`.
     """
 
-    # TLS leaves are inherited from ``BaseRemoteAPI`` (frozen); redeclared here
-    # solely to attach the display-only ``advanced`` marker per leaf. ``endpoint``
-    # is intentionally left inherited and unmarked. ``frozen=True`` is preserved so
-    # the executor's identity hash is unchanged.
-    verify_ssl: bool = hot_field(default=True, advanced=True, frozen=True)
-    ssl_cafile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
-    ssl_keyfile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
-    ssl_certfile: RelativeFilePathField | None = hot_field(
-        None, advanced=True, frozen=True
-    )
+    # Overlay, not redeclaration: redeclaring would drop the inherited frozen
+    # ``FieldInfo`` and force ``frozen=True`` repeated. ``endpoint`` left unmarked.
+    # Reuses the shared TLS overlay so every remote-api model marks these the same.
+    INHERITED_MARKERS: ClassVar[InheritedMarkers] = REMOTE_API_TLS_MARKERS
     secure: bool = hot_field(default=False, advanced=True)
     timeout: int = hot_field(10, advanced=True)
     minify_payload: bool = hot_field(default=True, advanced=True)
     log_socket_read_timeout: int = hot_field(10, advanced=True)
     cert_expiry_warn_days: int = hot_field(7, ge=1, advanced=True)
+    terminal_log_drain_max_attempts: int = hot_field(5, ge=0, advanced=True)
+    terminal_log_drain_interval: float = hot_field(0.5, gt=0, advanced=True)
     check_cert_expiry_interval: IntervalSchedule | None = field_with_metadata(
         metadata={"reload": ReloadClassification.HOT, "advanced": True},
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
@@ -1047,7 +1046,75 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             force_flush=force_flush,
         )
         if force_flush:
+            await self._drain_terminal_logs(
+                writer_session, queue_item, alloc, alloc_epoch
+            )
             await self._force_flush_remaining_streams(writer_session, queue_item.id)
+
+    async def _drain_terminal_logs(
+        self,
+        writer_session: AsyncSession,
+        queue_item: TaskHistory,
+        alloc: dict[str, Any],
+        alloc_epoch: int,
+    ) -> None:
+        """Fetch Nomad logs after terminal detection until every stream is quiet.
+
+        Nomad's ``logmon`` flushes stdout/stderr to the readable log file
+        asynchronously, so the single terminal fetch in
+        :meth:`_persist_nomad_task_logs` can miss a tail ``logmon`` had not yet
+        written, most visibly the burst of output right before process exit.
+        This bounded loop gives ``logmon`` a short interval to catch up, then
+        re-reads from the persisted ``TaskHistoryLogState`` cursors, repeating
+        until every started ``(step, stream)`` has advanced at least once and
+        then gone quiet, or ``terminal_log_drain_max_attempts`` is reached. The
+        writer's producer-offset dedup keeps every re-fetch idempotent, so an
+        overlapping read cannot double-write.
+
+        Advancement is tracked per stream, not per task: the loop early-exits
+        only once every candidate stream has itself advanced-then-quieted. A
+        stream that has not yet produced anything keeps the loop polling to the
+        attempt cap, so a stream whose first post-terminal flush lands after a
+        sibling stream already drained is not dropped, and a task that writes to
+        only one stream polls the full window (correctness over latency; the
+        window is ``hot``-tunable).
+
+        :param writer_session: The dedicated log writer session.
+        :param queue_item: The terminal task history record being drained.
+        :param alloc: The current Nomad allocation dict.
+        :param alloc_epoch: The allocation's ``CreateIndex``, threaded into each
+            write so a superseded allocation's bytes are discarded.
+        """
+        advanced = set()
+        candidates = set()
+        for _ in range(self.terminal_log_drain_max_attempts):
+            await asyncio.sleep(self.terminal_log_drain_interval)
+            initial_offsets = await self._build_initial_log_offsets(
+                writer_session, queue_item.id, alloc_epoch
+            )
+            task_logs = self.get_logs_for_allocation(
+                alloc, initial_offsets, queue_item.anonymized_entities
+            )
+            candidates.update(
+                (step, log_type) for step in task_logs for log_type in TaskLogType
+            )
+            produced = {
+                (step, log_type)
+                for step in task_logs
+                for log_type in TaskLogType
+                if task_logs[step].get(log_type)
+            }
+            if produced:
+                advanced |= produced
+                await self._write_nomad_deltas(
+                    writer_session,
+                    queue_item.id,
+                    alloc_epoch,
+                    task_logs,
+                    force_flush=True,
+                )
+            elif advanced == candidates:
+                return
 
     @staticmethod
     async def _build_initial_log_offsets(

@@ -4087,7 +4087,7 @@
         ]
       },
       "post": {
-        "description": "Create an alters task group from a JSON payload request body.\n\nPOSTs the parent execute task, dry-run derived sibling, and pre-checks\npredecessor. Pre-checks are started manually from the detail page.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics — an unchecked box\n    submits no field); this asymmetry is intentional.\n:type check_connectivity: bool",
+        "description": "Create an alters task group from a JSON payload request body.",
         "operationId": "alters_alters_api_create_api_apps_alters__post",
         "parameters": [
           {

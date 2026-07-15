@@ -62,6 +62,8 @@ __all__ = [
     "ServiceRef",
     "TableRef",
     "Ui",
+    "find_arg_format",
+    "resolve_arg_template",
 ]
 
 
@@ -164,6 +166,43 @@ class ArgFormat:
     """
 
     template: str | None = None
+
+
+def find_arg_format(name: str, metadata: list[Any]) -> ArgFormat | None:
+    """Return the field's single :class:`ArgFormat` marker, or ``None``.
+
+    :param name: The field name, used in the error message.
+    :param metadata: The field's ``FieldInfo.metadata`` list.
+    :return: The ``ArgFormat`` marker, or ``None`` when the field declares none.
+    :raises ValueError: When the field declares more than one ``ArgFormat`` marker.
+    """
+    found = [item for item in metadata if isinstance(item, ArgFormat)]
+    if len(found) > 1:
+        raise ValueError(
+            f"field {name!r} declares {len(found)} ArgFormat markers; at most one "
+            "is allowed per field"
+        )
+    return found[0] if found else None
+
+
+def resolve_arg_template(name: str, annotation: Any, marker: ArgFormat) -> str:
+    """Return the field's explicit ``ArgFormat`` template, or derive it from the name.
+
+    A templateless marker (``template is None``) derives the conventional shape from
+    the field name and type: a non-``bool`` field becomes the value arg
+    ``--<kebab-field-name>=${value}`` and a ``bool`` field becomes the flag
+    ``--<kebab-field-name>``. A field declares an explicit template only when its CLI
+    spelling diverges from its name.
+
+    :param name: The field name, kebab-cased for the derived template.
+    :param annotation: The field's resolved type, selecting the value-vs-flag shape.
+    :param marker: The field's ``ArgFormat`` marker.
+    :return: The explicit template, or the derived default when none was given.
+    """
+    if marker.template is not None:
+        return marker.template
+    flag = "--" + name.replace("_", "-")
+    return flag if annotation is bool else f"{flag}=${{value}}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,6 +426,12 @@ class SectionLayout:
         """Normalise ``forbidden`` to a tuple so the layout stays hashable."""
         if self.forbidden is not None:
             object.__setattr__(self, "forbidden", tuple(self.forbidden))
+
+
+#: Shared Task-section layout adopted by every task app's ``FormLayout`` and the
+#: task scaffold template. Frozen (see :class:`SectionLayout`), so this single
+#: instance is safe to reference directly.
+TASK_SECTION_LAYOUT = SectionLayout(key="Task", title="Task")
 
 
 @dataclass(frozen=True, slots=True)

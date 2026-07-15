@@ -394,7 +394,7 @@ def test_task_flavor_scaffolds_conformant_app(
         base = app_base_url(app)
 
         assert client.get(f"{base}/schema").status_code == status.HTTP_200_OK
-        assert isinstance(client.get(f"{base}/").json(), list)
+        assert "items" in client.get(f"{base}/").json()
         body = build_valid_create_body(app)
         assert client.post(f"{base}/", json=body).status_code == status.HTTP_201_CREATED
 

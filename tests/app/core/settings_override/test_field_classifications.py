@@ -42,11 +42,13 @@ from app.tasks.execution.executors.nomad.models import NomadExecutor
 
 
 def _reload(cls: type, field: str) -> ReloadClassification:
-    return field_reload_classification(cls.model_fields[field])
+    return field_reload_classification(
+        cls.model_fields[field], owner_cls=cls, field_name=field
+    )
 
 
 def _advanced(cls: type, field: str) -> bool:
-    return is_advanced_field(cls.model_fields[field])
+    return is_advanced_field(cls.model_fields[field], owner_cls=cls, field_name=field)
 
 
 class TestReclassification:
@@ -118,8 +120,9 @@ class TestAdvancedMarkers:
         )
 
     def test_nomad_frozen_tls_leaves_preserved(self) -> None:
-        """Assert redeclared inherited TLS leaves keep ``frozen`` for hash stability."""
-        # Redeclaring inherited TLS leaves must preserve ``frozen`` so the
+        """Assert the inherited TLS leaves keep ``frozen`` for hash stability."""
+        # The TLS leaves are marked via ``INHERITED_MARKERS`` rather than
+        # redeclared, so they keep ``BaseRemoteAPI``'s ``frozen=True`` and the
         # executor identity hash is unchanged.
         for field in ("verify_ssl", "ssl_cafile", "ssl_keyfile", "ssl_certfile"):
             assert NomadExecutor.model_fields[field].frozen is True
