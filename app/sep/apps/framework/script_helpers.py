@@ -80,7 +80,7 @@ def build_execution_meta(
     :param sudo_default: The fallback when the arguments lack a sudo field.
     :return: The assembled execution meta.
     """
-    if script.sudo == SnippetSudoOption.ALWAYS or getattr(
+    if script.sudo is SnippetSudoOption.ALWAYS or getattr(
         execution_args, execution_args.sudo_field, sudo_default
     ):
         interpreter = f"sudo {interpreter}"
@@ -114,9 +114,7 @@ def build_artifact_download_url(
     :raises HTTPBadRequestException: When ``request`` is ``None`` and neither
         ``SNIPPETS_BASE_URL`` nor ``BASE_URL`` is configured.
     """
-    if request is not None:
-        base_url = snippets_settings.SNIPPETS_BASE_URL or get_base_url(request)
-    else:
+    if request is None:
         base_url = snippets_settings.SNIPPETS_BASE_URL or settings.BASE_URL
         if base_url is None:
             raise HTTPBadRequestException(
@@ -124,6 +122,8 @@ def build_artifact_download_url(
                     "Snippet execution requires SNIPPETS_BASE_URL or BASE_URL to be set."
                 ),
             )
+    else:
+        base_url = snippets_settings.SNIPPETS_BASE_URL or get_base_url(request)
     token = crypto_timestamp_serializer.dumps(
         {"type": artifact_type, "filename": filename, "md5": md5_digest},
         salt=ARTIFACT_DOWNLOAD_SALT,
