@@ -23,6 +23,10 @@ from pydantic import ConfigDict, Field, model_validator
 from app.core.models import BaseLowercaseModel
 from app.core.utils.fields import StrCredentialAnyUrl, StrDatabaseUrl, StrRelativePath
 
+#: Service modules seeding the Celery ``include`` base. Not ``SEP.APPS`` apps, so
+#: they are not registry-derived; ``build_celery_include`` prepends them.
+STATIC_CELERY_INCLUDE: tuple[str, ...] = ("app.tasks.celery",)
+
 
 class CeleryOptions(BaseLowercaseModel):
     """Define configuration settings for Celery.
@@ -73,15 +77,14 @@ class CeleryOptions(BaseLowercaseModel):
 
     @model_validator(mode="after")
     def set_include(self) -> Self:
-        """Ensure 'include' is set in the options.
+        """Seed ``include`` with the static service base.
 
-        :return: Validated options.
-        :rtype: CeleryOptions
+        Reaching the app registry here would force ``sep_settings`` mid-construction,
+        re-entering the same un-guarded lazy proxy that is building this ``Settings``.
+        The registry-derived app modules are appended later, at a safe seam, via
+        :func:`app.sep.apps.framework.registry.build_celery_include`.
+
+        :return: Validated options with the static include base set.
         """
-        self.include = [
-            "app.tasks.celery",
-            "app.sep.apps.snippets.celery",
-            "app.sep.apps.alerts.celery",
-            "app.sep.apps.report.celery",
-        ]
+        self.include = list(STATIC_CELERY_INCLUDE)
         return self

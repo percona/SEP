@@ -130,7 +130,6 @@ function ApproveButton({
       <Tooltip title="Remove approval">
         <Button
           size="small"
-          color="warning"
           startIcon={isPending ? spinner : <RemoveCircleOutlineIcon />}
           disabled={isPending}
           onClick={(e) => {
@@ -149,7 +148,6 @@ function ApproveButton({
       <Tooltip title="Approve snippet">
         <Button
           size="small"
-          color="success"
           startIcon={isPending ? spinner : <CheckCircleOutlineIcon />}
           disabled={isPending || !hasDownloaded}
           onClick={(e) => {
@@ -171,7 +169,7 @@ function ApproveButton({
         <DialogActions>
           <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
           <Button
-            color="success"
+            variant="contained"
             onClick={() => {
               setConfirmOpen(false);
               approve.mutate();
@@ -403,7 +401,6 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         <Box sx={{ mb: 2 }}>
           <Button
             variant="contained"
-            color="success"
             onClick={() => setBatchConfirmOpen(true)}
             disabled={batchApprove.isPending}
           >
@@ -422,7 +419,11 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setBatchConfirmOpen(false)}>Cancel</Button>
-          <Button color="success" onClick={handleBatchApprove} disabled={batchApprove.isPending}>
+          <Button
+            variant="contained"
+            onClick={handleBatchApprove}
+            disabled={batchApprove.isPending}
+          >
             Approve selected
           </Button>
         </DialogActions>
@@ -465,7 +466,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         <DialogActions>
           <Button onClick={() => setRefreshConfirmOpen(false)}>Cancel</Button>
           <Button
-            color="primary"
+            variant="contained"
             disabled={refresh.isPending}
             onClick={() => {
               setRefreshConfirmOpen(false);

@@ -36,6 +36,7 @@ from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
 from app.core.utils.openapi import merge_openapi_documents
 from app.inventory.main import inventory_app, inventory_overrides_lifespan
+from app.sep.apps.framework.registry import build_celery_include
 from app.sep.config import sep_settings
 from app.sep.main import sep_app, sep_overrides_lifespan, sep_startup
 from app.tasks.main import tasks_app, tasks_lifespan
@@ -181,14 +182,7 @@ app.mount("/", sep_app)
 
 def start_celery_worker() -> None:
     """Start the Celery worker process."""
-    worker = celery_app.Worker(
-        include=[
-            "app.tasks.celery",
-            "app.sep.apps.snippets.celery",
-            "app.sep.apps.alerts.celery",
-            "app.sep.apps.report.celery",
-        ],
-    )
+    worker = celery_app.Worker(include=build_celery_include())
     worker.start()
 
 

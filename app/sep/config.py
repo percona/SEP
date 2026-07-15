@@ -42,6 +42,7 @@ from pydantic import (
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
+from app import BASE_DIR
 from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
@@ -75,6 +76,20 @@ from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 logger = logging.getLogger(__name__)
 
 _LEGACY_BACKUP_MODULE_NAMES = frozenset({"backup", "backups"})
+
+
+def _module_or_package_exists(target: Path) -> bool:
+    """Return whether ``target`` names a module file or package directory.
+
+    Probe the filesystem instead of importing, so settings-construction validators
+    can confirm a dotted path resolves without triggering circular imports through
+    plugin ``__init__`` modules.
+
+    :param target: The import path rendered as a filesystem path, extension omitted.
+    :return: ``True`` when a ``target/__init__.py`` package or ``target.py`` module
+        file exists on disk.
+    """
+    return (target / "__init__.py").is_file() or target.with_suffix(".py").is_file()
 
 
 class App(BaseCaseInsensitiveModel):
@@ -120,6 +135,22 @@ class App(BaseCaseInsensitiveModel):
           imported.
         * **Explicit ``null``** — opt the plugin out of the JSON API mount,
           even if a conventional module exists.
+    :param celery_module_path: Optional dot-separated import path to the plugin's
+        Celery task module (e.g. ``"app.sep.apps.snippets.celery"``). The path is a
+        *module*, not an attribute, so it feeds the worker ``include`` list rather
+        than being resolved to an object. Three input states, mirroring
+        ``api_router_path``:
+
+        * **Field omitted** — auto-derive ``<module_name>.celery`` when the plugin
+          ships a ``celery.py`` (convention).
+        * **Explicit string** — use as-is, filesystem-probed for existence during
+          settings construction (import-free, like ``module_name``) so a typo fails
+          at load rather than only when the Celery worker imports it. The path is a
+          trusted operator setting at the same trust level as
+          ``module_name``/``api_router_path`` and is not confined to the plugin's
+          own package.
+        * **Explicit ``null``** — opt the plugin out of the Celery include list,
+          even if a conventional ``celery.py`` exists.
     """
 
     name: str | None = None
@@ -133,6 +164,7 @@ class App(BaseCaseInsensitiveModel):
     nav_icon: NavIcon | None = None
     enabled: bool = True
     api_router_path: StrImportableAttribute | None = None
+    celery_module_path: str | None = None
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, App):
@@ -184,7 +216,7 @@ class App(BaseCaseInsensitiveModel):
         """
         relative = v.removeprefix("app.sep.apps.")
         target = Path(__file__).parent / "apps" / Path(*relative.split("."))
-        if (target / "__init__.py").is_file() or target.with_suffix(".py").is_file():
+        if _module_or_package_exists(target):
             return v
         raise ValueError(f"No module named {v}")
 
@@ -226,6 +258,52 @@ class App(BaseCaseInsensitiveModel):
         if candidate_file.is_file():
             self.api_router_path = f"{self.module_name}.api_routes.router"
         return self
+
+    @model_validator(mode="after")
+    def _default_celery_module_from_convention(self) -> Self:
+        """Auto-derive ``celery_module_path`` from ``module_name`` when not set.
+
+        Run only when the field was not present in the input data. ``None`` in the
+        input is a deliberate opt-out and is preserved.
+
+        Probe by filesystem, not by import, so this validator can run during
+        settings construction without triggering circular imports through plugin
+        ``__init__`` modules -- exactly as ``_default_api_router_from_convention``
+        does for ``api_routes.py``.
+
+        :return: ``self`` with ``celery_module_path`` populated when the plugin
+            module ships a ``celery.py`` file.
+        """
+        if "celery_module_path" in self.model_fields_set:
+            return self
+        relative = self.module_name.removeprefix("app.sep.apps.")
+        candidate_file = (
+            Path(__file__).parent / "apps" / Path(*relative.split(".")) / "celery.py"
+        )
+        if candidate_file.is_file():
+            self.celery_module_path = f"{self.module_name}.celery"
+        return self
+
+    @model_validator(mode="after")
+    def _validate_celery_module_exists(self) -> Self:
+        """Confirm ``celery_module_path`` resolves to a module file on disk.
+
+        The convention-derived path is set only after its own filesystem probe, but
+        an explicit override skips that check, so a typo would surface only when the
+        Celery worker tries to import the module. Probe by filesystem (import-free,
+        consistent with ``validate_module_exists``) so a bad override fails during
+        settings construction instead. The path is repo-root-relative, so an
+        override is not confined to the plugin's own package.
+
+        :return: ``self`` unchanged when the path exists or is unset.
+        :raises ValueError: When the path names no module file or package on disk.
+        """
+        if self.celery_module_path is None:
+            return self
+        target = BASE_DIR / Path(*self.celery_module_path.split("."))
+        if _module_or_package_exists(target):
+            return self
+        raise ValueError(f"No module named {self.celery_module_path}")
 
     @computed_field
     @property

@@ -218,7 +218,6 @@ function RestoreFlow({ backups, onClose }: RestoreFlowProps) {
         <Button
           type="submit"
           variant="contained"
-          color="warning"
           disabled={restoreMutation.isPending || selectedId === null || backups.length === 0}
           startIcon={restoreMutation.isPending ? <CircularProgress size={16} /> : undefined}
         >
@@ -319,7 +318,6 @@ function PagerDutyFlow({ configured, onClose }: PagerDutyFlowProps) {
             </Typography>
             <Button
               variant="outlined"
-              color="error"
               size="small"
               sx={{ mt: 1 }}
               onClick={() => void onDelete()}

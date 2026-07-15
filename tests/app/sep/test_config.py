@@ -226,6 +226,51 @@ class TestPluginReactRoute:
             App(module_name="backup_pg", react_route="backups/postgresql")
 
 
+class TestAppCeleryModulePath:
+    """Cover the ``App.celery_module_path`` three-state convention (like ``api_router_path``)."""
+
+    def test_auto_derives_when_app_ships_celery_module(self) -> None:
+        """Auto-derive ``<module_name>.celery`` when the app ships a ``celery.py``."""
+        plugin = App(module_name="snippets")
+        assert plugin.celery_module_path == "app.sep.apps.snippets.celery"
+
+    def test_none_when_app_has_no_celery_module(self) -> None:
+        """Leave ``celery_module_path`` unset when the app ships no ``celery.py``."""
+        plugin = App(module_name="checksums")
+        assert plugin.celery_module_path is None
+
+    def test_explicit_string_override_is_used_verbatim(self) -> None:
+        """Use an explicit, existing string as-is, bypassing the convention probe.
+
+        The override points at a real module outside the plugin's own package
+        (``app.tasks.celery``), proving the path is used verbatim and is not
+        confined to ``app/sep/apps/<module>/``.
+        """
+        plugin = App(module_name="checksums", celery_module_path="app.tasks.celery")
+        assert plugin.celery_module_path == "app.tasks.celery"
+
+    def test_explicit_missing_override_is_rejected(self) -> None:
+        """Reject an explicit override that names no module file on disk.
+
+        Validation is a filesystem probe during settings construction, so a typo
+        fails at load rather than only when the Celery worker imports the module.
+        """
+        with pytest.raises(ValidationError, match="No module named"):
+            App(module_name="checksums", celery_module_path="app.sep.apps.nope.celery")
+
+    def test_explicit_null_opts_out_even_with_celery_module(self) -> None:
+        """Opt out on an explicit ``None`` even when a conventional ``celery.py`` exists."""
+        plugin = App(module_name="snippets", celery_module_path=None)
+        assert plugin.celery_module_path is None
+
+    def test_legacy_alias_probes_remapped_module(self) -> None:
+        """Probe the ``mysql_backups`` remap target, which ships no ``celery.py``."""
+        with patch("app.sep.config.logger"):
+            plugin = App(name="MySQL Backups", module_name="backup")
+        assert plugin.module_name == "app.sep.apps.mysql_backups"
+        assert plugin.celery_module_path is None
+
+
 class TestAppDrainSettings:
     """The drain reconciler settings reject a non-positive stale-task TTL."""
 
