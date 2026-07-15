@@ -2593,6 +2593,37 @@
         "title": "OneOfGroup",
         "type": "object"
       },
+      "PaginatedResponse_BaseTaskResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BaseTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[BaseTaskResponse]",
+        "type": "object"
+      },
       "RelatedApp": {
         "additionalProperties": false,
         "description": "Declare a separately registered app surfaced as a sibling tab in the UI.\n\nConsumed by the React ``SchemaDrivenPlugin`` shell to mount a nested\nschema-driven flow for the related registry entry (for example\n``mysql_backups/restore``) under ``{route_base}/{route_segment}`` without\nre-merging the child app's API router into the parent.\n\n:param app_key: The scoped registry key of the related app (for example\n    ``mysql_backups/restore``).\n:type app_key: NonEmptyStr\n:param label: The human-readable tab label (for example ``Restore``).\n:type label: NonEmptyStr\n:param route_segment: The React sub-path segment under the parent's\n    ``route_base`` (for example ``restores``). Must be a single URL path\n    segment — no slashes — and must not be a reserved single-entity route\n    keyword (``new``, ``schedule``, ``task``).\n:type route_segment: NonEmptyStr",
@@ -3551,8 +3582,31 @@
   "paths": {
     "/api/apps/checksums/": {
       "get": {
-        "operationId": "checksums__list_api_apps_checksums__get",
+        "operationId": "checksums__list_paginated_api_apps_checksums__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "service_type",
@@ -3591,11 +3645,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/BaseTaskResponse"
-                  },
-                  "title": "Response Checksums  List Api Apps Checksums  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_BaseTaskResponse_"
                 }
               }
             },

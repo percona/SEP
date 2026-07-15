@@ -6957,6 +6957,37 @@
         "title": "PaginatedResponse[BackupSummary]",
         "type": "object"
       },
+      "PaginatedResponse_BaseTaskResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BaseTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[BaseTaskResponse]",
+        "type": "object"
+      },
       "PaginatedResponse_RestoreTaskResponse_": {
         "properties": {
           "items": {
@@ -7048,6 +7079,37 @@
           "limit"
         ],
         "title": "PaginatedResponse[ServiceResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse_SnippetResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SnippetResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[SnippetResponse]",
         "type": "object"
       },
       "PaginatedResponse_TaskHistoryResponse_": {
@@ -12446,8 +12508,31 @@
     },
     "/api/apps/archives/": {
       "get": {
-        "operationId": "archives__list_api_apps_archives__get",
+        "operationId": "archives__list_paginated_api_apps_archives__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "status",
@@ -12470,11 +12555,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/BaseTaskResponse"
-                  },
-                  "title": "Response Archives  List Api Apps Archives  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_BaseTaskResponse_"
                 }
               }
             },
@@ -13721,8 +13802,31 @@
     },
     "/api/apps/checksums/": {
       "get": {
-        "operationId": "checksums__list_api_apps_checksums__get",
+        "operationId": "checksums__list_paginated_api_apps_checksums__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "service_type",
@@ -13761,11 +13865,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/BaseTaskResponse"
-                  },
-                  "title": "Response Checksums  List Api Apps Checksums  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_BaseTaskResponse_"
                 }
               }
             },
@@ -15664,22 +15764,53 @@
     },
     "/api/apps/snippets/": {
       "get": {
-        "description": "List every discovered script as its list-row projection.",
+        "description": "List discovered scripts as a paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SnippetResponse"
-                  },
-                  "title": "Response Snippets Snippets Api List Api Apps Snippets  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_SnippetResponse_"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List",

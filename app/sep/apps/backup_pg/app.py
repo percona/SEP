@@ -34,7 +34,6 @@ guards; only the body-reading create running-conflict guard rides explicitly via
 ``jinja_router``; the registry does not.
 """
 
-from app.core.pagination.deps import make_pagination_dep
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.deps import (
     build_backup_pg_api_detail_response,
@@ -77,7 +76,6 @@ app = TaskExecutionApp(
     task_spec_builder=build_backup_pg_spec,
     capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.POSTGRESQL,
-    pagination=make_pagination_dep(),
     list_filter=ListFilterConfig(status=True),
     response_builder=build_backup_pg_api_task_response,
     detail_response_builder=build_backup_pg_api_detail_response,
