@@ -77,6 +77,20 @@ logger = logging.getLogger(__name__)
 _LEGACY_BACKUP_MODULE_NAMES = frozenset({"backup", "backups"})
 
 
+def _module_or_package_exists(target: Path) -> bool:
+    """Return whether ``target`` names a module file or package directory.
+
+    Probe the filesystem instead of importing, so settings-construction validators
+    can confirm a dotted path resolves without triggering circular imports through
+    plugin ``__init__`` modules.
+
+    :param target: The import path rendered as a filesystem path, extension omitted.
+    :return: ``True`` when a ``target/__init__.py`` package or ``target.py`` module
+        file exists on disk.
+    """
+    return (target / "__init__.py").is_file() or target.with_suffix(".py").is_file()
+
+
 class App(BaseCaseInsensitiveModel):
     """Represent a SEP plugin.
 
@@ -201,7 +215,7 @@ class App(BaseCaseInsensitiveModel):
         """
         relative = v.removeprefix("app.sep.apps.")
         target = Path(__file__).parent / "apps" / Path(*relative.split("."))
-        if (target / "__init__.py").is_file() or target.with_suffix(".py").is_file():
+        if _module_or_package_exists(target):
             return v
         raise ValueError(f"No module named {v}")
 
@@ -286,7 +300,7 @@ class App(BaseCaseInsensitiveModel):
         if self.celery_module_path is None:
             return self
         target = Path(__file__).parents[2] / Path(*self.celery_module_path.split("."))
-        if (target / "__init__.py").is_file() or target.with_suffix(".py").is_file():
+        if _module_or_package_exists(target):
             return self
         raise ValueError(f"No module named {self.celery_module_path}")
 

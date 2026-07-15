@@ -33,14 +33,6 @@ from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
 from app.sep.periodic_tasks import sync_app_periodic_task_gating
 from app.sep.snippets.config import snippets_settings
 
-_alerts_plugin_enabled = any(
-    p.module_name.endswith(".alerts") for p in sep_settings.APPS
-)
-
-_report_plugin_enabled = any(
-    p.module_name.endswith(".report") for p in sep_settings.APPS
-)
-
 
 def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     """Build the SEP system periodic-task set, reading live settings per call.
@@ -86,7 +78,7 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
             ),
         )
 
-    if _alerts_plugin_enabled and (alerts_celery := app_celery_module_for("alerts")):
+    if alerts_celery := app_celery_module_for("alerts"):
         from app.sep.apps.alerts.config import alerts_settings
 
         system_tasks.append(
@@ -102,7 +94,7 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
             ),
         )
 
-    if _report_plugin_enabled and (report_celery := app_celery_module_for("report")):
+    if report_celery := app_celery_module_for("report"):
         system_tasks.extend(_report_periodic_tasks(report_celery))
 
     return system_tasks

@@ -267,14 +267,6 @@ class TestCeleryDerivation:
         assert app_celery_module_for("report", apps) is None
         assert app_celery_module_for("nonexistent", apps) is None
 
-    def test_registry_exposes_ordered_module_paths(self) -> None:
-        """Mirror the derived ordered list on ``AppRegistry.celery_module_paths``."""
-        registry = build_app_registry(self._apps())
-        assert registry.celery_module_paths == [
-            "app.sep.apps.snippets.celery",
-            "app.sep.apps.alerts.celery",
-        ]
-
 
 class TestDefinitionCollection:
     """Tests for the future declarative-definition collection path."""

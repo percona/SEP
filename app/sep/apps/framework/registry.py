@@ -57,32 +57,14 @@ class AppRegistry:
 
     :param apps: The mounted apps, in activation order.
     :type apps: list[BaseApp]
-    :param celery_module_paths: The app-owned Celery module import paths, in
-        activation order; defaults to an empty list.
     """
 
-    def __init__(
-        self,
-        apps: list[BaseApp],
-        celery_module_paths: list[str] | None = None,
-    ) -> None:
+    def __init__(self, apps: list[BaseApp]) -> None:
         self._apps = apps
         self._by_key = {app.key: app for app in apps}
-        self._celery_module_paths = celery_module_paths or []
 
     def __iter__(self) -> Iterator[BaseApp]:
         return iter(self._apps)
-
-    @property
-    def celery_module_paths(self) -> list[str]:
-        """Return the app-owned Celery module paths in activation order.
-
-        Derived from each activation entry's ``App.celery_module_path`` (the single
-        source), so a module rename cannot desync the include list from the seed.
-
-        :return: The ordered app Celery module import paths.
-        """
-        return list(self._celery_module_paths)
 
     def keys(self) -> list[str]:
         """Return every app key in activation order.
@@ -287,7 +269,7 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
             apps.extend(_bind_child_apps(bound))
         else:
             apps.append(_synthesize_legacy_app(plugin, auto_key))
-    return AppRegistry(apps, celery_module_paths=app_celery_module_paths(plugins))
+    return AppRegistry(apps)
 
 
 @lru_cache(maxsize=1)
