@@ -3982,7 +3982,7 @@
         ]
       },
       "post": {
-        "description": "Create a backup task group from a JSON payload request body.\n\nPOSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,\n``pbm_physical``, and ``pbm_status`` siblings via\n:func:`~app.sep.apps.framework.cascade.cascade_create_tasks`.",
+        "description": "Create a backup task group from a JSON payload request body.",
         "operationId": "backup_mongo_backup_mongo_api_create_api_apps_backup_mongo__post",
         "requestBody": {
           "content": {

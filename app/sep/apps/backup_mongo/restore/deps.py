@@ -50,6 +50,7 @@ from app.sep.apps.framework import (
     get_task_latest_history,
     make_task_dep,
 )
+from app.sep.apps.framework.api import CascadeCreatePlan
 from app.sep.apps.framework.cascade import (
     cascade_create_independent_tasks,
     cascade_delete_tasks,
@@ -357,6 +358,39 @@ async def build_restore_task_group_from_body(
     """
     form = restore_create_from_write(body)
     return await build_restore_task_group(form, inventory_api)
+
+
+async def build_restore_cascade_plan(
+    body: RestoreTaskWrite,
+    inventory_api: InventoryAPI,
+) -> CascadeCreatePlan:
+    """Build the cascade create plan for a restore task group, retaining the form.
+
+    Convert the body to a :class:`RestoreCreate` form and keep it so
+    :func:`~app.sep.apps.framework.api.derive_cascade_create_route` can stamp it
+    onto the parent config task. The cascade closure POSTs the config parent plus
+    its independent restore, pbm-list, and optional force-resync children.
+
+    :param body: The JSON request body for restore task creation.
+    :param inventory_api: The Inventory API to look up services.
+    :return: The plan carrying the config parent write, form, and cascade closure.
+    """
+    form = restore_create_from_write(body)
+    payloads = await build_restore_task_group(form, inventory_api)
+    return CascadeCreatePlan(
+        parent_write=payloads.config_task,
+        form=form,
+        cascade=lambda api: create_restore_task_group(
+            api,
+            payloads.config_task,
+            payloads.restore_task,
+            payloads.pbm_list_task,
+            payloads.force_resync_task,
+        ),
+    )
+
+
+RestoreCascadePlan = Annotated[CascadeCreatePlan, Depends(build_restore_cascade_plan)]
 
 
 def restore_child_task_names(parent_name: str, backup_type: BackupType) -> list[str]:

@@ -19,7 +19,11 @@ from __future__ import annotations
 
 __all__ = [
     "NESTED_VALUE_MISSING",
+    "REMOTE_API_TLS_MARKERS",
+    "FieldMarkerKey",
+    "FieldMarkers",
     "FieldMetadata",
+    "InheritedMarkers",
     "Materializer",
     "MaterializerContext",
     "ReloadClassification",
@@ -59,7 +63,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from string import Template
 from types import UnionType
-from typing import Annotated, Any, NamedTuple, TYPE_CHECKING, Union
+from typing import Annotated, Any, NamedTuple, TYPE_CHECKING, TypedDict, Union
 
 from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSerializer
 from pydantic.errors import PydanticSchemaGenerationError
@@ -115,6 +119,28 @@ class ReloadClassification(StrEnum):
     NOT_OVERRIDABLE = "not_overridable"
 
 
+class FieldMarkerKey(StrEnum):
+    """Name the metadata-channel keys carrying a field's classification markers.
+
+    A single definition for the marker vocabulary the override substrate reads
+    and writes, so the keys are not repeated as bare string literals across the
+    construction helpers (:func:`hot_field` and friends) and the ``.get(...)``
+    read sites. As a :class:`~enum.StrEnum` each member *is* its string value,
+    so it interoperates with dict keys typed as the plain literals below.
+
+    :cvar RELOAD: The :class:`ReloadClassification` channel.
+    :vartype RELOAD: str
+    :cvar ADVANCED: The display-only ``advanced`` UI-grouping flag channel.
+    :vartype ADVANCED: str
+    :cvar MATERIALIZER: The optional snapshot :data:`Materializer` channel.
+    :vartype MATERIALIZER: str
+    """
+
+    RELOAD = "reload"
+    ADVANCED = "advanced"
+    MATERIALIZER = "materializer"
+
+
 class MaterializerContext(NamedTuple):
     """Bundle the inputs a snapshot materializer may consult.
 
@@ -140,6 +166,27 @@ class MaterializerContext(NamedTuple):
 
 
 Materializer = Callable[[MaterializerContext], Any]
+
+
+class FieldMarkers(TypedDict, total=False):
+    """Type the marker dict a single field carries or an overlay assigns to one.
+
+    Every key is optional (``total=False``): a field or overlay entry supplies
+    only the markers it wants set. Typing overlay literals against this (via
+    :data:`InheritedMarkers`) gives their keys and values static checking at
+    their declaration sites.
+
+    :cvar reload: The field's reload classification.
+    :vartype reload: ReloadClassification
+    :cvar advanced: Whether the field is display-only ``advanced`` for UI grouping.
+    :vartype advanced: bool
+    :cvar materializer: The snapshot materializer to run for the field.
+    :vartype materializer: Materializer
+    """
+
+    reload: ReloadClassification
+    advanced: bool
+    materializer: Materializer
 
 
 def hot_field(
@@ -176,11 +223,67 @@ def hot_field(
     :rtype: FieldInfo
     """
     metadata = {
-        "reload": ReloadClassification.HOT,
-        **({"materializer": materializer} if materializer is not None else {}),
-        **({"advanced": True} if advanced else {}),
+        FieldMarkerKey.RELOAD: ReloadClassification.HOT,
+        **(
+            {FieldMarkerKey.MATERIALIZER: materializer}
+            if materializer is not None
+            else {}
+        ),
+        **({FieldMarkerKey.ADVANCED: True} if advanced else {}),
     }
     return field_with_metadata(default, metadata=metadata, **kwargs)
+
+
+#: Opt-in class attribute mapping an inherited field name to a marker dict, so a
+#: subclass can mark inherited fields without redeclaring them. Keys match the
+#: field metadata channel (``"reload"``, ``"advanced"``, ``"materializer"``).
+INHERITED_MARKERS_ATTR = "INHERITED_MARKERS"
+
+#: Type of an :data:`INHERITED_MARKERS_ATTR` overlay: field name -> marker dict.
+#: The outer mapping is read-only (covariant) -- the right shape for a
+#: class-level overlay that is only ever read -- while each value is a
+#: :class:`FieldMarkers` so overlay literals get key/value checking.
+InheritedMarkers = Mapping[str, FieldMarkers]
+
+#: Shared overlay marking the inherited ``BaseRemoteAPI`` TLS fields HOT and
+#: ``advanced``, so every remote-api settings model reuses one definition
+#: instead of restating it. Lives in the settings-override layer (not on
+#: ``BaseRemoteAPI``) to keep ``app.core.requests`` free of any dependency on
+#: ``settings_override``.
+REMOTE_API_TLS_MARKERS: InheritedMarkers = {
+    "verify_ssl": {"reload": ReloadClassification.HOT, "advanced": True},
+    "ssl_cafile": {"reload": ReloadClassification.HOT, "advanced": True},
+    "ssl_keyfile": {"reload": ReloadClassification.HOT, "advanced": True},
+    "ssl_certfile": {"reload": ReloadClassification.HOT, "advanced": True},
+}
+
+
+def _effective_field_markers(
+    field_info: FieldInfo,
+    owner_cls: type[BaseModel] | None = None,
+    field_name: str | None = None,
+) -> dict[str, Any]:
+    """Return a field's effective markers: its own metadata plus the owner's overlay.
+
+    The field's own metadata takes precedence -- the ``INHERITED_MARKERS_ATTR``
+    overlay only fills keys the field does not already carry, so it can *add*
+    markers to an inherited field but never un-mark an explicit declaration.
+
+    :param field_info: The Pydantic field metadata to read.
+    :param owner_cls: The class that owns ``field_info``, if known.
+    :param field_name: The field's attribute name on ``owner_cls``, if known.
+    :return: The field's effective markers keyed by marker name.
+    """
+    markers = CustomFieldMetadata.field_to_dict(field_info)
+    if owner_cls is None or field_name is None:
+        return markers
+    overlay = getattr(owner_cls, INHERITED_MARKERS_ATTR, None)
+    if not isinstance(overlay, Mapping):
+        return markers
+    entry = overlay.get(field_name)
+    if not isinstance(entry, Mapping):
+        return markers
+    return {**entry, **markers}
 
 
 def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:
@@ -196,17 +299,24 @@ def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:
     :type field_name: str
     :return: ``True`` when ``field_name`` exists on ``settings_cls`` and is
         marked with ``{"reload": ReloadClassification.HOT}`` via
-        :func:`app.core.utils.pydantic.field_with_metadata`.
+        :func:`app.core.utils.pydantic.field_with_metadata` or the class overlay.
     :rtype: bool
     """
     field = settings_cls.model_fields.get(field_name)
     if field is None:
         return False
-    metadata = CustomFieldMetadata.field_to_dict(field)
-    return metadata.get("reload") == ReloadClassification.HOT
+    markers = _effective_field_markers(
+        field, owner_cls=settings_cls, field_name=field_name
+    )
+    return markers.get(FieldMarkerKey.RELOAD) == ReloadClassification.HOT
 
 
-def field_reload_classification(field_info: FieldInfo) -> ReloadClassification:
+def field_reload_classification(
+    field_info: FieldInfo,
+    *,
+    owner_cls: type[BaseModel] | None = None,
+    field_name: str | None = None,
+) -> ReloadClassification:
     """Return the reload classification attached to a single field.
 
     Reads the ``{"reload": ...}`` metadata set by :func:`hot_field`,
@@ -218,17 +328,25 @@ def field_reload_classification(field_info: FieldInfo) -> ReloadClassification:
     classify a nested leaf resolved out of a submodel.
 
     :param field_info: The Pydantic field metadata to classify.
-    :type field_info: FieldInfo
+    :param owner_cls: The class owning ``field_info``, for overlay lookup.
+    :param field_name: The field's name on ``owner_cls``, for overlay lookup.
     :return: The field's reload classification.
     :rtype: ReloadClassification
     """
-    value = CustomFieldMetadata.field_to_dict(field_info).get("reload")
+    value = _effective_field_markers(field_info, owner_cls, field_name).get(
+        FieldMarkerKey.RELOAD
+    )
     if value in {ReloadClassification.HOT, ReloadClassification.NESTED_ONLY}:
         return value
     return ReloadClassification.NOT_OVERRIDABLE
 
 
-def is_explicit_not_overridable(field_info: FieldInfo) -> bool:
+def is_explicit_not_overridable(
+    field_info: FieldInfo,
+    *,
+    owner_cls: type[BaseModel] | None = None,
+    field_name: str | None = None,
+) -> bool:
     """Return whether a field carries an *explicit* ``NOT_OVERRIDABLE`` marker.
 
     Distinct from ``field_reload_classification(...) == NOT_OVERRIDABLE``: an
@@ -240,12 +358,15 @@ def is_explicit_not_overridable(field_info: FieldInfo) -> bool:
     overridable.
 
     :param field_info: The Pydantic field metadata to inspect.
-    :type field_info: FieldInfo
+    :param owner_cls: The class owning ``field_info``, for overlay lookup.
+    :param field_name: The field's name on ``owner_cls``, for overlay lookup.
     :return: ``True`` iff the field has an explicit ``NOT_OVERRIDABLE`` marker.
     :rtype: bool
     """
     return (
-        CustomFieldMetadata.field_to_dict(field_info).get("reload")
+        _effective_field_markers(field_info, owner_cls, field_name).get(
+            FieldMarkerKey.RELOAD
+        )
         == ReloadClassification.NOT_OVERRIDABLE
     )
 
@@ -335,8 +456,7 @@ def field_materializer(
     """Return the materializer declared on a field, or ``None`` if none.
 
     Reads the ``"materializer"`` entry attached by :func:`hot_field` through the
-    same custom-metadata channel :func:`is_hot_reloadable` reads ``"reload"``
-    from.
+    same custom-metadata channel :func:`is_hot_reloadable` reads ``"reload"`` from.
 
     :param settings_cls: The Pydantic settings class to inspect.
     :type settings_cls: type[BaseYamlSettings]
@@ -349,10 +469,18 @@ def field_materializer(
     field = settings_cls.model_fields.get(field_name)
     if field is None:
         return None
-    return CustomFieldMetadata.field_to_dict(field).get("materializer")
+    markers = _effective_field_markers(
+        field, owner_cls=settings_cls, field_name=field_name
+    )
+    return markers.get(FieldMarkerKey.MATERIALIZER)
 
 
-def is_advanced_field(field_info: FieldInfo) -> bool:
+def is_advanced_field(
+    field_info: FieldInfo,
+    *,
+    owner_cls: type[BaseModel] | None = None,
+    field_name: str | None = None,
+) -> bool:
     """Return whether a field is flagged ``advanced`` via field metadata.
 
     Reads the ``"advanced"`` entry attached by :func:`hot_field`,
@@ -365,9 +493,16 @@ def is_advanced_field(field_info: FieldInfo) -> bool:
     out of a submodel.
 
     :param field_info: The Pydantic field metadata to inspect.
+    :param owner_cls: The class owning ``field_info``, for overlay lookup.
+    :param field_name: The field's name on ``owner_cls``, for overlay lookup.
     :return: ``True`` iff the field carries an explicit ``advanced`` marker.
     """
-    return CustomFieldMetadata.field_to_dict(field_info).get("advanced", False) is True
+    return (
+        _effective_field_markers(field_info, owner_cls, field_name).get(
+            FieldMarkerKey.ADVANCED, False
+        )
+        is True
+    )
 
 
 def materialize_via_owning_model(ctx: MaterializerContext) -> Any:
@@ -476,8 +611,8 @@ def nested_overridable_field(
     :rtype: FieldInfo
     """
     metadata = {
-        "reload": ReloadClassification.NESTED_ONLY,
-        **({"advanced": True} if advanced else {}),
+        FieldMarkerKey.RELOAD: ReloadClassification.NESTED_ONLY,
+        **({FieldMarkerKey.ADVANCED: True} if advanced else {}),
     }
     return field_with_metadata(default, metadata=metadata, **kwargs)
 
@@ -502,8 +637,8 @@ def not_overridable_field(
     :rtype: FieldInfo
     """
     metadata = {
-        "reload": ReloadClassification.NOT_OVERRIDABLE,
-        **({"advanced": True} if advanced else {}),
+        FieldMarkerKey.RELOAD: ReloadClassification.NOT_OVERRIDABLE,
+        **({FieldMarkerKey.ADVANCED: True} if advanced else {}),
     }
     return field_with_metadata(default, metadata=metadata, **kwargs)
 
@@ -532,8 +667,10 @@ def is_nested_overridable_parent(
     info = settings_cls.model_fields.get(field_name)
     if info is None:
         return False
-    metadata = CustomFieldMetadata.field_to_dict(info)
-    return metadata.get("reload") in {
+    markers = _effective_field_markers(
+        info, owner_cls=settings_cls, field_name=field_name
+    )
+    return markers.get(FieldMarkerKey.RELOAD) in {
         ReloadClassification.HOT,
         ReloadClassification.NESTED_ONLY,
     }
@@ -555,7 +692,9 @@ def nested_overridable_field_names(
     return frozenset(
         name
         for name, info in settings_cls.model_fields.items()
-        if CustomFieldMetadata.field_to_dict(info).get("reload")
+        if _effective_field_markers(info, owner_cls=settings_cls, field_name=name).get(
+            FieldMarkerKey.RELOAD
+        )
         == ReloadClassification.NESTED_ONLY
     )
 
@@ -599,22 +738,23 @@ def _resolve_field_in_model(
 def _resolve_nested_segments(
     settings_cls: type[BaseModel],
     key: str,
-) -> list[tuple[str, FieldInfo]] | None:
-    """Resolve every ``__`` segment of ``key`` to its ``(canonical_name, FieldInfo)``.
+) -> list[tuple[type[BaseModel], str, FieldInfo]] | None:
+    """Resolve every ``__`` segment of ``key`` to ``(owner_cls, canonical_name, FieldInfo)``.
 
     Walks one segment at a time, descending into nested Pydantic models. Returns
     ``None`` when any segment is unresolvable, the path hits a non-Pydantic
     intermediate, or the key is empty. The list preserves order from the
     top-level parent down to the leaf, so callers can inspect intermediate
     fields (e.g. for an explicit ``not_overridable_field`` marker) and not just
-    the leaf.
+    the leaf. Each entry carries its owning class so classifiers can consult that
+    class's :data:`INHERITED_MARKERS_ATTR` overlay.
 
     :param settings_cls: The top-level Pydantic settings class.
     :type settings_cls: type[BaseModel]
     :param key: The ``__``-delimited override key.
     :type key: str
-    :return: One ``(canonical_name, FieldInfo)`` per segment, or ``None``.
-    :rtype: list[tuple[str, FieldInfo]] | None
+    :return: One ``(owner_cls, canonical_name, FieldInfo)`` per segment, or ``None``.
+    :rtype: list[tuple[type[BaseModel], str, FieldInfo]] | None
     """
     if not key:
         return None
@@ -626,7 +766,7 @@ def _resolve_nested_segments(
         if resolved is None:
             return None
         canonical, info = resolved
-        resolved_chain.append((canonical, info))
+        resolved_chain.append((current_cls, canonical, info))
         if i < len(segments) - 1:
             next_cls = annotation_pydantic_class(info.annotation)
             if next_cls is None:
@@ -659,7 +799,7 @@ def resolve_nested_field(
     resolved = _resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return None
-    return tuple(name for name, _ in resolved), resolved[-1][1]
+    return tuple(name for _owner, name, _info in resolved), resolved[-1][2]
 
 
 def chain_has_explicit_not_overridable(settings_cls: type[BaseModel], key: str) -> bool:
@@ -682,7 +822,10 @@ def chain_has_explicit_not_overridable(settings_cls: type[BaseModel], key: str) 
     resolved = _resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return False
-    return any(is_explicit_not_overridable(info) for _, info in resolved)
+    return any(
+        is_explicit_not_overridable(info, owner_cls=owner, field_name=name)
+        for owner, name, info in resolved
+    )
 
 
 def chain_has_advanced(settings_cls: type[BaseModel], key: str) -> bool:
@@ -703,7 +846,10 @@ def chain_has_advanced(settings_cls: type[BaseModel], key: str) -> bool:
     resolved = _resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return False
-    return any(is_advanced_field(info) for _, info in resolved)
+    return any(
+        is_advanced_field(info, owner_cls=owner, field_name=name)
+        for owner, name, info in resolved
+    )
 
 
 def coerce_nested_field_value(
@@ -735,10 +881,13 @@ def coerce_nested_field_value(
     resolved = _resolve_nested_segments(settings_cls, key)
     if resolved is None:
         raise KeyError(key)
-    if any(is_explicit_not_overridable(info) for _, info in resolved):
+    if any(
+        is_explicit_not_overridable(info, owner_cls=owner, field_name=name)
+        for owner, name, info in resolved
+    ):
         raise KeyError(key)
-    chain = tuple(name for name, _ in resolved)
-    leaf_info = resolved[-1][1]
+    chain = tuple(name for _owner, name, _info in resolved)
+    leaf_info = resolved[-1][2]
     return chain, coerce_field_value(leaf_info, raw)
 
 
@@ -1083,10 +1232,14 @@ def iter_class_fields(
             annotation=field.annotation,
             default=_resolve_default(field),
             description=field.description,
-            reload=field_reload_classification(field),
+            reload=field_reload_classification(
+                field, owner_cls=settings_cls, field_name=name
+            ),
             is_secret=_field_contains_secret(field),
             is_complex=_field_is_complex(field.annotation),
-            is_advanced=is_advanced_field(field),
+            is_advanced=is_advanced_field(
+                field, owner_cls=settings_cls, field_name=name
+            ),
         )
 
 

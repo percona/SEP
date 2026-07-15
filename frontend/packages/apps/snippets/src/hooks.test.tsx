@@ -20,7 +20,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { apiClient, setTokenProvider } from '@sep/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useSnippetDownload } from './hooks';
+import { useSnippetDownload, useSnippets } from './hooks';
 
 type CapturedHeaders = {
   Authorization?: string;
@@ -186,5 +186,58 @@ describe('useSnippetDownload', () => {
     await waitFor(() => {
       expect(revokeObjectSpy).toHaveBeenCalledWith('blob:mock-url');
     });
+  });
+});
+
+describe('useSnippets', () => {
+  let responseBody: unknown;
+
+  beforeEach(() => {
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = (
+      config: CapturedRequestConfig,
+    ) =>
+      Promise.resolve({
+        data: responseBody,
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'application/json' },
+        config,
+        request: {},
+      });
+    setTokenProvider(() => 'test-access-token');
+  });
+
+  afterEach(() => {
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = originalAdapter;
+    setTokenProvider(() => null);
+  });
+
+  it('unwraps a PaginatedResponse envelope to the items array', async () => {
+    responseBody = {
+      items: [{ filename: 'a.sh' }, { filename: 'b.sh' }],
+      total: 2,
+      offset: 0,
+      limit: 50,
+    };
+
+    const { result } = renderHook(() => useSnippets(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data?.map((snippet) => snippet.filename)).toEqual(['a.sh', 'b.sh']);
+  });
+
+  it('returns a legacy flat array unchanged', async () => {
+    responseBody = [{ filename: 'a.sh' }];
+
+    const { result } = renderHook(() => useSnippets(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data?.map((snippet) => snippet.filename)).toEqual(['a.sh']);
   });
 });

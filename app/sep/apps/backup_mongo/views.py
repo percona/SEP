@@ -24,20 +24,23 @@ feed the derived ``GET /schema`` and are carried over from the previous hand-wri
 """
 
 from app.sep.apps.framework.apps import Views
-from app.sep.apps.framework.form_dsl import FormLayout, SectionLayout
+from app.sep.apps.framework.form_dsl import (
+    FormLayout,
+    SectionLayout,
+    TASK_SECTION_LAYOUT,
+)
 from app.sep.apps.framework.schema import (
     Capabilities,
-    Column,
-    ColumnFormat,
     default_columns,
     EXECUTOR_HOST_COLUMN,
     ListView,
 )
+from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
 
 backup_mongo_views = Views(
     layout=FormLayout(
         sections=(
-            SectionLayout(key="Task", title="Task"),
+            TASK_SECTION_LAYOUT,
             SectionLayout(key="Storage", title="Storage"),
             SectionLayout(key="PITR", title="Point-in-Time Recovery"),
             SectionLayout(key="BackupOptions", title="Backup Options"),
@@ -46,7 +49,7 @@ backup_mongo_views = Views(
     list_view=ListView(
         columns=default_columns(
             EXECUTOR_HOST_COLUMN,
-            Column(key="backup_type", label="Type", format=ColumnFormat.CHIP),
+            BACKUP_TYPE_COLUMN,
         ),
         default_sort="name",
     ),

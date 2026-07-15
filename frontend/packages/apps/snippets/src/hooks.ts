@@ -75,8 +75,10 @@ export function useSnippets() {
   return useQuery<SnippetResponse[]>({
     queryKey: ['snippets', 'list'],
     queryFn: async () => {
-      const { data } = await apiClient.get<SnippetResponse[]>(`${SNIPPETS_BASE}/`);
-      return data;
+      const { data } = await apiClient.get<SnippetResponse[] | { items: SnippetResponse[] }>(
+        `${SNIPPETS_BASE}/`,
+      );
+      return Array.isArray(data) ? data : data.items;
     },
   });
 }

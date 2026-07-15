@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
 from app.core.exceptions import HTTPNotFoundException
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -90,7 +91,9 @@ def build_derived_payload(
 ) -> dict[str, Any]:
     """Build the cascade payload for one derived task.
 
-    Deep-copies ``parent_payload``, suffixes ``name`` with
+    Deep-copies ``parent_payload``, drops the parent's ``RESERVED_FORM_KEY``
+    create-form stamp from the child's ``data`` (a derived task never prefills an
+    edit form, so it must not carry the parent's stamp), suffixes ``name`` with
     ``derived_spec.name_suffix``, applies ``arg_substitutions`` literally to
     ``data["meta"]["args"]`` (when present and string-typed), applies
     ``payload_substitutions`` literally to ``data["payload"]`` (when present
@@ -100,13 +103,13 @@ def build_derived_payload(
 
     :param parent_payload: The parent task's serialised payload (typically
         ``parent.model_dump()``).
-    :type parent_payload: dict[str, Any]
     :param derived_spec: The declarative spec for this derived task.
-    :type derived_spec: DerivedTask
     :return: A new dict ready to POST or PUT as a task payload.
-    :rtype: dict[str, Any]
     """
     payload = copy.deepcopy(parent_payload)
+    child_data = payload.get("data")
+    if isinstance(child_data, dict):
+        child_data.pop(RESERVED_FORM_KEY, None)
     parent_name = payload["name"]
     payload["name"] = f"{parent_name}{derived_spec.name_suffix}"
     if (

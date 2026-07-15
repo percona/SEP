@@ -26,34 +26,26 @@ child app (declared via ``child_apps`` on the parent), not a ``/restores``
 sub-router mounted here.
 """
 
-import logging
-
 from fastapi import APIRouter
 from fastapi import status as http_status
 
 from app.core.exceptions import HTTPInternalServerErrorException
 from app.sep.apps.backup_mongo.deps import (
-    backup_create_from_write,
     backup_derived_task_names,
+    BackupCascadePlan,
     BackupsTask,
     build_backup_mongo_api_detail_response,
-    build_backup_task_payload,
     get_backups_task,
     resolve_backup_parent_task,
 )
 from app.sep.apps.backup_mongo.models import (
     BackupTaskDetailResponse,
-    BackupTaskWrite,
 )
-from app.sep.apps.backup_mongo.schema import backup_mongo_schema
-from app.sep.apps.framework.api import derive_execute_route
-from app.sep.apps.framework.cascade import cascade_create_tasks, cascade_delete_tasks
+from app.sep.apps.framework.api import derive_cascade_create_route, derive_execute_route
+from app.sep.apps.framework.cascade import cascade_delete_tasks
 from app.sep.deps import (
-    InventoryAPI,
     TaskAPI,
 )
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -68,29 +60,16 @@ async def backup_mongo_api_detail(
     return await build_backup_mongo_api_detail_response(parent_task, tasks_api)
 
 
-@router.post(
-    "/",
-    status_code=http_status.HTTP_201_CREATED,
+derive_cascade_create_route(
+    router,
+    name="backup_mongo_api_create",
+    description="Create a backup task group from a JSON payload request body.",
+    create_plan=BackupCascadePlan,
+    get_task=get_backups_task,
+    response_builder=build_backup_mongo_api_detail_response,
+    response_model=BackupTaskDetailResponse,
+    connectivity_check=False,
 )
-async def backup_mongo_api_create(
-    body: BackupTaskWrite,
-    tasks_api: TaskAPI,
-    inventory_api: InventoryAPI,
-) -> BackupTaskDetailResponse:
-    """Create a backup task group from a JSON payload request body.
-
-    POSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,
-    ``pbm_physical``, and ``pbm_status`` siblings via
-    :func:`~app.sep.apps.framework.cascade.cascade_create_tasks`.
-    """
-    logger.debug("Create backup_mongo task group (JSON path): %s", body.task_name)
-    form = backup_create_from_write(body)
-    task_write = await build_backup_task_payload(form, inventory_api)
-    parent_payload = task_write.model_dump()
-    derived_specs = backup_mongo_schema.derived or []
-    await cascade_create_tasks(tasks_api, parent_payload, derived_specs)
-    task = await get_backups_task(task_write.name, tasks_api)
-    return await build_backup_mongo_api_detail_response(task, tasks_api)
 
 
 derive_execute_route(

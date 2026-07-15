@@ -500,7 +500,11 @@ class TestDeleteEndpoint:
     def test_delete_returns_204(self, test_client, mock_task_api_dep):
         """Successful delete returns 204."""
         task = build_backup_task()
-        mock_task_api_dep.get = AsyncMock(return_value=task)
+
+        async def _get(path, params=None, **_):
+            return {"items": []} if path.endswith("/history/") else task
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_get)
         mock_task_api_dep.delete = AsyncMock()
         response = test_client.delete(
             f"/api/apps/mysql_backups/{task['name']}", headers=BEARER_HEADERS

@@ -37,7 +37,7 @@ from fastapi import APIRouter, Body, Depends, Form, params
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field, model_validator, PrivateAttr, SkipValidation
 
-from app.core.pagination import PaginationDependency
+from app.core.pagination import make_pagination_dep, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.api import (
     capabilities_endpoint,
@@ -77,10 +77,12 @@ from app.sep.apps.framework.spec import (
     stamp_form_input,
     validate_arg_formats,
 )
-from app.sep.deps import InventoryAPI
+from app.sep.deps import InventoryAPI, make_conflict_guard, protected_task_guard
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 __all__ = [
+    "NO_PAGINATION",
+    "UNGUARDED",
     "AppCapabilities",
     "Cascade",
     "ListFilterConfig",
@@ -90,6 +92,45 @@ __all__ = [
 ]
 
 TaskSpecBuilder = Callable[[AppFormModel, ResolvedEntities], EnvelopeSpec]
+
+
+class _Unguarded:
+    """Mark a derived destructive route as opting out of the default guards.
+
+    A named singleton (mirroring the :data:`~app.sep.apps.framework.form_dsl` DSL's
+    ``_UNSET`` idiom) so an author's opt-out reads as a greppable, importable
+    :data:`UNGUARDED` rather than an anonymous marker. Distinct from the field
+    default ``()`` (apply the framework guards) and a non-empty tuple (per-app
+    override).
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        """Return the marker name so tracebacks and reprs read ``UNGUARDED``."""
+        return "UNGUARDED"
+
+
+UNGUARDED = _Unguarded()
+
+
+class _NoPagination:
+    """Mark a derived list route as explicitly opting out of pagination.
+
+    A named singleton (mirroring :data:`UNGUARDED`) so an author's opt-out reads
+    as a greppable, importable :data:`NO_PAGINATION` rather than ``None`` — which
+    stays a purely internal route-shape switch in
+    :mod:`~app.sep.apps.framework.api`.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        """Return the marker name so tracebacks and reprs read ``NO_PAGINATION``."""
+        return "NO_PAGINATION"
+
+
+NO_PAGINATION = _NoPagination()
 
 
 class AppCapabilities(BaseModel):
@@ -267,8 +308,12 @@ class TaskExecutionApp(BaseApp):
         ``task_name``).
     :param capabilities: The verb toggles gating route derivation. Defaults to
         all-default :class:`AppCapabilities`.
-    :param pagination: A ``make_pagination_dep(...)`` callable; when set the list
-        route paginates. Defaults to ``None``.
+    :param pagination: The derived list route's pagination knob. Defaults to
+        ``make_pagination_dep()`` (page size 50, ceiling 200), so a list route
+        paginates unless overridden — a new app is bounded by default. Pass a
+        custom ``make_pagination_dep(max_limit=...)`` callable to change the
+        ceiling, or the :data:`NO_PAGINATION` sentinel to opt out and serve a plain
+        ``list[model]``.
     :param create_form_encoded: Whether the derived create route accepts a
         form-urlencoded body (``Form()``) instead of the default JSON body
         (``Body()``). A create-route option, so it is rejected unless
@@ -286,7 +331,7 @@ class TaskExecutionApp(BaseApp):
     :param update_handler: A fully-formed ``PUT`` handler overriding the derived
         default; used only when ``capabilities.update``. When ``None`` (default)
         and ``capabilities.update`` is on, the framework derives a standard
-        create-mirroring PUT (guarded by ``update_guard``).
+        create-mirroring PUT (guarded per ``update_guard``).
     :param delete_handler: A fully-formed ``DELETE`` handler overriding the
         derived default; used only when ``capabilities.delete``. When ``None``
         (default) and ``capabilities.delete`` is on, the framework derives a plain
@@ -338,16 +383,20 @@ class TaskExecutionApp(BaseApp):
         framework default create builder over ``response_model``, pinning the
         create component to it. Mutually exclusive with ``create_response_model``
         and requires ``capabilities.create``. Defaults to ``None``.
-    :param update_guard: Extra route dependencies (guards) appended after the auth
-        guard on the *derived* PUT — the handler-less escape hatch for a per-plugin
-        update guard (for example a protected-task check). Requires
-        ``capabilities.update`` and is rejected alongside a full ``update_handler``.
-        Defaults to ``()``.
-    :param delete_guard: Extra route dependencies (guards) appended after the auth
-        guard on the *derived* DELETE — the handler-less escape hatch for a
-        per-plugin delete guard (for example a running-task conflict check).
+    :param update_guard: The tri-state guard knob for the *derived* PUT. ``()`` (the
+        default) applies the framework default guards — a protected-task check and a
+        running-conflict check, resolved off the fetched task. :data:`UNGUARDED`
+        opts the route out (bare ``IsApiAuthenticated``). A non-empty
+        ``tuple[params.Depends, ...]`` overrides both with the given guards
+        verbatim. Requires ``capabilities.update`` and is rejected alongside a full
+        ``update_handler`` (except the ``()`` default, always allowed). Defaults to
+        ``()``.
+    :param delete_guard: The tri-state guard knob for the *derived* DELETE, with the
+        same semantics as ``update_guard``: ``()`` applies the framework default
+        guards, :data:`UNGUARDED` opts out, and a non-empty tuple overrides.
         Requires ``capabilities.delete`` and is rejected alongside a full
-        ``delete_handler``. Defaults to ``()``.
+        ``delete_handler`` (except the ``()`` default, always allowed). Defaults to
+        ``()``.
     :param description: The plugin description threaded into the derived
         ``GET /schema`` (``AppSchema.description``). Defaults to ``None``.
     :param related_apps: Separately registered apps the React shell surfaces as
@@ -370,7 +419,7 @@ class TaskExecutionApp(BaseApp):
     script_source: SkipValidation[ScriptSource | None] = None
     get_task: Callable[..., Awaitable[Task]] | None = None
     capabilities: AppCapabilities = AppCapabilities()
-    pagination: PaginationDependency | None = None
+    pagination: PaginationDependency | _NoPagination = make_pagination_dep()
     create_form_encoded: bool = False
     cascade: SkipValidation[Cascade | None] = None
     extra_routes: tuple[APIRouter, ...] = ()
@@ -391,8 +440,8 @@ class TaskExecutionApp(BaseApp):
     )
     create_extra_deps: tuple[params.Depends, ...] = ()
     create_response_builder: SkipValidation[TaskResponseBuilder | None] = None
-    update_guard: tuple[params.Depends, ...] = ()
-    delete_guard: tuple[params.Depends, ...] = ()
+    update_guard: tuple[params.Depends, ...] | _Unguarded = ()
+    delete_guard: tuple[params.Depends, ...] | _Unguarded = ()
     description: str | None = None
     related_apps: tuple[RelatedApp, ...] = ()
     static_mounts: tuple[StaticMount, ...] = ()
@@ -671,16 +720,31 @@ class TaskExecutionApp(BaseApp):
                 "enable capabilities.create or drop them"
             )
 
+    @staticmethod
+    def _is_explicit_guard(guard: tuple[params.Depends, ...] | _Unguarded) -> bool:
+        """Return whether a guard knob is an explicit spec, not the default.
+
+        The field default ``()`` means "apply the framework guards" and is *not*
+        explicit; :data:`UNGUARDED` (opt-out) and a non-empty override tuple are.
+        Both explicit forms are rejected on a non-derived verb, while the default
+        ``()`` is always allowed.
+
+        :param guard: The tri-state ``update_guard`` / ``delete_guard`` value.
+        :return: ``True`` for :data:`UNGUARDED` or a non-empty override tuple.
+        """
+        return isinstance(guard, _Unguarded) or bool(guard)
+
     def _validate_route_knobs(self) -> None:
         """Validate the detail-path, execute, and update route knobs.
 
         :raises ValueError: When a non-default ``detail_path_param`` has no custom
             ``get_task``; when an ``update_handler`` or ``delete_handler`` is set
             without its capability enabled (it would otherwise be silently
-            dropped); when ``update_guard`` is set on a non-derived update (no
-            update capability, or a full ``update_handler``); or when the derived
-            update lacks the create capability whose payload it rebuilds the body
-            through.
+            dropped); when ``update_guard`` / ``delete_guard`` is an *explicit* spec
+            (:data:`UNGUARDED` or an override tuple) on a non-derived verb (no
+            capability, or a full handler) — the ``()`` default is always allowed;
+            or when the derived update lacks the create capability whose payload it
+            rebuilds the body through.
         """
         if self.detail_path_param != "task_name" and self.get_task is None:
             raise ValueError(
@@ -697,23 +761,29 @@ class TaskExecutionApp(BaseApp):
                 "TaskExecutionApp: delete_handler overrides the derived DELETE; enable "
                 "capabilities.delete or drop delete_handler"
             )
-        if self.update_guard and not self.capabilities.update:
+        if self._is_explicit_guard(self.update_guard) and not self.capabilities.update:
             raise ValueError(
                 "TaskExecutionApp: update_guard guards the derived PUT; enable "
                 "capabilities.update or drop update_guard"
             )
-        if self.update_guard and self.update_handler is not None:
+        if (
+            self._is_explicit_guard(self.update_guard)
+            and self.update_handler is not None
+        ):
             raise ValueError(
                 "TaskExecutionApp: update_guard guards the derived PUT; a full "
                 "update_handler must declare its own dependencies — drop update_guard "
                 "or the update_handler"
             )
-        if self.delete_guard and not self.capabilities.delete:
+        if self._is_explicit_guard(self.delete_guard) and not self.capabilities.delete:
             raise ValueError(
                 "TaskExecutionApp: delete_guard guards the derived DELETE; enable "
                 "capabilities.delete or drop delete_guard"
             )
-        if self.delete_guard and self.delete_handler is not None:
+        if (
+            self._is_explicit_guard(self.delete_guard)
+            and self.delete_handler is not None
+        ):
             raise ValueError(
                 "TaskExecutionApp: delete_guard guards the derived DELETE; a full "
                 "delete_handler must declare its own dependencies — drop delete_guard "
@@ -898,6 +968,37 @@ class TaskExecutionApp(BaseApp):
             params["parent_is_null"] = "true"
         return params
 
+    def _resolve_guard(
+        self, guard: tuple[params.Depends, ...] | _Unguarded, *, action: str
+    ) -> tuple[params.Depends, ...]:
+        """Resolve a guard knob to the dependency tuple for a derived destructive route.
+
+        The default guards resolve the protected-task and running-conflict checks
+        off the cached ``self._task_getter`` (not a fixed ``task_name`` path
+        parameter), so they stay decoupled from ``detail_path_param`` and share the
+        one task fetch with the route handler.
+
+        :param guard: The tri-state ``update_guard`` / ``delete_guard`` value.
+        :param action: The verb (``"edit"`` for PUT, ``"delete"`` for DELETE)
+            gating both the derive check and the protected-task guard's 409 detail.
+        :return: ``()`` for a non-derived verb or an :data:`UNGUARDED` opt-out; the
+            override tuple verbatim for a non-empty tuple; otherwise the framework
+            default protected-task + running-conflict guards for the ``()`` default.
+        """
+        derives = (
+            self.capabilities.update and self.update_handler is None
+            if action == "edit"
+            else self.capabilities.delete and self.delete_handler is None
+        )
+        if not derives or isinstance(guard, _Unguarded):
+            return ()
+        if guard:
+            return guard
+        return (
+            Depends(protected_task_guard(self._task_getter, action=action)),
+            Depends(make_conflict_guard(self._task_getter)),
+        )
+
     def build_router(self) -> APIRouter:
         """Compose the derived router from the route-derivation helpers.
 
@@ -915,8 +1016,15 @@ class TaskExecutionApp(BaseApp):
 
         :return: The composed plugin ``APIRouter``.
         """
+        pagination_dep = (
+            None if isinstance(self.pagination, _NoPagination) else self.pagination
+        )
         if self.script_source is not None:
-            router = derive_script_routes(self.script_source, name=self.name)
+            router = derive_script_routes(
+                self.script_source,
+                name=self.name,
+                pagination_dep=pagination_dep,
+            )
             if self.capabilities_provider is not None:
                 capabilities_endpoint(router, self.capabilities_provider)
             for extra in self.extra_routes:
@@ -942,7 +1050,7 @@ class TaskExecutionApp(BaseApp):
             create_response_builder=self._build_create_response_builder(),
             connectivity_check=self.connectivity_check,
             detail_path_param=self.detail_path_param,
-            pagination_dep=self.pagination,
+            pagination_dep=pagination_dep,
             list_status_filter=self.list_filter.status,
             list_service_type=(
                 self.service_type if self.list_filter.service_type else None
@@ -954,10 +1062,10 @@ class TaskExecutionApp(BaseApp):
             create_extra_deps=self.create_extra_deps,
             update_enabled=self.capabilities.update,
             update_handler=self.update_handler,
-            update_extra_deps=self.update_guard,
+            update_extra_deps=self._resolve_guard(self.update_guard, action="edit"),
             delete_enabled=self.capabilities.delete,
             delete_handler=self.delete_handler,
-            delete_extra_deps=self.delete_guard,
+            delete_extra_deps=self._resolve_guard(self.delete_guard, action="delete"),
         )
         router.include_router(crud)
 
