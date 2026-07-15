@@ -365,6 +365,12 @@ def _generate_namespaced(
     The class swap mutates process-global FastAPI state, so the patch and the
     ``generate`` call it guards are held under a module-level lock; a concurrent
     generation would otherwise see the patched class or a half-restored global.
+    The lock only serializes callers that route through here, which every
+    ``app.openapi`` in this process does once :func:`install_namespaced_openapi`
+    has run — so all live generation is cooperating and the swap is never observed
+    outside a held lock. Callers are non-nested (the merged spec computes each
+    sub-app's document sequentially, not one inside another), so the plain
+    ``Lock`` needs no reentrancy.
 
     :param app: The FastAPI application whose cached schema is swapped out.
     :param generate: The zero-arg callable that produces the raw OpenAPI document.
