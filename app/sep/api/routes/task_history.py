@@ -23,13 +23,13 @@ calls the Tasks sub-app directly. ``GET /`` either lists all history
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
-from app.sep.api.proxy import reraise_upstream_tasks_error
+from app.sep.api.proxy import reraise_upstream_tasks_errors
 from app.sep.api.task_history_merge import (
     fetch_merged_task_history,
     normalize_task_history_names,
@@ -82,24 +82,20 @@ async def list_merged_task_history(
             **({"status": task_status.value} if task_status is not None else {}),
             **({"exclude_internal": "true"} if exclude_internal else {}),
         }
-        try:
+        with reraise_upstream_tasks_errors():
             payload = await tasks_api.get("/history/", params=params)
-        except (HTTPException, OSError) as exc:
-            reraise_upstream_tasks_error(exc)
         return PaginatedResponse[TaskHistoryResponse].model_validate(payload)
     if not normalize_task_history_names(task_names):
         raise HTTPUnprocessableEntityException(
             "task_names must contain at least one non-empty name"
         )
-    try:
+    with reraise_upstream_tasks_errors():
         return await fetch_merged_task_history(
             tasks_api,
             task_names,
             status=task_status,
             pagination=pagination,
         )
-    except (HTTPException, OSError) as exc:
-        reraise_upstream_tasks_error(exc)
 
 
 @router.post(
@@ -118,7 +114,5 @@ async def stop_task_history(task_history_id: int, tasks_api: TaskAPI) -> dict[st
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
         or a connection-level ``OSError``.
     """
-    try:
+    with reraise_upstream_tasks_errors():
         return await tasks_api.post(f"/history/{task_history_id}/stop/")
-    except (HTTPException, OSError) as exc:
-        reraise_upstream_tasks_error(exc)
