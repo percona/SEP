@@ -430,8 +430,8 @@ def dsn_safe(value: str) -> str:
 
     Percona Toolkit DSN strings and comma-separated CLI arguments treat ``,``
     and ``=`` as structural delimiters. Free-solo reference fields accept either
-    an inventory id (``int``) or a free-typed name (``str``); call sites must
-    invoke this only after an ``isinstance(value, str)`` guard.
+    an inventory id (``int``) or a free-typed name (``str``); callers receiving
+    ``int | str`` values should guard with ``isinstance(value, str)`` first.
 
     :param value: The free-typed name to validate.
     :return: ``value`` unchanged when it contains no delimiter.
