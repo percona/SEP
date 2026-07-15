@@ -30,6 +30,8 @@ from fastapi.utils import generate_unique_id as default_generate_unique_id
 from pydantic.json_schema import DefsRef
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from fastapi import FastAPI
     from fastapi.routing import APIRoute
     from pydantic.json_schema import CoreModeRef
@@ -349,22 +351,23 @@ class _AppNamespacedJsonSchema(GenerateJsonSchema):
 _NAMESPACE_PATCH_LOCK = threading.Lock()
 
 
-def namespaced_openapi(app: FastAPI) -> dict[str, Any]:
-    """Return ``app``'s OpenAPI document with app schema names app-namespaced.
+def _generate_namespaced(
+    app: FastAPI, generate: Callable[[], dict[str, Any]]
+) -> dict[str, Any]:
+    """Return the namespaced document produced by ``generate`` under the schema patch.
 
-    Installs :class:`_AppNamespacedJsonSchema` for the duration of a fresh
-    ``app.openapi()`` computation (so every app model gets a stable
-    ``<app>__<Class>`` name regardless of the installed app set), then runs
-    :func:`namespace_app_schema_names` to rename generic wrappers by the app
-    owning their wrapped model. The app's cached ``openapi_schema`` is preserved:
-    the live spec the app serves is unaffected.
+    Installs :class:`_AppNamespacedJsonSchema` for the duration of ``generate``
+    (so every app model gets a stable ``<app>__<Class>`` name regardless of the
+    installed app set), then runs :func:`namespace_app_schema_names` to rename
+    generic wrappers by the app owning their wrapped model. ``app.openapi_schema``
+    is nulled for the fresh computation and restored afterwards.
 
     The class swap mutates process-global FastAPI state, so the patch and the
-    ``app.openapi()`` call it guards are held under a module-level lock; a
-    concurrent generation would otherwise see the patched class or a
-    half-restored global.
+    ``generate`` call it guards are held under a module-level lock; a concurrent
+    generation would otherwise see the patched class or a half-restored global.
 
-    :param app: The FastAPI application whose spec to namespace.
+    :param app: The FastAPI application whose cached schema is swapped out.
+    :param generate: The zero-arg callable that produces the raw OpenAPI document.
     :return: A namespaced OpenAPI document.
     """
     with _NAMESPACE_PATCH_LOCK:
@@ -373,11 +376,48 @@ def namespaced_openapi(app: FastAPI) -> dict[str, Any]:
         fastapi_compat_v2.GenerateJsonSchema = _AppNamespacedJsonSchema
         app.openapi_schema = None
         try:
-            doc = app.openapi()
+            doc = generate()
         finally:
             app.openapi_schema = cached
             fastapi_compat_v2.GenerateJsonSchema = original
     return namespace_app_schema_names(doc)
+
+
+def namespaced_openapi(app: FastAPI) -> dict[str, Any]:
+    """Return ``app``'s OpenAPI document with app schema names app-namespaced.
+
+    Runs a fresh ``app.openapi()`` computation under
+    :func:`_generate_namespaced`. The app's cached ``openapi_schema`` is
+    preserved, so the live spec the app serves is unaffected.
+
+    :param app: The FastAPI application whose spec to namespace.
+    :return: A namespaced OpenAPI document.
+    """
+    return _generate_namespaced(app, app.openapi)
+
+
+def install_namespaced_openapi(app: FastAPI) -> None:
+    """Override ``app.openapi`` so the live spec uses app-namespaced schema names.
+
+    Makes the document ``app`` serves (and any spec merged from it) carry the
+    same stable ``<app>__<Class>`` names as the committed fixtures, instead of
+    the install-set-dependent module-path fallbacks the default generator emits
+    on collision. The base ``app.openapi`` bound method is captured before the
+    override and driven directly by :func:`_generate_namespaced`, so the
+    computation never recurses through this override. The namespaced document is
+    cached on ``app.openapi_schema`` on first access, exactly as FastAPI caches
+    its own.
+
+    :param app: The FastAPI application whose live OpenAPI endpoint to namespace.
+    """
+    base_openapi = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            app.openapi_schema = _generate_namespaced(app, base_openapi)
+        return app.openapi_schema
+
+    app.openapi = openapi
 
 
 def _merge_schemas(
