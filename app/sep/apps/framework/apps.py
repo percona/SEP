@@ -1016,7 +1016,9 @@ class TaskExecutionApp(BaseApp):
 
         :return: The composed plugin ``APIRouter``.
         """
-        pagination_dep = None if self.pagination is NO_PAGINATION else self.pagination
+        pagination_dep = (
+            None if isinstance(self.pagination, _NoPagination) else self.pagination
+        )
         if self.script_source is not None:
             router = derive_script_routes(
                 self.script_source,

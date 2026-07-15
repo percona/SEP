@@ -477,6 +477,20 @@ class TestListAndDetail:
         assert response.status_code == status.HTTP_200_OK
         assert [item["name"] for item in response.json()] == ["t-1"]
 
+    def test_distinct_no_pagination_instance_returns_plain_list(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Opt out of pagination for any sentinel instance, not just the singleton."""
+        tasks_api = _make_tasks_api(list_items=[_task_dict("t-1")])
+        client = _client(
+            _synth_app(pagination=type(NO_PAGINATION)()), tasks_api, regular_user
+        )
+
+        response = client.get(f"{_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["name"] for item in response.json()] == ["t-1"]
+
     def test_default_list_is_paginated(self, regular_user: CasdoorUser) -> None:
         """Assert the default ``GET /`` returns a ``PaginatedResponse`` envelope."""
         tasks_api = _make_tasks_api(list_items=[_task_dict("t-1")], list_total=1)
