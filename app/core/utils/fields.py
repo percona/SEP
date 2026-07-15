@@ -424,6 +424,26 @@ def database_url_normalized_scheme_field_factory(
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
+
+def dsn_safe(value: str) -> str:
+    """Reject DSN/CLI delimiters in a free-typed schema, table, or host name.
+
+    Percona Toolkit DSN strings and comma-separated CLI arguments treat ``,``
+    and ``=`` as structural delimiters. Free-solo reference fields accept either
+    an inventory id (``int``) or a free-typed name (``str``); call sites must
+    invoke this only after an ``isinstance(value, str)`` guard.
+
+    :param value: The free-typed name to validate.
+    :return: ``value`` unchanged when it contains no delimiter.
+    :raises ValueError: When ``value`` contains ``,`` or ``=``.
+    """
+    if "," in value or "=" in value:
+        raise ValueError(
+            "Values cannot contain ',' or '=' characters (DSN delimiters)."
+        )
+    return value
+
+
 StrippedNonEmptyStr = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1)
 ]
