@@ -654,6 +654,17 @@ def test_registry_migrated_app_structural_checks(registry_app):
     assert check_schema_derivation_succeeds(registry_app) == []
 
 
+@pytest.mark.parametrize("registry_app", _APPS, ids=lambda app: app.key)
+def test_registry_app_requires_apps_resolve(registry_app):
+    """Assert every app's ``requires_apps`` is a tuple of registered app keys."""
+    assert isinstance(registry_app.requires_apps, tuple)
+    for dep_key in registry_app.requires_apps:
+        assert isinstance(dep_key, str)
+        assert _REGISTRY.get(dep_key) is not None, (
+            f"{registry_app.key} requires unregistered app {dep_key!r}"
+        )
+
+
 def test_registry_has_no_route_collisions():
     """Assert no two registry routes share a ``(path, method)`` signature."""
     assert check_route_collisions(_REGISTRY) == []
