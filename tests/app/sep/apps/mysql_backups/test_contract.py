@@ -79,14 +79,47 @@ def _valid_body(
 class TestMysqlBackupsContract(DerivedRouterContractTests):
     """Assert the mysql_backups app's derived HTTP surface, knob by knob.
 
-    ``remapped_username`` is ``None``: the app wires no response context provider
-    (its custom ``response_builder`` stamps ``backup_type`` / ``hostname`` and
-    leaves ``created_by`` as the raw id), so the injected-extras tests do not
-    apply.
+    ``remapped_username`` is ``None``: the app wires ``get_username_mapping`` as
+    its response context provider (so ``created_by`` / ``last_updated_by`` resolve
+    to usernames), but that provider is a real Casdoor lookup that is not
+    deterministic under test, so the injected-extras tests assert only the
+    deterministic ``service_type`` extra. The two create/update injected-extras
+    methods are overridden here to feed the gated per-``backup_type`` body, since
+    the generic Polyfactory body trips the create model's gates.
     """
 
     app_def = mysql_backups_app
     remapped_username = None
+
+    def test_create_injects_extras(self, contract_client: Any) -> None:
+        """Create binds the context provider; assert 201 + the service_type extra.
+
+        Overrides the generic suite method: the per-mode ``FailRule``s and
+        upload-consistency validator defeat the Polyfactory body, so a hand-built
+        gated body is used.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.post(f"{base}/", json=_valid_body())
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        assert response.json()["service_type"] == ServiceTypeEnum.MYSQL.value
+
+    def test_update_derived_injects_extras(self, contract_client: Any) -> None:
+        """Derived PUT binds the context provider; assert 200 + the service_type extra.
+
+        Overrides the generic suite method for the same gating reason as
+        :meth:`test_create_injects_extras`.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(
+            f"{base}/{SEEDED_TASK_NAME}",
+            json=_valid_body(task_name=SEEDED_TASK_NAME),
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert response.json()["service_type"] == ServiceTypeEnum.MYSQL.value
 
     def _valid_update_body(self, *, task_name: str) -> dict[str, Any] | None:
         """Return the gated valid PUT body; the generic Polyfactory body 422s here.
