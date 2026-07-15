@@ -41,7 +41,8 @@ from app.core.exceptions import (
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework.registry import build_app_registry
+from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.registry import AppRegistry, build_app_registry
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import App, sep_settings
 from app.sep.crud import AppStateManager
@@ -1646,6 +1647,62 @@ class TestRequireAppEnabled:
         """``inventory`` is the protected key the mount loops must skip."""
         assert "inventory" in PROTECTED_APP_KEYS
 
+    @staticmethod
+    def _dependent_registry() -> AppRegistry:
+        """Build a two-app registry where ``dependent`` requires ``dep``."""
+        return AppRegistry(
+            [
+                BaseApp(
+                    key="dependent",
+                    name="dependent",
+                    display_name="dependent",
+                    uri_path="/dependent",
+                    requires_apps=("dep",),
+                ),
+                BaseApp(
+                    key="dep",
+                    name="dep",
+                    display_name="dep",
+                    uri_path="/dep",
+                ),
+            ]
+        )
+
+    @pytest.mark.asyncio
+    async def test_gate_503_when_dependency_disabled(self, session) -> None:
+        """The gate 503s on the dependent's key when a required app is disabled."""
+        session.add(AppState(app_key="dep", lifecycle_state=AppLifecycleEnum.DISABLED))
+        await session.commit()
+        with patch(
+            "app.sep.apps.framework.registry.get_app_registry",
+            return_value=self._dependent_registry(),
+        ):
+            gate = require_app_enabled("dependent")
+            with pytest.raises(HTTPServiceUnavailableException) as exc_info:
+                await gate(session)
+        assert "dependent" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_gate_passes_when_dependency_enabled(self, session) -> None:
+        """The gate passes when both the app and its dependency are enabled."""
+        with patch(
+            "app.sep.apps.framework.registry.get_app_registry",
+            return_value=self._dependent_registry(),
+        ):
+            gate = require_app_enabled("dependent")
+            assert await gate(session) is None
+
+    @pytest.mark.asyncio
+    async def test_gate_fail_open_on_db_error(self, session) -> None:
+        """A DB read failure degrades to allowing the request (fail-open)."""
+        with patch.object(
+            AppStateManager,
+            "all_lifecycle_states",
+            side_effect=SQLAlchemyError("db down"),
+        ):
+            gate = require_app_enabled("snippets")
+            assert await gate(session) is None
+
 
 class TestGetToggleableAppKey:
     """Test app-key resolver used by the app-state toggle endpoint."""
@@ -1774,6 +1831,79 @@ class TestGetDefaultContextPluginFiltering:
 
         keys = {p.key for p in context["plugins"]}
         assert keys == {"inventory", "snippets", "checksums"}
+
+    @staticmethod
+    def _dependent_registry() -> AppRegistry:
+        """Build a registry where ``dependent`` requires ``snippets``."""
+        return AppRegistry(
+            [
+                BaseApp(
+                    key="inventory",
+                    name="inventory",
+                    display_name="Inventory",
+                    uri_path="/inventory",
+                ),
+                BaseApp(
+                    key="snippets",
+                    name="snippets",
+                    display_name="Snippets",
+                    uri_path="/snippets",
+                ),
+                BaseApp(
+                    key="dependent",
+                    name="dependent",
+                    display_name="Dependent",
+                    uri_path="/dependent",
+                    requires_apps=("snippets",),
+                ),
+            ]
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_app_hidden_when_dependency_disabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """An app is dropped from the sidebar when a required app is disabled."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+        with (
+            patch(
+                "app.sep.apps.framework.registry.get_app_registry",
+                return_value=self._dependent_registry(),
+            ),
+            patch("app.sep.deps.settings"),
+        ):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert "dependent" not in keys
+        assert "snippets" not in keys
+        assert "inventory" in keys
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_app_shown_when_dependency_enabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """An app stays in the sidebar when its dependency is enabled (missing row)."""
+        with (
+            patch(
+                "app.sep.apps.framework.registry.get_app_registry",
+                return_value=self._dependent_registry(),
+            ),
+            patch("app.sep.deps.settings"),
+        ):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert {"inventory", "snippets", "dependent"} <= keys
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")

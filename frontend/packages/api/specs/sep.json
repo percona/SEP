@@ -11757,7 +11757,7 @@
     },
     "/api/apps/": {
       "get": {
-        "description": "Return per-app state for the current user's navigation.\n\nProtected apps are always reported ``enabled=True``. Every other app reflects\nthe DB state of the row governing it (a missing row -> ``enabled=True``: a\nconfigured plugin is active until explicitly disabled). A child app owns no\nrow, so it resolves through its parent via\n:attr:`~app.sep.apps.framework.base.BaseApp.state_key`.\n\n:param session: The database session.\n:return: The per-app navigation list.",
+        "description": "Return per-app state for the current user's navigation.\n\nProtected apps are always reported ``enabled=True``. Every other app reflects\nits *effective* state via :meth:`AppRegistry.resolve_effective_enabled`: its\nown row must be ``ENABLED`` (a missing row -> ``enabled=True``: a configured\nplugin is active until explicitly disabled) **and** every app it declares in\n``requires_apps`` must be effectively enabled, so the shell hides an app when\na dependency is off. A child app owns no row, so it resolves through its\nparent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`.\n\n:param session: The database session.\n:return: The per-app navigation list.",
         "operationId": "apps_list_apps_for_navigation_api_apps__get",
         "responses": {
           "200": {

@@ -31,7 +31,7 @@ trick in ``App._default_api_router_from_convention`` that avoids circular
 imports through plugin ``__init__`` modules.
 """
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from functools import lru_cache
 from importlib import import_module
 
@@ -47,6 +47,7 @@ from app.sep.apps.framework.base import BaseApp
 from app.sep.config import App, sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import PROTECTED_APP_KEYS
+from app.sep.models import AppLifecycleEnum
 
 
 class AppRegistry:
@@ -57,11 +58,170 @@ class AppRegistry:
 
     :param apps: The mounted apps, in activation order.
     :type apps: list[BaseApp]
+    :raises ValueError: When two apps share a key, or a ``requires_apps`` entry
+        names an unknown app, itself, or forms a dependency cycle.
     """
 
     def __init__(self, apps: list[BaseApp]) -> None:
         self._apps = apps
-        self._by_key = {app.key: app for app in apps}
+        # Explicit loop, not a comprehension: a duplicate key must raise, not
+        # silently overwrite, or a ``requires_apps`` reference turns ambiguous.
+        self._by_key: dict[str, BaseApp] = {}
+        for app in apps:
+            if app.key in self._by_key:
+                raise ValueError(
+                    f"Duplicate app key {app.key!r}: two apps cannot share a"
+                    " key, or a requires_apps reference would be ambiguous.",
+                )
+            self._by_key[app.key] = app
+        self._validate_dependencies()
+
+    def _validate_dependencies(self) -> None:
+        """Reject self-dependencies, dangling deps, and cycles at build time.
+
+        :raises ValueError: When a ``requires_apps`` entry names the app itself,
+            names an unregistered key, participates in a dependency cycle, or is
+            declared alongside ``child_apps`` (unsupported -- children resolve
+            their own state through the parent's ``state_key`` but do not inherit
+            the parent's ``requires_apps``, so gating the parent would leave its
+            children reachable).
+        """
+        for app in self._apps:
+            if app.child_apps and app.requires_apps:
+                raise ValueError(
+                    f"App {app.key!r} combines child_apps with requires_apps, "
+                    "which is not supported.",
+                )
+            for dep_key in app.requires_apps:
+                if dep_key == app.key:
+                    raise ValueError(
+                        f"App {app.key!r} cannot depend on itself.",
+                    )
+                if dep_key not in self._by_key:
+                    raise ValueError(
+                        f"App {app.key!r} requires unknown app key {dep_key!r}.",
+                    )
+        self._assert_acyclic()
+
+    def _assert_acyclic(self) -> None:
+        """Raise when the ``requires_apps`` graph contains a cycle.
+
+        :raises ValueError: When a dependency cycle is detected.
+        """
+        white, gray, black = 0, 1, 2
+        color = {app.key: white for app in self._apps}
+
+        def visit(key: str, path: list[str]) -> None:
+            color[key] = gray
+            for dep_key in self._by_key[key].requires_apps:
+                if color[dep_key] == gray:
+                    chain = " -> ".join([*path, key, dep_key])
+                    raise ValueError(f"App dependency cycle detected: {chain}.")
+                if color[dep_key] == white:
+                    visit(dep_key, [*path, key])
+            color[key] = black
+
+        for app in self._apps:
+            if color[app.key] == white:
+                visit(app.key, [])
+
+    def resolve_effective_enabled(
+        self,
+        key: str,
+        states: Mapping[str, AppLifecycleEnum],
+        memo: dict[str, bool] | None = None,
+    ) -> bool:
+        """Return whether ``key``'s app is effectively enabled.
+
+        An app is effective-enabled when its own ``AppState`` is ``ENABLED``
+        **and** every app in its ``requires_apps`` is itself effective-enabled
+        (resolved transitively). This is the single resolver the mount gate, the
+        sidebar filter, and the ``GET /api/apps`` projection all share, so they
+        cannot drift. A protected app (or dependency) is always treated as
+        enabled; a missing ``AppState`` row defaults to ``ENABLED``.
+
+        :param key: The registry key of the app to resolve.
+        :param states: A ``{state_key: lifecycle}`` map (e.g. from
+            :meth:`AppStateManager.all_lifecycle_states`).
+        :param memo: An optional ``{key: bool}`` cache shared across a
+            full-registry projection so shared dependency subtrees are walked
+            once rather than re-walked per app. Only reuse a memo within a
+            single ``states`` snapshot; a fresh ``states`` needs a fresh memo.
+        :return: ``True`` when the app and every dependency are enabled.
+        """
+        app = self._by_key.get(key)
+        if app is None:
+            return False
+        return self._effective_enabled(app, states, frozenset(), memo)
+
+    def _effective_enabled(
+        self,
+        app: BaseApp,
+        states: Mapping[str, AppLifecycleEnum],
+        stack: frozenset[str],
+        memo: dict[str, bool] | None = None,
+    ) -> bool:
+        """Resolve ``app``'s effective-enabled state along a DFS path.
+
+        :param app: The app being resolved.
+        :param states: The ``{state_key: lifecycle}`` map.
+        :param stack: The keys on the current recursion path (cycle guard).
+        :param memo: An optional ``{key: bool}`` cache; a resolved result is
+            stored under ``app.key`` and reused on the next visit.
+        :return: ``True`` when the app and every dependency are enabled.
+        """
+        if memo is not None and app.key in memo:
+            return memo[app.key]
+        result = self._resolve_effective(app, states, stack, memo)
+        if memo is not None:
+            memo[app.key] = result
+        return result
+
+    def _resolve_effective(
+        self,
+        app: BaseApp,
+        states: Mapping[str, AppLifecycleEnum],
+        stack: frozenset[str],
+        memo: dict[str, bool] | None,
+    ) -> bool:
+        """Compute ``app``'s effective-enabled state (the un-memoized body).
+
+        :param app: The app being resolved.
+        :param states: The ``{state_key: lifecycle}`` map.
+        :param stack: The keys on the current recursion path (cycle guard).
+        :param memo: The projection cache threaded into dependency resolution.
+        :return: ``True`` when the app and every dependency are enabled.
+        """
+        if app.state_key in PROTECTED_APP_KEYS:
+            # Can never be disabled, so return True without recursing into its
+            # own ``requires_apps``.
+            return True
+        if not self._own_enabled(app, states):
+            return False
+        if app.key in stack:
+            # Defensive: the build rejects cycles, so this is unreachable. Fail
+            # closed -- an unexpected cycle gates the app off, never on.
+            return False
+        stack = stack | {app.key}
+        for dep_key in app.requires_apps:
+            dep = self._by_key.get(dep_key)
+            if dep is None or not self._effective_enabled(dep, states, stack, memo):
+                return False
+        return True
+
+    @staticmethod
+    def _own_enabled(app: BaseApp, states: Mapping[str, AppLifecycleEnum]) -> bool:
+        """Return whether ``app``'s own ``AppState`` is enabled (ignoring deps).
+
+        :param app: The app whose own state is inspected.
+        :param states: The ``{state_key: lifecycle}`` map.
+        :return: ``True`` when protected or the row is ``ENABLED`` (or absent).
+        """
+        return (
+            app.state_key in PROTECTED_APP_KEYS
+            or states.get(app.state_key, AppLifecycleEnum.ENABLED)
+            == AppLifecycleEnum.ENABLED
+        )
 
     def __iter__(self) -> Iterator[BaseApp]:
         return iter(self._apps)
