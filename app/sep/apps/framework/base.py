@@ -67,6 +67,13 @@ class BaseApp(BaseModel):
         registry appends each right after this app and stamps its ``enabled`` from
         this app's, so a child is mounted and snapshotted exactly when its parent
         is. Each child must set ``parent_key`` to this app's key.
+    :param requires_apps: App **keys** (not display names) this app functionally
+        depends on. An app's *effective* enabled state ANDs its own ``AppState``
+        with the effective state of every app named here, so a disabled dependency
+        hides and gates this app too. Depending on a protected app (one that can
+        never be disabled) is a harmless no-op. Keys are validated at
+        registry-build time: an unknown key, a self-dependency, or a cycle fails
+        fast. See :meth:`AppRegistry.resolve_effective_enabled`.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
@@ -88,6 +95,7 @@ class BaseApp(BaseModel):
     app_schema: AppSchema | None = Field(default=None, alias="schema")
     parent_key: str | None = None
     child_apps: tuple["BaseApp", ...] = ()
+    requires_apps: tuple[str, ...] = ()
 
     @model_validator(mode="before")
     @classmethod

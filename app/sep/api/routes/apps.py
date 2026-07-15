@@ -30,8 +30,7 @@ from app.core.utils.fields import URIPath
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.crud import AppStateManager
-from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
-from app.sep.models import AppLifecycleEnum
+from app.sep.deps import SessionDep
 
 router = APIRouter(tags=["apps"])
 APPS_ROUTE_PREFIX = "/apps"
@@ -88,21 +87,23 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
     """Return per-app state for the current user's navigation.
 
     Protected apps are always reported ``enabled=True``. Every other app reflects
-    the DB state of the row governing it (a missing row -> ``enabled=True``: a
-    configured plugin is active until explicitly disabled). A child app owns no
-    row, so it resolves through its parent via
-    :attr:`~app.sep.apps.framework.base.BaseApp.state_key`.
+    its *effective* state via :meth:`AppRegistry.resolve_effective_enabled`: its
+    own row must be ``ENABLED`` (a missing row -> ``enabled=True``: a configured
+    plugin is active until explicitly disabled) **and** every app it declares in
+    ``requires_apps`` must be effectively enabled, so the shell hides an app when
+    a dependency is off. A child app owns no row, so it resolves through its
+    parent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`.
 
     :param session: The database session.
     :return: The per-app navigation list.
     """
     states = await AppStateManager.all_lifecycle_states(session)
+    registry = get_app_registry()
+    memo: dict[str, bool] = {}
     return [
         AppKeyResponse(
             app_key=app.key,
-            enabled=app.state_key in PROTECTED_APP_KEYS
-            or states.get(app.state_key, AppLifecycleEnum.ENABLED)
-            == AppLifecycleEnum.ENABLED,
+            enabled=registry.resolve_effective_enabled(app.key, states, memo),
             sidebar=app.sidebar,
             uri_path=app.uri_path,
             display_name=app.display_name,
@@ -112,5 +113,5 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
             react_route=build_navigation_react_route(app.key, app.react_route),
             nav_icon=app.nav_icon,
         )
-        for app in get_app_registry()
+        for app in registry
     ]

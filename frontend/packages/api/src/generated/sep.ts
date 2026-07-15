@@ -136,10 +136,12 @@ export interface paths {
      * @description Return per-app state for the current user's navigation.
      *
      *     Protected apps are always reported ``enabled=True``. Every other app reflects
-     *     the DB state of the row governing it (a missing row -> ``enabled=True``: a
-     *     configured plugin is active until explicitly disabled). A child app owns no
-     *     row, so it resolves through its parent via
-     *     :attr:`~app.sep.apps.framework.base.BaseApp.state_key`.
+     *     its *effective* state via :meth:`AppRegistry.resolve_effective_enabled`: its
+     *     own row must be ``ENABLED`` (a missing row -> ``enabled=True``: a configured
+     *     plugin is active until explicitly disabled) **and** every app it declares in
+     *     ``requires_apps`` must be effectively enabled, so the shell hides an app when
+     *     a dependency is off. A child app owns no row, so it resolves through its
+     *     parent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`.
      *
      *     :param session: The database session.
      *     :return: The per-app navigation list.

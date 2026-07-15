@@ -620,11 +620,39 @@ class TestCollectAppOwnedSettingsClasses:
         entries = collect_app_owned_settings_classes([App(module_name="checksums")])
         assert entries == []
 
-    def test_rejects_duplicate_setting_class(self) -> None:
-        """Fail when the same settings class is declared twice."""
+    def test_rejects_duplicate_setting_class(self, mocker: MockerFixture) -> None:
+        """Fail when the same settings class is declared by two distinct apps.
+
+        Two entries share ``ALERT_SETTINGS`` across two distinctly-keyed apps
+        (``alerts`` and ``checksums``), so the duplicate-setting-class guard --
+        not the duplicate-app-key guard -- is what trips.
+        """
+        dup_entry = AppOwnedClassEntry(
+            setting_class=SettingClassEnum.ALERT_SETTINGS,
+            settings_cls=AlertSettings,
+            proxy=alert_settings,
+            app_key="checksums",
+        )
+        fake_module = mocker.MagicMock()
+        fake_module.APP_OWNED_SETTINGS_CLASSES = [dup_entry]
+        real_checksums = importlib.import_module("app.sep.apps.checksums")
+        import_calls = {"count": 0}
+
+        def import_side_effect(name: str):
+            if name == "app.sep.apps.checksums":
+                import_calls["count"] += 1
+                if import_calls["count"] == 1:
+                    return real_checksums
+                return fake_module
+            return importlib.import_module(name)
+
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module",
+            side_effect=import_side_effect,
+        )
         with pytest.raises(ValueError, match="more than one app-owned"):
             collect_app_owned_settings_classes(
-                [App(module_name="alerts"), App(module_name="alerts")],
+                [App(module_name="alerts"), App(module_name="checksums")],
             )
 
     def test_rejects_unknown_app_key(self, mocker: MockerFixture) -> None:
@@ -784,6 +812,247 @@ def _parent_plugin(*, enabled: bool = True) -> App:
     the module need not exist on disk.
     """
     return App.model_construct(name="Parent", module_name="parent_app", enabled=enabled)
+
+
+def _dep_app(key: str, *, requires_apps: tuple[str, ...] = ()) -> BaseApp:
+    """Build a minimal top-level ``BaseApp`` carrying ``requires_apps``."""
+    return BaseApp(
+        key=key,
+        name=key,
+        display_name=key,
+        uri_path=f"/{key}",
+        requires_apps=requires_apps,
+    )
+
+
+class TestRequiresAppsValidation:
+    """Cover build-time validation of ``requires_apps`` and app keys."""
+
+    def test_duplicate_app_key_raises(self) -> None:
+        """Reject two apps sharing a key rather than silently collapsing them."""
+        with pytest.raises(ValueError, match="duplicate|Duplicate"):
+            AppRegistry([_dep_app("dup"), _dep_app("dup")])
+
+    def test_dangling_dependency_raises(self) -> None:
+        """Reject a ``requires_apps`` key that resolves to no registered app."""
+        with pytest.raises(ValueError, match="ghost"):
+            AppRegistry([_dep_app("a", requires_apps=("ghost",))])
+
+    def test_self_dependency_raises(self) -> None:
+        """Reject an app that depends on itself."""
+        with pytest.raises(ValueError, match="itself|self"):
+            AppRegistry([_dep_app("a", requires_apps=("a",))])
+
+    def test_dependency_cycle_raises(self) -> None:
+        """Reject a dependency cycle across apps."""
+        with pytest.raises(ValueError, match="cycle|Cycle"):
+            AppRegistry(
+                [
+                    _dep_app("a", requires_apps=("b",)),
+                    _dep_app("b", requires_apps=("a",)),
+                ]
+            )
+
+    def test_valid_dependency_graph_builds(self) -> None:
+        """Build a well-formed dependency graph without error."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        assert registry.keys() == ["a", "b"]
+
+    def test_child_apps_with_requires_apps_raises(self) -> None:
+        """Reject combining ``child_apps`` with ``requires_apps``.
+
+        A child resolves its own state through the parent's ``state_key`` but does
+        not inherit the parent's ``requires_apps``, so the combination would leave
+        a child reachable while its parent is gated -- reject it until supported.
+        """
+        child = BaseApp(
+            key="parent_app/sub",
+            name="sub",
+            display_name="Sub",
+            uri_path="/parent_app/sub",
+            parent_key="parent_app",
+        )
+        parent = BaseApp(
+            key="parent_app",
+            name="parent_app",
+            display_name="Parent App",
+            uri_path="/parent_app",
+            child_apps=(child,),
+            requires_apps=("dep",),
+        )
+        with pytest.raises(ValueError, match="child_apps"):
+            AppRegistry([parent, _dep_app("dep")])
+
+
+class TestEffectiveEnabled:
+    """Cover the centralized effective-enabled resolver."""
+
+    def test_enabled_when_own_and_dep_enabled(self) -> None:
+        """Resolve effective-enabled when an app and its dependency are enabled."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        assert registry.resolve_effective_enabled("a", {}) is True
+
+    def test_disabled_when_own_disabled(self) -> None:
+        """Gate an app when its own state is disabled."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        states = {"a": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_effective_enabled("a", states) is False
+
+    def test_disabled_when_dependency_disabled(self) -> None:
+        """Gate an app when a dependency is disabled."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        states = {"b": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_effective_enabled("a", states) is False
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    def test_disabled_when_dependency_not_fully_enabled(
+        self, state: AppLifecycleEnum
+    ) -> None:
+        """Gate the dependent app for any dependency state other than ENABLED."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        assert registry.resolve_effective_enabled("a", {"b": state}) is False
+
+    def test_missing_row_treated_as_enabled(self) -> None:
+        """Treat a missing ``AppState`` row as ENABLED for every node."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        assert registry.resolve_effective_enabled("a", {}) is True
+
+    def test_unknown_key_resolves_disabled(self) -> None:
+        """Resolve an unregistered key to ``False`` rather than raising."""
+        registry = AppRegistry([_dep_app("a")])
+        assert registry.resolve_effective_enabled("ghost", {}) is False
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    def test_disabled_when_own_state_not_fully_enabled(
+        self, state: AppLifecycleEnum
+    ) -> None:
+        """Gate an app for any of its own states other than ENABLED."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        assert registry.resolve_effective_enabled("a", {"a": state}) is False
+
+    def test_disabled_when_one_of_several_deps_disabled(self) -> None:
+        """Gate an app when any one of its multiple dependencies is disabled."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("b", "c")),
+                _dep_app("b"),
+                _dep_app("c"),
+            ]
+        )
+        assert registry.resolve_effective_enabled("a", {}) is True
+        states = {"c": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_effective_enabled("a", states) is False
+
+    def test_child_app_gated_through_parent_state(self) -> None:
+        """Gate a child app via its parent's ``AppState`` (child owns no row).
+
+        A child resolves its own enabled state through ``state_key`` (its
+        ``parent_key``), so disabling the parent gates the child.
+        """
+        registry = AppRegistry(
+            [
+                _dep_app("parent_app"),
+                _child_app("parent_app/restore", parent_key="parent_app"),
+            ]
+        )
+        assert registry.resolve_effective_enabled("parent_app/restore", {}) is True
+        states = {"parent_app": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_effective_enabled("parent_app/restore", states) is False
+
+    def test_protected_dependency_is_always_enabled(self) -> None:
+        """Never gate on a protected dependency, even when its row says disabled."""
+        registry = AppRegistry(
+            [_dep_app("a", requires_apps=("inventory",)), _dep_app("inventory")]
+        )
+        states = {"inventory": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_effective_enabled("a", states) is True
+
+    def test_protected_app_ignores_its_own_disabled_dependency(self) -> None:
+        """Keep a dependent enabled when a protected middle node has a disabled dep.
+
+        ``inventory`` is protected, so ``consumer -> inventory -> snippets`` must
+        not gate ``consumer`` when ``snippets`` is disabled: a protected node is
+        unconditionally enabled and its own ``requires_apps`` are never walked.
+        """
+        registry = AppRegistry(
+            [
+                _dep_app("consumer", requires_apps=("inventory",)),
+                _dep_app("inventory", requires_apps=("snippets",)),
+                _dep_app("snippets"),
+            ]
+        )
+        states = {"snippets": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_effective_enabled("consumer", states) is True
+
+    def test_transitive_dependency_gates(self) -> None:
+        """Gate the whole chain on a disabled transitive dependency."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("b",)),
+                _dep_app("b", requires_apps=("c",)),
+                _dep_app("c"),
+            ]
+        )
+        assert (
+            registry.resolve_effective_enabled("a", {"c": AppLifecycleEnum.DISABLED})
+            is False
+        )
+        assert registry.resolve_effective_enabled("a", {}) is True
+
+    def test_cycle_at_resolve_time_fails_closed(self) -> None:
+        """Gate an app off if a dependency cycle is present at resolve time.
+
+        The build rejects cycles, so this guards the defensive branch against
+        post-build mutation or an unexpected graph shape: a detected cycle must
+        fail closed (gate the app off), never fall through to enabled.
+        """
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        # Inject an ``a -> b -> a`` cycle past the build-time validation.
+        registry._by_key["b"] = registry._by_key["b"].model_copy(
+            update={"requires_apps": ("a",)}
+        )
+        assert registry.resolve_effective_enabled("a", {}) is False
+
+    def test_memo_caches_shared_subtree_across_calls(self) -> None:
+        """Reuse a memoized dependency result across a full-registry projection."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("shared",)),
+                _dep_app("b", requires_apps=("shared",)),
+                _dep_app("shared"),
+            ]
+        )
+        memo: dict[str, bool] = {}
+        assert registry.resolve_effective_enabled("a", {}, memo) is True
+        assert registry.resolve_effective_enabled("b", {}, memo) is True
+        # The shared subtree is resolved once and cached for later reuse.
+        assert memo["shared"] is True
+
+    def test_memo_matches_unmemoized_result_when_dep_disabled(self) -> None:
+        """Produce identical gating with and without a memo for a disabled dep."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("shared",)),
+                _dep_app("b", requires_apps=("shared",)),
+                _dep_app("shared"),
+            ]
+        )
+        states = {"shared": AppLifecycleEnum.DISABLED}
+        memo: dict[str, bool] = {}
+        assert registry.resolve_effective_enabled("a", states, memo) is False
+        assert registry.resolve_effective_enabled("b", states, memo) is False
 
 
 class TestChildApps:
