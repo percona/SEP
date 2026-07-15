@@ -15,6 +15,8 @@
 
 """Shared error mapping for SEP gateway proxies to the Tasks sub-app."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import NoReturn
 
 from fastapi import HTTPException, status
@@ -43,6 +45,27 @@ def reraise_upstream_tasks_error(exc: HTTPException | OSError) -> NoReturn:
         isinstance(exc, HTTPException)
         and exc.status_code < status.HTTP_500_INTERNAL_SERVER_ERROR
     ):
-        raise exc
+        raise exc.with_traceback(exc.__traceback__)
     detail = getattr(exc, "detail", str(exc))
     raise HTTPBadGatewayException(detail=str(detail)) from exc
+
+
+@contextmanager
+def reraise_upstream_tasks_errors() -> Iterator[None]:
+    """Route upstream Tasks-API failures raised in the block onto the gateway contract.
+
+    Wrap an upstream ``tasks_api`` call so an ``HTTPException`` or ``OSError`` it
+    raises is mapped through :func:`reraise_upstream_tasks_error`; any other
+    exception propagates unchanged.
+
+    :yield: Control to the wrapped block; the block runs inside the try, and any
+        ``HTTPException`` / ``OSError`` it raises is routed through the mapper.
+    :raises HTTPException: Re-raised unchanged for an upstream client error
+        (status < 500).
+    :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+        or a connection-level ``OSError``.
+    """
+    try:
+        yield
+    except (HTTPException, OSError) as exc:
+        reraise_upstream_tasks_error(exc)
