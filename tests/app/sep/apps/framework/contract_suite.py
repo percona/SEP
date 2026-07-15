@@ -43,7 +43,7 @@ from polyfactory.factories.pydantic_factory import ModelFactory
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning, TaskExecuteWrite
-from app.sep.apps.framework.apps import TaskExecutionApp, UNGUARDED
+from app.sep.apps.framework.apps import NO_PAGINATION, TaskExecutionApp, UNGUARDED
 from app.sep.apps.framework.conformance import CAPABILITY_RENDERED_CONTROLS
 from app.sep.apps.framework.form_dsl import (
     find_ref_marker,
@@ -327,7 +327,7 @@ class DerivedRouterContractTests:
 
     def test_list_200_plain(self, contract_client: TestClient) -> None:
         """Assert an unpaginated ``GET /`` returns a plain list."""
-        if self.app_def.pagination is not None:
+        if self.app_def.pagination is not NO_PAGINATION:
             pytest.skip("paginated list")
         base = app_base_url(self.app_def)
 
@@ -338,7 +338,7 @@ class DerivedRouterContractTests:
 
     def test_list_200_paginated(self, contract_client: TestClient) -> None:
         """Assert a paginated ``GET /`` returns a ``PaginatedResponse`` envelope."""
-        if self.app_def.pagination is None:
+        if self.app_def.pagination is NO_PAGINATION:
             pytest.skip("unpaginated list")
         base = app_base_url(self.app_def)
 

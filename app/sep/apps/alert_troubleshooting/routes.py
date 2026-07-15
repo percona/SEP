@@ -29,6 +29,7 @@ from app.sep.apps.alert_troubleshooting.deps import (
     TroubleshootingIndexContext,
 )
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
+from app.sep.apps.framework.script_helpers import post_task_execution
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated, TaskAPI
 
@@ -119,13 +120,8 @@ async def troubleshooting_execute(
     :rtype: JSONResponse
     """
     try:
-        result = await tasks_api.post(
-            f"/execute/{snippet.execution_task_name}",
-            json={
-                "meta": execution_request_meta.model_dump(
-                    by_alias=True, exclude_none=True
-                )
-            },
+        task_id = await post_task_execution(
+            tasks_api, snippet.execution_task_name, execution_request_meta
         )
     except HTTPException as exc:
         logger.warning(
@@ -138,9 +134,7 @@ async def troubleshooting_execute(
             {"error": exc.detail or "Execution failed"},
             status_code=exc.status_code,
         )
-    try:
-        task_id = result["id"]
-    except KeyError:
+    if task_id is None:
         logger.warning(
             "Unexpected response from Tasks API for snippet %r",
             snippet.filename,

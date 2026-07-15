@@ -562,7 +562,7 @@ export interface paths {
       cookie?: never;
     };
     /** List */
-    get: operations['archives__list_api_apps_archives__get'];
+    get: operations['archives__list_paginated_api_apps_archives__get'];
     put?: never;
     /** Create */
     post: operations['archives__create_api_apps_archives__post'];
@@ -949,7 +949,7 @@ export interface paths {
       cookie?: never;
     };
     /** List */
-    get: operations['checksums__list_api_apps_checksums__get'];
+    get: operations['checksums__list_paginated_api_apps_checksums__get'];
     put?: never;
     /** Create */
     post: operations['checksums__create_api_apps_checksums__post'];
@@ -1761,7 +1761,7 @@ export interface paths {
     };
     /**
      * List
-     * @description List every discovered script as its list-row projection.
+     * @description List discovered scripts as a paginated projection.
      */
     get: operations['snippets_snippets_api_list_api_apps_snippets__get'];
     put?: never;
@@ -6557,6 +6557,17 @@ export interface components {
       /** Total */
       total: number;
     };
+    /** PaginatedResponse[BaseTaskResponse] */
+    PaginatedResponse_BaseTaskResponse_: {
+      /** Items */
+      items: components['schemas']['BaseTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[RestoreTaskResponse] */
     PaginatedResponse_RestoreTaskResponse_: {
       /** Items */
@@ -6583,6 +6594,17 @@ export interface components {
     PaginatedResponse_ServiceResponse_: {
       /** Items */
       items: components['schemas']['ServiceResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[SnippetResponse] */
+    PaginatedResponse_SnippetResponse_: {
+      /** Items */
+      items: components['schemas']['SnippetResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -7511,14 +7533,11 @@ export interface components {
      *
      *     :param content: The full text content of the snippet file (preamble,
      *         frontmatter, and body concatenated).
-     *     :type content: str
      *     :param language: A JS syntax-highlighter language identifier derived
      *         from the snippet's MIME type (for example, ``"bash"`` or
      *         ``"plaintext"``).
-     *     :type language: str
      *     :param is_truncated: Whether the preview was truncated to fit
      *         within the configured per-file character or line limit.
-     *     :type is_truncated: bool
      */
     ScriptPreviewResponse: {
       /** Content */
@@ -9455,9 +9474,11 @@ export interface operations {
       };
     };
   };
-  archives__list_api_apps_archives__get: {
+  archives__list_paginated_api_apps_archives__get: {
     parameters: {
       query?: {
+        offset?: number;
+        limit?: number;
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
       header?: never;
@@ -9472,7 +9493,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['BaseTaskResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_BaseTaskResponse_'];
         };
       };
       /** @description Validation Error */
@@ -10330,9 +10351,11 @@ export interface operations {
       };
     };
   };
-  checksums__list_api_apps_checksums__get: {
+  checksums__list_paginated_api_apps_checksums__get: {
     parameters: {
       query?: {
+        offset?: number;
+        limit?: number;
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
@@ -10348,7 +10371,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['BaseTaskResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_BaseTaskResponse_'];
         };
       };
       /** @description Validation Error */
@@ -11669,7 +11692,10 @@ export interface operations {
   };
   snippets_snippets_api_list_api_apps_snippets__get: {
     parameters: {
-      query?: never;
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -11682,7 +11708,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['SnippetResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_SnippetResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
