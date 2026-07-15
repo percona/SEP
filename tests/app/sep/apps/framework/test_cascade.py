@@ -40,6 +40,7 @@ from app.sep.apps.framework.cascade import (
     CascadeResult,
 )
 from app.sep.apps.framework.schema import ChainedPredecessor, DerivedTask
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 
 
 def _parent_payload(**overrides: Any) -> dict[str, Any]:
@@ -129,6 +130,16 @@ class TestBuildDerivedPayload:
         assert parent["name"] == before["name"]
         assert parent["data"]["meta"]["args"] == before["args"]
         assert "parent" not in parent["data"]
+
+    def test_strips_reserved_form_key_from_child(self) -> None:
+        """Drop the parent's create-form stamp from the derived child copy."""
+        parent = _parent_payload()
+        parent["data"][RESERVED_FORM_KEY] = {"task_name": "t1"}
+
+        result = build_derived_payload(parent, DerivedTask(name_suffix="-dry-run"))
+
+        assert RESERVED_FORM_KEY not in result["data"]
+        assert parent["data"][RESERVED_FORM_KEY] == {"task_name": "t1"}
 
     def test_applies_payload_substitutions(self) -> None:
         """Apply ``payload_substitutions`` to ``data.payload`` literally."""

@@ -47,6 +47,8 @@ from app.sep.apps.framework import (
 )
 from app.sep.apps.framework.api import (
     capabilities_endpoint,
+    CascadeCreatePlan,
+    derive_cascade_create_route,
     derive_crud_routes,
     derive_execute_route,
     derive_script_routes,
@@ -90,6 +92,7 @@ from app.sep.apps.framework.schema import (
     YamlField,
 )
 from app.sep.apps.framework.script_source import ScriptSource
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -103,8 +106,8 @@ from app.sep.deps import (
     IsApiAuthenticated,
     TaskAPI,
 )
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
-from tests.app.factories import TaskFactory
+from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskWrite
+from tests.app.factories import GeneratedTaskFactory, TaskFactory
 
 _TEST_SCHEMA = AppSchema(
     name="test-schema-endpoint",
@@ -1094,6 +1097,9 @@ class TestCapabilitiesEndpointRuntime:
 _SYNTHETIC_OWNER = "ARCHIVER"
 _CRUD_PREFIX = "/test-derive-crud"
 _CRUD_BASE_URL = f"/api/apps{_CRUD_PREFIX}"
+_SCRIPT_PREFIX = "/test-derive-script"
+_SCRIPT_BASE_URL = f"/api/apps{_SCRIPT_PREFIX}"
+_SCRIPT_PAGE_LIMIT = 25
 
 _PAGE_OFFSET = 5
 _PAGE_LIMIT = 2
@@ -1362,6 +1368,21 @@ def _authed_crud_client(
     return TestClient(app, raise_server_exceptions=False)
 
 
+def _authed_script_client(router: APIRouter, user: CasdoorUser) -> TestClient:
+    """Mount a script ``router`` in a production-shape app with an auth override.
+
+    A script list route lists from its ``ScriptSource``, not the Tasks API, so no
+    ``get_tasks_api`` override is installed.
+
+    :param router: The ``derive_script_routes`` router under test.
+    :param user: The authenticated user the auth dep resolves to.
+    :return: A bare ``TestClient`` mounting the script router under the script prefix.
+    """
+    app = _mount_plugin_router(router, _SCRIPT_PREFIX)
+    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    return TestClient(app, raise_server_exceptions=False)
+
+
 def _api_routes(router: APIRouter) -> list[APIRoute]:
     """Return the concrete ``APIRoute`` objects registered on ``router``."""
     return [r for r in router.routes if isinstance(r, APIRoute)]
@@ -1548,6 +1569,43 @@ class TestDeriveScriptRoutes:
         route = _route_for(router, "/", "GET")
 
         assert route.response_model is PaginatedResponse
+
+
+class TestDeriveScriptRoutesPaginatedList:
+    """Exercise the paginated script ``GET /`` list route over HTTP."""
+
+    def test_paginated_list_200_returns_envelope(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the paginated script list returns the envelope echoing offset/limit."""
+        router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
+        client = _authed_script_client(router, regular_user)
+
+        response = client.get(
+            f"{_SCRIPT_BASE_URL}/", params={"offset": 0, "limit": _SCRIPT_PAGE_LIMIT}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert {"items", "total", "offset", "limit"} <= body.keys()
+        assert body["total"] == 1
+        assert body["offset"] == 0
+        assert body["limit"] == _SCRIPT_PAGE_LIMIT
+        assert [item["filename"] for item in body["items"]] == ["stub.sh"]
+
+    def test_paginated_list_slices_by_offset(self, regular_user: CasdoorUser) -> None:
+        """Assert an offset past the discovered scripts yields an empty page."""
+        router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
+        client = _authed_script_client(router, regular_user)
+
+        response = client.get(
+            f"{_SCRIPT_BASE_URL}/", params={"offset": 1, "limit": _SCRIPT_PAGE_LIMIT}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"] == []
 
 
 class TestDeriveCrudRoutesCreateSkip:
@@ -2871,3 +2929,342 @@ class TestDeriveExecuteRouteOpenApi:
         assert operation["description"] == (
             "Resolve, dispatch, and wrap a standard task execution."
         )
+
+
+# ── derive_cascade_create_route() helper ────────────────────────────────
+
+
+_CASCADE_PREFIX = "/test-derive-cascade-create"
+_CASCADE_BASE_URL = f"/api/apps{_CASCADE_PREFIX}"
+
+
+class _SyntheticCreateBody(BaseModel):
+    """Represent the create request body for the synthetic cascade plugin."""
+
+    task_name: str
+
+
+class _SyntheticCascadeResponse(BaseModel):
+    """Represent the create response (with a connectivity slot) for the plugin."""
+
+    task_name: str
+    connectivity_warning: ConnectivityWarning | None = None
+
+
+class _SyntheticCreateResponseNoConnectivity(BaseModel):
+    """Represent a create response lacking the ``connectivity_warning`` field."""
+
+    task_name: str
+
+
+async def _synthetic_cascade(tasks_api: RemoteAPI, parent_write: TaskWrite) -> None:
+    """Send the (already-stamped) synthetic parent write at cascade time."""
+    await tasks_api.post("/", json=parent_write.model_dump())
+
+
+async def _build_synthetic_cascade_plan(
+    body: _SyntheticCreateBody,
+) -> CascadeCreatePlan:
+    """Build a synthetic ``CascadeCreatePlan`` carrying its cascade closure."""
+    parent_write = GeneratedTaskFactory.build(
+        name=body.task_name,
+        backend=TaskBackendEnum.NOMAD,
+        data={"meta": {}},
+    )
+    return CascadeCreatePlan(
+        parent_write=parent_write,
+        form=body,
+        cascade=lambda api: _synthetic_cascade(api, parent_write),
+    )
+
+
+_SyntheticCascadePlan = Annotated[
+    CascadeCreatePlan, Depends(_build_synthetic_cascade_plan)
+]
+
+
+async def _get_synthetic_task(task_name: str, tasks_api: RemoteAPI) -> Task:
+    """Fetch and validate the created synthetic parent task."""
+    fetched = await tasks_api.get(f"/{task_name}")
+    return Task.model_validate(fetched)
+
+
+async def _build_synthetic_cascade_response(
+    task: Task, tasks_api: RemoteAPI
+) -> _SyntheticCascadeResponse:
+    """Render the synthetic create response from the refetched task."""
+    return _SyntheticCascadeResponse(task_name=task.name)
+
+
+def _cascade_router(**overrides: object) -> APIRouter:
+    """Register one ``derive_cascade_create_route`` on a fresh router."""
+    router = APIRouter()
+    kwargs = {
+        "create_plan": _SyntheticCascadePlan,
+        "get_task": _get_synthetic_task,
+        "response_builder": _build_synthetic_cascade_response,
+        "response_model": _SyntheticCascadeResponse,
+    }
+    kwargs.update(overrides)
+    derive_cascade_create_route(router, **kwargs)
+    return router
+
+
+def _authed_cascade_client(
+    router: APIRouter, tasks_api: AsyncMock, user: CasdoorUser
+) -> TestClient:
+    """Mount ``router`` in a production-shape app with auth + Tasks-API overrides."""
+    app = _mount_plugin_router(router, _CASCADE_PREFIX)
+    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    app.dependency_overrides[get_tasks_api] = lambda: tasks_api
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestDeriveCascadeCreateRouteComposition:
+    """Inspect the registered cascade create route in isolation, without HTTP."""
+
+    def test_registers_post_create_route(self) -> None:
+        """Assert the helper registers a single ``POST /`` route."""
+        route = _route_for(_cascade_router(), "/", "POST")
+
+        assert route.methods == {"POST"}
+
+    def test_create_route_pins_201(self) -> None:
+        """Assert the create route defaults to ``status_code=201``."""
+        route = _route_for(_cascade_router(), "/", "POST")
+
+        assert route.status_code == status.HTTP_201_CREATED
+
+    def test_status_code_override(self) -> None:
+        """Assert an explicit ``status_code`` overrides the 201 default."""
+        route = _route_for(_cascade_router(status_code=status.HTTP_200_OK), "/", "POST")
+
+        assert route.status_code == status.HTTP_200_OK
+
+    def test_response_model_is_response_model(self) -> None:
+        """Assert the route's response model is the supplied ``response_model``."""
+        route = _route_for(_cascade_router(), "/", "POST")
+
+        assert route.response_model is _SyntheticCascadeResponse
+
+    def test_metadata_override_sets_route_name(self) -> None:
+        """Assert passing ``name`` overrides the route name (drives operationId)."""
+        route = _route_for(_cascade_router(name="synthetic_api_create"), "/", "POST")
+
+        assert route.name == "synthetic_api_create"
+
+    def test_metadata_default_route_name_is_inner_handler(self) -> None:
+        """Assert the route name defaults to the inner ``create`` handler name."""
+        route = _route_for(_cascade_router(), "/", "POST")
+
+        assert route.name == "create"
+
+    def test_route_declares_no_per_route_guards(self) -> None:
+        """Assert the create route carries no per-route deps (auth inherited from mount)."""
+        route = _route_for(_cascade_router(), "/", "POST")
+
+        assert route.dependencies == []
+
+    def test_extra_deps_appended(self) -> None:
+        """Assert ``extra_deps`` are attached as the route's dependencies."""
+        route = _route_for(
+            _cascade_router(extra_deps=[Depends(_marker_dep)]), "/", "POST"
+        )
+        callables = {d.dependency for d in route.dependencies}
+
+        assert _marker_dep in callables
+
+    def test_second_call_raises_value_error(self) -> None:
+        """Assert registering a second create route on the same router fails."""
+        router = _cascade_router()
+
+        with pytest.raises(ValueError, match="derive_cascade_create_route"):
+            derive_cascade_create_route(
+                router,
+                create_plan=_SyntheticCascadePlan,
+                get_task=_get_synthetic_task,
+                response_builder=_build_synthetic_cascade_response,
+                response_model=_SyntheticCascadeResponse,
+            )
+
+    def test_second_call_raises_value_error_on_prefixed_router(self) -> None:
+        """Assert the duplicate guard fires when the router carries a prefix."""
+        router = APIRouter(prefix="/plugin-prefix")
+        derive_cascade_create_route(
+            router,
+            create_plan=_SyntheticCascadePlan,
+            get_task=_get_synthetic_task,
+            response_builder=_build_synthetic_cascade_response,
+            response_model=_SyntheticCascadeResponse,
+        )
+
+        with pytest.raises(ValueError, match="derive_cascade_create_route"):
+            derive_cascade_create_route(
+                router,
+                create_plan=_SyntheticCascadePlan,
+                get_task=_get_synthetic_task,
+                response_builder=_build_synthetic_cascade_response,
+                response_model=_SyntheticCascadeResponse,
+            )
+
+    def test_non_basemodel_response_model_raises_type_error(self) -> None:
+        """Assert a non-BaseModel ``response_model`` is rejected at registration."""
+        with pytest.raises(TypeError, match="BaseModel"):
+            _cascade_router(response_model=object)
+
+    def test_connectivity_check_requires_connectivity_field(self) -> None:
+        """Assert ``connectivity_check`` needs a ``connectivity_warning`` field."""
+        with pytest.raises(TypeError, match="connectivity_warning"):
+            _cascade_router(
+                connectivity_check=True,
+                response_model=_SyntheticCreateResponseNoConnectivity,
+            )
+
+
+class TestDeriveCascadeCreateRouteOverHttp:
+    """Exercise the registered cascade create route over real HTTP."""
+
+    def test_create_201_stamps_form_and_runs_cascade(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a valid authed POST returns 201 and the parent POST carries ``_form``."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"), created_task=_task_dict("t1")
+        )
+        client = _authed_cascade_client(_cascade_router(), tasks_api, regular_user)
+
+        response = client.post(f"{_CASCADE_BASE_URL}/", json={"task_name": "t1"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json() == {"task_name": "t1", "connectivity_warning": None}
+        tasks_api.post.assert_awaited_once()
+        posted = tasks_api.post.await_args
+        assert posted.args[0] == "/"
+        assert posted.kwargs["json"]["data"][RESERVED_FORM_KEY] == {"task_name": "t1"}
+
+    def test_connectivity_check_false_skips_probe(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``check_connectivity=false`` leaves ``connectivity_warning`` unset."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"), created_task=_task_dict("t1")
+        )
+        client = _authed_cascade_client(
+            _cascade_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(
+            f"{_CASCADE_BASE_URL}/?check_connectivity=false", json={"task_name": "t1"}
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] is None
+
+    def test_connectivity_check_default_probes_without_meta(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the default connectivity probe short-circuits when meta lacks keys."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"), created_task=_task_dict("t1")
+        )
+        client = _authed_cascade_client(
+            _cascade_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CASCADE_BASE_URL}/", json={"task_name": "t1"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] is None
+
+    def test_connectivity_check_populates_warning_on_probe_failure(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Attach the probe warning to the create response when the probe fails."""
+        warning = ConnectivityWarning(
+            target="node-1", service_type="mysql", message="unreachable"
+        )
+        probe = _patch_probe(mocker, warning)
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict_with_meta("t1", _CONNECTIVITY_META),
+            created_task=_task_dict("t1"),
+        )
+        client = _authed_cascade_client(
+            _cascade_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CASCADE_BASE_URL}/", json={"task_name": "t1"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] == {
+            "target": "node-1",
+            "service_type": "mysql",
+            "message": "unreachable",
+            "task_history_id": None,
+        }
+        probe.assert_awaited_once()
+
+    def test_create_401_when_unauthenticated(self) -> None:
+        """Assert the create route returns a JSON 401 without an auth override."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"), created_task=_task_dict("t1")
+        )
+        app = _mount_plugin_router(_cascade_router(), _CASCADE_PREFIX)
+        app.dependency_overrides[get_tasks_api] = lambda: tasks_api
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.post(
+            f"{_CASCADE_BASE_URL}/", json={"task_name": "t1"}, follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.headers["content-type"].startswith("application/json")
+
+
+class TestDeriveCascadeCreateRouteOpenApi:
+    """Assert the cascade create route's generated OpenAPI carries the expected shape."""
+
+    def _openapi_for(self, router: APIRouter, regular_user: CasdoorUser) -> dict:
+        """Return the generated OpenAPI for an app mounting ``router``."""
+        tasks_api = _make_tasks_api()
+        client = _authed_cascade_client(router, tasks_api, regular_user)
+        return client.get("/openapi.json").json()
+
+    def test_request_body_schema_is_plan_body_model(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the requestBody schema references the plan dependency's body model."""
+        spec = self._openapi_for(_cascade_router(), regular_user)
+        operation = spec["paths"][f"{_CASCADE_BASE_URL}/"]["post"]
+        ref = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+
+        assert ref.endswith("_SyntheticCreateBody")
+
+    def test_connectivity_check_query_present_when_enabled(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the ``check_connectivity`` query param appears when enabled."""
+        spec = self._openapi_for(_cascade_router(connectivity_check=True), regular_user)
+        operation = spec["paths"][f"{_CASCADE_BASE_URL}/"]["post"]
+        params = {p["name"] for p in operation.get("parameters", [])}
+
+        assert "check_connectivity" in params
+
+    def test_connectivity_check_query_absent_when_disabled(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert no ``check_connectivity`` query param when connectivity is off."""
+        spec = self._openapi_for(_cascade_router(), regular_user)
+        operation = spec["paths"][f"{_CASCADE_BASE_URL}/"]["post"]
+        params = {p["name"] for p in operation.get("parameters", [])}
+
+        assert "check_connectivity" not in params
+
+    def test_metadata_override_sets_description(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a supplied ``description`` becomes the operation description."""
+        router = _cascade_router(description="Create the synthetic task group.")
+        spec = self._openapi_for(router, regular_user)
+        operation = spec["paths"][f"{_CASCADE_BASE_URL}/"]["post"]
+
+        assert operation["description"] == "Create the synthetic task group."
