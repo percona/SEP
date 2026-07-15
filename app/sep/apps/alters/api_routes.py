@@ -31,17 +31,18 @@ from fastapi import status as http_status
 
 from app.core.exceptions import HTTPInternalServerErrorException
 from app.sep.apps.alters.deps import (
+    AltersCascadePlan,
     AltersTask,
     build_alters_api_task_response,
     build_alters_task,
     build_pre_checks_task_payload,
-    cascade_create_alters_group,
     cascade_delete_alters_group,
     cascade_update_alters_group,
     DeletableAltersParent,
     EditableAltersParent,
     ensure_alters_group_update_preserves_names,
     get_alters_task,
+    render_alters_create,
     resolve_alters_parent_task,
 )
 from app.sep.apps.alters.models import (
@@ -54,7 +55,10 @@ from app.sep.apps.framework import (
     get_task_latest_history,
     maybe_record_connectivity_warning,
 )
-from app.sep.apps.framework.api import derive_execute_route
+from app.sep.apps.framework.api import (
+    derive_cascade_create_route,
+    derive_execute_route,
+)
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
     get_username_mapping,
@@ -84,56 +88,16 @@ async def alters_api_detail(
     )
 
 
-@router.post(
-    "/",
-    status_code=http_status.HTTP_201_CREATED,
+derive_cascade_create_route(
+    router,
+    name="alters_api_create",
+    description="Create an alters task group from a JSON payload request body.",
+    create_plan=AltersCascadePlan,
+    get_task=get_alters_task,
+    response_builder=render_alters_create,
+    response_model=AltersTaskResponseCreate,
+    connectivity_check=True,
 )
-async def alters_api_create(
-    body: AltersCreate,
-    tasks_api: TaskAPI,
-    inventory_api: InventoryAPI,
-    *,
-    check_connectivity: Annotated[bool, Query()] = True,
-) -> AltersTaskResponseCreate:
-    """Create an alters task group from a JSON payload request body.
-
-    POSTs the parent execute task, dry-run derived sibling, and pre-checks
-    predecessor. Pre-checks are started manually from the detail page.
-
-    :param check_connectivity: Whether to verify the target database is
-        reachable after task creation. Defaults to ``True`` so callers that
-        omit the parameter still get a connectivity round-trip; pass
-        ``check_connectivity=false`` to opt out. Note that the form flow
-        defaults to ``False`` (HTML checkbox semantics — an unchecked box
-        submits no field); this asymmetry is intentional.
-    :type check_connectivity: bool
-    """
-    logger.debug("Create alters task group (JSON path): %s", body.task_name)
-    parent_task = await build_alters_task(body, inventory_api)
-    pre_checks_template = await build_pre_checks_task_payload(
-        parent_task, task_api=tasks_api
-    )
-    stamp_form_input(parent_task, body)
-    await cascade_create_alters_group(
-        tasks_api,
-        parent_task,
-        pre_checks_template,
-        body,
-    )
-    task = await get_alters_task(parent_task.name, tasks_api)
-    username_mapping = await get_username_mapping()
-    connectivity_warning = await maybe_record_connectivity_warning(
-        tasks_api,
-        task.data.get("meta", {}),
-        check_connectivity=check_connectivity,
-    )
-    return build_alters_api_task_response(
-        task,
-        status=None,
-        response_model=AltersTaskResponseCreate,
-        connectivity_warning=connectivity_warning,
-        username_mapping=username_mapping,
-    )
 
 
 @router.put("/{task_name}")

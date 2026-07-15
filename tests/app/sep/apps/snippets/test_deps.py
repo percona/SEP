@@ -209,6 +209,26 @@ async def test_build_snippet_execution_meta_prepends_sudo_when_always(create_sni
 
 
 @pytest.mark.asyncio
+async def test_build_snippet_execution_meta_raises_when_no_interpreter(
+    create_snippet, mocker
+):
+    """Raise ``HTTPBadRequestException`` when the snippet has no configured interpreter."""
+    snippet = await create_snippet("hello.sh", approved=True)
+    execution_args = snippet.get_execution_model().model_validate(
+        {EXECUTOR_HOSTS_INPUT_NAME: "host1"},
+    )
+    mocker.patch.object(
+        Snippet,
+        "execution_interpreter",
+        new_callable=mocker.PropertyMock,
+        return_value=None,
+    )
+
+    with pytest.raises(HTTPBadRequestException):
+        build_snippet_execution_meta(snippet, execution_args, "https://x/y")
+
+
+@pytest.mark.asyncio
 async def test_get_executable_snippet_for_api_raises_403_for_unapproved(
     create_snippet,
 ):

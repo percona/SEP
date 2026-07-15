@@ -347,12 +347,15 @@ class TestAltersApiCreate:
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
         assert first_post["owner"] == "ALTERS"
         assert "--execute" in first_post["data"]["meta"]["args"]
+        assert "_form" in first_post["data"]
         dry_run_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
         assert dry_run_post["name"] == f"{DEFAULT_TASK_NAME}-dry-run"
         assert "--dry-run" in dry_run_post["data"]["meta"]["args"]
         assert dry_run_post["data"]["parent"] == DEFAULT_TASK_NAME
+        assert "_form" not in dry_run_post["data"]
         pre_checks_post = mock_task_api_dep.post.await_args_list[2].kwargs["json"]
         assert pre_checks_post["name"] == f"{DEFAULT_TASK_NAME}-pre-checks"
+        assert "_form" not in pre_checks_post["data"]
 
     def test_create_returns_422_missing_required_fields(
         self, test_client, mock_task_api_dep
@@ -495,6 +498,12 @@ class TestAltersApiUpdate:
         parent_data = parent_put.kwargs["json"]["data"]
         assert "_form" in parent_data
         assert parent_data["_form"]["task_name"] == DEFAULT_PARENT_NAME
+        dry_run_put = next(
+            c
+            for c in mock_task_api_dep.put.await_args_list
+            if c.args[0] == f"/{DEFAULT_PARENT_NAME}-dry-run"
+        )
+        assert "_form" not in dry_run_put.kwargs["json"]["data"]
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_update_continue_on_pre_check_failure_uses_continue_predecessor_spec(

@@ -103,6 +103,23 @@ class ScriptExecutionResponse(BaseModel):
     snippet_filename: NonEmptyStr
 
 
+class ScriptPreviewResponse(BaseModel):
+    """Represent the backend response for the preview endpoint.
+
+    :param content: The full text content of the snippet file (preamble,
+        frontmatter, and body concatenated).
+    :param language: A JS syntax-highlighter language identifier derived
+        from the snippet's MIME type (for example, ``"bash"`` or
+        ``"plaintext"``).
+    :param is_truncated: Whether the preview was truncated to fit
+        within the configured per-file character or line limit.
+    """
+
+    content: str
+    language: str
+    is_truncated: bool
+
+
 @dataclass(frozen=True, slots=True)
 class ScriptSource(Generic[S]):
     """Carry the hooks ``derive_script_routes`` derives a script app's surface from.
@@ -187,6 +204,7 @@ def make_script_dep(source: ScriptSource[S]) -> Callable[[str], Awaitable[S]]:
 __all__ = [
     "ScriptExecuteWrite",
     "ScriptExecutionResponse",
+    "ScriptPreviewResponse",
     "ScriptProtocol",
     "ScriptSource",
     "make_script_dep",
