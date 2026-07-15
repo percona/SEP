@@ -3608,7 +3608,7 @@
         "title": "YamlField",
         "type": "object"
       },
-      "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2": {
+      "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___3": {
         "properties": {
           "items": {
             "items": {
@@ -4061,7 +4061,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2"
+                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___3"
                 }
               }
             },

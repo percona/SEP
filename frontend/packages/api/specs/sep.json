@@ -2878,185 +2878,6 @@
         "title": "BackupPgForm",
         "type": "object"
       },
-      "BackupResponse": {
-        "description": "Represent a backup task API response.\n\n:param hostname: The executor hostname target.",
-        "properties": {
-          "alert_on_fail": {
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "anonymize_mask": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymize Mask"
-          },
-          "anonymized_entities": {
-            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
-            "items": {
-              "type": "string"
-            },
-            "readOnly": true,
-            "title": "Anonymized Entities",
-            "type": "array"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum"
-          },
-          "backup_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BackupType-Output"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "connectivity_warning": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConnectivityWarning"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "title": "Data",
-            "type": "object"
-          },
-          "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hostname"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "last_executed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Executed At"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
-          "protected": {
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "owner",
-          "backend",
-          "data",
-          "protected",
-          "alert_on_fail",
-          "anonymized_entities"
-        ],
-        "title": "BackupResponse",
-        "type": "object"
-      },
       "BackupSection": {
         "description": "Aggregated backup data for the report.\n\n:param total_backups: Total number of backup entries collected.\n:type total_backups: int\n:param backups_by_host: Backup count keyed by node name.\n:type backups_by_host: dict[str, int]\n:param backups_by_status: Backup count keyed by status string.\n:type backups_by_status: dict[str, int]\n:param backups_by_type: Backup count keyed by backup type.\n:type backups_by_type: dict[str, int]\n:param failed_backups: Subset of backups with a ``fail`` status.\n:type failed_backups: list[BackupEntry]\n:param all_backups: Complete list of all backup entries.\n:type all_backups: list[BackupEntry]",
         "properties": {
@@ -6895,37 +6716,6 @@
         "title": "PaginatedResponse[AltersTaskResponse]",
         "type": "object"
       },
-      "PaginatedResponse_BackupResponse_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/BackupResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "PaginatedResponse[BackupResponse]",
-        "type": "object"
-      },
       "PaginatedResponse_BackupSummary_": {
         "properties": {
           "items": {
@@ -10722,7 +10512,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/app__sep__apps__backup_mongo__models__BackupTaskResponse"
+              "$ref": "#/components/schemas/app__sep__apps__mysql_backups__models__BackupTaskResponse"
             },
             "title": "Items",
             "type": "array"
@@ -10750,6 +10540,37 @@
         "type": "object"
       },
       "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/app__sep__apps__backup_mongo__models__BackupTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[BackupTaskResponse]",
+        "type": "object"
+      },
+      "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___3": {
         "properties": {
           "items": {
             "items": {
@@ -11536,6 +11357,185 @@
           "protected",
           "alert_on_fail",
           "backup_type",
+          "anonymized_entities"
+        ],
+        "title": "BackupTaskResponse",
+        "type": "object"
+      },
+      "app__sep__apps__mysql_backups__models__BackupTaskResponse": {
+        "description": "Represent a backup task API response.\n\n:param backup_type: The backup type recorded in task config.\n:type backup_type: BackupType | None",
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "backup_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupType-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backend",
+          "data",
+          "protected",
+          "alert_on_fail",
           "anonymized_entities"
         ],
         "title": "BackupTaskResponse",
@@ -12855,7 +12855,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1"
+                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2"
                 }
               }
             },
@@ -13435,7 +13435,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2"
+                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___3"
                 }
               }
             },
@@ -14745,7 +14745,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_BackupResponse_"
+                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1"
                 }
               }
             },
@@ -15204,7 +15204,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BackupResponse"
+                  "$ref": "#/components/schemas/app__sep__apps__mysql_backups__models__BackupTaskResponse"
                 }
               }
             },

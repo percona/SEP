@@ -4312,50 +4312,6 @@ export interface components {
       task_name: string;
     };
     /**
-     * BackupResponse
-     * @description Represent a backup task API response.
-     *
-     *     :param hostname: The executor hostname target.
-     */
-    BackupResponse: {
-      /** Alert On Fail */
-      alert_on_fail: boolean;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /**
-       * Anonymized Entities
-       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
-       */
-      readonly anonymized_entities: string[];
-      backend: components['schemas']['TaskBackendEnum'];
-      backup_type?: components['schemas']['BackupType-Output'] | null;
-      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
-      /** Created At */
-      created_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Data */
-      data: Record<string, never>;
-      /** Hostname */
-      hostname?: string | null;
-      /** Id */
-      id?: number | null;
-      /** Last Executed At */
-      last_executed_at?: string | null;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      /** Name */
-      name: string;
-      /** Owner */
-      owner: string;
-      /** Protected */
-      protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Updated At */
-      updated_at?: string | null;
-    };
-    /**
      * BackupSection
      * @description Aggregated backup data for the report.
      *
@@ -6553,17 +6509,6 @@ export interface components {
       /** Total */
       total: number;
     };
-    /** PaginatedResponse[BackupResponse] */
-    PaginatedResponse_BackupResponse_: {
-      /** Items */
-      items: components['schemas']['BackupResponse'][];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
-    };
     /** PaginatedResponse[BackupSummary] */
     PaginatedResponse_BackupSummary_: {
       /** Items */
@@ -8607,7 +8552,7 @@ export interface components {
     /** PaginatedResponse[BackupTaskResponse] */
     app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1: {
       /** Items */
-      items: components['schemas']['app__sep__apps__backup_mongo__models__BackupTaskResponse'][];
+      items: components['schemas']['app__sep__apps__mysql_backups__models__BackupTaskResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -8617,6 +8562,17 @@ export interface components {
     };
     /** PaginatedResponse[BackupTaskResponse] */
     app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2: {
+      /** Items */
+      items: components['schemas']['app__sep__apps__backup_mongo__models__BackupTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[BackupTaskResponse] */
+    app__core__pagination__models__PaginatedResponse_BackupTaskResponse___3: {
       /** Items */
       items: components['schemas']['app__sep__apps__backup_pg__models__BackupTaskResponse'][];
       /** Limit */
@@ -8821,6 +8777,51 @@ export interface components {
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      /** Owner */
+      owner: string;
+      /** Protected */
+      protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * BackupTaskResponse
+     * @description Represent a backup task API response.
+     *
+     *     :param backup_type: The backup type recorded in task config.
+     *     :type backup_type: BackupType | None
+     */
+    app__sep__apps__mysql_backups__models__BackupTaskResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
+      backend: components['schemas']['TaskBackendEnum'];
+      backup_type?: components['schemas']['BackupType-Output'] | null;
       connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
@@ -9750,7 +9751,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1'];
+          'application/json': components['schemas']['app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2'];
         };
       };
       /** @description Validation Error */
@@ -10147,7 +10148,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2'];
+          'application/json': components['schemas']['app__core__pagination__models__PaginatedResponse_BackupTaskResponse___3'];
         };
       };
       /** @description Validation Error */
@@ -11054,7 +11055,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PaginatedResponse_BackupResponse_'];
+          'application/json': components['schemas']['app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1'];
         };
       };
       /** @description Validation Error */
@@ -11356,7 +11357,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['BackupResponse'];
+          'application/json': components['schemas']['app__sep__apps__mysql_backups__models__BackupTaskResponse'];
         };
       };
       /** @description Validation Error */
