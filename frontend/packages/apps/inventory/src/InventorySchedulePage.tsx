@@ -525,7 +525,6 @@ function InventoryScheduleRow({
               setConfirmOpen(false);
               onDelete(task);
             }}
-            color="error"
             variant="contained"
             autoFocus
             data-testid={`inv-sched-confirm-delete-${task.id}`}

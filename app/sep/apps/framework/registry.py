@@ -38,6 +38,7 @@ from importlib import import_module
 from fastapi import APIRouter
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.celery.config import STATIC_CELERY_INCLUDE
 from app.core.settings_override.api.models import SettingClassAppMetadata
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.settings_override.models import SettingClassEnum
@@ -97,6 +98,58 @@ def _derive_app_key(module_name: str) -> str:
     :return: The auto-derived scoped app key.
     """
     return module_name.removeprefix("app.sep.apps.").replace(".", "/")
+
+
+def app_celery_module_paths(plugins: Iterable[App] | None = None) -> list[str]:
+    """Return the ordered app-owned Celery module paths for an activation list.
+
+    Read from each entry's ``App.celery_module_path`` (the single, filesystem-derived
+    source). Pure and **import-free** -- it never imports a plugin module, so it is
+    safe to call while the Celery app is being assembled (``app/celery.py``), before
+    the full registry (which imports every plugin) can be built.
+
+    :param plugins: The activation entries to scan. Defaults to ``sep_settings.APPS``.
+    :return: The app Celery module import paths, in activation order.
+    """
+    plugins = sep_settings.APPS if plugins is None else plugins
+    return [p.celery_module_path for p in plugins if p.celery_module_path]
+
+
+def app_celery_module_for(
+    app_key: str,
+    plugins: Iterable[App] | None = None,
+) -> str | None:
+    """Return the Celery module path owned by ``app_key``, or ``None``.
+
+    Keyed by the same scoped key derivation the registry uses
+    (:func:`_derive_app_key`), so the beat seed can source an app-owned
+    ``task_name`` prefix from the identical origin as the include list.
+
+    :param app_key: The scoped app key (e.g. ``"snippets"``).
+    :param plugins: The activation entries to scan. Defaults to ``sep_settings.APPS``.
+    :return: The app's Celery module path, or ``None`` when the app is unknown,
+        ships no ``celery.py``, or opted out.
+    """
+    plugins = sep_settings.APPS if plugins is None else plugins
+    for plugin in plugins:
+        if _derive_app_key(plugin.module_name) == app_key:
+            return plugin.celery_module_path
+    return None
+
+
+def build_celery_include(plugins: Iterable[App] | None = None) -> list[str]:
+    """Compose the full Celery ``include`` list: static base + app modules.
+
+    The single seam both the Celery-app assembly (``app/celery.py``) and the worker
+    bootstrap (``start_celery_worker``) call, so the two can never drift.
+
+    :param plugins: The activation entries to scan. Defaults to ``sep_settings.APPS``.
+    :return: The static service modules followed by the registry-derived app modules,
+        deduplicated while preserving first-seen order.
+    """
+    return list(
+        dict.fromkeys([*STATIC_CELERY_INCLUDE, *app_celery_module_paths(plugins)])
+    )
 
 
 def _synthesize_legacy_app(plugin: App, auto_key: str) -> BaseApp:

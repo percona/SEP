@@ -626,7 +626,6 @@ function ActionBar({
 
         <Button
           variant="outlined"
-          color="error"
           startIcon={<DeleteIcon />}
           onClick={() => setConfirmOpen(true)}
           disabled={deleteTask.isPending}
@@ -672,12 +671,7 @@ function ActionBar({
           <Button onClick={() => setConfirmOpen(false)} disabled={deleteTask.isPending}>
             Cancel
           </Button>
-          <Button
-            onClick={handleDelete}
-            color="error"
-            variant="contained"
-            disabled={deleteTask.isPending}
-          >
+          <Button onClick={handleDelete} variant="contained" disabled={deleteTask.isPending}>
             Delete
           </Button>
         </DialogActions>
@@ -864,7 +858,6 @@ export function AppDetailPage({
                   Edit
                 </Button>
                 <Button
-                  color="error"
                   variant="outlined"
                   size="small"
                   onClick={() => setEntityDeleteOpen(true)}
