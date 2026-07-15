@@ -124,7 +124,7 @@ class TestSnippetsApiList:
     async def test_returns_empty_list_when_no_snippets(
         self, test_client, session: AsyncSession, snippets_dir
     ):
-        """Empty DB → empty paginated envelope with a 200 ``application/json``."""
+        """Return an empty paginated envelope with a 200 ``application/json`` when empty."""
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK

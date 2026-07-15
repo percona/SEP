@@ -671,7 +671,7 @@ def synth_app(**overrides: Any) -> TaskExecutionApp:
 
 
 class _SynthScript:
-    """Stand in as a minimal script backing the synthetic script-flavored app."""
+    """Represent a minimal script backing the synthetic script-flavored app."""
 
     def __init__(self, filename: str = "synth.sh") -> None:
         self.filename = filename
