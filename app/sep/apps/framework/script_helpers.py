@@ -62,7 +62,7 @@ def build_execution_meta(
     script: BaseSnippet,
     execution_args: BaseSnippetArgs,
     *,
-    interpreter: str | None,
+    interpreter: str,
     snippet_source: str,
     snippet_filename: str,
     sudo_default: bool = False,

@@ -372,11 +372,15 @@ def build_snippet_execution_meta(
     :type snippet_source: str
     :return: The prepared execution metadata.
     :rtype: SnippetExecutionMeta
+    :raises HTTPBadRequestException: When the snippet has no configured interpreter.
     """
+    interpreter = snippet.execution_interpreter
+    if interpreter is None:
+        raise HTTPBadRequestException(detail="No interpreter configured for snippet")
     return build_execution_meta(
         snippet,
         execution_args,
-        interpreter=snippet.execution_interpreter,
+        interpreter=interpreter,
         snippet_source=snippet_source,
         snippet_filename=snippet.filename,
     )
