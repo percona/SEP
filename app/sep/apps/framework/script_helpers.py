@@ -41,6 +41,13 @@ from app.sep.snippets.models.snippet import (
 )
 from app.sep.snippets.utils import guess_mime_type, mime_type_to_highlighter_language
 
+__all__ = [
+    "build_artifact_download_url",
+    "build_execution_meta",
+    "build_script_preview",
+    "post_task_execution",
+]
+
 
 async def build_script_preview(script: BaseSnippet) -> ScriptPreviewResponse:
     """Build a preview response from a resolved script.
@@ -149,11 +156,3 @@ async def post_task_execution(
         json={"meta": meta.model_dump(by_alias=True, exclude_none=True)},
     )
     return created.get("id") if isinstance(created, dict) else None
-
-
-__all__ = [
-    "build_artifact_download_url",
-    "build_execution_meta",
-    "build_script_preview",
-    "post_task_execution",
-]
