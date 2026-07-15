@@ -60,7 +60,10 @@ async def _override_session_maker() -> async_sessionmaker:
     )
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    return get_async_session_maker_from_engine(engine)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
 
 
 def _sep_proxies() -> dict:
@@ -293,7 +296,10 @@ async def _beat_session_maker() -> async_sessionmaker:
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     async with engine.begin() as conn:
         await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
-    return get_async_session_maker_from_engine(engine)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
 
 
 async def _seed_snippets_task(

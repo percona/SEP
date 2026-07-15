@@ -43,12 +43,14 @@ from tests.app.factories import build_task_history, TaskFactory
 async def test_get_async_session_maker_from_engine():
     """Verify that the sessionmaker is correctly configured with AsyncSession and expire_on_commit=False."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        session_maker = get_async_session_maker_from_engine(engine)
+        assert session_maker.kw.get("expire_on_commit") is False
 
-    session_maker = get_async_session_maker_from_engine(engine)
-    assert session_maker.kw.get("expire_on_commit") is False
-
-    async with session_maker() as session:
-        assert isinstance(session, AsyncSession)
+        async with session_maker() as session:
+            assert isinstance(session, AsyncSession)
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture

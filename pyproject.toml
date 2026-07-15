@@ -150,6 +150,7 @@ polyfactory = "^2.18.0"
 pytest-asyncio = "^1.3.0"
 pytest-env = "^1.1.5"
 pytest-xdist = "^3.5"
+pytest-timeout = "^2.3.1"
 pymysql = "^1.1.3"
 myloginpath = "^0.0.4"
 
@@ -305,6 +306,10 @@ line-ending = "lf"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
+# Guardrail: fail a runaway per-test setup/call/teardown instead of blocking the
+# whole run forever. Uses thread method so xdist workers stay compatible.
+timeout = 120
+timeout_method = "thread"
 markers = [
     "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
 ]
