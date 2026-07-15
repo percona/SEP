@@ -184,7 +184,6 @@ export default function SettingRow({ setting }: SettingRowProps) {
                 <Button
                   size="small"
                   variant="outlined"
-                  color="secondary"
                   disabled={reset.isPending}
                   onClick={handleReset}
                 >
@@ -217,7 +216,6 @@ export default function SettingRow({ setting }: SettingRowProps) {
               <Button
                 size="small"
                 variant="outlined"
-                color="secondary"
                 disabled={reset.isPending}
                 onClick={handleReset}
               >
