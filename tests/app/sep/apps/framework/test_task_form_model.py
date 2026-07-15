@@ -57,14 +57,13 @@ _PLUGIN_FORMS = [
 ]
 
 # ``AltersCreate`` is a deliberate carve-out, NOT an inheritor. It is also a
-# model-first task form, but it declares its Task-section fields with the
-# lowercase section key ``section="task"`` (every inheritor and the canonical
-# ``TaskFormModel`` use ``section="Task"``). Schema sections are grouped by
-# section *key*, so reparenting alters onto ``TaskFormModel`` would split its
-# single Task section into two same-titled sections (``"Task"`` for the two
-# inherited fields, ``"task"`` for the rest), changing its ``GET /schema``
-# output. Migrating it would require rewriting the
-# section key on every other alters field too, beyond this ticket's scope.
+# model-first task form, but it redeclares its identity fields locally
+# (``task_name``, ``hostname``) alongside its own Task-section fields
+# (``service_id``, ``pre_checks_mysql_config_file``) rather than inheriting the
+# identity pair from ``TaskFormModel``. Its Task section uses the same
+# ``section="Task"`` key as every inheritor and the shared ``TASK_SECTION_LAYOUT``;
+# reparenting it onto ``TaskFormModel`` is a separate change beyond this ticket's
+# scope.
 
 
 def _marker(field_info, marker_type):
@@ -166,14 +165,14 @@ class TestAltersCarveOut:
     """Lock ``AltersCreate`` as the documented non-inheriting carve-out."""
 
     def test_alters_does_not_inherit_task_form_model(self) -> None:
-        """Keep alters off ``TaskFormModel`` — lowercase ``"task"`` would split."""
+        """Keep alters off ``TaskFormModel`` — it redeclares its own identity fields."""
         assert not issubclass(AltersCreate, TaskFormModel)
 
-    def test_alters_keeps_lowercase_task_section(self) -> None:
-        """Pin the carve-out: alters redeclares identity fields ``section="task"``."""
+    def test_alters_uses_titlecase_task_section(self) -> None:
+        """Pin the carve-out: alters redeclares identity fields ``section="Task"``."""
         own = set(AltersCreate.__annotations__)
         assert {"task_name", "hostname"} <= own
         for name in ("task_name", "hostname"):
             ui = _marker(AltersCreate.model_fields[name], Ui)
             assert ui is not None
-            assert ui.section == "task"
+            assert ui.section == "Task"

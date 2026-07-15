@@ -34,12 +34,11 @@ from app.core.pagination.deps import PaginationDep
 from app.sep.apps.backup_mongo.restore.deps import (
     build_restore_mongo_api_detail_response,
     build_restore_mongo_api_task_response,
-    create_restore_task_group,
     delete_restore_task_group,
     get_restore_mongo_api_task_responses,
     get_restores_task,
+    RestoreCascadePlan,
     RestoreParentTask,
-    RestoreTaskGroupFromBody,
     RestoreUpdateFormFromBody,
     UnprotectedRestoreParentTask,
     update_restore_task_group,
@@ -49,6 +48,7 @@ from app.sep.apps.backup_mongo.restore.models import (
     RestoreTaskResponse,
 )
 from app.sep.apps.framework import get_task_latest_history
+from app.sep.apps.framework.api import derive_cascade_create_route
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -84,32 +84,16 @@ async def restore_mongo_api_detail(
     return await build_restore_mongo_api_detail_response(parent_task, tasks_api)
 
 
-@router.post(
-    "/",
-    status_code=http_status.HTTP_201_CREATED,
+derive_cascade_create_route(
+    router,
+    name="restore_mongo_api_create",
+    description="Create a restore task group from a JSON payload request body.",
+    create_plan=RestoreCascadePlan,
+    get_task=get_restores_task,
+    response_builder=build_restore_mongo_api_detail_response,
+    response_model=RestoreTaskDetailResponse,
+    connectivity_check=False,
 )
-async def restore_mongo_api_create(
-    payloads: RestoreTaskGroupFromBody,
-    tasks_api: TaskAPI,
-) -> RestoreTaskDetailResponse:
-    """Create a restore task group from a JSON payload request body.
-
-    POSTs the parent config task, restore leg, pbm-list helper, and optional
-    force-resync child for physical restores. Rolls back on any failure.
-    """
-    logger.debug(
-        "Create backup_mongo restore task group (JSON path): %s",
-        payloads.config_task.name,
-    )
-    await create_restore_task_group(
-        tasks_api,
-        payloads.config_task,
-        payloads.restore_task,
-        payloads.pbm_list_task,
-        payloads.force_resync_task,
-    )
-    task = await get_restores_task(payloads.config_task.name, tasks_api)
-    return await build_restore_mongo_api_detail_response(task, tasks_api)
 
 
 @router.put(

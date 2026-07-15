@@ -27,11 +27,16 @@ import pytest
 from aiohttp import ClientError, ClientTimeout
 from fastapi import status
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
+from pydantic import ValidationError
 
 from app.core.exceptions import HTTPBadRequestException
+from app.core.settings_override.registry import (
+    ReloadClassification,
+    resolve_nested_field_metadata,
+)
 from app.core.utils import slugify
 from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.config import tasks_settings
+from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryLogStateManager
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
@@ -108,7 +113,7 @@ def _build_task(
     """
     data = {"ID": task_id, "Constraints": constraints or []}
     if parameterized:
-        parameterized_spec: dict = {"Payload": "required"}
+        parameterized_spec = {"Payload": "required"}
         if declares_staleness_meta:
             parameterized_spec["MetaOptional"] = [
                 "scheduled_at",
@@ -176,6 +181,40 @@ def _build_executor(**kwargs) -> NomadExecutor:
     }
     defaults.update(kwargs)
     return NomadExecutor(**defaults)
+
+
+class TestNomadExecutorTlsClassification:
+    """Assert the inherited TLS leaves classify as advanced + HOT via the overlay.
+
+    These fields are inherited (frozen) from ``BaseRemoteAPI`` and marked only
+    through ``NomadExecutor.INHERITED_MARKERS`` -- not by redeclaration.
+    """
+
+    @pytest.mark.parametrize(
+        "leaf", ["VERIFY_SSL", "SSL_CAFILE", "SSL_KEYFILE", "SSL_CERTFILE"]
+    )
+    def test_tls_leaves_are_advanced_and_hot(self, leaf: str) -> None:
+        """Assert each TLS leaf classifies ``advanced`` + HOT through the settings API."""
+        meta = resolve_nested_field_metadata(TasksSettings, f"NOMAD__{leaf}")
+        assert meta is not None
+        assert meta.is_advanced is True
+        assert meta.reload is ReloadClassification.HOT
+
+    def test_endpoint_stays_unmarked(self) -> None:
+        """Assert the inherited ``endpoint`` has no overlay entry, so it stays non-advanced."""
+        meta = resolve_nested_field_metadata(TasksSettings, "NOMAD__ENDPOINT")
+        assert meta is not None
+        assert meta.is_advanced is False
+
+    def test_tls_leaves_remain_frozen(self) -> None:
+        """Assert dropping the redeclarations keeps ``frozen=True`` inherited from the base."""
+        executor = _build_executor()
+        with pytest.raises(ValidationError):
+            executor.verify_ssl = True
+
+    def test_hash_is_value_stable(self) -> None:
+        """Assert two executors with identical config hash equal (identity hash unchanged)."""
+        assert hash(_build_executor()) == hash(_build_executor())
 
 
 class TestNomadAllocStatusEnum:
@@ -1777,7 +1816,7 @@ class TestNomadLogStreaming:
 
     @staticmethod
     def _nomad_log_frame(*, msg: str | None, offset: int) -> bytes:
-        frame: dict = {"Offset": offset}
+        frame = {"Offset": offset}
         if msg is not None:
             frame["Data"] = b64encode(msg.encode()).decode()
         return json.dumps(frame).encode()
@@ -3103,3 +3142,538 @@ class TestPersistNomadTaskLogsCursorDurability:
             offsets["run-script"]["stdout_producer_offset"]
             == LEGACY_SEED_PRODUCER_OFFSET
         )
+
+
+class TestDrainTerminalLogs:
+    """Exercise the bounded post-terminal log drain in ``_persist_nomad_task_logs``."""
+
+    DRAIN_MAX_ATTEMPTS = 5
+    SHORT_DRAIN_MAX_ATTEMPTS = 3
+    EXPECTED_SLEEPS_ALL_STREAMS_DRAINED = 2
+
+    @staticmethod
+    def _reconstruct_stream(chunks, state) -> str:
+        """Return the ordered persisted-plus-staged content for one stream."""
+        body = "".join(
+            chunk.content for chunk in sorted(chunks, key=lambda c: c.start_offset)
+        )
+        staged = state.staging.decode("utf-8") if state and state.staging else ""
+        return body + staged
+
+    @staticmethod
+    def _growing_stream(snapshots: dict[tuple, list[str]]):
+        """Return a ``stream_logs.stream`` mock that reveals content over calls.
+
+        ``snapshots[(task, type_)]`` is the cumulative on-disk content visible on
+        each successive call to that stream; once the list is exhausted the last
+        snapshot repeats. Every call honors the ``offset`` kwarg and returns only
+        ``content[offset:]`` (or ``""`` when nothing new is on disk), modelling
+        Nomad's non-blocking single-shot read as ``logmon`` flushes the tail.
+        """
+        calls = defaultdict(int)
+
+        def fake_stream(alloc_id, *, task, type_, offset):
+            series = snapshots.get((task, type_), [""])
+            idx = min(calls[(task, type_)], len(series) - 1)
+            calls[(task, type_)] += 1
+            content = series[idx]
+            delta = content[offset:]
+            if not delta:
+                return ""
+            return json.dumps(
+                {"Data": b64encode(delta.encode()).decode(), "Offset": len(content)}
+            )
+
+        return fake_stream
+
+    @staticmethod
+    def _terminal_alloc(*steps: str) -> dict:
+        """Return an allocation dict with the given steps already started."""
+        return {
+            "ID": "alloc-1",
+            "CreateIndex": ALLOCATION_CREATE_INDEX,
+            "TaskStates": {
+                step: {"StartedAt": "2024-01-01T00:00:00Z"} for step in steps
+            },
+        }
+
+    async def _stream_content(self, session, history_id, step, stream) -> str:
+        """Return the full persisted-plus-staged content for one stream."""
+        chunks = [
+            chunk
+            for chunk in await TaskHistoryLogManager.list_chunks_for_task(
+                session, history_id
+            )
+            if chunk.source == step and chunk.stream == stream
+        ]
+        state = await TaskHistoryLogStateManager.get_for_stream(
+            session, history_id, step, stream
+        )
+        return self._reconstruct_stream(chunks, state)
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_lagging_tail_captured_across_drain_reads(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a tail ``logmon`` flushes after terminal detection is captured."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {("run-script", TaskLogType.STDOUT): ["partial\n", "partial\ntail\n"]}
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        content = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert content == "partial\ntail\n"
+        mock_sleep.assert_awaited()
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_empty_first_retry_does_not_end_drain(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert an empty first retry does not end the drain before the tail lands."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {
+                ("run-script", TaskLogType.STDOUT): [
+                    "partial\n",
+                    "partial\n",
+                    "partial\ntail\n",
+                ]
+            }
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        content = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert content == "partial\ntail\n"
+        assert mock_sleep.await_count == self.DRAIN_MAX_ATTEMPTS
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_early_exit_when_all_streams_drained(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert the drain early-exits once every active stream drains then quiets."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {
+                ("run-script", TaskLogType.STDOUT): ["out\n", "out\ntail\n"],
+                ("run-script", TaskLogType.STDERR): ["err\n", "err\ndone\n"],
+            }
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        stdout = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        stderr = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDERR
+        )
+        assert stdout == "out\ntail\n"
+        assert stderr == "err\ndone\n"
+        assert mock_sleep.await_count == self.EXPECTED_SLEEPS_ALL_STREAMS_DRAINED
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_fully_flushed_task_polls_full_window(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a task whose tail was already captured polls the full window."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {("run-script", TaskLogType.STDOUT): ["complete\n"]}
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        content = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert content == "complete\n"
+        assert mock_sleep.await_count == self.DRAIN_MAX_ATTEMPTS
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_never_empty_stream_bounded_by_max_attempts(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a pathological never-quiet stream still terminates at the cap."""
+        calls = defaultdict(int)
+
+        def ever_growing(alloc_id, *, task, type_, offset):
+            length = calls[(task, type_)] + 1
+            calls[(task, type_)] += 1
+            content = "x" * length
+            delta = content[offset:]
+            if not delta:
+                return ""
+            return json.dumps(
+                {"Data": b64encode(delta.encode()).decode(), "Offset": len(content)}
+            )
+
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = ever_growing
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.SHORT_DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        assert mock_sleep.await_count == self.SHORT_DRAIN_MAX_ATTEMPTS
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_max_attempts_zero_disables_drain(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert ``max_attempts=0`` skips the drain entirely — no fetch, no sleep."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {("run-script", TaskLogType.STDOUT): ["partial\n", "partial\ntail\n"]}
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        content = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert content == "partial\n"
+        mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_drain_resume_is_idempotent_across_terminal_reruns(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert re-running the terminal persist re-reads without duplicating bytes."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {("run-script", TaskLogType.STDOUT): ["partial\n", "partial\ntail\n"]}
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+        alloc = self._terminal_alloc("run-script")
+
+        for _ in range(2):
+            await executor._persist_nomad_task_logs(
+                writer_session=session,
+                queue_item=history,
+                alloc=alloc,
+                previous_allocation_id="alloc-1",
+            )
+
+        content = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert content == "partial\ntail\n"
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_running_status_does_not_drain(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a still-running sync (``force_flush=False``) never drains."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {("run-script", TaskLogType.STDOUT): ["partial\n", "partial\ntail\n"]}
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.RUNNING
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_allocation_gone_during_drain_degrades_gracefully(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a GC'd allocation mid-drain degrades to empty without crashing."""
+        calls = defaultdict(int)
+
+        def gone_after_terminal(alloc_id, *, task, type_, offset):
+            index = calls[(task, type_)]
+            calls[(task, type_)] += 1
+            if index == 0:
+                return json.dumps(
+                    {
+                        "Data": b64encode(b"partial\n").decode(),
+                        "Offset": len("partial\n"),
+                    }
+                )
+            raise BaseNomadException(MagicMock())
+
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = gone_after_terminal
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        content = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert content == "partial\n"
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_lagging_stdout_with_settled_stderr(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert the drain captures a lagging stdout tail while stderr is settled."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {
+                ("run-script", TaskLogType.STDERR): ["boot ok\n"],
+                ("run-script", TaskLogType.STDOUT): ["head\n", "head\ntail\n"],
+            }
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        stdout = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        stderr = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDERR
+        )
+        assert stdout == "head\ntail\n"
+        assert stderr == "boot ok\n"
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_terminal_failed_status_drains_lagging_tail(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a non-``SUCCESS`` terminal status (FAILED) still drains the tail."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {("run-script", TaskLogType.STDOUT): ["partial\n", "partial\ntail\n"]}
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.FAILED
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        content = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert content == "partial\ntail\n"
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_lagging_second_stream_not_dropped_after_sibling_drains(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a stream whose tail lands after a sibling drained is not dropped.
+
+        stdout's tail lands and goes quiet, then a fully-quiet round passes
+        before stderr's own tail flushes. A task-wide early-exit gate would
+        return on that quiet round and lose the stderr tail; per-stream tracking
+        keeps polling because stderr has not advanced yet.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {
+                ("run-script", TaskLogType.STDOUT): ["head\n", "head\ntail\n"],
+                ("run-script", TaskLogType.STDERR): [
+                    "boot\n",
+                    "boot\n",
+                    "boot\nlate\n",
+                ],
+            }
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        stdout = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        stderr = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDERR
+        )
+        assert stdout == "head\ntail\n"
+        assert stderr == "boot\nlate\n"
