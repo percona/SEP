@@ -41,6 +41,8 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast, Protocol
 
+from pydantic import BaseModel
+
 from app.core.exceptions import HTTPBadRequestException
 from app.core.utils.cli_args import (
     arg_template_identifiers,
@@ -513,7 +515,7 @@ def build_run_python_task(
     )
 
 
-def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:
+def stamp_form_input(write: TaskWrite, form: BaseModel) -> None:
     """Persist the validated create-form body under ``write.data[RESERVED_FORM_KEY]``.
 
     Persist the create form verbatim so a derived ``PUT`` can prefill an edit form
@@ -522,7 +524,9 @@ def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:
     must re-validate against the app's ``create_model``.
 
     :param write: The assembled task envelope whose ``data`` carries the stamp.
-    :param form: The validated create-form instance to persist.
+    :param form: The validated create-form instance to persist. Any
+        :class:`pydantic.BaseModel` is accepted, not only ``AppFormModel`` — the
+        mongo apps stamp ``BaseCaseInsensitiveModel`` create forms.
     :raises ValueError: When ``write.data`` already carries the reserved key,
         which means a spec builder populated it; stamping would silently
         overwrite that app-provided data.

@@ -37,6 +37,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.models import (
     AltersCreate,
     AltersTaskResponse,
+    AltersTaskResponseCreate,
     OWNER,
 )
 from app.sep.apps.alters.schema import alters_schema
@@ -46,6 +47,7 @@ from app.sep.apps.framework import (
     ConnectivityWarning,
     make_task_dep,
 )
+from app.sep.apps.framework.api import CascadeCreatePlan
 from app.sep.apps.framework.cascade import (
     build_derived_payload,
     build_predecessor_payload,
@@ -68,6 +70,7 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_tasks_context,
+    get_username_mapping,
     InventoryAPI,
     reject_if_protected,
     TaskAPI,
@@ -552,6 +555,63 @@ async def cascade_create_alters_group(
                     rollback_exc,
                 )
         raise
+
+
+async def build_alters_cascade_plan(
+    body: AltersCreate,
+    inventory_api: InventoryAPI,
+    tasks_api: TaskAPI,
+) -> CascadeCreatePlan:
+    """Build the cascade create plan for an alters task group.
+
+    Assemble the parent execute task and its imperative pre-checks predecessor,
+    then bind a cascade closure that POSTs the parent, its dry-run derived
+    sibling, and the pre-checks predecessor. The parent is re-serialised inside
+    :func:`cascade_create_alters_group` so it carries the form stamp
+    :func:`~app.sep.apps.framework.api.derive_cascade_create_route` applies first.
+
+    :param body: The alters create/write JSON request body.
+    :param inventory_api: The Inventory API to resolve the alters target.
+    :param tasks_api: The Tasks API, used to template the pre-checks predecessor.
+    :return: The plan carrying the parent write, form, and cascade closure.
+    """
+    parent_task = await build_alters_task(body, inventory_api)
+    pre_checks_template = await build_pre_checks_task_payload(
+        parent_task, task_api=tasks_api
+    )
+    return CascadeCreatePlan(
+        parent_write=parent_task,
+        form=body,
+        cascade=lambda api: cascade_create_alters_group(
+            api, parent_task, pre_checks_template, body
+        ),
+    )
+
+
+AltersCascadePlan = Annotated[CascadeCreatePlan, Depends(build_alters_cascade_plan)]
+
+
+async def render_alters_create(
+    task: Task, _tasks_api: TaskAPI
+) -> AltersTaskResponseCreate:
+    """Render the alters create response, matching the cascade builder contract.
+
+    The uniform ``response_builder`` contract is ``async (task, tasks_api)``;
+    alters resolves the username mapping instead of touching the Tasks API, so the
+    client argument is unused here. The connectivity warning is attached by the
+    route helper via ``model_copy`` after this call, so it is not set here.
+
+    :param task: The refetched canonical parent alters task.
+    :param _tasks_api: The Tasks API client (unused; part of the builder contract).
+    :return: The rendered create response.
+    """
+    username_mapping = await get_username_mapping()
+    return build_alters_api_task_response(
+        task,
+        status=None,
+        response_model=AltersTaskResponseCreate,
+        username_mapping=username_mapping,
+    )
 
 
 _ALTERS_GROUP_RENAME_MESSAGE = (

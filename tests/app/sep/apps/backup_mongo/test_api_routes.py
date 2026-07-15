@@ -25,6 +25,7 @@ from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import BackupType, OWNER
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
@@ -402,9 +403,11 @@ class TestBackupMongoApiCreate:
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
         assert first_post["owner"] == "BACKUP_MONGO"
         assert first_post["data"]["backup_type"] == BackupType.PBM_CONFIG.value
+        assert "service_id" in first_post["data"][RESERVED_FORM_KEY]
         logical_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
         assert logical_post["data"]["payload"].endswith("pbm_logical_payload")
         assert logical_post["data"]["parent"] == "mongo-backup-task"
+        assert RESERVED_FORM_KEY not in logical_post["data"]
 
     def test_create_rolls_back_on_mid_chain_failure(
         self,
