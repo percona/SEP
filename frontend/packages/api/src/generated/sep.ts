@@ -469,17 +469,6 @@ export interface paths {
     /**
      * Alters Api Create
      * @description Create an alters task group from a JSON payload request body.
-     *
-     *     POSTs the parent execute task, dry-run derived sibling, and pre-checks
-     *     predecessor. Pre-checks are started manually from the detail page.
-     *
-     *     :param check_connectivity: Whether to verify the target database is
-     *         reachable after task creation. Defaults to ``True`` so callers that
-     *         omit the parameter still get a connectivity round-trip; pass
-     *         ``check_connectivity=false`` to opt out. Note that the form flow
-     *         defaults to ``False`` (HTML checkbox semantics — an unchecked box
-     *         submits no field); this asymmetry is intentional.
-     *     :type check_connectivity: bool
      */
     post: operations['alters_alters_api_create_api_apps_alters__post'];
     delete?: never;
@@ -702,10 +691,6 @@ export interface paths {
     /**
      * Backup Mongo Api Create
      * @description Create a backup task group from a JSON payload request body.
-     *
-     *     POSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,
-     *     ``pbm_physical``, and ``pbm_status`` siblings via
-     *     :func:`~app.sep.apps.framework.cascade.cascade_create_tasks`.
      */
     post: operations['backup_mongo_backup_mongo_api_create_api_apps_backup_mongo__post'];
     delete?: never;
@@ -730,9 +715,6 @@ export interface paths {
     /**
      * Restore Mongo Api Create
      * @description Create a restore task group from a JSON payload request body.
-     *
-     *     POSTs the parent config task, restore leg, pbm-list helper, and optional
-     *     force-resync child for physical restores. Rolls back on any failure.
      */
     post: operations['backup_mongo_restore_restore_mongo_api_create_api_apps_backup_mongo_restore__post'];
     delete?: never;
