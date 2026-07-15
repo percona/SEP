@@ -47,6 +47,8 @@ from app.sep.apps.framework import (
     get_task_latest_history,
     make_task_dep,
 )
+from app.sep.apps.framework.api import CascadeCreatePlan
+from app.sep.apps.framework.cascade import cascade_create_tasks
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -133,6 +135,36 @@ async def build_backup_task_payload(
         service_name=service.name if service is not None else None
     )
     return build_backup_mongo_spec(form, resolved)
+
+
+async def build_backup_cascade_plan(
+    body: BackupTaskWrite,
+    inventory_api: InventoryAPI,
+) -> CascadeCreatePlan:
+    """Build the cascade create plan for a backup_mongo task group.
+
+    Convert the body to a :class:`BackupCreate` form, assemble the parent
+    ``pbm_config`` write, and bind a cascade closure that POSTs the parent plus
+    its derived ``pbm_logical`` / ``pbm_physical`` / ``pbm_status`` siblings. The
+    parent is re-serialised *inside* the closure so it carries the form stamp
+    :func:`~app.sep.apps.framework.api.derive_cascade_create_route` applies first.
+
+    :param body: The JSON request body for backup task creation.
+    :param inventory_api: The Inventory API to look up the backup service.
+    :return: The plan carrying the parent write, form, and cascade closure.
+    """
+    form = backup_create_from_write(body)
+    task_write = await build_backup_task_payload(form, inventory_api)
+    return CascadeCreatePlan(
+        parent_write=task_write,
+        form=form,
+        cascade=lambda api: cascade_create_tasks(
+            api, task_write.model_dump(), BACKUP_MONGO_DERIVED
+        ),
+    )
+
+
+BackupCascadePlan = Annotated[CascadeCreatePlan, Depends(build_backup_cascade_plan)]
 
 
 async def build_backup_task_payload_from_form(

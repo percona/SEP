@@ -37,7 +37,7 @@ from fastapi import APIRouter, Body, Depends, Form, params
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field, model_validator, PrivateAttr, SkipValidation
 
-from app.core.pagination import PaginationDependency
+from app.core.pagination import make_pagination_dep, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.api import (
     capabilities_endpoint,
@@ -81,6 +81,7 @@ from app.sep.deps import InventoryAPI, make_conflict_guard, protected_task_guard
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 __all__ = [
+    "NO_PAGINATION",
     "UNGUARDED",
     "AppCapabilities",
     "Cascade",
@@ -111,6 +112,25 @@ class _Unguarded:
 
 
 UNGUARDED = _Unguarded()
+
+
+class _NoPagination:
+    """Mark a derived list route as explicitly opting out of pagination.
+
+    A named singleton (mirroring :data:`UNGUARDED`) so an author's opt-out reads
+    as a greppable, importable :data:`NO_PAGINATION` rather than ``None`` — which
+    stays a purely internal route-shape switch in
+    :mod:`~app.sep.apps.framework.api`.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        """Return the marker name so tracebacks and reprs read ``NO_PAGINATION``."""
+        return "NO_PAGINATION"
+
+
+NO_PAGINATION = _NoPagination()
 
 
 class AppCapabilities(BaseModel):
@@ -288,8 +308,12 @@ class TaskExecutionApp(BaseApp):
         ``task_name``).
     :param capabilities: The verb toggles gating route derivation. Defaults to
         all-default :class:`AppCapabilities`.
-    :param pagination: A ``make_pagination_dep(...)`` callable; when set the list
-        route paginates. Defaults to ``None``.
+    :param pagination: The derived list route's pagination knob. Defaults to
+        ``make_pagination_dep()`` (page size 50, ceiling 200), so a list route
+        paginates unless overridden — a new app is bounded by default. Pass a
+        custom ``make_pagination_dep(max_limit=...)`` callable to change the
+        ceiling, or the :data:`NO_PAGINATION` sentinel to opt out and serve a plain
+        ``list[model]``.
     :param create_form_encoded: Whether the derived create route accepts a
         form-urlencoded body (``Form()``) instead of the default JSON body
         (``Body()``). A create-route option, so it is rejected unless
@@ -395,7 +419,7 @@ class TaskExecutionApp(BaseApp):
     script_source: SkipValidation[ScriptSource | None] = None
     get_task: Callable[..., Awaitable[Task]] | None = None
     capabilities: AppCapabilities = AppCapabilities()
-    pagination: PaginationDependency | None = None
+    pagination: PaginationDependency | _NoPagination = make_pagination_dep()
     create_form_encoded: bool = False
     cascade: SkipValidation[Cascade | None] = None
     extra_routes: tuple[APIRouter, ...] = ()
@@ -992,8 +1016,15 @@ class TaskExecutionApp(BaseApp):
 
         :return: The composed plugin ``APIRouter``.
         """
+        pagination_dep = (
+            None if isinstance(self.pagination, _NoPagination) else self.pagination
+        )
         if self.script_source is not None:
-            router = derive_script_routes(self.script_source, name=self.name)
+            router = derive_script_routes(
+                self.script_source,
+                name=self.name,
+                pagination_dep=pagination_dep,
+            )
             if self.capabilities_provider is not None:
                 capabilities_endpoint(router, self.capabilities_provider)
             for extra in self.extra_routes:
@@ -1019,7 +1050,7 @@ class TaskExecutionApp(BaseApp):
             create_response_builder=self._build_create_response_builder(),
             connectivity_check=self.connectivity_check,
             detail_path_param=self.detail_path_param,
-            pagination_dep=self.pagination,
+            pagination_dep=pagination_dep,
             list_status_filter=self.list_filter.status,
             list_service_type=(
                 self.service_type if self.list_filter.service_type else None
