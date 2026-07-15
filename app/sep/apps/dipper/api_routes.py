@@ -51,7 +51,8 @@ from app.sep.apps.dipper.models import (
 from app.sep.apps.dipper.schema import build_dipper_form_schema, dipper_schema
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.framework.schema import AppSchema
-from app.sep.apps.snippets.models import ScriptPreviewResponse
+from app.sep.apps.framework.script_helpers import post_task_execution
+from app.sep.apps.framework.script_source import ScriptPreviewResponse
 from app.sep.deps import ExecutorHosts, InventoryAPI, TaskAPI
 from app.sep.inventory import CreatedService
 
@@ -231,12 +232,9 @@ async def dipper_api_execute(
         execution_meta.snippet_filename,
         service.id,
     )
-    created = await tasks_api.post(
-        f"/execute/{execution_task_name}",
-        json={"meta": execution_meta.model_dump(by_alias=True, exclude_none=True)},
-    )
+    task_id = await post_task_execution(tasks_api, execution_task_name, execution_meta)
     return DipperExecutionResponse(
-        task_id=created.get("id") if isinstance(created, dict) else None,
+        task_id=task_id,
         task_name=execution_task_name,
         snippet_filename=execution_meta.snippet_filename,
         service_id=service.id,

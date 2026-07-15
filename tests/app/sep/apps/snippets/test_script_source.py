@@ -153,7 +153,7 @@ class TestBuildSnippetSource:
         """Raise 400 when neither SNIPPETS_BASE_URL nor BASE_URL is set."""
         monkeypatch.setattr(snippets_settings, "SNIPPETS_BASE_URL", None)
         monkeypatch.setattr(
-            "app.sep.apps.snippets.script_source.settings.BASE_URL", None
+            "app.sep.apps.framework.script_helpers.settings.BASE_URL", None
         )
         await create_snippet("ok.sh", approved=True)
         script = await snippet_source.load_script("ok.sh")

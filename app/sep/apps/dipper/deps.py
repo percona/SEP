@@ -31,7 +31,6 @@ from app.core.exceptions import (
     HTTPUnprocessableEntityException,
 )
 from app.core.pagination import fetch_all_dict_items
-from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
 from app.core.utils.iterators import unique_everseen
 from app.inventory.models import ServiceTypeEnum
@@ -42,30 +41,31 @@ from app.sep.apps.dipper.constants import (
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
 )
 from app.sep.apps.dipper.models import DipperExecuteWrite, DipperScript
-from app.sep.apps.snippets.models import ScriptPreviewResponse
+from app.sep.apps.framework.script_helpers import (
+    build_artifact_download_url,
+    build_execution_meta,
+    build_script_preview,
+)
+from app.sep.apps.framework.script_source import ScriptPreviewResponse
 from app.sep.artifact_constants import (
-    ARTIFACT_DOWNLOAD_SALT,
     ARTIFACT_TYPE_DIPPER,
 )
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.deps import (
     CreatedServiceDep,
     ExecutorHosts,
-    get_base_url,
     get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     InventoryAPI,
     PMMAPIDep,  # noqa: F401 -- re-exported for existing importers
 )
 from app.sep.inventory import CreatedService
 from app.sep.middleware import messages
-from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
     EXECUTOR_HOSTS_INPUT_NAME,
     SnippetExecutionMeta,
     SUDO_INPUT_NAME,
 )
-from app.sep.snippets.utils import guess_mime_type, mime_type_to_highlighter_language
 
 logger = logging.getLogger(__name__)
 
@@ -149,16 +149,11 @@ async def get_dipper_script_preview(
     """
     script = await load_dipper_script(service, collector_type)
     try:
-        preview = await script.get_preview()
+        return await build_script_preview(script)
     except UnicodeDecodeError as exc:
         raise HTTPUnprocessableEntityException(
             detail=f"Dipper script {script.filename!r} contains non-UTF-8 bytes; preview unavailable."
         ) from exc
-    return ScriptPreviewResponse(
-        content=preview.full_content,
-        language=mime_type_to_highlighter_language(guess_mime_type(script.path)),
-        is_truncated=preview.is_truncated,
-    )
 
 
 async def get_dipper_script(
@@ -210,16 +205,12 @@ def get_dipper_script_source(request: Request, script: DipperScript) -> str:
     :return: The signed URL to download the dipper artifact.
     :rtype: str
     """
-    token = crypto_timestamp_serializer.dumps(
-        {
-            "type": ARTIFACT_TYPE_DIPPER,
-            "filename": script.filename,
-            "md5": script.md5_digest,
-        },
-        salt=ARTIFACT_DOWNLOAD_SALT,
+    return build_artifact_download_url(
+        request,
+        artifact_type=ARTIFACT_TYPE_DIPPER,
+        filename=script.filename,
+        md5_digest=script.md5_digest,
     )
-    base_url = snippets_settings.SNIPPETS_BASE_URL or get_base_url(request)
-    return str(base_url.replace(path=f"/artifacts/download/{token}"))
 
 
 async def get_dipper_execution_args(
@@ -486,18 +477,13 @@ def build_dipper_meta_from_args(
     interpreter = script.execution_interpreter
     if interpreter is None:
         raise HTTPBadRequestException(detail="No interpreter configured for script")
-    if script.sudo == SnippetSudoOption.ALWAYS or getattr(
-        execution_args, execution_args.sudo_field, sudo_default
-    ):
-        interpreter = f"sudo {interpreter}"
-    return SnippetExecutionMeta(
-        target=execution_args.executor_host,
+    return build_execution_meta(
+        script,
+        execution_args,
         interpreter=interpreter,
         snippet_source=script_source,
         snippet_filename=build_dipper_snippet_filename(service, script),
-        md5_checksum=script.md5_digest,
-        args=execution_args.to_args_string(),
-        requirements=script.requirements,
+        sudo_default=sudo_default,
     )
 
 
