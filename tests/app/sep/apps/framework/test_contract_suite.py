@@ -37,7 +37,7 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination.deps import make_pagination_dep
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
-from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
+from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp, UNGUARDED
 from app.sep.apps.framework.task_status import batch_get_latest_statuses
 from app.sep.deps import IsApiAuthenticated, TaskAPI
 from app.tasks.models import LATEST_HISTORY_STATUS_NAMES_MAX, TaskHistoryStatusEnum
@@ -124,12 +124,26 @@ class TestSyntheticFullCrudContract(DerivedRouterContractTests):
 
 
 class TestSyntheticDerivedCrudContract(DerivedRouterContractTests):
-    """Cover the handler-less derived PUT/DELETE and the ``update_guard``."""
+    """Cover the handler-less derived PUT/DELETE with an explicit guard override."""
 
     app_def = synth_app(
         capabilities=AppCapabilities(update=True, delete=True),
         update_guard=(synth_update_guard,),
         delete_guard=(synth_update_guard,),
+    )
+
+
+class TestSyntheticDefaultGuardedCrudContract(DerivedRouterContractTests):
+    """Cover the framework default guards on a derived PUT/DELETE with no override.
+
+    Leaving ``update_guard`` / ``delete_guard`` unset (``()``) makes the framework
+    ride its default protected-task + running-conflict guards on the derived
+    routes, so the inherited running-conflict and protected-task 409 cases run
+    without a per-app guard being declared.
+    """
+
+    app_def = synth_app(
+        capabilities=AppCapabilities(update=True, delete=True),
     )
 
 
@@ -242,6 +256,97 @@ def test_suite_detects_missing_conflict_guard(regular_user: CasdoorUser) -> None
 
     with pytest.raises(AssertionError):
         _bind_suite(broken).test_execute_conflict_409(client, tasks_api)
+
+
+def test_unguarded_opt_out_leaves_derived_routes_unguarded(
+    regular_user: CasdoorUser,
+) -> None:
+    """Assert ``UNGUARDED`` drops the framework default guards from PUT and DELETE.
+
+    A task seeded both RUNNING and protected would trip either default guard; with
+    both knobs opted out, the derived PUT and DELETE succeed against it.
+    """
+    app_def = synth_app(
+        capabilities=AppCapabilities(update=True, delete=True),
+        update_guard=UNGUARDED,
+        delete_guard=UNGUARDED,
+    )
+    tasks_api = MockTaskAPI()
+    tasks_api.seed_task(
+        SEEDED_TASK_NAME,
+        owner=app_def.owner,
+        statuses=(TaskHistoryStatusEnum.RUNNING,),
+        protected=True,
+    )
+    client = build_contract_client(
+        app_def,
+        user=regular_user,
+        tasks_api=tasks_api,
+        inventory_api=MockInventoryAPI(),
+    )
+    base = app_base_url(app_def)
+    body = build_valid_create_body(app_def, task_name=SEEDED_TASK_NAME)
+
+    put = client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+    delete = client.delete(f"{base}/{SEEDED_TASK_NAME}")
+
+    assert put.status_code == status.HTTP_200_OK
+    assert delete.status_code == status.HTTP_204_NO_CONTENT
+
+
+def test_default_guard_rides_only_the_derived_verb(regular_user: CasdoorUser) -> None:
+    """Assert the default guard attaches to the derived verb but not its absent sibling.
+
+    An update-only app guards its PUT (409 on a running task) yet derives no DELETE
+    route (the ``delete`` path exists for GET only, so DELETE is 405).
+    """
+    app_def = synth_app(capabilities=AppCapabilities(update=True, delete=False))
+    tasks_api = MockTaskAPI()
+    tasks_api.seed_running(SEEDED_TASK_NAME, owner=app_def.owner)
+    client = build_contract_client(
+        app_def,
+        user=regular_user,
+        tasks_api=tasks_api,
+        inventory_api=MockInventoryAPI(),
+    )
+    base = app_base_url(app_def)
+    body = build_valid_create_body(app_def, task_name=SEEDED_TASK_NAME)
+
+    put = client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+    delete = client.delete(f"{base}/{SEEDED_TASK_NAME}")
+
+    assert put.status_code == status.HTTP_409_CONFLICT
+    assert delete.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
+
+
+def test_default_guards_share_one_task_fetch(
+    regular_user: CasdoorUser, mocker: Any
+) -> None:
+    """Assert the two default guards and the handler share one cached task fetch.
+
+    All three depend on the same ``_task_getter`` callable, so FastAPI's
+    ``use_cache`` collapses the get-by-name to a single upstream call per request.
+    """
+    app_def = synth_app(capabilities=AppCapabilities(update=True, delete=True))
+    tasks_api = MockTaskAPI()
+    tasks_api.seed_task(SEEDED_TASK_NAME, owner=app_def.owner)
+    spy = mocker.spy(tasks_api, "get")
+    client = build_contract_client(
+        app_def,
+        user=regular_user,
+        tasks_api=tasks_api,
+        inventory_api=MockInventoryAPI(),
+    )
+    base = app_base_url(app_def)
+    body = build_valid_create_body(app_def, task_name=SEEDED_TASK_NAME)
+
+    response = client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+    assert response.status_code == status.HTTP_200_OK
+    detail_fetches = [
+        call for call in spy.call_args_list if call.args[0] == f"/{SEEDED_TASK_NAME}"
+    ]
+    assert len(detail_fetches) == 1
 
 
 @pytest.mark.asyncio

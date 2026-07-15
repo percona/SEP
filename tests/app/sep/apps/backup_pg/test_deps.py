@@ -18,12 +18,10 @@
 import pytest
 import yaml
 
-from app.core.exceptions import HTTPConflictException
 from app.core.utils.path import resolve_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.deps import (
     get_backups_task_info,
-    get_unprotected_backups_task,
     parse_backup_task_data,
 )
 from app.sep.apps.backup_pg.models import BackupPgForm, BackupType
@@ -34,7 +32,6 @@ from app.sep.inventory import CreatedService
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedServiceFactory,
-    TaskFactory,
 )
 
 
@@ -98,23 +95,6 @@ def test_build_backup_pg_spec_uses_stanza_as_alias():
     cfg = yaml.safe_load(spec.config)
     assert cfg["SERVER_LIST"][0]["ALIAS"] == "my-custom-stanza"
     assert cfg["SERVER_LIST"][0]["ALIAS"] != service.node.address
-
-
-@pytest.mark.asyncio
-async def test_get_unprotected_backups_task_returns_unprotected_task():
-    """Return an unprotected task unchanged."""
-    task = TaskFactory.build(owner="BACKUP_PG", protected=False)
-
-    assert await get_unprotected_backups_task(task) is task
-
-
-@pytest.mark.asyncio
-async def test_get_unprotected_backups_task_rejects_protected_task():
-    """Reject a protected task with a 409."""
-    task = TaskFactory.build(owner="BACKUP_PG", protected=True)
-
-    with pytest.raises(HTTPConflictException):
-        await get_unprotected_backups_task(task)
 
 
 def test_get_backups_task_info():
