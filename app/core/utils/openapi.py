@@ -386,14 +386,22 @@ def _generate_namespaced(
 def namespaced_openapi(app: FastAPI) -> dict[str, Any]:
     """Return ``app``'s OpenAPI document with app schema names app-namespaced.
 
-    Runs a fresh ``app.openapi()`` computation under
-    :func:`_generate_namespaced`. The app's cached ``openapi_schema`` is
-    preserved, so the live spec the app serves is unaffected.
+    Runs a fresh spec computation under :func:`_generate_namespaced`. The app's
+    cached ``openapi_schema`` is preserved, so the live spec the app serves is
+    unaffected.
+
+    When :func:`install_namespaced_openapi` has run, ``app.openapi`` is the
+    namespacing wrapper, which itself calls :func:`_generate_namespaced` under the
+    non-reentrant patch lock. Driving that wrapper here would re-acquire the lock
+    and deadlock, so the pre-install base generator stashed on ``app.state`` is
+    used instead; a bare app that was never installed falls back to its own
+    ``app.openapi``.
 
     :param app: The FastAPI application whose spec to namespace.
     :return: A namespaced OpenAPI document.
     """
-    return _generate_namespaced(app, app.openapi)
+    generate = getattr(app.state, "namespaced_base_openapi", app.openapi)
+    return _generate_namespaced(app, generate)
 
 
 def install_namespaced_openapi(app: FastAPI) -> None:
@@ -411,6 +419,9 @@ def install_namespaced_openapi(app: FastAPI) -> None:
     :param app: The FastAPI application whose live OpenAPI endpoint to namespace.
     """
     base_openapi = app.openapi
+    # Bridge the raw generator to namespaced_openapi so it can compute a fresh
+    # spec without recursing through the wrapper installed below.
+    app.state.namespaced_base_openapi = base_openapi
 
     def openapi() -> dict[str, Any]:
         if app.openapi_schema is None:
