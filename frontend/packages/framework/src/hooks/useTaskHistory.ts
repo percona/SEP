@@ -24,7 +24,7 @@ export type PaginatedTaskHistory =
   TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
 
 /** Optional JSON body for ``POST .../execute`` (chain wiring, schedule ETA, etc.). */
-export type TaskExecuteBody = SepComponents['schemas']['TaskExecuteWrite'];
+export type TaskExecuteBody = SepComponents['schemas']['framework__TaskExecuteWrite'];
 
 export const RUNNING_STATUSES: ReadonlySet<TaskHistoryStatus> = new Set(['running', 'pending']);
 

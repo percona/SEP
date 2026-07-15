@@ -16,7 +16,7 @@
 """Define tests for the app.tasks.celery module."""
 
 import asyncio
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from types import SimpleNamespace
@@ -1136,12 +1136,14 @@ class TestSyncRunningItems:
         mock_sync_task.chunks.assert_not_called()
 
 
+@asynccontextmanager
 async def _seed_purge_db(num_aged: int, *, chunks_each: int = 1):
     """Build an in-memory tasks DB with ``num_aged`` aged finished histories.
 
     Each history is SUCCESS, finished 100 days ago, and carries ``chunks_each``
-    log rows. Returns the session maker so the helper-under-test can be patched
-    onto it.
+    log rows. Yields the session maker so the helper-under-test can be patched
+    onto it, then disposes the engine on exit so its aiosqlite thread cannot
+    outlive the test and block interpreter shutdown.
     """
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -1188,7 +1190,10 @@ async def _seed_purge_db(num_aged: int, *, chunks_each: int = 1):
                     )
                 )
         await session.commit()
-    return maker
+    try:
+        yield maker
+    finally:
+        await engine.dispose()
 
 
 def _purge_settings(retention_days: int = 90, batch_size: int = 10):
@@ -1204,53 +1209,53 @@ class TestPurgeTaskHistoryLogs:
     @pytest.mark.asyncio
     async def test_purges_all_aged_logs_across_batches(self):
         """Loop batches until every aged log row is gone; audit rows survive."""
-        maker = await _seed_purge_db(1, chunks_each=5)
-        with (
-            patch(f"{MODULE}.get_async_session_maker", return_value=maker),
-            patch(f"{MODULE}.tasks_settings", _purge_settings(batch_size=2)),
-        ):
-            await _purge_task_history_logs()
+        async with _seed_purge_db(1, chunks_each=5) as maker:
+            with (
+                patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+                patch(f"{MODULE}.tasks_settings", _purge_settings(batch_size=2)),
+            ):
+                await _purge_task_history_logs()
 
-        async with maker() as session:
-            logs = await session.exec(select(col(TaskHistoryLog.id)))
-            histories = await session.exec(select(col(TaskHistory.id)))
-        assert len(logs.all()) == 0
-        assert len(histories.all()) == 1
+            async with maker() as session:
+                logs = await session.exec(select(col(TaskHistoryLog.id)))
+                histories = await session.exec(select(col(TaskHistory.id)))
+            assert len(logs.all()) == 0
+            assert len(histories.all()) == 1
 
     @pytest.mark.asyncio
     async def test_no_aged_rows_is_noop(self):
         """A clean table deletes nothing and raises no error."""
-        maker = await _seed_purge_db(0)
-        with (
-            patch(f"{MODULE}.get_async_session_maker", return_value=maker),
-            patch(f"{MODULE}.tasks_settings", _purge_settings()),
-        ):
-            await _purge_task_history_logs()  # must not raise
+        async with _seed_purge_db(0) as maker:
+            with (
+                patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+                patch(f"{MODULE}.tasks_settings", _purge_settings()),
+            ):
+                await _purge_task_history_logs()  # must not raise
 
     @pytest.mark.asyncio
     async def test_error_triggers_alert_and_reraises(self):
         """A delete failure fires a system alert and propagates the exception."""
-        maker = await _seed_purge_db(1)
-        boom = RuntimeError("db exploded")
-        with (
-            patch(f"{MODULE}.get_async_session_maker", return_value=maker),
-            patch(f"{MODULE}.tasks_settings", _purge_settings()),
-            patch(
-                f"{MODULE}.TaskHistoryLogManager.delete_aged_batch",
-                new_callable=AsyncMock,
-                side_effect=boom,
-            ),
-            patch(
-                f"{MODULE}.alert_service.trigger", new_callable=AsyncMock
-            ) as mock_alert,
-            pytest.raises(RuntimeError),
-        ):
-            await _purge_task_history_logs()
+        async with _seed_purge_db(1) as maker:
+            boom = RuntimeError("db exploded")
+            with (
+                patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+                patch(f"{MODULE}.tasks_settings", _purge_settings()),
+                patch(
+                    f"{MODULE}.TaskHistoryLogManager.delete_aged_batch",
+                    new_callable=AsyncMock,
+                    side_effect=boom,
+                ),
+                patch(
+                    f"{MODULE}.alert_service.trigger", new_callable=AsyncMock
+                ) as mock_alert,
+                pytest.raises(RuntimeError),
+            ):
+                await _purge_task_history_logs()
 
-        mock_alert.assert_awaited_once()
-        alert = mock_alert.await_args[0][0]
-        assert alert["severity"] == AlertSeverity.ERROR
-        assert alert["dedup_key"] == "purge_task_history_logs"
+            mock_alert.assert_awaited_once()
+            alert = mock_alert.await_args[0][0]
+            assert alert["severity"] == AlertSeverity.ERROR
+            assert alert["dedup_key"] == "purge_task_history_logs"
 
     def test_wrapper_runs_helper_on_loop(self):
         """The Celery wrapper drives the async helper via the celery loop."""

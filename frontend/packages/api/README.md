@@ -156,7 +156,7 @@ git diff --exit-code -- packages/api/src/generated/
 import { useQuery } from '@tanstack/react-query';
 import { sepApi, throwOnApiError, type SepComponents } from '@sep/api';
 
-type Task = SepComponents['schemas']['BaseTaskResponse'];
+type Task = SepComponents['schemas']['framework__BaseTaskResponse'];
 
 export function useChecksumTask(name: string) {
   return useQuery<Task>({

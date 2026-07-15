@@ -65,7 +65,10 @@ async def seed_maker_fixture() -> AsyncIterator:
     )
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    yield get_async_session_maker_from_engine(engine)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture
@@ -316,7 +319,10 @@ async def beat_maker_fixture() -> AsyncIterator:
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     async with engine.begin() as conn:
         await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
-    yield get_async_session_maker_from_engine(engine)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

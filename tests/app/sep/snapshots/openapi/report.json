@@ -1,7 +1,60 @@
 {
   "components": {
     "schemas": {
-      "AdvisorCheck": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "report__AdvisorCheck": {
         "description": "A single advisor check definition (enabled only).\n\n:param name: The unique check name.\n:type name: str\n:param description: Human-readable description of what the check tests.\n:type description: str\n:param summary: Short one-line summary of the check.\n:type summary: str\n:param family: The advisor family key this check belongs to, if any.\n:type family: str | None",
         "properties": {
           "description": {
@@ -36,12 +89,12 @@
         "title": "AdvisorCheck",
         "type": "object"
       },
-      "AdvisorFamily": {
+      "report__AdvisorFamily": {
         "description": "A group of advisor checks that share the same family.\n\n:param family_key: Internal family key (e.g. ``\"FAMILY_MYSQL\"``).\n:type family_key: str\n:param display_name: Human-readable name shown in the report (e.g. ``\"MySQL\"``).\n:type display_name: str\n:param checks: All enabled checks belonging to this family.\n:type checks: list[AdvisorCheck]\n:param failed: Mapping of check name to its list of failed results.\n:type failed: dict[str, list[FailedCheck]]",
         "properties": {
           "checks": {
             "items": {
-              "$ref": "#/components/schemas/AdvisorCheck"
+              "$ref": "#/components/schemas/report__AdvisorCheck"
             },
             "title": "Checks",
             "type": "array"
@@ -53,7 +106,7 @@
           "failed": {
             "additionalProperties": {
               "items": {
-                "$ref": "#/components/schemas/FailedCheck"
+                "$ref": "#/components/schemas/report__FailedCheck"
               },
               "type": "array"
             },
@@ -72,12 +125,12 @@
         "title": "AdvisorFamily",
         "type": "object"
       },
-      "AdvisorSection": {
+      "report__AdvisorSection": {
         "description": "Aggregated advisor data for the report.\n\n``total_failed`` counts failed advisor results (rows), not distinct check names.",
         "properties": {
           "families": {
             "items": {
-              "$ref": "#/components/schemas/AdvisorFamily"
+              "$ref": "#/components/schemas/report__AdvisorFamily"
             },
             "title": "Families",
             "type": "array"
@@ -103,7 +156,7 @@
         "title": "AdvisorSection",
         "type": "object"
       },
-      "AlertEntry": {
+      "report__AlertEntry": {
         "additionalProperties": true,
         "description": "A single alert annotation extracted from Grafana.",
         "properties": {
@@ -156,12 +209,12 @@
         "title": "AlertEntry",
         "type": "object"
       },
-      "AlertSection": {
+      "report__AlertSection": {
         "description": "Aggregated alert data for the report.\n\n:param total_alerts: Total number of alert annotations in the period.\n:type total_alerts: int\n:param alerts_per_service: Alert count keyed by service name.\n:type alerts_per_service: dict[str, int]\n:param alerts_per_rule: Alert count keyed by alert rule name.\n:type alerts_per_rule: dict[str, int]\n:param alerts_per_host: Alert count keyed by node name.\n:type alerts_per_host: dict[str, int]\n:param alerts_daily: Alert count keyed by date string (``YYYY-MM-DD``).\n:type alerts_daily: dict[str, int]\n:param alerts_daily_per_host: Daily alert count per host, keyed by date then host.\n:type alerts_daily_per_host: dict[str, dict[str, int]]\n:param alert_history: Full list of individual alert entries.\n:type alert_history: list[AlertEntry]",
         "properties": {
           "alert_history": {
             "items": {
-              "$ref": "#/components/schemas/AlertEntry"
+              "$ref": "#/components/schemas/report__AlertEntry"
             },
             "title": "Alert History",
             "type": "array"
@@ -213,7 +266,7 @@
         "title": "AlertSection",
         "type": "object"
       },
-      "BackupEntry": {
+      "report__BackupEntry": {
         "additionalProperties": true,
         "description": "A single backup record.\n\n:param id: Unique identifier for this backup entry.\n:type id: str\n:param alias: Human-readable alias for the backup schedule.\n:type alias: str\n:param name: Node name where the backup was taken.\n:type name: str\n:param type: Backup type (e.g. ``\"physical\"``, ``\"logical\"``).\n:type type: str\n:param status: Result status of the backup.\n:type status: BackupStatus\n:param size: Raw backup size value from the metric label, or ``\"0\"`` if unknown.\n:type size: str\n:param estimated_data: ``True`` when the time period or size data is estimated.\n:type estimated_data: bool\n:param enabled: Whether the backup schedule is currently enabled, if available.\n:type enabled: bool | None\n:param encryption: Encryption state label reported by PMM.\n:type encryption: str\n:param period: Dictionary with ``start``, ``end``, and ``duration`` of the backup.\n:type period: dict[str, Any]",
         "properties": {
@@ -262,7 +315,7 @@
             "type": "string"
           },
           "status": {
-            "$ref": "#/components/schemas/BackupStatus",
+            "$ref": "#/components/schemas/report__BackupStatus",
             "default": "unknown"
           },
           "type": {
@@ -277,12 +330,12 @@
         "title": "BackupEntry",
         "type": "object"
       },
-      "BackupSection": {
+      "report__BackupSection": {
         "description": "Aggregated backup data for the report.\n\n:param total_backups: Total number of backup entries collected.\n:type total_backups: int\n:param backups_by_host: Backup count keyed by node name.\n:type backups_by_host: dict[str, int]\n:param backups_by_status: Backup count keyed by status string.\n:type backups_by_status: dict[str, int]\n:param backups_by_type: Backup count keyed by backup type.\n:type backups_by_type: dict[str, int]\n:param failed_backups: Subset of backups with a ``fail`` status.\n:type failed_backups: list[BackupEntry]\n:param all_backups: Complete list of all backup entries.\n:type all_backups: list[BackupEntry]",
         "properties": {
           "all_backups": {
             "items": {
-              "$ref": "#/components/schemas/BackupEntry"
+              "$ref": "#/components/schemas/report__BackupEntry"
             },
             "title": "All Backups",
             "type": "array"
@@ -310,7 +363,7 @@
           },
           "failed_backups": {
             "items": {
-              "$ref": "#/components/schemas/BackupEntry"
+              "$ref": "#/components/schemas/report__BackupEntry"
             },
             "title": "Failed Backups",
             "type": "array"
@@ -324,7 +377,7 @@
         "title": "BackupSection",
         "type": "object"
       },
-      "BackupStatus": {
+      "report__BackupStatus": {
         "description": "Status values for a backup entry.",
         "enum": [
           "pass",
@@ -335,7 +388,7 @@
         "title": "BackupStatus",
         "type": "string"
       },
-      "CheckSeverity": {
+      "report__CheckSeverity": {
         "description": "Severity levels for advisor check results.",
         "enum": [
           "SEVERITY_EMERGENCY",
@@ -350,7 +403,7 @@
         "title": "CheckSeverity",
         "type": "string"
       },
-      "DiskUsageEntry": {
+      "report__DiskUsageEntry": {
         "description": "Disk usage for a single mountpoint on a node.\n\n:param node_name: Human-readable node hostname.\n:type node_name: str\n:param mountpoint: Filesystem mountpoint path (e.g. ``\"/\"``, ``\"/data\"``).\n:type mountpoint: str\n:param capacity_bytes: Total filesystem capacity in bytes.\n:type capacity_bytes: int\n:param used_start_bytes: Used bytes at the start of the report period.\n:type used_start_bytes: float\n:param used_end_bytes: Used bytes at the end of the report period.\n:type used_end_bytes: float\n:param used_peak_bytes: Peak used bytes observed during the report period.\n:type used_peak_bytes: float\n:param usage_percentage: End-of-period usage as a percentage of total capacity.\n:type usage_percentage: int",
         "properties": {
           "capacity_bytes": {
@@ -394,7 +447,7 @@
         "title": "DiskUsageEntry",
         "type": "object"
       },
-      "FailedCheck": {
+      "report__FailedCheck": {
         "description": "A single failed advisor check result.\n\n:param name: The check name that failed.\n:type name: str\n:param description: Human-readable description of what the check tests.\n:type description: str\n:param summary: Short one-line summary of the check.\n:type summary: str\n:param severity: Severity level of the failure.\n:type severity: CheckSeverity\n:param node_name: Name of the node affected, if applicable.\n:type node_name: str | None\n:param node_id: PMM node ID of the affected node, if applicable.\n:type node_id: str | None\n:param service_name: Name of the service affected, if applicable.\n:type service_name: str | None\n:param service_id: PMM service ID of the affected service, if applicable.\n:type service_id: str | None\n:param read_more_url: URL linking to documentation for this check.\n:type read_more_url: str",
         "properties": {
           "description": {
@@ -455,7 +508,7 @@
             "title": "Service Name"
           },
           "severity": {
-            "$ref": "#/components/schemas/CheckSeverity"
+            "$ref": "#/components/schemas/report__CheckSeverity"
           },
           "summary": {
             "title": "Summary",
@@ -471,25 +524,12 @@
         "title": "FailedCheck",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "InventorySection": {
+      "report__InventorySection": {
         "description": "Aggregated inventory data for the report.",
         "properties": {
           "entries": {
             "items": {
-              "$ref": "#/components/schemas/InventoryServiceEntry"
+              "$ref": "#/components/schemas/report__InventoryServiceEntry"
             },
             "title": "Entries",
             "type": "array"
@@ -498,7 +538,7 @@
         "title": "InventorySection",
         "type": "object"
       },
-      "InventoryServiceEntry": {
+      "report__InventoryServiceEntry": {
         "description": "A monitored service with its agent connectivity status.",
         "properties": {
           "node_name": {
@@ -515,7 +555,7 @@
             "type": "string"
           },
           "status": {
-            "$ref": "#/components/schemas/ServiceStatus",
+            "$ref": "#/components/schemas/report__ServiceStatus",
             "default": "OK"
           }
         },
@@ -526,7 +566,7 @@
         "title": "InventoryServiceEntry",
         "type": "object"
       },
-      "MonitoredSummary": {
+      "report__MonitoredSummary": {
         "description": "Summary of monitored nodes and services by type.",
         "properties": {
           "services_by_type": {
@@ -550,17 +590,17 @@
         "title": "MonitoredSummary",
         "type": "object"
       },
-      "ReportData": {
+      "report__ReportData": {
         "description": "Complete report payload ready for rendering.\n\n:param full: When ``True``, all check results and full backup history are included.\n:type full: bool\n:param refresh: When ``True``, advisor checks were refreshed before data collection.\n:type refresh: bool\n:param metadata: Report title, generation timestamp, and period labels.\n:type metadata: ReportMetadata\n:param monitored: Summary counts of monitored nodes and services.\n:type monitored: MonitoredSummary\n:param advisors: Advisor check results grouped by family.\n:type advisors: AdvisorSection\n:param alerts: Alert annotation history and aggregations.\n:type alerts: AlertSection\n:param backups: Backup status entries and aggregations.\n:type backups: BackupSection\n:param storage: Disk usage entries per node mountpoint.\n:type storage: StorageSection\n:param uptime: Service uptime entries for the report period.\n:type uptime: UptimeSection\n:param inventory: Monitored service inventory with connectivity status.\n:type inventory: InventorySection",
         "properties": {
           "advisors": {
-            "$ref": "#/components/schemas/AdvisorSection"
+            "$ref": "#/components/schemas/report__AdvisorSection"
           },
           "alerts": {
-            "$ref": "#/components/schemas/AlertSection"
+            "$ref": "#/components/schemas/report__AlertSection"
           },
           "backups": {
-            "$ref": "#/components/schemas/BackupSection"
+            "$ref": "#/components/schemas/report__BackupSection"
           },
           "full": {
             "default": true,
@@ -568,13 +608,13 @@
             "type": "boolean"
           },
           "inventory": {
-            "$ref": "#/components/schemas/InventorySection"
+            "$ref": "#/components/schemas/report__InventorySection"
           },
           "metadata": {
-            "$ref": "#/components/schemas/ReportMetadata"
+            "$ref": "#/components/schemas/report__ReportMetadata"
           },
           "monitored": {
-            "$ref": "#/components/schemas/MonitoredSummary"
+            "$ref": "#/components/schemas/report__MonitoredSummary"
           },
           "refresh": {
             "default": false,
@@ -582,10 +622,10 @@
             "type": "boolean"
           },
           "storage": {
-            "$ref": "#/components/schemas/StorageSection"
+            "$ref": "#/components/schemas/report__StorageSection"
           },
           "uptime": {
-            "$ref": "#/components/schemas/UptimeSection"
+            "$ref": "#/components/schemas/report__UptimeSection"
           }
         },
         "required": [
@@ -594,7 +634,7 @@
         "title": "ReportData",
         "type": "object"
       },
-      "ReportJobResponse": {
+      "report__ReportJobResponse": {
         "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:param status: Lowercase Celery task state.\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:param result: Successful job result payload, if available.\n:param error: Failed job error text, if available.",
         "properties": {
           "error": {
@@ -641,7 +681,7 @@
         "title": "ReportJobResponse",
         "type": "object"
       },
-      "ReportMetadata": {
+      "report__ReportMetadata": {
         "description": "Metadata about a generated report.\n\n:param title: Report title string.\n:type title: str\n:param generated_at: Timestamp when the report was generated.\n:type generated_at: datetime\n:param report_week: ISO week label, e.g. ``\"Report 2026 Week 15\"``.\n:type report_week: str\n:param report_interval: Human-readable date range string for the report period.\n:type report_interval: str",
         "properties": {
           "generated_at": {
@@ -671,11 +711,11 @@
         "title": "ReportMetadata",
         "type": "object"
       },
-      "ReportSnapshotWrite": {
+      "report__ReportSnapshotWrite": {
         "description": "Define report snapshot body for PDF/upload jobs.\n\n:param report: Generated report snapshot reused for PDF/upload work.",
         "properties": {
           "report": {
-            "$ref": "#/components/schemas/ReportData"
+            "$ref": "#/components/schemas/report__ReportData"
           }
         },
         "required": [
@@ -684,7 +724,7 @@
         "title": "ReportSnapshotWrite",
         "type": "object"
       },
-      "ServiceStatus": {
+      "report__ServiceStatus": {
         "description": "Agent connectivity status for an inventory service.",
         "enum": [
           "OK",
@@ -693,12 +733,12 @@
         "title": "ServiceStatus",
         "type": "string"
       },
-      "StorageSection": {
+      "report__StorageSection": {
         "description": "Aggregated storage data for the report.\n\n:param entries: List of per-mountpoint disk usage entries, sorted by usage descending.\n:type entries: list[DiskUsageEntry]",
         "properties": {
           "entries": {
             "items": {
-              "$ref": "#/components/schemas/DiskUsageEntry"
+              "$ref": "#/components/schemas/report__DiskUsageEntry"
             },
             "title": "Entries",
             "type": "array"
@@ -707,7 +747,7 @@
         "title": "StorageSection",
         "type": "object"
       },
-      "UptimeEntry": {
+      "report__UptimeEntry": {
         "description": "Uptime for a single monitored service.",
         "properties": {
           "service_name": {
@@ -732,58 +772,18 @@
         "title": "UptimeEntry",
         "type": "object"
       },
-      "UptimeSection": {
+      "report__UptimeSection": {
         "description": "Aggregated uptime data for the report.",
         "properties": {
           "entries": {
             "items": {
-              "$ref": "#/components/schemas/UptimeEntry"
+              "$ref": "#/components/schemas/report__UptimeEntry"
             },
             "title": "Entries",
             "type": "array"
           }
         },
         "title": "UptimeSection",
-        "type": "object"
-      },
-      "ValidationError": {
-        "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError",
         "type": "object"
       }
     }
@@ -908,7 +908,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReportSnapshotWrite"
+                "$ref": "#/components/schemas/report__ReportSnapshotWrite"
               }
             }
           },
@@ -919,7 +919,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReportJobResponse"
+                  "$ref": "#/components/schemas/report__ReportJobResponse"
                 }
               }
             },
@@ -962,7 +962,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReportJobResponse"
+                  "$ref": "#/components/schemas/report__ReportJobResponse"
                 }
               }
             },
@@ -1034,7 +1034,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReportSnapshotWrite"
+                "$ref": "#/components/schemas/report__ReportSnapshotWrite"
               }
             }
           },
@@ -1045,7 +1045,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReportJobResponse"
+                  "$ref": "#/components/schemas/report__ReportJobResponse"
                 }
               }
             },
@@ -1088,7 +1088,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReportJobResponse"
+                  "$ref": "#/components/schemas/report__ReportJobResponse"
                 }
               }
             },
