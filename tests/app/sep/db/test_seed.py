@@ -264,6 +264,41 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
         snippets_settings._set_snapshot({})
 
 
+class TestAppOwnedScheduleGating:
+    """Cover omission of an app-owned schedule when its Celery module is absent."""
+
+    @staticmethod
+    def _task_names(tasks: list[SystemPeriodicTaskSchedule]) -> set[str]:
+        """Return the ``name`` of every task across ``tasks``."""
+        return {task.name for schedule in tasks for task in schedule.tasks}
+
+    def test_absent_app_yields_no_schedule(self, mocker) -> None:
+        """Omit an app's schedule when it contributes no Celery module.
+
+        Interpolating an absent module path once produced a beat ``task_name``
+        like ``None.sync_snippets`` pointing at nothing the worker registers.
+        """
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("inventory")])
+
+        tasks = seed_module.get_system_periodic_tasks()
+
+        prefixes = [task.task_name for schedule in tasks for task in schedule.tasks]
+        assert not any(name.startswith("None.") for name in prefixes)
+        assert SNIPPETS_TASK not in self._task_names(tasks)
+
+    def test_celery_opt_out_yields_no_schedule(self, mocker) -> None:
+        """Omit the snippets schedule when snippets opts out of the Celery include."""
+        mocker.patch.object(
+            seed_module.sep_settings,
+            "APPS",
+            [App(module_name="snippets", celery_module_path=None)],
+        )
+
+        tasks = seed_module.get_system_periodic_tasks()
+
+        assert SNIPPETS_TASK not in self._task_names(tasks)
+
+
 def test_celery_result_expires_configured() -> None:
     """Celery results have a TTL so result backends do not grow forever."""
     assert settings.CELERY.result_expires == CELERY_RESULT_EXPIRES_SECONDS
