@@ -23,7 +23,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.core.utils.fields import NonEmptyStr, StrippedNonEmptyStr
+from app.core.utils.fields import dsn_safe, NonEmptyStr, StrippedNonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import BaseTaskResponse, derive_create_response_model
 from app.sep.apps.framework.form_dsl import (
@@ -43,24 +43,6 @@ from app.sep.apps.framework.rules import (
     F,
 )
 from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
-
-
-def _dsn_safe(value: str | None) -> str | None:
-    """Reject DSN delimiters (``,`` / ``=``) that could split a pt-osc DSN.
-
-    A free-typed schema or table name is interpolated into the
-    ``D={schema},t={table}`` DSN the spec builder emits, so a ``,`` or ``=`` in
-    the value could inject extra DSN parts.
-
-    :param value: The free-typed schema or table name to validate.
-    :return: The value unchanged when it carries no delimiter.
-    :raises ValueError: When the value contains a ``,`` or ``=`` character.
-    """
-    if value and ("," in value or "=" in value):
-        raise ValueError(
-            "Values cannot contain ',' or '=' characters (DSN delimiters)."
-        )
-    return value
 
 
 def reject_multiline_alter(value: str) -> str:
@@ -195,7 +177,7 @@ class AltersCreate(AppFormModel):
         :param value: The submitted schema or table value (inventory id or name).
         :return: The value unchanged when it carries no DSN delimiter.
         """
-        return _dsn_safe(value) if isinstance(value, str) else value
+        return dsn_safe(value) if isinstance(value, str) else value
 
     alter: Annotated[
         NonEmptyStr,

@@ -20,6 +20,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.core.utils.fields import (
     bounded_int_from_empty_str_factory,
+    dsn_safe,
     TCP_PORT_MAX,
     TCP_PORT_MIN,
     TcpPort,
@@ -89,6 +90,21 @@ class TestTcpPort:
         """Reject ports outside the 1-65535 range."""
         with pytest.raises(ValidationError):
             TypeAdapter(TcpPort).validate_python(port)
+
+
+class TestDsnSafe:
+    """Cover the shared ``dsn_safe`` delimiter guard for free-typed names."""
+
+    @pytest.mark.parametrize("value", ["mydb", "host.example.com", "schema.table"])
+    def test_accepts_safe_names(self, value: str) -> None:
+        """Return names that contain no DSN delimiters unchanged."""
+        assert dsn_safe(value) == value
+
+    @pytest.mark.parametrize("value", ["bad,name", "key=value", "a,b=c"])
+    def test_rejects_delimiters(self, value: str) -> None:
+        """Reject free-typed names containing ``,`` or ``=``."""
+        with pytest.raises(ValueError, match="DSN delimiters"):
+            dsn_safe(value)
 
 
 class TestBoundedIntFromEmptyStrFactory:
