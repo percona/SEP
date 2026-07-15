@@ -42,6 +42,7 @@ from pydantic import (
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
+from app import BASE_DIR
 from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
@@ -299,7 +300,7 @@ class App(BaseCaseInsensitiveModel):
         """
         if self.celery_module_path is None:
             return self
-        target = Path(__file__).parents[2] / Path(*self.celery_module_path.split("."))
+        target = BASE_DIR / Path(*self.celery_module_path.split("."))
         if _module_or_package_exists(target):
             return self
         raise ValueError(f"No module named {self.celery_module_path}")

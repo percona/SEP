@@ -258,7 +258,6 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
     :return: The ordered registry.
     :rtype: AppRegistry
     """
-    plugins = list(plugins)
     apps = []
     for plugin in plugins:
         auto_key = _derive_app_key(plugin.module_name)
