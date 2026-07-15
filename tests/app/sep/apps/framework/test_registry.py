@@ -36,8 +36,11 @@ from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import (
+    app_celery_module_for,
+    app_celery_module_paths,
     AppRegistry,
     build_app_registry,
+    build_celery_include,
     collect_app_owned_settings_classes,
     get_app_registry,
     resolve_app_settings_metadata,
@@ -207,6 +210,62 @@ class TestOrderAndLookup:
         """An unconfigured key resolves to ``None``."""
         registry = build_app_registry([App(name="Inventory", module_name="inventory")])
         assert registry.get("nonexistent") is None
+
+
+class TestCeleryDerivation:
+    """Cover the registry-derived Celery include + seed-prefix accessors."""
+
+    def _apps(self) -> list[App]:
+        """Return a mixed activation list: two celery apps, one without, one opt-out."""
+        return [
+            App(name="Snippet Manager", module_name="snippets"),
+            App(name="Checksums", module_name="checksums"),
+            App(name="Alerts", module_name="alerts"),
+            App(name="Report", module_name="report", celery_module_path=None),
+        ]
+
+    def test_module_paths_ordered_and_filtered(self) -> None:
+        """Return only celery-bearing apps, in activation order, opt-out excluded."""
+        assert app_celery_module_paths(self._apps()) == [
+            "app.sep.apps.snippets.celery",
+            "app.sep.apps.alerts.celery",
+        ]
+
+    def test_explicit_override_is_used(self) -> None:
+        """Surface an explicit ``celery_module_path`` string verbatim."""
+        apps = [App(module_name="checksums", celery_module_path="app.tasks.celery")]
+        assert app_celery_module_paths(apps) == ["app.tasks.celery"]
+
+    def test_build_include_prepends_static_base(self) -> None:
+        """Put the tasks service first, then the app modules."""
+        assert build_celery_include(self._apps()) == [
+            "app.tasks.celery",
+            "app.sep.apps.snippets.celery",
+            "app.sep.apps.alerts.celery",
+        ]
+
+    def test_build_include_empty_apps_is_static_base_only(self) -> None:
+        """Return exactly the static service base when no apps are configured."""
+        assert build_celery_include([]) == ["app.tasks.celery"]
+
+    def test_build_include_dedupes_static_base_collision(self) -> None:
+        """Drop an app module that duplicates the static base, keeping first-seen order."""
+        apps = [App(module_name="checksums", celery_module_path="app.tasks.celery")]
+        assert build_celery_include(apps) == ["app.tasks.celery"]
+
+    def test_module_for_key(self) -> None:
+        """Map an app key to its celery module."""
+        assert (
+            app_celery_module_for("snippets", self._apps())
+            == "app.sep.apps.snippets.celery"
+        )
+
+    def test_module_for_key_none_when_absent_or_opted_out(self) -> None:
+        """Resolve unknown keys and opt-out/no-celery apps to ``None``."""
+        apps = self._apps()
+        assert app_celery_module_for("checksums", apps) is None
+        assert app_celery_module_for("report", apps) is None
+        assert app_celery_module_for("nonexistent", apps) is None
 
 
 class TestDefinitionCollection:

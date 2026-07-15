@@ -171,7 +171,6 @@ export function ScheduledTaskRow({
               setConfirmOpen(false);
               onDelete(task);
             }}
-            color="error"
             variant="contained"
             autoFocus
           >
