@@ -124,12 +124,12 @@ class TestSnippetsApiList:
     async def test_returns_empty_list_when_no_snippets(
         self, test_client, session: AsyncSession, snippets_dir
     ):
-        """Empty DB → empty list with a 200 ``application/json`` response."""
+        """Empty DB → empty paginated envelope with a 200 ``application/json``."""
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
         assert "application/json" in response.headers["content-type"]
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     async def test_returns_snippet_payload(self, test_client, create_snippet):
         """A persisted snippet is projected into its API response shape."""
@@ -138,7 +138,7 @@ class TestSnippetsApiList:
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
-        body = response.json()
+        body = response.json()["items"]
         assert len(body) == 1
         row = body[0]
         assert row["filename"] == snippet.filename

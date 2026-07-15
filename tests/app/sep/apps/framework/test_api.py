@@ -1094,6 +1094,9 @@ class TestCapabilitiesEndpointRuntime:
 _SYNTHETIC_OWNER = "ARCHIVER"
 _CRUD_PREFIX = "/test-derive-crud"
 _CRUD_BASE_URL = f"/api/apps{_CRUD_PREFIX}"
+_SCRIPT_PREFIX = "/test-derive-script"
+_SCRIPT_BASE_URL = f"/api/apps{_SCRIPT_PREFIX}"
+_SCRIPT_PAGE_LIMIT = 25
 
 _PAGE_OFFSET = 5
 _PAGE_LIMIT = 2
@@ -1362,6 +1365,21 @@ def _authed_crud_client(
     return TestClient(app, raise_server_exceptions=False)
 
 
+def _authed_script_client(router: APIRouter, user: CasdoorUser) -> TestClient:
+    """Mount a script ``router`` in a production-shape app with an auth override.
+
+    A script list route lists from its ``ScriptSource``, not the Tasks API, so no
+    ``get_tasks_api`` override is installed.
+
+    :param router: The ``derive_script_routes`` router under test.
+    :param user: The authenticated user the auth dep resolves to.
+    :return: A bare ``TestClient`` mounting the script router under the script prefix.
+    """
+    app = _mount_plugin_router(router, _SCRIPT_PREFIX)
+    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    return TestClient(app, raise_server_exceptions=False)
+
+
 def _api_routes(router: APIRouter) -> list[APIRoute]:
     """Return the concrete ``APIRoute`` objects registered on ``router``."""
     return [r for r in router.routes if isinstance(r, APIRoute)]
@@ -1548,6 +1566,43 @@ class TestDeriveScriptRoutes:
         route = _route_for(router, "/", "GET")
 
         assert route.response_model is PaginatedResponse
+
+
+class TestDeriveScriptRoutesPaginatedList:
+    """Exercise the paginated script ``GET /`` list route over HTTP."""
+
+    def test_paginated_list_200_returns_envelope(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the paginated script list returns the envelope echoing offset/limit."""
+        router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
+        client = _authed_script_client(router, regular_user)
+
+        response = client.get(
+            f"{_SCRIPT_BASE_URL}/", params={"offset": 0, "limit": _SCRIPT_PAGE_LIMIT}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert {"items", "total", "offset", "limit"} <= body.keys()
+        assert body["total"] == 1
+        assert body["offset"] == 0
+        assert body["limit"] == _SCRIPT_PAGE_LIMIT
+        assert [item["filename"] for item in body["items"]] == ["stub.sh"]
+
+    def test_paginated_list_slices_by_offset(self, regular_user: CasdoorUser) -> None:
+        """Assert an offset past the discovered scripts yields an empty page."""
+        router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
+        client = _authed_script_client(router, regular_user)
+
+        response = client.get(
+            f"{_SCRIPT_BASE_URL}/", params={"offset": 1, "limit": _SCRIPT_PAGE_LIMIT}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"] == []
 
 
 class TestDeriveCrudRoutesCreateSkip:
