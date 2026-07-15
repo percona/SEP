@@ -232,7 +232,7 @@ def namespace_app_schema_names(doc: dict[str, Any]) -> dict[str, Any]:
     if not schemas:
         return result
 
-    rename_map: dict[str, str] = {}
+    rename_map = {}
     for key in schemas:
         target = _namespaced_target(key, schemas)
         if target is not None and target != key:
@@ -353,7 +353,7 @@ def namespaced_openapi(app: FastAPI) -> dict[str, Any]:
     """Return ``app``'s OpenAPI document with app schema names app-namespaced.
 
     Installs :class:`_AppNamespacedJsonSchema` for the duration of a fresh
-    ``app.openapi()` computation (so every app model gets a stable
+    ``app.openapi()`` computation (so every app model gets a stable
     ``<app>__<Class>`` name regardless of the installed app set), then runs
     :func:`namespace_app_schema_names` to rename generic wrappers by the app
     owning their wrapped model. The app's cached ``openapi_schema`` is preserved:
