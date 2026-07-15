@@ -2311,6 +2311,37 @@
         "title": "OneOfGroup",
         "type": "object"
       },
+      "PaginatedResponse_SnippetResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SnippetResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[SnippetResponse]",
+        "type": "object"
+      },
       "RefreshResponse": {
         "description": "Represent the successful result of a manual snippets-refresh operation.\n\n:param refreshed_at: UTC timestamp at which the refresh completed.\n:type refreshed_at: datetime",
         "properties": {
@@ -2628,7 +2659,7 @@
         "type": "object"
       },
       "ScriptPreviewResponse": {
-        "description": "Represent the backend response for the preview endpoint.\n\n:param content: The full text content of the snippet file (preamble,\n    frontmatter, and body concatenated).\n:type content: str\n:param language: A JS syntax-highlighter language identifier derived\n    from the snippet's MIME type (for example, ``\"bash\"`` or\n    ``\"plaintext\"``).\n:type language: str\n:param is_truncated: Whether the preview was truncated to fit\n    within the configured per-file character or line limit.\n:type is_truncated: bool",
+        "description": "Represent the backend response for the preview endpoint.\n\n:param content: The full text content of the snippet file (preamble,\n    frontmatter, and body concatenated).\n:param language: A JS syntax-highlighter language identifier derived\n    from the snippet's MIME type (for example, ``\"bash\"`` or\n    ``\"plaintext\"``).\n:param is_truncated: Whether the preview was truncated to fit\n    within the configured per-file character or line limit.",
         "properties": {
           "content": {
             "title": "Content",
@@ -3429,22 +3460,53 @@
   "paths": {
     "/api/apps/snippets/": {
       "get": {
-        "description": "List every discovered script as its list-row projection.",
+        "description": "List discovered scripts as a paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SnippetResponse"
-                  },
-                  "title": "Response Snippets Snippets Api List Api Apps Snippets  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_SnippetResponse_"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List",

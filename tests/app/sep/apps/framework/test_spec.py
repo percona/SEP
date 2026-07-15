@@ -788,6 +788,15 @@ class _FlagOnNonBoolForm(AppFormModel):
     ] = ""
 
 
+class _NonTerminalValueForm(AppFormModel):
+    """Carry a value template whose ``${value}`` is not in the terminal position."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    databases: Annotated[
+        str, ArgFormat("--databases=${value}s"), Ui(label="DB", section="main")
+    ] = ""
+
+
 class TestValidateArgFormats:
     """Cover the construction-time ``ArgFormat`` validation in ``validate_arg_formats``."""
 
@@ -804,6 +813,11 @@ class TestValidateArgFormats:
         """Reject a no-placeholder template on a field that is not ``bool``."""
         with pytest.raises(ValueError, match="bool field"):
             validate_arg_formats(_FlagOnNonBoolForm)
+
+    def test_non_terminal_value_placeholder_raises(self) -> None:
+        """Reject a value template whose ``${value}`` is not terminal (reverse-parse footgun)."""
+        with pytest.raises(ValueError, match="terminal"):
+            validate_arg_formats(_NonTerminalValueForm)
 
 
 class _DefaultArgForm(AppFormModel):
@@ -857,6 +871,13 @@ class _StampForm(AppFormModel):
     task_name: Annotated[str, Ui(label="Name", section="main")] = ""
 
 
+class _PlainStampForm(BaseModel):
+    """Declare a plain ``BaseModel`` form (not an ``AppFormModel``) for stamping."""
+
+    task_name: str
+    count: int = 3
+
+
 class TestStampFormInput:
     """Cover the reserved-key stamp written onto the task envelope ``data``."""
 
@@ -892,6 +913,15 @@ class TestStampFormInput:
 
         with pytest.raises(ValueError, match="reserved key"):
             stamp_form_input(write, _StampForm(task_name="task-1"))
+
+    def test_accepts_plain_basemodel_form(self) -> None:
+        """Accept a plain ``BaseModel`` form — the mongo apps pass non-``AppFormModel``."""
+        write = self._envelope()
+        form = _PlainStampForm(task_name="task-1")
+
+        stamp_form_input(write, form)
+
+        assert write.data[RESERVED_FORM_KEY] == form.model_dump(mode="json")
 
 
 class TestBuildRunPythonTask:

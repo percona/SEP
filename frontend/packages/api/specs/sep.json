@@ -6957,6 +6957,37 @@
         "title": "PaginatedResponse[BackupSummary]",
         "type": "object"
       },
+      "PaginatedResponse_BaseTaskResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BaseTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[BaseTaskResponse]",
+        "type": "object"
+      },
       "PaginatedResponse_RestoreTaskResponse_": {
         "properties": {
           "items": {
@@ -7048,6 +7079,37 @@
           "limit"
         ],
         "title": "PaginatedResponse[ServiceResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse_SnippetResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SnippetResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[SnippetResponse]",
         "type": "object"
       },
       "PaginatedResponse_TaskHistoryResponse_": {
@@ -8932,7 +8994,7 @@
         "type": "object"
       },
       "ScriptPreviewResponse": {
-        "description": "Represent the backend response for the preview endpoint.\n\n:param content: The full text content of the snippet file (preamble,\n    frontmatter, and body concatenated).\n:type content: str\n:param language: A JS syntax-highlighter language identifier derived\n    from the snippet's MIME type (for example, ``\"bash\"`` or\n    ``\"plaintext\"``).\n:type language: str\n:param is_truncated: Whether the preview was truncated to fit\n    within the configured per-file character or line limit.\n:type is_truncated: bool",
+        "description": "Represent the backend response for the preview endpoint.\n\n:param content: The full text content of the snippet file (preamble,\n    frontmatter, and body concatenated).\n:param language: A JS syntax-highlighter language identifier derived\n    from the snippet's MIME type (for example, ``\"bash\"`` or\n    ``\"plaintext\"``).\n:param is_truncated: Whether the preview was truncated to fit\n    within the configured per-file character or line limit.",
         "properties": {
           "content": {
             "title": "Content",
@@ -12179,7 +12241,7 @@
         ]
       },
       "post": {
-        "description": "Create an alters task group from a JSON payload request body.\n\nPOSTs the parent execute task, dry-run derived sibling, and pre-checks\npredecessor. Pre-checks are started manually from the detail page.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics — an unchecked box\n    submits no field); this asymmetry is intentional.\n:type check_connectivity: bool",
+        "description": "Create an alters task group from a JSON payload request body.",
         "operationId": "alters_alters_api_create_api_apps_alters__post",
         "parameters": [
           {
@@ -12446,8 +12508,31 @@
     },
     "/api/apps/archives/": {
       "get": {
-        "operationId": "archives__list_api_apps_archives__get",
+        "operationId": "archives__list_paginated_api_apps_archives__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "status",
@@ -12470,11 +12555,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/BaseTaskResponse"
-                  },
-                  "title": "Response Archives  List Api Apps Archives  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_BaseTaskResponse_"
                 }
               }
             },
@@ -12878,7 +12959,7 @@
         ]
       },
       "post": {
-        "description": "Create a backup task group from a JSON payload request body.\n\nPOSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,\n``pbm_physical``, and ``pbm_status`` siblings via\n:func:`~app.sep.apps.framework.cascade.cascade_create_tasks`.",
+        "description": "Create a backup task group from a JSON payload request body.",
         "operationId": "backup_mongo_backup_mongo_api_create_api_apps_backup_mongo__post",
         "requestBody": {
           "content": {
@@ -12991,7 +13072,7 @@
         ]
       },
       "post": {
-        "description": "Create a restore task group from a JSON payload request body.\n\nPOSTs the parent config task, restore leg, pbm-list helper, and optional\nforce-resync child for physical restores. Rolls back on any failure.",
+        "description": "Create a restore task group from a JSON payload request body.",
         "operationId": "backup_mongo_restore_restore_mongo_api_create_api_apps_backup_mongo_restore__post",
         "requestBody": {
           "content": {
@@ -13721,8 +13802,31 @@
     },
     "/api/apps/checksums/": {
       "get": {
-        "operationId": "checksums__list_api_apps_checksums__get",
+        "operationId": "checksums__list_paginated_api_apps_checksums__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "service_type",
@@ -13761,11 +13865,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/BaseTaskResponse"
-                  },
-                  "title": "Response Checksums  List Api Apps Checksums  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_BaseTaskResponse_"
                 }
               }
             },
@@ -15664,22 +15764,53 @@
     },
     "/api/apps/snippets/": {
       "get": {
-        "description": "List every discovered script as its list-row projection.",
+        "description": "List discovered scripts as a paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SnippetResponse"
-                  },
-                  "title": "Response Snippets Snippets Api List Api Apps Snippets  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_SnippetResponse_"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List",

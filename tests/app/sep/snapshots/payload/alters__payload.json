@@ -1,0 +1,282 @@
+{
+  "all_flags": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --print --no-swap-tables --no-drop-old-table --no-drop-new-table --no-drop-triggers --execute",
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "~/.my.cnf",
+        "_schema_name": "app",
+        "_service_host": "db.internal",
+        "_service_name": "svc-alters",
+        "_service_port": 3306,
+        "_table_name": "users",
+        "args": "'--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --print --no-swap-tables --no-drop-old-table --no-drop-new-table --no-drop-triggers --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  },
+  "all_value_args": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --pause-file=/var/run/osc.pause --new-table-name=_users_new --tries=create_triggers:10000:1,drop_triggers:10000:1 --set-vars=lock_wait_timeout=5 --critical-load=Threads_running=99999,Connections=200 --max-load=Threads_running=30,Threads_connected=120 --chunk-time=0.5 --max-lag=150 --max-flow-ctl=25 --execute",
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "~/.my.cnf",
+        "_schema_name": "app",
+        "_service_host": "db.internal",
+        "_service_name": "svc-alters",
+        "_service_port": 3306,
+        "_table_name": "users",
+        "args": "'--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --pause-file=/var/run/osc.pause --new-table-name=_users_new --tries=create_triggers:10000:1,drop_triggers:10000:1 --set-vars=lock_wait_timeout=5 --critical-load=Threads_running=99999,Connections=200 --max-load=Threads_running=30,Threads_connected=120 --chunk-time=0.5 --max-lag=150 --max-flow-ctl=25 --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  },
+  "defaults_file_custom": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change --defaults-file=/etc/mysql/exec.cnf '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --execute",
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "/etc/mysql/exec.cnf",
+        "_schema_name": "app",
+        "_service_host": "db.internal",
+        "_service_name": "svc-alters",
+        "_service_port": 3306,
+        "_table_name": "users",
+        "args": "--defaults-file=/etc/mysql/exec.cnf '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  },
+  "dsn_recursion_custom_table": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=dsn=h=db.internal,P=3306,D=mydb,t=custom_dsns --execute",
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "~/.my.cnf",
+        "_schema_name": "app",
+        "_service_host": "db.internal",
+        "_service_name": "svc-alters",
+        "_service_port": 3306,
+        "_table_name": "users",
+        "args": "'--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=dsn=h=db.internal,P=3306,D=mydb,t=custom_dsns --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  },
+  "dsn_recursion_default_table": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=dsn=h=db.internal,P=3306,D=percona,t=dsns --execute",
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "~/.my.cnf",
+        "_schema_name": "app",
+        "_service_host": "db.internal",
+        "_service_name": "svc-alters",
+        "_service_port": 3306,
+        "_table_name": "users",
+        "args": "'--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=dsn=h=db.internal,P=3306,D=percona,t=dsns --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  },
+  "extra_args_tokens": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --sleep 0.5 --chunk-size 1000 --execute",
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "~/.my.cnf",
+        "_schema_name": "app",
+        "_service_host": "db.internal",
+        "_service_name": "svc-alters",
+        "_service_port": 3306,
+        "_table_name": "users",
+        "args": "'--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --sleep 0.5 --chunk-size 1000 --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  },
+  "local_portless_dsn_elision": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change '--alter=ADD COLUMN new_col INT' D=app,t=users --recursion-method=processlist --execute",
+        "_connectivity_host": "localhost",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "~/.my.cnf",
+        "_schema_name": "app",
+        "_service_host": "localhost",
+        "_service_name": "svc-local",
+        "_service_port": null,
+        "_table_name": "users",
+        "args": "'--alter=ADD COLUMN new_col INT' D=app,t=users --recursion-method=processlist --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  },
+  "progress_after_flags": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --no-swap-tables --progress=time,10 --execute",
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "~/.my.cnf",
+        "_schema_name": "app",
+        "_service_host": "db.internal",
+        "_service_name": "svc-alters",
+        "_service_port": 3306,
+        "_table_name": "users",
+        "args": "'--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --no-swap-tables --progress=time,10 --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  },
+  "required_minimal": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --execute",
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "~/.my.cnf",
+        "_schema_name": "app",
+        "_service_host": "db.internal",
+        "_service_name": "svc-alters",
+        "_service_port": 3306,
+        "_table_name": "users",
+        "args": "'--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  },
+  "value_with_space_quoting": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_command_line": "pt-online-schema-change '--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist '--set-vars=sql_mode='\"'\"'ONLY FULL'\"'\"'' --execute",
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_pre_checks_mysql_config_file": "~/.my.cnf",
+        "_schema_name": "app",
+        "_service_host": "db.internal",
+        "_service_name": "svc-alters",
+        "_service_port": 3306,
+        "_table_name": "users",
+        "args": "'--alter=ADD COLUMN new_col INT' h=db.internal,P=3306,D=app,t=users --recursion-method=processlist '--set-vars=sql_mode='\"'\"'ONLY FULL'\"'\"'' --execute",
+        "command": "pt-online-schema-change",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "alters-golden",
+    "owner": "ALTERS",
+    "protected": false
+  }
+}

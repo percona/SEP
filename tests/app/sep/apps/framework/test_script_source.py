@@ -41,8 +41,10 @@ from pydantic import BaseModel, create_model
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPNotFoundException
+from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.framework import ScriptSource, StaticMount, TaskExecutionApp
+from app.sep.apps.framework.apps import NO_PAGINATION
 from app.sep.apps.framework.conformance import (
     check_capability_route_consistency,
     check_schema_derivation_succeeds,
@@ -66,6 +68,9 @@ _OWNER = "ARCHIVER"
 _PREFIX = "/fixture-scripts"
 _BASE = f"/api/apps{_PREFIX}"
 _TASK_NAME = "run-bash"
+_PAGE_OFFSET = 1
+_PAGE_LIMIT = 1
+_SCRIPT_TOTAL = 2
 _SCRIPT_PARAMS: dict[str, dict[str, type]] = {
     "report.sh": {"database": str, "count": int},
     "noparams.sh": {},
@@ -336,9 +341,13 @@ class TestDerivedRouteSurface:
     def test_list_response_model_types_the_derived_list_route(
         self, scripts_dir: Path, regular_user: CasdoorUser
     ) -> None:
-        """Assert the derived ``GET /`` 200 is typed ``array<list_response_model>`` when set."""
+        """Assert the opt-out ``GET /`` 200 is typed ``array<list_response_model>``."""
         source = _make_source(scripts_dir, list_response_model=_ListRow)
-        client = _client(_script_app(source), _make_tasks_api(), regular_user)
+        client = _client(
+            _script_app(source, pagination=NO_PAGINATION),
+            _make_tasks_api(),
+            regular_user,
+        )
         spec = client.get("/openapi.json").json()
         list_schema = spec["paths"][f"{_BASE}/"]["get"]["responses"]["200"]["content"][
             "application/json"
@@ -363,22 +372,37 @@ class TestDerivedRouteSurface:
 class TestDerivedRouteHTTP:
     """Exercise the full derived route matrix through a real ``TestClient``."""
 
-    def test_list_returns_rows(
+    def test_default_list_returns_paginated_rows(
         self, source: ScriptSource, regular_user: CasdoorUser
     ) -> None:
-        """List every discovered script as its list-row projection."""
+        """List every discovered script as list-row projections in the default envelope."""
         client = _client(_script_app(source), _make_tasks_api(), regular_user)
         response = client.get(f"{_BASE}/")
         assert response.status_code == status.HTTP_200_OK
-        assert sorted(row["filename"] for row in response.json()) == [
+        assert sorted(row["filename"] for row in response.json()["items"]) == [
             "noparams.sh",
             "report.sh",
         ]
 
-    def test_empty_listing_returns_empty_list(
+    def test_no_pagination_sentinel_returns_plain_array(
+        self, source: ScriptSource, regular_user: CasdoorUser
+    ) -> None:
+        """Return a plain JSON array when the app opts out via ``NO_PAGINATION``."""
+        client = _client(
+            _script_app(source, pagination=NO_PAGINATION),
+            _make_tasks_api(),
+            regular_user,
+        )
+        response = client.get(f"{_BASE}/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert isinstance(body, list)
+        assert sorted(row["filename"] for row in body) == ["noparams.sh", "report.sh"]
+
+    def test_empty_listing_returns_empty_envelope(
         self, scripts_dir: Path, regular_user: CasdoorUser
     ) -> None:
-        """Return ``200`` with ``[]`` when the source lists no scripts."""
+        """Return ``200`` with an empty paginated envelope when no scripts exist."""
         source = _make_source(scripts_dir)
 
         async def _empty() -> list[_FixtureScript]:
@@ -395,7 +419,9 @@ class TestDerivedRouteHTTP:
         client = _client(_script_app(source), _make_tasks_api(), regular_user)
         response = client.get(f"{_BASE}/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        body = response.json()
+        assert body["items"] == []
+        assert body["total"] == 0
 
     def test_per_script_schema_reflects_parameters(
         self, source: ScriptSource, regular_user: CasdoorUser
@@ -562,6 +588,80 @@ class TestDerivedRouteHTTP:
         client = _client(_script_app(source), _make_tasks_api(), regular_user)
         response = client.get(f"{_BASE}/schema")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestDerivedRoutePaginatedList:
+    """Exercise the paginated ``GET /`` list route over HTTP."""
+
+    def test_paginated_list_returns_envelope(
+        self, source: ScriptSource, regular_user: CasdoorUser
+    ) -> None:
+        """Assert pagination switches the list to a ``PaginatedResponse`` envelope."""
+        client = _client(
+            _script_app(source, pagination=make_pagination_dep(max_limit=50)),
+            _make_tasks_api(),
+            regular_user,
+        )
+        response = client.get(f"{_BASE}/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert set(body) == {"items", "total", "offset", "limit"}
+        assert sorted(item["filename"] for item in body["items"]) == [
+            "noparams.sh",
+            "report.sh",
+        ]
+
+    def test_paginated_list_slices_by_offset_and_limit(
+        self, source: ScriptSource, regular_user: CasdoorUser
+    ) -> None:
+        """Assert offset/limit slice the discovered scripts client-side."""
+        client = _client(
+            _script_app(source, pagination=make_pagination_dep(max_limit=50)),
+            _make_tasks_api(),
+            regular_user,
+        )
+        response = client.get(
+            f"{_BASE}/",
+            params={"offset": _PAGE_OFFSET, "limit": _PAGE_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["offset"] == _PAGE_OFFSET
+        assert body["limit"] == _PAGE_LIMIT
+        assert body["total"] == _SCRIPT_TOTAL
+        assert [item["filename"] for item in body["items"]] == ["report.sh"]
+
+    def test_paginated_list_untyped_without_response_model(
+        self, scripts_dir: Path, regular_user: CasdoorUser
+    ) -> None:
+        """Assert pagination emits an untyped envelope without ``list_response_model``."""
+        client = _client(
+            _script_app(
+                _make_source(scripts_dir),
+                pagination=make_pagination_dep(max_limit=50),
+            ),
+            _make_tasks_api(),
+            regular_user,
+        )
+        spec = client.get("/openapi.json").json()
+        list_schema = spec["paths"][f"{_BASE}/"]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert list_schema.get("type") != "array"
+        if "$ref" in list_schema:
+            schema_name = list_schema["$ref"].rsplit("/", 1)[-1]
+            envelope_schema = spec["components"]["schemas"][schema_name]
+            assert "items" in envelope_schema["properties"]
+        else:
+            assert "items" in list_schema.get("properties", {})
+        response = client.get(f"{_BASE}/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert set(body) == {"items", "total", "offset", "limit"}
+        assert sorted(item["filename"] for item in body["items"]) == [
+            "noparams.sh",
+            "report.sh",
+        ]
 
 
 class TestScriptAppAuxiliarySurface:
