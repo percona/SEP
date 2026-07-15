@@ -1611,7 +1611,7 @@ class TestRequireAppEnabled:
 
     @pytest.mark.asyncio
     async def test_gate_passes_when_enabled(self, session) -> None:
-        """The gate returns ``None`` when the app is ``ENABLED``."""
+        """Assert the gate returns ``None`` when the app is ``ENABLED``."""
         session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
         )
@@ -1629,7 +1629,7 @@ class TestRequireAppEnabled:
         ],
     )
     async def test_gate_raises_503_for_non_enabled_states(self, session, state) -> None:
-        """The gate raises 503 whenever the app is not ``ENABLED``."""
+        """Assert the gate raises 503 whenever the app is not ``ENABLED``."""
         session.add(AppState(app_key="snippets", lifecycle_state=state))
         await session.commit()
         gate = require_app_enabled("snippets")
@@ -1670,7 +1670,7 @@ class TestRequireAppEnabled:
 
     @pytest.mark.asyncio
     async def test_gate_503_when_dependency_disabled(self, session) -> None:
-        """The gate 503s on the dependent's key when a required app is disabled."""
+        """Assert the gate 503s on the dependent's key when a required app is disabled."""
         session.add(AppState(app_key="dep", lifecycle_state=AppLifecycleEnum.DISABLED))
         await session.commit()
         with patch(
@@ -1684,7 +1684,7 @@ class TestRequireAppEnabled:
 
     @pytest.mark.asyncio
     async def test_gate_passes_when_dependency_enabled(self, session) -> None:
-        """The gate passes when both the app and its dependency are enabled."""
+        """Assert the gate passes when both the app and its dependency are enabled."""
         with patch(
             "app.sep.apps.framework.registry.get_app_registry",
             return_value=self._dependent_registry(),
@@ -1694,7 +1694,7 @@ class TestRequireAppEnabled:
 
     @pytest.mark.asyncio
     async def test_gate_fail_open_on_db_error(self, session) -> None:
-        """A DB read failure degrades to allowing the request (fail-open)."""
+        """Assert a DB read failure degrades to allowing the request (fail-open)."""
         with patch.object(
             AppStateManager,
             "all_lifecycle_states",
@@ -1864,7 +1864,7 @@ class TestGetDefaultContextPluginFiltering:
     async def test_app_hidden_when_dependency_disabled(
         self, session, dummy_request, regular_user
     ) -> None:
-        """An app is dropped from the sidebar when a required app is disabled."""
+        """Assert an app is dropped from the sidebar when a required app is disabled."""
         session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
@@ -1890,7 +1890,7 @@ class TestGetDefaultContextPluginFiltering:
     async def test_app_shown_when_dependency_enabled(
         self, session, dummy_request, regular_user
     ) -> None:
-        """An app stays in the sidebar when its dependency is enabled (missing row)."""
+        """Assert an app stays in the sidebar when its dependency is enabled (missing row)."""
         with (
             patch(
                 "app.sep.apps.framework.registry.get_app_registry",
@@ -1910,7 +1910,7 @@ class TestGetDefaultContextPluginFiltering:
     async def test_db_failure_degrades_to_showing_all_apps(
         self, session, dummy_request, regular_user
     ) -> None:
-        """A DB read failure shows every app so the page (and error pages) render."""
+        """Assert a DB read failure shows every app so the page (and error pages) render."""
         with (
             patch(
                 "app.sep.apps.framework.registry.get_app_registry",

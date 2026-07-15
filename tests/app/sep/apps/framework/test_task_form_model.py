@@ -62,8 +62,7 @@ _PLUGIN_FORMS = [
 # (``service_id``, ``pre_checks_mysql_config_file``) rather than inheriting the
 # identity pair from ``TaskFormModel``. Its Task section uses the same
 # ``section="Task"`` key as every inheritor and the shared ``TASK_SECTION_LAYOUT``;
-# reparenting it onto ``TaskFormModel`` is a separate change beyond this ticket's
-# scope.
+# reparenting it onto ``TaskFormModel`` is a separate, out-of-scope change.
 
 
 def _marker(field_info, marker_type):
