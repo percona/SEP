@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { http, HttpResponse } from 'msw';
@@ -112,7 +112,9 @@ describe('authenticated provider boundary — no eager request during ambient bo
     // Ambient sign-in completes: the shell mounts and only now fetches nav metadata.
     releaseSession();
     await screen.findByText('authenticated shell');
-    expect(appsSpy).toHaveBeenCalled();
+    // The shell renders immediately from the static nav fallback, so wait for the
+    // now-mounted NavigationProvider's metadata fetch to reach its handler.
+    await waitFor(() => expect(appsSpy).toHaveBeenCalled());
     expect(screen.queryByText('login screen')).toBeNull();
   });
 
