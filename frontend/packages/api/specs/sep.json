@@ -8932,7 +8932,7 @@
         "type": "object"
       },
       "ScriptPreviewResponse": {
-        "description": "Represent the backend response for the preview endpoint.\n\n:param content: The full text content of the snippet file (preamble,\n    frontmatter, and body concatenated).\n:type content: str\n:param language: A JS syntax-highlighter language identifier derived\n    from the snippet's MIME type (for example, ``\"bash\"`` or\n    ``\"plaintext\"``).\n:type language: str\n:param is_truncated: Whether the preview was truncated to fit\n    within the configured per-file character or line limit.\n:type is_truncated: bool",
+        "description": "Represent the backend response for the preview endpoint.\n\n:param content: The full text content of the snippet file (preamble,\n    frontmatter, and body concatenated).\n:param language: A JS syntax-highlighter language identifier derived\n    from the snippet's MIME type (for example, ``\"bash\"`` or\n    ``\"plaintext\"``).\n:param is_truncated: Whether the preview was truncated to fit\n    within the configured per-file character or line limit.",
         "properties": {
           "content": {
             "title": "Content",
