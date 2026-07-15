@@ -16,6 +16,7 @@
 """Tests for the HOT-classification registry."""
 
 from string import Template
+from typing import ClassVar
 
 import pytest
 from pydantic import BaseModel
@@ -25,9 +26,11 @@ from app.core.alerts.models import BaseAlertProvider
 from app.core.settings_override.registry import (
     chain_has_advanced,
     field_materializer,
+    field_reload_classification,
     hot_field,
     hot_field_names,
     is_advanced_field,
+    is_explicit_not_overridable,
     is_hot_reloadable,
     materialize_template,
     materialize_via_owning_model,
@@ -340,3 +343,148 @@ def test_is_advanced_field_false_without_metadata() -> None:
         value: int = 1
 
     assert is_advanced_field(_Plain.model_fields["value"]) is False
+
+
+class _OverlayProbe(BaseModel):
+    """Define a probe carrying an ``INHERITED_MARKERS`` overlay over otherwise-bare fields.
+
+    ``inherited_leaf`` is a plain (unmarked) field promoted purely by the
+    overlay, mirroring the inherited-field use case. ``plain_leaf`` has no
+    overlay entry and must classify exactly as it would without the mechanism.
+    ``conflicting`` carries an explicit ``NOT_OVERRIDABLE`` marker that the
+    overlay must not override. ``ghost_field`` is an overlay entry naming a field
+    that does not exist on the model, to prove such entries are safely ignored.
+    """
+
+    INHERITED_MARKERS: ClassVar[dict[str, dict[str, object]]] = {
+        "inherited_leaf": {"reload": ReloadClassification.HOT, "advanced": True},
+        "conflicting": {"reload": ReloadClassification.HOT, "advanced": True},
+        "ghost_field": {"advanced": True},
+    }
+    inherited_leaf: int = 1
+    plain_leaf: int = 2
+    conflicting: int = field_with_metadata(
+        3, metadata={"reload": ReloadClassification.NOT_OVERRIDABLE}
+    )
+
+
+def test_overlay_promotes_bare_inherited_field() -> None:
+    """Assert an overlay entry marks a bare field ``advanced`` + HOT via owner context."""
+    info = _OverlayProbe.model_fields["inherited_leaf"]
+    assert is_advanced_field(info, owner_cls=_OverlayProbe, field_name="inherited_leaf")
+    assert (
+        field_reload_classification(
+            info, owner_cls=_OverlayProbe, field_name="inherited_leaf"
+        )
+        is ReloadClassification.HOT
+    )
+    assert is_hot_reloadable(_OverlayProbe, "inherited_leaf") is True
+
+
+def test_overlay_bare_call_is_unchanged_fast_path() -> None:
+    """Assert calling classifiers with only a bare ``FieldInfo`` ignores the overlay."""
+    info = _OverlayProbe.model_fields["inherited_leaf"]
+    assert is_advanced_field(info) is False
+    assert field_reload_classification(info) is ReloadClassification.NOT_OVERRIDABLE
+
+
+def test_overlay_is_opt_in_per_field() -> None:
+    """Assert a field with no overlay entry classifies exactly as today."""
+    info = _OverlayProbe.model_fields["plain_leaf"]
+    assert (
+        is_advanced_field(info, owner_cls=_OverlayProbe, field_name="plain_leaf")
+        is False
+    )
+    assert (
+        field_reload_classification(
+            info, owner_cls=_OverlayProbe, field_name="plain_leaf"
+        )
+        is ReloadClassification.NOT_OVERRIDABLE
+    )
+
+
+def test_overlay_does_not_override_explicit_field_metadata() -> None:
+    """Assert the field's own marker wins; the overlay only fills absent keys.
+
+    ``conflicting`` explicitly declares ``NOT_OVERRIDABLE`` -- the overlay's
+    ``HOT`` must not win -- while ``advanced`` (absent on the field) is filled.
+    """
+    info = _OverlayProbe.model_fields["conflicting"]
+    assert (
+        field_reload_classification(
+            info, owner_cls=_OverlayProbe, field_name="conflicting"
+        )
+        is ReloadClassification.NOT_OVERRIDABLE
+    )
+    assert is_explicit_not_overridable(
+        info, owner_cls=_OverlayProbe, field_name="conflicting"
+    )
+    assert is_advanced_field(info, owner_cls=_OverlayProbe, field_name="conflicting")
+
+
+def test_overlay_entry_for_absent_field_is_ignored() -> None:
+    """Assert an overlay entry naming a field absent from the model is harmless.
+
+    ``ghost_field`` has an overlay entry but no matching model field, so no
+    classifier ever resolves it and its presence must not affect the real fields.
+    """
+    assert "ghost_field" not in _OverlayProbe.model_fields
+    assert (
+        is_advanced_field(
+            _OverlayProbe.model_fields["plain_leaf"],
+            owner_cls=_OverlayProbe,
+            field_name="plain_leaf",
+        )
+        is False
+    )
+
+
+class _OverlayMaterializerProbe(BaseModel):
+    """Define a probe whose overlay supplies a materializer for an otherwise-bare field.
+
+    ``inherited_leaf`` declares no materializer of its own; the overlay attaches
+    one. ``own`` declares its own materializer that the overlay must not shadow.
+    """
+
+    INHERITED_MARKERS: ClassVar[dict[str, dict[str, object]]] = {
+        "inherited_leaf": {
+            "reload": ReloadClassification.HOT,
+            "materializer": materialize_template,
+        },
+    }
+    inherited_leaf: str = ""
+    own: str = hot_field("", materializer=materialize_template)
+
+
+def test_overlay_supplies_materializer_for_bare_field() -> None:
+    """Assert ``field_materializer`` honors an overlay-supplied materializer."""
+    assert (
+        field_materializer(_OverlayMaterializerProbe, "inherited_leaf")
+        is materialize_template
+    )
+
+
+def test_overlay_materializer_does_not_shadow_own_field() -> None:
+    """Assert a field's own materializer wins over an (absent) overlay entry."""
+    assert field_materializer(_OverlayMaterializerProbe, "own") is materialize_template
+
+
+@pytest.mark.parametrize(
+    "overlay",
+    [None, {}, "not-a-dict", {"value": "not-a-dict-entry"}],
+)
+def test_overlay_malformed_or_absent_is_harmless(overlay: object) -> None:
+    """Assert an absent, empty, or malformed overlay never affects classification or raises."""
+
+    class _Probe(BaseModel):
+        value: int = 1
+
+    if overlay is not None:
+        _Probe.INHERITED_MARKERS = overlay  # type: ignore[attr-defined]
+
+    info = _Probe.model_fields["value"]
+    assert is_advanced_field(info, owner_cls=_Probe, field_name="value") is False
+    assert (
+        field_reload_classification(info, owner_cls=_Probe, field_name="value")
+        is ReloadClassification.NOT_OVERRIDABLE
+    )

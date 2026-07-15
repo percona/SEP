@@ -44,17 +44,17 @@ class << class_prefix >>Form(AppFormModel):
     :param message: An example value argument passed to the command.
     """
 
-    task_name: Annotated[NonEmptyStr, Ui(section="Main")]
+    task_name: Annotated[NonEmptyStr, Ui(section="Task")]
     service_id: Annotated[
         int,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
-        Ui(label="Database Host", section="Main"),
+        Ui(label="Database Host", section="Task"),
     ]
     hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="Main")
+        NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="Task")
     ]
     message: Annotated[
         str,
         ArgFormat(),
-        Ui(section="Main", description="Example value argument"),
+        Ui(section="Task", description="Example value argument"),
     ] = "hello"
