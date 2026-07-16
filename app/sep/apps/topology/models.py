@@ -77,7 +77,7 @@ class TopologyCollectResponse(BaseModel):
 
 
 class MySQLServerInfo(BaseModel):
-    """MySQL server identity/mode collected per host."""
+    """Represent MySQL server identity/mode collected per host."""
 
     server_hash: str | None = None
     server_id: int | None = None
@@ -90,7 +90,7 @@ class MySQLServerInfo(BaseModel):
 
 
 class MySQLReplicationInfo(BaseModel):
-    """Replication source/state for a replica host (``source_uuid`` stripped)."""
+    """Represent replication source/state for a replica host (``source_uuid`` stripped)."""
 
     source_host: str | None = None
     source_port: int | None = None
@@ -104,7 +104,7 @@ class MySQLReplicationInfo(BaseModel):
 
 
 class MySQLClusterInfo(BaseModel):
-    """Percona XtraDB Cluster (wsrep) metadata for a host."""
+    """Represent Percona XtraDB Cluster (wsrep) metadata for a host."""
 
     cluster_name: str
     cluster_size: str | None = None
@@ -113,7 +113,7 @@ class MySQLClusterInfo(BaseModel):
 
 
 class MySQLNodeData(BaseModel):
-    """React-Flow ``data`` payload for a MySQL node."""
+    """Represent the React-Flow ``data`` payload for a MySQL node."""
 
     host_entry: str
     status: Literal["ok", "error"]
@@ -127,7 +127,7 @@ class MySQLNodeData(BaseModel):
 
 
 class ClusterNodeData(BaseModel):
-    """React-Flow ``data`` payload for a synthetic PXC cluster node."""
+    """Represent the React-Flow ``data`` payload for a synthetic PXC cluster node."""
 
     cluster_name: str
     size: str | None = None
@@ -136,7 +136,7 @@ class ClusterNodeData(BaseModel):
 
 
 class UnknownSourceNodeData(BaseModel):
-    """React-Flow ``data`` payload for a replication source not in inventory."""
+    """Represent the React-Flow ``data`` payload for a replication source not in inventory."""
 
     address: str | None = None
     port: int | None = None
@@ -144,7 +144,7 @@ class UnknownSourceNodeData(BaseModel):
 
 
 class MySQLNode(BaseModel):
-    """A MySQL server node in the topology graph."""
+    """Represent a MySQL server node in the topology graph."""
 
     id: str
     type: Literal["mysql"]
@@ -152,7 +152,7 @@ class MySQLNode(BaseModel):
 
 
 class ClusterNode(BaseModel):
-    """A synthetic cluster-group node in the topology graph."""
+    """Represent a synthetic cluster-group node in the topology graph."""
 
     id: str
     type: Literal["cluster"]
@@ -160,7 +160,7 @@ class ClusterNode(BaseModel):
 
 
 class UnknownSourceNode(BaseModel):
-    """A synthetic node for a replication source absent from inventory."""
+    """Represent a synthetic node for a replication source absent from inventory."""
 
     id: str
     type: Literal["unknown_source"]
@@ -174,7 +174,7 @@ TopologyNode = Annotated[
 
 
 class ReplicationEdgeData(BaseModel):
-    """React-Flow ``data`` payload for a replication edge."""
+    """Represent the React-Flow ``data`` payload for a replication edge."""
 
     status: Literal["ok", "err"] | None = None
     io_running: str | None = None
@@ -186,7 +186,7 @@ class ReplicationEdgeData(BaseModel):
 
 
 class ReplicationEdge(BaseModel):
-    """A primary -> replica replication edge."""
+    """Represent a primary -> replica replication edge."""
 
     id: str
     source: str
@@ -196,7 +196,7 @@ class ReplicationEdge(BaseModel):
 
 
 class DualPrimaryEdge(BaseModel):
-    """A dual-primary (mutually replicating) edge."""
+    """Represent a dual-primary (mutually replicating) edge."""
 
     id: str
     source: str
@@ -222,7 +222,7 @@ class TopologyGraphSummary(BaseModel):
 
 
 class TopologyGraph(BaseModel):
-    """The merged React-Flow ``{nodes, edges, summary}`` graph."""
+    """Represent the merged React-Flow ``{nodes, edges, summary}`` graph."""
 
     nodes: list[TopologyNode] = Field(default_factory=list)
     edges: list[TopologyEdge] = Field(default_factory=list)

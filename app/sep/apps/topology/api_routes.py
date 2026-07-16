@@ -174,6 +174,11 @@ async def topology_collect(
     persistence side effects occur. With ``shards > 1`` the host list is
     split round-robin across the first N executor hosts so geographically
     split inventories run in parallel.
+
+    :param body: Collection request (shard count, optional executor, timeouts).
+    :param inventory_api: Remote inventory API client used to source MySQL hosts.
+    :param tasks_api: Remote Tasks API client used to dispatch collector tasks.
+    :return: Dispatched task history ids plus the executor targets and counts.
     """
     hosts = await _collect_mysql_host_entries(inventory_api)
     if not hosts:
@@ -326,6 +331,11 @@ async def topology_result(
     the response via TanStack Query (long ``staleTime``) and stops
     polling once status flips to ``ok``, so the server doesn't bother
     with HTTP cache validation here.
+
+    :param tasks_api: Remote Tasks API client used to fetch task histories and logs.
+    :param current_user: Authenticated caller; results are scoped to their own tasks.
+    :param ids: Comma-separated task history ids to merge into one graph.
+    :return: Aggregate status plus the merged graph (when ready) and task-id lists.
     """
     task_ids = _parse_ids_param(ids)
     histories = list(

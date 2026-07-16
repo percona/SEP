@@ -638,7 +638,6 @@ class SEPSettings(BaseYamlAppSettings):
         checkboxes submit no field, the route parameter defaults to ``False`` —
         automated clients that omit ``check_connectivity`` will skip the check
         regardless of this setting.
-    :type CONNECTIVITY_CHECK_DEFAULT: bool
     :param AMBIENT_SESSION_SSO_ENABLED: Whether to sign an unauthenticated caller
         in automatically from an existing PMM/Grafana session cookie (ambient
         SSO), skipping SEP's login form. Defaults to ``False`` (opt-in). Takes
