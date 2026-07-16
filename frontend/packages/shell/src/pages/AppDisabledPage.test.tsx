@@ -42,11 +42,8 @@ describe('AppDisabledPage', () => {
         />
       </MemoryRouter>,
     );
-    expect(
-      screen.getByText(
-        'Collect Diagnostic Data requires the Snippet Manager app, which is currently disabled.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Enable the Snippet Manager app to use it.')).toBeInTheDocument();
     expect(screen.queryByText('Contact an administrator to re-enable it.')).not.toBeInTheDocument();
   });
 
@@ -59,34 +56,31 @@ describe('AppDisabledPage', () => {
         />
       </MemoryRouter>,
     );
+    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Collect Diagnostic Data requires these apps, which are currently disabled: Snippet Manager, Task Manager.',
-      ),
+      screen.getByText('Enable these apps to use it: Snippet Manager, Task Manager.'),
     ).toBeInTheDocument();
   });
 
-  it('falls back to "This app" for a single dependency when the app name is absent', () => {
+  it('falls back to "This feature" in the title when the app name is absent', () => {
     render(
       <MemoryRouter>
         <AppDisabledPage blockingDependencyNames={['Snippet Manager']} />
       </MemoryRouter>,
     );
-    expect(
-      screen.getByText('This app requires the Snippet Manager app, which is currently disabled.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('This feature is unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Enable the Snippet Manager app to use it.')).toBeInTheDocument();
   });
 
-  it('falls back to "This app" for multiple dependencies when the app name is absent', () => {
+  it('names every blocking app in the body when the app name is absent', () => {
     render(
       <MemoryRouter>
         <AppDisabledPage blockingDependencyNames={['Snippet Manager', 'Task Manager']} />
       </MemoryRouter>,
     );
+    expect(screen.getByText('This feature is unavailable')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'This app requires these apps, which are currently disabled: Snippet Manager, Task Manager.',
-      ),
+      screen.getByText('Enable these apps to use it: Snippet Manager, Task Manager.'),
     ).toBeInTheDocument();
   });
 

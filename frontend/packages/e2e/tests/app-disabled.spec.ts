@@ -121,7 +121,11 @@ async function mockApis(
   });
 }
 
-const atwHeading = (page: Page) => page.getByRole('heading', { name: APP_DISPLAY_NAME });
+// Exact match: the dependency splash title ("<app> is unavailable") is itself a
+// heading that contains the app name, and getByRole name matching is substring
+// by default -- exact keeps this pinned to the real mounted app heading.
+const atwHeading = (page: Page) =>
+  page.getByRole('heading', { name: APP_DISPLAY_NAME, exact: true });
 
 test.describe('Disabled-app splash', () => {
   test('names the required app when disablement is dependency-driven', async ({ page }) => {
@@ -131,11 +135,10 @@ test.describe('Disabled-app splash', () => {
     });
     await page.goto(APP_ROUTE);
 
-    await expect(
-      page.getByText(
-        'Collect Diagnostic Data requires the Snippet Manager app, which is currently disabled.',
-      ),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Collect Diagnostic Data is unavailable')).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByText('Enable the Snippet Manager app to use it.')).toBeVisible();
     await expect(page.getByText(GENERIC_BODY)).toBeHidden();
     // The wrapped atw app must never mount behind the splash.
     await expect(atwHeading(page)).toHaveCount(0);
@@ -149,7 +152,7 @@ test.describe('Disabled-app splash', () => {
 
     await expect(page.getByText(GENERIC_TITLE)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(GENERIC_BODY)).toBeVisible();
-    await expect(page.getByText(/requires the .* app/)).toHaveCount(0);
+    await expect(page.getByText(/^Enable /)).toHaveCount(0);
     await expect(atwHeading(page)).toHaveCount(0);
   });
 
@@ -163,12 +166,12 @@ test.describe('Disabled-app splash', () => {
     });
     await page.goto(APP_ROUTE);
 
+    await expect(page.getByText('Collect Diagnostic Data is unavailable')).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(
-      page.getByText(
-        'Collect Diagnostic Data requires these apps, which are currently disabled: ' +
-          'Snippet Manager, Task Manager.',
-      ),
-    ).toBeVisible({ timeout: 10_000 });
+      page.getByText('Enable these apps to use it: Snippet Manager, Task Manager.'),
+    ).toBeVisible();
     await expect(atwHeading(page)).toHaveCount(0);
   });
 

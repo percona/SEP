@@ -124,11 +124,8 @@ describe('AppDisabledGuard', () => {
       ],
     });
     renderGuard('atw');
-    expect(
-      screen.getByText(
-        'Collect Diagnostic Data requires the Snippet Manager app, which is currently disabled.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Enable the Snippet Manager app to use it.')).toBeInTheDocument();
     expect(screen.queryByTestId('child')).not.toBeInTheDocument();
   });
 
@@ -156,11 +153,9 @@ describe('AppDisabledGuard', () => {
       ],
     });
     renderGuard('atw');
+    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Collect Diagnostic Data requires these apps, which are currently disabled: ' +
-          'Snippet Manager, Task Manager.',
-      ),
+      screen.getByText('Enable these apps to use it: Snippet Manager, Task Manager.'),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('child')).not.toBeInTheDocument();
   });
@@ -180,11 +175,8 @@ describe('AppDisabledGuard', () => {
       ],
     });
     renderGuard('atw');
-    expect(
-      screen.getByText(
-        'Collect Diagnostic Data requires the Snippet Manager app, which is currently disabled.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Enable the Snippet Manager app to use it.')).toBeInTheDocument();
   });
 
   it('shows the generic splash when blocking_dependencies is absent from the entry', () => {
