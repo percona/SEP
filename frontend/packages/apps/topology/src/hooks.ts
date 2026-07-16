@@ -62,6 +62,9 @@ export function useTopologyResult(taskHistoryIds: number[] | null) {
       return data;
     },
     refetchInterval: (query) => {
+      if (query.state.status === 'error') {
+        return false;
+      }
       const data = query.state.data;
       if (!data) {
         return 2000;
