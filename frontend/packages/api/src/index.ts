@@ -109,6 +109,7 @@ export {
   useUpdateAppTask,
   useAppEntityList,
   useAppEntityDetail,
+  unwrapAppListResponse,
   useCreateAppEntity,
   useUpdateAppEntity,
   useDeleteAppEntity,
@@ -137,7 +138,7 @@ export {
   useAppInfo,
   APP_INFO_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats, EnabledApp, AppInfo } from './hooks';
+export type { AlertConfig, DashboardStats, EnabledApp, AppInfo, PaginatedAppList } from './hooks';
 export type { ConnectivityCheckRequest, ConnectivityResult, ConnectivityStatus } from './hooks';
 export type {
   AdminApp,

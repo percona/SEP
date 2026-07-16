@@ -34,6 +34,7 @@ from fastapi import APIRouter, Request
 from fastapi import status as http_status
 
 from app.core.exceptions import HTTPNotFoundException, HTTPUnprocessableEntityException
+from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
 from app.sep.apps.dipper.constants import CollectorTypeEnum
 from app.sep.apps.dipper.deps import (
     build_dipper_execution_meta,
@@ -83,23 +84,26 @@ def _snippet_filename_for(history: dict[str, Any]) -> str | None:
 
 
 @router.get("/")
-async def dipper_api_list(tasks_api: TaskAPI) -> dict[str, Any]:
+async def dipper_api_list(
+    tasks_api: TaskAPI, pagination: PaginationDep
+) -> PaginatedResponse[dict[str, Any]]:
     """Return Dipper execution history rows.
 
     :param tasks_api: Async client for the tasks sub-app.
-    :type tasks_api: RemoteAPI
-    :return: Paginated task-history response filtered to Dipper runs.
-    :rtype: dict[str, Any]
+    :param pagination: Validated offset/limit forwarded to the upstream history call.
+    :return: A paginated envelope of task-history rows filtered to Dipper runs. Because
+        the ``dipper/`` filter runs client-side, ``total`` is the filtered count of the
+        current page, not a global count across all pages.
     """
-    response = await tasks_api.get("/history/")
+    response = await tasks_api.get(
+        "/history/", params={"offset": pagination.offset, "limit": pagination.limit}
+    )
     items = [
         item
         for item in response.get("items", [])
         if (_snippet_filename_for(item) or "").startswith("dipper/")
     ]
-    # total reflects all tasks in the upstream response, not just the Dipper-filtered
-    # subset; accurate Dipper-specific counts require server-side filtering support.
-    return {**response, "items": items}
+    return build_proxied_page(items, response, pagination, client_side_filtered=True)
 
 
 @router.get(

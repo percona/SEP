@@ -28,6 +28,7 @@ from pydantic import SecretStr
 
 from app.core.config import settings
 from app.inventory.models import ServiceTypeEnum
+from app.core.pagination import DEFAULT_PAGINATION_OFFSET, MAX_PAGINATION_LIMIT
 from app.sep.apps.inventory.deps import (
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
@@ -39,6 +40,11 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from tests.app.sep.apps.inventory.conftest import no_syncers, PMM_STUB_NAME
 
 _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
+_ENVELOPE_TOTAL = 7
+_REQUEST_OFFSET = 2
+_REQUEST_LIMIT = 5
+_UPSTREAM_OFFSET = 99
+_UPSTREAM_LIMIT = 1
 _CREATE_SERVICE_TEST_NODE_ID = 7
 
 
@@ -99,33 +105,64 @@ class TestInventorySchemaEndpoint:
 class TestInventoryGateway:
     """Tests for inventory CRUD proxy routes under ``/api/apps/inventory/``."""
 
-    def test_list_nodes_unwraps_items(self, test_client, mock_inventory_api_dep):
-        """Ensure GET ``/api/apps/inventory/nodes/`` unwraps paginated ``items`` to a JSON array."""
-        mock_inventory_api_dep.get.return_value = {
-            "items": [{"id": 1, "name": "n"}],
-            "total": 1,
-            "offset": 0,
-            "limit": 50,
-        }
-        response = test_client.get("/api/apps/inventory/nodes/")
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == [{"id": 1, "name": "n"}]
-        mock_inventory_api_dep.get.assert_awaited_once_with("/nodes/", params={})
-
-    def test_list_forwards_query_params_to_inventory(
+    def test_list_nodes_echoes_request_window_and_preserves_total(
         self, test_client, mock_inventory_api_dep
     ):
-        """Ensure list route forwards query params to the inventory API."""
+        """Ensure the envelope echoes the request window and keeps the upstream total.
+
+        The response ``offset``/``limit`` reflect what the client asked for, not
+        whatever the upstream happened to return; only ``total`` is proxied.
+        """
+        mock_inventory_api_dep.get.return_value = {
+            "items": [{"id": 1, "name": "n"}],
+            "total": _ENVELOPE_TOTAL,
+            "offset": _UPSTREAM_OFFSET,
+            "limit": _UPSTREAM_LIMIT,
+        }
+        response = test_client.get(
+            "/api/apps/inventory/nodes/",
+            params={"offset": _REQUEST_OFFSET, "limit": _REQUEST_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["items"] == [{"id": 1, "name": "n"}]
+        assert body["total"] == _ENVELOPE_TOTAL
+        assert body["offset"] == _REQUEST_OFFSET
+        assert body["limit"] == _REQUEST_LIMIT
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/nodes/",
+            params={"offset": _REQUEST_OFFSET, "limit": _REQUEST_LIMIT},
+        )
+
+    def test_list_forwards_validated_pagination_and_preserves_filters(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure entity filters survive while validated offset/limit are forwarded."""
         mock_inventory_api_dep.get.return_value = {"items": [], "total": 0}
         response = test_client.get(
             "/api/apps/inventory/nodes/",
-            params={"limit": 10},
+            params={"name": "db1", "limit": _REQUEST_LIMIT},
         )
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.get.assert_awaited_once_with(
             "/nodes/",
-            params={"limit": "10"},
+            params={
+                "name": "db1",
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": _REQUEST_LIMIT,
+            },
         )
+
+    def test_list_rejects_out_of_bounds_limit_with_422(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure a limit above ``MAX_PAGINATION_LIMIT`` is rejected before any upstream call."""
+        response = test_client.get(
+            "/api/apps/inventory/nodes/",
+            params={"limit": MAX_PAGINATION_LIMIT + 1},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_inventory_api_dep.get.assert_not_called()
 
     def test_unknown_entity_404(self, test_client, mock_inventory_api_dep):
         """Ensure GET on an unknown entity segment returns HTTP 404."""

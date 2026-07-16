@@ -28,7 +28,9 @@ export {
   useUpdateAppEntity,
   useDeleteAppEntity,
   useDeleteAppTask,
+  unwrapAppListResponse,
 } from './useAppTasks';
+export type { PaginatedAppList } from './useAppTasks';
 export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
 export type { AlertConfig } from './useAlertConfig';
 export { useDashboardStats } from './useDashboardStats';
