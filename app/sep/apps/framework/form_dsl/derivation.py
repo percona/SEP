@@ -446,6 +446,12 @@ def _build_ref_field(
         return field_class(
             **common, depends_on=ui.depends_on, allow_custom=allow_custom
         )
+    if isinstance(ref, HostRef):
+        # Optional cascade: emit depends_on when Ui declares one; omit (None)
+        # otherwise so exclude_none keeps other apps' wire schemas unchanged.
+        return field_class(
+            **common, allow_custom=allow_custom, depends_on=ui.depends_on
+        )
     return field_class(**common, allow_custom=allow_custom)
 
 

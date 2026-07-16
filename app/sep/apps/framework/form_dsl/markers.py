@@ -106,9 +106,12 @@ class Ui:
     :param section: The layout-section key the field belongs to; must match a
         :attr:`SectionLayout.key` in the form layout.
     :param description: Optional helper text rendered beneath the field.
-    :param depends_on: For a cascade reference (``SchemaRef`` / ``TableRef``),
-        the field name whose value drives this field's options. Required for
-        those refs; ignored otherwise. Defaults to ``None``.
+    :param depends_on: For a cascade reference (``SchemaRef`` / ``TableRef`` /
+        ``HostRef``), the field name whose value drives this field's options or
+        default selection. Required for ``SchemaRef`` / ``TableRef``; optional
+        for ``HostRef`` (when set, the renderer auto-selects an executor from
+        the upstream service). Ignored for other field kinds. Defaults to
+        ``None``.
     :param order: Sort position within the section; ties break on declaration
         order. Defaults to ``0``.
     :param required: Override for the wire ``required`` flag. ``None`` (the
@@ -285,6 +288,12 @@ class TableRef:
 @dataclass(frozen=True, slots=True)
 class HostRef:
     """Mark a field as an executor-target (Nomad / Celery) selector.
+
+    Cascade from a service (or other upstream field) is declared via
+    ``Ui(depends_on=...)``, the same way :class:`SchemaRef` / :class:`TableRef`
+    declare theirs. When set, the derived ``HostField`` carries ``depends_on``
+    on the wire and the renderer may auto-select an executor from the upstream
+    value; when omitted the field lists every available executor as before.
 
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value and emits ``allow_custom`` on the wire. Defaults to ``False``.
