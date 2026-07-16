@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""Tests for the shared offset/limit pagination models and helpers."""
+"""Define tests for the shared offset/limit pagination models and helpers."""
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
 
