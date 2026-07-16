@@ -34,7 +34,6 @@ derived router), so it is no longer mounted as a ``/restores`` sub-router here.
 The Jinja UI router is threaded explicitly.
 """
 
-from app.core.pagination.deps import pagination_dep
 from app.sep.apps.backup_mongo.api_routes import router as backup_mongo_custom_router
 from app.sep.apps.backup_mongo.deps import (
     build_backup_mongo_api_task_response,
@@ -49,6 +48,7 @@ from app.sep.apps.framework.apps import (
     ListFilterConfig,
     TaskExecutionApp,
 )
+from app.sep.apps.nav_icons import NavIcon
 
 app = TaskExecutionApp(
     name="backup_mongo",
@@ -57,12 +57,13 @@ app = TaskExecutionApp(
     css_class="backup_mongo",
     group="backups",
     nav_order=9,
+    react_route="/backups/mongodb",
+    nav_icon=NavIcon.MONGO,
     owner=OWNER,
     schema=backup_mongo_schema,
     response_model=BackupTaskResponse,
     response_builder=build_backup_mongo_api_task_response,
     get_task=get_backups_task,
-    pagination=pagination_dep,
     list_filter=ListFilterConfig(
         status=True,
         roots_only=True,

@@ -41,6 +41,7 @@ from app.sep.apps.framework.apps import (
     ListFilterConfig,
     TaskExecutionApp,
 )
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.deps import get_username_mapping
 
 ALTERS_MAX_PAGINATION_LIMIT = 50
@@ -51,6 +52,7 @@ app = TaskExecutionApp(
     uri_path="/alters",
     css_class="alters",
     nav_order=6,
+    nav_icon=NavIcon.TABLE_CHART,
     owner=OWNER,
     schema=alters_schema,
     response_model=AltersTaskResponse,

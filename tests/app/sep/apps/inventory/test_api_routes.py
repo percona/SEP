@@ -46,18 +46,18 @@ class TestInventoryResponseModelsInOpenAPI:
     """Ensure new endpoints expose typed Pydantic models in the OpenAPI schema."""
 
     def test_plugin_tasks_response_schema_is_defined(self, test_client):
-        """Ensure PluginTaskResponse appears as a named schema in the OpenAPI spec."""
+        """Ensure the app-namespaced PluginTaskResponse is a named schema in the OpenAPI spec."""
         response = test_client.get("/openapi.json")
         assert response.status_code == status.HTTP_200_OK
         schemas = response.json().get("components", {}).get("schemas", {})
-        assert "PluginTaskResponse" in schemas
+        assert "inventory__PluginTaskResponse" in schemas
 
     def test_available_syncers_response_schema_is_defined(self, test_client):
-        """Ensure AvailableSyncer appears as a named schema in the OpenAPI spec."""
+        """Ensure the app-namespaced AvailableSyncer is a named schema in the OpenAPI spec."""
         response = test_client.get("/openapi.json")
         assert response.status_code == status.HTTP_200_OK
         schemas = response.json().get("components", {}).get("schemas", {})
-        assert "AvailableSyncer" in schemas
+        assert "inventory__AvailableSyncer" in schemas
 
     def test_plugin_tasks_openapi_response_references_model(self, test_client):
         """Ensure GET /api/apps/inventory/ response body references PluginTaskResponse."""

@@ -21,7 +21,7 @@ The hooks are exercised through the public :data:`snippet_source` surface
 framework's own ``test_script_source.py``. ``load_script`` / ``list_scripts`` open
 their own request-less session, so the suite points
 ``script_source.get_async_session_maker`` at the in-memory test session (the same
-pattern ``tests/app/sep/test_celery.py`` uses for the Celery sync task) — the real
+pattern ``tests/app/sep/apps/snippets/test_celery.py`` uses for the Celery sync task) — the real
 session is exercised, never a mocked ``AsyncSession``.
 """
 
@@ -32,7 +32,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.datastructures import URL
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPBadRequestException,
+    HTTPNotFoundException,
+    HTTPUnprocessableEntityException,
+)
 from app.sep.apps.framework.script_source import ScriptExecuteWrite
 from app.sep.apps.snippets.deps import build_snippet_execution_meta
 from app.sep.apps.snippets.script_source import (
@@ -149,7 +153,7 @@ class TestBuildSnippetSource:
         """Raise 400 when neither SNIPPETS_BASE_URL nor BASE_URL is set."""
         monkeypatch.setattr(snippets_settings, "SNIPPETS_BASE_URL", None)
         monkeypatch.setattr(
-            "app.sep.apps.snippets.script_source.settings.BASE_URL", None
+            "app.sep.apps.framework.script_helpers.settings.BASE_URL", None
         )
         await create_snippet("ok.sh", approved=True)
         script = await snippet_source.load_script("ok.sh")
@@ -190,6 +194,46 @@ class TestBuildExecutionMeta:
         body = ScriptExecuteWrite(executor_host="host1", args={})
         with pytest.raises(HTTPForbiddenException):
             snippet_source.build_execution_meta(script, body)
+
+    async def test_requires_gate_omitted_field_raises_422(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Reject a JSON execute omitting a requires-gated field with 422.
+
+        Security backstop for the ``requires`` direction: the constraint must be
+        enforced server-side on the JSON API path, not merely rendered client-side.
+        """
+        monkeypatch.setattr(
+            snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
+        )
+        snippet = await create_snippet("gated.sh", approved=True)
+        snippet.meta = {
+            **snippet.meta,
+            "parameters": [
+                {"name": "mode", "type": "str", "label": "Mode"},
+                {
+                    "name": "reason",
+                    "type": "str",
+                    "label": "Reason",
+                    "requires_when": {"parameter": "mode", "equals": "write"},
+                },
+            ],
+        }
+        snippet.__dict__.pop("validated_parameters", None)
+        await SnippetManager.save(
+            request_less_session, snippet, flag_modified_fields=["meta"]
+        )
+        script = await snippet_source.load_script("gated.sh")
+        # ``mode == write`` but ``reason`` omitted -> requires gate fires.
+        body = ScriptExecuteWrite(executor_host="host1", args={"mode": "write"})
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            snippet_source.build_execution_meta(
+                script, _framework_processed_body(script, body)
+            )
 
     async def test_meta_matches_legacy_path(
         self,

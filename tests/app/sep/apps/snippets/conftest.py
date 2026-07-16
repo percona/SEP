@@ -55,8 +55,11 @@ async def session_fixture() -> AsyncSession:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(autouse=True)
@@ -67,7 +70,7 @@ def request_less_session(session: AsyncSession, mocker: object) -> AsyncSession:
     request-less session via ``get_async_session_maker`` rather than the
     request-scoped ``get_session`` the other fixtures override, so the maker is
     patched to yield the same in-memory ``session`` the rows are seeded through
-    (mirroring ``tests/app/sep/test_celery.py``). Autouse so every derived-route
+    (mirroring ``tests/app/sep/apps/snippets/test_celery.py``). Autouse so every derived-route
     test sees the seeded data; a no-op for tests that never hit that path.
     """
     maker = MagicMock()

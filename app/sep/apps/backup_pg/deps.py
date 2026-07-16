@@ -25,7 +25,6 @@ from fastapi import Depends, Form, Request
 from app.core.exceptions import HTTPConflictException
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_edit_form import parse_server_list_config
 from app.sep.apps.backup_pg.models import (
     BackupPgForm,
     BackupTaskDetailResponse,
@@ -39,13 +38,13 @@ from app.sep.apps.framework.spec import (
     assemble_envelope,
     resolve_refs,
 )
+from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_tasks_context,
     InventoryAPI,
-    protected_task_guard,
     TaskAPI,
 )
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
@@ -86,11 +85,6 @@ BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 get_backups_task = make_task_dep(OWNER)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
-
-
-get_unprotected_backups_task = protected_task_guard(get_backups_task)
-
-UnprotectedBackupsTask = Annotated[Task, Depends(get_unprotected_backups_task)]
 
 
 async def check_create_has_no_conflicted_running_tasks(
@@ -301,7 +295,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     Extracts configuration from an existing backup task to populate the edit form.
 
     Delegates the shared ``SERVER_LIST`` parsing to
-    :func:`~app.sep.apps.backup_edit_form.parse_server_list_config`, layering on the
+    :func:`~app.sep.apps.shared.backups.edit_form.parse_server_list_config`, layering on the
     postgres-specific ``port`` fallback (YAML port, then the connectivity-meta
     port, then the default).
 

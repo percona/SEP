@@ -32,20 +32,22 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPRedirectException,
 )
-from app.core.security import crypto_timestamp_serializer
 from app.core.utils import remove_falsy_values_from_dict
+from app.sep.apps.framework.script_helpers import (
+    build_artifact_download_url,
+    build_execution_meta,
+)
 from app.sep.apps.snippets.models import (
     BatchApprovalErrorResponse,
     SnippetBatchApproveRequest,
 )
-from app.sep.apps.snippets.schema import evaluate_visibility_gates
+from app.sep.apps.snippets.schema import evaluate_snippet_gates
 from app.sep.artifact_constants import (
-    ARTIFACT_DOWNLOAD_SALT,
     ARTIFACT_TYPE_SNIPPET,
 )
-from app.sep.deps import get_base_url, SessionDep
+from app.sep.deps import SessionDep
 from app.sep.middleware import messages
-from app.sep.snippets.config import snippets_settings, SnippetSudoOption
+from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
@@ -286,16 +288,12 @@ def get_snippet_source(request: Request, snippet: SnippetDep) -> str:
     :return: The signed URL to download the snippet artifact.
     :rtype: str
     """
-    token = crypto_timestamp_serializer.dumps(
-        {
-            "type": ARTIFACT_TYPE_SNIPPET,
-            "filename": snippet.filename,
-            "md5": snippet.md5_digest,
-        },
-        salt=ARTIFACT_DOWNLOAD_SALT,
+    return build_artifact_download_url(
+        request,
+        artifact_type=ARTIFACT_TYPE_SNIPPET,
+        filename=snippet.filename,
+        md5_digest=snippet.md5_digest,
     )
-    base_url = snippets_settings.SNIPPETS_BASE_URL or get_base_url(request)
-    return str(base_url.replace(path=f"/artifacts/download/{token}"))
 
 
 SnippetSource = Annotated[str, Depends(get_snippet_source)]
@@ -317,11 +315,14 @@ async def get_validated_execution_args(
     :type referer: str | None
     :return: The validated execution arguments.
     :rtype: BaseSnippetArgs
-    :raises HTTPRedirectException: When dynamic validation fails, or a value is
-        submitted for a parameter whose conditional-visibility
-        (``visible_when`` / ``visible_when_not``) gate fires given the rest of
-        the submission — the value is rejected rather than silently stripped,
-        matching ``@apply_conditional_rules`` for hand-coded plugins.
+    :raises HTTPRedirectException: When dynamic validation fails, or a snippet
+        field gate fires given the rest of the submission — a value submitted for
+        a parameter whose visibility (``visible_when`` / ``visible_when_not``) or
+        ``forbidden`` (``forbidden_when`` / ``forbidden_when_not``) gate fires, or
+        a parameter omitted while its ``requires`` (``requires_when`` /
+        ``requires_when_not``) gate fires. The submission is rejected rather than
+        silently stripped, matching ``@apply_conditional_rules`` for hand-coded
+        plugins.
     """
     execution_model = snippet.get_execution_model()
     async with request.form() as form:
@@ -343,7 +344,7 @@ async def get_validated_execution_args(
         )
         raise _get_snippet_redirect_exc(request, referer) from None
 
-    gate_failures = evaluate_visibility_gates(snippet, execution_args)
+    gate_failures = evaluate_snippet_gates(snippet, execution_args)
     if gate_failures:
         messages.error(request, "Error executing snippet: " + "; ".join(gate_failures))
         raise _get_snippet_redirect_exc(request, referer)
@@ -371,20 +372,17 @@ def build_snippet_execution_meta(
     :type snippet_source: str
     :return: The prepared execution metadata.
     :rtype: SnippetExecutionMeta
+    :raises HTTPBadRequestException: When the snippet has no configured interpreter.
     """
     interpreter = snippet.execution_interpreter
-    if snippet.sudo == SnippetSudoOption.ALWAYS or getattr(
-        execution_args, execution_args.sudo_field, False
-    ):
-        interpreter = f"sudo {interpreter}"
-    return SnippetExecutionMeta(
-        target=execution_args.executor_host,
+    if interpreter is None:
+        raise HTTPBadRequestException(detail="No interpreter configured for snippet")
+    return build_execution_meta(
+        snippet,
+        execution_args,
         interpreter=interpreter,
         snippet_source=snippet_source,
         snippet_filename=snippet.filename,
-        md5_checksum=snippet.md5_digest,
-        args=execution_args.to_args_string(),
-        requirements=snippet.requirements,
     )
 
 

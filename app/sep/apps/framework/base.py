@@ -20,7 +20,9 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.utils.fields import URIPath
 from app.sep.apps.framework.schema import AppSchema
+from app.sep.apps.nav_icons import NavIcon
 
 
 class BaseApp(BaseModel):
@@ -46,6 +48,10 @@ class BaseApp(BaseModel):
         as a top-level sidebar entry.
     :param nav_order: The app's sort position within the sidebar; ``None`` sorts
         last.
+    :param react_route: The canonical React route the shell mounts and links to;
+        ``None`` resolves to ``/apps/<key>`` in the ``GET /api/apps`` response.
+    :param nav_icon: The sidebar icon key; ``None`` falls back to the frontend's
+        default app icon.
     :param enabled: The seed-time enabled default; stamped by the registry.
     :param custom_ui: Whether the app ships a bespoke React UI.
     :param api_router: The plugin's JSON ``APIRouter``, when it exposes one.
@@ -61,6 +67,13 @@ class BaseApp(BaseModel):
         registry appends each right after this app and stamps its ``enabled`` from
         this app's, so a child is mounted and snapshotted exactly when its parent
         is. Each child must set ``parent_key`` to this app's key.
+    :param requires_apps: App **keys** (not display names) this app functionally
+        depends on. An app's *effective* enabled state ANDs its own ``AppState``
+        with the effective state of every app named here, so a disabled dependency
+        hides and gates this app too. Depending on a protected app (one that can
+        never be disabled) is a harmless no-op. Keys are validated at
+        registry-build time: an unknown key, a self-dependency, or a cycle fails
+        fast. See :meth:`AppRegistry.resolve_effective_enabled`.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
@@ -73,6 +86,8 @@ class BaseApp(BaseModel):
     sidebar: bool = True
     group: str | None = None
     nav_order: int | None = None
+    react_route: URIPath | None = None
+    nav_icon: NavIcon | None = None
     enabled: bool = True
     custom_ui: bool = False
     api_router: APIRouter | None = None
@@ -80,6 +95,7 @@ class BaseApp(BaseModel):
     app_schema: AppSchema | None = Field(default=None, alias="schema")
     parent_key: str | None = None
     child_apps: tuple["BaseApp", ...] = ()
+    requires_apps: tuple[str, ...] = ()
 
     @model_validator(mode="before")
     @classmethod

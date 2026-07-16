@@ -27,7 +27,6 @@ __all__ = [
     "BatchApprovalErrorResponse",
     "BatchApprovalResponse",
     "RefreshResponse",
-    "ScriptPreviewResponse",
     "SnippetBatchApproveRequest",
     "SnippetResponse",
     "SnippetsCapabilitiesResponse",
@@ -140,26 +139,6 @@ def build_snippet_response(snippet: Snippet) -> SnippetResponse:
         created_at=snippet.created_at,
         updated_at=snippet.updated_at,
     )
-
-
-class ScriptPreviewResponse(BaseModel):
-    """Represent the backend response for the preview endpoint.
-
-    :param content: The full text content of the snippet file (preamble,
-        frontmatter, and body concatenated).
-    :type content: str
-    :param language: A JS syntax-highlighter language identifier derived
-        from the snippet's MIME type (for example, ``"bash"`` or
-        ``"plaintext"``).
-    :type language: str
-    :param is_truncated: Whether the preview was truncated to fit
-        within the configured per-file character or line limit.
-    :type is_truncated: bool
-    """
-
-    content: str
-    language: str
-    is_truncated: bool
 
 
 class SnippetBatchApproveRequest(BaseModel):

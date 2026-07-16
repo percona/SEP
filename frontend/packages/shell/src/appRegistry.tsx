@@ -18,26 +18,22 @@
 /**
  * Frontend ``app_key`` → bespoke React component registry.
  *
- * Apps listed here ship custom UI (inventory, tasks, alters, …). Every other
- * known ``app_key`` in ``APP_ROUTE_BY_KEY`` routes through
- * ``SchemaDrivenAppRoute`` instead — no per-app FE package required.
+ * Apps listed here ship custom UI (inventory, tasks, alters, …). Schema-driven
+ * apps carry no entry here — ``SchemaDrivenAppResolver`` (the terminal ``*``
+ * route in ``router``) mounts them at render from the ``GET /api/apps`` payload.
+ * Legacy route aliases still resolve through ``SchemaDrivenAppRoute``.
  */
 
 import { createElement, lazy, type ComponentType, type ReactElement } from 'react';
-import AppDisabledGuard from './components/AppDisabledGuard';
 import { SchemaDrivenAppRoute } from './components/SchemaDrivenAppRoute';
-import { APP_ROUTE_BY_KEY, getAppRouteMeta } from './appNavConfig';
+import { getAppRouteMeta } from './appNavConfig';
+import { wrapAppRoute } from './appRouteGuard';
 import { useAuth } from './contexts/auth';
 
 export interface CustomAppRegistryEntry {
   appKey: string;
   routePattern: string;
   Component: ComponentType;
-}
-
-export interface SchemaDrivenFallbackRoute {
-  appKey: string;
-  routePattern: string;
 }
 
 /** Legacy router aliases with no sidebar consumer — kept for bookmark compatibility. */
@@ -112,35 +108,12 @@ export function isCustomApp(appKey: string): boolean {
   return appKey in CUSTOM_APP_REGISTRY;
 }
 
-/** Schema-driven apps that fall back to ``SchemaDrivenAppRoute`` (not bespoke). */
-export function getSchemaDrivenFallbackRoutes(): SchemaDrivenFallbackRoute[] {
-  return Object.keys(APP_ROUTE_BY_KEY)
-    .filter((appKey) => !isCustomApp(appKey))
-    .map((appKey) => {
-      const meta = APP_ROUTE_BY_KEY[appKey];
-      return {
-        appKey,
-        routePattern: meta.routePattern,
-      };
-    });
-}
-
 export interface AppRouteDefinition {
   path: string;
   element: ReactElement;
 }
 
-/** Protected apps are never gated — toggle returns 409 on the backend. */
-const UNGUARDED_APP_KEYS = new Set(['inventory']);
-
-function wrapAppRoute(appKey: string, element: ReactElement): ReactElement {
-  if (UNGUARDED_APP_KEYS.has(appKey)) {
-    return element;
-  }
-  return createElement(AppDisabledGuard, { appKey, children: element });
-}
-
-/** Shell app routes: bespoke registry entries, schema-driven fallbacks, legacy aliases. */
+/** Shell app routes: bespoke registry entries + legacy aliases. */
 export function buildAppRoutes(): AppRouteDefinition[] {
   const routes: AppRouteDefinition[] = Object.values(CUSTOM_APP_REGISTRY).map(
     ({ appKey, routePattern, Component }) => ({
@@ -148,13 +121,6 @@ export function buildAppRoutes(): AppRouteDefinition[] {
       element: wrapAppRoute(appKey, createElement(Component)),
     }),
   );
-
-  for (const { routePattern, appKey } of getSchemaDrivenFallbackRoutes()) {
-    routes.push({
-      path: routePattern,
-      element: wrapAppRoute(appKey, createElement(SchemaDrivenAppRoute, { appKey })),
-    });
-  }
 
   for (const { path, appKey, useCustom } of LEGACY_ROUTE_ALIASES) {
     if (useCustom) {

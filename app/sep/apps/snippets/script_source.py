@@ -32,7 +32,7 @@ Three real couplings the synthetic kit deferred are bridged here:
   execute hook re-attaches the real host via ``model_construct``.
 * **The request-less listing.** ``load_script`` / ``list_scripts`` are plain
   callables with no request or session, so they open their own request-less
-  session (mirroring ``app/sep/celery.py``). Only loaded columns and file/meta
+  session (mirroring ``app/sep/apps/snippets/celery.py``). Only loaded columns and file/meta
   ``cached_property`` values are read after it closes — never a lazy relationship.
 * **The request-less artifact URL.** :func:`build_snippet_source` reads
   ``SNIPPETS_BASE_URL`` / ``BASE_URL`` rather than the legacy request-derived
@@ -46,14 +46,12 @@ from functools import lru_cache
 from pydantic import create_model, Field
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.config import settings
 from app.core.exceptions import (
-    HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
-from app.core.security import crypto_timestamp_serializer
 from app.sep.apps.framework.schema import AppSchema
+from app.sep.apps.framework.script_helpers import build_artifact_download_url
 from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
 from app.sep.apps.snippets.deps import (
     build_snippet_execution_meta,
@@ -62,10 +60,10 @@ from app.sep.apps.snippets.deps import (
 from app.sep.apps.snippets.models import build_snippet_response, SnippetResponse
 from app.sep.apps.snippets.schema import (
     build_snippet_schema,
-    evaluate_visibility_gates,
+    evaluate_snippet_gates,
     SNIPPETS_PLUGIN_SCHEMA,
 )
-from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT, ARTIFACT_TYPE_SNIPPET
+from app.sep.artifact_constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.db import get_async_session_maker
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
@@ -145,22 +143,12 @@ def build_snippet_source(snippet: Snippet) -> str:
     :raises HTTPBadRequestException: When neither ``SNIPPETS_BASE_URL`` nor
         ``BASE_URL`` is configured.
     """
-    base_url = snippets_settings.SNIPPETS_BASE_URL or settings.BASE_URL
-    if base_url is None:
-        raise HTTPBadRequestException(
-            detail=(
-                "Snippet execution requires SNIPPETS_BASE_URL or BASE_URL to be set."
-            ),
-        )
-    token = crypto_timestamp_serializer.dumps(
-        {
-            "type": ARTIFACT_TYPE_SNIPPET,
-            "filename": snippet.filename,
-            "md5": snippet.md5_digest,
-        },
-        salt=ARTIFACT_DOWNLOAD_SALT,
+    return build_artifact_download_url(
+        None,
+        artifact_type=ARTIFACT_TYPE_SNIPPET,
+        filename=snippet.filename,
+        md5_digest=snippet.md5_digest,
     )
-    return str(base_url.replace(path=f"/artifacts/download/{token}"))
 
 
 async def _load_script(filename: str) -> SnippetScript:
@@ -225,8 +213,8 @@ def _build_execution_meta(
     :return: The execution meta the framework posts to the Tasks API.
     :raises HTTPForbiddenException: When the snippet is unapproved or otherwise
         not executable.
-    :raises HTTPUnprocessableEntityException: When a conditional-visibility gate
-        rejects the submitted args.
+    :raises HTTPUnprocessableEntityException: When a snippet field gate (visibility,
+        ``requires`` or ``forbidden``) rejects the submitted args.
     """
     snippet = script.snippet
     if not snippet.can_execute:
@@ -243,7 +231,7 @@ def _build_execution_meta(
     execution_args = snippet.get_execution_model().model_construct(
         executor_host=body.executor_host, **construct_args
     )
-    gate_failures = evaluate_visibility_gates(snippet, execution_args)
+    gate_failures = evaluate_snippet_gates(snippet, execution_args)
     if gate_failures:
         raise HTTPUnprocessableEntityException(detail=gate_failures)
     return build_snippet_execution_meta(

@@ -15,22 +15,46 @@
 
 """Define models for the Checksums plugin."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import dsn_safe, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
     ArgFormat,
     Choices,
     DSN_TABLE_DEFAULT,
+    SchemaRef,
     ServiceRef,
+    TableRef,
     TaskFormModel,
     Ui,
 )
 
 OWNER = "CHECKSUMS"
+
+
+def coerce_target_list(value: Any) -> list[int | str]:
+    """Normalize a legacy or wire-shaped target field into a reference list.
+
+    Accepts the new ``list[int | str]`` shape, a legacy comma-separated string,
+    a bare inventory id, or an empty selection.
+
+    :param value: The submitted field value before element validation.
+    :return: A list of inventory ids and/or free-typed names.
+    """
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, set):
+        return list(value)
+    if isinstance(value, int):
+        return [value]
+    if isinstance(value, str):
+        return [part.strip() for part in value.strip().split(",") if part.strip()]
+    return value
 
 
 class ChecksumsCreate(BaseModel):
@@ -113,16 +137,16 @@ class ChecksumsForm(TaskFormModel):
     model defaults match the previous hand-written request body; the form-display
     defaults that differ from the model default are carried on ``Ui(default=...)``.
 
-    Field declaration order is load-bearing. The framework assembles the
-    ``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)
-    followed by all flag args (in field order), and derives the form section order
-    (Task, Data, Recursion, Flags, Advanced) from each section's first field — so
-    the order here reproduces the historical arg string byte-for-byte. ``progress``
-    is declared last to land at the end of the value args, and ``Ui(order=...)``
-    pins the Advanced section's display order where it diverges from declaration
-    order. The ``task_name`` / ``hostname`` Task-section fields and the
-    ``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`
-    (``alert_on_fail`` is ``Hidden``, off-schema).
+    Field declaration order is load-bearing. The spec builder assembles
+    ``--databases`` / ``--tables`` from the multi-value reference fields, then the
+    framework's ``build_command_args`` emits the remaining ``ArgFormat`` value args
+    (in field order) followed by all flag args (in field order). Section order
+    (Task, Data, Recursion, Flags, Advanced) follows each section's first field.
+    ``progress`` is declared last to land at the end of the value args, and
+    ``Ui(order=...)`` pins the Advanced section's display order where it diverges
+    from declaration order. The ``task_name`` / ``hostname`` Task-section fields
+    and the ``alert_on_fail`` capability control are inherited from
+    :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).
     """
 
     service_id: Annotated[
@@ -131,23 +155,26 @@ class ChecksumsForm(TaskFormModel):
         Ui(label="Database Host", section="Task"),
     ]
     databases: Annotated[
-        str,
-        ArgFormat(),
+        list[int | NonEmptyStr],
+        SchemaRef(multiple=True, allow_custom=True),
         Ui(
+            label="Databases",
             section="Data",
-            default=None,
-            description="Comma-separated database names",
+            depends_on="service_id",
+            description="Schemas to checksum; pick from inventory or type names.",
         ),
-    ] = ""
+    ] = Field(default_factory=list)
     tables: Annotated[
-        str,
-        ArgFormat(),
+        list[int | NonEmptyStr],
+        TableRef(multiple=True, allow_custom=True),
         Ui(
+            label="Tables",
             section="Data",
-            default=None,
-            description="Comma-separated table names (schema.table format)",
+            depends_on="databases",
+            description="Tables as schema.table; pick from inventory or type names.",
         ),
-    ] = ""
+    ] = Field(default_factory=list)
+
     recursion_method: Annotated[
         str,
         Choices(
@@ -263,3 +290,25 @@ class ChecksumsForm(TaskFormModel):
             description="Print progress reports to STDERR (e.g. time,10)",
         ),
     ] = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_target_fields(cls, data: Any) -> Any:
+        """Accept legacy comma-separated strings for ``databases`` / ``tables``."""
+        if not isinstance(data, dict):
+            return data
+        updated = dict(data)
+        for key in ("databases", "tables"):
+            if key in updated:
+                updated[key] = coerce_target_list(updated[key])
+        return updated
+
+    @field_validator("databases", "tables")
+    @classmethod
+    def _target_dsn_safe(cls, value: list[int | str]) -> list[int | str]:
+        """Reject DSN delimiters in a free-typed schema or table name.
+
+        :param value: The submitted target list (inventory ids and/or names).
+        :return: The value unchanged when no element carries a DSN delimiter.
+        """
+        return [dsn_safe(item) if isinstance(item, str) else item for item in value]

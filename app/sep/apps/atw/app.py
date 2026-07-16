@@ -26,6 +26,7 @@ under the shared ``snippets`` nav group alongside the snippets app.
 from app.sep.apps.atw.api_routes import router as api_router
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.nav_icons import NavIcon
 
 app = BaseApp(
     name="atw",
@@ -35,6 +36,9 @@ app = BaseApp(
     custom_ui=True,
     group="diagnostics",
     nav_order=3,
+    react_route="/atw",
+    nav_icon=NavIcon.SUPPORT_AGENT,
     api_router=api_router,
     schema=atw_schema,
+    requires_apps=("snippets",),
 )

@@ -27,21 +27,17 @@ pgBackRest spec builder, with the YAML-config-derived
 :func:`~app.sep.apps.backup_pg.deps.build_backup_pg_api_task_response` /
 :func:`~app.sep.apps.backup_pg.deps.build_backup_pg_api_detail_response`
 stamping ``hostname`` / ``backup_type`` (and ``host`` / ``port`` on detail) so
-the list, detail, create, and update bodies stay byte-identical. Delete is the
-framework's plain default; the body-reading running-conflict guard rides on the
-derived create via ``create_extra_deps``, and the protected-task +
-running-conflict guards ride on the derived PUT via ``update_guard``. The Jinja
-UI router is threaded explicitly as ``jinja_router``; the registry does not.
+the list, detail, create, and update bodies stay byte-identical. The derived PUT
+and DELETE carry the framework's default protected-task + running-conflict
+guards; only the body-reading create running-conflict guard rides explicitly via
+``create_extra_deps``. The Jinja UI router is threaded explicitly as
+``jinja_router``; the registry does not.
 """
 
-from fastapi import Depends
-
-from app.core.pagination.deps import make_pagination_dep
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.deps import (
     build_backup_pg_api_detail_response,
     build_backup_pg_api_task_response,
-    get_unprotected_backups_task,
     HasNoConflictedRunningTasksOnCreate,
 )
 from app.sep.apps.backup_pg.models import (
@@ -58,7 +54,7 @@ from app.sep.apps.framework.apps import (
     ListFilterConfig,
     TaskExecutionApp,
 )
-from app.sep.deps import HasNoConflictedRunningTasks
+from app.sep.apps.nav_icons import NavIcon
 
 app = TaskExecutionApp(
     name="backup_pg",
@@ -67,6 +63,8 @@ app = TaskExecutionApp(
     css_class="backup_pg",
     group="backups",
     nav_order=10,
+    react_route="/backups/postgresql",
+    nav_icon=NavIcon.POSTGRESQL,
     description=(
         "Configure pgBackRest-based PostgreSQL backups and run incremental "
         "or differential backup tasks against a Percona-managed Postgres host."
@@ -78,13 +76,10 @@ app = TaskExecutionApp(
     task_spec_builder=build_backup_pg_spec,
     capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.POSTGRESQL,
-    pagination=make_pagination_dep(),
     list_filter=ListFilterConfig(status=True),
     response_builder=build_backup_pg_api_task_response,
     detail_response_builder=build_backup_pg_api_detail_response,
     detail_response_model=BackupTaskDetailResponse,
     create_extra_deps=(HasNoConflictedRunningTasksOnCreate,),
-    update_guard=(Depends(get_unprotected_backups_task), HasNoConflictedRunningTasks),
-    delete_guard=(HasNoConflictedRunningTasks,),
     jinja_router=jinja_router,
 )

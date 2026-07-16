@@ -20,9 +20,11 @@
  *
  * ``GET /api/apps/`` supplies per-app state, labels, and placement
  * (``display_name``, ``enabled``, ``sidebar``, ``group``, ``nav_order``).
- * ``buildNavigationItems()`` derives the sidebar tree from that data; this
- * module holds only what the API does not carry — group labels/icons, per-app
- * icons, the static (non-app) entries, and React route paths/patterns.
+ * ``buildNavigationItems()`` derives the sidebar tree from that data (each
+ * leaf's icon, and its ``to`` for schema-driven apps); this module holds only
+ * what the API does not carry — group labels/icons, the icon-key → component
+ * map, the static (non-app) entries, and the custom-app React route patterns
+ * (which also supply custom apps' sidebar ``to``).
  */
 
 import type { EnabledApp } from '@sep/api';
@@ -62,7 +64,7 @@ export interface AppRouteMeta {
   routeBase?: string;
 }
 
-function toRoutePattern(reactRoute: string): string {
+export function toRoutePattern(reactRoute: string): string {
   const trimmed = reactRoute.replace(/^\//, '');
   return trimmed.length > 0 ? `${trimmed}/*` : '*';
 }
@@ -76,7 +78,14 @@ function defineAppRoute(appKey: string, reactRoute: string, routeBase?: string):
   };
 }
 
-/** Canonical React paths and router patterns per ``app_key``. */
+/**
+ * Canonical React paths and router patterns per custom-UI ``app_key``.
+ *
+ * Only bespoke React apps live here — ``customEntry()`` reads each entry's
+ * ``routePattern`` at router-build time. Schema-driven apps no longer need an
+ * entry: their route is carried on the ``GET /api/apps`` payload's
+ * ``react_route`` and mounted at render by ``SchemaDrivenAppResolver``.
+ */
 export const APP_ROUTE_BY_KEY: Record<string, AppRouteMeta> = {
   inventory: defineAppRoute('inventory', ROUTES.inventory, ROUTES.inventory),
   tasks: defineAppRoute('tasks', ROUTES.tasks, ROUTES.tasks),
@@ -89,11 +98,7 @@ export const APP_ROUTE_BY_KEY: Record<string, AppRouteMeta> = {
     ROUTES.alertTroubleshooting,
   ),
   alters: defineAppRoute('alters', ROUTES.schemaAlters, ROUTES.schemaAlters),
-  checksums: defineAppRoute('checksums', ROUTES.checksums),
-  mysql_backups: defineAppRoute('mysql_backups', ROUTES.mysqlBackups),
   backup_mongo: defineAppRoute('backup_mongo', ROUTES.backupsMongodb, ROUTES.backupsMongodb),
-  backup_pg: defineAppRoute('backup_pg', ROUTES.backupsPostgresql, ROUTES.backupsPostgresql),
-  archives: defineAppRoute('archives', ROUTES.archive),
   dipper: defineAppRoute('dipper', ROUTES.dipper, ROUTES.dipper),
   topology: defineAppRoute('topology', ROUTES.topology, ROUTES.topology),
   report: defineAppRoute('report', ROUTES.reports, ROUTES.reports),
@@ -113,22 +118,29 @@ const NAV_GROUPS: Record<string, { label: string; icon: NavIcon }> = {
 
 const DEFAULT_APP_ICON: NavIcon = ExtensionIcon;
 
-/** Sidebar icon per ``app_key``; falls back to ``DEFAULT_APP_ICON``. */
-const APP_NAV_ICONS: Record<string, NavIcon> = {
-  tasks: AssignmentIcon,
-  snippets: CodeIcon,
-  atw: SupportAgentIcon,
-  alerts: DescriptionIcon,
-  alert_troubleshooting: TroubleshootIcon,
-  alters: TableChartIcon,
-  checksums: CheckCircleIcon,
-  mysql_backups: MySqlIcon,
-  backup_mongo: MongoIcon,
-  backup_pg: PostgreSqlIcon,
-  archives: ArchiveIcon,
-  dipper: ScienceIcon,
-  topology: AccountTreeIcon,
-  report: BarChartIcon,
+/**
+ * Sidebar icon per backend ``nav_icon`` key; falls back to ``DEFAULT_APP_ICON``.
+ *
+ * Mirrors the backend ``app.sep.apps.nav_icons.NavIcon`` StrEnum, kept in sync
+ * by hand. ``appNavConfig.test.ts`` asserts this map matches its own
+ * ``NAV_ICON_KEYS`` mirror exactly — catching a key added to one but not the
+ * other — but neither half is checked against the backend enum, so a new backend
+ * key must still be added here by hand.
+ */
+export const ICON_BY_KEY: Record<string, NavIcon> = {
+  assignment: AssignmentIcon,
+  code: CodeIcon,
+  'support-agent': SupportAgentIcon,
+  description: DescriptionIcon,
+  troubleshoot: TroubleshootIcon,
+  'table-chart': TableChartIcon,
+  'check-circle': CheckCircleIcon,
+  mysql: MySqlIcon,
+  mongo: MongoIcon,
+  postgresql: PostgreSqlIcon,
+  archive: ArchiveIcon,
+  science: ScienceIcon,
+  'bar-chart': BarChartIcon,
 };
 
 /** Always-on non-app destinations, prepended ahead of the derived app tree. */
@@ -155,11 +167,21 @@ function byOrderThenKey(
   return a.key.localeCompare(b.key);
 }
 
+/**
+ * Build a leaf nav item for one app.
+ *
+ * ``to`` prefers the frontend route registry when the app has an entry there —
+ * i.e. a custom-UI app, whose bespoke component is mounted at that registered
+ * path — so its link always matches what actually mounts (a backend
+ * ``react_route`` override can never strand a custom app on the 404 resolver).
+ * Schema-driven apps have no registry entry, so their link falls through to the
+ * backend ``react_route`` that ``SchemaDrivenAppResolver`` mounts them at.
+ */
 function leafNavItem(app: EnabledApp): NavItem {
   return {
     title: app.display_name,
-    icon: APP_NAV_ICONS[app.app_key] ?? DEFAULT_APP_ICON,
-    to: getAppRouteMeta(app.app_key)?.reactRoute,
+    icon: (app.nav_icon ? ICON_BY_KEY[app.nav_icon] : undefined) ?? DEFAULT_APP_ICON,
+    to: getAppRouteMeta(app.app_key)?.reactRoute ?? app.react_route,
     appKey: app.app_key,
   };
 }
@@ -172,8 +194,8 @@ function leafNavItem(app: EnabledApp): NavItem {
  * Inventory entries render. After a successful load, React Query retains the
  * last-good data across transient errors, so the full derived tree stays.
  *
- * Visible apps (``enabled``, ``sidebar``, with a known route, excluding the
- * statically-handled keys) are partitioned into groups and ungrouped leaves;
+ * Visible apps (``enabled``, ``sidebar``, excluding the statically-handled keys
+ * and nested sub-app keys) are partitioned into groups and ungrouped leaves;
  * each group sorts by its lowest child ``nav_order`` and is hidden when it has
  * no visible children.
  */
@@ -184,10 +206,7 @@ export function buildNavigationItems(apps: EnabledApp[] | undefined): NavItem[] 
 
   const visible = apps.filter(
     (app) =>
-      app.enabled &&
-      app.sidebar &&
-      !STATIC_APP_KEYS.has(app.app_key) &&
-      getAppRouteMeta(app.app_key) !== undefined,
+      app.enabled && app.sidebar && !STATIC_APP_KEYS.has(app.app_key) && !app.app_key.includes('/'),
   );
 
   const grouped = new Map<string, EnabledApp[]>();

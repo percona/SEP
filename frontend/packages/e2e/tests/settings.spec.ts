@@ -164,6 +164,40 @@ async function mockApis(
           }),
         ],
       },
+      // App-owned group whose app is enabled: shows under "App settings".
+      {
+        setting_class: 'AlertsSettings',
+        is_app_owned: true,
+        app_id: 'alerts',
+        app_display_name: 'Alerts',
+        app_enabled: true,
+        settings: [
+          makeSetting({
+            setting_class: 'AlertsSettings',
+            key: 'ALERTS_RETENTION_DAYS',
+            value: 30,
+            default_value: 30,
+            type: 'int',
+          }),
+        ],
+      },
+      // App-owned group whose app is disabled: hidden from the page entirely.
+      {
+        setting_class: 'InventorySettings',
+        is_app_owned: true,
+        app_id: 'inventory',
+        app_display_name: 'Inventory',
+        app_enabled: false,
+        settings: [
+          makeSetting({
+            setting_class: 'InventorySettings',
+            key: 'INVENTORY_SCAN_INTERVAL',
+            value: 60,
+            default_value: 60,
+            type: 'int',
+          }),
+        ],
+      },
     ],
   });
 
@@ -299,6 +333,36 @@ test.describe('Settings page smoke', () => {
     await page.getByLabel('Search settings').fill('STALENESS');
     await expect(page.getByTestId('setting-row-SYNC_REFRESH_TIME')).toBeHidden();
     await expect(page.getByTestId('setting-row-STALENESS_THRESHOLD_SECONDS')).toBeVisible();
+  });
+
+  test('groups app-owned settings in the App settings region and hides disabled apps', async ({
+    page,
+  }) => {
+    await mockApis(page, { isAdmin: true });
+    await page.goto('/settings');
+
+    await expect(page.getByTestId('settings-group-SEPSettings')).toBeVisible({ timeout: 10_000 });
+
+    // Enabled app's group renders under App settings, tagged with its app name.
+    const region = page.getByTestId('app-settings-region');
+    await expect(region).toBeVisible();
+    await expect(region.getByText('App settings')).toBeVisible();
+    await expect(region.getByTestId('settings-group-AlertsSettings')).toBeVisible();
+    await expect(region.getByTestId('settings-group-app-label-AlertsSettings')).toHaveText(
+      'Alerts',
+    );
+
+    // Core groups stay out of the App settings region.
+    await expect(region.getByTestId('settings-group-SEPSettings')).toHaveCount(0);
+
+    // Disabled app's group is hidden everywhere.
+    await expect(page.getByTestId('settings-group-InventorySettings')).toHaveCount(0);
+    await expect(page.getByTestId('setting-row-INVENTORY_SCAN_INTERVAL')).toHaveCount(0);
+
+    // Search reaches into the app region too.
+    await page.getByLabel('Search settings').fill('ALERTS_RETENTION');
+    await expect(page.getByTestId('setting-row-SYNC_REFRESH_TIME')).toBeHidden();
+    await expect(region.getByTestId('setting-row-ALERTS_RETENTION_DAYS')).toBeVisible();
   });
 
   test('admin can run a connectivity check and see per-service results', async ({ page }) => {

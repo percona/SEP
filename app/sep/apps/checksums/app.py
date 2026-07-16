@@ -20,26 +20,23 @@ registry discovers the exported ``app`` and mounts its derived router, which
 serves the byte-identical schema, list, detail, create, update, execute, and
 delete surfaces. Create and update are derived from the model-first
 :class:`~app.sep.apps.checksums.models.ChecksumsForm` through the
-``pt-table-checksum`` spec builder; delete is the framework's plain default; the
-checksums-specific protected-task + running-conflict guards ride on the derived
-PUT via ``update_guard``. The Jinja UI router is threaded explicitly (the
-registry does not).
+``pt-table-checksum`` spec builder; the derived PUT and DELETE carry the
+framework's default protected-task + running-conflict guards. The Jinja UI router
+is threaded explicitly (the registry does not).
 """
 
-from fastapi import Depends
-
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.checksums.deps import get_unprotected_checksums_task
+from app.sep.apps.checksums.deps import build_checksums_payload
 from app.sep.apps.checksums.models import ChecksumsForm, OWNER
 from app.sep.apps.checksums.routes import router as jinja_router
-from app.sep.apps.checksums.spec import build_checksums_spec
 from app.sep.apps.checksums.views import checksums_views
 from app.sep.apps.framework.apps import (
     AppCapabilities,
     ListFilterConfig,
     TaskExecutionApp,
 )
-from app.sep.deps import get_username_mapping, HasNoConflictedRunningTasks
+from app.sep.apps.nav_icons import NavIcon
+from app.sep.deps import get_username_mapping
 
 app = TaskExecutionApp(
     name="checksums",
@@ -47,15 +44,15 @@ app = TaskExecutionApp(
     uri_path="/checksums",
     css_class="checksums",
     nav_order=7,
+    nav_icon=NavIcon.CHECK_CIRCLE,
     description="Run pt-table-checksum to verify MySQL replication consistency.",
     owner=OWNER,
     create_model=ChecksumsForm,
     views=checksums_views,
-    task_spec_builder=build_checksums_spec,
+    payload_builder=build_checksums_payload,
     capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True, service_type=True),
     response_context_provider=get_username_mapping,
-    update_guard=(Depends(get_unprotected_checksums_task), HasNoConflictedRunningTasks),
     jinja_router=jinja_router,
 )

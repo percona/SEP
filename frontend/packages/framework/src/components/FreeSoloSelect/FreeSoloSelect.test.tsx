@@ -95,6 +95,14 @@ describe('FreeSoloSelect', () => {
     expect(screen.getByLabelText('Schema')).toHaveValue('analytics');
   });
 
+  it('resolves a prefilled stringified inventory id to its option label', async () => {
+    // Edit forms persist reference ids as strings (e.g. `"11"`); it should
+    // render as the option label, not the raw digits.
+    render(<Harness defaultValue="11" />);
+    await waitFor(() => expect(screen.getByLabelText('Schema')).toHaveValue('analytics'));
+    expect(value()).toBe('11');
+  });
+
   it('re-resolves a value typed before options loaded to its id once they arrive', async () => {
     const user = userEvent.setup();
     const { rerender } = render(<Harness options={[]} />);

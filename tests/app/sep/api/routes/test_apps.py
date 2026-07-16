@@ -28,6 +28,7 @@ from sqlmodel import SQLModel
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+from app.sep.api.routes.apps import build_navigation_react_route
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.deps import (
     get_api_authenticated_user,
@@ -51,8 +52,11 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(name="api_user_client")
@@ -100,6 +104,8 @@ class TestListAppsForNavigation:
             "custom_ui",
             "group",
             "nav_order",
+            "react_route",
+            "nav_icon",
         }
 
     async def test_additive_fields_carry_registry_values(
@@ -125,6 +131,47 @@ class TestListAppsForNavigation:
             definition = registry.get(app_key)
             assert entry["group"] == definition.group
             assert entry["nav_order"] == definition.nav_order
+
+    async def test_react_route_and_nav_icon_carry_registry_values(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Carry ``react_route`` (concrete default) and ``nav_icon`` per entry."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        registry = get_app_registry()
+
+        for app_key, entry in entries.items():
+            definition = registry.get(app_key)
+            assert entry["react_route"] == build_navigation_react_route(
+                app_key, definition.react_route
+            )
+            assert entry["nav_icon"] == definition.nav_icon
+
+    async def test_default_react_route_emitted_concrete(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Emit ``/apps/<key>`` for an app with no ``react_route`` override."""
+        response = api_user_client.get("/api/apps/")
+        checksums = next(e for e in response.json() if e["app_key"] == "checksums")
+        assert checksums["react_route"] == "/apps/checksums"
+
+    @pytest.mark.parametrize(
+        ("app_key", "expected_route"),
+        [
+            ("tasks", "/apps/tasks"),
+            ("alerts", "/apps/alerts/templates"),
+            ("backup_mongo", "/apps/backups/mongodb"),
+            ("backup_pg", "/apps/backups/postgresql"),
+            ("report", "/apps/reports"),
+        ],
+    )
+    async def test_declared_react_routes_are_normalized_under_apps_namespace(
+        self, api_user_client: TestClient, app_key: str, expected_route: str
+    ) -> None:
+        """Emit declared routes after normalizing them under ``/apps``."""
+        response = api_user_client.get("/api/apps/")
+        entry = next(e for e in response.json() if e["app_key"] == app_key)
+        assert entry["react_route"] == expected_route
 
     async def test_child_enabled_follows_parent(
         self, api_user_client: TestClient, override_session: AsyncSession
@@ -181,6 +228,34 @@ class TestListAppsForNavigation:
         snippets = next(e for e in response.json() if e["app_key"] == "snippets")
         assert snippets["enabled"] is False
         assert "lifecycle_state" not in snippets
+
+    async def test_atw_reported_disabled_when_snippets_disabled(
+        self, api_user_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Atw reports ``enabled=False`` when the ``snippets`` app it requires is disabled.
+
+        This pins the cross-app dependency on the nav surface: atw owns an
+        ``ENABLED`` row (or none) yet is projected disabled because a required
+        app is off, so the shell hides it.
+        """
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["snippets"]["enabled"] is False
+        assert entries["atw"]["enabled"] is False
+
+    async def test_atw_reported_enabled_when_snippets_enabled(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Atw reports ``enabled=True`` when snippets is enabled (no regression)."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["snippets"]["enabled"] is True
+        assert entries["atw"]["enabled"] is True
 
     async def test_unauthenticated_returns_json_401(
         self, api_unauthenticated_client: TestClient

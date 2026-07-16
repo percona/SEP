@@ -250,6 +250,7 @@
       "fields": [
         {
           "label": "Task Name",
+          "min_length": 1,
           "name": "task_name",
           "required": true,
           "type": "string"
@@ -291,6 +292,7 @@
         },
         {
           "label": "Server Alias",
+          "min_length": 1,
           "name": "alias",
           "required": false,
           "type": "string"
@@ -347,18 +349,21 @@
         },
         {
           "label": "Logging directory",
+          "min_length": 1,
           "name": "logging_dir",
           "required": false,
           "type": "string"
         },
         {
           "label": "Backup directory",
+          "min_length": 1,
           "name": "backup_dir",
           "required": false,
           "type": "string"
         },
         {
           "label": "MySQL defaults file",
+          "min_length": 1,
           "name": "defaults_file",
           "required": false,
           "type": "string"
@@ -582,6 +587,7 @@
             }
           ],
           "label": "Prepare memory",
+          "min_length": 1,
           "name": "xtrabackup_prepare_memory",
           "required": false,
           "type": "string"
@@ -618,6 +624,7 @@
             }
           ],
           "label": "XtraBackup defaults file",
+          "min_length": 1,
           "name": "xtrabackup_defaults_file",
           "required": false,
           "type": "string"
@@ -633,6 +640,7 @@
             }
           ],
           "label": "Extra args",
+          "min_length": 1,
           "name": "xtrabackup_extra_args",
           "required": false,
           "type": "string"
@@ -722,6 +730,7 @@
             }
           ],
           "label": "Local SSH destination",
+          "min_length": 1,
           "name": "xtrabackup_local_ssh_destination",
           "required": false,
           "type": "string"
@@ -737,13 +746,15 @@
             }
           ],
           "label": "AES-256 key file path",
+          "min_length": 1,
           "name": "xtrabackup_aes256_keyfile",
           "required": false,
           "type": "string"
         },
         {
           "default": false,
-          "label": "Stop replica before backup",
+          "description": "Passes --safe-slave-backup so xtrabackup pauses the replica SQL thread during the backup (required for --slave-info on a multi-threaded replica with GTID off).",
+          "label": "Safe replica backup",
           "name": "xtrabackup_stop_replica",
           "required": false,
           "type": "bool"
@@ -819,6 +830,7 @@
             }
           ],
           "label": "Binlog prefix",
+          "min_length": 1,
           "name": "binlog_prefix",
           "required": false,
           "type": "string"
@@ -849,6 +861,7 @@
             }
           ],
           "label": "Extra args",
+          "min_length": 1,
           "name": "binlog_extra_args",
           "required": false,
           "type": "string"
@@ -864,6 +877,7 @@
             }
           ],
           "label": "Compress command",
+          "min_length": 1,
           "name": "binlog_compress_cmd",
           "required": false,
           "type": "string"
@@ -879,6 +893,7 @@
             }
           ],
           "label": "Binlog command",
+          "min_length": 1,
           "name": "binlog_cmd",
           "required": false,
           "type": "string"
@@ -901,6 +916,7 @@
             }
           ],
           "label": "Alternative binlog host",
+          "min_length": 1,
           "name": "binlog_alternative_host",
           "required": false,
           "type": "string"
@@ -952,6 +968,7 @@
             }
           ],
           "label": "Encryption recipient",
+          "min_length": 1,
           "name": "encryption_recipient",
           "required": false,
           "requires": [
@@ -1004,6 +1021,7 @@
             }
           ],
           "label": "S3 bucket",
+          "min_length": 1,
           "name": "s3_bucket",
           "required": false,
           "type": "string"
@@ -1021,6 +1039,7 @@
             }
           ],
           "label": "S3 storage class",
+          "min_length": 1,
           "name": "s3_storage_class",
           "required": false,
           "type": "string"
@@ -1063,6 +1082,7 @@
             }
           ],
           "label": "AWS S3 upload extra args",
+          "min_length": 1,
           "name": "awscli_s3_upload_extra_args",
           "required": false,
           "type": "string"
@@ -1080,6 +1100,7 @@
             }
           ],
           "label": "Google Cloud Storage bucket",
+          "min_length": 1,
           "name": "gs_bucket",
           "required": false,
           "type": "string"
@@ -1097,6 +1118,7 @@
             }
           ],
           "label": "Rsync destination path",
+          "min_length": 1,
           "name": "rsync_path",
           "required": false,
           "type": "string"

@@ -23,11 +23,13 @@ import pytest
 from app.sep.apps.checksums.deps import (
     assemble_checksum_payload,
     build_checksums_task_payload,
+    legacy_checksums_create_to_form,
     parse_checksums_task_args,
 )
 from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm
 from app.sep.apps.checksums.spec import (
     build_checksums_spec,
+    resolve_checksums_target_args,
 )
 from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
@@ -67,6 +69,43 @@ class TestChecksumsJinjaFormDeps:
         )
         assert recursion_arg
         assert DSN_TABLE_DEFAULT in recursion_arg
+
+
+class TestLegacyChecksumsCreateToForm:
+    """Cover legacy Jinja POST → ``ChecksumsForm`` mapping."""
+
+    def test_merges_text_fields_and_extra_args_targets(self) -> None:
+        """Merge databases/tables inputs with matching extra_args tokens."""
+        flat = ChecksumsCreate(
+            task_name="chk",
+            hostname="host1",
+            service_id=1,
+            recursion_method="processlist",
+            databases="db1",
+            tables="db1.t1",
+            extra_args="--databases=db2 --tables=db2.t2 --chunk-time=1",
+        )
+        form, remaining = legacy_checksums_create_to_form(flat)
+
+        assert form.databases == ["db1", "db2"]
+        assert form.tables == ["db1.t1", "db2.t2"]
+        assert remaining == ["--chunk-time=1"]
+
+    def test_merges_legacy_inventory_ids(self) -> None:
+        """Append legacy schema_id / table_id selections as inventory refs."""
+        flat = ChecksumsCreate(
+            task_name="chk",
+            hostname="host1",
+            service_id=1,
+            recursion_method="processlist",
+            schema_id={10, 20},
+            table_id={30},
+        )
+        form, remaining = legacy_checksums_create_to_form(flat)
+
+        assert form.databases == [10, 20]
+        assert form.tables == [30]
+        assert remaining == []
 
 
 class TestChecksumsNomadPayloadParity:
@@ -113,13 +152,22 @@ class TestChecksumsNomadPayloadParity:
             ChecksumsCreate(**common_fields, extra_args=""), mock_remote_api
         )
 
+        checksums_form = ChecksumsForm.model_validate(common_fields)
         resolved = ResolvedEntities(
             service=created_service,
             entities={"service_id": created_service},
             executor_host=common_fields["hostname"],
         )
+        databases_arg, tables_arg = await resolve_checksums_target_args(
+            checksums_form, mock_remote_api
+        )
         spec_result = assemble_envelope(
-            build_checksums_spec(ChecksumsForm(**common_fields), resolved),
+            build_checksums_spec(
+                checksums_form,
+                resolved,
+                databases_arg=databases_arg,
+                tables_arg=tables_arg,
+            ),
             resolved,
             name=common_fields["task_name"],
             owner="CHECKSUMS",
@@ -137,17 +185,16 @@ class TestChecksumsPayloadAssembly:
         """Run ``assemble_checksum_payload`` with default kwargs, applying overrides.
 
         :param created_service: the service fixture forwarded as the first positional arg.
-        :type created_service: Service
         :param overrides: keyword arguments overriding the assembled defaults.
-        :type overrides: typing.Any
         """
+        databases = overrides.pop("databases", "")
+        tables = overrides.pop("tables", "")
         kwargs = {
             "task_name": "test",
             "hostname": "host1",
+            "service_id": created_service.id,
             "recursion_method": "processlist",
             "dsn_table": "",
-            "databases": "",
-            "tables": "",
             "pause_file": "",
             "binary_index": False,
             "explain_arg": False,
@@ -161,7 +208,17 @@ class TestChecksumsPayloadAssembly:
             "alert_on_fail": False,
         }
         kwargs.update(overrides)
-        return assemble_checksum_payload(created_service, **kwargs)
+        form = ChecksumsForm.model_validate(
+            {**kwargs, "databases": databases, "tables": tables}
+        )
+        databases_arg = ",".join(str(value) for value in form.databases)
+        tables_arg = ",".join(str(value) for value in form.tables)
+        return assemble_checksum_payload(
+            created_service,
+            form,
+            databases_arg=databases_arg,
+            tables_arg=tables_arg,
+        )
 
     def test_dsn_expansion_does_not_mutate_input(self, created_service):
         """Assert assemble_checksum_payload does not mutate the recursion_method argument."""
@@ -169,23 +226,14 @@ class TestChecksumsPayloadAssembly:
 
         assemble_checksum_payload(
             created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method=original_recursion_method,
-            dsn_table="",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
+            ChecksumsForm(
+                task_name="test",
+                hostname="host1",
+                service_id=created_service.id,
+                recursion_method=original_recursion_method,
+            ),
+            databases_arg="",
+            tables_arg="",
         )
 
         assert original_recursion_method == "dsn"
@@ -219,25 +267,10 @@ class TestChecksumsPayloadAssembly:
         self, recursion_method, created_service
     ):
         """Assert non-DSN recursion methods are forwarded as-is without dsn= expansion."""
-        result = assemble_checksum_payload(
+        result = self._assemble(
             created_service,
-            task_name="test",
-            hostname="host1",
             recursion_method=recursion_method,
             dsn_table="D=percona,t=dsns",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
         )
 
         args_str = result.data["meta"]["args"]
