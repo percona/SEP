@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
-import { TopologyView } from './TopologyView';
+import { TOPOLOGY_TASK_IDS_STORAGE_KEY, TopologyView } from './TopologyView';
 import type { TopologyGraph } from './types';
 
 const SAMPLE_GRAPH: TopologyGraph = {
@@ -71,8 +71,6 @@ function renderTopology() {
     </QueryClientProvider>,
   );
 }
-
-const TOPOLOGY_TASK_IDS_STORAGE_KEY = 'sep.topology.taskIds';
 
 describe('TopologyView', () => {
   beforeEach(() => {

@@ -67,6 +67,7 @@ default:
       - MODULE_NAME: backup_pg
       - MODULE_NAME: dipper
       - MODULE_NAME: topology
+        ENABLED: false
       - MODULE_NAME: alerts
       - MODULE_NAME: alert_troubleshooting
       - MODULE_NAME: report

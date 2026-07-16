@@ -59,7 +59,7 @@ const NODE_TYPES = {
  * Per-tab storage is intentional — different operators in different
  * browser tabs each get their own collection without interfering.
  */
-const TOPOLOGY_TASK_IDS_STORAGE_KEY = 'sep.topology.taskIds';
+export const TOPOLOGY_TASK_IDS_STORAGE_KEY = 'sep.topology.taskIds';
 
 function readPersistedTaskIds(): number[] | null {
   if (typeof sessionStorage === 'undefined') {
