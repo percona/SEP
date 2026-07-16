@@ -361,6 +361,9 @@ importers:
       '@emotion/styled':
         specifier: ^11.14.0
         version: 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6)
+      '@sep/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
       '@tanstack/react-query':
         specifier: ^5.75.0
         version: 5.100.9(react@19.2.6)
@@ -593,6 +596,9 @@ importers:
       '@emotion/styled':
         specifier: ^11.14.0
         version: 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.6))(@types/react@19.2.14)(react@19.2.6)
+      '@sep/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
       '@tanstack/react-query':
         specifier: ^5.75.0
         version: 5.100.9(react@19.2.6)
@@ -898,6 +904,12 @@ importers:
       vitest:
         specifier: ^4.0.0
         version: 4.1.5(@types/node@22.19.17)(jsdom@29.1.1)(msw@2.14.4(@types/node@22.19.17)(typescript@6.0.3))(vite@8.0.16(@types/node@22.19.17)(esbuild@0.28.1)(tsx@4.21.0))
+
+  packages/test-utils:
+    devDependencies:
+      typescript:
+        specifier: ~5.8.0
+        version: 5.8.3
 
 packages:
 

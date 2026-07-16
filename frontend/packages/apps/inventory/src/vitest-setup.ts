@@ -16,61 +16,6 @@
  */
 
 import '@testing-library/jest-dom/vitest';
+import { installReactFlowTestPolyfills } from '@sep/test-utils';
 
-// React Flow needs ResizeObserver and DOMRect; jsdom omits them.
-class _ResizeObserverPolyfill {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
-
-if (globalThis.ResizeObserver === undefined) {
-  Object.defineProperty(globalThis, 'ResizeObserver', {
-    writable: true,
-    configurable: true,
-    value: _ResizeObserverPolyfill,
-  });
-}
-
-if (typeof DOMRect === 'undefined') {
-  class DOMRectPolyfill {
-    constructor(
-      public x = 0,
-      public y = 0,
-      public width = 0,
-      public height = 0,
-    ) {}
-    static fromRect(rect: { x?: number; y?: number; width?: number; height?: number } = {}) {
-      return new DOMRectPolyfill(rect.x, rect.y, rect.width, rect.height);
-    }
-    get top() {
-      return this.y;
-    }
-    get left() {
-      return this.x;
-    }
-    get right() {
-      return this.x + this.width;
-    }
-    get bottom() {
-      return this.y + this.height;
-    }
-    toJSON() {
-      return {
-        x: this.x,
-        y: this.y,
-        width: this.width,
-        height: this.height,
-        top: this.top,
-        right: this.right,
-        bottom: this.bottom,
-        left: this.left,
-      };
-    }
-  }
-  Object.defineProperty(globalThis, 'DOMRect', {
-    writable: true,
-    configurable: true,
-    value: DOMRectPolyfill,
-  });
-}
+installReactFlowTestPolyfills();
