@@ -1034,9 +1034,10 @@ export interface paths {
      * @description Return Dipper execution history rows.
      *
      *     :param tasks_api: Async client for the tasks sub-app.
-     *     :type tasks_api: RemoteAPI
-     *     :return: Paginated task-history response filtered to Dipper runs.
-     *     :rtype: dict[str, Any]
+     *     :param pagination: Validated offset/limit forwarded to the upstream history call.
+     *     :return: A paginated envelope of task-history rows filtered to Dipper runs. Because
+     *         the ``dipper/`` filter runs client-side, ``total`` is the filtered count of the
+     *         current page, not a global count across all pages.
      */
     get: operations['dipper_dipper_api_list_api_apps_dipper__get'];
     put?: never;
@@ -1367,6 +1368,12 @@ export interface paths {
     /**
      * Inventory List Entity
      * @description List inventory nodes, services, schemas, or tables.
+     *
+     *     :param request: Inbound request; its query string carries entity filters.
+     *     :param entity: Inventory entity type (nodes, services, schemas, tables).
+     *     :param inventory_api: Async client for the Inventory sub-app.
+     *     :param pagination: Validated offset/limit forwarded to the upstream call.
+     *     :return: A paginated envelope echoing the requested window.
      */
     get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
     put?: never;
@@ -2070,9 +2077,8 @@ export interface paths {
      * @description List task definitions for the read-only plugin UI.
      *
      *     :param tasks_api: Async client for the tasks sub-app.
-     *     :type tasks_api: TaskAPI
-     *     :return: Task rows for the schema-driven list view.
-     *     :rtype: list[TaskListResponse]
+     *     :param pagination: Validated offset/limit forwarded to the upstream Tasks API.
+     *     :return: A paginated envelope of task rows for the schema-driven list view.
      */
     get: operations['task_manager_tasks_api_list_api_apps_tasks__get'];
     put?: never;
@@ -3221,6 +3227,17 @@ export interface components {
       /** Updated At */
       updated_at?: string | null;
     };
+    /** PaginatedResponse[Any] */
+    PaginatedResponse_Any_: {
+      /** Items */
+      items: unknown[];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[ServiceResponse] */
     PaginatedResponse_ServiceResponse_: {
       /** Items */
@@ -3236,6 +3253,17 @@ export interface components {
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
       items: components['schemas']['TaskHistoryResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[dict[str, Any]] */
+    PaginatedResponse_dict_str__Any__: {
+      /** Items */
+      items: Record<string, never>[];
       /** Limit */
       limit: number;
       /** Offset */
@@ -8755,6 +8783,17 @@ export interface components {
       /** Value */
       value: string;
     };
+    /** PaginatedResponse[TaskListResponse] */
+    tasks__PaginatedResponse_TaskListResponse_: {
+      /** Items */
+      items: components['schemas']['tasks__TaskListResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /**
      * PeriodicTaskSummary
      * @description Represent read-only periodic-schedule metadata for a single task.
@@ -10566,7 +10605,10 @@ export interface operations {
   };
   dipper_dipper_api_list_api_apps_dipper__get: {
     parameters: {
-      query?: never;
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -10579,7 +10621,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': components['schemas']['PaginatedResponse_dict_str__Any__'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -10876,7 +10927,10 @@ export interface operations {
   };
   inventory_inventory_list_entity_api_apps_inventory__entity___get: {
     parameters: {
-      query?: never;
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
       header?: never;
       path: {
         entity: string;
@@ -10891,7 +10945,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': unknown[];
+          'application/json': components['schemas']['PaginatedResponse_Any_'];
         };
       };
       /** @description Validation Error */
@@ -12035,7 +12089,10 @@ export interface operations {
   };
   task_manager_tasks_api_list_api_apps_tasks__get: {
     parameters: {
-      query?: never;
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -12048,7 +12105,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['tasks__TaskListResponse'][];
+          'application/json': components['schemas']['tasks__PaginatedResponse_TaskListResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

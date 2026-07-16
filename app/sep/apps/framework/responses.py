@@ -22,7 +22,7 @@ from typing import Any, cast, overload, Protocol, TypeVar
 
 from pydantic import BaseModel, computed_field, create_model, FutureDatetime
 
-from app.core.pagination import PaginatedResponse, Pagination
+from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
@@ -346,5 +346,6 @@ async def build_task_list_responses(
     if pagination is None:
         return items
     client_side_filtered = status_filter is not None or task_filter is not None
-    total = len(items) if client_side_filtered else response.get("total", len(items))
-    return PaginatedResponse.from_pagination(items, total, pagination)
+    return build_proxied_page(
+        items, response, pagination, client_side_filtered=client_side_filtered
+    )
