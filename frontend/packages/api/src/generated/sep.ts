@@ -8006,7 +8006,8 @@ export interface components {
       | 'postgresql'
       | 'archive'
       | 'science'
-      | 'bar-chart';
+      | 'bar-chart'
+      | 'account-tree';
     /**
      * AdvisorCheck
      * @description A single advisor check definition (enabled only).

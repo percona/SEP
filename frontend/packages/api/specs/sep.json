@@ -10463,7 +10463,8 @@
           "postgresql",
           "archive",
           "science",
-          "bar-chart"
+          "bar-chart",
+          "account-tree"
         ],
         "title": "NavIcon",
         "type": "string"
