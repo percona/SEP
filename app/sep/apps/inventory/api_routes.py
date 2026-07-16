@@ -49,10 +49,8 @@ from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
 from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import (
     build_proxied_page,
-    DEFAULT_PAGINATION_LIMIT,
-    DEFAULT_PAGINATION_OFFSET,
     PaginatedResponse,
-    Pagination,
+    PaginationDep,
 )
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.inventory.deps import (
@@ -188,17 +186,23 @@ async def inventory_list_entity(
     request: Request,
     entity: str,
     inventory_api: InventoryAPI,
+    pagination: PaginationDep,
 ) -> PaginatedResponse[Any]:
-    """List inventory nodes, services, schemas, or tables."""
+    """List inventory nodes, services, schemas, or tables.
+
+    :param request: Inbound request; its query string carries entity filters.
+    :param entity: Inventory entity type (nodes, services, schemas, tables).
+    :param inventory_api: Async client for the Inventory sub-app.
+    :param pagination: Validated offset/limit forwarded to the upstream call.
+    :return: A paginated envelope echoing the requested window.
+    """
     entity = require_inventory_plugin_entity(entity)
     params = inventory_plugin_query_params(request)
+    params["offset"] = pagination.offset
+    params["limit"] = pagination.limit
     data = await inventory_api.get(inventory_service_list_path(entity), params=params)
     items = unwrap_inventory_plugin_list_payload(data)
     envelope = data if isinstance(data, dict) else {}
-    pagination = Pagination(
-        offset=envelope.get("offset", DEFAULT_PAGINATION_OFFSET),
-        limit=envelope.get("limit", DEFAULT_PAGINATION_LIMIT),
-    )
     return build_proxied_page(items, envelope, pagination, client_side_filtered=False)
 
 

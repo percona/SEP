@@ -3468,7 +3468,7 @@
     },
     "/api/apps/inventory/{entity}/": {
       "get": {
-        "description": "List inventory nodes, services, schemas, or tables.",
+        "description": "List inventory nodes, services, schemas, or tables.\n\n:param request: Inbound request; its query string carries entity filters.\n:param entity: Inventory entity type (nodes, services, schemas, tables).\n:param inventory_api: Async client for the Inventory sub-app.\n:param pagination: Validated offset/limit forwarded to the upstream call.\n:return: A paginated envelope echoing the requested window.",
         "operationId": "inventory_inventory_list_entity_api_apps_inventory__entity___get",
         "parameters": [
           {
@@ -3478,6 +3478,29 @@
             "schema": {
               "title": "Entity",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
