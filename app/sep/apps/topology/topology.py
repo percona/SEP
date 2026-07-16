@@ -66,6 +66,11 @@ def make_primary_hash(server_id: Any, server_uuid: Any, port: Any) -> str:
     MySQL 5.7 lacks ``server_uuid`` in replica status, so the collector
     synthesizes it from ``server_hash``; replica-to-5.7-primary correlation
     then matches on the address+port fallback rather than this hash.
+
+    :param server_id: Source or server ``server_id`` value.
+    :param server_uuid: Source or server ``server_uuid`` value.
+    :param port: Source or server port value.
+    :return: Hex SHA-256 hash matching the collector's ``server_hash`` format.
     """
     raw = "|".join(
         str(part) for part in (server_id, server_uuid, port) if part is not None
@@ -77,6 +82,9 @@ def parse_ndjson(stdout: str) -> list[dict[str, Any]]:
     """Parse the NDJSON stdout from one topology collector task.
 
     Skips blank lines and silently drops malformed JSON (logged at debug).
+
+    :param stdout: Raw stdout content emitted by one collector shard.
+    :return: Parsed JSON event objects in input order.
     """
     events: list[dict[str, Any]] = []
     for raw_line in stdout.splitlines():
@@ -97,6 +105,9 @@ def merge_host_records(
 
     Last-write-wins on duplicate ``host`` keys; ``host_error`` always replaces
     a prior ``host_done`` so a later shard's failure is visible.
+
+    :param event_streams: Parsed event streams from one or more shards.
+    :return: Host-entry map keyed by ``host`` with ``ok`` or ``error`` status.
     """
     out: dict[str, dict[str, Any]] = {}
     for stream in event_streams:
@@ -150,11 +161,8 @@ def _build_error_node(host_entry: str, record: Mapping[str, Any]) -> dict[str, A
     """Build a MySQL node for a failed host collection.
 
     :param host_entry: Inventory host entry for the failed MySQL service.
-    :type host_entry: str
     :param record: Merged ``host_error`` record.
-    :type record: Mapping[str, Any]
     :return: React Flow node payload with error status.
-    :rtype: dict[str, Any]
     """
     return {
         "id": _server_node_id(host_entry),
@@ -171,11 +179,8 @@ def _build_mysql_node(host_entry: str, data: Mapping[str, Any]) -> dict[str, Any
     """Build a MySQL node for a successfully collected host.
 
     :param host_entry: Inventory host entry for the MySQL service.
-    :type host_entry: str
     :param data: Collector payload for the host.
-    :type data: Mapping[str, Any]
     :return: React Flow node payload with server, replication, and cluster data.
-    :rtype: dict[str, Any]
     """
     repl = data.get("replication") or {}
     cluster = data.get("cluster") or {}
@@ -206,19 +211,11 @@ def _index_ok_host(
     """Index one successfully collected host into graph lookup structures.
 
     :param host_entry: Inventory host entry for the MySQL service.
-    :type host_entry: str
     :param record: Merged ``host_done`` record.
-    :type record: Mapping[str, Any]
     :param nodes: Mutable React Flow node list.
-    :type nodes: list[dict[str, Any]]
     :param cluster_members: Mutable cluster key to member node ids map.
-    :type cluster_members: dict[str, list[str]]
     :param hash_to_node: Mutable server hash to node id index.
-    :type hash_to_node: dict[str, str]
     :param addr_to_node: Mutable address+port to node id index.
-    :type addr_to_node: dict[tuple[str, int], str]
-    :return: ``None``.
-    :rtype: None
     """
     node_id = _server_node_id(host_entry)
     data = record.get("data") or {}
@@ -246,9 +243,7 @@ def _build_mysql_nodes(
     """Build MySQL nodes and lookup indexes from merged host records.
 
     :param host_records: Merged topology host records.
-    :type host_records: Mapping[str, dict[str, Any]]
     :return: Nodes, cluster membership index, server hash index, and address index.
-    :rtype: tuple[list[dict[str, Any]], dict[str, list[str]], dict[str, str], dict[tuple[str, int], str]]
     """
     nodes: list[dict[str, Any]] = []
     cluster_members: dict[str, list[str]] = defaultdict(list)
@@ -276,11 +271,8 @@ def _first_cluster_data(
     """Return cluster metadata from the first matching member node.
 
     :param nodes: React Flow node list.
-    :type nodes: list[dict[str, Any]]
     :param members: MySQL node ids in the cluster.
-    :type members: list[str]
     :return: Cluster data from a member node, or an empty mapping.
-    :rtype: dict[str, Any]
     """
     return next(
         (
@@ -299,11 +291,7 @@ def _add_cluster_nodes(
     """Add synthetic PXC cluster nodes to the graph.
 
     :param nodes: Mutable React Flow node list.
-    :type nodes: list[dict[str, Any]]
     :param cluster_members: Cluster key to member node ids map.
-    :type cluster_members: Mapping[str, list[str]]
-    :return: ``None``.
-    :rtype: None
     """
     for cluster_name, members in cluster_members.items():
         first_data = _first_cluster_data(nodes, members)
@@ -330,15 +318,10 @@ def _build_replication_edge(
     """Build a React Flow edge for one replication relationship.
 
     :param source_node_id: Source MySQL or unknown-source node id.
-    :type source_node_id: str
     :param target_node_id: Replica MySQL node id.
-    :type target_node_id: str
     :param repl: Replication metadata from the collector.
-    :type repl: Mapping[str, Any]
     :param gtid_mode: Target host GTID mode.
-    :type gtid_mode: Any
     :return: React Flow replication edge payload.
-    :rtype: dict[str, Any]
     """
     return {
         "id": _build_repl_edge_id(source_node_id, target_node_id),
@@ -367,17 +350,11 @@ def _add_replication_edges(
     """Add replication edges and collect primary hashes seen by replicas.
 
     :param host_records: Merged topology host records.
-    :type host_records: Mapping[str, dict[str, Any]]
     :param nodes: Mutable React Flow node list.
-    :type nodes: list[dict[str, Any]]
     :param edges: Mutable React Flow edge list.
-    :type edges: list[dict[str, Any]]
     :param hash_to_node: Server hash to node id index.
-    :type hash_to_node: Mapping[str, str]
     :param addr_to_node: Mutable address+port to node id index.
-    :type addr_to_node: dict[tuple[str, int], str]
     :return: Replica node id to computed primary hash map.
-    :rtype: dict[str, str]
     """
     primary_hashes_seen: dict[str, str] = {}
     for host_entry, record in host_records.items():
@@ -412,13 +389,8 @@ def _add_dual_primary_edges(
     """Add dual-primary edges for mutually replicating MySQL nodes.
 
     :param edges: Mutable React Flow edge list.
-    :type edges: list[dict[str, Any]]
     :param primary_hashes_seen: Replica node id to computed primary hash map.
-    :type primary_hashes_seen: Mapping[str, str]
     :param hash_to_node: Server hash to MySQL node id index.
-    :type hash_to_node: Mapping[str, str]
-    :return: ``None``.
-    :rtype: None
     """
     node_to_hash = {
         node_id: server_hash for server_hash, node_id in hash_to_node.items()
@@ -456,13 +428,9 @@ def _build_graph_summary(
     """Build aggregate graph counts for the topology response.
 
     :param nodes: React Flow node list.
-    :type nodes: list[dict[str, Any]]
     :param edges: React Flow edge list.
-    :type edges: list[dict[str, Any]]
     :param cluster_members: Cluster key to member node ids map.
-    :type cluster_members: Mapping[str, list[str]]
     :return: Host, status, cluster, and edge counts.
-    :rtype: dict[str, int]
     """
     mysql_nodes = [node for node in nodes if node["type"] == NODE_TYPE_MYSQL]
     return {
@@ -487,11 +455,9 @@ def build_topology_graph(
 
     :param host_records: Output of :func:`merge_host_records` - ``{host_entry:
         {"status": "ok"|"error", "data"|"error": ...}}``.
-    :type host_records: Mapping[str, dict[str, Any]]
     :return: Graph dict with ``nodes`` (mysql + cluster + unknown_source) and
         ``edges`` (replication + dual_primary). The shape matches what the
         ``TopologyView`` React component expects.
-    :rtype: dict[str, Any]
     """
     nodes, cluster_members, hash_to_node, addr_to_node = _build_mysql_nodes(
         host_records
@@ -554,7 +520,11 @@ def _resolve_or_add_replication_source(
 
 
 def build_graph_from_stdouts(stdout_blobs: list[str]) -> dict[str, Any]:
-    """Build a graph from raw shard stdout without retaining collector output."""
+    """Build a graph from raw shard stdout without retaining collector output.
+
+    :param stdout_blobs: Raw stdout blobs from completed topology shard tasks.
+    :return: Merged topology graph ready for the API response.
+    """
     streams = [parse_ndjson(blob) for blob in stdout_blobs]
     merged = merge_host_records(*streams)
     return build_topology_graph(merged)
@@ -563,7 +533,13 @@ def build_graph_from_stdouts(stdout_blobs: list[str]) -> dict[str, Any]:
 def build_topology_meta(
     *, target: str, hosts: list[str], extra: Mapping[str, Any] | None = None
 ) -> dict[str, Any]:
-    """Assemble the ``meta`` dict for a topology ``run-python`` task dispatch."""
+    """Assemble the ``meta`` dict for a topology ``run-python`` task dispatch.
+
+    :param target: Executor target host name for the shard.
+    :param hosts: Host entries assigned to the shard.
+    :param extra: Optional additional collector config values.
+    :return: Task meta payload including config JSON and shared requirements.
+    """
     config: dict[str, Any] = {"hosts": hosts}
     if extra:
         config.update(extra)
@@ -576,7 +552,15 @@ def build_topology_meta(
 
 
 def shard_hosts(hosts: list[str], shards: int) -> list[list[str]]:
-    """Split ``hosts`` into ``shards`` round-robin chunks (ordering preserved per shard)."""
+    """Split ``hosts`` into ``shards`` round-robin chunks.
+
+    Preserve host ordering inside each shard chunk.
+
+    :param hosts: Host entries to distribute.
+    :param shards: Requested shard count.
+    :return: Non-empty shard chunks in dispatch order.
+    :raises ValueError: When ``shards`` is less than 1.
+    """
     if shards < 1:
         raise ValueError("shards must be >= 1")
     if shards == 1 or len(hosts) <= 1:

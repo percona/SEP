@@ -59,7 +59,7 @@ from app.core.pagination import (
     PaginatedResponse,
     PaginationDep,
 )
-from app.sep.apps.framework.schema import AppSchema
+from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.inventory.deps import (
     AvailableSyncer,
     filter_syncers_by_name,
@@ -87,7 +87,6 @@ from app.sep.apps.inventory.sync import run_inventory_sync
 from app.sep.crud import SyncItemManager
 from app.sep.deps import (
     InventoryAPI,
-    IsApiAuthenticated,
     SessionDep,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -99,16 +98,7 @@ router = APIRouter()
 _OPTIONAL_TRIGGER_BODY = Body(default=None)
 
 
-@router.get(
-    "/schema",
-    response_model=AppSchema,
-    response_model_by_alias=True,
-    response_model_exclude_none=True,
-    dependencies=[IsApiAuthenticated],
-)
-async def get_schema() -> AppSchema:
-    """Return the inventory plugin schema."""
-    return inventory_schema
+schema_endpoint(router=router, plugin_schema=inventory_schema)
 
 
 @router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
