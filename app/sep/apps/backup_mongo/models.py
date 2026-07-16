@@ -29,11 +29,13 @@ from app.sep.apps.framework.form_dsl import (
     Choices,
     FieldWidget,
     Forbidden,
+    HostRef,
     ServiceRef,
     TaskFormModel,
     Ui,
 )
 from app.sep.apps.framework.rules import F
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.tasks.models import TaskHistoryStatusEnum
 
 OWNER = "BACKUP_MONGO"
@@ -365,23 +367,39 @@ class BackupForm(TaskFormModel):
     :class:`Ui` / reference / :class:`Choices` / :class:`Forbidden` markers. It is
     *not* the JSON request body — :class:`BackupTaskWrite` is — and is never validated
     as one; field-declaration order reproduces the schema's section and field order
-    (Task, Storage, Point-in-Time Recovery, Backup Options). The ``task_name`` /
-    ``hostname`` Task-section fields and the ``alert_on_fail`` capability control are
-    inherited from :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``,
-    off-schema). The inherited ``NonEmptyStr`` type is used for those two fields,
-    the deriver emits no min-length constraint, and this form is never validated as
-    a request body.
+    (Task, Storage, Point-in-Time Recovery, Backup Options). ``task_name`` and
+    ``hostname`` are redeclared here (still ``NonEmptyStr``) so the form can carry a
+    presentation default for the task name, cascade the executor host from
+    ``service_id``, and order the Task section as service → host. The
+    ``alert_on_fail`` capability control stays inherited from
+    :class:`TaskFormModel` (``Hidden``, off-schema). The deriver emits no
+    min-length constraint, and this form is never validated as a request body.
     """
 
+    task_name: Annotated[
+        NonEmptyStr,
+        Ui(section="Task", order=0, default="mongodb-backup"),
+    ]
     service_id: Annotated[
         int,
         ServiceRef(service_types=(ServiceTypeEnum.MONGODB,)),
-        Ui(label="Database Service", section="Task"),
+        Ui(label="Database Service", section="Task", order=1),
+    ]
+    hostname: Annotated[
+        NonEmptyStr,
+        HostRef(),
+        Ui(
+            label=EXECUTION_HOST_LABEL,
+            section="Task",
+            depends_on="service_id",
+            order=2,
+        ),
     ]
     credentials_path: Annotated[
         str | None,
         Ui(
             section="Task",
+            order=3,
             description="Optional path to MongoDB URI credentials on the Nomad node",
         ),
     ] = None
