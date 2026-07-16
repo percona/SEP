@@ -18,19 +18,47 @@
 import BlockIcon from '@mui/icons-material/Block';
 import CenteredSplash from '../components/CenteredSplash';
 
+interface AppDisabledPageProps {
+  /** Display name of the disabled app; used only for the dependency message. */
+  appDisplayName?: string;
+  /**
+   * Display names of the required apps whose being off blocks this app. When
+   * non-empty the splash names them; otherwise it shows the generic copy.
+   */
+  blockingDependencyNames?: string[];
+}
+
+/** Build the dependency-driven splash body naming the required app(s). */
+function dependencyMessage(appDisplayName: string | undefined, names: string[]): string {
+  const app = appDisplayName ?? 'This app';
+  if (names.length === 1) {
+    return `${app} requires the ${names[0]} app, which is currently disabled.`;
+  }
+  return `${app} requires these apps, which are currently disabled: ${names.join(', ')}.`;
+}
+
 /**
- * Splash shown by `AppDisabledGuard` in place of a disabled app's route.
+ * Render the disabled-app splash for `AppDisabledGuard` in place of the route.
  *
- * Generic by design: it surfaces neither the disable reason nor the admin
- * contact (deferred to a future ticket once the backend exposes that
- * metadata). Built on the shared `CenteredSplash` layout, like `NotFoundPage`.
+ * When the disablement is dependency-driven — the app's own state is enabled
+ * but a required app is off — name the blocking app(s). When the app is disabled
+ * by its own state (or no blocking dependency is supplied), fall back to the
+ * generic copy. Built on the shared `CenteredSplash` layout, like `NotFoundPage`.
  */
-export default function AppDisabledPage() {
+export default function AppDisabledPage({
+  appDisplayName,
+  blockingDependencyNames = [],
+}: AppDisabledPageProps = {}) {
+  const isDependencyDriven = blockingDependencyNames.length > 0;
   return (
     <CenteredSplash
       icon={<BlockIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />}
       title="This feature is currently disabled."
-      body="Contact an administrator to re-enable it."
+      body={
+        isDependencyDriven
+          ? dependencyMessage(appDisplayName, blockingDependencyNames)
+          : 'Contact an administrator to re-enable it.'
+      }
     />
   );
 }

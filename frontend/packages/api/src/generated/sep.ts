@@ -2962,10 +2962,20 @@ export interface components {
      *         always concrete (defaulting to ``/apps/<app_key>``).
      *     :param nav_icon: The sidebar icon key; ``None`` falls back to the shell's
      *         default app icon.
+     *     :param blocking_dependencies: The effective-disabled ``requires_apps`` keys
+     *         that are the reason this app is effective-disabled. Empty when the app is
+     *         enabled or disabled by its own state; non-empty only for a
+     *         dependency-driven disablement, so the shell can name the required app on
+     *         the disabled splash.
      */
     AppKeyResponse: {
       /** App Key */
       app_key: string;
+      /**
+       * Blocking Dependencies
+       * @default []
+       */
+      blocking_dependencies: string[];
       /** Custom Ui */
       custom_ui: boolean;
       /** Display Name */

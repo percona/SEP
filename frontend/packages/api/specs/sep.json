@@ -80,11 +80,19 @@
         "type": "object"
       },
       "AppKeyResponse": {
-        "description": "Represent a minimal per-app entry for the navigation shell.\n\n:param app_key: The plugin module key.\n:param enabled: Whether the app is currently enabled.\n:param sidebar: Whether the plugin appears in the sidebar.\n:param uri_path: The plugin's mount URI path.\n:param display_name: The human-facing label for the app.\n:param custom_ui: Whether the app ships a bespoke React UI.\n:param group: The nav group key this app nests under; ``None`` when the app\n    renders as a top-level sidebar entry.\n:param nav_order: The app's sort position within the sidebar; ``None`` when\n    unset.\n:param react_route: The canonical React route the shell mounts and links to;\n    always concrete (defaulting to ``/apps/<app_key>``).\n:param nav_icon: The sidebar icon key; ``None`` falls back to the shell's\n    default app icon.",
+        "description": "Represent a minimal per-app entry for the navigation shell.\n\n:param app_key: The plugin module key.\n:param enabled: Whether the app is currently enabled.\n:param sidebar: Whether the plugin appears in the sidebar.\n:param uri_path: The plugin's mount URI path.\n:param display_name: The human-facing label for the app.\n:param custom_ui: Whether the app ships a bespoke React UI.\n:param group: The nav group key this app nests under; ``None`` when the app\n    renders as a top-level sidebar entry.\n:param nav_order: The app's sort position within the sidebar; ``None`` when\n    unset.\n:param react_route: The canonical React route the shell mounts and links to;\n    always concrete (defaulting to ``/apps/<app_key>``).\n:param nav_icon: The sidebar icon key; ``None`` falls back to the shell's\n    default app icon.\n:param blocking_dependencies: The effective-disabled ``requires_apps`` keys\n    that are the reason this app is effective-disabled. Empty when the app is\n    enabled or disabled by its own state; non-empty only for a\n    dependency-driven disablement, so the shell can name the required app on\n    the disabled splash.",
         "properties": {
           "app_key": {
             "title": "App Key",
             "type": "string"
+          },
+          "blocking_dependencies": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Dependencies",
+            "type": "array"
           },
           "custom_ui": {
             "title": "Custom Ui",
