@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -147,6 +148,63 @@ class TestGraphBuilder:
         assert edges[0]["source"] == "mysql:primary:3306"
         assert edges[0]["target"] == "mysql:replica:3306"
         assert graph["summary"]["host_count"] == expected_host_count
+
+    def test_primary_hash_matches_collector_concat_ws_format(self) -> None:
+        """Pin make_primary_hash to the collector's ``CONCAT_WS('|', ...)`` digest.
+
+        The collector computes each host's ``server_hash`` in MySQL as
+        ``SHA2(CONCAT_WS('|', @@server_id, @@server_uuid, @@port), 256)``; the
+        replica side recomputes the expected primary hash here. The two must be
+        byte-identical or hash-based correlation silently stops matching, so
+        assert against an independently-built digest (not ``make_primary_hash``
+        itself) and confirm a falsy-but-real ``0`` renders as ``"0"``.
+        """
+        assert (
+            make_primary_hash(10, "uuid-primary", 3306)
+            == hashlib.sha256(b"10|uuid-primary|3306").hexdigest()
+        )
+        assert (
+            make_primary_hash(0, "uuid-zero", 3306)
+            == hashlib.sha256(b"0|uuid-zero|3306").hexdigest()
+        )
+
+    def test_replica_resolves_when_primary_hash_uses_collector_format(self) -> None:
+        """Correlate a replica to its primary purely by the collector-format hash.
+
+        The replica's ``source_host`` differs from the primary's address, so
+        address+port matching cannot resolve it -- only the primary-hash path
+        can. The primary's ``server_hash`` is built the way the collector's
+        ``CONCAT_WS('|', ...)`` query does (independently of
+        ``make_primary_hash``), so the edge appears only when the two formats
+        agree.
+        """
+        collector_hash = hashlib.sha256(b"10|uuid-primary|3306").hexdigest()
+        primary = _host_data(
+            "primary:3306",
+            server_hash=collector_hash,
+            server_id=10,
+            server_uuid="uuid-primary",
+        )
+        replica = _host_data(
+            "replica:3306",
+            server_hash="replica-hash",
+            read_only="RO",
+            server_id=20,
+            server_uuid="uuid-replica",
+            repl={
+                "source_host": "primary-vip",
+                "source_port": 3306,
+                "source_server_id": 10,
+                "source_uuid": "uuid-primary",
+                "repl_status": "ok",
+            },
+        )
+        graph = build_topology_graph(merge_host_records([primary, replica]))
+        edges = [e for e in graph["edges"] if e["type"] == EDGE_TYPE_REPLICATION]
+        assert len(edges) == 1
+        assert edges[0]["source"] == "mysql:primary:3306"
+        assert edges[0]["target"] == "mysql:replica:3306"
+        assert not [n for n in graph["nodes"] if n["type"] == NODE_TYPE_UNKNOWN]
 
     def test_unknown_source_node_synthesised(self) -> None:
         """A replica pointing at an out-of-inventory primary gets a synthetic ``unknown_source`` node."""

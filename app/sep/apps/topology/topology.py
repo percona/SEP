@@ -55,14 +55,21 @@ TOPOLOGY_PAYLOAD_REQUIREMENTS = "PyMySQL[rsa,ed25519]\nmyloginpath"
 def make_primary_hash(server_id: Any, server_uuid: Any, port: Any) -> str:
     """Compute the deterministic hash that lets a replica match a primary's identity.
 
-    Mirrors ``GAS/tools/bin/db_tree.py::make_primary_hash`` so existing
-    operator intuition transfers (replica's source_server_id+uuid+port hash
-    must equal its primary's @@server_hash).
+    Stays byte-identical to the collector's server-identity hash,
+    ``SHA2(CONCAT_WS('|', @@server_id, @@server_uuid, @@port), 256)`` (see
+    ``payloads/topology.py``): a primary reports that value as its
+    ``server_hash`` and a replica recomputes it here from its
+    ``source_server_id``/``source_uuid``/``source_port``. The ``'|'`` separator
+    and the ``NULL``-skipping mirror ``CONCAT_WS`` exactly -- a format drift
+    silently disables hash-based correlation, and a falsy-but-real ``0`` must
+    render as ``"0"`` rather than collapse away.
     MySQL 5.7 lacks ``server_uuid`` in replica status, so the collector
     synthesizes it from ``server_hash``; replica-to-5.7-primary correlation
     then matches on the address+port fallback rather than this hash.
     """
-    raw = f"{server_id or ''}|{server_uuid or ''}|{port or ''}"
+    raw = "|".join(
+        str(part) for part in (server_id, server_uuid, port) if part is not None
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -516,9 +523,9 @@ def _resolve_or_add_replication_source(
     the dependency.
     """
     if (
-        repl.get("source_server_id")
+        repl.get("source_server_id") is not None
         and repl.get("source_uuid")
-        and repl.get("source_port")
+        and repl.get("source_port") is not None
     ):
         candidate = make_primary_hash(
             repl["source_server_id"], repl["source_uuid"], repl["source_port"]

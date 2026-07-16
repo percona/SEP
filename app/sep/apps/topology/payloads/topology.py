@@ -153,7 +153,7 @@ def _query_server_info(cursor: DictCursor) -> dict[str, Any]:
     """
     try:
         cursor.execute(
-            "SELECT SHA2(CONCAT(@@server_id, @@server_uuid, @@port), 256) AS server_hash, "
+            "SELECT SHA2(CONCAT_WS('|', @@server_id, @@server_uuid, @@port), 256) AS server_hash, "
             "@@server_id AS server_id, @@server_uuid AS server_uuid, @@port AS port, "
             "@@super_read_only AS super_read_only, @@read_only AS read_only, "
             "@@version AS version, @@log_bin AS log_bin, @@hostname AS hostname"
@@ -161,7 +161,7 @@ def _query_server_info(cursor: DictCursor) -> dict[str, Any]:
         row = cursor.fetchone()
     except pymysql.MySQLError:
         cursor.execute(
-            "SELECT SHA2(CONCAT(@@server_id, @@hostname, @@port), 256) AS server_hash, "
+            "SELECT SHA2(CONCAT_WS('|', @@server_id, @@hostname, @@port), 256) AS server_hash, "
             "@@server_id AS server_id, @@port AS port, "
             "@@read_only AS read_only, @@version AS version, "
             "@@log_bin AS log_bin, @@hostname AS hostname"
