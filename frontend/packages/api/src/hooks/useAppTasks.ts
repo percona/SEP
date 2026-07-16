@@ -45,7 +45,7 @@ export function isBackendUnavailable(error: unknown): boolean {
   return false;
 }
 
-type PaginatedAppList<T> = {
+export type PaginatedAppList<T> = {
   items: T[];
   total: number;
   offset: number;

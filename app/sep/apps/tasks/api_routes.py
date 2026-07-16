@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.tasks.deps import TaskDep
 from app.sep.apps.tasks.models import (
@@ -46,17 +47,20 @@ schema_endpoint(router=router, plugin_schema=TASKS_PLUGIN_SCHEMA)
 
 
 @router.get("/")
-async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
+async def tasks_api_list(
+    tasks_api: TaskAPI, pagination: PaginationDep
+) -> PaginatedResponse[TaskListResponse]:
     """List task definitions for the read-only plugin UI.
 
     :param tasks_api: Async client for the tasks sub-app.
-    :type tasks_api: TaskAPI
-    :return: Task rows for the schema-driven list view.
-    :rtype: list[TaskListResponse]
+    :param pagination: Validated offset/limit forwarded to the upstream Tasks API.
+    :return: A paginated envelope of task rows for the schema-driven list view.
     """
-    response = await tasks_api.get("/")
+    response = await tasks_api.get(
+        "/", params={"offset": pagination.offset, "limit": pagination.limit}
+    )
     user_id_to_username = await get_username_mapping()
-    return [
+    items = [
         TaskListResponse(
             name=item["name"],
             backend=TaskBackendEnum(item["backend"]),
@@ -70,6 +74,7 @@ async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
         )
         for item in response["items"]
     ]
+    return build_proxied_page(items, response, pagination, client_side_filtered=False)
 
 
 @router.get("/{task_name}")

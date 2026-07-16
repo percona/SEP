@@ -29,6 +29,8 @@ from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.main import sep_app
 
 API_BASE = "/api/apps/dipper"
+FORWARDED_OFFSET = 5
+FORWARDED_LIMIT = 10
 FAKE_TASK_ID = 99
 
 
@@ -130,11 +132,11 @@ class TestDipperListEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert "application/json" in response.headers["content-type"]
         body = response.json()
-        assert body["total"] == 2  # noqa: PLR2004 — upstream total preserved, not filtered count
+        assert body["total"] == 1  # filtered Dipper subset, not the upstream count
         assert [item["id"] for item in body["items"]] == [1]
 
-    def test_list_preserves_upstream_total(self, test_client, mock_task_api_dep):
-        """Upstream ``total`` is passed through unchanged, not replaced with filtered count."""
+    def test_list_total_reflects_filtered_subset(self, test_client, mock_task_api_dep):
+        """Report ``total`` as the Dipper-filtered subset, not the upstream total."""
         mock_task_api_dep.get = AsyncMock(
             return_value={
                 "items": [
@@ -168,8 +170,32 @@ class TestDipperListEndpoint:
         response = test_client.get(f"{API_BASE}/")
 
         body = response.json()
-        assert body["total"] == 500  # noqa: PLR2004 — matches upstream mock total
+        assert body["total"] == 1
         assert [item["id"] for item in body["items"]] == [10]
+
+    def test_list_forwards_offset_and_limit(self, test_client, mock_task_api_dep):
+        """Forward offset/limit query params to the upstream history call."""
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [],
+                "total": 0,
+                "offset": FORWARDED_OFFSET,
+                "limit": FORWARDED_LIMIT,
+            }
+        )
+
+        response = test_client.get(
+            f"{API_BASE}/?offset={FORWARDED_OFFSET}&limit={FORWARDED_LIMIT}"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["offset"] == FORWARDED_OFFSET
+        assert body["limit"] == FORWARDED_LIMIT
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/history/",
+            params={"offset": FORWARDED_OFFSET, "limit": FORWARDED_LIMIT},
+        )
 
 
 class TestDipperFormSchemaEndpoint:
