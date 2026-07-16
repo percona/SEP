@@ -1368,6 +1368,12 @@ export interface paths {
     /**
      * Inventory List Entity
      * @description List inventory nodes, services, schemas, or tables.
+     *
+     *     :param request: Inbound request; its query string carries entity filters.
+     *     :param entity: Inventory entity type (nodes, services, schemas, tables).
+     *     :param inventory_api: Async client for the Inventory sub-app.
+     *     :param pagination: Validated offset/limit forwarded to the upstream call.
+     *     :return: A paginated envelope echoing the requested window.
      */
     get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
     put?: never;
