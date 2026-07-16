@@ -55,7 +55,7 @@
         "type": "object"
       },
       "topology__ClusterNode": {
-        "description": "A synthetic cluster-group node in the topology graph.",
+        "description": "Represent a synthetic cluster-group node in the topology graph.",
         "properties": {
           "data": {
             "$ref": "#/components/schemas/topology__ClusterNodeData"
@@ -82,7 +82,7 @@
         "type": "object"
       },
       "topology__ClusterNodeData": {
-        "description": "React-Flow ``data`` payload for a synthetic PXC cluster node.",
+        "description": "Represent the React-Flow ``data`` payload for a synthetic PXC cluster node.",
         "properties": {
           "cluster_name": {
             "title": "Cluster Name",
@@ -125,7 +125,7 @@
         "type": "object"
       },
       "topology__DualPrimaryEdge": {
-        "description": "A dual-primary (mutually replicating) edge.",
+        "description": "Represent a dual-primary (mutually replicating) edge.",
         "properties": {
           "data": {
             "title": "Data",
@@ -162,7 +162,7 @@
         "type": "object"
       },
       "topology__MySQLClusterInfo": {
-        "description": "Percona XtraDB Cluster (wsrep) metadata for a host.",
+        "description": "Represent Percona XtraDB Cluster (wsrep) metadata for a host.",
         "properties": {
           "cluster_name": {
             "title": "Cluster Name",
@@ -209,7 +209,7 @@
         "type": "object"
       },
       "topology__MySQLNode": {
-        "description": "A MySQL server node in the topology graph.",
+        "description": "Represent a MySQL server node in the topology graph.",
         "properties": {
           "data": {
             "$ref": "#/components/schemas/topology__MySQLNodeData"
@@ -236,7 +236,7 @@
         "type": "object"
       },
       "topology__MySQLNodeData": {
-        "description": "React-Flow ``data`` payload for a MySQL node.",
+        "description": "Represent the React-Flow ``data`` payload for a MySQL node.",
         "properties": {
           "address": {
             "anyOf": [
@@ -333,7 +333,7 @@
         "type": "object"
       },
       "topology__MySQLReplicationInfo": {
-        "description": "Replication source/state for a replica host (``source_uuid`` stripped).",
+        "description": "Represent replication source/state for a replica host (``source_uuid`` stripped).",
         "properties": {
           "auto_position": {
             "anyOf": [
@@ -447,7 +447,7 @@
         "type": "object"
       },
       "topology__MySQLServerInfo": {
-        "description": "MySQL server identity/mode collected per host.",
+        "description": "Represent MySQL server identity/mode collected per host.",
         "properties": {
           "hostname": {
             "anyOf": [
@@ -551,7 +551,7 @@
         "type": "object"
       },
       "topology__ReplicationEdge": {
-        "description": "A primary -> replica replication edge.",
+        "description": "Represent a primary -> replica replication edge.",
         "properties": {
           "data": {
             "anyOf": [
@@ -594,7 +594,7 @@
         "type": "object"
       },
       "topology__ReplicationEdgeData": {
-        "description": "React-Flow ``data`` payload for a replication edge.",
+        "description": "Represent the React-Flow ``data`` payload for a replication edge.",
         "properties": {
           "auto_position": {
             "anyOf": [
@@ -756,7 +756,7 @@
         "type": "object"
       },
       "topology__TopologyGraph": {
-        "description": "The merged React-Flow ``{nodes, edges, summary}`` graph.",
+        "description": "Represent the merged React-Flow ``{nodes, edges, summary}`` graph.",
         "properties": {
           "edges": {
             "items": {
@@ -892,7 +892,7 @@
         "type": "object"
       },
       "topology__UnknownSourceNode": {
-        "description": "A synthetic node for a replication source absent from inventory.",
+        "description": "Represent a synthetic node for a replication source absent from inventory.",
         "properties": {
           "data": {
             "$ref": "#/components/schemas/topology__UnknownSourceNodeData"
@@ -919,7 +919,7 @@
         "type": "object"
       },
       "topology__UnknownSourceNodeData": {
-        "description": "React-Flow ``data`` payload for a replication source not in inventory.",
+        "description": "Represent the React-Flow ``data`` payload for a replication source not in inventory.",
         "properties": {
           "address": {
             "anyOf": [
@@ -963,7 +963,7 @@
   "paths": {
     "/api/apps/topology/collect": {
       "post": {
-        "description": "Dispatch one or more topology collector tasks. Returns the task ids.\n\nHosts are pulled from the inventory MySQL service list; no inventory\npersistence side effects occur. With ``shards > 1`` the host list is\nsplit round-robin across the first N executor hosts so geographically\nsplit inventories run in parallel.",
+        "description": "Dispatch one or more topology collector tasks. Returns the task ids.\n\nHosts are pulled from the inventory MySQL service list; no inventory\npersistence side effects occur. With ``shards > 1`` the host list is\nsplit round-robin across the first N executor hosts so geographically\nsplit inventories run in parallel.\n\n:param body: Collection request (shard count, optional executor, timeouts).\n:param inventory_api: Remote inventory API client used to source MySQL hosts.\n:param tasks_api: Remote Tasks API client used to dispatch collector tasks.\n:return: Dispatched task history ids plus the executor targets and counts.",
         "operationId": "topology_topology_collect_api_apps_topology_collect_post",
         "requestBody": {
           "content": {
@@ -1005,7 +1005,7 @@
     },
     "/api/apps/topology/result": {
       "get": {
-        "description": "Return the merged graph for the supplied task history ids.\n\nStatus mirrors the underlying tasks: ``running`` while any are pending\nor running, ``failed`` when any task failed and produced no usable\noutput, ``ok`` once every task is finished. The React client caches\nthe response via TanStack Query (long ``staleTime``) and stops\npolling once status flips to ``ok``, so the server doesn't bother\nwith HTTP cache validation here.",
+        "description": "Return the merged graph for the supplied task history ids.\n\nStatus mirrors the underlying tasks: ``running`` while any are pending\nor running, ``failed`` when any task failed and produced no usable\noutput, ``ok`` once every task is finished. The React client caches\nthe response via TanStack Query (long ``staleTime``) and stops\npolling once status flips to ``ok``, so the server doesn't bother\nwith HTTP cache validation here.\n\n:param tasks_api: Remote Tasks API client used to fetch task histories and logs.\n:param current_user: Authenticated caller; results are scoped to their own tasks.\n:param ids: Comma-separated task history ids to merge into one graph.\n:return: Aggregate status plus the merged graph (when ready) and task-id lists.",
         "operationId": "topology_topology_result_api_apps_topology_result_get",
         "parameters": [
           {

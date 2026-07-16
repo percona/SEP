@@ -2155,6 +2155,11 @@ export interface paths {
      *     persistence side effects occur. With ``shards > 1`` the host list is
      *     split round-robin across the first N executor hosts so geographically
      *     split inventories run in parallel.
+     *
+     *     :param body: Collection request (shard count, optional executor, timeouts).
+     *     :param inventory_api: Remote inventory API client used to source MySQL hosts.
+     *     :param tasks_api: Remote Tasks API client used to dispatch collector tasks.
+     *     :return: Dispatched task history ids plus the executor targets and counts.
      */
     post: operations['topology_topology_collect_api_apps_topology_collect_post'];
     delete?: never;
@@ -2180,6 +2185,11 @@ export interface paths {
      *     the response via TanStack Query (long ``staleTime``) and stops
      *     polling once status flips to ``ok``, so the server doesn't bother
      *     with HTTP cache validation here.
+     *
+     *     :param tasks_api: Remote Tasks API client used to fetch task histories and logs.
+     *     :param current_user: Authenticated caller; results are scoped to their own tasks.
+     *     :param ids: Comma-separated task history ids to merge into one graph.
+     *     :return: Aggregate status plus the merged graph (when ready) and task-id lists.
      */
     get: operations['topology_topology_result_api_apps_topology_result_get'];
     put?: never;
@@ -8948,7 +8958,7 @@ export interface components {
     };
     /**
      * ClusterNode
-     * @description A synthetic cluster-group node in the topology graph.
+     * @description Represent a synthetic cluster-group node in the topology graph.
      */
     topology__ClusterNode: {
       data: components['schemas']['topology__ClusterNodeData'];
@@ -8962,7 +8972,7 @@ export interface components {
     };
     /**
      * ClusterNodeData
-     * @description React-Flow ``data`` payload for a synthetic PXC cluster node.
+     * @description Represent the React-Flow ``data`` payload for a synthetic PXC cluster node.
      */
     topology__ClusterNodeData: {
       /** Cluster Name */
@@ -8976,7 +8986,7 @@ export interface components {
     };
     /**
      * DualPrimaryEdge
-     * @description A dual-primary (mutually replicating) edge.
+     * @description Represent a dual-primary (mutually replicating) edge.
      */
     topology__DualPrimaryEdge: {
       /** Data */
@@ -8995,7 +9005,7 @@ export interface components {
     };
     /**
      * MySQLClusterInfo
-     * @description Percona XtraDB Cluster (wsrep) metadata for a host.
+     * @description Represent Percona XtraDB Cluster (wsrep) metadata for a host.
      */
     topology__MySQLClusterInfo: {
       /** Cluster Name */
@@ -9009,7 +9019,7 @@ export interface components {
     };
     /**
      * MySQLNode
-     * @description A MySQL server node in the topology graph.
+     * @description Represent a MySQL server node in the topology graph.
      */
     topology__MySQLNode: {
       data: components['schemas']['topology__MySQLNodeData'];
@@ -9023,7 +9033,7 @@ export interface components {
     };
     /**
      * MySQLNodeData
-     * @description React-Flow ``data`` payload for a MySQL node.
+     * @description Represent the React-Flow ``data`` payload for a MySQL node.
      */
     topology__MySQLNodeData: {
       /** Address */
@@ -9047,7 +9057,7 @@ export interface components {
     };
     /**
      * MySQLReplicationInfo
-     * @description Replication source/state for a replica host (``source_uuid`` stripped).
+     * @description Represent replication source/state for a replica host (``source_uuid`` stripped).
      */
     topology__MySQLReplicationInfo: {
       /** Auto Position */
@@ -9071,7 +9081,7 @@ export interface components {
     };
     /**
      * MySQLServerInfo
-     * @description MySQL server identity/mode collected per host.
+     * @description Represent MySQL server identity/mode collected per host.
      */
     topology__MySQLServerInfo: {
       /** Hostname */
@@ -9093,7 +9103,7 @@ export interface components {
     };
     /**
      * ReplicationEdge
-     * @description A primary -> replica replication edge.
+     * @description Represent a primary -> replica replication edge.
      */
     topology__ReplicationEdge: {
       data?: components['schemas']['topology__ReplicationEdgeData'] | null;
@@ -9111,7 +9121,7 @@ export interface components {
     };
     /**
      * ReplicationEdgeData
-     * @description React-Flow ``data`` payload for a replication edge.
+     * @description Represent the React-Flow ``data`` payload for a replication edge.
      */
     topology__ReplicationEdgeData: {
       /** Auto Position */
@@ -9194,7 +9204,7 @@ export interface components {
     };
     /**
      * TopologyGraph
-     * @description The merged React-Flow ``{nodes, edges, summary}`` graph.
+     * @description Represent the merged React-Flow ``{nodes, edges, summary}`` graph.
      */
     topology__TopologyGraph: {
       /** Edges */
@@ -9260,7 +9270,7 @@ export interface components {
     };
     /**
      * UnknownSourceNode
-     * @description A synthetic node for a replication source absent from inventory.
+     * @description Represent a synthetic node for a replication source absent from inventory.
      */
     topology__UnknownSourceNode: {
       data: components['schemas']['topology__UnknownSourceNodeData'];
@@ -9274,7 +9284,7 @@ export interface components {
     };
     /**
      * UnknownSourceNodeData
-     * @description React-Flow ``data`` payload for a replication source not in inventory.
+     * @description Represent the React-Flow ``data`` payload for a replication source not in inventory.
      */
     topology__UnknownSourceNodeData: {
       /** Address */
