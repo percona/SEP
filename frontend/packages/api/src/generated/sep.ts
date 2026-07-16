@@ -10921,7 +10921,10 @@ export interface operations {
   };
   inventory_inventory_list_entity_api_apps_inventory__entity___get: {
     parameters: {
-      query?: never;
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
       header?: never;
       path: {
         entity: string;
