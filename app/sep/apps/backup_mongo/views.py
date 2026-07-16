@@ -18,16 +18,15 @@
 Section *membership* and *order* are declared on
 :class:`~app.sep.apps.backup_mongo.models.BackupForm` (via ``Ui(section=...)``
 and field-declaration order); what lives here is the part the model cannot
-express: the section titles, the list columns, and the UI capability flags. These
-feed the derived ``GET /schema`` and are carried over from the previous hand-written
-``AppSchema`` so the schema wire format is preserved.
+express: the section titles, the collapse metadata, the read-only Task-section
+note about derived backup types, the list columns, and the UI capability flags.
+These feed the derived ``GET /schema``.
 """
 
 from app.sep.apps.framework.apps import Views
 from app.sep.apps.framework.form_dsl import (
     FormLayout,
     SectionLayout,
-    TASK_SECTION_LAYOUT,
 )
 from app.sep.apps.framework.schema import (
     Capabilities,
@@ -37,13 +36,40 @@ from app.sep.apps.framework.schema import (
 )
 from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
 
+#: Task section stays expanded; description surfaces the derived sibling types
+#: (logical, physical, status) produced by one create — cascade behavior is
+#: unchanged.
+_TASK_SECTION_LAYOUT = SectionLayout(
+    key="Task",
+    title="Task",
+    description=(
+        "Creating this backup produces three sibling tasks: logical, physical, "
+        "and status."
+    ),
+)
+
 backup_mongo_views = Views(
     layout=FormLayout(
         sections=(
-            TASK_SECTION_LAYOUT,
-            SectionLayout(key="Storage", title="Storage"),
-            SectionLayout(key="PITR", title="Point-in-Time Recovery"),
-            SectionLayout(key="BackupOptions", title="Backup Options"),
+            _TASK_SECTION_LAYOUT,
+            SectionLayout(
+                key="Storage",
+                title="Storage",
+                collapsible=True,
+                collapsed_by_default=True,
+            ),
+            SectionLayout(
+                key="PITR",
+                title="Point-in-Time Recovery",
+                collapsible=True,
+                collapsed_by_default=True,
+            ),
+            SectionLayout(
+                key="BackupOptions",
+                title="Backup Options",
+                collapsible=True,
+                collapsed_by_default=True,
+            ),
         )
     ),
     list_view=ListView(
