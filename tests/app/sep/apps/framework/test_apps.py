@@ -181,6 +181,90 @@ class _SoleMultiServiceForm(AppFormModel):
     ]
 
 
+class _PrimaryDesignatedServiceForm(AppFormModel):
+    """Represent two services, one designated ``primary`` without a probe.
+
+    The primary is declared *before* an unmarked destination so the old
+    two-or-more-unmarked rejection no longer fires and the designation, not
+    last-wins, names the primary.
+    """
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), primary=True),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="B", section="main"),
+    ] = None
+
+
+class _PrimaryAndCheckConflictForm(AppFormModel):
+    """Represent a ``primary`` field conflicting with a ``check_connectivity`` field."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), primary=True),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="B", section="main"),
+    ] = None
+
+
+class _TwoPrimaryServiceForm(AppFormModel):
+    """Represent a create form designating two ``primary`` services."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), primary=True),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), primary=True),
+        Ui(label="B", section="main"),
+    ] = None
+
+
+class _PrimaryMultipleForm(AppFormModel):
+    """Represent a multi-value ``ServiceRef`` designated ``primary``."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    services: Annotated[
+        list[int],
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), multiple=True, primary=True),
+        Ui(label="Services", section="main"),
+    ]
+
+
+class _RedundantPrimaryProbeForm(AppFormModel):
+    """Represent a single field carrying both ``primary`` and ``check_connectivity``."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(
+            service_types=(ServiceTypeEnum.MYSQL,),
+            check_connectivity=True,
+            primary=True,
+        ),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="B", section="main"),
+    ] = None
+
+
 class _BadArgFormatForm(AppFormModel):
     """Represent a create form whose ``ArgFormat`` template misspells the placeholder."""
 
@@ -869,6 +953,39 @@ class TestDefinitionValidation:
     def test_marked_service_enables_probe(self) -> None:
         """Derive ``connectivity_check`` from a ``check_connectivity`` service."""
         assert _synth_app(connectivity_check=True).connectivity_check is True
+
+    def test_primary_marker_designates_without_probe(self) -> None:
+        """Accept two services with one ``primary`` designation and no probe."""
+        assert (
+            _synth_app(create_model=_PrimaryDesignatedServiceForm).connectivity_check
+            is False
+        )
+
+    def test_primary_and_check_connectivity_conflict_raises(self) -> None:
+        """Reject a ``primary`` field conflicting with a ``check_connectivity`` field."""
+        with pytest.raises(
+            ValueError, match="at most one service is the envelope primary"
+        ):
+            _synth_app(create_model=_PrimaryAndCheckConflictForm)
+
+    def test_two_primary_designations_raise(self) -> None:
+        """Reject a create_model designating more than one ``primary`` service."""
+        with pytest.raises(
+            ValueError, match="at most one service is the envelope primary"
+        ):
+            _synth_app(create_model=_TwoPrimaryServiceForm)
+
+    def test_primary_with_multiple_raises(self) -> None:
+        """Reject a multiple=True ServiceRef designated the primary."""
+        with pytest.raises(ValueError, match="multiple=True"):
+            _synth_app(create_model=_PrimaryMultipleForm)
+
+    def test_redundant_primary_and_probe_same_field_allowed(self) -> None:
+        """Accept one field marked both ``primary`` and ``check_connectivity``, probing."""
+        assert (
+            _synth_app(create_model=_RedundantPrimaryProbeForm).connectivity_check
+            is True
+        )
 
     def test_list_suppress_without_custom_list_raises(self) -> None:
         """Assert ``list=False`` with no custom ``GET /`` in extra_routes is rejected."""
