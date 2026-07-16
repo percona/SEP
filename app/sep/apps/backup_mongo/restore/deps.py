@@ -23,10 +23,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
-from app.core.exceptions import (
-    HTTPInternalServerErrorException,
-    HTTPNotFoundException,
-)
+from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.deps import _gathered_latest_history
@@ -733,13 +730,7 @@ async def delete_restore_task_group(
         parent_task.name,
         restore_child_task_names(parent_task.name, backup_type),
     )
-    if not result.success:
-        failed = [
-            (failure.task_name, str(failure.exception)) for failure in result.failures
-        ]
-        raise HTTPInternalServerErrorException(
-            detail=f"Partial delete failure; orphaned tasks: {failed}"
-        )
+    result.raise_if_failed(op="delete")
 
 
 RestoreTasks = Annotated[RestoreTaskGroupPayloads, Depends(build_restore_tasks)]
