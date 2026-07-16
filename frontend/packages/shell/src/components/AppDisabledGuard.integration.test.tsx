@@ -83,7 +83,11 @@ describe('AppDisabledGuard + useEnabledApps (network contract)', () => {
     await waitFor(() =>
       expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument(),
     );
-    expect(screen.getByText('Enable the Snippet Manager app to use it.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The Snippet Manager app must be enabled first. Contact an administrator to enable it.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('child')).not.toBeInTheDocument();
   });
 

@@ -84,7 +84,7 @@ export default function AppDisabledGuard({ appKey, children }: AppDisabledGuardP
     const nameByKey = new Map((apps ?? []).map((a) => [a.app_key, a.display_name]));
     const blockingDependencyNames = (app.blocking_dependencies ?? [])
       .map((key) => nameByKey.get(key))
-      .filter((name): name is string => Boolean(name));
+      .filter((name): name is string => name !== undefined);
     return (
       <AppDisabledPage
         appDisplayName={app.display_name}

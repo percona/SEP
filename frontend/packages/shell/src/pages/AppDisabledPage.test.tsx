@@ -43,7 +43,11 @@ describe('AppDisabledPage', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
-    expect(screen.getByText('Enable the Snippet Manager app to use it.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The Snippet Manager app must be enabled first. Contact an administrator to enable it.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Contact an administrator to re-enable it.')).not.toBeInTheDocument();
   });
 
@@ -58,7 +62,9 @@ describe('AppDisabledPage', () => {
     );
     expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
     expect(
-      screen.getByText('Enable these apps to use it: Snippet Manager, Task Manager.'),
+      screen.getByText(
+        'These apps must be enabled first: Snippet Manager, Task Manager. Contact an administrator to enable them.',
+      ),
     ).toBeInTheDocument();
   });
 
@@ -69,7 +75,11 @@ describe('AppDisabledPage', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText('This feature is unavailable')).toBeInTheDocument();
-    expect(screen.getByText('Enable the Snippet Manager app to use it.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The Snippet Manager app must be enabled first. Contact an administrator to enable it.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('names every blocking app in the body when the app name is absent', () => {
@@ -80,7 +90,9 @@ describe('AppDisabledPage', () => {
     );
     expect(screen.getByText('This feature is unavailable')).toBeInTheDocument();
     expect(
-      screen.getByText('Enable these apps to use it: Snippet Manager, Task Manager.'),
+      screen.getByText(
+        'These apps must be enabled first: Snippet Manager, Task Manager. Contact an administrator to enable them.',
+      ),
     ).toBeInTheDocument();
   });
 

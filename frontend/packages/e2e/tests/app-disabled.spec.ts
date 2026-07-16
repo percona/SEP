@@ -138,7 +138,11 @@ test.describe('Disabled-app splash', () => {
     await expect(page.getByText('Collect Diagnostic Data is unavailable')).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByText('Enable the Snippet Manager app to use it.')).toBeVisible();
+    await expect(
+      page.getByText(
+        'The Snippet Manager app must be enabled first. Contact an administrator to enable it.',
+      ),
+    ).toBeVisible();
     await expect(page.getByText(GENERIC_BODY)).toBeHidden();
     // The wrapped atw app must never mount behind the splash.
     await expect(atwHeading(page)).toHaveCount(0);
@@ -152,7 +156,7 @@ test.describe('Disabled-app splash', () => {
 
     await expect(page.getByText(GENERIC_TITLE)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(GENERIC_BODY)).toBeVisible();
-    await expect(page.getByText(/^Enable /)).toHaveCount(0);
+    await expect(page.getByText(/must be enabled first/)).toHaveCount(0);
     await expect(atwHeading(page)).toHaveCount(0);
   });
 
@@ -170,7 +174,9 @@ test.describe('Disabled-app splash', () => {
       timeout: 10_000,
     });
     await expect(
-      page.getByText('Enable these apps to use it: Snippet Manager, Task Manager.'),
+      page.getByText(
+        'These apps must be enabled first: Snippet Manager, Task Manager. Contact an administrator to enable them.',
+      ),
     ).toBeVisible();
     await expect(atwHeading(page)).toHaveCount(0);
   });

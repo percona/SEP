@@ -28,12 +28,12 @@ interface AppDisabledPageProps {
   blockingDependencyNames?: string[];
 }
 
-/** Build the actionable splash body naming the required app(s) to enable. */
+/** Build the splash body naming the required app(s) an admin must enable. */
 function dependencyMessage(names: string[]): string {
   if (names.length === 1) {
-    return `Enable the ${names[0]} app to use it.`;
+    return `The ${names[0]} app must be enabled first. Contact an administrator to enable it.`;
   }
-  return `Enable these apps to use it: ${names.join(', ')}.`;
+  return `These apps must be enabled first: ${names.join(', ')}. Contact an administrator to enable them.`;
 }
 
 /**
@@ -49,14 +49,14 @@ function dependencyMessage(names: string[]): string {
 export default function AppDisabledPage({
   appDisplayName,
   blockingDependencyNames = [],
-}: AppDisabledPageProps = {}) {
+}: AppDisabledPageProps) {
   const isDependencyDriven = blockingDependencyNames.length > 0;
   return (
     <CenteredSplash
       icon={<BlockIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />}
       title={
         isDependencyDriven
-          ? `${appDisplayName ?? 'This feature'} is unavailable`
+          ? `${appDisplayName || 'This feature'} is unavailable`
           : 'This feature is currently disabled.'
       }
       body={
