@@ -573,7 +573,7 @@ class TaskExecutionApp(BaseApp):
         if not designated and any(ref.multiple for ref in refs):
             raise ValueError(
                 "TaskExecutionApp: a create_model declares a multiple=True ServiceRef "
-                "with no designated primary ServiceRef to serve as the connectivity "
+                "with no designated primary ServiceRef to serve as the envelope "
                 "primary; a multi-value service field cannot resolve to the single "
                 "primary assemble_envelope stamps onto every task — mark a scalar "
                 "ServiceRef check_connectivity=True or primary=True"
@@ -589,7 +589,7 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: a create_model declares "
                 f"{len(refs)} ServiceRef fields with none designated primary "
-                "(check_connectivity=True or primary=True); no connectivity primary "
+                "(check_connectivity=True or primary=True); no envelope primary "
                 "is determinable — designate exactly one"
             )
 

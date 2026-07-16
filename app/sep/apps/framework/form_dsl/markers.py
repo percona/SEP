@@ -237,7 +237,7 @@ class ServiceRef:
         (``_service_name``, the connectivity meta, and the executor-target
         fallback) *without* enabling the probe — the way to name a primary among
         several ``ServiceRef`` fields when no connectivity check is wanted. A model
-        declares at most one designated primary across both markers: exactly one
+        designates at most one primary across both markers: at most one
         ``ServiceRef`` may be marked ``check_connectivity`` **or** ``primary`` (a
         single field carrying both is redundant, since ``check_connectivity``
         already implies primary). Defaults to ``False``.
