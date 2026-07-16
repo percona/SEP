@@ -230,9 +230,17 @@ class ServiceRef:
         post-creation connectivity probe against this service, and the service is
         selected as the envelope's primary (``_service_name``, the connectivity
         meta, and the executor-target fallback) even when a second ``ServiceRef``
-        resolves. A model declares at most one ``check_connectivity`` service;
-        when none is marked the sole ``ServiceRef`` is the primary and no probe
-        runs. Defaults to ``False``.
+        resolves. ``check_connectivity`` therefore implies ``primary``. When none
+        is marked the sole ``ServiceRef`` is the primary and no probe runs.
+        Defaults to ``False``.
+    :param primary: When ``True``, the service is the envelope's primary
+        (``_service_name``, the connectivity meta, and the executor-target
+        fallback) *without* enabling the probe — the way to name a primary among
+        several ``ServiceRef`` fields when no connectivity check is wanted. A model
+        declares at most one designated primary across both markers: exactly one
+        ``ServiceRef`` may be marked ``check_connectivity`` **or** ``primary`` (a
+        single field carrying both is redundant, since ``check_connectivity``
+        already implies primary). Defaults to ``False``.
     :param multiple: When ``True``, the field is a multi-value selector backed by
         a ``list[...]`` / ``set[...]`` annotation and derives a
         ``MultiServiceField``. Defaults to ``False`` (single-value).
@@ -241,6 +249,7 @@ class ServiceRef:
     service_types: tuple[ServiceTypeEnum, ...]
     allow_custom: bool = False
     check_connectivity: bool = False
+    primary: bool = False
     multiple: bool = False
 
     def __post_init__(self) -> None:

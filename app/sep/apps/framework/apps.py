@@ -455,8 +455,9 @@ class TaskExecutionApp(BaseApp):
         An app probes iff the create capability is enabled and its ``create_model``
         declares a ``check_connectivity=True`` ``ServiceRef`` (top-level or nested
         in a one-of branch); that marked service is also the envelope's primary.
-        Replaces the former app-level flag, so a single per-reference marker drives
-        both the probe and the connectivity-service selection.
+        Probe enablement is keyed off ``check_connectivity`` alone — a ``ServiceRef``
+        marked ``primary=True`` designates the envelope primary without probing, so it
+        does not turn this on.
 
         :return: ``True`` when the app derives a probing create route.
         """
@@ -538,57 +539,58 @@ class TaskExecutionApp(BaseApp):
             )
 
     def _validate_connectivity_refs(self) -> None:
-        """Reject an ambiguous or unselectable connectivity-service configuration.
+        """Reject an ambiguous or unselectable primary-service configuration.
 
-        A model-first app probes the ``check_connectivity=True`` ``ServiceRef`` and
-        makes it the envelope's primary. At most one service may be marked — a
-        second would make the probe target ambiguous — and a model declaring two or
-        more ``ServiceRef`` fields with none marked has no determinable primary. A
-        single unmarked ``ServiceRef`` is valid: it is the sole primary and the app
-        does not probe. The two-or-more-unmarked rejection is about primary
-        disambiguation, not the probe: ``assemble_envelope`` unconditionally stamps
-        the primary service onto every task's connectivity host/port and
+        A model-first app names its envelope primary with a *designated* marker —
+        ``check_connectivity=True`` (which also probes) or ``primary=True`` (which
+        designates without probing). At most one ``ServiceRef`` may be designated
+        across both markers; a second designation makes the primary ambiguous. A
+        model declaring two or more ``ServiceRef`` fields with none designated has
+        no determinable primary. A single unmarked ``ServiceRef`` is valid: it is
+        the sole primary and the app does not probe. The disambiguation is about the
+        primary, not the probe: ``assemble_envelope`` unconditionally stamps the
+        primary service onto every task's connectivity host/port and
         ``service_name``, so the primary must be unambiguous even when no probe runs.
 
-        :raises ValueError: When a ``check_connectivity`` ``ServiceRef`` is also
-            marked ``multiple`` (a multi-value field has no single primary), when a
-            ``multiple=True`` ``ServiceRef`` would be the connectivity primary (no
-            scalar ``check_connectivity`` ref is marked to take its place), when
-            more than one ``ServiceRef`` is marked ``check_connectivity``, or when
-            two or more ``ServiceRef`` fields leave no determinable connectivity
-            primary.
+        :raises ValueError: When a designated ``ServiceRef`` is also marked
+            ``multiple`` (a multi-value field has no single primary), when a
+            ``multiple=True`` ``ServiceRef`` would be the primary with no scalar
+            designated ref to take its place, when more than one ``ServiceRef`` is
+            designated primary (via ``check_connectivity`` and/or ``primary``), or
+            when two or more ``ServiceRef`` fields leave no determinable primary.
         """
         if self.create_model is None:
             return
         refs = list(iter_service_refs(self.create_model))
-        marked = [ref for ref in refs if ref.check_connectivity]
-        if any(ref.multiple for ref in marked):
+        designated = [ref for ref in refs if ref.check_connectivity or ref.primary]
+        if any(ref.multiple for ref in designated):
             raise ValueError(
                 "TaskExecutionApp: a create_model declares a multiple=True ServiceRef "
-                "marked check_connectivity=True; the connectivity probe targets a "
-                "single primary service and cannot select one from a multi-value "
-                "field — set multiple=False or check_connectivity=False"
+                "designated primary (check_connectivity=True or primary=True); the "
+                "envelope primary is a single service and cannot be selected from a "
+                "multi-value field — set multiple=False, or drop the primary marker"
             )
-        if not marked and any(ref.multiple for ref in refs):
+        if not designated and any(ref.multiple for ref in refs):
             raise ValueError(
                 "TaskExecutionApp: a create_model declares a multiple=True ServiceRef "
-                "with no check_connectivity=True ServiceRef to serve as the "
-                "connectivity primary; a multi-value service field cannot resolve to "
-                "the single primary assemble_envelope stamps onto every task — mark a "
-                "scalar ServiceRef check_connectivity=True"
+                "with no designated primary ServiceRef to serve as the connectivity "
+                "primary; a multi-value service field cannot resolve to the single "
+                "primary assemble_envelope stamps onto every task — mark a scalar "
+                "ServiceRef check_connectivity=True or primary=True"
             )
-        if len(marked) > 1:
+        if len(designated) > 1:
+            raise ValueError(
+                "TaskExecutionApp: a create_model designates "
+                f"{len(designated)} primary ServiceRef fields via check_connectivity "
+                "and/or primary; at most one service is the envelope primary — "
+                "designate exactly one"
+            )
+        if not designated and len(refs) > 1:
             raise ValueError(
                 "TaskExecutionApp: a create_model declares "
-                f"{len(marked)} check_connectivity=True ServiceRef fields; at most "
-                "one service is the connectivity primary — mark exactly one"
-            )
-        if not marked and len(refs) > 1:
-            raise ValueError(
-                "TaskExecutionApp: a create_model declares "
-                f"{len(refs)} ServiceRef fields with none marked "
-                "check_connectivity=True; no connectivity primary is determinable — "
-                "mark exactly one"
+                f"{len(refs)} ServiceRef fields with none designated primary "
+                "(check_connectivity=True or primary=True); no connectivity primary "
+                "is determinable — designate exactly one"
             )
 
     def _validate_schema_source(self) -> None:
