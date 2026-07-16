@@ -35,6 +35,10 @@ from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/tasks"
 EXPECTED_TEMPLATE_DETAIL_CALLS = 2
+DEFAULT_PAGE_LIMIT = 50
+TOTAL_BEYOND_PAGE = 60
+FORWARDED_OFFSET = 50
+FORWARDED_LIMIT = 10
 
 
 def build_task_payload(**overrides: Any) -> dict:
@@ -100,8 +104,8 @@ class TestTasksPluginListEndpoint:
         ):
             yield
 
-    def test_list_returns_empty_array(self, test_client, mock_task_api_dep):
-        """Ensure an empty upstream list maps to an empty JSON array."""
+    def test_list_returns_empty_envelope(self, test_client, mock_task_api_dep):
+        """Ensure an empty upstream list maps to an empty paginated envelope."""
         mock_task_api_dep.get = AsyncMock(
             return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
         )
@@ -109,8 +113,14 @@ class TestTasksPluginListEndpoint:
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
-        mock_task_api_dep.get.assert_awaited_once_with("/")
+        body = response.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+        assert body["offset"] == 0
+        assert body["limit"] == DEFAULT_PAGE_LIMIT
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/", params={"offset": 0, "limit": DEFAULT_PAGE_LIMIT}
+        )
 
     def test_list_maps_task_rows(self, test_client, mock_task_api_dep):
         """Ensure upstream task items are projected into list response rows."""
@@ -129,13 +139,59 @@ class TestTasksPluginListEndpoint:
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert len(body) == 1
-        row = body[0]
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        row = body["items"][0]
         assert row["name"] == "monitor-task"
         assert row["backend"] == TaskBackendEnum.NOMAD
         assert row["created_at"] == task["created_at"]
         assert row["created_by"] == "creator-id"
         assert row["last_updated_by"] == "editor-id"
+
+    def test_list_exposes_total_beyond_page(self, test_client, mock_task_api_dep):
+        """Ensure a >50-task list exposes the upstream total and is not truncated."""
+        page = [
+            build_task_payload(name=f"task-{index}")
+            for index in range(DEFAULT_PAGE_LIMIT)
+        ]
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": page,
+                "total": TOTAL_BEYOND_PAGE,
+                "offset": 0,
+                "limit": DEFAULT_PAGE_LIMIT,
+            }
+        )
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == TOTAL_BEYOND_PAGE
+        assert len(body["items"]) == DEFAULT_PAGE_LIMIT
+
+    def test_list_forwards_offset_and_limit(self, test_client, mock_task_api_dep):
+        """Ensure offset/limit query params are forwarded upstream and echoed."""
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [],
+                "total": TOTAL_BEYOND_PAGE,
+                "offset": FORWARDED_OFFSET,
+                "limit": FORWARDED_LIMIT,
+            }
+        )
+
+        response = test_client.get(
+            f"{API_BASE}/?offset={FORWARDED_OFFSET}&limit={FORWARDED_LIMIT}"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["offset"] == FORWARDED_OFFSET
+        assert body["limit"] == FORWARDED_LIMIT
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/", params={"offset": FORWARDED_OFFSET, "limit": FORWARDED_LIMIT}
+        )
 
     @patch(
         "app.sep.apps.tasks.api_routes.get_username_mapping",
@@ -163,7 +219,7 @@ class TestTasksPluginListEndpoint:
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
-        row = response.json()[0]
+        row = response.json()["items"][0]
         assert row["created_by"] == SYSTEM_USER
         assert row["last_updated_by"] == "Admin"
 

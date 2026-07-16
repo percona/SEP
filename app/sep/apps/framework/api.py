@@ -25,6 +25,13 @@ wiring, or status-code conventions:
   route plus the standard list / detail / create (and optional update /
   delete) CRUD routes, composing the shared framework task helpers for the
   handler bodies.
+
+Pagination convention: paginate anything backed by an unbounded resource and
+return a :class:`~app.core.pagination.PaginatedResponse` envelope; a bare list
+is acceptable only for compile-time-bounded enumerations. Hand-written proxy
+list routes build the envelope with
+:func:`~app.core.pagination.build_proxied_page`, which corrects the ``total``
+when rows are filtered in-process.
 """
 
 import functools

@@ -49,15 +49,20 @@ describe('useTasksList', () => {
     ) => {
       lastConfig = config;
       return Promise.resolve({
-        data: [
-          {
-            name: 'monitor-task',
-            backend: 'nomad',
-            created_at: '2026-05-19T12:00:00Z',
-            created_by: 'creator',
-            last_updated_by: null,
-          },
-        ],
+        data: {
+          items: [
+            {
+              name: 'monitor-task',
+              backend: 'nomad',
+              created_at: '2026-05-19T12:00:00Z',
+              created_by: 'creator',
+              last_updated_by: null,
+            },
+          ],
+          total: 60,
+          offset: 0,
+          limit: 50,
+        },
         status: 200,
         statusText: 'OK',
         headers: {},
@@ -71,7 +76,7 @@ describe('useTasksList', () => {
     (apiClient.defaults as unknown as { adapter: unknown }).adapter = originalAdapter;
   });
 
-  it('fetches task rows from the tasks app list endpoint', async () => {
+  it('unwraps the paginated envelope into task rows', async () => {
     const { result } = renderHook(() => useTasksList(), { wrapper: makeWrapper() });
 
     await waitFor(() => {
