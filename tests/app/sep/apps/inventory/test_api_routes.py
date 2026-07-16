@@ -27,8 +27,8 @@ from fastapi import HTTPException, status
 from pydantic import SecretStr
 
 from app.core.config import settings
-from app.inventory.models import ServiceTypeEnum
 from app.core.pagination import DEFAULT_PAGINATION_OFFSET, MAX_PAGINATION_LIMIT
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.inventory.deps import (
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
