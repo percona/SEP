@@ -50,3 +50,4 @@ class NavIcon(StrEnum):
     ARCHIVE = "archive"
     SCIENCE = "science"
     BAR_CHART = "bar-chart"
+    ACCOUNT_TREE = "account-tree"

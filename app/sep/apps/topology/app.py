@@ -22,6 +22,7 @@ registration (``SEP.APPS``); there is no separate feature flag.
 """
 
 from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.topology.api_routes import router as api_router
 
 app = BaseApp(
@@ -31,6 +32,7 @@ app = BaseApp(
     css_class="topology",
     group="diagnostics",
     nav_order=13,
+    nav_icon=NavIcon.ACCOUNT_TREE,
     custom_ui=True,
     api_router=api_router,
 )

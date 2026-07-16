@@ -40,6 +40,7 @@ const NAV_ICON_KEYS = [
   'archive',
   'science',
   'bar-chart',
+  'account-tree',
 ] as const;
 
 describe('ICON_BY_KEY', () => {

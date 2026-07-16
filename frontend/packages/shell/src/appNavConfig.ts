@@ -141,6 +141,7 @@ export const ICON_BY_KEY: Record<string, NavIcon> = {
   archive: ArchiveIcon,
   science: ScienceIcon,
   'bar-chart': BarChartIcon,
+  'account-tree': AccountTreeIcon,
 };
 
 /** Always-on non-app destinations, prepended ahead of the derived app tree. */
