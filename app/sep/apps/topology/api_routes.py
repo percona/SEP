@@ -82,9 +82,7 @@ def _format_host_entry(service: dict[str, Any]) -> str | None:
     """Return a collector ``host:port`` entry for an inventory service.
 
     :param service: Inventory service payload with optional nested node data.
-    :type service: dict[str, Any]
     :return: ``address:port`` or ``name:port`` when address data exists.
-    :rtype: str | None
     """
     node = service.get("node") or {}
     address = node.get("address") or service.get("name")
@@ -102,9 +100,7 @@ async def _collect_mysql_host_entries(inventory_api: RemoteAPI) -> list[str]:
     hosts once the fleet exceeds one page.
 
     :param inventory_api: Remote inventory API client.
-    :type inventory_api: RemoteAPI
     :return: De-duplicated MySQL ``host:port`` entries in inventory order.
-    :rtype: list[str]
     """
 
     async def _fetch_page(pagination: Pagination) -> dict[str, Any]:
@@ -134,13 +130,9 @@ def _select_topology_targets(
     """Select executor host names for topology collection.
 
     :param available_hosts: Mapping of executor host names to host addresses.
-    :type available_hosts: dict[str, str]
     :param requested_executor: Optional explicit executor host name.
-    :type requested_executor: str | None
     :param shards: Requested number of executor shards.
-    :type shards: int
     :return: Selected executor host names.
-    :rtype: list[str]
     :raises HTTPServiceUnavailableException: When no executor hosts are available.
     :raises HTTPBadRequestException: When the explicit executor is unavailable.
     """
