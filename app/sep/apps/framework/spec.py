@@ -288,10 +288,10 @@ def _select_primary_service(
 ) -> CreatedService | None:
     """Select the primary (connectivity) service from the resolved service refs.
 
-    A ``check_connectivity``-marked ref wins outright (the construction guard
-    permits at most one). Otherwise fall back to the last ref that resolved to a
-    real entity, preserving the pre-marker last-wins behaviour for the
-    single-service apps that declare no marker.
+    A designated primary — a ref marked ``check_connectivity`` or ``primary`` —
+    wins outright (the construction guard permits at most one). Otherwise fall
+    back to the last ref that resolved to a real entity, preserving the pre-marker
+    last-wins behaviour for the single-service apps that declare no marker.
 
     :param candidates: The ``(marker, resolved entity)`` pairs for every resolved
         ``ServiceRef`` field, in declaration order.
@@ -299,7 +299,7 @@ def _select_primary_service(
     """
     primary = None
     for ref, entity in candidates:
-        if ref.check_connectivity:
+        if ref.check_connectivity or ref.primary:
             return entity
         if entity is not None:
             primary = entity
@@ -319,9 +319,9 @@ async def resolve_refs(
     spec builder can fall back to the raw form value. A ``HostRef`` field's
     submitted value (free-typed or selected) is captured as the executor host
     without an inventory call, coerced to ``str``; a model declaring more than one
-    ``HostRef`` is rejected. The connectivity / primary service is the
-    ``check_connectivity``-marked ``ServiceRef`` when present, else the sole
-    resolved ``ServiceRef``.
+    ``HostRef`` is rejected. The primary service is the designated ``ServiceRef``
+    (marked ``check_connectivity`` or ``primary``) when present, else the sole /
+    last-resolved ``ServiceRef``.
 
     :param form: The validated create form instance.
     :param inventory_api: The inventory API client.
