@@ -16,7 +16,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { apiClient, useAppSchema } from '@sep/api';
+import { apiClient, unwrapAppListResponse, useAppSchema, type PaginatedAppList } from '@sep/api';
 import { RUNNING_STATUSES } from '@sep/framework';
 import {
   TASKS_APP_NAME,
@@ -36,8 +36,10 @@ export function useTasksList(options?: { enabled?: boolean }) {
     queryKey: ['tasks', 'list'],
     enabled: options?.enabled !== false,
     queryFn: async () => {
-      const { data } = await apiClient.get<TaskListRow[]>(`${TASKS_APPS_API_BASE}/`);
-      return data;
+      const { data } = await apiClient.get<TaskListRow[] | PaginatedAppList<TaskListRow>>(
+        `${TASKS_APPS_API_BASE}/`,
+      );
+      return unwrapAppListResponse(data);
     },
   });
 }

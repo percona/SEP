@@ -14,6 +14,35 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "PaginatedResponse_Any_": {
+        "properties": {
+          "items": {
+            "items": {},
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[Any]",
+        "type": "object"
+      },
       "ServiceTypeEnum": {
         "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
         "enum": [
@@ -3457,9 +3486,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {},
-                  "title": "Response Inventory Inventory List Entity Api Apps Inventory  Entity   Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_Any_"
                 }
               }
             },

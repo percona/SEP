@@ -26,7 +26,7 @@ from typing import Any, Generic, NotRequired, TYPE_CHECKING, TypeVar
 from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, Field, PositiveInt, validate_call
 
@@ -175,6 +175,30 @@ class PaginatedResponse(BaseModel, Generic[T]):
             offset=self.offset,
             limit=self.limit,
         )
+
+
+def build_proxied_page(
+    items: list[T],
+    upstream: Mapping[str, Any],
+    pagination: Pagination,
+    *,
+    client_side_filtered: bool,
+) -> PaginatedResponse[T]:
+    """Build a paginated envelope from a proxied upstream list response.
+
+    Pass through the upstream ``total`` when the proxy returned the upstream
+    rows unchanged; substitute ``len(items)`` when the rows were filtered in
+    this process, since the current-page filtered count is the only honest
+    total available without server-side filter support.
+
+    :param items: The rows for the current page, after any client-side filter.
+    :param upstream: The raw upstream envelope, read for its ``total``.
+    :param pagination: The request pagination window echoed into the envelope.
+    :param client_side_filtered: Whether ``items`` was narrowed in this process.
+    :return: A paginated envelope with the corrected ``total``.
+    """
+    total = len(items) if client_side_filtered else upstream.get("total", len(items))
+    return PaginatedResponse.from_pagination(items, total, pagination)
 
 
 @validate_call

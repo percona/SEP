@@ -47,6 +47,13 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
 
 from app.core.exceptions import HTTPBadRequestException
+from app.core.pagination import (
+    build_proxied_page,
+    DEFAULT_PAGINATION_LIMIT,
+    DEFAULT_PAGINATION_OFFSET,
+    PaginatedResponse,
+    Pagination,
+)
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.inventory.deps import (
     AvailableSyncer,
@@ -181,12 +188,18 @@ async def inventory_list_entity(
     request: Request,
     entity: str,
     inventory_api: InventoryAPI,
-) -> list[Any]:
+) -> PaginatedResponse[Any]:
     """List inventory nodes, services, schemas, or tables."""
     entity = require_inventory_plugin_entity(entity)
     params = inventory_plugin_query_params(request)
     data = await inventory_api.get(inventory_service_list_path(entity), params=params)
-    return unwrap_inventory_plugin_list_payload(data)
+    items = unwrap_inventory_plugin_list_payload(data)
+    envelope = data if isinstance(data, dict) else {}
+    pagination = Pagination(
+        offset=envelope.get("offset", DEFAULT_PAGINATION_OFFSET),
+        limit=envelope.get("limit", DEFAULT_PAGINATION_LIMIT),
+    )
+    return build_proxied_page(items, envelope, pagination, client_side_filtered=False)
 
 
 @router.post("/{entity}/")

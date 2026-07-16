@@ -38,6 +38,9 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from tests.app.sep.apps.inventory.conftest import no_syncers, PMM_STUB_NAME
 
 _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
+_ENVELOPE_TOTAL = 7
+_ENVELOPE_OFFSET = 2
+_ENVELOPE_LIMIT = 5
 _CREATE_SERVICE_TEST_NODE_ID = 7
 
 
@@ -98,17 +101,21 @@ class TestInventorySchemaEndpoint:
 class TestInventoryGateway:
     """Tests for inventory CRUD proxy routes under ``/api/apps/inventory/``."""
 
-    def test_list_nodes_unwraps_items(self, test_client, mock_inventory_api_dep):
-        """Ensure GET ``/api/apps/inventory/nodes/`` unwraps paginated ``items`` to a JSON array."""
+    def test_list_nodes_preserves_envelope(self, test_client, mock_inventory_api_dep):
+        """Ensure GET ``/api/apps/inventory/nodes/`` preserves the paginated envelope."""
         mock_inventory_api_dep.get.return_value = {
             "items": [{"id": 1, "name": "n"}],
-            "total": 1,
-            "offset": 0,
-            "limit": 50,
+            "total": _ENVELOPE_TOTAL,
+            "offset": _ENVELOPE_OFFSET,
+            "limit": _ENVELOPE_LIMIT,
         }
         response = test_client.get("/api/apps/inventory/nodes/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == [{"id": 1, "name": "n"}]
+        body = response.json()
+        assert body["items"] == [{"id": 1, "name": "n"}]
+        assert body["total"] == _ENVELOPE_TOTAL
+        assert body["offset"] == _ENVELOPE_OFFSET
+        assert body["limit"] == _ENVELOPE_LIMIT
         mock_inventory_api_dep.get.assert_awaited_once_with("/nodes/", params={})
 
     def test_list_forwards_query_params_to_inventory(
