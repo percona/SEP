@@ -1244,9 +1244,7 @@ export interface paths {
     };
     /**
      * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
+     * @description Return the inventory plugin schema.
      */
     get: operations['inventory_get_schema_api_apps_inventory_schema_get'];
     put?: never;
@@ -2126,6 +2124,58 @@ export interface paths {
      *     :rtype: TaskDetailResponse
      */
     get: operations['task_manager_tasks_api_detail_api_apps_tasks__task_name__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/topology/collect': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Topology Collect
+     * @description Dispatch one or more topology collector tasks. Returns the task ids.
+     *
+     *     Hosts are pulled from the inventory MySQL service list; no inventory
+     *     persistence side effects occur. With ``shards > 1`` the host list is
+     *     split round-robin across the first N executor hosts so geographically
+     *     split inventories run in parallel.
+     */
+    post: operations['topology_topology_collect_api_apps_topology_collect_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/topology/result': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Topology Result
+     * @description Return the merged graph for the supplied task history ids.
+     *
+     *     Status mirrors the underlying tasks: ``running`` while any are pending
+     *     or running, ``failed`` when any task failed and produced no usable
+     *     output, ``ok`` once every task is finished. The React client caches
+     *     the response via TanStack Query (long ``staleTime``) and stops
+     *     polling once status flips to ``ok``, so the server doesn't bother
+     *     with HTTP cache validation here.
+     */
+    get: operations['topology_topology_result_api_apps_topology_result_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -8856,6 +8906,344 @@ export interface components {
       /** Name */
       name: string;
     };
+    /**
+     * ClusterNode
+     * @description A synthetic cluster-group node in the topology graph.
+     */
+    topology__ClusterNode: {
+      data: components['schemas']['topology__ClusterNodeData'];
+      /** Id */
+      id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'cluster';
+    };
+    /**
+     * ClusterNodeData
+     * @description React-Flow ``data`` payload for a synthetic PXC cluster node.
+     */
+    topology__ClusterNodeData: {
+      /** Cluster Name */
+      cluster_name: string;
+      /** Members */
+      members?: string[];
+      /** Size */
+      size?: string | null;
+      /** Status */
+      status?: string | null;
+    };
+    /**
+     * DualPrimaryEdge
+     * @description A dual-primary (mutually replicating) edge.
+     */
+    topology__DualPrimaryEdge: {
+      /** Data */
+      data?: Record<string, never>;
+      /** Id */
+      id: string;
+      /** Source */
+      source: string;
+      /** Target */
+      target: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'dual_primary';
+    };
+    /**
+     * MySQLClusterInfo
+     * @description Percona XtraDB Cluster (wsrep) metadata for a host.
+     */
+    topology__MySQLClusterInfo: {
+      /** Cluster Name */
+      cluster_name: string;
+      /** Cluster Size */
+      cluster_size?: string | null;
+      /** Cluster Status */
+      cluster_status?: string | null;
+      /** Local State Comment */
+      local_state_comment?: string | null;
+    };
+    /**
+     * MySQLNode
+     * @description A MySQL server node in the topology graph.
+     */
+    topology__MySQLNode: {
+      data: components['schemas']['topology__MySQLNodeData'];
+      /** Id */
+      id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'mysql';
+    };
+    /**
+     * MySQLNodeData
+     * @description React-Flow ``data`` payload for a MySQL node.
+     */
+    topology__MySQLNodeData: {
+      /** Address */
+      address?: string | null;
+      cluster?: components['schemas']['topology__MySQLClusterInfo'] | null;
+      /** Error */
+      error?: string | null;
+      /** Gtid Mode */
+      gtid_mode?: string | null;
+      /** Host Entry */
+      host_entry: string;
+      /** Port */
+      port?: number | null;
+      replication?: components['schemas']['topology__MySQLReplicationInfo'] | null;
+      server?: components['schemas']['topology__MySQLServerInfo'] | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'ok' | 'error';
+    };
+    /**
+     * MySQLReplicationInfo
+     * @description Replication source/state for a replica host (``source_uuid`` stripped).
+     */
+    topology__MySQLReplicationInfo: {
+      /** Auto Position */
+      auto_position?: number | null;
+      /** Io Running */
+      io_running?: string | null;
+      /** Repl Filter */
+      repl_filter?: ('yes' | 'none') | null;
+      /** Repl Status */
+      repl_status?: ('ok' | 'err') | null;
+      /** Seconds Behind */
+      seconds_behind?: number | null;
+      /** Source Host */
+      source_host?: string | null;
+      /** Source Port */
+      source_port?: number | null;
+      /** Source Server Id */
+      source_server_id?: number | null;
+      /** Sql Running */
+      sql_running?: string | null;
+    };
+    /**
+     * MySQLServerInfo
+     * @description MySQL server identity/mode collected per host.
+     */
+    topology__MySQLServerInfo: {
+      /** Hostname */
+      hostname?: string | null;
+      /** Log Bin */
+      log_bin?: ('ON' | 'OFF') | null;
+      /** Port */
+      port?: number | null;
+      /** Read Only */
+      read_only?: ('RW' | 'RO' | 'SR') | null;
+      /** Server Hash */
+      server_hash?: string | null;
+      /** Server Id */
+      server_id?: number | null;
+      /** Server Uuid */
+      server_uuid?: string | null;
+      /** Version */
+      version?: string | null;
+    };
+    /**
+     * ReplicationEdge
+     * @description A primary -> replica replication edge.
+     */
+    topology__ReplicationEdge: {
+      data?: components['schemas']['topology__ReplicationEdgeData'] | null;
+      /** Id */
+      id: string;
+      /** Source */
+      source: string;
+      /** Target */
+      target: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'replication';
+    };
+    /**
+     * ReplicationEdgeData
+     * @description React-Flow ``data`` payload for a replication edge.
+     */
+    topology__ReplicationEdgeData: {
+      /** Auto Position */
+      auto_position?: number | null;
+      /** Filter */
+      filter?: string | null;
+      /** Gtid Mode */
+      gtid_mode?: string | null;
+      /** Io Running */
+      io_running?: string | null;
+      /** Seconds Behind */
+      seconds_behind?: number | null;
+      /** Sql Running */
+      sql_running?: string | null;
+      /** Status */
+      status?: ('ok' | 'err') | null;
+    };
+    /**
+     * TopologyCollectResponse
+     * @description Represent the response body for ``POST /collect``.
+     *
+     *     ``task_history_ids`` lists the dispatched ``run-python`` tasks the
+     *     frontend then polls (``/result``) to assemble the topology graph.
+     *     ``targets`` echoes the executor hosts the work was sharded across so
+     *     the UI can surface where the collection ran.
+     *
+     *     :param task_history_ids: Created task history ids, one per shard.
+     *     :type task_history_ids: list[int]
+     *     :param targets: Executor hosts selected for topology collection.
+     *     :type targets: list[str]
+     *     :param host_count: Number of MySQL hosts included in the collection.
+     *     :type host_count: int
+     *     :param shard_count: Number of dispatched topology shards.
+     *     :type shard_count: int
+     */
+    topology__TopologyCollectResponse: {
+      /** Host Count */
+      host_count: number;
+      /** Shard Count */
+      shard_count: number;
+      /** Targets */
+      targets: string[];
+      /** Task History Ids */
+      task_history_ids: number[];
+    };
+    /**
+     * TopologyCollectWrite
+     * @description Describe the request body for ``POST /collect``.
+     *
+     *     :param shards: Number of executor hosts to dispatch in parallel. Hosts
+     *         are split round-robin across the chosen executors. Capped at
+     *         :data:`MAX_TOPOLOGY_SHARDS`.
+     *     :type shards: int
+     *     :param executor_host: Optional explicit executor. Must be used with
+     *         ``shards=1`` because it selects a single-shard run.
+     *     :type executor_host: str | None
+     *     :param connect_timeout: Per-host MySQL TCP connect timeout (seconds).
+     *     :type connect_timeout: int
+     *     :param read_timeout: Per-host MySQL read/write timeout (seconds).
+     *     :type read_timeout: int
+     */
+    topology__TopologyCollectWrite: {
+      /**
+       * Connect Timeout
+       * @default 5
+       */
+      connect_timeout: number;
+      /** Executor Host */
+      executor_host?: string | null;
+      /**
+       * Read Timeout
+       * @default 10
+       */
+      read_timeout: number;
+      /**
+       * Shards
+       * @default 1
+       */
+      shards: number;
+    };
+    /**
+     * TopologyGraph
+     * @description The merged React-Flow ``{nodes, edges, summary}`` graph.
+     */
+    topology__TopologyGraph: {
+      /** Edges */
+      edges?: (
+        | components['schemas']['topology__ReplicationEdge']
+        | components['schemas']['topology__DualPrimaryEdge']
+      )[];
+      /** Nodes */
+      nodes?: (
+        | components['schemas']['topology__MySQLNode']
+        | components['schemas']['topology__ClusterNode']
+        | components['schemas']['topology__UnknownSourceNode']
+      )[];
+      summary: components['schemas']['topology__TopologyGraphSummary'];
+    };
+    /**
+     * TopologyGraphSummary
+     * @description Aggregate counts for the topology graph.
+     */
+    topology__TopologyGraphSummary: {
+      /** Cluster Count */
+      cluster_count: number;
+      /** Edge Count */
+      edge_count: number;
+      /** Error Count */
+      error_count: number;
+      /** Host Count */
+      host_count: number;
+      /** Ok Count */
+      ok_count: number;
+    };
+    /**
+     * TopologyResultResponse
+     * @description Represent the response body for ``GET /result``.
+     *
+     *     ``status`` is ``running`` while any of the underlying tasks is
+     *     still pending, ``ok`` once every task has finished, and ``failed``
+     *     when at least one task failed and produced no usable output.
+     *     ``graph`` is the merged React-Flow graph; ``pending_task_ids``
+     *     lists the still-running tasks for the UI's progress chip, and
+     *     ``failed_task_ids`` lets the UI warn when only some shards failed.
+     *
+     *     :param status: Aggregate topology collection status.
+     *     :type status: Literal["running", "ok", "failed"]
+     *     :param graph: Merged React-Flow graph when collection output is ready.
+     *     :type graph: TopologyGraph | None
+     *     :param pending_task_ids: Task ids still pending or running.
+     *     :type pending_task_ids: list[int]
+     *     :param failed_task_ids: Terminal task ids that did not finish successfully.
+     *     :type failed_task_ids: list[int]
+     */
+    topology__TopologyResultResponse: {
+      /** Failed Task Ids */
+      failed_task_ids?: number[];
+      graph?: components['schemas']['topology__TopologyGraph'] | null;
+      /** Pending Task Ids */
+      pending_task_ids?: number[];
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: 'running' | 'ok' | 'failed';
+    };
+    /**
+     * UnknownSourceNode
+     * @description A synthetic node for a replication source absent from inventory.
+     */
+    topology__UnknownSourceNode: {
+      data: components['schemas']['topology__UnknownSourceNodeData'];
+      /** Id */
+      id: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'unknown_source';
+    };
+    /**
+     * UnknownSourceNodeData
+     * @description React-Flow ``data`` payload for a replication source not in inventory.
+     */
+    topology__UnknownSourceNodeData: {
+      /** Address */
+      address?: string | null;
+      /** Port */
+      port?: number | null;
+      /** Reason */
+      reason?: string | null;
+    };
   };
   responses: never;
   parameters: never;
@@ -12093,6 +12481,71 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['tasks__TaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  topology_topology_collect_api_apps_topology_collect_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['topology__TopologyCollectWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['topology__TopologyCollectResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  topology_topology_result_api_apps_topology_result_get: {
+    parameters: {
+      query: {
+        /** @description Comma-separated task history ids */
+        ids: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['topology__TopologyResultResponse'];
         };
       };
       /** @description Validation Error */

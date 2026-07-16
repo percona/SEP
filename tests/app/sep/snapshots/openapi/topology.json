@@ -1,11 +1,64 @@
 {
   "components": {
     "schemas": {
-      "ClusterNode": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "topology__ClusterNode": {
         "description": "A synthetic cluster-group node in the topology graph.",
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/ClusterNodeData"
+            "$ref": "#/components/schemas/topology__ClusterNodeData"
           },
           "id": {
             "title": "Id",
@@ -28,7 +81,7 @@
         "title": "ClusterNode",
         "type": "object"
       },
-      "ClusterNodeData": {
+      "topology__ClusterNodeData": {
         "description": "React-Flow ``data`` payload for a synthetic PXC cluster node.",
         "properties": {
           "cluster_name": {
@@ -71,7 +124,7 @@
         "title": "ClusterNodeData",
         "type": "object"
       },
-      "DualPrimaryEdge": {
+      "topology__DualPrimaryEdge": {
         "description": "A dual-primary (mutually replicating) edge.",
         "properties": {
           "data": {
@@ -108,20 +161,7 @@
         "title": "DualPrimaryEdge",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "MySQLClusterInfo": {
+      "topology__MySQLClusterInfo": {
         "description": "Percona XtraDB Cluster (wsrep) metadata for a host.",
         "properties": {
           "cluster_name": {
@@ -168,11 +208,11 @@
         "title": "MySQLClusterInfo",
         "type": "object"
       },
-      "MySQLNode": {
+      "topology__MySQLNode": {
         "description": "A MySQL server node in the topology graph.",
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/MySQLNodeData"
+            "$ref": "#/components/schemas/topology__MySQLNodeData"
           },
           "id": {
             "title": "Id",
@@ -195,7 +235,7 @@
         "title": "MySQLNode",
         "type": "object"
       },
-      "MySQLNodeData": {
+      "topology__MySQLNodeData": {
         "description": "React-Flow ``data`` payload for a MySQL node.",
         "properties": {
           "address": {
@@ -212,7 +252,7 @@
           "cluster": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/MySQLClusterInfo"
+                "$ref": "#/components/schemas/topology__MySQLClusterInfo"
               },
               {
                 "type": "null"
@@ -259,7 +299,7 @@
           "replication": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/MySQLReplicationInfo"
+                "$ref": "#/components/schemas/topology__MySQLReplicationInfo"
               },
               {
                 "type": "null"
@@ -269,7 +309,7 @@
           "server": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/MySQLServerInfo"
+                "$ref": "#/components/schemas/topology__MySQLServerInfo"
               },
               {
                 "type": "null"
@@ -292,7 +332,7 @@
         "title": "MySQLNodeData",
         "type": "object"
       },
-      "MySQLReplicationInfo": {
+      "topology__MySQLReplicationInfo": {
         "description": "Replication source/state for a replica host (``source_uuid`` stripped).",
         "properties": {
           "auto_position": {
@@ -406,7 +446,7 @@
         "title": "MySQLReplicationInfo",
         "type": "object"
       },
-      "MySQLServerInfo": {
+      "topology__MySQLServerInfo": {
         "description": "MySQL server identity/mode collected per host.",
         "properties": {
           "hostname": {
@@ -510,13 +550,13 @@
         "title": "MySQLServerInfo",
         "type": "object"
       },
-      "ReplicationEdge": {
+      "topology__ReplicationEdge": {
         "description": "A primary -> replica replication edge.",
         "properties": {
           "data": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ReplicationEdgeData"
+                "$ref": "#/components/schemas/topology__ReplicationEdgeData"
               },
               {
                 "type": "null"
@@ -553,7 +593,7 @@
         "title": "ReplicationEdge",
         "type": "object"
       },
-      "ReplicationEdgeData": {
+      "topology__ReplicationEdgeData": {
         "description": "React-Flow ``data`` payload for a replication edge.",
         "properties": {
           "auto_position": {
@@ -641,7 +681,7 @@
         "title": "ReplicationEdgeData",
         "type": "object"
       },
-      "TopologyCollectResponse": {
+      "topology__TopologyCollectResponse": {
         "description": "Represent the response body for ``POST /collect``.\n\n``task_history_ids`` lists the dispatched ``run-python`` tasks the\nfrontend then polls (``/result``) to assemble the topology graph.\n``targets`` echoes the executor hosts the work was sharded across so\nthe UI can surface where the collection ran.\n\n:param task_history_ids: Created task history ids, one per shard.\n:type task_history_ids: list[int]\n:param targets: Executor hosts selected for topology collection.\n:type targets: list[str]\n:param host_count: Number of MySQL hosts included in the collection.\n:type host_count: int\n:param shard_count: Number of dispatched topology shards.\n:type shard_count: int",
         "properties": {
           "host_count": {
@@ -676,7 +716,7 @@
         "title": "TopologyCollectResponse",
         "type": "object"
       },
-      "TopologyCollectWrite": {
+      "topology__TopologyCollectWrite": {
         "description": "Describe the request body for ``POST /collect``.\n\n:param shards: Number of executor hosts to dispatch in parallel. Hosts\n    are split round-robin across the chosen executors. Capped at\n    :data:`MAX_TOPOLOGY_SHARDS`.\n:type shards: int\n:param executor_host: Optional explicit executor. Must be used with\n    ``shards=1`` because it selects a single-shard run.\n:type executor_host: str | None\n:param connect_timeout: Per-host MySQL TCP connect timeout (seconds).\n:type connect_timeout: int\n:param read_timeout: Per-host MySQL read/write timeout (seconds).\n:type read_timeout: int",
         "properties": {
           "connect_timeout": {
@@ -715,24 +755,24 @@
         "title": "TopologyCollectWrite",
         "type": "object"
       },
-      "TopologyGraph": {
+      "topology__TopologyGraph": {
         "description": "The merged React-Flow ``{nodes, edges, summary}`` graph.",
         "properties": {
           "edges": {
             "items": {
               "discriminator": {
                 "mapping": {
-                  "dual_primary": "#/components/schemas/DualPrimaryEdge",
-                  "replication": "#/components/schemas/ReplicationEdge"
+                  "dual_primary": "#/components/schemas/topology__DualPrimaryEdge",
+                  "replication": "#/components/schemas/topology__ReplicationEdge"
                 },
                 "propertyName": "type"
               },
               "oneOf": [
                 {
-                  "$ref": "#/components/schemas/ReplicationEdge"
+                  "$ref": "#/components/schemas/topology__ReplicationEdge"
                 },
                 {
-                  "$ref": "#/components/schemas/DualPrimaryEdge"
+                  "$ref": "#/components/schemas/topology__DualPrimaryEdge"
                 }
               ]
             },
@@ -743,21 +783,21 @@
             "items": {
               "discriminator": {
                 "mapping": {
-                  "cluster": "#/components/schemas/ClusterNode",
-                  "mysql": "#/components/schemas/MySQLNode",
-                  "unknown_source": "#/components/schemas/UnknownSourceNode"
+                  "cluster": "#/components/schemas/topology__ClusterNode",
+                  "mysql": "#/components/schemas/topology__MySQLNode",
+                  "unknown_source": "#/components/schemas/topology__UnknownSourceNode"
                 },
                 "propertyName": "type"
               },
               "oneOf": [
                 {
-                  "$ref": "#/components/schemas/MySQLNode"
+                  "$ref": "#/components/schemas/topology__MySQLNode"
                 },
                 {
-                  "$ref": "#/components/schemas/ClusterNode"
+                  "$ref": "#/components/schemas/topology__ClusterNode"
                 },
                 {
-                  "$ref": "#/components/schemas/UnknownSourceNode"
+                  "$ref": "#/components/schemas/topology__UnknownSourceNode"
                 }
               ]
             },
@@ -765,7 +805,7 @@
             "type": "array"
           },
           "summary": {
-            "$ref": "#/components/schemas/TopologyGraphSummary"
+            "$ref": "#/components/schemas/topology__TopologyGraphSummary"
           }
         },
         "required": [
@@ -774,7 +814,7 @@
         "title": "TopologyGraph",
         "type": "object"
       },
-      "TopologyGraphSummary": {
+      "topology__TopologyGraphSummary": {
         "description": "Aggregate counts for the topology graph.",
         "properties": {
           "cluster_count": {
@@ -808,7 +848,7 @@
         "title": "TopologyGraphSummary",
         "type": "object"
       },
-      "TopologyResultResponse": {
+      "topology__TopologyResultResponse": {
         "description": "Represent the response body for ``GET /result``.\n\n``status`` is ``running`` while any of the underlying tasks is\nstill pending, ``ok`` once every task has finished, and ``failed``\nwhen at least one task failed and produced no usable output.\n``graph`` is the merged React-Flow graph; ``pending_task_ids``\nlists the still-running tasks for the UI's progress chip, and\n``failed_task_ids`` lets the UI warn when only some shards failed.\n\n:param status: Aggregate topology collection status.\n:type status: Literal[\"running\", \"ok\", \"failed\"]\n:param graph: Merged React-Flow graph when collection output is ready.\n:type graph: TopologyGraph | None\n:param pending_task_ids: Task ids still pending or running.\n:type pending_task_ids: list[int]\n:param failed_task_ids: Terminal task ids that did not finish successfully.\n:type failed_task_ids: list[int]",
         "properties": {
           "failed_task_ids": {
@@ -821,7 +861,7 @@
           "graph": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/TopologyGraph"
+                "$ref": "#/components/schemas/topology__TopologyGraph"
               },
               {
                 "type": "null"
@@ -851,11 +891,11 @@
         "title": "TopologyResultResponse",
         "type": "object"
       },
-      "UnknownSourceNode": {
+      "topology__UnknownSourceNode": {
         "description": "A synthetic node for a replication source absent from inventory.",
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/UnknownSourceNodeData"
+            "$ref": "#/components/schemas/topology__UnknownSourceNodeData"
           },
           "id": {
             "title": "Id",
@@ -878,7 +918,7 @@
         "title": "UnknownSourceNode",
         "type": "object"
       },
-      "UnknownSourceNodeData": {
+      "topology__UnknownSourceNodeData": {
         "description": "React-Flow ``data`` payload for a replication source not in inventory.",
         "properties": {
           "address": {
@@ -917,46 +957,6 @@
         },
         "title": "UnknownSourceNodeData",
         "type": "object"
-      },
-      "ValidationError": {
-        "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError",
-        "type": "object"
       }
     }
   },
@@ -969,7 +969,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TopologyCollectWrite"
+                "$ref": "#/components/schemas/topology__TopologyCollectWrite"
               }
             }
           },
@@ -980,7 +980,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TopologyCollectResponse"
+                  "$ref": "#/components/schemas/topology__TopologyCollectResponse"
                 }
               }
             },
@@ -1025,7 +1025,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TopologyResultResponse"
+                  "$ref": "#/components/schemas/topology__TopologyResultResponse"
                 }
               }
             },
