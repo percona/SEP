@@ -682,7 +682,7 @@
         "type": "object"
       },
       "topology__TopologyCollectResponse": {
-        "description": "Represent the response body for ``POST /collect``.\n\n``task_history_ids`` lists the dispatched ``run-python`` tasks the\nfrontend then polls (``/result``) to assemble the topology graph.\n``targets`` echoes the executor hosts the work was sharded across so\nthe UI can surface where the collection ran.\n\n:param task_history_ids: Created task history ids, one per shard.\n:type task_history_ids: list[int]\n:param targets: Executor hosts selected for topology collection.\n:type targets: list[str]\n:param host_count: Number of MySQL hosts included in the collection.\n:type host_count: int\n:param shard_count: Number of dispatched topology shards.\n:type shard_count: int",
+        "description": "Represent the response body for ``POST /collect``.\n\n``task_history_ids`` lists the dispatched ``run-python`` tasks the\nfrontend then polls (``/result``) to assemble the topology graph.\n``targets`` echoes the executor hosts the work was sharded across so\nthe UI can surface where the collection ran.\n\n:param task_history_ids: Created task history ids, one per shard.\n:param targets: Executor hosts selected for topology collection.\n:param host_count: Number of MySQL hosts included in the collection.\n:param shard_count: Number of dispatched topology shards.",
         "properties": {
           "host_count": {
             "title": "Host Count",
@@ -717,7 +717,7 @@
         "type": "object"
       },
       "topology__TopologyCollectWrite": {
-        "description": "Describe the request body for ``POST /collect``.\n\n:param shards: Number of executor hosts to dispatch in parallel. Hosts\n    are split round-robin across the chosen executors. Capped at\n    :data:`MAX_TOPOLOGY_SHARDS`.\n:type shards: int\n:param executor_host: Optional explicit executor. Must be used with\n    ``shards=1`` because it selects a single-shard run.\n:type executor_host: str | None\n:param connect_timeout: Per-host MySQL TCP connect timeout (seconds).\n:type connect_timeout: int\n:param read_timeout: Per-host MySQL read/write timeout (seconds).\n:type read_timeout: int",
+        "description": "Describe the request body for ``POST /collect``.\n\n:param shards: Number of executor hosts to dispatch in parallel. Hosts\n    are split round-robin across the chosen executors. Capped at\n    :data:`MAX_TOPOLOGY_SHARDS`.\n:param executor_host: Optional explicit executor. Must be used with\n    ``shards=1`` because it selects a single-shard run.\n:param connect_timeout: Per-host MySQL TCP connect timeout (seconds).\n:param read_timeout: Per-host MySQL read/write timeout (seconds).",
         "properties": {
           "connect_timeout": {
             "default": 5,
@@ -849,7 +849,7 @@
         "type": "object"
       },
       "topology__TopologyResultResponse": {
-        "description": "Represent the response body for ``GET /result``.\n\n``status`` is ``running`` while any of the underlying tasks is\nstill pending, ``ok`` once every task has finished, and ``failed``\nwhen at least one task failed and produced no usable output.\n``graph`` is the merged React-Flow graph; ``pending_task_ids``\nlists the still-running tasks for the UI's progress chip, and\n``failed_task_ids`` lets the UI warn when only some shards failed.\n\n:param status: Aggregate topology collection status.\n:type status: Literal[\"running\", \"ok\", \"failed\"]\n:param graph: Merged React-Flow graph when collection output is ready.\n:type graph: TopologyGraph | None\n:param pending_task_ids: Task ids still pending or running.\n:type pending_task_ids: list[int]\n:param failed_task_ids: Terminal task ids that did not finish successfully.\n:type failed_task_ids: list[int]",
+        "description": "Represent the response body for ``GET /result``.\n\n``status`` is ``running`` while any of the underlying tasks is\nstill pending, ``ok`` once every task has finished, and ``failed``\nwhen at least one task failed and produced no usable output.\n``graph`` is the merged React-Flow graph; ``pending_task_ids``\nlists the still-running tasks for the UI's progress chip, and\n``failed_task_ids`` lets the UI warn when only some shards failed.\n\n:param status: Aggregate topology collection status.\n:param graph: Merged React-Flow graph when collection output is ready.\n:param pending_task_ids: Task ids still pending or running.\n:param failed_task_ids: Terminal task ids that did not finish successfully.",
         "properties": {
           "failed_task_ids": {
             "items": {

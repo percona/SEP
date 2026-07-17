@@ -1245,7 +1245,9 @@ export interface paths {
     };
     /**
      * Get Schema
-     * @description Return the inventory plugin schema.
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
      */
     get: operations['inventory_get_schema_api_apps_inventory_schema_get'];
     put?: never;
@@ -9149,13 +9151,9 @@ export interface components {
      *     the UI can surface where the collection ran.
      *
      *     :param task_history_ids: Created task history ids, one per shard.
-     *     :type task_history_ids: list[int]
      *     :param targets: Executor hosts selected for topology collection.
-     *     :type targets: list[str]
      *     :param host_count: Number of MySQL hosts included in the collection.
-     *     :type host_count: int
      *     :param shard_count: Number of dispatched topology shards.
-     *     :type shard_count: int
      */
     topology__TopologyCollectResponse: {
       /** Host Count */
@@ -9174,14 +9172,10 @@ export interface components {
      *     :param shards: Number of executor hosts to dispatch in parallel. Hosts
      *         are split round-robin across the chosen executors. Capped at
      *         :data:`MAX_TOPOLOGY_SHARDS`.
-     *     :type shards: int
      *     :param executor_host: Optional explicit executor. Must be used with
      *         ``shards=1`` because it selects a single-shard run.
-     *     :type executor_host: str | None
      *     :param connect_timeout: Per-host MySQL TCP connect timeout (seconds).
-     *     :type connect_timeout: int
      *     :param read_timeout: Per-host MySQL read/write timeout (seconds).
-     *     :type read_timeout: int
      */
     topology__TopologyCollectWrite: {
       /**
@@ -9248,13 +9242,9 @@ export interface components {
      *     ``failed_task_ids`` lets the UI warn when only some shards failed.
      *
      *     :param status: Aggregate topology collection status.
-     *     :type status: Literal["running", "ok", "failed"]
      *     :param graph: Merged React-Flow graph when collection output is ready.
-     *     :type graph: TopologyGraph | None
      *     :param pending_task_ids: Task ids still pending or running.
-     *     :type pending_task_ids: list[int]
      *     :param failed_task_ids: Terminal task ids that did not finish successfully.
-     *     :type failed_task_ids: list[int]
      */
     topology__TopologyResultResponse: {
       /** Failed Task Ids */
