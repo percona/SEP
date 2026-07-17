@@ -42,6 +42,14 @@
 #     description: Collect Sentinel-related information.
 #     type: bool
 #     arg_format: "-s"
+#   - name: P
+#     label: Sentinel port
+#     description: Port the Sentinel listens on, used by Sentinel mode (-s). Defaults to 26379.
+#     type: int
+#     default: 26379
+#     ge: 1
+#     le: 65535
+#     arg_format: "-P ${value}"
 # ---
 
 ## Globals
@@ -61,6 +69,7 @@ REDISMODE=0
 CLUSTER=0
 SENTINEL=0
 SINGLEMODE=0
+SENTINEL_PORT=26379
 DB_CLI_OPTIONS+=("--json")
 PT_TOOLS=(pt-summary)
 
@@ -85,12 +94,13 @@ function usage {
     -l        Legacy (Redis) mode; Defaults to Valkey mode
     -c        Cluster mode
     -s        Sentinel mode
+    -P int    Port the Sentinel listens on for Sentinel mode (default: 26379)
 
 
 EOF
 }
 
-while getopts hrto:d:i:p:lcs flag; do
+while getopts hrto:d:i:p:lcsP: flag; do
     case ${flag} in
         o)
             IFS=" " read -r -a OPTS <<< "${OPTARG}"
@@ -131,6 +141,9 @@ while getopts hrto:d:i:p:lcs flag; do
         s)
             echo "** Sentinel mode **"
             SENTINEL=1
+            ;;
+        P)
+            SENTINEL_PORT="${OPTARG}"
             ;;
         *)
             usage
@@ -244,10 +257,12 @@ function check_valkey_connection {
 # @param  query
 # @param  new file name
 # @param  append to file
+# @param  name of the CLI options array to connect with (default: DB_CLI_OPTIONS)
 function query_to_file {
     local stat_desc=$1
     local stat_file=$3
     local stat_append=${4:-false}
+    local -n cli_opts="${5:-DB_CLI_OPTIONS}"
 
     # Convert query to array
     IFS=" " read -r -a stat_query <<< "${2}"
@@ -261,7 +276,7 @@ function query_to_file {
     fi
 
     # Exec, append, and strip carriage return
-    "${DBCLI}" "${DB_CLI_OPTIONS[@]}" "${stat_query[@]}" 2> /dev/null | tr -d '\r' >> "${OUT_DIR}"/"${stat_file}"
+    "${DBCLI}" "${cli_opts[@]}" "${stat_query[@]}" 2> /dev/null | tr -d '\r' >> "${OUT_DIR}"/"${stat_file}"
 }
 
 if [[ -z ${DB_CLI_OPTIONS[*]} ]]; then
@@ -279,6 +294,10 @@ else
     DBSERVER=valkey-server
     DBMODE=valkey
 fi
+
+# Sentinel commands answer only on the Sentinel port, so reuse the data-node
+# connection (-o host/auth/TLS) and override the port: the CLI honors the last -p.
+SENTINEL_CLI_OPTIONS=("${DB_CLI_OPTIONS[@]}" -p "${SENTINEL_PORT}")
 
 # check if single instance mode
 if [[ ${CLUSTER} -ne 1 ]] && [[ ${SENTINEL} -ne 1 ]]; then
@@ -601,27 +620,27 @@ if [[ ${SENTINEL} -eq 1 ]]; then
 
     ## sentinel config
     query="SENTINEL CONFIG GET *"
-    query_to_file 'SENTINEL CONFIG' "${query}" "${DBMODE}"_sen_cfg.out
+    query_to_file 'SENTINEL CONFIG' "${query}" "${DBMODE}"_sen_cfg.out false SENTINEL_CLI_OPTIONS
 
     ## sentinel masters
     query="SENTINEL MASTERS"
-    query_to_file 'SENTINEL MASTERS' "${query}" "${DBMODE}"_sen_masters.out
+    query_to_file 'SENTINEL MASTERS' "${query}" "${DBMODE}"_sen_masters.out false SENTINEL_CLI_OPTIONS
 
     ## sentinel primaries
     query="SENTINEL PRIMARIES"
-    query_to_file 'SENTINEL PRIMARIES' "${query}" "${DBMODE}"_sen_primaries.out
+    query_to_file 'SENTINEL PRIMARIES' "${query}" "${DBMODE}"_sen_primaries.out false SENTINEL_CLI_OPTIONS
 
     ## following commands per master
-    readarray -t masters < <("${DBCLI}" "${DB_CLI_OPTIONS[@]}" -3 --raw -p 26379 SENTINEL MASTERS | grep "name" | awk '{print $2}')
+    readarray -t masters < <("${DBCLI}" "${SENTINEL_CLI_OPTIONS[@]}" -3 --raw SENTINEL MASTERS | grep "name" | awk '{print $2}')
     for master in "${masters[@]}"; do
         echo "master: ${master}"
         ## sentinel replicas
         query="SENTINEL REPLICAS ${master}"
-        query_to_file 'SENTINEL REPLICAS' "${query}" "${DBMODE}"_sen_"${master}"_replicas.out
+        query_to_file 'SENTINEL REPLICAS' "${query}" "${DBMODE}"_sen_"${master}"_replicas.out false SENTINEL_CLI_OPTIONS
 
         ## sentinel sentinels
         query="SENTINEL SENTINELS ${master}"
-        query_to_file 'SENTINEL SENTINELS' "${query}" "${DBMODE}"_sen_"${master}"_sentinels.out
+        query_to_file 'SENTINEL SENTINELS' "${query}" "${DBMODE}"_sen_"${master}"_sentinels.out false SENTINEL_CLI_OPTIONS
     done
 fi
 
