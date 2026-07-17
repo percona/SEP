@@ -166,6 +166,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -176,6 +196,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -268,6 +298,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -294,22 +334,43 @@
         "required": [
           "name",
           "owner",
-          "backup_type",
-          "backup_source",
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "backup_source",
+          "anonymized_entities"
         ],
         "title": "RestoreTaskDetailResponse",
         "type": "object"
       },
       "backup_mongo__RestoreTaskResponse": {
-        "description": "Represent a restore task API response.\n\n:param id: The unique identifier for the restore task.\n:type id: int | None\n:param backend: The backend worker/engine executing the task.\n:type backend: TaskBackendEnum\n:param data: The raw configuration and parameters for the restore execution.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:type alert_on_fail: bool\n:param created_at: The timestamp when the task was first created.\n:type created_at: datetime | None\n:param updated_at: The timestamp of the last modification to the task.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a restore task API response.\n\nCarries the shared task fields from :class:`BaseTaskResponse` plus the\nrestore-specific additions from :class:`RestoreTaskBase`.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -321,6 +382,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -406,6 +477,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -432,12 +513,13 @@
         "required": [
           "name",
           "owner",
-          "backup_type",
-          "backup_source",
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "backup_source",
+          "anonymized_entities"
         ],
         "title": "RestoreTaskResponse",
         "type": "object"
@@ -1237,6 +1319,41 @@
         ],
         "title": "ColumnFormat",
         "type": "string"
+      },
+      "framework__ConnectivityWarning": {
+        "description": "Represent a connectivity-check failure on a JSON API task-creation response.\n\n:param target: The Nomad node the task targets.\n:param service_type: The lowercase database service type (e.g. ``mysql``).\n:param message: A human-readable description of the failure.\n:param task_history_id: The run-script task-history id whose log explains\n    the failure, or ``None`` when no task was created (e.g. the Tasks API\n    was unreachable). Optional for backward compatibility with existing\n    plugin consumers.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "service_type": {
+            "title": "Service Type",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "task_history_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task History Id"
+          }
+        },
+        "required": [
+          "target",
+          "service_type",
+          "message"
+        ],
+        "title": "ConnectivityWarning",
+        "type": "object"
       },
       "framework__DateTimeField": {
         "additionalProperties": false,
