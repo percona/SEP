@@ -19,10 +19,11 @@ Each member's value is the icon key emitted on ``GET /api/apps`` and resolved by
 the React shell's ``ICON_BY_KEY`` map to a concrete MUI component. The set is
 closed -- it names the icons the frontend bundles -- so an app definition that
 declares an unknown icon fails Pydantic validation at import. Members name the
-icon, not the app, so apps sharing an icon share a member. The frontend mirrors
-this vocabulary in an ``ICON_BY_KEY`` map; the two copies are kept in sync by
-hand (no codegen), so a member added here needs the matching frontend entry or
-that app silently falls back to the default sidebar icon.
+icon, not the app, so apps sharing an icon share a member. The frontend derives
+its ``ICON_BY_KEY`` map from this vocabulary via codegen
+(``pnpm --filter @sep/shell codegen``), so a member added here needs a codegen
+re-run rather than a hand-edited frontend entry, and a missing map entry is a
+compile error rather than a silent fallback to the default sidebar icon.
 
 This is a leaf module (only ``enum``) deliberately kept outside the
 ``app.sep.apps.framework`` package: ``app.sep.config`` types its ``App.NAV_ICON``

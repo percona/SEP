@@ -30,28 +30,13 @@
 import type { EnabledApp } from '@sep/api';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DnsIcon from '@mui/icons-material/Dns';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import CodeIcon from '@mui/icons-material/Code';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import DescriptionIcon from '@mui/icons-material/Description';
-import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import TableChartIcon from '@mui/icons-material/TableChart';
 import BackupIcon from '@mui/icons-material/Backup';
-import ArchiveIcon from '@mui/icons-material/Archive';
-import BarChartIcon from '@mui/icons-material/BarChart';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
-import SupportAgentIcon from '@mui/icons-material/SupportAgent';
-import ScienceIcon from '@mui/icons-material/Science';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ExtensionIcon from '@mui/icons-material/Extension';
-import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
 import { ROUTES } from '@sep/shared';
-import type { SvgIconComponent } from '@mui/icons-material';
-import type { SvgIconProps } from '@mui/material';
-import type { NavItem } from './contexts/navigation';
-
-export type NavIcon = SvgIconComponent | ((props: SvgIconProps) => React.JSX.Element);
+import { ICON_BY_KEY } from './generated/appNavIcons';
+import type { NavIcon, NavItem } from './contexts/navigation';
 
 /** React routing metadata keyed by backend ``app_key``. */
 export interface AppRouteMeta {
@@ -117,32 +102,6 @@ const NAV_GROUPS: Record<string, { label: string; icon: NavIcon }> = {
 };
 
 const DEFAULT_APP_ICON: NavIcon = ExtensionIcon;
-
-/**
- * Sidebar icon per backend ``nav_icon`` key; falls back to ``DEFAULT_APP_ICON``.
- *
- * Mirrors the backend ``app.sep.apps.nav_icons.NavIcon`` StrEnum, kept in sync
- * by hand. ``appNavConfig.test.ts`` asserts this map matches its own
- * ``NAV_ICON_KEYS`` mirror exactly — catching a key added to one but not the
- * other — but neither half is checked against the backend enum, so a new backend
- * key must still be added here by hand.
- */
-export const ICON_BY_KEY: Record<string, NavIcon> = {
-  assignment: AssignmentIcon,
-  code: CodeIcon,
-  'support-agent': SupportAgentIcon,
-  description: DescriptionIcon,
-  troubleshoot: TroubleshootIcon,
-  'table-chart': TableChartIcon,
-  'check-circle': CheckCircleIcon,
-  mysql: MySqlIcon,
-  mongo: MongoIcon,
-  postgresql: PostgreSqlIcon,
-  archive: ArchiveIcon,
-  science: ScienceIcon,
-  'bar-chart': BarChartIcon,
-  'account-tree': AccountTreeIcon,
-};
 
 /** Always-on non-app destinations, prepended ahead of the derived app tree. */
 const STATIC_NAV_ENTRIES: NavItem[] = [
