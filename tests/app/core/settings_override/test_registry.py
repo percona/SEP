@@ -154,7 +154,10 @@ def test_is_hot_reloadable_false_for_missing_field() -> None:
 
 
 def test_hot_field_names_sep_settings() -> None:
-    """Assert ``SEPSettings`` HOT fields include the endpoint and footer promotions."""
+    """``SEPSettings`` ships the promoted HOT fields plus runtime toggles.
+
+    Includes the endpoint and footer promotions and the ambient-SSO toggle.
+    """
     assert hot_field_names(SEPSettings) == frozenset(
         {
             "CONNECTIVITY_CHECK_DEFAULT",

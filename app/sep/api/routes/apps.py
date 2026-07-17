@@ -53,6 +53,11 @@ class AppKeyResponse(BaseModel):
         always concrete (defaulting to ``/apps/<app_key>``).
     :param nav_icon: The sidebar icon key; ``None`` falls back to the shell's
         default app icon.
+    :param blocking_dependencies: The effective-disabled ``requires_apps`` keys
+        that are the reason this app is effective-disabled. Empty when the app is
+        enabled or disabled by its own state; non-empty only for a
+        dependency-driven disablement, so the shell can name the required app on
+        the disabled splash.
     """
 
     app_key: str
@@ -65,6 +70,7 @@ class AppKeyResponse(BaseModel):
     nav_order: int | None
     react_route: URIPath
     nav_icon: NavIcon | None
+    blocking_dependencies: list[str] = []
 
 
 def build_navigation_react_route(app_key: str, react_route: URIPath | None) -> URIPath:
@@ -112,6 +118,9 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
             nav_order=app.nav_order,
             react_route=build_navigation_react_route(app.key, app.react_route),
             nav_icon=app.nav_icon,
+            blocking_dependencies=list(
+                registry.resolve_blocking_dependencies(app.key, states, memo)
+            ),
         )
         for app in registry
     ]
