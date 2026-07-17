@@ -45,6 +45,7 @@ from app.sep.apps.alters.spec import build_alters_spec
 from app.sep.apps.framework import (
     build_default_task_response,
     ConnectivityWarning,
+    make_parent_resolver,
     make_task_dep,
 )
 from app.sep.apps.framework.api import CascadeCreatePlan
@@ -740,21 +741,7 @@ async def cascade_delete_alters_group(
     )
 
 
-async def resolve_alters_parent_task(task_name: str, tasks_api: TaskAPI) -> Task:
-    """Resolve a parent task, following satellite ``data.parent`` links.
-
-    :param task_name: The requested task name (parent or satellite).
-    :type task_name: str
-    :param tasks_api: The Tasks API client.
-    :type tasks_api: TaskAPI
-    :return: The parent alters task.
-    :rtype: Task
-    """
-    task = await get_alters_task(task_name, tasks_api)
-    parent_name = task.data.get("parent")
-    if parent_name:
-        return await get_alters_task(parent_name, tasks_api)
-    return task
+resolve_alters_parent_task = make_parent_resolver(get_alters_task)
 
 
 async def get_unprotected_alters_task(

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the ``make_task_dep`` task-by-name dependency factory."""
+"""Tests for framework dependency factories in ``deps``."""
 
 from typing import Annotated
 from unittest.mock import AsyncMock
@@ -23,7 +23,7 @@ from fastapi import Depends, FastAPI, status
 from fastapi.testclient import TestClient
 
 from app.core.requests import RemoteAPI
-from app.sep.apps.framework import make_task_dep
+from app.sep.apps.framework import make_parent_resolver, make_task_dep
 from app.sep.deps import get_tasks_api
 from app.tasks.models import Task
 from tests.app.factories import TaskFactory
@@ -76,3 +76,57 @@ class TestMakeTaskDep:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"name": "task-1"}
+
+
+class TestMakeParentResolver:
+    """Test suite for ``make_parent_resolver``."""
+
+    @pytest.mark.asyncio
+    async def test_parent_present_refetches_parent(self) -> None:
+        """Follow ``data["parent"]`` and re-fetch the parent via ``get_task``."""
+        satellite = TaskFactory.build(
+            name="child-1",
+            owner="ARCHIVER",
+            data={"parent": "parent-1"},
+        )
+        parent = TaskFactory.build(name="parent-1", owner="ARCHIVER")
+        get_task = AsyncMock(side_effect=[satellite, parent])
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        resolve = make_parent_resolver(get_task)
+
+        result = await resolve("child-1", tasks_api)
+
+        assert result is parent
+        assert get_task.await_args_list[0].args == ("child-1", tasks_api)
+        assert get_task.await_args_list[1].args == ("parent-1", tasks_api)
+
+    @pytest.mark.asyncio
+    async def test_parent_absent_returns_original(self) -> None:
+        """Return the fetched task unchanged when no parent link is present."""
+        task = TaskFactory.build(name="parent-1", owner="ARCHIVER", data={})
+        get_task = AsyncMock(return_value=task)
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        resolve = make_parent_resolver(get_task)
+
+        result = await resolve("parent-1", tasks_api)
+
+        assert result is task
+        get_task.assert_awaited_once_with("parent-1", tasks_api)
+
+    @pytest.mark.asyncio
+    async def test_parent_name_is_coerced_with_str(self) -> None:
+        """Coerce the followed parent name with ``str(...)`` before re-fetching."""
+        satellite = TaskFactory.build(
+            name="child-1",
+            owner="ARCHIVER",
+            data={"parent": 42},
+        )
+        parent = TaskFactory.build(name="42", owner="ARCHIVER")
+        get_task = AsyncMock(side_effect=[satellite, parent])
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        resolve = make_parent_resolver(get_task)
+
+        result = await resolve("child-1", tasks_api)
+
+        assert result is parent
+        assert get_task.await_args_list[1].args == ("42", tasks_api)
