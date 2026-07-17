@@ -183,7 +183,6 @@ class TaskHistoryStatusEnum(StrEnum):
         """Check if task execution has reached a terminal state.
 
         :return: True if task execution will not transition again.
-        :rtype: bool
         """
         return self.is_finished() or self == TaskHistoryStatusEnum.LOST
 
