@@ -30,6 +30,7 @@ from starlette.status import (
     HTTP_503_SERVICE_UNAVAILABLE,
 )
 
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.clients.pmm import (
     AlertRule,
     AlertTemplate,
@@ -346,6 +347,44 @@ class TestCreateRule:
         )
 
     @pytest.mark.asyncio
+    async def test_create_rule_raises_not_found_on_coded_404(
+        self, mocker, mock_get_version: AsyncMock, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Map PMM's gRPC-gateway coded 404 to HTTPNotFoundException, not a bare one.
+
+        PMM returns ``{"code": 5, "message": ...}`` for a missing template; the
+        ``code`` field must no longer force the bare-``HTTPException`` fallback, so
+        callers can narrow to ``except HTTPNotFoundException``.
+        """
+        mock_get_version.return_value = "3.0.0"
+        mock_response = MagicMock(spec=ClientResponse)
+        mock_response.status = HTTP_404_NOT_FOUND
+        mock_response.json = AsyncMock(
+            return_value={"code": 5, "message": "template not found"}
+        )
+        mock_response.raise_for_status = MagicMock(
+            side_effect=_client_response_error(HTTP_404_NOT_FOUND)
+        )
+
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        with pytest.raises(HTTPNotFoundException) as exc_info:
+            await pmm_remote_api.create_rule(
+                name="High CPU",
+                template_name="missing",
+                folder_uid="folder-1",
+                for_duration="300s",
+                group="infra-alerts",
+            )
+        assert type(exc_info.value) is HTTPNotFoundException
+        assert exc_info.value.detail == "template not found"
+        assert exc_info.value.headers == {"X-Error-Code": "5"}
+
+    @pytest.mark.asyncio
     async def test_create_rule_with_params(
         self,
         mock_request: AsyncMock,
@@ -546,10 +585,10 @@ class TestDeleteRule:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_delete_rule_raises_http_exception_on_error_response(
+    async def test_delete_rule_raises_not_found_on_error_response(
         self, mocker, pmm_remote_api: PMMRemoteAPI
     ) -> None:
-        """Test delete_rule maps an upstream error to ``HTTPException``."""
+        """Test delete_rule maps an upstream 404 to ``HTTPNotFoundException``."""
         error_status = HTTP_404_NOT_FOUND
         mock_response = MagicMock(spec=ClientResponse)
         mock_response.raise_for_status = MagicMock(
@@ -562,9 +601,10 @@ class TestDeleteRule:
 
         mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(HTTPNotFoundException) as exc_info:
             await pmm_remote_api.delete_rule("missing-uid")
 
+        assert type(exc_info.value) is HTTPNotFoundException
         assert exc_info.value.status_code == error_status
 
 
@@ -877,6 +917,29 @@ class TestUpdateContactPoint:
 
         assert exc_info.value.status_code == error_status
 
+    @pytest.mark.asyncio
+    async def test_update_contact_point_raises_not_found_on_404(
+        self,
+        captured_requests: tuple[list[dict], MagicMock],
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test update_contact_point maps an upstream 404 to ``HTTPNotFoundException``."""
+        _captured, mock_response = captured_requests
+        mock_response.raise_for_status = MagicMock(
+            side_effect=_client_response_error(HTTP_404_NOT_FOUND)
+        )
+
+        with pytest.raises(HTTPNotFoundException) as exc_info:
+            await pmm_remote_api.update_contact_point(
+                uid="cp-123",
+                name="Updated Email",
+                type_="email",
+                settings={"addresses": "new@example.com"},
+            )
+
+        assert type(exc_info.value) is HTTPNotFoundException
+        assert exc_info.value.status_code == HTTP_404_NOT_FOUND
+
 
 class TestDeleteContactPoint:
     """Test the delete_contact_point method."""
@@ -927,10 +990,10 @@ class TestDeleteContactPoint:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_delete_contact_point_raises_http_exception_on_error(
+    async def test_delete_contact_point_raises_not_found_on_error(
         self, mocker, pmm_remote_api: PMMRemoteAPI
     ) -> None:
-        """Test delete_contact_point maps an upstream error to ``HTTPException``."""
+        """Test delete_contact_point maps an upstream 404 to ``HTTPNotFoundException``."""
         error_status = HTTP_404_NOT_FOUND
         mock_response = MagicMock(spec=ClientResponse)
         mock_response.raise_for_status = MagicMock(
@@ -943,9 +1006,10 @@ class TestDeleteContactPoint:
 
         mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(HTTPNotFoundException) as exc_info:
             await pmm_remote_api.delete_contact_point("missing-cp")
 
+        assert type(exc_info.value) is HTTPNotFoundException
         assert exc_info.value.status_code == error_status
 
 

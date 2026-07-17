@@ -159,7 +159,8 @@ async def test_request_error(remote_api):
 
     A mapped status (409) still falls back to :class:`fastapi.HTTPException`
     rather than :class:`HTTPConflictException` when the body carries an error
-    code, because only :class:`HTTPGoneException` can carry response headers.
+    code, because only :class:`HTTPGoneException` and :class:`HTTPNotFoundException`
+    can carry response headers.
     """
     conflict_error_msg = "Task with the same name already exists."
     conflict_error_code = "DUP_ERROR"
@@ -252,6 +253,71 @@ async def test_request_410_with_error_code_preserves_headers_as_gone(remote_api)
         assert type(exc_info.value) is HTTPGoneException
         assert exc_info.value.status_code == status.HTTP_410_GONE
         assert exc_info.value.headers == {"X-Error-Code": "TASK_GONE"}
+
+
+@pytest.mark.asyncio
+async def test_request_404_with_error_code_preserves_headers_as_not_found(remote_api):
+    """Map a 404 carrying an error code to HTTPNotFoundException with the header intact.
+
+    PMM's gRPC-gateway 404 returns ``{"code": 5, ...}``; the coded body must still
+    surface as :class:`HTTPNotFoundException` (not a bare HTTPException) so consumers
+    can narrow to ``except HTTPNotFoundException``.
+    """
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"detail": "missing", "code": "NOT_FOUND"}
+    mock_response.status = status.HTTP_404_NOT_FOUND
+    error = ClientResponseError(
+        request_info=None,
+        history=None,
+        status=status.HTTP_404_NOT_FOUND,
+        message="Not Found",
+    )
+    mock_response.raise_for_status = Mock(side_effect=error)
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    with patch.object(remote_api, "_request", return_value=mock_context_manager):
+        with pytest.raises(HTTPNotFoundException) as exc_info:
+            await remote_api.request("GET", "/missing")
+        assert type(exc_info.value) is HTTPNotFoundException
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+        assert exc_info.value.detail == "missing"
+        assert exc_info.value.headers == {"X-Error-Code": "NOT_FOUND"}
+
+
+@pytest.mark.asyncio
+async def test_request_non_json_404_stays_bare_http_exception(remote_api):
+    """Keep a non-JSON (proxy) 404 a bare HTTPException, not HTTPNotFoundException.
+
+    A non-JSON body marks a proxy/gateway failure. It must not surface as
+    :class:`HTTPNotFoundException`, or callers narrowing to
+    ``except HTTPNotFoundException`` (e.g. the inventory selector proxy) would
+    mistake an upstream infra failure for a real resource-absent response and
+    silently swallow it.
+    """
+    mock_response = AsyncMock()
+    mock_response.json = AsyncMock(
+        side_effect=ContentTypeError(
+            request_info=None,
+            history=(),
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    )
+    mock_response.status = status.HTTP_404_NOT_FOUND
+    mock_response.content = b"<html>404 Not Found</html>"
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    with patch.object(remote_api, "_request", return_value=mock_context_manager):
+        with pytest.raises(HTTPException) as exc_info:
+            await remote_api.request("GET", "/proxy-404")
+        assert type(exc_info.value) is HTTPException
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+        assert exc_info.value.headers == {UPSTREAM_NON_JSON_HEADER: "1"}
 
 
 @pytest.mark.asyncio

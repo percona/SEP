@@ -23,7 +23,6 @@ from typing import Any, ClassVar
 
 from aiohttp import ClientResponseError
 from async_lru import _LRUCacheWrapper, alru_cache
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from app.core.requests import RemoteAPI
@@ -34,6 +33,7 @@ from app.core.requests.connectivity import (
     ConnectivityStatusEnum,
     PROBE_TIMEOUT_SECONDS,
 )
+from app.core.requests.remote_api import exception_for_status
 from app.core.utils.dict import remove_falsy_values_from_dict
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import SourceEnum
@@ -646,10 +646,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise HTTPException(
-                    status_code=err.status,
-                    detail=err.message,
-                ) from None
+                raise exception_for_status(err.status, detail=err.message) from None
 
     async def update_rule(
         self,
@@ -781,10 +778,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise HTTPException(
-                    status_code=err.status,
-                    detail=err.message,
-                ) from None
+                raise exception_for_status(err.status, detail=err.message) from None
 
     async def delete_contact_point(self, uid: str) -> None:
         """Delete an alert contact point by its UID.
@@ -803,10 +797,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise HTTPException(
-                    status_code=err.status,
-                    detail=err.message,
-                ) from None
+                raise exception_for_status(err.status, detail=err.message) from None
 
     async def get_notification_policy(self) -> NotificationPolicy:
         """Fetch the current notification policy tree from PMM.

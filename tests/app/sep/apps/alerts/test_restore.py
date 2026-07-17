@@ -22,6 +22,7 @@ import pytest
 from fastapi import status
 from fastapi.exceptions import HTTPException
 
+from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.sep.apps.alerts.models import (
     AlertBackup,
     AlertSeverity,
@@ -197,9 +198,7 @@ class TestRestoreFromBackup:
         mock_api.list_contact_points.return_value = [
             ContactPoint(uid="existing-cp", name="Email", type="email"),
         ]
-        mock_api.update_contact_point.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
-        )
+        mock_api.update_contact_point.side_effect = HTTPNotFoundException("Not Found")
 
         backup = AlertBackup(
             id=1,
@@ -226,12 +225,8 @@ class TestRestoreFromBackup:
         mock_api.list_contact_points.return_value = [
             ContactPoint(uid="existing-cp", name="Email", type="email"),
         ]
-        mock_api.update_contact_point.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
-        )
-        mock_api.delete_contact_point.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
-        )
+        mock_api.update_contact_point.side_effect = HTTPNotFoundException("Not Found")
+        mock_api.delete_contact_point.side_effect = HTTPNotFoundException("Not Found")
 
         backup = AlertBackup(
             id=1,
@@ -388,9 +383,8 @@ class TestRestoreFromBackup:
         ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = []
-        mock_api.create_rule.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Unknown template nonexistent",
+        mock_api.create_rule.side_effect = HTTPNotFoundException(
+            "Unknown template nonexistent"
         )
 
         data = _sample_backup_data()
@@ -418,6 +412,34 @@ class TestRestoreFromBackup:
         assert results["rules_created"] == 0
         assert results["rules_skipped"] == _MISSING_TEMPLATE_RULE_COUNT
         assert mock_api.create_rule.await_count == _MISSING_TEMPLATE_RULE_COUNT
+
+    @pytest.mark.asyncio
+    async def test_rules_non_404_error_propagates(self):
+        """Assert a non-404 create_rule error is not swallowed by the 404 skip path."""
+        mock_api = AsyncMock(spec=PMMRemoteAPI)
+        mock_api.list_rules.return_value = []
+        mock_api.list_folders.return_value = [
+            Folder(uid="f1", title="SEP Alerts", id=1),
+        ]
+        mock_api.template_exists.return_value = True
+        mock_api.list_contact_points.return_value = []
+        mock_api.create_rule.side_effect = HTTPConflictException("Rule already exists")
+
+        data = _sample_backup_data()
+        data["rules"] = [
+            {
+                "uid": "r1",
+                "title": "Conflicting Rule",
+                "labels": {"template_name": "nonexistent"},
+                "for": "5m",
+                "group": "SEP Alerts",
+            },
+        ]
+
+        backup = AlertBackup(id=1, data=data, metadata_={})
+
+        with pytest.raises(HTTPConflictException):
+            await restore_from_backup(mock_api, backup)
 
     @pytest.mark.asyncio
     async def test_api_error_propagates(self):

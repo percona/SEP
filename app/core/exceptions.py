@@ -26,11 +26,19 @@ class HTTPNotFoundException(HTTPException):
 
     :param detail: A message providing additional details about the exception.
         Defaults to "Not Found".
-    :type detail: str
+    :param headers: Optional response headers to preserve (e.g. a PMM
+        ``X-Error-Code``).
     """
 
-    def __init__(self, detail: str = "Not Found") -> None:
-        super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    def __init__(
+        self,
+        detail: str = "Not Found",
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(
+            status_code=status.HTTP_404_NOT_FOUND, detail=detail, headers=headers
+        )
 
 
 class HTTPConflictException(HTTPException):
