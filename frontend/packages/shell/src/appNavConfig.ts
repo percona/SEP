@@ -27,7 +27,7 @@
  * (which also supply custom apps' sidebar ``to``).
  */
 
-import type { EnabledApp } from '@sep/api';
+import type { EnabledApp, SepComponents } from '@sep/api';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DnsIcon from '@mui/icons-material/Dns';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -119,13 +119,12 @@ const DEFAULT_APP_ICON: NavIcon = ExtensionIcon;
 /**
  * Sidebar icon per backend ``nav_icon`` key; falls back to ``DEFAULT_APP_ICON``.
  *
- * Mirrors the backend ``app.sep.apps.nav_icons.NavIcon`` StrEnum, kept in sync
- * by hand. ``appNavConfig.test.ts`` asserts this map matches its own
- * ``NAV_ICON_KEYS`` mirror exactly — catching a key added to one but not the
- * other — but neither half is checked against the backend enum, so a new backend
- * key must still be added here by hand.
+ * Keyed by the generated ``nav_icons__NavIcon`` union (the backend
+ * ``app.sep.apps.nav_icons.NavIcon`` StrEnum, surfaced through the OpenAPI
+ * codegen), so ``tsc`` fails the build on a missing key (TS2741) or an extra key
+ * (TS2353) — the map can no longer silently drift from the backend vocabulary.
  */
-export const ICON_BY_KEY: Record<string, NavIcon> = {
+export const ICON_BY_KEY: Record<SepComponents['schemas']['nav_icons__NavIcon'], NavIcon> = {
   assignment: AssignmentIcon,
   code: CodeIcon,
   'support-agent': SupportAgentIcon,
