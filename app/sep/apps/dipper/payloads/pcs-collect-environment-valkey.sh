@@ -77,7 +77,7 @@ PT_TOOLS=(pt-summary)
 function usage {
     cat << EOF
  Percona Consulting Scripts - v1.3.0
- Usage: $0 [-h] [-o DB arguments] [-d additional string] [-i RDS hostname] [-t] [-r] [-p pid] [-l] [-c] [-s]
+ Usage: $0 [-h] [-o DB arguments] [-d additional string] [-i RDS hostname] [-t] [-r] [-p pid] [-l] [-c] [-s] [-P sentinel port]
 
 
  GLOBAL OPTIONS:
@@ -262,7 +262,9 @@ function query_to_file {
     local stat_desc=$1
     local stat_file=$3
     local stat_append=${4:-false}
-    local -n cli_opts="${5:-DB_CLI_OPTIONS}"
+    # Copy the named options array by indirect expansion (avoids bash 4.3 namerefs).
+    local cli_opts_ref="${5:-DB_CLI_OPTIONS}[@]"
+    local cli_opts=("${!cli_opts_ref}")
 
     # Convert query to array
     IFS=" " read -r -a stat_query <<< "${2}"

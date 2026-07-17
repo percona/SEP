@@ -123,10 +123,10 @@ class TestPcsCollectEnvironmentValkeyParses:
 
 
 def _capable_bash() -> str | None:
-    """Return the path to a bash that supports namerefs (>= 4.3), or None.
+    """Return the path to a bash that supports ``readarray`` (>= 4.0), or None.
 
-    The collector relies on ``local -n`` and ``readarray``; macOS ships bash 3.2,
-    so the behavior test is skipped when no capable interpreter is available.
+    The collector relies on ``readarray``; macOS ships bash 3.2, so the behavior
+    test is skipped when no capable interpreter is available.
     """
     for candidate in ("bash", "/opt/homebrew/bin/bash", "/usr/local/bin/bash"):
         path = shutil.which(candidate) if "/" not in candidate else candidate
@@ -142,7 +142,7 @@ def _capable_bash() -> str | None:
             major, minor = (int(part) for part in probe.stdout.strip().split("."))
         except ValueError:
             continue
-        if (major, minor) >= (4, 3):
+        if (major, minor) >= (4, 0):
             return path
     return None
 
@@ -178,7 +178,7 @@ class TestPcsCollectEnvironmentValkeySentinelRouting:
             mode_args = ("-s", "-P", self.SENTINEL_PORT)
         bash = _capable_bash()
         if bash is None:
-            pytest.skip("no bash >= 4.3 available for nameref support")
+            pytest.skip("no bash >= 4.0 available for readarray support")
 
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
@@ -202,7 +202,7 @@ class TestPcsCollectEnvironmentValkeySentinelRouting:
 
         env = {
             **os.environ,
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
             "CLI_LOG": str(cli_log),
         }
         result = subprocess.run(
