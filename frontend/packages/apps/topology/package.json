@@ -1,5 +1,5 @@
 {
-  "name": "@sep/inventory",
+  "name": "@sep/topology",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,12 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
     "@sep/api": "workspace:*",
-    "@sep/framework": "workspace:*",
-    "cronstrue": "^3.14.0",
-    "notistack": "^3.0.2"
+    "@xyflow/react": "^12.10.2"
   },
   "devDependencies": {
     "@emotion/react": "^11.14.0",

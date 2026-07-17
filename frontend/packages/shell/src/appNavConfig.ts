@@ -85,6 +85,7 @@ export const APP_ROUTE_BY_KEY: Record<string, AppRouteMeta> = {
   alters: defineAppRoute('alters', ROUTES.schemaAlters, ROUTES.schemaAlters),
   backup_mongo: defineAppRoute('backup_mongo', ROUTES.backupsMongodb, ROUTES.backupsMongodb),
   dipper: defineAppRoute('dipper', ROUTES.dipper, ROUTES.dipper),
+  topology: defineAppRoute('topology', ROUTES.topology, ROUTES.topology),
   report: defineAppRoute('report', ROUTES.reports, ROUTES.reports),
 };
 
