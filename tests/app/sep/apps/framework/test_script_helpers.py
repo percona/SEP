@@ -30,17 +30,15 @@ from starlette.requests import Request
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
+from app.sep.apps.dipper.constants import ARTIFACT_TYPE_DIPPER
 from app.sep.apps.framework.script_helpers import (
     build_artifact_download_url,
     build_execution_meta,
     build_script_preview,
     post_task_execution,
 )
-from app.sep.artifact_constants import (
-    ARTIFACT_DOWNLOAD_SALT,
-    ARTIFACT_TYPE_DIPPER,
-    ARTIFACT_TYPE_SNIPPET,
-)
+from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,

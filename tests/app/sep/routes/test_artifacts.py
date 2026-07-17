@@ -15,18 +15,71 @@
 
 """Define tests for the app.sep.routes.artifacts module."""
 
+from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from starlette.status import (
     HTTP_200_OK,
     HTTP_303_SEE_OTHER,
 )
 
 from app.core.security import crypto_timestamp_serializer
+from app.sep.apps.framework.base import BaseApp
+from app.sep.routes.artifacts import collect_base_dirs
 
 
 def _make_token(payload: dict, salt: str = "artifact-download") -> str:
     return crypto_timestamp_serializer.dumps(payload, salt=salt)
+
+
+class TestCollectBaseDirs:
+    """Cover the registry flatten that builds the artifact base-dir map."""
+
+    def test_raises_on_duplicate_artifact_type(self, mocker) -> None:
+        """Raise ``RuntimeError`` naming a type two apps both declare."""
+        first = BaseApp(
+            name="first",
+            uri_path="/first",
+            artifact_base_dirs={"shared": lambda: Path("/tmp/first")},
+        )
+        second = BaseApp(
+            name="second",
+            uri_path="/second",
+            artifact_base_dirs={"shared": lambda: Path("/tmp/second")},
+        )
+        mocker.patch(
+            "app.sep.routes.artifacts.get_app_registry",
+            return_value=[first, second],
+        )
+
+        with pytest.raises(RuntimeError, match="shared"):
+            collect_base_dirs()
+
+    def test_flattens_distinct_artifact_types(self, mocker) -> None:
+        """Merge distinct per-app declarations into one map."""
+        snippet_dir = Path("/tmp/snippets")
+        dipper_dir = Path("/tmp/dipper")
+        first = BaseApp(
+            name="snippets",
+            uri_path="/snippets",
+            artifact_base_dirs={"snippet": lambda: snippet_dir},
+        )
+        second = BaseApp(
+            name="dipper",
+            uri_path="/dipper",
+            artifact_base_dirs={"dipper": lambda: dipper_dir},
+        )
+        mocker.patch(
+            "app.sep.routes.artifacts.get_app_registry",
+            return_value=[first, second],
+        )
+
+        result = collect_base_dirs()
+
+        assert result.keys() == {"snippet", "dipper"}
+        assert result["snippet"]() == snippet_dir
+        assert result["dipper"]() == dipper_dir
 
 
 class TestDownloadArtifact:
@@ -44,7 +97,9 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch("app.sep.routes.artifacts.snippets_settings.SNIPPETS_DIR", tmp_path):
+        with patch(
+            "app.sep.apps.snippets.app.snippets_settings.SNIPPETS_DIR", tmp_path
+        ):
             response = test_client.get(f"/artifacts/download/{token}")
 
         assert response.status_code == HTTP_200_OK
@@ -61,7 +116,7 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch("app.sep.routes.artifacts.DIPPER_PAYLOADS_DIR", tmp_path):
+        with patch("app.sep.apps.dipper.app.DIPPER_PAYLOADS_DIR", tmp_path):
             response = test_client.get(f"/artifacts/download/{token}")
 
         assert response.status_code == HTTP_200_OK
@@ -77,7 +132,7 @@ class TestDownloadArtifact:
 
         with (
             patch("app.sep.routes.artifacts.sep_settings.ARTIFACT_DOWNLOAD_TTL", 0),
-            patch("app.sep.routes.artifacts.snippets_settings.SNIPPETS_DIR", tmp_path),
+            patch("app.sep.apps.snippets.app.snippets_settings.SNIPPETS_DIR", tmp_path),
         ):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
@@ -110,7 +165,9 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch("app.sep.routes.artifacts.snippets_settings.SNIPPETS_DIR", tmp_path):
+        with patch(
+            "app.sep.apps.snippets.app.snippets_settings.SNIPPETS_DIR", tmp_path
+        ):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
             )
@@ -126,7 +183,9 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch("app.sep.routes.artifacts.snippets_settings.SNIPPETS_DIR", tmp_path):
+        with patch(
+            "app.sep.apps.snippets.app.snippets_settings.SNIPPETS_DIR", tmp_path
+        ):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
             )
