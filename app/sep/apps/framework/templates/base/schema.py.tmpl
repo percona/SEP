@@ -24,8 +24,8 @@ from app.sep.apps.framework.schema import (
 
 << name >>_schema = AppSchema(
     name="<< name >>",
-    display_name="<< display_name >>",
-    description="TODO: describe the << display_name >> app.",
+    display_name=<< display_name_repr >>,
+    description=<< schema_description_repr >>,
     forms=[],
     list_view=ListView(
         columns=[Column(key="name", label="Name", sortable=True)],

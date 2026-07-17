@@ -93,7 +93,7 @@ def _build_form_schema(script: << class_prefix >>Script) -> AppSchema:
     ]
     return AppSchema(
         name="<< name >>",
-        display_name="<< display_name >>",
+        display_name=<< display_name_repr >>,
         forms=[FormSection(title="Parameters", fields=fields)],
         list_view=_LIST_VIEW,
     )
@@ -121,7 +121,7 @@ def _list_row(script: << class_prefix >>Script) -> << class_prefix >>ListRow:
 def _static_schema() -> AppSchema:
     """Build the plugin-level schema served at ``GET /schema``."""
     return AppSchema(
-        name="<< name >>", display_name="<< display_name >>", list_view=_LIST_VIEW
+        name="<< name >>", display_name=<< display_name_repr >>, list_view=_LIST_VIEW
     )
 
 

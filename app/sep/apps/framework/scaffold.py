@@ -234,7 +234,7 @@ def validate_name(name: str) -> None:
 
 
 def _derive_display_name(name: str) -> str:
-    """Title-case a module name into a human-facing display label.
+    """Convert a module name into a title-cased display label.
 
     :param name: The validated module name.
     :return: The underscore-split, title-cased display name.
@@ -308,12 +308,14 @@ def _build_context(config: ScaffoldConfig) -> dict[str, str]:
     """
     parts = [part for part in config.name.split("_") if part]
     command = "echo" if config.command is None else config.command
+    schema_description = f"TODO: describe the {config.display_name} app."
     return {
         "name": config.name,
         "class_prefix": "".join(part[:1].upper() + part[1:] for part in parts),
         "display_name": config.display_name,
         "display_name_repr": json.dumps(config.display_name),
         "description_repr": json.dumps(config.description),
+        "schema_description_repr": json.dumps(schema_description),
         "service_type": config.service_type,
         "command": json.dumps(command),
         "derive_update": str(config.derive_update),
@@ -828,7 +830,7 @@ def _resolve_non_interactive(
 
 
 def _prompt_optional(label: str, prompt: type[Prompt]) -> str | None:
-    """Prompt for an optional free-text value; blank input resolves to ``None``.
+    """Resolve an optional free-text value from a prompt; blank input maps to ``None``.
 
     :param label: The prompt label.
     :param prompt: The ``rich`` ``Prompt`` class.
@@ -1038,7 +1040,7 @@ def _collect_run_mode(
 
 
 def _print_preview(console: Console, config: ScaffoldConfig) -> None:
-    """Print the resolved config and a preview of the rendered ``app.py``.
+    """Render the resolved config and a preview of the generated ``app.py`` to the console.
 
     :param console: The ``rich`` ``Console`` used for output.
     :param config: The resolved config to preview.

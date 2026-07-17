@@ -228,6 +228,30 @@ def test_default_render_is_byte_identical(
     )
 
 
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_free_text_display_name_escaped_in_every_rendered_file(
+    tmp_settings: Path, flavor: scaffold.Flavor
+) -> None:
+    """Ensure a quoted display name renders as valid Python in every generated file."""
+    name = f"_scaffold_quote_{flavor.value}"
+    config = _config_from_args(
+        [
+            "--name",
+            name,
+            "--type",
+            flavor.value,
+            "--display-name",
+            'Fast "Cool" Backup',
+            "--no-input",
+        ]
+    )
+    with _scaffolded_config(config) as result:
+        for rendered in result.written:
+            if rendered.suffix == ".py":
+                compile(rendered.read_text(), str(rendered), "exec")
+        importlib.import_module(f"app.sep.apps.{name}")
+
+
 @pytest.mark.parametrize(
     "bad_name", ["My App!", "123app", "", "demo-app", "___", "class", "Demo"]
 )
@@ -612,7 +636,7 @@ def test_nav_icons_mirror_matches_enum() -> None:
 
 
 def test_no_input_without_name_errors() -> None:
-    """Exit non-zero when ``--no-input`` is given without ``--name``."""
+    """Raise ``SystemExit`` when ``--no-input`` is given without ``--name``."""
     with pytest.raises(SystemExit) as exc_info:
         scaffold.main(["--no-input"])
 
@@ -620,7 +644,7 @@ def test_no_input_without_name_errors() -> None:
 
 
 def test_no_input_with_name_scaffolds_defaults(tmp_settings: Path) -> None:
-    """Scaffold with defaults when ``--no-input --name`` is supplied."""
+    """Generate a default scaffold when ``--no-input --name`` is supplied."""
     name = "_scaffold_smoke_noinput"
     try:
         assert scaffold.main(["--no-input", "--name", name, "--type", "task"]) == 0
@@ -730,7 +754,7 @@ def test_run_python_spec_renders_and_copies_payload(
 
 
 def test_run_python_inferred_from_payload(tmp_settings: Path, tmp_path: Path) -> None:
-    """Infer run-python when only ``--payload`` is given (no ``--run-mode``)."""
+    """Resolve run-python when only ``--payload`` is given (no ``--run-mode``)."""
     payload_src = tmp_path / "entrypoint.py"
     payload_src.write_text("print('x')\n")
     config = _config_from_args(
@@ -796,7 +820,7 @@ def test_run_mode_matrix_invalid_combos_exit(argv: list[str]) -> None:
 def test_wizard_prompts_for_flavor_when_type_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Prompt for the flavor when ``--type`` is unset, and let the answer drive gating."""
+    """Collect the flavor from a prompt when ``--type`` is unset; the answer drives gating."""
     stub = _force_wizard(monkeypatch, prompt_answers={"Flavor": "script"})
     parser = scaffold.build_parser()
     config = scaffold.resolve_config(
@@ -898,7 +922,7 @@ def test_wizard_supplied_flag_skips_its_prompt(monkeypatch: pytest.MonkeyPatch) 
 def test_wizard_reprompts_on_invalid_then_clobbering_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Re-prompt the module name until it validates rather than raising later."""
+    """Validate the module name at the prompt, re-prompting until it passes."""
     name_answers = ["Bad-Name!", "_scaffold_wizard_valid"]
     stub = _force_wizard(monkeypatch, prompt_answers={"Module name": name_answers})
     parser = scaffold.build_parser()
