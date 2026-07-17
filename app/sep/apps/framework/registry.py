@@ -154,6 +154,41 @@ class AppRegistry:
             return False
         return self._effective_enabled(app, states, frozenset(), memo)
 
+    def resolve_blocking_dependencies(
+        self,
+        key: str,
+        states: Mapping[str, AppLifecycleEnum],
+        memo: dict[str, bool] | None = None,
+    ) -> tuple[str, ...]:
+        """Return the immediate disabled ``requires_apps`` keys blocking ``key``.
+
+        The result is empty when the app is effective-enabled, when it is disabled
+        by its own ``AppState`` (self-disabled rather than dependency-driven), when
+        it is protected, or when ``key`` is unknown. It is non-empty only when the
+        app's own state is enabled but one or more of its direct ``requires_apps``
+        are effective-disabled -- the concrete reason a dependency-driven
+        disablement should name in the UI. Only the *immediate* blocking
+        dependency is reported: a dependency that is itself off because of a deeper
+        transitive dependency is still listed as the immediate blocker.
+
+        :param key: The registry key of the app to resolve.
+        :param states: A ``{state_key: lifecycle}`` map (e.g. from
+            :meth:`AppStateManager.all_lifecycle_states`).
+        :param memo: An optional ``{key: bool}`` cache shared with
+            :meth:`resolve_effective_enabled` across a full-registry projection.
+        :return: The disabled direct-dependency keys, in declaration order.
+        """
+        app = self._by_key.get(key)
+        if app is None or app.state_key in PROTECTED_APP_KEYS:
+            return ()
+        if not self._own_enabled(app, states):
+            return ()
+        return tuple(
+            dep_key
+            for dep_key in app.requires_apps
+            if not self.resolve_effective_enabled(dep_key, states, memo)
+        )
+
     def _effective_enabled(
         self,
         app: BaseApp,

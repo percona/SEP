@@ -1058,6 +1058,172 @@ class TestEffectiveEnabled:
         assert registry.resolve_effective_enabled("b", states, memo) is False
 
 
+class TestResolveBlockingDependencies:
+    """Cover reporting of the immediate disabled ``requires_apps`` blocker(s)."""
+
+    def test_empty_when_effective_enabled(self) -> None:
+        """Report no blocker when the app and its dependency are enabled."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        assert registry.resolve_blocking_dependencies("a", {}) == ()
+
+    def test_empty_when_self_disabled(self) -> None:
+        """Report no blocker when the app is disabled by its own state.
+
+        A self-disabled app keeps the generic splash, so the blocker list is empty
+        even when a dependency also happens to be off -- own-state disablement
+        takes precedence over dependency-driven disablement.
+        """
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        states = {
+            "a": AppLifecycleEnum.DISABLED,
+            "b": AppLifecycleEnum.DISABLED,
+        }
+        assert registry.resolve_blocking_dependencies("a", states) == ()
+
+    def test_reports_disabled_dependency(self) -> None:
+        """Name the disabled dependency when own state is enabled but a dep is off."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        states = {"b": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_blocking_dependencies("a", states) == ("b",)
+
+    def test_reports_only_disabled_of_several_deps(self) -> None:
+        """List only the disabled dependencies, preserving declaration order."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("b", "c", "d")),
+                _dep_app("b"),
+                _dep_app("c"),
+                _dep_app("d"),
+            ]
+        )
+        states = {
+            "d": AppLifecycleEnum.DISABLED,
+            "b": AppLifecycleEnum.DISABLED,
+        }
+        assert registry.resolve_blocking_dependencies("a", states) == ("b", "d")
+
+    def test_reports_immediate_dependency_for_transitive_disable(self) -> None:
+        """Name the immediate dependency, not the deep transitive cause.
+
+        ``a -> b -> c`` with ``c`` off: ``a``'s blocker is ``b`` (its immediate
+        effective-disabled dependency), while ``b``'s blocker is ``c``.
+        """
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("b",)),
+                _dep_app("b", requires_apps=("c",)),
+                _dep_app("c"),
+            ]
+        )
+        states = {"c": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_blocking_dependencies("a", states) == ("b",)
+        assert registry.resolve_blocking_dependencies("b", states) == ("c",)
+
+    def test_protected_dependency_is_never_a_blocker(self) -> None:
+        """Never list a protected dependency, even when its row says disabled."""
+        registry = AppRegistry(
+            [_dep_app("a", requires_apps=("inventory",)), _dep_app("inventory")]
+        )
+        states = {"inventory": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_blocking_dependencies("a", states) == ()
+
+    def test_protected_app_reports_no_blocker(self) -> None:
+        """Report no blocker for a protected app itself (never disabled)."""
+        registry = AppRegistry(
+            [_dep_app("inventory", requires_apps=("b",)), _dep_app("b")]
+        )
+        states = {"b": AppLifecycleEnum.DISABLED}
+        assert registry.resolve_blocking_dependencies("inventory", states) == ()
+
+    def test_unknown_key_reports_no_blocker(self) -> None:
+        """Report no blocker for an unregistered key rather than raising."""
+        registry = AppRegistry([_dep_app("a")])
+        assert registry.resolve_blocking_dependencies("ghost", {}) == ()
+
+    def test_shares_memo_with_effective_resolver(self) -> None:
+        """Reuse a shared memo across effective-enabled and blocker resolution."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("shared",)),
+                _dep_app("shared"),
+            ]
+        )
+        states = {"shared": AppLifecycleEnum.DISABLED}
+        memo: dict[str, bool] = {}
+        assert registry.resolve_effective_enabled("a", states, memo) is False
+        assert registry.resolve_blocking_dependencies("a", states, memo) == ("shared",)
+        assert memo["shared"] is False
+
+    def test_reports_every_dependency_when_all_disabled(self) -> None:
+        """List the full dependency tuple, in declaration order, when all are off."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("b", "c", "d")),
+                _dep_app("b"),
+                _dep_app("c"),
+                _dep_app("d"),
+            ]
+        )
+        states = {
+            "b": AppLifecycleEnum.DISABLED,
+            "c": AppLifecycleEnum.DISABLED,
+            "d": AppLifecycleEnum.DISABLED,
+        }
+        assert registry.resolve_blocking_dependencies("a", states) == ("b", "c", "d")
+
+    def test_empty_when_own_enabled_without_dependencies(self) -> None:
+        """Report no blocker for an enabled app that declares no dependencies."""
+        registry = AppRegistry([_dep_app("a")])
+        assert registry.resolve_blocking_dependencies("a", {}) == ()
+
+    @pytest.mark.parametrize(
+        "state",
+        [AppLifecycleEnum.DISABLING, AppLifecycleEnum.ENABLING],
+    )
+    def test_reports_dependency_in_transitional_state(
+        self, state: AppLifecycleEnum
+    ) -> None:
+        """Name a dependency stuck mid-transition, since only ENABLED counts as on."""
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        assert registry.resolve_blocking_dependencies("a", {"b": state}) == ("b",)
+
+    def test_shares_memo_across_sibling_dependencies_in_one_call(self) -> None:
+        """Resolve a shared sub-dependency once when two blockers both require it.
+
+        ``a`` requires ``b`` and ``c``, both of which require a disabled ``shared``.
+        Within a single call the generator resolves ``b`` and ``c`` in turn; the
+        threaded memo caches ``shared`` so it is walked once, and both siblings are
+        reported as immediate blockers.
+        """
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("b", "c")),
+                _dep_app("b", requires_apps=("shared",)),
+                _dep_app("c", requires_apps=("shared",)),
+                _dep_app("shared"),
+            ]
+        )
+        states = {"shared": AppLifecycleEnum.DISABLED}
+        memo: dict[str, bool] = {}
+        assert registry.resolve_blocking_dependencies("a", states, memo) == ("b", "c")
+        assert memo["shared"] is False
+
+    def test_follows_declaration_order_not_registration_order(self) -> None:
+        """Order blockers by ``requires_apps`` declaration, not registration order."""
+        registry = AppRegistry(
+            [
+                _dep_app("a", requires_apps=("c", "b")),
+                _dep_app("b"),
+                _dep_app("c"),
+            ]
+        )
+        states = {
+            "b": AppLifecycleEnum.DISABLED,
+            "c": AppLifecycleEnum.DISABLED,
+        }
+        assert registry.resolve_blocking_dependencies("a", states) == ("c", "b")
+
+
 class TestChildApps:
     """Cover ``child_apps`` structural registration in ``build_app_registry``."""
 
