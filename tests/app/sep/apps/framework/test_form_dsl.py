@@ -525,6 +525,33 @@ class _MultiRefValueModel(AppFormModel):
     ] = Field(default_factory=list)
 
 
+class _HostCascadeModel(AppFormModel):
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+        Ui(label="Service", section="s"),
+    ]
+    hostname: Annotated[
+        str,
+        HostRef(),
+        Ui(label="Host", section="s", depends_on="service_id"),
+    ]
+    plain_host: Annotated[str, HostRef(), Ui(label="Plain Host", section="s")]
+
+
+class _MultiHostCascadeModel(AppFormModel):
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+        Ui(label="Service", section="s"),
+    ]
+    hosts: Annotated[
+        list[str],
+        HostRef(multiple=True),
+        Ui(label="Hosts", section="s", depends_on="service_id"),
+    ] = Field(default_factory=list)
+
+
 class TestReferenceFields:
     """Cover ref markers driving the schema field class and their extras."""
 
@@ -538,6 +565,23 @@ class TestReferenceFields:
         assert isinstance(fields["table_id"], TableField)
         assert fields["table_id"].depends_on == "schema_id"
         assert isinstance(fields["hostname"], HostField)
+        assert fields["hostname"].depends_on is None
+
+    def test_host_ref_depends_on_emitted_when_set(self) -> None:
+        """Emit ``depends_on`` on a HostField when ``Ui(depends_on=...)`` is set."""
+        fields = _fields_by_name(_HostCascadeModel)
+        assert isinstance(fields["hostname"], HostField)
+        assert fields["hostname"].depends_on == "service_id"
+        assert "depends_on" not in fields["plain_host"].model_dump(exclude_none=True)
+        assert fields["hostname"].model_dump(exclude_none=True)["depends_on"] == (
+            "service_id"
+        )
+
+    def test_multi_host_ref_depends_on_emitted_when_set(self) -> None:
+        """Emit ``depends_on`` on a MultiHostField when ``Ui(depends_on=...)`` is set."""
+        fields = _fields_by_name(_MultiHostCascadeModel)
+        assert isinstance(fields["hosts"], MultiHostField)
+        assert fields["hosts"].depends_on == "service_id"
 
     def test_allow_custom_emitted_only_when_true(self) -> None:
         """Emit ``allow_custom`` only when the ref opts in."""

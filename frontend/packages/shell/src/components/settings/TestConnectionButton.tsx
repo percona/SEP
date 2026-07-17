@@ -15,6 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { useRef } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -126,15 +127,33 @@ function ConnectivityResults({ results }: { results: ConnectivityResult[] }) {
  */
 export default function TestConnectionButton() {
   const check = useConnectivityCheck();
+  // Sync guard: `disabled` alone is not enough under synthetic clicks
+  // (user-event can bypass pointer-events) or a double-click before re-render.
+  const inFlightRef = useRef(false);
 
   const showPanel = check.isError || check.isSuccess;
+
+  const runCheck = () => {
+    if (inFlightRef.current || check.isPending) {
+      return;
+    }
+    inFlightRef.current = true;
+    check.mutate(
+      { targets: ALL_TARGETS },
+      {
+        onSettled: () => {
+          inFlightRef.current = false;
+        },
+      },
+    );
+  };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
       <Button
         variant="outlined"
         startIcon={<NetworkCheckIcon />}
-        onClick={() => check.mutate({ targets: ALL_TARGETS })}
+        onClick={runCheck}
         disabled={check.isPending}
       >
         {check.isPending ? 'Testing…' : 'Test connection'}
