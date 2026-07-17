@@ -13,20 +13,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Build the run-command spec for the << display_name >> app."""
+"""Build the run-command spec for the Golden Task app."""
 
 import shlex
 
-from app.sep.apps.<< name >>.models import << class_prefix >>Form
 from app.sep.apps.framework.spec import (
     build_command_args,
     ResolvedEntities,
     RunCommandSpec,
 )
+from app.sep.apps.golden_task.models import GoldenTaskForm
 
 
-def build_<< name >>_spec(
-    form: << class_prefix >>Form, resolved: ResolvedEntities
+def build_golden_task_spec(
+    form: GoldenTaskForm, resolved: ResolvedEntities
 ) -> RunCommandSpec:
     """Build the run-command spec from the validated form and resolved entities.
 
@@ -44,7 +44,7 @@ def build_<< name >>_spec(
     """
     service = resolved.service
     return RunCommandSpec(
-        command=<< command >>,
+        command="echo",
         args=shlex.join(build_command_args(form)),
         extra_meta={
             "_service_host": service.node.address,

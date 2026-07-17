@@ -13,22 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Wire the << display_name >> plugin as a script-backed ``TaskExecutionApp``.
+"""Wire the Golden Script plugin as a script-backed ``TaskExecutionApp``.
 
 A script-flavored app derives its surface from the ``script_source`` seam: the
 listing, the per-script ``GET /snippet/schema``, the ``POST /snippet/execute``
 delegation, and ``GET /snippet/history``. It declares no model-first CRUD.
 """
 
-from app.sep.apps.<< name >>.source import << name >>_source
 from app.sep.apps.framework.apps import TaskExecutionApp
-<< nav_icon_import_line >>from app.tasks.models import ANY_OWNER
+from app.sep.apps.golden_script.source import golden_script_source
+from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(
-    name="<< name >>",
-    display_name=<< display_name_repr >>,
-    uri_path="/<< name >>",
-    description=<< description_repr >>,
+    name="golden_script",
+    display_name="Golden Script",
+    uri_path="/golden_script",
+    description="TODO: describe what the Golden Script scripts do.",
     owner=ANY_OWNER,
-    script_source=<< name >>_source,
-<< group_line >><< nav_icon_kwarg_line >>)
+    script_source=golden_script_source,
+)

@@ -13,23 +13,23 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Wire the << display_name >> plugin as a declarative API-first ``BaseApp``.
+"""Wire the Golden Base plugin as a declarative API-first ``BaseApp``.
 
 The registry mounts the exported ``app``'s ``api_router`` under
-``/api/apps/<< name >>`` and serves its ``schema``. ``custom_ui=True`` marks
+``/api/apps/golden_base`` and serves its ``schema``. ``custom_ui=True`` marks
 that the app ships a bespoke React UI rather than the schema-driven one.
 """
 
-from app.sep.apps.<< name >>.api_routes import router as api_router
-from app.sep.apps.<< name >>.schema import << name >>_schema
 from app.sep.apps.framework.base import BaseApp
-<< nav_icon_import_line >>
+from app.sep.apps.golden_base.api_routes import router as api_router
+from app.sep.apps.golden_base.schema import golden_base_schema
+
 app = BaseApp(
-    name="<< name >>",
-    display_name=<< display_name_repr >>,
-    uri_path="/<< name >>",
-    css_class="<< name >>",
+    name="golden_base",
+    display_name="Golden Base",
+    uri_path="/golden_base",
+    css_class="golden_base",
     api_router=api_router,
-    schema=<< name >>_schema,
+    schema=golden_base_schema,
     custom_ui=True,
-<< group_line >><< nav_icon_kwarg_line >>)
+)
