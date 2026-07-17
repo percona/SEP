@@ -410,6 +410,8 @@ def render_app(config: ScaffoldConfig) -> list[Path]:
 
     :param config: The resolved scaffold config.
     :return: The written file paths, in render order.
+    :raises ValueError: Propagates from :func:`_render` when a template references
+        an unknown placeholder.
     """
     template_root = _TEMPLATES_DIR / config.flavor
     context = _build_context(config)
@@ -577,6 +579,8 @@ def write_settings_entry(name: str, *, enabled: bool = False) -> bool:
     :param name: The module name to register.
     :param enabled: Whether to write the entry enabled. Defaults to ``False``.
     :return: Whether the file was modified.
+    :raises ValueError: Propagates from :func:`insert_app_entry` when
+        ``settings.yaml`` has no default ``SEP.APPS`` block.
     """
     new_text, changed = insert_app_entry(
         SETTINGS_FILE.read_text(), name, enabled=enabled
@@ -625,7 +629,8 @@ def scaffold_app(config: ScaffoldConfig) -> ScaffoldResult:
 
     :param config: The resolved scaffold config.
     :return: The scaffold outcome for the caller's summary.
-    :raises ValueError: When the name is invalid.
+    :raises ValueError: When the name is invalid, or ``settings.yaml`` has no
+        default ``SEP.APPS`` block to register into.
     :raises FileExistsError: When the app or test package directory holds a real
         plugin.
     :raises FileNotFoundError: When a run-python payload path does not point at a
@@ -1088,6 +1093,8 @@ def _print_preview(console: Console, config: ScaffoldConfig) -> None:
 
     :param console: The ``rich`` ``Console`` used for output.
     :param config: The resolved config to preview.
+    :raises ValueError: Propagates from :func:`_render` when ``app.py.tmpl``
+        references an unknown placeholder.
     """
     template = _TEMPLATES_DIR / config.flavor / "app.py.tmpl"
     preview = _render(template.read_text(), _build_context(config), template)
@@ -1137,7 +1144,7 @@ def _print_summary(result: ScaffoldResult) -> None:
     if result.payload_written is not None:
         payload_note = f"  payload: {result.payload_written}\n"
     sys.stdout.write(
-        f"Scaffolded {result.flavor!r} app {result.name!r}:\n"
+        f"Scaffolded {result.flavor.value!r} app {result.name!r}:\n"
         f"  app:   {result.app_dir}\n"
         f"  tests: {result.tests_dir}\n"
         f"{payload_note}"
