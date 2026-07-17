@@ -41,10 +41,12 @@ import argparse
 import importlib
 import json
 import keyword
+import os
 import re
 import shutil
 import subprocess  # nosec B404
 import sys
+import tempfile
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -292,14 +294,32 @@ def _nav_icon_kwarg_line(nav_icon: str | None) -> str:
     return f"    nav_icon=NavIcon.{nav_icon},\n"
 
 
+def _docstring_safe(value: str) -> str:
+    r"""Escape a free-text value for verbatim inclusion inside a Python docstring.
+
+    Unlike the ``*_repr`` placeholders (which wrap a value in a full
+    :func:`json.dumps` string literal), the raw ``display_name`` is interpolated
+    into the *interior* of triple-quoted docstrings across the templates. There an
+    unescaped backslash starts an escape sequence (``\x`` / ``\u`` raise
+    ``SyntaxError``) and a ``"``-run can terminate the docstring early, so a
+    free-text display name could render syntactically invalid Python. Doubling
+    backslashes and escaping double quotes keeps the interior a valid string body.
+
+    :param value: The free-text value.
+    :return: The value with backslashes doubled and double quotes escaped.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _build_context(config: ScaffoldConfig) -> dict[str, str]:
     """Derive the template variables from a resolved config.
 
     Free-text values that land inside a Python string literal
     (``display_name``, ``description``, ``command``) render via :func:`json.dumps`
-    so embedded quotes/backslashes escape safely; the optional ``group`` /
-    ``nav_icon`` lines render as complete-line-or-empty composites so an omitted
-    value collapses the whole line, import included.
+    so embedded quotes/backslashes escape safely; ``display_name_doc`` covers the
+    docstring-interior positions via :func:`_docstring_safe`; the optional
+    ``group`` / ``nav_icon`` lines render as complete-line-or-empty composites so an
+    omitted value collapses the whole line, import included.
 
     :param config: The resolved scaffold config.
     :return: The ``<< var >>`` substitution mapping for the flavor's templates. A
@@ -313,6 +333,7 @@ def _build_context(config: ScaffoldConfig) -> dict[str, str]:
         "name": config.name,
         "class_prefix": "".join(part[:1].upper() + part[1:] for part in parts),
         "display_name": config.display_name,
+        "display_name_doc": _docstring_safe(config.display_name),
         "display_name_repr": json.dumps(config.display_name),
         "description_repr": json.dumps(config.description),
         "schema_description_repr": json.dumps(schema_description),
@@ -527,6 +548,29 @@ def insert_app_entry(
     return "".join(lines[:end] + [entry] + lines[end:]), True
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    """Replace ``path``'s contents with ``text`` via a same-directory temp swap.
+
+    A plain :meth:`Path.write_text` truncates the target before writing, so a
+    concurrent reader (e.g. a parallel ``pytest-xdist`` worker copying the shared
+    ``settings.yaml``) can observe a torn, partially-written file. Writing to a
+    sibling temp file and :func:`os.replace`-ing it in is atomic on POSIX, so every
+    reader sees either the whole old file or the whole new one — and a crash mid-run
+    leaves the original intact.
+
+    :param path: The file to overwrite.
+    :param text: The new contents.
+    """
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(text)
+        Path(tmp).replace(path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
 def write_settings_entry(name: str, *, enabled: bool = False) -> bool:
     """Register ``name`` in ``settings.yaml`` idempotently.
 
@@ -538,7 +582,7 @@ def write_settings_entry(name: str, *, enabled: bool = False) -> bool:
         SETTINGS_FILE.read_text(), name, enabled=enabled
     )
     if changed:
-        SETTINGS_FILE.write_text(new_text)
+        _atomic_write(SETTINGS_FILE, new_text)
     return changed
 
 

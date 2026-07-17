@@ -232,7 +232,13 @@ def test_default_render_is_byte_identical(
 def test_free_text_display_name_escaped_in_every_rendered_file(
     tmp_settings: Path, flavor: scaffold.Flavor
 ) -> None:
-    """Ensure a quoted display name renders as valid Python in every generated file."""
+    """Ensure a hostile display name renders as valid Python in every generated file.
+
+    The chosen display name carries the exact sequences that break an unescaped
+    docstring interior: a triple-quote run (which would close the docstring early)
+    and bare backslash-x / backslash-u escapes (which raise SyntaxError outside a
+    raw string literal).
+    """
     name = f"_scaffold_quote_{flavor.value}"
     config = _config_from_args(
         [
@@ -241,7 +247,7 @@ def test_free_text_display_name_escaped_in_every_rendered_file(
             "--type",
             flavor.value,
             "--display-name",
-            'Fast "Cool" Backup',
+            r'Fast """ \x \u "Cool" \ Backup',
             "--no-input",
         ]
     )
@@ -1000,5 +1006,5 @@ def test_makefile_forwards_quoted_values() -> None:
         assert "description=" in rendered
         assert description in rendered
     finally:
-        scaffold.SETTINGS_FILE.write_text(settings_backup)
+        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
