@@ -44,14 +44,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Body,
-    Request,
-    Response,
-    status,
-)
+from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import (
@@ -85,20 +78,15 @@ from app.sep.apps.inventory.models import (
 from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.inventory.sync import run_inventory_sync
 from app.sep.crud import SyncItemManager
-from app.sep.deps import (
-    InventoryAPI,
-    SessionDep,
-)
+from app.sep.deps import InventoryAPI, SessionDep
 from app.sep.models import SyncInventoryEntityTypeEnum
 
 router = APIRouter()
+schema_endpoint(router=router, plugin_schema=inventory_schema)
 
 # Module-level singleton avoids the B008 lint warning about function calls in
 # argument defaults; the optional-body semantics are unchanged.
 _OPTIONAL_TRIGGER_BODY = Body(default=None)
-
-
-schema_endpoint(router=router, plugin_schema=inventory_schema)
 
 
 @router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
