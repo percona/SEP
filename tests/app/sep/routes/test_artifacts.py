@@ -19,17 +19,18 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from starlette.status import (
+from fastapi.status import (
     HTTP_200_OK,
     HTTP_303_SEE_OTHER,
 )
 
 from app.core.security import crypto_timestamp_serializer
 from app.sep.apps.framework.base import BaseApp
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.routes.artifacts import collect_base_dirs
 
 
-def _make_token(payload: dict, salt: str = "artifact-download") -> str:
+def _make_token(payload: dict, salt: str = ARTIFACT_DOWNLOAD_SALT) -> str:
     return crypto_timestamp_serializer.dumps(payload, salt=salt)
 
 
