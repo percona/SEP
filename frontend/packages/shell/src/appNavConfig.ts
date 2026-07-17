@@ -27,30 +27,16 @@
  * (which also supply custom apps' sidebar ``to``).
  */
 
-import type { EnabledApp, SepComponents } from '@sep/api';
+import type { EnabledApp } from '@sep/api';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DnsIcon from '@mui/icons-material/Dns';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import CodeIcon from '@mui/icons-material/Code';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import DescriptionIcon from '@mui/icons-material/Description';
-import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import TableChartIcon from '@mui/icons-material/TableChart';
 import BackupIcon from '@mui/icons-material/Backup';
-import ArchiveIcon from '@mui/icons-material/Archive';
-import BarChartIcon from '@mui/icons-material/BarChart';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
-import SupportAgentIcon from '@mui/icons-material/SupportAgent';
-import ScienceIcon from '@mui/icons-material/Science';
 import ExtensionIcon from '@mui/icons-material/Extension';
-import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
 import { ROUTES } from '@sep/shared';
-import type { SvgIconComponent } from '@mui/icons-material';
-import type { SvgIconProps } from '@mui/material';
-import type { NavItem } from './contexts/navigation';
-
-export type NavIcon = SvgIconComponent | ((props: SvgIconProps) => React.JSX.Element);
+import { ICON_BY_KEY } from './generated/appNavIcons';
+import type { NavIcon, NavItem } from './contexts/navigation';
 
 /** React routing metadata keyed by backend ``app_key``. */
 export interface AppRouteMeta {
@@ -115,30 +101,6 @@ const NAV_GROUPS: Record<string, { label: string; icon: NavIcon }> = {
 };
 
 const DEFAULT_APP_ICON: NavIcon = ExtensionIcon;
-
-/**
- * Sidebar icon per backend ``nav_icon`` key; falls back to ``DEFAULT_APP_ICON``.
- *
- * Keyed by the generated ``nav_icons__NavIcon`` union (the backend
- * ``app.sep.apps.nav_icons.NavIcon`` StrEnum, surfaced through the OpenAPI
- * codegen), so ``tsc`` fails the build on a missing key (TS2741) or an extra key
- * (TS2353) — the map can no longer silently drift from the backend vocabulary.
- */
-export const ICON_BY_KEY: Record<SepComponents['schemas']['nav_icons__NavIcon'], NavIcon> = {
-  assignment: AssignmentIcon,
-  code: CodeIcon,
-  'support-agent': SupportAgentIcon,
-  description: DescriptionIcon,
-  troubleshoot: TroubleshootIcon,
-  'table-chart': TableChartIcon,
-  'check-circle': CheckCircleIcon,
-  mysql: MySqlIcon,
-  mongo: MongoIcon,
-  postgresql: PostgreSqlIcon,
-  archive: ArchiveIcon,
-  science: ScienceIcon,
-  'bar-chart': BarChartIcon,
-};
 
 /** Always-on non-app destinations, prepended ahead of the derived app tree. */
 const STATIC_NAV_ENTRIES: NavItem[] = [
