@@ -295,7 +295,7 @@ def _nav_icon_kwarg_line(nav_icon: str | None) -> str:
 
 
 def _docstring_safe(value: str) -> str:
-    r"""Escape a free-text value for verbatim inclusion inside a Python docstring.
+    r"""Return a free-text value made safe for verbatim inclusion in a docstring.
 
     Unlike the ``*_repr`` placeholders (which wrap a value in a full
     :func:`json.dumps` string literal), the raw ``display_name`` is interpolated
