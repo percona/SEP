@@ -17,6 +17,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../client';
+import type { components } from '../generated/sep';
 
 /** Per-app entry returned by the public ``GET /api/apps/`` endpoint. */
 export interface EnabledApp {
@@ -33,7 +34,7 @@ export interface EnabledApp {
   /** Canonical React route the shell mounts and links to; always concrete. */
   react_route: string;
   /** Sidebar icon key; ``null`` falls back to the shell's default app icon. */
-  nav_icon: string | null;
+  nav_icon: components['schemas']['nav_icons__NavIcon'] | null;
   /**
    * Effective-disabled ``requires_apps`` keys that are the reason this app is
    * effective-disabled. Empty when the app is enabled or disabled by its own

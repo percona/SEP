@@ -20,7 +20,7 @@ repos:
       - id: addlicense
         args: ["-f", ".license_header", "-v"]
         types_or: [python, javascript, ts, tsx, css, jinja]
-        exclude: ^(static/(js|css)/vendor/|frontend/(node_modules|.*/dist|packages/api/src/generated)/)
+        exclude: ^(static/(js|css)/vendor/|frontend/(node_modules|.*/dist|packages/[^/]+/src/generated)/)
   - repo: local
     hooks:
       - id: js-beautify
