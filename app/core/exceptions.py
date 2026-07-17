@@ -24,15 +24,20 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 class HTTPNotFoundException(HTTPException):
     """Define exception raised for resource not found (HTTP 404).
 
-    :param detail: A message providing additional details about the exception.
-        Defaults to "Not Found".
+    ``detail`` may be a string or a JSON-serializable structure, matching
+    :class:`fastapi.HTTPException` (and :class:`HTTPGoneException`), so
+    :func:`app.core.requests.remote_api.exception_for_status` can pass through
+    structured 404 payloads without a type mismatch.
+
+    :param detail: Human-readable or structured error payload. Defaults to
+        ``"Not Found"``.
     :param headers: Optional response headers to preserve (e.g. a PMM
         ``X-Error-Code``).
     """
 
     def __init__(
         self,
-        detail: str = "Not Found",
+        detail: Any = "Not Found",
         *,
         headers: dict[str, str] | None = None,
     ) -> None:

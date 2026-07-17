@@ -903,6 +903,7 @@ class TestUpdateContactPoint:
         """Test update_contact_point maps an upstream error to ``HTTPException``."""
         error_status = HTTP_409_CONFLICT
         _captured, mock_response = captured_requests
+        mock_response.content_type = "application/json"
         mock_response.raise_for_status = MagicMock(
             side_effect=_client_response_error(error_status)
         )
@@ -923,8 +924,9 @@ class TestUpdateContactPoint:
         captured_requests: tuple[list[dict], MagicMock],
         pmm_remote_api: PMMRemoteAPI,
     ) -> None:
-        """Test update_contact_point maps an upstream 404 to ``HTTPNotFoundException``."""
+        """Test update_contact_point maps a JSON 404 to ``HTTPNotFoundException``."""
         _captured, mock_response = captured_requests
+        mock_response.content_type = "application/json"
         mock_response.raise_for_status = MagicMock(
             side_effect=_client_response_error(HTTP_404_NOT_FOUND)
         )
@@ -938,6 +940,31 @@ class TestUpdateContactPoint:
             )
 
         assert type(exc_info.value) is HTTPNotFoundException
+        assert exc_info.value.status_code == HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_update_contact_point_non_json_404_stays_bare(
+        self,
+        captured_requests: tuple[list[dict], MagicMock],
+        pmm_remote_api: PMMRemoteAPI,
+    ) -> None:
+        """Test a non-JSON (proxy) 404 stays a bare ``HTTPException``, not not-found."""
+        _captured, mock_response = captured_requests
+        mock_response.content_type = "text/html"
+        mock_response.raise_for_status = MagicMock(
+            side_effect=_client_response_error(HTTP_404_NOT_FOUND)
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.update_contact_point(
+                uid="cp-123",
+                name="Updated Email",
+                type_="email",
+                settings={"addresses": "new@example.com"},
+            )
+
+        assert type(exc_info.value) is HTTPException
+        assert not isinstance(exc_info.value, HTTPNotFoundException)
         assert exc_info.value.status_code == HTTP_404_NOT_FOUND
 
 
@@ -993,9 +1020,10 @@ class TestDeleteContactPoint:
     async def test_delete_contact_point_raises_not_found_on_error(
         self, mocker, pmm_remote_api: PMMRemoteAPI
     ) -> None:
-        """Test delete_contact_point maps an upstream 404 to ``HTTPNotFoundException``."""
+        """Test delete_contact_point maps a JSON 404 to ``HTTPNotFoundException``."""
         error_status = HTTP_404_NOT_FOUND
         mock_response = MagicMock(spec=ClientResponse)
+        mock_response.content_type = "application/json"
         mock_response.raise_for_status = MagicMock(
             side_effect=_client_response_error(error_status)
         )
@@ -1011,6 +1039,30 @@ class TestDeleteContactPoint:
 
         assert type(exc_info.value) is HTTPNotFoundException
         assert exc_info.value.status_code == error_status
+
+    @pytest.mark.asyncio
+    async def test_delete_contact_point_non_json_404_stays_bare(
+        self, mocker, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test a non-JSON (proxy) 404 stays a bare ``HTTPException``, not not-found."""
+        mock_response = MagicMock(spec=ClientResponse)
+        mock_response.content_type = "text/html"
+        mock_response.raise_for_status = MagicMock(
+            side_effect=_client_response_error(HTTP_404_NOT_FOUND)
+        )
+
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.delete_contact_point("missing-cp")
+
+        assert type(exc_info.value) is HTTPException
+        assert not isinstance(exc_info.value, HTTPNotFoundException)
+        assert exc_info.value.status_code == HTTP_404_NOT_FOUND
 
 
 class TestGetNotificationPolicy:
