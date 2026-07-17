@@ -14,6 +14,37 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "PaginatedResponse_dict_str__Any__": {
+        "properties": {
+          "items": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[dict[str, Any]]",
+        "type": "object"
+      },
       "ServiceTypeEnum": {
         "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
         "enum": [
@@ -3279,19 +3310,53 @@
   "paths": {
     "/api/apps/dipper/": {
       "get": {
-        "description": "Return Dipper execution history rows.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:return: Paginated task-history response filtered to Dipper runs.\n:rtype: dict[str, Any]",
+        "description": "Return Dipper execution history rows.\n\n:param tasks_api: Async client for the tasks sub-app.\n:param pagination: Validated offset/limit forwarded to the upstream history call.\n:return: A paginated envelope of task-history rows filtered to Dipper runs. Because\n    the ``dipper/`` filter runs client-side, ``total`` is the filtered count of the\n    current page, not a global count across all pages.",
         "operationId": "dipper_dipper_api_list_api_apps_dipper__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Dipper Dipper Api List Api Apps Dipper  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PaginatedResponse_dict_str__Any__"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Dipper Api List",

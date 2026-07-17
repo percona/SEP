@@ -493,6 +493,35 @@
         "title": "Node",
         "type": "object"
       },
+      "PaginatedResponse_Any_": {
+        "properties": {
+          "items": {
+            "items": {},
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[Any]",
+        "type": "object"
+      },
       "PaginatedResponse_ServiceResponse_": {
         "properties": {
           "items": {
@@ -553,6 +582,37 @@
           "limit"
         ],
         "title": "PaginatedResponse[TaskHistoryResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse_dict_str__Any__": {
+        "properties": {
+          "items": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[dict[str, Any]]",
         "type": "object"
       },
       "ReloadClassification": {
@@ -11454,6 +11514,37 @@
         "title": "ExecutorHostMetadata",
         "type": "object"
       },
+      "tasks__PaginatedResponse_TaskListResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/tasks__TaskListResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[TaskListResponse]",
+        "type": "object"
+      },
       "tasks__PeriodicTaskSummary": {
         "description": "Represent read-only periodic-schedule metadata for a single task.\n\n:param id: The periodic task's database identifier.\n:type id: int\n:param name: The periodic task's display name.\n:type name: str\n:param enabled: Whether the periodic schedule is currently enabled.\n:type enabled: bool\n:param period: A human-readable schedule description (cron or interval),\n    or ``None`` when unavailable.\n:type period: str | None\n:param next_run_at: The next scheduled run time in ISO 8601 format, or\n    ``None`` when not scheduled.\n:type next_run_at: UTCDatetime | None\n:param last_run_at: The last run time in ISO 8601 format, or ``None`` if\n    the schedule has never run.\n:type last_run_at: UTCDatetime | None\n:param total_run_count: The total number of times the schedule has run,\n    or ``None`` when unavailable.\n:type total_run_count: int | None\n:param chain_task_names: Ordered task names in the periodic execution\n    chain, if any.\n:type chain_task_names: list[str]",
         "properties": {
@@ -14141,19 +14232,53 @@
     },
     "/api/apps/dipper/": {
       "get": {
-        "description": "Return Dipper execution history rows.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:return: Paginated task-history response filtered to Dipper runs.\n:rtype: dict[str, Any]",
+        "description": "Return Dipper execution history rows.\n\n:param tasks_api: Async client for the tasks sub-app.\n:param pagination: Validated offset/limit forwarded to the upstream history call.\n:return: A paginated envelope of task-history rows filtered to Dipper runs. Because\n    the ``dipper/`` filter runs client-side, ``total`` is the filtered count of the\n    current page, not a global count across all pages.",
         "operationId": "dipper_dipper_api_list_api_apps_dipper__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Dipper Dipper Api List Api Apps Dipper  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PaginatedResponse_dict_str__Any__"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Dipper Api List",
@@ -14552,7 +14677,7 @@
     },
     "/api/apps/inventory/{entity}/": {
       "get": {
-        "description": "List inventory nodes, services, schemas, or tables.",
+        "description": "List inventory nodes, services, schemas, or tables.\n\n:param request: Inbound request; its query string carries entity filters.\n:param entity: Inventory entity type (nodes, services, schemas, tables).\n:param inventory_api: Async client for the Inventory sub-app.\n:param pagination: Validated offset/limit forwarded to the upstream call.\n:return: A paginated envelope echoing the requested window.",
         "operationId": "inventory_inventory_list_entity_api_apps_inventory__entity___get",
         "parameters": [
           {
@@ -14563,6 +14688,29 @@
               "title": "Entity",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -14570,9 +14718,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {},
-                  "title": "Response Inventory Inventory List Entity Api Apps Inventory  Entity   Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_Any_"
                 }
               }
             },
@@ -16234,22 +16380,53 @@
     },
     "/api/apps/tasks/": {
       "get": {
-        "description": "List task definitions for the read-only plugin UI.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:return: Task rows for the schema-driven list view.\n:rtype: list[TaskListResponse]",
+        "description": "List task definitions for the read-only plugin UI.\n\n:param tasks_api: Async client for the tasks sub-app.\n:param pagination: Validated offset/limit forwarded to the upstream Tasks API.\n:return: A paginated envelope of task rows for the schema-driven list view.",
         "operationId": "task_manager_tasks_api_list_api_apps_tasks__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/tasks__TaskListResponse"
-                  },
-                  "title": "Response Task Manager Tasks Api List Api Apps Tasks  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/tasks__PaginatedResponse_TaskListResponse_"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Tasks Api List",

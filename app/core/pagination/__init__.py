@@ -22,6 +22,7 @@ from app.core.pagination.deps import (
     PaginationDependency,
 )
 from app.core.pagination.models import (
+    build_proxied_page,
     DEFAULT_PAGINATION_LIMIT,
     DEFAULT_PAGINATION_OFFSET,
     fetch_all_dict_items,
@@ -41,6 +42,7 @@ __all__ = [
     "Pagination",
     "PaginationDep",
     "PaginationDependency",
+    "build_proxied_page",
     "fetch_all_dict_items",
     "fetch_all_items",
     "make_pagination_dep",
