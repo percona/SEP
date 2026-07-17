@@ -13,6 +13,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import ScienceIcon from '@mui/icons-material/Science';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
 import type { NavIcon } from '../contexts/navigation';
 
@@ -30,4 +31,5 @@ export const ICON_BY_KEY: Record<SepComponents['schemas']['nav_icons__NavIcon'],
   archive: ArchiveIcon,
   science: ScienceIcon,
   'bar-chart': BarChartIcon,
+  'account-tree': AccountTreeIcon,
 };

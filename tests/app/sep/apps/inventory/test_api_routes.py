@@ -28,6 +28,7 @@ from pydantic import SecretStr
 
 from app.core.config import settings
 from app.core.pagination import DEFAULT_PAGINATION_OFFSET, MAX_PAGINATION_LIMIT
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.inventory.deps import (
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
@@ -178,7 +179,7 @@ class TestInventoryGateway:
             json={
                 "node_id": _CREATE_SERVICE_TEST_NODE_ID,
                 "name": "db",
-                "type": "mysql",
+                "type": ServiceTypeEnum.MYSQL.value,
             },
         )
         assert response.status_code == status.HTTP_200_OK
@@ -196,7 +197,7 @@ class TestInventoryGateway:
             json={
                 "node_id": "abc",
                 "name": "db",
-                "type": "mysql",
+                "type": ServiceTypeEnum.MYSQL.value,
             },
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -771,3 +772,25 @@ class TestInventorySystemObservation:
         """Without API auth the system-observation endpoints return 401."""
         response = unauthenticated_client.get(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_openapi_schema_is_named_model_not_inline_dict(self):
+        """The 200 response schema must reference a named model, not an inline dict.
+
+        ``dict[str, bool]`` generates a free-form ``additionalProperties``
+        schema; ``InventorySyncStatusResponse`` generates a ``$ref`` to a named
+        component. The React client's generated hooks depend on a stable schema
+        name, so this assertion guards against regression to the untyped form.
+        """
+        prior_schema = sep_app.openapi_schema
+        sep_app.openapi_schema = None
+        try:
+            openapi = sep_app.openapi()
+            response_schema = openapi["paths"]["/api/apps/inventory/sync/status/"][
+                "get"
+            ]["responses"]["200"]["content"]["application/json"]["schema"]
+            assert "$ref" in response_schema, (
+                "Expected a $ref to InventorySyncStatusResponse; got inline schema. "
+                "Change the return type annotation back to InventorySyncStatusResponse."
+            )
+        finally:
+            sep_app.openapi_schema = prior_schema

@@ -473,6 +473,45 @@ SEP:
       DEFAULT_EXECUTOR_HOST: "ip-10-0-1-5.region.compute.internal"  # Nomad node name from /api/tasks/hosts/ that can reach RDS
 ```
 
+#### MySQL Topology
+
+Topology is a standalone, experimental **Topology** app that is shipped disabled
+by default. Enable it like any other plugin by activating its module in
+`SEP.APPS`:
+
+```yaml
+SEP:
+  APPS:
+    - MODULE_NAME: topology
+      ENABLED: true
+```
+
+When enabled, the app draws an interactive React Flow graph of every MySQL
+service the inventory knows about: replication chains (primary → replica with
+GTID/IO/SQL state), dual-primary pairs, and Percona XtraDB Cluster groups. It
+sources the MySQL host list from the Inventory service at request time.
+Topology data is collected **live, on demand** - there is no persisted snapshot
+in the database - by dispatching
+sharded `run-python` tasks (capped at 8 shards) to executor hosts via the
+Tasks API. Each shard runs the
+[`topology.py`](app/sep/apps/topology/payloads/topology.py) payload, which
+fans out per-host queries with a `ThreadPoolExecutor` and emits NDJSON events
+to stdout. The API polls the dispatched tasks (`GET /result`), merges their
+stdout into the graph, and the client polls that endpoint until every shard is
+finished. Results are cached client-side with TanStack Query, so re-opening the
+app is free until the user clicks **Refresh**.
+
+Topology runtime limits live in
+[`api_routes.py`](app/sep/apps/topology/api_routes.py) as module constants:
+maximum shards is 8. Changing that value currently requires a code deploy; move
+it into `inventory_settings` first if it needs per-deployment tuning.
+
+The payload reuses the same credential rules as `MySQLSyncer` -
+`~/.my.cnf` and `~/.mylogin.cnf` on the executor, with per-host login paths
+matched by `host:port` (or `host_port`) and a `client` fallback - so no
+additional configuration is required if you already have `MySQLSyncer` running
+against the same hosts.
+
 ### SSL Configuration
 
 SEP supports SSL/TLS configuration for secure communications. SSL settings can be configured at different levels:
