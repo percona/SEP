@@ -23,6 +23,7 @@ import {
   getBackupMongoExecuteActions,
   getBackupMongoHistoryTaskNames,
 } from './backupMongoTaskDetail';
+import { backupMongoCreateRenderField } from './backupMongoCreateForm';
 import {
   getRestoreMongoExecuteActions,
   getRestoreMongoHistoryTaskNames,
@@ -92,6 +93,7 @@ export function BackupMongoApp() {
               getTaskExecuteActions={getBackupMongoExecuteActions}
               getTaskHistoryNames={getBackupMongoHistoryTaskNames}
               suppressDetailKeys={BACKUP_DETAIL_SUPPRESS_KEYS}
+              renderField={backupMongoCreateRenderField}
               renderTaskDetailChildren={({ task }) => <BackupMongoTaskDetailExtras task={task} />}
             />
           }
