@@ -32,7 +32,12 @@ export { useLogDownload } from './useLogDownload';
 export type { DownloadLog } from './useLogDownload';
 
 export { useServices } from './useServices';
-export type { ServiceOption, ServiceType, UseServicesOptions } from './useServices';
+export type {
+  ServiceOption,
+  ServiceNodeOption,
+  ServiceType,
+  UseServicesOptions,
+} from './useServices';
 export { useSchemas } from './useSchemas';
 export type { SchemaOption, UseSchemasOptions } from './useSchemas';
 export { useTables } from './useTables';

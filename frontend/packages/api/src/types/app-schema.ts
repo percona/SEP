@@ -209,10 +209,25 @@ export interface MultiTableField extends BaseField {
 
 export interface HostField extends BaseField {
   type: 'host';
+  /**
+   * Optional upstream field whose value drives the default executor
+   * selection (typically a service field). Omitted when the host list is
+   * not cascaded.
+   */
+  depends_on?: string;
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allow_custom?: boolean;
 }
 
 export interface MultiHostField extends BaseField {
   type: 'multi_host';
+  /**
+   * Optional upstream field whose value drives the default executor
+   * selection. Omitted when the host list is not cascaded.
+   */
+  depends_on?: string;
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allow_custom?: boolean;
 }
 
 // ── Read-only preview ───────────────────────────────────────────────────

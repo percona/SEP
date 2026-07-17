@@ -210,4 +210,83 @@ describe('HostSelector', () => {
       await screen.findByText(/Failed to load executor hosts: tasks unreachable/),
     ).toBeInTheDocument();
   });
+
+  it('auto-selects an executor host from the upstream service (node name)', async () => {
+    mocked.get.mockImplementation((url: string) => {
+      if (url === '/sep/hosts/') {
+        return Promise.resolve(
+          makeResponse([
+            { id: 'node-a', name: 'Display A', address: '10.0.0.1' },
+            { id: 'node-b', name: 'Display B', address: '10.0.0.2' },
+          ]),
+        );
+      }
+      if (url === '/sep/services/') {
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                id: 7,
+                name: 'mongo-svc',
+                type: 'mongodb',
+                node: { name: 'node-b', address: '10.0.0.2', type: 'generic' },
+                node_id: 1,
+                schemas: [],
+              },
+            ],
+            total: 1,
+            offset: 0,
+            limit: 200,
+          },
+        });
+      }
+      return Promise.reject(new Error(`unexpected url ${url}`));
+    });
+
+    const onSubmit = vi.fn();
+    const sections: FormSection[] = [
+      {
+        title: 'Task',
+        fields: [
+          {
+            type: 'service',
+            name: 'service_id',
+            label: 'Database Service',
+            required: true,
+            service_types: ['mongodb'],
+          },
+          {
+            type: 'host',
+            name: 'hostname',
+            label: 'Execution Host',
+            required: true,
+            depends_on: 'service_id',
+          },
+        ],
+      },
+    ];
+
+    const client = makeClient();
+    render(
+      <Wrapper client={client}>
+        <SchemaFormRenderer sections={sections} onSubmit={onSubmit} />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText(/^Database Service\b/));
+    await user.click(await screen.findByRole('option', { name: 'mongo-svc (mongodb)' }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Execution Host\b/)).toHaveValue('Display B');
+    });
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ hostname: 'node-b', service_id: 7 }),
+    );
+  });
 });

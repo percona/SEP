@@ -23,5 +23,12 @@ interface HostFieldProps {
 }
 
 export function HostField({ field }: HostFieldProps) {
-  return <HostSelector name={field.name} label={field.label} required={field.required} />;
+  return (
+    <HostSelector
+      name={field.name}
+      label={field.label}
+      required={field.required}
+      dependsOn={field.depends_on}
+    />
+  );
 }
