@@ -117,8 +117,33 @@ class TestTaskHistoryStatusEnum:
         ],
     )
     def test_is_finished_false(self, status: TaskHistoryStatusEnum) -> None:
-        """Assert is_finished returns False for non-terminal statuses."""
+        """Assert is_finished returns False for unfinished statuses."""
         assert status.is_finished() is False
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            TaskHistoryStatusEnum.FAILED,
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.STOPPED,
+            TaskHistoryStatusEnum.LOST,
+            TaskHistoryStatusEnum.STALE,
+        ],
+    )
+    def test_is_terminal_true(self, status: TaskHistoryStatusEnum) -> None:
+        """Assert is_terminal returns True for terminal statuses."""
+        assert status.is_terminal() is True
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            TaskHistoryStatusEnum.PENDING,
+            TaskHistoryStatusEnum.RUNNING,
+        ],
+    )
+    def test_is_terminal_false(self, status: TaskHistoryStatusEnum) -> None:
+        """Assert is_terminal returns False for active statuses."""
+        assert status.is_terminal() is False
 
 
 class TestTaskLogType:

@@ -15,7 +15,17 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import '@testing-library/jest-dom/vitest';
-import { installReactFlowTestPolyfills } from '@sep/test-utils';
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vitest/config';
 
-installReactFlowTestPolyfills();
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react-router', 'react-router-dom', '@tanstack/react-query'],
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/vitest-setup.ts'],
+  },
+});
