@@ -38,7 +38,7 @@ class TestCollectBaseDirs:
     """Cover the registry flatten that builds the artifact base-dir map."""
 
     def test_raises_on_duplicate_artifact_type(self, mocker) -> None:
-        """Raise ``RuntimeError`` naming a type two apps both declare."""
+        """Raise ``ValueError`` naming a type two apps both declare."""
         first = BaseApp(
             name="first",
             uri_path="/first",
@@ -54,7 +54,7 @@ class TestCollectBaseDirs:
             return_value=[first, second],
         )
 
-        with pytest.raises(RuntimeError, match="shared"):
+        with pytest.raises(ValueError, match="shared"):
             collect_base_dirs()
 
     def test_flattens_distinct_artifact_types(self, mocker) -> None:

@@ -35,14 +35,14 @@ def collect_base_dirs() -> dict[str, Callable[[], Path]]:
     """Collect every app's ``artifact_base_dirs`` into a single lookup map.
 
     :return: A mapping from artifact-type discriminator to its base-dir thunk.
-    :raises RuntimeError: If two apps declare the same artifact type, which
+    :raises ValueError: If two apps declare the same artifact type, which
         would ambiguously route one app's downloads into another's directory.
     """
     base_dirs = {}
     for app in get_app_registry():
         for artifact_type, thunk in app.artifact_base_dirs.items():
             if artifact_type in base_dirs:
-                raise RuntimeError(
+                raise ValueError(
                     f"Artifact type {artifact_type!r} declared by more than one app"
                 )
             base_dirs[artifact_type] = thunk
