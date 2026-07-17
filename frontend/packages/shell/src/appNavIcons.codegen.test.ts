@@ -67,6 +67,12 @@ describe('resolveNavIcon', () => {
     });
   });
 
+  it('does not treat inherited Object.prototype keys as brand keys', () => {
+    const resolved = resolveNavIcon('toString');
+    expect(resolved.module).not.toBe('@percona/percona-ui');
+    expect(typeof resolved.importName).toBe('string');
+  });
+
   it('resolves every NavIcon vocabulary key to an import source', () => {
     for (const key of NAV_ICON_KEYS) {
       const resolved = resolveNavIcon(key);

@@ -47,7 +47,7 @@ export const pascalCase = (key: string): string =>
  * ``<Pascal>Icon`` binding.
  */
 export function resolveNavIcon(key: string): { module: string; importName: string } {
-  if (key in BRAND_ICONS) {
+  if (Object.prototype.hasOwnProperty.call(BRAND_ICONS, key)) {
     return { module: '@percona/percona-ui', importName: BRAND_ICONS[key] };
   }
   const pascal = pascalCase(key);
