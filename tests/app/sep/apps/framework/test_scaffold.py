@@ -835,7 +835,6 @@ def test_wizard_prompts_for_flavor_when_type_unset(
 
     assert any(p.startswith("Flavor") for p in stub.prompts)
     assert config.flavor is scaffold.Flavor.SCRIPT
-    # The chosen script flavor gates out the task-only service-type prompt.
     assert not any(p.startswith("Service type") for p in stub.prompts)
 
 
@@ -937,6 +936,28 @@ def test_wizard_reprompts_on_invalid_then_clobbering_name(
     assert config.name == "_scaffold_wizard_valid"
     name_prompts = [p for p in stub.prompts if p.startswith("Module name")]
     assert len(name_prompts) == len(name_answers)
+
+
+def test_wizard_reprompts_on_invalid_then_real_payload_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reject an invalid run-python payload path, re-prompting until a real file."""
+    payload = tmp_path / "entrypoint.py"
+    payload.write_text("print('scaffolded payload')\n")
+    answers = [str(tmp_path / "missing.py"), str(payload)]
+    stub = _force_wizard(monkeypatch, prompt_answers={"Payload file path": answers})
+    parser = scaffold.build_parser()
+    config = scaffold.resolve_config(
+        parser,
+        parser.parse_args(
+            ["--name", "wiz_payload", "--type", "task", "--run-mode", "run-python"]
+        ),
+    )
+
+    assert config.run_mode is scaffold.RunMode.RUN_PYTHON
+    assert config.payload_path == payload
+    payload_prompts = [p for p in stub.prompts if p.startswith("Payload file path")]
+    assert len(payload_prompts) == len(answers)
 
 
 def test_wizard_final_decline_aborts_without_writing(
