@@ -352,9 +352,9 @@ class MockInventoryAPI:
     def seed_table(self, table_id: int) -> None:
         """Seed a created table at ``table_id`` with an id-derived name.
 
-        The name is derived from ``table_id`` (not left to a random per-build
-        value) so distinct table ids never collide by name — the archives
-        self-archive guard compares resolved source/destination table names.
+        The name is derived from ``table_id`` (not left to a random factory value) so
+        distinct table ids never collide by name — some task plugins guard against
+        operations where source and destination resolve to the same table name.
         """
         self._entities["/tables"][table_id] = CreatedTableFactory.build(
             id=table_id, name=f"tbl-{table_id}"
