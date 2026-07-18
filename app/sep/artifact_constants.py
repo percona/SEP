@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Constant for signing artifact-download URLs.
+"""Define constant for signing artifact-download URLs.
 
 Houses the itsdangerous salt shared by the generic ``app.sep.routes.artifacts``
 route and the framework signer in ``app.sep.apps.framework.script_helpers``, so
