@@ -103,9 +103,8 @@ class AuthSettings(BaseYamlSettings):
            instead, ignore the legacy config.
         2. Drop any entry whose value is ``None`` -- an overlay can set
            ``<name>: null`` to remove a provider the ``default`` settings block
-           merged in (such an entry previously raised). The drop runs after the
-           legacy fold above, so an explicit ``null`` wins over a legacy
-           ``CASDOOR`` resurrection.
+           merged in. The drop runs after the legacy fold above, so an explicit
+           ``null`` wins over a legacy ``CASDOOR`` resurrection.
         3. Resolve each remaining entry's class via :class:`AuthProviderEnum` (a
            built-in member, or ``CUSTOM`` via ``import_var(PROVIDER_CLASS)``) and
            construct the provider.
