@@ -179,6 +179,13 @@ class TaskHistoryStatusEnum(StrEnum):
             TaskHistoryStatusEnum.STALE,
         ]
 
+    def is_terminal(self) -> bool:
+        """Check if task execution has reached a terminal state.
+
+        :return: True if task execution will not transition again.
+        """
+        return self.is_finished() or self == TaskHistoryStatusEnum.LOST
+
     @classmethod
     def active_statuses(cls) -> frozenset["TaskHistoryStatusEnum"]:
         """Return the statuses whose executions are still in flight.
