@@ -19,7 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from fastapi.status import (
+from starlette.status import (
     HTTP_200_OK,
     HTTP_303_SEE_OTHER,
 )
