@@ -258,6 +258,19 @@ def test_free_text_display_name_escaped_in_every_rendered_file(
         importlib.import_module(f"app.sep.apps.{name}")
 
 
+def test_docstring_safe_preserves_plain_double_quotes() -> None:
+    """Keep plain double quotes untouched so generated docstrings stay lint-clean."""
+    assert scaffold._docstring_safe('My "Cool" App') == 'My "Cool" App'
+
+
+def test_docstring_safe_escapes_backslashes_and_triple_quote_runs() -> None:
+    """Escape only syntax-breaking sequences for triple-quoted docstring interiors."""
+    assert (
+        scaffold._docstring_safe(r'Fast """ \x \u "Cool" \ Backup')
+        == 'Fast \\""" \\\\x \\\\u "Cool" \\\\ Backup'
+    )
+
+
 @pytest.mark.parametrize(
     "bad_name", ["My App!", "123app", "", "demo-app", "___", "class", "Demo"]
 )

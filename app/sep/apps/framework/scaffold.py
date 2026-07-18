@@ -301,14 +301,18 @@ def _docstring_safe(value: str) -> str:
     :func:`json.dumps` string literal), the raw ``display_name`` is interpolated
     into the *interior* of triple-quoted docstrings across the templates. There an
     unescaped backslash starts an escape sequence (``\x`` / ``\u`` raise
-    ``SyntaxError``) and a ``"``-run can terminate the docstring early, so a
-    free-text display name could render syntactically invalid Python. Doubling
-    backslashes and escaping double quotes keeps the interior a valid string body.
+    ``SyntaxError``) and an unbroken three-double-quote run terminates the
+    docstring early,
+    so a free-text display name could render syntactically invalid Python.
+    Doubling backslashes and only neutralizing triple-quote runs keeps the
+    interior valid while leaving ordinary ``"`` unchanged (avoiding needless
+    backslashes in generated docstrings).
 
     :param value: The free-text value.
-    :return: The value with backslashes doubled and double quotes escaped.
+    :return: The value with backslashes doubled and any triple-quote runs
+        neutralized.
     """
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    return value.replace("\\", "\\\\").replace('"""', '\\"""')
 
 
 def _build_context(config: ScaffoldConfig) -> dict[str, str]:
