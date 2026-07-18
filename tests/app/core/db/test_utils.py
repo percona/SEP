@@ -28,12 +28,15 @@ from sqlalchemy.sql import column
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.config import DatabaseOptions
 from app.core.db.utils import (
     compare_type,
+    create_app_async_engine,
     func_json_extract,
     get_async_session_maker_from_engine,
     idempotent_insert,
 )
+from app.core.utils.fields import AsyncDatabaseEngine
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.models import TaskExecutionRequestJSON, TaskHistory, TaskWrite
 from tests.app.factories import build_task_history, TaskFactory
@@ -524,3 +527,46 @@ class TestFuncJsonExtractOnRealPostgres:
             select(func_json_extract(name, col(TaskHistory.execution_request), "task"))
         )
         assert result.scalar_one() == "mysqldump"
+
+
+_SQLALCHEMY_DEFAULT_POOL_SIZE = 5
+_SQLALCHEMY_DEFAULT_MAX_OVERFLOW = 10
+
+
+class TestCreateAppAsyncEngine:
+    """Exercise the ``create_app_async_engine`` shared factory."""
+
+    @staticmethod
+    def _postgres_options(**overrides) -> DatabaseOptions:
+        """Return a lazy PostgreSQL ``DatabaseOptions`` (never connects until used)."""
+        return DatabaseOptions(
+            ENGINE=AsyncDatabaseEngine.POSTGRESQL,
+            HOST="localhost",
+            PORT=5432,
+            USER="u",
+            PASSWORD="p",
+            NAME="db",
+            **overrides,
+        )
+
+    @pytest.mark.asyncio
+    async def test_forwards_set_pool_options(self):
+        """Set pool fields reach the async engine's pool."""
+        pool = {"POOL_SIZE": 7, "MAX_OVERFLOW": 3, "POOL_TIMEOUT": 25.0}
+        engine = create_app_async_engine(self._postgres_options(**pool))
+        try:
+            assert engine.pool.size() == pool["POOL_SIZE"]
+            assert engine.pool._max_overflow == pool["MAX_OVERFLOW"]
+            assert engine.pool._timeout == pool["POOL_TIMEOUT"]
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_preserves_sqlalchemy_defaults_when_unset(self):
+        """Preserve SQLAlchemy's own defaults when pool fields are unset."""
+        engine = create_app_async_engine(self._postgres_options())
+        try:
+            assert engine.pool.size() == _SQLALCHEMY_DEFAULT_POOL_SIZE
+            assert engine.pool._max_overflow == _SQLALCHEMY_DEFAULT_MAX_OVERFLOW
+        finally:
+            await engine.dispose()

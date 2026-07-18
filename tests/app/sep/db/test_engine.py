@@ -13,28 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define database initialization and utility functions for SEP."""
+"""Define tests for the app.sep.db.engine module."""
 
-__all__ = ["engine", "get_async_session_maker"]
+import importlib
+from unittest.mock import MagicMock, patch
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
-from app.core.db.utils import (
-    create_app_async_engine,
-    get_async_session_maker_from_engine,
-)
+import app.sep.db.engine as sep_engine_module
 from app.sep.config import sep_settings
 
-engine = create_app_async_engine(sep_settings.DATABASE)
 
-
-def get_async_session_maker() -> async_sessionmaker:
-    """Return a new asynchronous session maker for database operations.
-
-    This function creates a new SQLAlchemy asynchronous session maker using the
-    predefined engine configuration.
-
-    :return: A new asynchronous session maker.
-    :rtype: sessionmaker
-    """
-    return get_async_session_maker_from_engine(engine)
+def test_engine_built_from_sep_database():
+    """Assert the SEP engine is built via the shared factory from its own DATABASE."""
+    try:
+        with patch(
+            "app.core.db.utils.create_app_async_engine", return_value=MagicMock()
+        ) as create_engine:
+            importlib.reload(sep_engine_module)
+            create_engine.assert_called_once_with(sep_settings.DATABASE)
+    finally:
+        importlib.reload(sep_engine_module)
