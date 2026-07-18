@@ -101,12 +101,19 @@ class AuthSettings(BaseYamlSettings):
            ``AUTH.PROVIDER`` values win on conflict), adding the entry when no
            provider is configured. If a *non-casdoor* provider is configured
            instead, ignore the legacy config.
-        2. Resolve each entry's class via :class:`AuthProviderEnum` (a built-in
-           member, or ``CUSTOM`` via ``import_var(PROVIDER_CLASS)``) and construct
-           the provider.
+        2. Drop any entry whose value is ``None`` -- an overlay can set
+           ``<name>: null`` to remove a provider the ``default`` settings block
+           merged in (such an entry previously raised). The drop runs after the
+           legacy fold above, so an explicit ``null`` wins over a legacy
+           ``CASDOOR`` resurrection.
+        3. Resolve each remaining entry's class via :class:`AuthProviderEnum` (a
+           built-in member, or ``CUSTOM`` via ``import_var(PROVIDER_CLASS)``) and
+           construct the provider.
 
         :param data: The raw settings input.
         :return: The input with ``PROVIDER`` mapped to constructed providers.
+        :raises ValueError: Propagates from ``_resolve_entry`` for an
+            unresolvable provider entry.
         """
         if not isinstance(data, dict):
             return data
@@ -136,6 +143,7 @@ class AuthSettings(BaseYamlSettings):
             "PROVIDER": {
                 name: cls._resolve_entry(name, entry)
                 for name, entry in provider.items()
+                if entry is not None
             },
         }
 

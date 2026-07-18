@@ -161,6 +161,19 @@ class TestAuthSettingsResolution:
                 }
             )
 
+    def test_null_entry_dropped_sibling_survives(self):
+        """Drop a ``None``-valued entry and resolve the surviving sibling."""
+        settings = IsolatedAuthSettings(
+            PROVIDER={"casdoor": None, "grafana": _GRAFANA_CONFIG}
+        )
+        assert list(settings.PROVIDER) == ["grafana"]
+        assert isinstance(settings.active_provider, GrafanaAuthProvider)
+
+    def test_null_entry_emptying_map_fails_fast(self):
+        """Reject a ``None`` entry that empties the map via the count error."""
+        with pytest.raises(ValidationError, match="Exactly one auth provider"):
+            IsolatedAuthSettings(PROVIDER={"casdoor": None})
+
 
 class TestDeprecationShim:
     """Test the legacy top-level ``CASDOOR`` deprecation shim."""
