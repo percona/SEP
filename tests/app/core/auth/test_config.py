@@ -236,6 +236,33 @@ class TestDeprecationShim:
         IsolatedAuthSettings(PROVIDER={"casdoor": _CASDOOR_CONFIG})
         mock_logger.warning.assert_not_called()
 
+    def test_null_casdoor_beats_legacy_resurrection(self, mocker):
+        """Verify an explicit ``casdoor: null`` beats a legacy CASDOOR resurrection.
+
+        The null-drop runs after the legacy fold, so a legacy top-level
+        ``CASDOOR`` cannot revive the sole provider an overlay nulled out; the
+        map empties and the count invariant reports it. Reordering the drop
+        before the fold would resurrect casdoor and this would stop raising.
+        """
+        mocker.patch(
+            "app.core.auth.config._read_legacy_casdoor",
+            return_value=dict(_CASDOOR_CONFIG),
+        )
+        with pytest.raises(ValidationError, match="Exactly one auth provider"):
+            IsolatedAuthSettings(PROVIDER={"casdoor": None})
+
+    def test_null_casdoor_keeps_sibling_despite_legacy(self, mocker):
+        """Verify a nulled ``casdoor`` leaves the sibling active despite legacy config."""
+        mocker.patch(
+            "app.core.auth.config._read_legacy_casdoor",
+            return_value=dict(_CASDOOR_CONFIG),
+        )
+        settings = IsolatedAuthSettings(
+            PROVIDER={"casdoor": None, "grafana": _GRAFANA_CONFIG}
+        )
+        assert list(settings.PROVIDER) == ["grafana"]
+        assert isinstance(settings.active_provider, GrafanaAuthProvider)
+
 
 class TestRemovedAuthUserModelDetector:
     """Test the removed ``AUTH_USER_MODEL`` startup detector."""
