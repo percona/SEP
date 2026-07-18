@@ -35,6 +35,13 @@ export interface EnabledApp {
   react_route: string;
   /** Sidebar icon key; ``null`` falls back to the shell's default app icon. */
   nav_icon: components['schemas']['nav_icons__NavIcon'] | null;
+  /**
+   * Effective-disabled ``requires_apps`` keys that are the reason this app is
+   * effective-disabled. Empty when the app is enabled or disabled by its own
+   * state; non-empty only for a dependency-driven disablement, letting the
+   * disabled splash name the required app.
+   */
+  blocking_dependencies: string[];
 }
 
 export const ENABLED_APPS_QUERY_KEY = ['apps'] as const;
