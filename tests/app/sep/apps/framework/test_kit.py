@@ -17,6 +17,7 @@
 
 import pytest
 
+from tests.app.factories import MOCK_CREATED_TABLE_ID
 from tests.app.sep.apps.framework.kit import MockInventoryAPI
 
 
@@ -33,7 +34,11 @@ class TestMockInventoryAPISeeding:
         distinct-table create, so the kit derives the name from the id instead.
         """
         api = MockInventoryAPI()
-        api.seed_table(2)
-        first = await api.get("/tables/1")
-        second = await api.get("/tables/2")
-        assert (first["name"], second["name"]) == ("tbl-1", "tbl-2")
+        second_id = MOCK_CREATED_TABLE_ID + 1
+        api.seed_table(second_id)
+        first = await api.get(f"/tables/{MOCK_CREATED_TABLE_ID}")
+        second = await api.get(f"/tables/{second_id}")
+        assert (first["name"], second["name"]) == (
+            f"tbl-{MOCK_CREATED_TABLE_ID}",
+            f"tbl-{second_id}",
+        )
