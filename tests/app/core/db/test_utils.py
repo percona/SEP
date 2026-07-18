@@ -551,7 +551,7 @@ class TestCreateAppAsyncEngine:
 
     @pytest.mark.asyncio
     async def test_forwards_set_pool_options(self):
-        """Set pool fields reach the async engine's pool."""
+        """Forward set pool fields into the async engine's pool."""
         pool = {"POOL_SIZE": 7, "MAX_OVERFLOW": 3, "POOL_TIMEOUT": 25.0}
         engine = create_app_async_engine(self._postgres_options(**pool))
         try:

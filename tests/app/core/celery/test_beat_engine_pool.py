@@ -75,7 +75,7 @@ def test_non_forked_path_silently_drops_pool_size_and_timeout():
 
 
 def test_beat_engine_options_reach_celery_conf():
-    """model_dump() propagates beat_engine_options into the Celery app config.
+    """Propagate ``beat_engine_options`` into the Celery config via ``model_dump()``.
 
     ``DatabaseScheduler`` reads ``app.conf.get('beat_engine_options')``; this
     closes the config-path seam the forked-honoring test above does not (that

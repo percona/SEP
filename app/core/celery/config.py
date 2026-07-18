@@ -47,6 +47,8 @@ class CeleryOptions(BaseLowercaseModel):
     :param result_backend: The URL of the result backend. Defaults to None.
     :param beat_dburi: The database URI for storing scheduled tasks. Defaults to
         ``"sqlite:///schedule.db"``.
+    :param worker_state_db: Filesystem path where the Celery worker persists state
+        such as revoked task ids. Defaults to ``.celery_worker_state``.
     :param beat_schema: The schema to store the beat tables in the database.
     :param max_retries: The maximum number of times to retry failed tasks. Defaults
         to ``0`` (no retries).
