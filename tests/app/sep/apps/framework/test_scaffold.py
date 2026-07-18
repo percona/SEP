@@ -27,6 +27,7 @@ worker.
 """
 
 import importlib
+import json
 import shutil
 import sys
 from collections.abc import Iterator
@@ -1038,7 +1039,7 @@ def test_makefile_forwards_quoted_values() -> None:
         # normalise the literal's quote style (double → single to avoid escapes), so
         # assert on the value content rather than a fixed quote form.
         assert "description=" in rendered
-        assert description in rendered
+        assert f"description={json.dumps(description)}" in rendered
     finally:
         scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)

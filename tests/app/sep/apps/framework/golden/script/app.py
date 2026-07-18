@@ -20,8 +20,8 @@ listing, the per-script ``GET /snippet/schema``, the ``POST /snippet/execute``
 delegation, and ``GET /snippet/history``. It declares no model-first CRUD.
 """
 
-from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.golden_script.source import golden_script_source
+from app.sep.apps.framework.apps import TaskExecutionApp
 from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(

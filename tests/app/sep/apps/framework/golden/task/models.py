@@ -19,6 +19,7 @@ from typing import Annotated
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
     ArgFormat,
@@ -26,7 +27,6 @@ from app.sep.apps.framework.form_dsl import (
     ServiceRef,
     Ui,
 )
-from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
 
 class GoldenTaskForm(AppFormModel):

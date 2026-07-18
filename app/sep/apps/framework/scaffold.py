@@ -108,6 +108,7 @@ _NAV_ICONS = (
     "ARCHIVE",
     "SCIENCE",
     "BAR_CHART",
+    "ACCOUNT_TREE",
 )
 
 
