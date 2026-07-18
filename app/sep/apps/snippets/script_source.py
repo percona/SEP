@@ -53,6 +53,7 @@ from app.core.exceptions import (
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.framework.script_helpers import build_artifact_download_url
 from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
+from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.apps.snippets.deps import (
     build_snippet_execution_meta,
     validate_snippet_filename,
@@ -63,7 +64,6 @@ from app.sep.apps.snippets.schema import (
     evaluate_snippet_gates,
     SNIPPETS_PLUGIN_SCHEMA,
 )
-from app.sep.artifact_constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.db import get_async_session_maker
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager

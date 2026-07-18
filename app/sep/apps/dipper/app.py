@@ -25,6 +25,7 @@ Jinja UI is threaded as ``jinja_router``.
 """
 
 from app.sep.apps.dipper.api_routes import router as api_router
+from app.sep.apps.dipper.constants import ARTIFACT_TYPE_DIPPER, DIPPER_PAYLOADS_DIR
 from app.sep.apps.dipper.routes import router as jinja_router
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.nav_icons import NavIcon
@@ -40,4 +41,5 @@ app = BaseApp(
     nav_icon=NavIcon.SCIENCE,
     api_router=api_router,
     jinja_router=jinja_router,
+    artifact_base_dirs={ARTIFACT_TYPE_DIPPER: lambda: DIPPER_PAYLOADS_DIR},
 )

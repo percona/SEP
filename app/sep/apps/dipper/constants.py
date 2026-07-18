@@ -23,6 +23,8 @@ from app.inventory.models import ServiceTypeEnum
 
 DIPPER_PAYLOADS_DIR = Path(__file__).resolve().parent / "payloads"
 
+ARTIFACT_TYPE_DIPPER = "dipper"
+
 
 class CollectorTypeEnum(EnumFieldMixin, StrEnum):
     """Define enum for Dipper collector types."""
