@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the JSON API router for the << display_name >> app.
+"""Define the JSON API router for the << display_name_doc >> app.
 
 Auth is applied at the mount level (``/api/apps`` carries the
 ``IsApiAuthenticated`` router guard) and ``schema_endpoint`` pins it on
@@ -28,7 +28,7 @@ from app.sep.apps.framework.api import schema_endpoint
 
 
 class << class_prefix >>Item(BaseModel):
-    """Represent one << display_name >> list row.
+    """Represent one << display_name_doc >> list row.
 
     :param name: The item identifier.
     """
@@ -42,7 +42,7 @@ schema_endpoint(router=router, plugin_schema=<< name >>_schema)
 
 @router.get("/")
 async def list_<< name >>() -> list[<< class_prefix >>Item]:
-    """List << display_name >> items.
+    """List << display_name_doc >> items.
 
     Replace the empty stub with the app's real listing logic.
     """

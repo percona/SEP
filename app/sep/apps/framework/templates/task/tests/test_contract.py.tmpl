@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Run the derived-router contract suite against the << display_name >> app.
+"""Run the derived-router contract suite against the << display_name_doc >> app.
 
 The shared :class:`DerivedRouterContractTests` exercises the whole derived HTTP
 surface (schema, list, detail, create, update, execute, delete, auth) against the
@@ -26,7 +26,7 @@ from tests.app.sep.apps.framework.contract_suite import DerivedRouterContractTes
 
 
 class Test<< class_prefix >>Contract(DerivedRouterContractTests):
-    """Assert the << display_name >> app's derived HTTP surface, knob by knob."""
+    """Assert the << display_name_doc >> app's derived HTTP surface, knob by knob."""
 
     app_def = << name >>_app
     remapped_username = None
