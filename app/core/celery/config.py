@@ -32,6 +32,10 @@ BEAT_ENGINE_OPTION_KEYS: frozenset[str] = frozenset(
     {"pool_size", "max_overflow", "pool_timeout"}
 )
 
+#: Beat pool keys that must be whole integers; ``pool_timeout`` alone may be
+#: fractional. Mirrors the ``int`` typing of the ``DatabaseOptions`` counterparts.
+BEAT_ENGINE_INTEGER_KEYS: frozenset[str] = frozenset({"pool_size", "max_overflow"})
+
 
 class CeleryOptions(BaseLowercaseModel):
     """Define configuration settings for Celery.
@@ -76,19 +80,32 @@ class CeleryOptions(BaseLowercaseModel):
         """Validate beat pool options against the known pool kwargs and bounds.
 
         The scheduler forwards this dict straight to ``create_engine``; validating
-        here surfaces a typo or out-of-range value at config load rather than as a
-        silent no-op or a late engine-creation error. Bounds mirror
-        ``DatabaseOptions`` and admit ``max_overflow=0`` (no overflow).
+        here surfaces a typo, wrong-shape value, or out-of-range value at config
+        load rather than as a silent no-op or a late engine-creation error. Type
+        and bounds mirror ``DatabaseOptions`` -- ``pool_size``/``max_overflow`` are
+        whole integers, ``pool_timeout`` may be fractional -- and admit
+        ``max_overflow=0`` (no overflow).
 
         :param value: The raw ``beat_engine_options`` mapping.
         :return: The validated mapping.
-        :raises ValueError: If a key is unknown or a value is out of range.
+        :raises ValueError: If a key is unknown, a whole-integer key is fractional,
+            or a value is out of range.
         """
         unknown = set(value) - BEAT_ENGINE_OPTION_KEYS
         if unknown:
             raise ValueError(
                 f"Unknown beat_engine_options keys: {sorted(unknown)}. "
                 f"Allowed keys: {sorted(BEAT_ENGINE_OPTION_KEYS)}."
+            )
+        fractional = sorted(
+            key
+            for key in BEAT_ENGINE_INTEGER_KEYS & value.keys()
+            if isinstance(value[key], float) and not value[key].is_integer()
+        )
+        if fractional:
+            raise ValueError(
+                f"beat_engine_options must be whole integers, got fractional: "
+                f"{fractional}."
             )
         if "pool_size" in value and value["pool_size"] < 1:
             raise ValueError("beat_engine_options 'pool_size' must be >= 1.")

@@ -54,9 +54,20 @@ def test_beat_engine_options_accepts_zero_max_overflow():
         {"pool_size": 0},
         {"max_overflow": -1},
         {"pool_timeout": 0},
+        {"pool_size": 7.5},
+        {"max_overflow": 3.5},
     ],
 )
 def test_beat_engine_options_rejects_invalid_values(pool):
-    """Reject unknown keys and out-of-range values at config load."""
+    """Reject unknown keys, fractional integer keys, and out-of-range values."""
     with pytest.raises(ValidationError):
         CeleryOptions(broker_url=_BROKER_URL, beat_engine_options=pool)
+
+
+def test_beat_engine_options_allows_fractional_pool_timeout():
+    """Accept a fractional pool_timeout while integer keys stay whole."""
+    options = CeleryOptions(
+        broker_url=_BROKER_URL, beat_engine_options={"pool_timeout": 25.5}
+    )
+
+    assert options.beat_engine_options == {"pool_timeout": 25.5}
