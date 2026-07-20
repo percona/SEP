@@ -189,11 +189,17 @@ def _build_form_schema(script: _DiskScript, *, name: str) -> AppSchema:
                 name=_SUDO_FIELD_NAME,
                 label="Run with sudo",
                 default=snippet.sudo.sudo_default,
+                description="Prepend sudo to the interpreter when the script is executed.",
             )
         )
     elif snippet.sudo is SnippetSudoOption.ALWAYS:
         execution_fields.append(
-            BoolField(name=_SUDO_FIELD_NAME, label="Run with sudo", default=True)
+            BoolField(
+                name=_SUDO_FIELD_NAME,
+                label="Run with sudo",
+                default=True,
+                description="This script is configured to always run with sudo.",
+            )
         )
     forms.append(FormSection(title="Execution", fields=execution_fields))
 
