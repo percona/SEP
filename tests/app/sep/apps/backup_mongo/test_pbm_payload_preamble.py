@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from app.sep.apps.framework.pbm_creds_common import (
+from app.sep.apps.backup_mongo.pbm_creds_common import (
     _creds_path,
     _creds_path_from_config,
     pbm_creds,

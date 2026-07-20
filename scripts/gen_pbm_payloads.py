@@ -19,7 +19,7 @@
 Payloads are shipped by ``file://`` and can't import shared code, so this
 rewrites the block between each payload's ``# --- BEGIN/END GENERATED PBM CREDS
 PREAMBLE ---`` markers with the canonical region from
-``app/sep/apps/framework/pbm_creds_common.py``. Any file under the search root
+``app/sep/apps/backup_mongo/pbm_creds_common.py``. Any file under the search root
 carrying the BEGIN marker opts in; markerless files (e.g. ``pbm_snapshot_payload``)
 are left untouched.
 
@@ -34,7 +34,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SEARCH_ROOT = REPO_ROOT / "app" / "sep" / "apps" / "backup_mongo"
 CANONICAL_SOURCE = (
-    REPO_ROOT / "app" / "sep" / "apps" / "framework" / "pbm_creds_common.py"
+    REPO_ROOT / "app" / "sep" / "apps" / "backup_mongo" / "pbm_creds_common.py"
 )
 
 
@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         ``--check`` finds drift or no opted-in payload exists.
     """
     sys.path.insert(0, str(REPO_ROOT))
-    from app.sep.apps.framework.pbm_creds_common import (
+    from app.sep.apps.backup_mongo.pbm_creds_common import (
         PREAMBLE_BEGIN,
         PREAMBLE_END,
         preamble_source,

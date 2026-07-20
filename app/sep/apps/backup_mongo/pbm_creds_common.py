@@ -21,7 +21,7 @@ execution time. Instead, the block between :data:`PREAMBLE_BEGIN` and
 :data:`PREAMBLE_END` below is the one canonical definition of the PBM
 credential-resolution helpers, materialized verbatim into each payload's marked
 region by ``scripts/gen_pbm_payloads.py`` and guarded in-sync (and behaviorally)
-by ``tests/app/sep/apps/framework/test_pbm_payload_preamble.py``.
+by ``tests/app/sep/apps/backup_mongo/test_pbm_payload_preamble.py``.
 
 A hardening fix to credential handling therefore lands here once and propagates
 to all nine payloads via the regen step, instead of drifting across nine copies.
