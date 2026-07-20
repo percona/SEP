@@ -367,7 +367,7 @@ def _ready_settings(**overrides) -> BundleUploadSettings:
 
 
 class TestBundleUploadSettings:
-    """Define tests for the BundleUploadSettings readiness and validators."""
+    """Define tests for the ``BundleUploadSettings`` readiness and validators."""
 
     def test_disabled_by_default(self):
         """Return the disabled reason when the master toggle is off."""
