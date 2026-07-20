@@ -138,7 +138,6 @@ def preamble_source() -> str:
     codegen step and the in-sync guard share one definition of "the block".
 
     :return: The preamble body text, stripped of its leading/trailing blank lines.
-    :rtype: str
     :raises ValueError: When either marker is missing from the module source.
     """
     lines = Path(__file__).read_text(encoding="utf-8").splitlines()

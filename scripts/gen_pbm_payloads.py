@@ -46,11 +46,8 @@ def find_payloads(search_root: Path, begin_marker: str) -> list[Path]:
     match). The canonical source itself is skipped.
 
     :param search_root: The directory tree scanned for opted-in payloads.
-    :type search_root: Path
     :param begin_marker: The BEGIN marker line a payload must contain.
-    :type begin_marker: str
     :return: The opted-in payload paths, sorted for deterministic output.
-    :rtype: list[Path]
     """
     found = []
     for path in sorted(search_root.rglob("*")):
@@ -72,15 +69,10 @@ def render(text: str, region: str, begin_marker: str, end_marker: str) -> str:
     preserves the file's trailing newline through the round-trip.
 
     :param text: The payload's current source text.
-    :type text: str
     :param region: The canonical preamble body to place between the markers.
-    :type region: str
     :param begin_marker: The BEGIN marker line.
-    :type begin_marker: str
     :param end_marker: The END marker line.
-    :type end_marker: str
     :return: The rewritten payload source.
-    :rtype: str
     :raises ValueError: When either marker line is absent or out of order.
     """
     lines = text.split("\n")
@@ -101,10 +93,8 @@ def main(argv: list[str] | None = None) -> int:
     """Rewrite or check the payload preambles against the canonical region.
 
     :param argv: The CLI arguments (defaults to ``sys.argv``).
-    :type argv: list[str] | None
     :return: ``0`` when every payload is in sync (or was rewritten); ``1`` when
         ``--check`` finds drift or no opted-in payload exists.
-    :rtype: int
     """
     sys.path.insert(0, str(REPO_ROOT))
     from app.sep.apps.framework.pbm_creds_common import (
