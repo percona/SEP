@@ -22,6 +22,7 @@ import {
   isAutoMongoRestoreTaskName,
   suggestMongoRestoreTaskName,
 } from './suggestMongoRestoreTaskName';
+import './restoreMongoCreateForm.css';
 
 function serviceDisplayName(value: unknown): string | undefined {
   if (value && typeof value === 'object' && 'name' in value) {
@@ -108,6 +109,9 @@ export const restoreMongoCreateRenderField: RenderFieldOverride = ({
 /**
  * Create-form slot: seed ``task_name`` with a stamped suggestion so the field
  * does not flash (or stick on) the static schema default ``mongodb-restore``.
+ *
+ * Accordion padding is scoped here (not in SchemaFormRenderer) so other apps'
+ * collapsible sections keep their existing spacing.
  */
 export const restoreMongoCreateForm: RenderFormSlot = ({
   sections,
@@ -116,13 +120,15 @@ export const restoreMongoCreateForm: RenderFormSlot = ({
   capabilities,
   renderField,
 }) => (
-  <SchemaFormRenderer
-    sections={sections}
-    onSubmit={onSubmit}
-    loading={loading}
-    capabilities={capabilities}
-    renderField={renderField}
-    defaultValues={{ task_name: suggestMongoRestoreTaskName() }}
-    submitLabel="Create MongoDB Restores"
-  />
+  <div className="restore-mongo-create-form">
+    <SchemaFormRenderer
+      sections={sections}
+      onSubmit={onSubmit}
+      loading={loading}
+      capabilities={capabilities}
+      renderField={renderField}
+      defaultValues={{ task_name: suggestMongoRestoreTaskName() }}
+      submitLabel="Create MongoDB Restores"
+    />
+  </div>
 );
