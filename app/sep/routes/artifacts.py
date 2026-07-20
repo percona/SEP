@@ -15,27 +15,41 @@
 
 """Define routes for downloading artifacts via signed URLs."""
 
+from collections.abc import Callable
+from pathlib import Path
+
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 from itsdangerous import BadSignature, SignatureExpired
 
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.security import crypto_timestamp_serializer
-from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
-from app.sep.artifact_constants import (
-    ARTIFACT_DOWNLOAD_SALT,
-    ARTIFACT_TYPE_DIPPER,
-    ARTIFACT_TYPE_SNIPPET,
-)
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.config import sep_settings
-from app.sep.snippets.config import snippets_settings
 
 router = APIRouter(include_in_schema=False)
 
-_BASE_DIRS = {
-    ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR,
-    ARTIFACT_TYPE_DIPPER: lambda: DIPPER_PAYLOADS_DIR,
-}
+
+def collect_base_dirs() -> dict[str, Callable[[], Path]]:
+    """Collect every app's ``artifact_base_dirs`` into a single lookup map.
+
+    :return: A mapping from artifact-type discriminator to its base-dir thunk.
+    :raises ValueError: If two apps declare the same artifact type, which
+        would ambiguously route one app's downloads into another's directory.
+    """
+    base_dirs = {}
+    for app in get_app_registry():
+        for artifact_type, thunk in app.artifact_base_dirs.items():
+            if artifact_type in base_dirs:
+                raise ValueError(
+                    f"Artifact type {artifact_type!r} declared by more than one app"
+                )
+            base_dirs[artifact_type] = thunk
+    return base_dirs
+
+
+_BASE_DIRS = collect_base_dirs()
 
 
 @router.get("/download/{token}")

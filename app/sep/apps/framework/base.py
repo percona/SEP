@@ -15,10 +15,12 @@
 
 """Define ``BaseApp``, the uniform registry entry for a mounted SEP app."""
 
+from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, SkipValidation
 
 from app.core.utils.fields import URIPath
 from app.sep.apps.framework.schema import AppSchema
@@ -74,6 +76,10 @@ class BaseApp(BaseModel):
         never be disabled) is a harmless no-op. Keys are validated at
         registry-build time: an unknown key, a self-dependency, or a cycle fails
         fast. See :meth:`AppRegistry.resolve_effective_enabled`.
+    :param artifact_base_dirs: A mapping from each artifact-type discriminator
+        this app owns to a thunk returning that type's download base directory.
+        The generic artifact-download route flattens these across the registry
+        to resolve a signed token to a file on disk; defaults to empty.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
@@ -96,6 +102,9 @@ class BaseApp(BaseModel):
     parent_key: str | None = None
     child_apps: tuple["BaseApp", ...] = ()
     requires_apps: tuple[str, ...] = ()
+    artifact_base_dirs: SkipValidation[Mapping[str, Callable[[], Path]]] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="before")
     @classmethod
