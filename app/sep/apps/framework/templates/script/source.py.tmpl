@@ -16,121 +16,32 @@
 """Back the << display_name_doc >> app with the framework ``ScriptSource`` seam.
 
 ``derive_script_routes`` builds the ``/snippet/*`` API surface from the hooks
-wired into :data:`<< name >>_source`. The example reads ``.sh`` files from
-``snippets/``; replace the hooks with the app's real script catalogue. Point
-``EXECUTION_TASK_NAME`` at the Tasks-API task the scripts dispatch to and make
-``_build_execution_meta`` return that task's required meta — the example task name
-and meta shape are placeholders the contract test exercises only against a mocked
-Tasks API, so they must match a real task before the app executes anything.
+:func:`~app.sep.apps.shared.disk_script_source.build_disk_script_source` wires into
+:data:`<< name >>_source`. Drop the app's scripts into ``snippets/``, each declaring
+its parameters in a ``# ---`` frontmatter block. The target task and interpreter are
+derived per-file at runtime by ``BaseSnippet`` — a ``.sh`` (or a plain ``.py``) runs
+under ``exec-artifact``, and a ``.py`` declaring ``requires_packages`` under
+``exec-python-artifact``.
 """
 
-from collections.abc import Sequence
 from pathlib import Path
+from typing import ClassVar
 
-from pydantic import BaseModel
-
-from app.core.exceptions import HTTPNotFoundException
-from app.sep.apps.<< name >>.models import (
-    << class_prefix >>Args,
-    << class_prefix >>ExecutionMeta,
-    << class_prefix >>ListRow,
-)
-from app.sep.apps.framework.schema import (
-    Column,
-    FormSection,
-    ListView,
-    AppSchema,
-    StringField,
-)
-from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
-
-SCRIPT_DIR = Path(__file__).parent / "snippets"
-EXECUTION_TASK_NAME = "run-command"
-
-_LIST_VIEW = ListView(columns=[Column(key="filename", label="Filename")])
+from app.sep.apps.<< name >>.constants import ARTIFACT_TYPE_<< name_upper >>, SCRIPT_DIR
+from app.sep.apps.shared.disk_script_source import build_disk_script_source
+from app.sep.snippets.models.snippet import BaseSnippet
 
 
-class << class_prefix >>Script:
-    """Implement ``ScriptProtocol`` over a script file under :data:`SCRIPT_DIR`.
+class << class_prefix >>Script(BaseSnippet):
+    """Load a << display_name_doc >> script from the app's script directory."""
 
-    :param filename: The script filename relative to :data:`SCRIPT_DIR`.
-    """
-
-    def __init__(self, filename: str) -> None:
-        self.filename = filename
-
-    @property
-    def execution_task_name(self) -> str:
-        """Return the Tasks-API task name this script executes under."""
-        return EXECUTION_TASK_NAME
-
-    def get_execution_model(self) -> type[BaseModel]:
-        """Return the model validating this script's execution arguments."""
-        return << class_prefix >>Args
+    BASE_DIR: ClassVar[Path] = SCRIPT_DIR
 
 
-async def _load_script(filename: str) -> << class_prefix >>Script:
-    """Resolve a ``snippet_filename`` to a script, 404 when the file is absent."""
-    if not (SCRIPT_DIR / filename).is_file():
-        raise HTTPNotFoundException
-    return << class_prefix >>Script(filename)
-
-
-async def _list_scripts() -> Sequence[<< class_prefix >>Script]:
-    """List every script file discovered under :data:`SCRIPT_DIR`."""
-    return [
-        << class_prefix >>Script(path.name)
-        for path in sorted(SCRIPT_DIR.iterdir())
-        if path.is_file()
-    ]
-
-
-def _build_form_schema(script: << class_prefix >>Script) -> AppSchema:
-    """Build the per-script form schema from its execution model's fields."""
-    fields = [
-        StringField(name=field_name, label=field_name)
-        for field_name in script.get_execution_model().model_fields
-    ]
-    return AppSchema(
-        name="<< name >>",
-        display_name=<< display_name_repr >>,
-        forms=[FormSection(title="Parameters", fields=fields)],
-        list_view=_LIST_VIEW,
-    )
-
-
-def _build_execution_meta(
-    script: << class_prefix >>Script, request: ScriptExecuteWrite
-) -> << class_prefix >>ExecutionMeta:
-    """Assemble the execution meta from the script and validated request body."""
-    return << class_prefix >>ExecutionMeta(
-        target=request.executor_host,
-        filename=script.filename,
-        sudo=request.sudo,
-        args=request.args,
-    )
-
-
-def _list_row(script: << class_prefix >>Script) -> << class_prefix >>ListRow:
-    """Project a script into its list-row response."""
-    return << class_prefix >>ListRow(
-        filename=script.filename, task_name=script.execution_task_name
-    )
-
-
-def _static_schema() -> AppSchema:
-    """Build the plugin-level schema served at ``GET /schema``."""
-    return AppSchema(
-        name="<< name >>", display_name=<< display_name_repr >>, list_view=_LIST_VIEW
-    )
-
-
-<< name >>_source = ScriptSource(
+<< name >>_source = build_disk_script_source(
     script_dir=SCRIPT_DIR,
-    load_script=_load_script,
-    list_scripts=_list_scripts,
-    build_form_schema=_build_form_schema,
-    build_execution_meta=_build_execution_meta,
-    list_response=_list_row,
-    static_schema=_static_schema(),
+    script_cls=<< class_prefix >>Script,
+    artifact_type=ARTIFACT_TYPE_<< name_upper >>,
+    name="<< name >>",
+    display_name=<< display_name_repr >>,
 )
