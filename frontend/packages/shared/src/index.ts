@@ -56,6 +56,7 @@ export const ROUTES = {
   schemaInventory: '/schema-change/inventory',
   backupsMongodb: '/backups/mongodb',
   dipper: '/dipper',
+  topology: '/topology',
   reports: '/reports',
   settings: '/settings',
 } as const;

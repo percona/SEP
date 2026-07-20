@@ -15,6 +15,8 @@
 
 """Tests for the ``BaseApp`` registry-entry definition."""
 
+from pathlib import Path
+
 from fastapi import APIRouter
 
 from app.sep.apps.framework.base import BaseApp
@@ -80,3 +82,27 @@ class TestBaseAppSchemaAlias:
         """A legacy-wrapped app carries no schema."""
         app = BaseApp(name="Checksums", uri_path="/checksums")
         assert app.app_schema is None
+
+
+class TestBaseAppArtifactBaseDirs:
+    """Cover the ``artifact_base_dirs`` registry-collected download map."""
+
+    def test_artifact_base_dirs_defaults_to_empty(self) -> None:
+        """Return an empty mapping when the field is unset."""
+        app = BaseApp(name="Inventory", uri_path="/inventory")
+        assert app.artifact_base_dirs == {}
+
+    def test_artifact_base_dirs_default_is_not_shared(self) -> None:
+        """Keep the default mapping distinct across instances."""
+        first = BaseApp(name="Inventory", uri_path="/inventory")
+        second = BaseApp(name="Checksums", uri_path="/checksums")
+        assert first.artifact_base_dirs is not second.artifact_base_dirs
+
+    def test_artifact_base_dirs_carries_thunk_declaration(self) -> None:
+        """Carry a declared thunk that resolves to its ``Path`` when called."""
+        app = BaseApp(
+            name="Dipper",
+            uri_path="/dipper",
+            artifact_base_dirs={"dipper": lambda: Path("/tmp/payloads")},
+        )
+        assert app.artifact_base_dirs["dipper"]() == Path("/tmp/payloads")

@@ -33,6 +33,7 @@ owner of its own — ``ANY`` is the honest "no owner restriction" value.
 
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.nav_icons import NavIcon
+from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.apps.snippets.extra_routes import (
     approval_router,
     artifact_router,
@@ -72,4 +73,5 @@ app = TaskExecutionApp(
     capabilities_provider=_snippets_capabilities_provider,
     extra_routes=(approval_router, maintenance_router, artifact_router),
     jinja_router=jinja_router,
+    artifact_base_dirs={ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR},
 )
