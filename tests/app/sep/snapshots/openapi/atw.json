@@ -139,8 +139,8 @@
         "title": "ATWSnippetSummary",
         "type": "object"
       },
-      "atw__AtwIncident": {
-        "description": "Represent a named grouping of diagnostic snippet executions per support case.\n\n:param created_by: Username of the support engineer who created the incident.\n:param executions: The snippet executions grouped under this incident.",
+      "atw__AtwIncidentResponse": {
+        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param servicenow_case: ServiceNow support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -186,9 +186,14 @@
           }
         },
         "required": [
-          "created_by"
+          "id",
+          "name",
+          "servicenow_case",
+          "created_by",
+          "created_at",
+          "updated_at"
         ],
-        "title": "AtwIncident",
+        "title": "AtwIncidentResponse",
         "type": "object"
       },
       "atw__AtwIncidentUpdate": {
@@ -237,11 +242,11 @@
         "title": "AtwIncidentWrite",
         "type": "object"
       },
-      "atw__PaginatedResponse_AtwIncident_": {
+      "atw__PaginatedResponse_AtwIncidentResponse_": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/atw__AtwIncident"
+              "$ref": "#/components/schemas/atw__AtwIncidentResponse"
             },
             "title": "Items",
             "type": "array"
@@ -265,7 +270,7 @@
           "offset",
           "limit"
         ],
-        "title": "PaginatedResponse[AtwIncident]",
+        "title": "PaginatedResponse[AtwIncidentResponse]",
         "type": "object"
       },
       "framework__AppEntitySchema": {
@@ -3402,7 +3407,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/atw__PaginatedResponse_AtwIncident_"
+                  "$ref": "#/components/schemas/atw__PaginatedResponse_AtwIncidentResponse_"
                 }
               }
             },
@@ -3442,7 +3447,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/atw__AtwIncident"
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
                 }
               }
             },
@@ -3521,7 +3526,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/atw__AtwIncident"
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
                 }
               }
             },
@@ -3573,7 +3578,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/atw__AtwIncident"
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
                 }
               }
             },

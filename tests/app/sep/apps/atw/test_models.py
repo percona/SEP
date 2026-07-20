@@ -22,7 +22,11 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.sep.apps.atw.models import AtwIncident, AtwIncidentWrite
+from app.sep.apps.atw.models import (
+    AtwIncident,
+    AtwIncidentResponse,
+    AtwIncidentWrite,
+)
 from tests.app.factories import AtwIncidentExecutionFactory, AtwIncidentFactory
 
 _INCIDENT_NAME_PATTERN = r"Incident \d{4}-\d\d-\d\d \d\d:\d\d"
@@ -60,6 +64,22 @@ class TestAtwIncidentModel:
         session.add(incident)
         with pytest.raises(IntegrityError):
             await session.commit()
+
+
+class TestAtwIncidentResponse:
+    """Check the AtwIncidentResponse API response model."""
+
+    def test_all_persisted_fields_are_required(self) -> None:
+        """Ensure the response advertises every stored field as required, not optional."""
+        required = set(AtwIncidentResponse.model_json_schema()["required"])
+        assert required == {
+            "id",
+            "name",
+            "servicenow_case",
+            "created_by",
+            "created_at",
+            "updated_at",
+        }
 
 
 class TestAtwIncidentExecutionModel:

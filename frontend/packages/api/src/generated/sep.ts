@@ -4814,31 +4814,39 @@ export interface components {
       title: string;
     };
     /**
-     * AtwIncident
-     * @description Represent a named grouping of diagnostic snippet executions per support case.
+     * AtwIncidentResponse
+     * @description Represent a persisted diagnostic incident.
      *
+     *     Every field is always present on a stored incident, so — unlike returning
+     *     the :class:`AtwIncident` table model directly — the generated client types
+     *     them as required rather than optional.
+     *
+     *     :param id: The incident's UUID primary key.
+     *     :param name: Human-readable incident label.
+     *     :param servicenow_case: ServiceNow support-case reference, if set.
      *     :param created_by: Username of the support engineer who created the incident.
-     *     :param executions: The snippet executions grouped under this incident.
+     *     :param created_at: When the incident was created.
+     *     :param updated_at: When the incident was last updated, if ever.
      */
-    atw__AtwIncident: {
+    atw__AtwIncidentResponse: {
       /**
        * Created At
        * Format: date-time
        */
-      created_at?: string;
+      created_at: string;
       /** Created By */
       created_by: string;
       /**
        * Id
        * Format: uuid4
        */
-      id?: string;
+      id: string;
       /** Name */
-      name?: string;
+      name: string;
       /** Servicenow Case */
-      servicenow_case?: string | null;
+      servicenow_case: string | null;
       /** Updated At */
-      updated_at?: string | null;
+      updated_at: string | null;
     };
     /**
      * AtwIncidentUpdate
@@ -4868,10 +4876,10 @@ export interface components {
       /** Servicenow Case */
       servicenow_case?: string | null;
     };
-    /** PaginatedResponse[AtwIncident] */
-    atw__PaginatedResponse_AtwIncident_: {
+    /** PaginatedResponse[AtwIncidentResponse] */
+    atw__PaginatedResponse_AtwIncidentResponse_: {
       /** Items */
-      items: components['schemas']['atw__AtwIncident'][];
+      items: components['schemas']['atw__AtwIncidentResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -10304,7 +10312,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['atw__PaginatedResponse_AtwIncident_'];
+          'application/json': components['schemas']['atw__PaginatedResponse_AtwIncidentResponse_'];
         };
       };
       /** @description Validation Error */
@@ -10337,7 +10345,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['atw__AtwIncident'];
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
         };
       };
       /** @description Validation Error */
@@ -10368,7 +10376,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['atw__AtwIncident'];
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
         };
       };
       /** @description Validation Error */
@@ -10432,7 +10440,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['atw__AtwIncident'];
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
         };
       };
       /** @description Validation Error */

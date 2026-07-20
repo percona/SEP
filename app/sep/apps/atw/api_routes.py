@@ -29,7 +29,12 @@ from app.sep.apps.atw.categories import (
     derive_category_root,
 )
 from app.sep.apps.atw.crud import AtwIncidentManager
-from app.sep.apps.atw.models import AtwIncident, AtwIncidentUpdate, AtwIncidentWrite
+from app.sep.apps.atw.models import (
+    AtwIncident,
+    AtwIncidentResponse,
+    AtwIncidentUpdate,
+    AtwIncidentWrite,
+)
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.deps import ApiCurrentUser, SessionDep
@@ -152,7 +157,7 @@ async def atw_create_incident(
     session: SessionDep,
     current_user: ApiCurrentUser,
     body: AtwIncidentWrite,
-) -> AtwIncident:
+) -> AtwIncidentResponse:
     """Create a diagnostic incident owned by the current user.
 
     :param session: The database session.
@@ -161,24 +166,29 @@ async def atw_create_incident(
     :return: The created incident.
     """
     incident = AtwIncident(**body.model_dump(), created_by=current_user.username)
-    return await AtwIncidentManager.save(session, incident)
+    saved = await AtwIncidentManager.save(session, incident)
+    return AtwIncidentResponse.model_validate(saved)
 
 
 @router.get("/incidents/")
 async def atw_list_incidents(
     session: SessionDep, pagination: PaginationDep
-) -> PaginatedResponse[AtwIncident]:
+) -> PaginatedResponse[AtwIncidentResponse]:
     """List diagnostic incidents, newest first.
 
     :param session: The database session.
     :param pagination: The offset/limit window for the page.
     :return: A paginated page of incidents, newest first.
     """
-    return await AtwIncidentManager.list_paginated(session, pagination=pagination)
+    page = await AtwIncidentManager.list_paginated(session, pagination=pagination)
+    items = [AtwIncidentResponse.model_validate(incident) for incident in page.items]
+    return PaginatedResponse.from_pagination(items, page.total, pagination)
 
 
 @router.get("/incidents/{incident_id}")
-async def atw_get_incident(session: SessionDep, incident_id: UUID4) -> AtwIncident:
+async def atw_get_incident(
+    session: SessionDep, incident_id: UUID4
+) -> AtwIncidentResponse:
     """Retrieve a single diagnostic incident by id.
 
     :param session: The database session.
@@ -186,13 +196,14 @@ async def atw_get_incident(session: SessionDep, incident_id: UUID4) -> AtwIncide
     :return: The matching incident.
     :raises HTTPNotFoundException: If no incident has that id.
     """
-    return await AtwIncidentManager.get_or_404(session, id=incident_id)
+    incident = await AtwIncidentManager.get_or_404(session, id=incident_id)
+    return AtwIncidentResponse.model_validate(incident)
 
 
 @router.patch("/incidents/{incident_id}")
 async def atw_update_incident(
     session: SessionDep, incident_id: UUID4, body: AtwIncidentUpdate
-) -> AtwIncident:
+) -> AtwIncidentResponse:
     """Update a diagnostic incident's name or ServiceNow case reference.
 
     :param session: The database session.
@@ -202,7 +213,8 @@ async def atw_update_incident(
     :raises HTTPNotFoundException: If no incident has that id.
     """
     incident = await AtwIncidentManager.get_or_404(session, id=incident_id)
-    return await AtwIncidentManager.update(session, incident, body)
+    updated = await AtwIncidentManager.update(session, incident, body)
+    return AtwIncidentResponse.model_validate(updated)
 
 
 @router.delete(

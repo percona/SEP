@@ -23,18 +23,18 @@ them into the ``sep`` autogenerate). The category taxonomy, which depends on
 ``app.inventory``, lives in :mod:`app.sep.apps.atw.categories`.
 """
 
-from pydantic import Field, UUID4
+from pydantic import BaseModel, ConfigDict, Field, UUID4
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db.models import BaseUUIDSQLModel
 from app.core.utils.date_time import utc_now
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import NonEmptyStr, UTCDatetime
 
 
 def _default_incident_name() -> str:
-    """Build the server-generated default incident name embedding the creation time.
+    """Build the default incident name embedding the creation time.
 
     :return: A timestamped name of the form ``Incident YYYY-MM-DD HH:MM``.
     """
@@ -86,6 +86,31 @@ class AtwIncidentUpdate(SQLModel):
 
     name: NonEmptyStr = Field(default=None)
     servicenow_case: str | None = None
+
+
+class AtwIncidentResponse(BaseModel):
+    """Represent a persisted diagnostic incident.
+
+    Every field is always present on a stored incident, so — unlike returning
+    the :class:`AtwIncident` table model directly — the generated client types
+    them as required rather than optional.
+
+    :param id: The incident's UUID primary key.
+    :param name: Human-readable incident label.
+    :param servicenow_case: ServiceNow support-case reference, if set.
+    :param created_by: Username of the support engineer who created the incident.
+    :param created_at: When the incident was created.
+    :param updated_at: When the incident was last updated, if ever.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID4
+    name: NonEmptyStr
+    servicenow_case: str | None
+    created_by: str
+    created_at: UTCDatetime
+    updated_at: UTCDatetime | None
 
 
 class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
