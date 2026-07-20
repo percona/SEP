@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Wire the << display_name_doc >> plugin as a declarative ``TaskExecutionApp``.
+"""Wire the Golden Task plugin as a declarative ``TaskExecutionApp``.
 
 The registry discovers the exported ``app`` and mounts its derived router, which
 serves the schema, list, detail, create, update, execute, and delete surfaces.
@@ -21,20 +21,20 @@ Set ``group`` / ``nav_order`` to place the app in the sidebar, or
 ``service_type`` plus ``list_filter=ListFilterConfig(...)`` to expose list filters.
 """
 
-from app.sep.apps.<< name >>.models import << class_prefix >>Form
-from app.sep.apps.<< name >>.spec import build_<< name >>_spec
-from app.sep.apps.<< name >>.views import << name >>_views
+from app.sep.apps.golden_task.models import GoldenTaskForm
+from app.sep.apps.golden_task.spec import build_golden_task_spec
+from app.sep.apps.golden_task.views import golden_task_views
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
-<< nav_icon_import_line >>from app.tasks.models import ANY_OWNER
+from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(
-    name="<< name >>",
-    display_name=<< display_name_repr >>,
-    uri_path="/<< name >>",
-    description=<< description_repr >>,
+    name="golden_task",
+    display_name="Golden Task",
+    uri_path="/golden_task",
+    description="TODO: describe what the Golden Task task does.",
     owner=ANY_OWNER,
-    create_model=<< class_prefix >>Form,
-    views=<< name >>_views,
-    task_spec_builder=build_<< name >>_spec,
-    capabilities=AppCapabilities(update=<< derive_update >>, delete=<< derive_delete >>),
-<< group_line >><< nav_icon_kwarg_line >>)
+    create_model=GoldenTaskForm,
+    views=golden_task_views,
+    task_spec_builder=build_golden_task_spec,
+    capabilities=AppCapabilities(update=True, delete=True),
+)

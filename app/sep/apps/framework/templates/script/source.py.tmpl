@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Back the << display_name >> app with the framework ``ScriptSource`` seam.
+"""Back the << display_name_doc >> app with the framework ``ScriptSource`` seam.
 
 ``derive_script_routes`` builds the ``/snippet/*`` API surface from the hooks
 wired into :data:`<< name >>_source`. The example reads ``.sh`` files from
@@ -93,7 +93,7 @@ def _build_form_schema(script: << class_prefix >>Script) -> AppSchema:
     ]
     return AppSchema(
         name="<< name >>",
-        display_name="<< display_name >>",
+        display_name=<< display_name_repr >>,
         forms=[FormSection(title="Parameters", fields=fields)],
         list_view=_LIST_VIEW,
     )
@@ -121,7 +121,7 @@ def _list_row(script: << class_prefix >>Script) -> << class_prefix >>ListRow:
 def _static_schema() -> AppSchema:
     """Build the plugin-level schema served at ``GET /schema``."""
     return AppSchema(
-        name="<< name >>", display_name="<< display_name >>", list_view=_LIST_VIEW
+        name="<< name >>", display_name=<< display_name_repr >>, list_view=_LIST_VIEW
     )
 
 
