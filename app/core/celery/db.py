@@ -26,6 +26,7 @@ engine = create_async_engine(
     run_pydantic_type_validator(StrAsyncDatabaseUrl, settings.CELERY.beat_dburi),
     echo=False,
     json_serializer=json_serializer,
+    **settings.CELERY.beat_engine_options.model_dump(exclude_none=True),
 ).execution_options(schema_translate_map={"celery_schema": settings.CELERY.beat_schema})
 
 

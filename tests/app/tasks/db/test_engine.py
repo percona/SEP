@@ -15,8 +15,13 @@
 
 """Define tests for the app.tasks.db.engine module."""
 
+import importlib
+from unittest.mock import MagicMock, patch
+
 from sqlalchemy.orm import sessionmaker
 
+import app.tasks.db.engine as tasks_engine_module
+from app.tasks.config import tasks_settings
 from app.tasks.db.engine import get_async_session_maker
 
 
@@ -33,3 +38,15 @@ class TestGetAsyncSessionMaker:
         maker_a = get_async_session_maker()
         maker_b = get_async_session_maker()
         assert maker_a is not maker_b
+
+
+def test_engine_built_from_tasks_database():
+    """Assert the Tasks engine is built via the shared factory from its own DATABASE."""
+    try:
+        with patch(
+            "app.core.db.utils.create_app_async_engine", return_value=MagicMock()
+        ) as create_engine:
+            importlib.reload(tasks_engine_module)
+            create_engine.assert_called_once_with(tasks_settings.DATABASE)
+    finally:
+        importlib.reload(tasks_engine_module)
