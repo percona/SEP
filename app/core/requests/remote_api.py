@@ -243,18 +243,18 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     :type logger_name: str
     """
 
+    #: Lightweight route hit by :meth:`RemoteAPI.check_connectivity` for a
+    #: reachability probe. A ``ClassVar`` (not a model field) so it is purely
+    #: additive: existing subclasses and callers are unaffected, and it never
+    #: enters the client-registry key or model serialization. Override per
+    #: client, or pass an explicit ``path`` to ``check_connectivity``.
+    CONNECTIVITY_CHECK_PATH: ClassVar[str] = "/"
     endpoint: CredentialHttpUrl = Field(..., frozen=True)
     verify_ssl: bool = Field(default=True, frozen=True)
     ssl_cafile: RelativeFilePathField | None = Field(None, frozen=True)
     ssl_keyfile: RelativeFilePathField | None = Field(None, frozen=True)
     ssl_certfile: RelativeFilePathField | None = Field(None, frozen=True)
     logger_name: str = __name__
-    #: Lightweight route hit by :meth:`RemoteAPI.check_connectivity` for a
-    #: reachability probe. A ``ClassVar`` (not a model field) so it is purely
-    #: additive: existing subclasses and callers are unaffected, and it never
-    #: enters the client-registry key or model serialization. Override per
-    #: client, or pass an explicit ``path`` to ``check_connectivity``.
-    connectivity_check_path: ClassVar[str] = "/"
     _session: ClientSession | None = None
     _extra_headers: ContextVar[dict[str, str] | None] = PrivateAttr(
         default_factory=lambda: ContextVar("api_extra_headers", default=None)
@@ -735,7 +735,7 @@ class RemoteAPI(BaseRemoteAPI):
         """Probe the endpoint and return a normalized connectivity result.
 
         Issue a lightweight ``GET`` against ``path`` (or
-        :attr:`connectivity_check_path`) under a short bounded timeout and map
+        :attr:`CONNECTIVITY_CHECK_PATH`) under a short bounded timeout and map
         the outcome to one of the :class:`ConnectivityStatusEnum` states:
         reachable, authentication failure, unreachable, SSL verification
         failure, or timeout. Any failure is captured and classified -- this
@@ -749,12 +749,12 @@ class RemoteAPI(BaseRemoteAPI):
         :param service: Stable identifier of the probed service (e.g. ``"pmm"``).
         :type service: str
         :param path: Optional override for the probe route. Defaults to
-            :attr:`connectivity_check_path`.
+            :attr:`CONNECTIVITY_CHECK_PATH`.
         :type path: str | None
         :return: The normalized connectivity result.
         :rtype: ConnectivityResult
         """
-        probe_path = path if path is not None else self.connectivity_check_path
+        probe_path = path if path is not None else self.CONNECTIVITY_CHECK_PATH
         try:
             async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
                 await self.get(probe_path)

@@ -209,14 +209,13 @@ class PMMRemoteAPI(RemoteAPI):
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
+    #: PMM exposes its version (and proves reachability) at this route, so the
+    #: connectivity probe targets it instead of the base ``/``.
+    CONNECTIVITY_CHECK_PATH: ClassVar[str] = "/v1/version"
     api_key: SecretStr
     error_detail_key: NonEmptyStr = "message"
     error_code_key: NonEmptyStr | None = "code"
     default_to_v3: bool = True
-
-    #: PMM exposes its version (and proves reachability) at this route, so the
-    #: connectivity probe targets it instead of the base ``/``.
-    connectivity_check_path: ClassVar[str] = "/v1/version"
 
     @property
     def headers(self) -> dict[str, str]:
@@ -284,7 +283,7 @@ class PMMRemoteAPI(RemoteAPI):
 
         Override the generic probe so a successful check also reports the PMM
         version. The probe route is the class-level
-        :attr:`connectivity_check_path` (``/v1/version``) unless an explicit
+        :attr:`CONNECTIVITY_CHECK_PATH` (``/v1/version``) unless an explicit
         ``path`` is given. A response with an unexpected body shape (missing
         ``version`` key) still counts as reachable -- the server answered --
         just without a version. All other failures are classified into the same
@@ -293,13 +292,13 @@ class PMMRemoteAPI(RemoteAPI):
         :param service: Stable identifier of the probed service (``"pmm"``).
         :type service: str
         :param path: Optional override for the probe route. Defaults to
-            :attr:`connectivity_check_path`.
+            :attr:`CONNECTIVITY_CHECK_PATH`.
         :type path: str | None
         :return: The normalized connectivity result, with ``version`` set on
             success.
         :rtype: ConnectivityResult
         """
-        probe_path = path if path is not None else self.connectivity_check_path
+        probe_path = path if path is not None else self.CONNECTIVITY_CHECK_PATH
         try:
             async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
                 version_data = await self.get(probe_path)
