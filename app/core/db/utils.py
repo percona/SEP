@@ -36,15 +36,17 @@ from sqlalchemy import (
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async_engine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
 from sqlalchemy.sql.dml import Insert as GenericInsert
 from sqlalchemy.sql.type_api import TypeEngine
 from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.config import DatabaseOptions
 from app.core.db.sql_types import AutoJSON
 from app.core.utils.fields import DatabaseDialect
+from app.core.utils.serialization import json_serializer
 
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
 
@@ -64,6 +66,24 @@ def get_async_session_maker_from_engine(engine: AsyncEngine) -> async_sessionmak
         engine,
         class_=AsyncSession,
         expire_on_commit=False,
+    )
+
+
+def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
+    """Build a service API async engine, forwarding only the set pool options.
+
+    Unset pool fields are omitted so the engine keeps SQLAlchemy's own defaults,
+    leaving standalone deployments unchanged.
+
+    :param database: The service database options carrying the URL and any
+        configured pool sizing.
+    :return: A configured asynchronous engine.
+    """
+    return create_async_engine(
+        database.URL,
+        echo=False,
+        json_serializer=json_serializer,
+        **database.pool_engine_kwargs,
     )
 
 
