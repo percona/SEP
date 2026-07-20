@@ -34,7 +34,7 @@ from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/backup_mongo/restore"
 EMAIL_MASK = PIIEntity.encode_selection({PIIEntity.EMAIL_ADDRESS})
-EXPECTED_EMAIL_ENTITIES = ["EMAIL_ADDRESS"]
+EXPECTED_EMAIL_ENTITIES = [PIIEntity.EMAIL_ADDRESS.name]
 EXPECTED_LOGICAL_RESTORE_POSTS = 3
 EXPECTED_PHYSICAL_RESTORE_POSTS = 4
 DEFAULT_PAGE_LIMIT = 50

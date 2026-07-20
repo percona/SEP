@@ -653,7 +653,7 @@ async def build_restore_mongo_api_detail_response(
         last_executed_at=parent_latest.finished_at if parent_latest else None,
     )
     return RestoreTaskDetailResponse(
-        **base.model_dump(exclude={"anonymized_entities"}),
+        **base.model_dump(exclude=set(base.model_computed_fields)),
         derived_tasks=derived_tasks,
     )
 
