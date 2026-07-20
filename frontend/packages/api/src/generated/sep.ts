@@ -658,6 +658,82 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/atw/incidents/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw List Incidents
+     * @description List diagnostic incidents, newest first.
+     *
+     *     :param session: The database session.
+     *     :param pagination: The offset/limit window for the page.
+     *     :return: A paginated page of incidents, newest first.
+     */
+    get: operations['atw_atw_list_incidents_api_apps_atw_incidents__get'];
+    put?: never;
+    /**
+     * Atw Create Incident
+     * @description Create a diagnostic incident owned by the current user.
+     *
+     *     :param session: The database session.
+     *     :param current_user: The authenticated user, stamped as ``created_by``.
+     *     :param body: The incident create payload.
+     *     :return: The created incident.
+     */
+    post: operations['atw_atw_create_incident_api_apps_atw_incidents__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Get Incident
+     * @description Retrieve a single diagnostic incident by id.
+     *
+     *     :param session: The database session.
+     *     :param incident_id: The incident's UUID.
+     *     :return: The matching incident.
+     *     :raises HTTPNotFoundException: If no incident has that id.
+     */
+    get: operations['atw_atw_get_incident_api_apps_atw_incidents__incident_id__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Atw Delete Incident
+     * @description Delete a diagnostic incident and cascade its execution rows.
+     *
+     *     :param session: The database session.
+     *     :param incident_id: The incident's UUID.
+     *     :raises HTTPNotFoundException: If no incident has that id.
+     */
+    delete: operations['atw_atw_delete_incident_api_apps_atw_incidents__incident_id__delete'];
+    options?: never;
+    head?: never;
+    /**
+     * Atw Update Incident
+     * @description Update a diagnostic incident's name or ServiceNow case reference.
+     *
+     *     :param session: The database session.
+     *     :param incident_id: The incident's UUID.
+     *     :param body: The partial update payload; unset fields are untouched.
+     *     :return: The updated incident.
+     *     :raises HTTPNotFoundException: If no incident has that id.
+     */
+    patch: operations['atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch'];
+    trace?: never;
+  };
   '/api/apps/atw/schema': {
     parameters: {
       query?: never;
@@ -4736,6 +4812,72 @@ export interface components {
       name: string;
       /** Title */
       title: string;
+    };
+    /**
+     * AtwIncident
+     * @description Represent a named grouping of diagnostic snippet executions per support case.
+     *
+     *     :param created_by: Username of the support engineer who created the incident.
+     *     :param executions: The snippet executions grouped under this incident.
+     */
+    atw__AtwIncident: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Created By */
+      created_by: string;
+      /**
+       * Id
+       * Format: uuid4
+       */
+      id?: string;
+      /** Name */
+      name?: string;
+      /** Servicenow Case */
+      servicenow_case?: string | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * AtwIncidentUpdate
+     * @description Define the PATCH payload — all fields optional; unset fields are untouched.
+     *
+     *     :param name: New incident label. Non-nullable when provided: an omitted
+     *         ``name`` is left unchanged, while an explicit null or empty string is
+     *         rejected with 422 (the column is NOT NULL). Typing it as a non-optional
+     *         ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel
+     *         out of the JSON schema, so the generated client advertises ``name?: string``
+     *         (not ``string | null``) — matching what the route actually accepts.
+     *     :param servicenow_case: New ServiceNow case reference; an explicit null clears it.
+     */
+    atw__AtwIncidentUpdate: {
+      /** Name */
+      name?: string;
+      /** Servicenow Case */
+      servicenow_case?: string | null;
+    };
+    /**
+     * AtwIncidentWrite
+     * @description Define the create payload; ``name`` defaults and ``created_by`` is server-stamped.
+     */
+    atw__AtwIncidentWrite: {
+      /** Name */
+      name?: string;
+      /** Servicenow Case */
+      servicenow_case?: string | null;
+    };
+    /** PaginatedResponse[AtwIncident] */
+    atw__PaginatedResponse_AtwIncident_: {
+      /** Items */
+      items: components['schemas']['atw__AtwIncident'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /**
      * BackupDerivedTaskSummary
@@ -10140,6 +10282,166 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['atw__ATWCategoryListing'][];
+        };
+      };
+    };
+  };
+  atw_atw_list_incidents_api_apps_atw_incidents__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_AtwIncident_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_create_incident_api_apps_atw_incidents__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__AtwIncidentWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncident'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_get_incident_api_apps_atw_incidents__incident_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncident'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_delete_incident_api_apps_atw_incidents__incident_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__AtwIncidentUpdate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncident'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
       "ServiceTypeEnum": {
         "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
         "enum": [
@@ -14,6 +27,46 @@
         ],
         "title": "ServiceTypeEnum",
         "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
       },
       "atw__ATWCategoryListing": {
         "description": "Represent one ATW category row and its snippet members.\n\n:param category_root: The top-level product/category root.\n:type category_root: str\n:param parent_category: The parent category enum name.\n:type parent_category: str\n:param parent_category_label: The parent category display label.\n:type parent_category_label: str\n:param category: The ATW leaf category enum name.\n:type category: str\n:param category_label: The ATW leaf category display label.\n:type category_label: str\n:param snippet_count: Number of snippets in this category.\n:type snippet_count: int\n:param snippets: Snippet summaries belonging to this category.\n:type snippets: list[ATWSnippetSummary]",
@@ -84,6 +137,135 @@
           "description"
         ],
         "title": "ATWSnippetSummary",
+        "type": "object"
+      },
+      "atw__AtwIncident": {
+        "description": "Represent a named grouping of diagnostic snippet executions per support case.\n\n:param created_by: Username of the support engineer who created the incident.\n:param executions: The snippet executions grouped under this incident.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid4",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "servicenow_case": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servicenow Case"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "created_by"
+        ],
+        "title": "AtwIncident",
+        "type": "object"
+      },
+      "atw__AtwIncidentUpdate": {
+        "description": "Define the PATCH payload — all fields optional; unset fields are untouched.\n\n:param name: New incident label. Non-nullable when provided: an omitted\n    ``name`` is left unchanged, while an explicit null or empty string is\n    rejected with 422 (the column is NOT NULL). Typing it as a non-optional\n    ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel\n    out of the JSON schema, so the generated client advertises ``name?: string``\n    (not ``string | null``) — matching what the route actually accepts.\n:param servicenow_case: New ServiceNow case reference; an explicit null clears it.",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "servicenow_case": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servicenow Case"
+          }
+        },
+        "title": "AtwIncidentUpdate",
+        "type": "object"
+      },
+      "atw__AtwIncidentWrite": {
+        "description": "Define the create payload; ``name`` defaults and ``created_by`` is server-stamped.",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "servicenow_case": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servicenow Case"
+          }
+        },
+        "title": "AtwIncidentWrite",
+        "type": "object"
+      },
+      "atw__PaginatedResponse_AtwIncident_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/atw__AtwIncident"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[AtwIncident]",
         "type": "object"
       },
       "framework__AppEntitySchema": {
@@ -3181,6 +3363,234 @@
           }
         },
         "summary": "Atw Api List",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/": {
+      "get": {
+        "description": "List diagnostic incidents, newest first.\n\n:param session: The database session.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of incidents, newest first.",
+        "operationId": "atw_atw_list_incidents_api_apps_atw_incidents__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__PaginatedResponse_AtwIncident_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw List Incidents",
+        "tags": [
+          "atw"
+        ]
+      },
+      "post": {
+        "description": "Create a diagnostic incident owned by the current user.\n\n:param session: The database session.\n:param current_user: The authenticated user, stamped as ``created_by``.\n:param body: The incident create payload.\n:return: The created incident.",
+        "operationId": "atw_atw_create_incident_api_apps_atw_incidents__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/atw__AtwIncidentWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncident"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Create Incident",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/{incident_id}": {
+      "delete": {
+        "description": "Delete a diagnostic incident and cascade its execution rows.\n\n:param session: The database session.\n:param incident_id: The incident's UUID.\n:raises HTTPNotFoundException: If no incident has that id.",
+        "operationId": "atw_atw_delete_incident_api_apps_atw_incidents__incident_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Delete Incident",
+        "tags": [
+          "atw"
+        ]
+      },
+      "get": {
+        "description": "Retrieve a single diagnostic incident by id.\n\n:param session: The database session.\n:param incident_id: The incident's UUID.\n:return: The matching incident.\n:raises HTTPNotFoundException: If no incident has that id.",
+        "operationId": "atw_atw_get_incident_api_apps_atw_incidents__incident_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncident"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Get Incident",
+        "tags": [
+          "atw"
+        ]
+      },
+      "patch": {
+        "description": "Update a diagnostic incident's name or ServiceNow case reference.\n\n:param session: The database session.\n:param incident_id: The incident's UUID.\n:param body: The partial update payload; unset fields are untouched.\n:return: The updated incident.\n:raises HTTPNotFoundException: If no incident has that id.",
+        "operationId": "atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/atw__AtwIncidentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncident"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Update Incident",
         "tags": [
           "atw"
         ]

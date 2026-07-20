@@ -13,92 +13,103 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define models for the ATW plugin."""
+"""Define the ATW plugin's DB tables and their API request/response models.
 
-from enum import StrEnum
+This module is loaded by the Alembic plugin-discovery loader at migration time,
+so it must stay self-contained — importing only from ``app.core``, ``pydantic``,
+``sqlalchemy``, and ``sqlmodel``, never from sibling plugins or other service
+packages (that would register foreign tables in ``SQLModel.metadata`` and leak
+them into the ``sep`` autogenerate). The category taxonomy, which depends on
+``app.inventory``, lives in :mod:`app.sep.apps.atw.categories`.
+"""
 
-from app.inventory.models import ServiceTypeEnum
+from pydantic import Field, UUID4
+from sqlalchemy import UniqueConstraint
+from sqlmodel import Field as SQLField
+from sqlmodel import Relationship, SQLModel
 
-_GENERIC_SERVICE_TYPE = "generic"
-
-# Insertion order defines the API response order for category_root.
-CATEGORY_ROOT_LABELS: dict[str, str] = {
-    ServiceTypeEnum.MYSQL: "MySQL",
-    ServiceTypeEnum.MONGODB: "MongoDB",
-    ServiceTypeEnum.POSTGRESQL: "PostgreSQL",
-    ServiceTypeEnum.PROXYSQL: "ProxySQL",
-    ServiceTypeEnum.HAPROXY: "HAProxy",
-    ServiceTypeEnum.EXTERNAL: "External",
-    _GENERIC_SERVICE_TYPE: "Generic",
-}
+from app.core.db.models import BaseUUIDSQLModel
+from app.core.utils.date_time import utc_now
+from app.core.utils.fields import NonEmptyStr
 
 
-def derive_category_root(service_type: str | None) -> str:
-    """Map snippet ``service_type`` meta to an ATW category-root display label.
+def _default_incident_name() -> str:
+    """Build the server-generated default incident name embedding the creation time.
 
-    :param service_type: Snippet frontmatter ``service_type`` value, or ``None``
-        when the key is absent.
-    :type service_type: str | None
-    :return: Display label for the category root (e.g. ``"MySQL"``, ``"Generic"``).
-    :rtype: str
+    :return: A timestamped name of the form ``Incident YYYY-MM-DD HH:MM``.
     """
-    generic_label = CATEGORY_ROOT_LABELS[_GENERIC_SERVICE_TYPE]
-    if not service_type:
-        return generic_label
-    return CATEGORY_ROOT_LABELS.get(service_type.lower(), generic_label)
+    return f"Incident {utc_now():%Y-%m-%d %H:%M}"
 
 
-class ParentCategory(StrEnum):
-    """Enumerate top-level categories for ATW."""
+class AtwIncidentBase(SQLModel):
+    """Define the incident fields shared by the create payload and the DB table.
 
-    CRASHES = "Crashes"
-    PERFORMANCE_ISSUES = "Performance Issues"
-    REPLICATION_HA = "Replication High / Availability"
+    :param name: Human-readable incident label; defaults to a timestamped name.
+    :param servicenow_case: Optional ServiceNow support-case reference.
+    """
+
+    name: NonEmptyStr = SQLField(default_factory=_default_incident_name)
+    servicenow_case: str | None = SQLField(default=None)
 
 
-class ATWCategory(StrEnum):
-    """Enumerate categories for ATW (Advanced Troubleshooting Wizard)."""
+class AtwIncident(BaseUUIDSQLModel, AtwIncidentBase, table=True):
+    """Represent a named grouping of diagnostic snippet executions per support case.
 
-    # --- Crashes ---
-    SERVER_CRASHED_RESTART_SUCCESSFUL = (
-        "Server crashed - Restart Successful",
-        ParentCategory.CRASHES,
+    :param created_by: Username of the support engineer who created the incident.
+    :param executions: The snippet executions grouped under this incident.
+    """
+
+    __tablename__ = "atw_incident"
+
+    created_by: str = SQLField(nullable=False)
+    executions: list["AtwIncidentExecution"] = Relationship(
+        back_populates="incident",
+        cascade_delete=True,
     )
-    SERVER_CRASHED_RESTART_NOT_SUCCESSFUL = (
-        "Server crashed - Restart not Successful",
-        ParentCategory.CRASHES,
+
+
+class AtwIncidentWrite(AtwIncidentBase):
+    """Define the create payload; ``name`` defaults and ``created_by`` is server-stamped."""
+
+
+class AtwIncidentUpdate(SQLModel):
+    """Define the PATCH payload — all fields optional; unset fields are untouched.
+
+    :param name: New incident label. Non-nullable when provided: an omitted
+        ``name`` is left unchanged, while an explicit null or empty string is
+        rejected with 422 (the column is NOT NULL). Typing it as a non-optional
+        ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel
+        out of the JSON schema, so the generated client advertises ``name?: string``
+        (not ``string | null``) — matching what the route actually accepts.
+    :param servicenow_case: New ServiceNow case reference; an explicit null clears it.
+    """
+
+    name: NonEmptyStr = Field(default=None)
+    servicenow_case: str | None = None
+
+
+class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
+    """Link one diagnostic snippet execution to its incident grouping.
+
+    :param incident_id: Foreign key to the owning :class:`AtwIncident`.
+    :param task_history_id: Logical reference to the tasks-service execution row.
+    :param snippet_filename: Filename of the executed diagnostic snippet.
+    :param incident: The incident this execution belongs to.
+    """
+
+    __tablename__ = "atw_incident_execution"
+    __table_args__ = (
+        UniqueConstraint(
+            "incident_id",
+            "task_history_id",
+            name="uq_atw_incident_execution_incident_task",
+        ),
     )
 
-    # --- Performance Issues ---
-    OVERALL_SLOWNESS = ("Overall Slowness", ParentCategory.PERFORMANCE_ISSUES)
-    QUERY_TUNING_OPTIMIZATION = (
-        "Query Tuning / Optimization",
-        ParentCategory.PERFORMANCE_ISSUES,
+    incident_id: UUID4 = SQLField(
+        foreign_key="atw_incident.id",
+        ondelete="CASCADE",
     )
-    NOT_RESPONDING = ("Not Responding", ParentCategory.PERFORMANCE_ISSUES)
-    WRITES_ARE_BLOCKED = ("Writes are Blocked", ParentCategory.PERFORMANCE_ISSUES)
-    PERFORMANCE_OTHER = ("Other", ParentCategory.PERFORMANCE_ISSUES)
-    TEMPORARY_STALLS = ("Temporary Stalls", ParentCategory.PERFORMANCE_ISSUES)
-
-    # --- Replication High / Availability ---
-    NATIVE_ASYNC_REPLICATION = (
-        "Native Asynchronous Replication",
-        ParentCategory.REPLICATION_HA,
-    )
-    MULTI_SOURCE_REPLICATION = (
-        "Multi-Source replication",
-        ParentCategory.REPLICATION_HA,
-    )
-    GALERA = ("Galera", ParentCategory.REPLICATION_HA)
-    GROUP_REPLICATION = ("Group Replication", ParentCategory.REPLICATION_HA)
-
-    def __new__(cls, label: str, parent: ParentCategory) -> "ATWCategory":  # noqa: D102
-        obj = str.__new__(cls, label)
-        obj._value_ = label
-        obj._parent = parent  # noqa: SLF001
-        return obj
-
-    @property
-    def parent(self) -> ParentCategory:
-        """Return the parent category of the current category."""
-        return self._parent
+    task_history_id: int = SQLField(index=True)
+    snippet_filename: str
+    incident: AtwIncident = Relationship(back_populates="executions")

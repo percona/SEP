@@ -18,17 +18,21 @@
 import logging
 from collections import defaultdict
 
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, status
+from pydantic import BaseModel, UUID4
 
-from app.sep.apps.atw.models import (
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
+from app.sep.apps.atw.categories import (
     ATWCategory,
     CATEGORY_ROOT_LABELS,
     derive_category_root,
 )
+from app.sep.apps.atw.crud import AtwIncidentManager
+from app.sep.apps.atw.models import AtwIncident, AtwIncidentUpdate, AtwIncidentWrite
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.deps import SessionDep
+from app.sep.deps import ApiCurrentUser, SessionDep
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 
@@ -141,3 +145,76 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
             )
 
     return grouped
+
+
+@router.post("/incidents/", status_code=status.HTTP_201_CREATED)
+async def atw_create_incident(
+    session: SessionDep,
+    current_user: ApiCurrentUser,
+    body: AtwIncidentWrite,
+) -> AtwIncident:
+    """Create a diagnostic incident owned by the current user.
+
+    :param session: The database session.
+    :param current_user: The authenticated user, stamped as ``created_by``.
+    :param body: The incident create payload.
+    :return: The created incident.
+    """
+    incident = AtwIncident(**body.model_dump(), created_by=current_user.username)
+    return await AtwIncidentManager.save(session, incident)
+
+
+@router.get("/incidents/")
+async def atw_list_incidents(
+    session: SessionDep, pagination: PaginationDep
+) -> PaginatedResponse[AtwIncident]:
+    """List diagnostic incidents, newest first.
+
+    :param session: The database session.
+    :param pagination: The offset/limit window for the page.
+    :return: A paginated page of incidents, newest first.
+    """
+    return await AtwIncidentManager.list_paginated(session, pagination=pagination)
+
+
+@router.get("/incidents/{incident_id}")
+async def atw_get_incident(session: SessionDep, incident_id: UUID4) -> AtwIncident:
+    """Retrieve a single diagnostic incident by id.
+
+    :param session: The database session.
+    :param incident_id: The incident's UUID.
+    :return: The matching incident.
+    :raises HTTPNotFoundException: If no incident has that id.
+    """
+    return await AtwIncidentManager.get_or_404(session, id=incident_id)
+
+
+@router.patch("/incidents/{incident_id}")
+async def atw_update_incident(
+    session: SessionDep, incident_id: UUID4, body: AtwIncidentUpdate
+) -> AtwIncident:
+    """Update a diagnostic incident's name or ServiceNow case reference.
+
+    :param session: The database session.
+    :param incident_id: The incident's UUID.
+    :param body: The partial update payload; unset fields are untouched.
+    :return: The updated incident.
+    :raises HTTPNotFoundException: If no incident has that id.
+    """
+    incident = await AtwIncidentManager.get_or_404(session, id=incident_id)
+    return await AtwIncidentManager.update(session, incident, body)
+
+
+@router.delete(
+    "/incidents/{incident_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def atw_delete_incident(session: SessionDep, incident_id: UUID4) -> None:
+    """Delete a diagnostic incident and cascade its execution rows.
+
+    :param session: The database session.
+    :param incident_id: The incident's UUID.
+    :raises HTTPNotFoundException: If no incident has that id.
+    """
+    incident = await AtwIncidentManager.get_or_404(session, id=incident_id)
+    await AtwIncidentManager.delete(session, incident)
