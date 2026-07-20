@@ -13,13 +13,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define constant for signing artifact-download URLs.
+"""Constants for the Snippets plugin."""
 
-Houses the itsdangerous salt shared by the generic ``app.sep.routes.artifacts``
-route and the framework signer in ``app.sep.apps.framework.script_helpers``, so
-both sign and verify download tokens under the same namespace.
-"""
-
-__all__ = ["ARTIFACT_DOWNLOAD_SALT"]
-
-ARTIFACT_DOWNLOAD_SALT = "artifact-download"
+ARTIFACT_TYPE_SNIPPET = "snippet"

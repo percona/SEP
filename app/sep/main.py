@@ -439,7 +439,7 @@ if (_TASK_INFRA_PLUGINS | {"inventory"}) & imported_plugins:
 
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
 
-if {"snippets", "dipper"} & imported_plugins:
+if any(app.artifact_base_dirs for app in get_app_registry()):
     from app.sep.routes.artifacts import router as artifacts_router
 
     sep_app.include_router(artifacts_router, prefix="/artifacts")
