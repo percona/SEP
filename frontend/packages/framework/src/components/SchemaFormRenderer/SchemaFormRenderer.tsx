@@ -167,7 +167,7 @@ const SectionRenderer = memo(function SectionRenderer({
               {section.title}
             </Typography>
           </AccordionSummary>
-          <AccordionDetails sx={{ px: 0, pl: 2 }}>{sectionContent}</AccordionDetails>
+          <AccordionDetails sx={{ px: 2, pt: 1, pb: 2 }}>{sectionContent}</AccordionDetails>
         </Accordion>
       ) : (
         <>
