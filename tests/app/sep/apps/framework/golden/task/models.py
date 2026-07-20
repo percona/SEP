@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the model-first create form for the << display_name_doc >> app."""
+"""Define the model-first create form for the Golden Task app."""
 
 from typing import Annotated
 
@@ -29,8 +29,8 @@ from app.sep.apps.framework.form_dsl import (
 )
 
 
-class << class_prefix >>Form(AppFormModel):
-    """Declare the create/update body and ``GET /schema`` source for << display_name_doc >>.
+class GoldenTaskForm(AppFormModel):
+    """Declare the create/update body and ``GET /schema`` source for Golden Task.
 
     The single source of the JSON request body the server validates *and* the
     derived form. Replace these example fields with the task's real inputs:
@@ -47,7 +47,7 @@ class << class_prefix >>Form(AppFormModel):
     task_name: Annotated[NonEmptyStr, Ui(section="Task")]
     service_id: Annotated[
         int,
-        ServiceRef(service_types=(ServiceTypeEnum.<< service_type >>,)),
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
         Ui(label="Database Host", section="Task"),
     ]
     hostname: Annotated[

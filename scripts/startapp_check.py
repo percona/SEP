@@ -63,6 +63,7 @@ def main() -> int:
                 name,
                 "--type",
                 flavor,
+                "--no-input",
             )
             _run(sys.executable, "-m", "pytest", f"tests/app/sep/apps/{name}/", "-q")
     except subprocess.CalledProcessError as error:

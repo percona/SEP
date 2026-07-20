@@ -36,6 +36,7 @@ from app.core.utils.iterators import unique_everseen
 from app.inventory.models import ServiceTypeEnum
 from app.sep.api.host_resolution import resolve_executor_name_by_address
 from app.sep.apps.dipper.constants import (
+    ARTIFACT_TYPE_DIPPER,
     CollectorTypeEnum,
     DIPPER_PMM_SCRIPT_BY_SERVICE_TYPE,
     DIPPER_SCRIPT_BY_SERVICE_TYPE,
@@ -47,9 +48,6 @@ from app.sep.apps.framework.script_helpers import (
     build_script_preview,
 )
 from app.sep.apps.framework.script_source import ScriptPreviewResponse
-from app.sep.artifact_constants import (
-    ARTIFACT_TYPE_DIPPER,
-)
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.deps import (
     CreatedServiceDep,
