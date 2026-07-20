@@ -102,6 +102,7 @@
           "type": "choice"
         },
         {
+          "description": "Required for S3 storage.",
           "forbidden": [
             {
               "when": {
@@ -117,6 +118,7 @@
           "type": "string"
         },
         {
+          "description": "Required for S3 storage.",
           "forbidden": [
             {
               "when": {

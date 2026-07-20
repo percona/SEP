@@ -6,21 +6,6 @@ import sys
 import yaml
 
 
-SEP_ONLY_CONFIG_KEYS = frozenset({
-    'credentials_path', 'credentialsPath'
-})
-
-
-def _config_for_pbm(config):
-    """ Return config dict with SEP-only keys removed, for use with pbm config --file """
-    if not config:
-        return {}
-    return {
-        k: v for k, v in config.items()
-        if k not in SEP_ONLY_CONFIG_KEYS and v is not None
-    }
-
-
 # --- BEGIN GENERATED PBM CREDS PREAMBLE ---
 def _creds_path(config_source: str) -> str:
     """Resolve the MongoDB URI credentials path from ``NOMAD_META_CONFIG``.
@@ -100,50 +85,62 @@ def pbm_creds(creds_path: str) -> str:
         sys.exit(1)
 # --- END GENERATED PBM CREDS PREAMBLE ---
 
-def pbm():
-    """ PBM Config Payload """
 
-    taskdir = os.environ['NOMAD_TASK_DIR']
-    #if os.path.basename(taskdir) == 'local':
-    #    taskdir = os.path.dirname(taskdir)
+# --- BEGIN GENERATED PBM CONFIG APPLY ---
+def _apply_pbm_config(config: dict) -> None:
+    """Apply the SEP-managed PBM config to the cluster via `pbm config --file`.
 
-    os.environ['PBM_MONGODB_URI'] = pbm_creds(_creds_path('backup'))
-
-    # Write PBM config file (full config minus SEP-only keys like credentials_path).
-    # Always create the file so "pbm config --file" never sees a missing path; use {}
-    # when config is absent or contains only SEP-only keys (e.g. credentials_path).
-    config_yaml = os.environ.get('NOMAD_META_CONFIG')
-    config_file = f'{taskdir}/script_config'
-    pbm_config = {}
-    if config_yaml:
-        try:
-            config = yaml.safe_load(config_yaml)
-            if config is not None:
-                pbm_config = _config_for_pbm(config)
-        except Exception as e:
-            print(f'Failed to parse backup config YAML, using empty PBM config: {e}', file=sys.stderr)
-    with open(config_file, 'w', encoding='utf-8') as f:
-        yaml.dump(
-            pbm_config,
-            f,
-            default_flow_style=False,
-            allow_unicode=True,
-        )
-    cmd = ['pbm',
-           'config',
-           '--file',
-           config_file,
-           ]
-
+    PBM storage is cluster-wide with no per-backup flag, so the per-task config
+    (storage, priority, pitr) is applied here, before the backup runs, rather than
+    relying on the separate Sync-config task having run. Writes the full config
+    (minus SEP-only keys) to the task dir and runs `pbm config --file`. Exits
+    non-zero with an actionable message when PBM rejects the config -- for example
+    an unreachable or non-existent S3 bucket -- so the backup never silently falls
+    back to PBM's pre-existing cluster-wide storage.
+    """
+    sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
+    pbm_config = {
+        k: v for k, v in config.items() if k not in sep_only_keys and v is not None
+    }
+    config_file = f"{os.environ['NOMAD_TASK_DIR']}/script_config"
+    with open(config_file, "w", encoding="utf-8") as f:
+        yaml.dump(pbm_config, f, default_flow_style=False, allow_unicode=True)
+    cmd = ["pbm", "config", "--file", config_file]
     try:
-        proc = subprocess.Popen(cmd)
+        proc = subprocess.Popen(cmd)  # noqa: S603
         proc.wait()
         ret_code = proc.poll()
         if ret_code != 0:
+            print(
+                "Failed to apply the task storage configuration to PBM "
+                f"(pbm config --file exited {ret_code}). Verify the configured S3 "
+                "bucket/region/endpoint exist and are reachable.",
+                file=sys.stderr,
+            )
             sys.exit(ret_code)
-
     except OSError as err:
-        print(f'Failed to run pbm: {err}', file=sys.stderr)
+        print(f"Failed to run pbm config: {err}", file=sys.stderr)
         sys.exit(1)
+# --- END GENERATED PBM CONFIG APPLY ---
+
+
+def pbm():
+    """ PBM Config Payload """
+
+    os.environ['PBM_MONGODB_URI'] = pbm_creds(_creds_path('backup'))
+
+    # Always apply, even with an empty config, so an explicit Sync clears/normalizes
+    # PBM to exactly the SEP-managed config (minus SEP-only keys like credentials_path).
+    config_yaml = os.environ.get('NOMAD_META_CONFIG')
+    config = {}
+    if config_yaml:
+        try:
+            parsed = yaml.safe_load(config_yaml)
+            if isinstance(parsed, dict):
+                config = parsed
+        except Exception as e:
+            print(f'Failed to parse backup config YAML, using empty PBM config: {e}', file=sys.stderr)
+    _apply_pbm_config(config)
+
 
 pbm()

@@ -1,0 +1,282 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Tests for the ``pbm config`` storage-apply step in the backup payloads.
+
+The logical and physical payloads apply the per-task PBM config (``pbm config
+--file``) before running ``pbm backup``, so a per-task S3 bucket/region is honored
+end-to-end rather than the backup landing in PBM's cluster-wide storage. These
+tests exec the real payloads with ``subprocess.Popen`` stubbed to capture the full
+command sequence, and assert each payload's generated ``_apply_pbm_config`` region
+matches the one canonical source in ``pbm_creds_common.py``.
+"""
+
+import importlib.util
+import os
+import pathlib
+import sys
+
+import pytest
+import yaml
+
+from app.sep.apps.backup_mongo.models import BackupCreate, BackupType
+from app.sep.apps.backup_mongo.pbm_creds_common import (
+    CONFIG_APPLY_BEGIN,
+    CONFIG_APPLY_END,
+    config_apply_source,
+)
+from app.sep.apps.backup_mongo.spec import (
+    BackupMongoResolved,
+    build_backup_mongo_spec,
+)
+
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[5]
+_GEN_SCRIPT = _PROJECT_ROOT / "scripts" / "gen_pbm_payloads.py"
+_gen_spec = importlib.util.spec_from_file_location("gen_pbm_payloads", _GEN_SCRIPT)
+assert _gen_spec is not None
+assert _gen_spec.loader is not None
+gen_pbm_payloads = importlib.util.module_from_spec(_gen_spec)
+sys.modules["gen_pbm_payloads"] = gen_pbm_payloads
+_gen_spec.loader.exec_module(gen_pbm_payloads)
+
+_APP_DIR = pathlib.Path(__file__).parents[5] / "app/sep/apps/backup_mongo"
+_BACKUP_PAYLOADS = {
+    "logical": _APP_DIR / "pbm_logical_payload",
+    "physical": _APP_DIR / "pbm_physical_payload",
+}
+_ALL_PAYLOADS = {
+    "config": _APP_DIR / "pbm_config_payload",
+    **_BACKUP_PAYLOADS,
+}
+_BACKUP_TYPE = {"logical": "logical", "physical": "physical"}
+_PARAMETRIZE_BACKUP = pytest.mark.parametrize("payload", ["logical", "physical"])
+# An s3 backup runs two commands: apply the config, then take the backup.
+_APPLY_THEN_BACKUP = 2
+
+_S3_CONFIG = {
+    "storage": {
+        "type": "s3",
+        "s3": {"bucket": "backups", "region": "eu-west-1"},
+    }
+}
+
+
+def _exec_payload_capture_cmds(
+    payload: str,
+    config: dict | None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    *,
+    config_ret: int = 0,
+) -> list[list[str]]:
+    """Exec a payload with a stubbed ``Popen`` and capture every command it runs.
+
+    :param payload: Payload key (``config`` / ``logical`` / ``physical``).
+    :param config: Config dict serialized to ``NOMAD_META_CONFIG``, or None to omit it.
+    :param monkeypatch: pytest monkeypatch fixture.
+    :param tmp_path: pytest tmp_path fixture for HOME, the task dir, and creds.
+    :param config_ret: Return code the stub reports for a ``pbm config`` command.
+    :return: The list of argument lists passed to ``subprocess.Popen``, in order.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+    (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
+
+    if config is None:
+        monkeypatch.delenv("NOMAD_META_CONFIG", raising=False)
+    else:
+        monkeypatch.setenv("NOMAD_META_CONFIG", yaml.safe_dump(config))
+
+    captured: list[list[str]] = []
+
+    class _FakePopen:
+        def __init__(self, cmd: list[str], *args: object, **kwargs: object):
+            captured.append(cmd)
+            self._cmd = cmd
+
+        def wait(self) -> None:
+            return None
+
+        def poll(self) -> int:
+            if self._cmd[:2] == ["pbm", "config"]:
+                return config_ret
+            return 0
+
+    import subprocess
+
+    monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+
+    namespace: dict[str, object] = {}
+    path = _ALL_PAYLOADS[payload]
+    exec(compile(path.read_text(), str(path), "exec"), namespace)
+    os.environ.pop("PBM_MONGODB_URI", None)
+    return captured
+
+
+class TestStorageAppliedBeforeBackup:
+    """The backup payloads apply the config before running ``pbm backup``."""
+
+    @_PARAMETRIZE_BACKUP
+    def test_config_applied_before_backup_for_s3(
+        self, payload: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Run ``pbm config --file`` before ``pbm backup`` when storage is set."""
+        cmds = _exec_payload_capture_cmds(payload, _S3_CONFIG, monkeypatch, tmp_path)
+
+        assert len(cmds) == _APPLY_THEN_BACKUP
+        assert cmds[0][:3] == ["pbm", "config", "--file"]
+        assert cmds[1] == [
+            "pbm",
+            "backup",
+            "--type",
+            _BACKUP_TYPE[payload],
+            "--wait",
+        ]
+
+    @_PARAMETRIZE_BACKUP
+    def test_no_config_apply_without_storage(
+        self, payload: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Skip the config apply and run only ``pbm backup`` when no storage is set."""
+        cmds = _exec_payload_capture_cmds(
+            payload, {"backup": {"compression": "gzip"}}, monkeypatch, tmp_path
+        )
+
+        assert cmds == [
+            [
+                "pbm",
+                "backup",
+                "--type",
+                _BACKUP_TYPE[payload],
+                "--wait",
+                "--compression",
+                "gzip",
+            ]
+        ]
+
+    @_PARAMETRIZE_BACKUP
+    def test_absent_config_runs_backup_only(
+        self, payload: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Run only ``pbm backup`` when NOMAD_META_CONFIG is absent."""
+        cmds = _exec_payload_capture_cmds(payload, None, monkeypatch, tmp_path)
+
+        assert cmds == [["pbm", "backup", "--type", _BACKUP_TYPE[payload], "--wait"]]
+
+    @_PARAMETRIZE_BACKUP
+    def test_config_failure_aborts_before_backup(
+        self,
+        payload: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture,
+    ):
+        """Exit non-zero with an actionable error and never reach ``pbm backup``."""
+        with pytest.raises(SystemExit) as exc:
+            _exec_payload_capture_cmds(
+                payload, _S3_CONFIG, monkeypatch, tmp_path, config_ret=1
+            )
+
+        assert exc.value.code == 1
+        err = capsys.readouterr().err
+        assert "storage configuration" in err
+        assert "bucket/region/endpoint" in err
+
+    @_PARAMETRIZE_BACKUP
+    def test_config_failure_only_runs_config_command(
+        self, payload: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Do not run ``pbm backup`` after a failed config apply."""
+        captured: list[list[str]] = []
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+        (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
+        monkeypatch.setenv("NOMAD_META_CONFIG", yaml.safe_dump(_S3_CONFIG))
+
+        class _FakePopen:
+            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
+                captured.append(cmd)
+
+            def wait(self) -> None:
+                return None
+
+            def poll(self) -> int:
+                return 1
+
+        import subprocess
+
+        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+        path = _BACKUP_PAYLOADS[payload]
+        with pytest.raises(SystemExit):
+            exec(compile(path.read_text(), str(path), "exec"), {})
+        os.environ.pop("PBM_MONGODB_URI", None)
+
+        assert captured == [captured[0]]
+        assert captured[0][:2] == ["pbm", "config"]
+
+
+class TestRealSpecThreadsStorageIntoConfigFile:
+    """The real spec output applies its S3 storage through the payload's config file."""
+
+    @_PARAMETRIZE_BACKUP
+    def test_s3_storage_reaches_applied_config_file(
+        self, payload: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Write the form's bucket/region into the file handed to ``pbm config --file``."""
+        form = BackupCreate(
+            task_name="mongo-backup",
+            hostname="mongo-host",
+            service_id=1,
+            backup_type=BackupType.PBM_CONFIG,
+            pitr_compression="gzip",
+            storage_type="s3",
+            storage_s3_region="eu-west-1",
+            storage_s3_bucket="backups",
+            storage_s3_prefix="mongo",
+            storage_s3_endpoint_url="https://s3.example.com",
+        )
+        config_yaml = build_backup_mongo_spec(form, BackupMongoResolved()).data["meta"][
+            "config"
+        ]
+        config = yaml.safe_load(config_yaml)
+
+        _exec_payload_capture_cmds(payload, config, monkeypatch, tmp_path)
+
+        applied = yaml.safe_load((tmp_path / "script_config").read_text())
+        assert applied["storage"]["s3"]["bucket"] == "backups"
+        assert applied["storage"]["s3"]["region"] == "eu-west-1"
+        # SEP-only keys must not leak into the PBM config file.
+        assert "credentials_path" not in applied
+
+
+class TestApplyHelperNoDrift:
+    """The ``_apply_pbm_config`` helper tracks one canonical generated source."""
+
+    def _region(self, path: pathlib.Path) -> str:
+        """Return the config-apply region carried between the markers in ``path``."""
+        lines = path.read_text().split("\n")
+        begin = lines.index(CONFIG_APPLY_BEGIN)
+        end = lines.index(CONFIG_APPLY_END, begin + 1)
+        return "\n".join(lines[begin + 1 : end]).strip("\n")
+
+    @pytest.mark.parametrize("payload", sorted(_ALL_PAYLOADS))
+    def test_region_matches_canonical(self, payload: str) -> None:
+        """Require each payload's ``_apply_pbm_config`` to equal the canonical source."""
+        assert self._region(_ALL_PAYLOADS[payload]) == config_apply_source()
+
+    def test_check_mode_reports_no_drift(self) -> None:
+        """``gen_pbm_payloads.py --check`` accepts the checked-in config-apply region."""
+        assert gen_pbm_payloads.main(["--check"]) == 0

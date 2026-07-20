@@ -17,11 +17,14 @@
 
 The nine ``backup_mongo`` payload scripts are shipped to executors by ``file://``
 reference and read directly from disk, so they cannot import a shared module at
-execution time. Instead, the block between :data:`PREAMBLE_BEGIN` and
-:data:`PREAMBLE_END` below is the one canonical definition of the PBM
-credential-resolution helpers, materialized verbatim into each payload's marked
-region by ``scripts/gen_pbm_payloads.py`` and guarded in-sync (and behaviorally)
-by ``tests/app/sep/apps/backup_mongo/test_pbm_payload_preamble.py``.
+execution time. Instead, each marked block below is the one canonical definition of
+its generated region -- the PBM credential-resolution helpers between
+:data:`PREAMBLE_BEGIN` / :data:`PREAMBLE_END`, and the :func:`_apply_pbm_config`
+storage-apply helper between :data:`CONFIG_APPLY_BEGIN` / :data:`CONFIG_APPLY_END`
+(carried only by the config/logical/physical payloads that apply the config).
+Both are materialized verbatim into each payload's marked region by
+``scripts/gen_pbm_payloads.py`` and guarded in-sync (and behaviorally) by
+``tests/app/sep/apps/backup_mongo/test_pbm_payload_preamble.py``.
 
 A hardening fix to credential handling therefore lands here once and propagates
 to all nine payloads via the regen step, instead of drifting across nine copies.
@@ -39,6 +42,7 @@ already imports, so the extracted region drops into a payload unchanged.
 """
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,6 +50,8 @@ import yaml
 
 PREAMBLE_BEGIN = "# --- BEGIN GENERATED PBM CREDS PREAMBLE ---"
 PREAMBLE_END = "# --- END GENERATED PBM CREDS PREAMBLE ---"
+CONFIG_APPLY_BEGIN = "# --- BEGIN GENERATED PBM CONFIG APPLY ---"
+CONFIG_APPLY_END = "# --- END GENERATED PBM CONFIG APPLY ---"
 
 
 # --- BEGIN GENERATED PBM CREDS PREAMBLE ---
@@ -130,22 +136,82 @@ def pbm_creds(creds_path: str) -> str:
 # --- END GENERATED PBM CREDS PREAMBLE ---
 
 
-def preamble_source() -> str:
-    """Return the canonical generated-preamble region text.
+# --- BEGIN GENERATED PBM CONFIG APPLY ---
+def _apply_pbm_config(config: dict) -> None:
+    """Apply the SEP-managed PBM config to the cluster via `pbm config --file`.
 
-    Extract the lines strictly between :data:`PREAMBLE_BEGIN` and
-    :data:`PREAMBLE_END` (both exclusive) from this module's own source, so the
-    codegen step and the in-sync guard share one definition of "the block".
+    PBM storage is cluster-wide with no per-backup flag, so the per-task config
+    (storage, priority, pitr) is applied here, before the backup runs, rather than
+    relying on the separate Sync-config task having run. Writes the full config
+    (minus SEP-only keys) to the task dir and runs `pbm config --file`. Exits
+    non-zero with an actionable message when PBM rejects the config -- for example
+    an unreachable or non-existent S3 bucket -- so the backup never silently falls
+    back to PBM's pre-existing cluster-wide storage.
+    """
+    sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
+    pbm_config = {
+        k: v for k, v in config.items() if k not in sep_only_keys and v is not None
+    }
+    config_file = f"{os.environ['NOMAD_TASK_DIR']}/script_config"
+    with open(config_file, "w", encoding="utf-8") as f:
+        yaml.dump(pbm_config, f, default_flow_style=False, allow_unicode=True)
+    cmd = ["pbm", "config", "--file", config_file]
+    try:
+        proc = subprocess.Popen(cmd)  # noqa: S603
+        proc.wait()
+        ret_code = proc.poll()
+        if ret_code != 0:
+            print(
+                "Failed to apply the task storage configuration to PBM "
+                f"(pbm config --file exited {ret_code}). Verify the configured S3 "
+                "bucket/region/endpoint exist and are reachable.",
+                file=sys.stderr,
+            )
+            sys.exit(ret_code)
+    except OSError as err:
+        print(f"Failed to run pbm config: {err}", file=sys.stderr)
+        sys.exit(1)
 
-    :return: The preamble body text, stripped of its leading/trailing blank lines.
+
+# --- END GENERATED PBM CONFIG APPLY ---
+
+
+def _region_between(begin_marker: str, end_marker: str) -> str:
+    """Return this module's source strictly between ``begin_marker`` and ``end_marker``.
+
+    Extract the lines between the markers (both exclusive) from this module's own
+    source, so the codegen step and the in-sync guard share one definition of each
+    generated block.
+
+    :param begin_marker: The BEGIN marker line delimiting the region.
+    :param end_marker: The END marker line delimiting the region.
+    :return: The region body text, stripped of its leading/trailing blank lines.
     :raises ValueError: When either marker is missing from the module source.
     """
     lines = Path(__file__).read_text(encoding="utf-8").splitlines()
     try:
-        begin = lines.index(PREAMBLE_BEGIN)
-        end = lines.index(PREAMBLE_END, begin + 1)
+        begin = lines.index(begin_marker)
+        end = lines.index(end_marker, begin + 1)
     except ValueError as exc:
         raise ValueError(
-            "pbm_creds_common.py is missing a PBM CREDS PREAMBLE marker line"
+            "pbm_creds_common.py is missing a generated-region marker line"
         ) from exc
     return "\n".join(lines[begin + 1 : end]).strip("\n")
+
+
+def preamble_source() -> str:
+    """Return the canonical generated PBM creds-preamble region text.
+
+    :return: The preamble body text, stripped of its leading/trailing blank lines.
+    :raises ValueError: When either marker is missing from the module source.
+    """
+    return _region_between(PREAMBLE_BEGIN, PREAMBLE_END)
+
+
+def config_apply_source() -> str:
+    """Return the canonical generated ``_apply_pbm_config`` region text.
+
+    :return: The ``_apply_pbm_config`` body text, stripped of leading/trailing blanks.
+    :raises ValueError: When either marker is missing from the module source.
+    """
+    return _region_between(CONFIG_APPLY_BEGIN, CONFIG_APPLY_END)
