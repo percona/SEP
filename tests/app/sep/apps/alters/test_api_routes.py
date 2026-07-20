@@ -704,7 +704,7 @@ class TestAltersApiDelete:
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         detail = response.json()["detail"]
         assert detail["message"] == "Partial delete failure; orphaned tasks"
-        assert f"{DEFAULT_PARENT_NAME}-pre-checks" in detail
+        assert f"{DEFAULT_PARENT_NAME}-pre-checks" in detail["errors"]
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_delete_returns_409_for_protected_task(

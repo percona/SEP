@@ -757,8 +757,24 @@ class TestCascadeResult:
 
         assert exc_info.value.detail == {
             "message": message,
-            "t1-a": "boom",
-            "t1-b": "timeout",
+            "errors": {
+                "t1-a": "boom",
+                "t1-b": "timeout",
+            },
+        }
+
+    def test_raise_if_failed_nests_failures_when_task_name_is_message(self) -> None:
+        """Keep the human-readable message when a failing task is named ``message``."""
+        result = CascadeResult(
+            failures=[CascadeFailure("message", RuntimeError("boom"))],
+        )
+
+        with pytest.raises(HTTPInternalServerErrorException) as exc_info:
+            result.raise_if_failed(op="delete")
+
+        assert exc_info.value.detail == {
+            "message": "Partial delete failure; orphaned tasks",
+            "errors": {"message": "boom"},
         }
 
 

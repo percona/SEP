@@ -606,7 +606,7 @@ class TestBackupMongoApiDelete:
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         detail = response.json()["detail"]
         assert detail["message"] == "Partial delete failure; orphaned tasks"
-        assert "parent-backup-physical" in detail
+        assert "parent-backup-physical" in detail["errors"]
 
 
 class TestBackupMongoApiExecute:

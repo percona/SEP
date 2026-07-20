@@ -101,7 +101,9 @@ class CascadeResult:
             return
         detail: dict[str, Any] = {
             "message": _CASCADE_PARTIAL_FAILURE_MESSAGES[op],
-            **{failure.task_name: str(failure.exception) for failure in self.failures},
+            "errors": {
+                failure.task_name: str(failure.exception) for failure in self.failures
+            },
         }
         raise HTTPInternalServerErrorException(detail=detail)
 
