@@ -76,16 +76,20 @@ _VALID_SYNTH_BODIES: list[dict[str, Any]] = [
     },
 ]
 
-# Malformed one-of bodies that must 422 identically on both routes: an unknown
-# discriminator on the required union, a missing discriminator, and an unknown
-# discriminator on the *optional* sink union (the archives destination/host analog
-# the materialization fix touches — a naive fix could loosen it unnoticed).
+# Malformed one-of bodies that must 422 identically on both routes: unknown and
+# missing discriminators on the required ``source`` union, and unknown and missing
+# discriminators on the *optional* ``sink`` union (the archives destination/host
+# analog the materialization fix touches — a naive fix could loosen it unnoticed).
 _INVALID_ONEOF_BODIES: list[dict[str, Any]] = [
     {"source": {"mode": "gamma", "alpha_value": "v"}},
     {"source": {"alpha_value": "v"}},
     {
         "source": {"mode": "alpha", "alpha_value": "v"},
         "sink": {"mode": "nope", "file_path": "/tmp/out"},
+    },
+    {
+        "source": {"mode": "alpha", "alpha_value": "v"},
+        "sink": {"file_path": "/tmp/out"},
     },
 ]
 

@@ -563,7 +563,6 @@ def _register_create_route(
     :param extra_deps: Extra route dependencies appended after
         ``IsApiAuthenticated``, never replacing it.
     """
-    create_model = create_response_model
 
     async def _build_create_response(
         tasks_api: TaskAPI,
@@ -599,7 +598,7 @@ def _register_create_route(
         builder = await _bind_context(base_builder, context_provider)
         base = builder(task, status=None)
         if warning is not None:
-            return create_model(
+            return create_response_model(
                 **{**base.model_dump(), "connectivity_warning": warning}
             )
         return base
@@ -631,7 +630,7 @@ def _register_create_route(
         methods=["POST"],
         summary="Create",
         status_code=status.HTTP_201_CREATED,
-        response_model=create_model,
+        response_model=create_response_model,
         response_model_by_alias=True,
         dependencies=[IsApiAuthenticated, *extra_deps],
     )
@@ -683,7 +682,6 @@ def _register_update_route(
         ``IsApiAuthenticated``, never replacing it; the caller may resolve these to
         a default guard set rather than only per-route extras.
     """
-    update_model = create_response_model
 
     async def _build_update_response(
         tasks_api: TaskAPI,
@@ -728,7 +726,7 @@ def _register_update_route(
             updated_task, status=latest.status, last_executed_at=latest.finished_at
         )
         if warning is not None:
-            return update_model(
+            return create_response_model(
                 **{**base.model_dump(), "connectivity_warning": warning}
             )
         return base
@@ -761,7 +759,7 @@ def _register_update_route(
         _update,
         methods=["PUT"],
         summary="Update",
-        response_model=update_model,
+        response_model=create_response_model,
         response_model_by_alias=True,
         dependencies=[IsApiAuthenticated, *extra_deps],
     )
