@@ -24,18 +24,18 @@
 | app/core/auth/providers/grafana/provider.py                                                                     |       20 |        0 |        2 |        0 |    100% |           |
 | app/core/auth/providers/grafana/sdk.py                                                                          |       52 |        0 |        6 |        0 |    100% |           |
 | app/core/auth/utils.py                                                                                          |        6 |        1 |        0 |        0 |     83% |        35 |
-| app/core/celery/config.py                                                                                       |       24 |        0 |        2 |        1 |     96% |   74-\>76 |
+| app/core/celery/config.py                                                                                       |       33 |        0 |        2 |        1 |     97% | 120-\>122 |
 | app/core/celery/crud.py                                                                                         |       26 |        2 |        4 |        1 |     90% |     91-97 |
 | app/core/celery/db.py                                                                                           |        8 |        0 |        0 |        0 |    100% |           |
 | app/core/celery/deps.py                                                                                         |       10 |        0 |        0 |        0 |    100% |           |
 | app/core/celery/models.py                                                                                       |       36 |        2 |        6 |        2 |     90% |   72, 135 |
 | app/core/celery/utils.py                                                                                        |       31 |        2 |       10 |        2 |     90% |   92, 120 |
 | app/core/config.py                                                                                              |      217 |        7 |       46 |        5 |     95% |224-\>exit, 418, 452, 536, 540, 616, 629, 667-\>669, 672 |
-| app/core/db/config.py                                                                                           |       17 |        0 |        2 |        0 |    100% |           |
+| app/core/db/config.py                                                                                           |       23 |        0 |        2 |        0 |    100% |           |
 | app/core/db/crud.py                                                                                             |      285 |       22 |       82 |        9 |     90% |194, 246-\>248, 248-\>250, 250-\>252, 259-\>275, 310-327, 345, 350, 367, 481-484, 850-854, 1120-1121 |
 | app/core/db/models.py                                                                                           |       14 |        0 |        0 |        0 |    100% |           |
 | app/core/db/sql\_types.py                                                                                       |       37 |        0 |       12 |        0 |    100% |           |
-| app/core/db/utils.py                                                                                            |       66 |        5 |       26 |        5 |     89% |81, 196, 225, 228, 246 |
+| app/core/db/utils.py                                                                                            |       70 |        5 |       26 |        5 |     90% |101, 216, 245, 248, 266 |
 | app/core/exceptions.py                                                                                          |       32 |        0 |        0 |        0 |    100% |           |
 | app/core/health.py                                                                                              |       18 |        0 |        0 |        0 |    100% |           |
 | app/core/log.py                                                                                                 |       21 |        0 |        8 |        0 |    100% |           |
@@ -76,7 +76,7 @@
 | app/inventory/config.py                                                                                         |       12 |        0 |        0 |        0 |    100% |           |
 | app/inventory/constants.py                                                                                      |        2 |        0 |        0 |        0 |    100% |           |
 | app/inventory/crud.py                                                                                           |       24 |        0 |        0 |        0 |    100% |           |
-| app/inventory/db.py                                                                                             |        7 |        0 |        0 |        0 |    100% |           |
+| app/inventory/db.py                                                                                             |        6 |        0 |        0 |        0 |    100% |           |
 | app/inventory/deps.py                                                                                           |       24 |        3 |        0 |        0 |     88% |     38-40 |
 | app/inventory/main.py                                                                                           |       44 |        8 |        2 |        1 |     80% |52, 99-100, 131-132, 136-140 |
 | app/inventory/models.py                                                                                         |       92 |        0 |        4 |        0 |    100% |           |
@@ -275,7 +275,7 @@
 | app/sep/config.py                                                                                               |      269 |       10 |       56 |       10 |     94% |172, 221, 410, 514, 531, 545, 549, 551, 553, 703 |
 | app/sep/connectivity.py                                                                                         |       79 |        1 |       16 |        1 |     98% |       117 |
 | app/sep/crud.py                                                                                                 |       81 |        0 |       10 |        0 |    100% |           |
-| app/sep/db/engine.py                                                                                            |        8 |        0 |        0 |        0 |    100% |           |
+| app/sep/db/engine.py                                                                                            |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/db/seed.py                                                                                              |       58 |       15 |       26 |        1 |     67% |   116-130 |
 | app/sep/deps.py                                                                                                 |      369 |       10 |       72 |        2 |     97% |411, 414-415, 432, 1085-1086, 1260-1263 |
 | app/sep/exceptions.py                                                                                           |       13 |        0 |        0 |        0 |    100% |           |
@@ -321,8 +321,8 @@
 | app/sep/sync/exceptions.py                                                                                      |       25 |        0 |        0 |        0 |    100% |           |
 | app/sep/sync/models.py                                                                                          |      368 |       42 |      100 |       20 |     85% |81-90, 102-\>104, 104-\>106, 125, 131-\>133, 134-\>136, 195-\>201, 273-275, 304-\>302, 336, 396-397, 544, 592, 698-\>exit, 716, 730, 750-751, 786-\>exit, 831, 845, 867-868, 904-\>exit, 949, 962, 986-988, 1021-\>exit, 1130-\>exit, 1169, 1313-1315, 1422-1424, 1429-1435, 1439 |
 | app/sep/sync/syncers/mysql/payload.py                                                                           |      175 |       47 |       54 |        5 |     69% |156-\>164, 240-244, 249-254, 267-273, 277-300, 354-\>370, 373, 394-402, 421 |
-| app/sep/sync/syncers/mysql/syncer.py                                                                            |      222 |        1 |       86 |        8 |     97% |112, 268-\>270, 272-\>274, 586-\>594, 595-\>599, 676-\>687, 762-\>766, 764-\>763 |
-| app/sep/sync/syncers/pmm.py                                                                                     |       85 |       17 |       28 |        6 |     73% |78-82, 102-105, 116, 171-179, 226-\>228, 228-\>224, 231-247, 285-\>290 |
+| app/sep/sync/syncers/mysql/syncer.py                                                                            |      222 |        1 |       86 |        7 |     97% |112, 268-\>270, 272-\>274, 586-\>594, 595-\>599, 676-\>687, 762-\>766 |
+| app/sep/sync/syncers/pmm.py                                                                                     |       85 |       18 |       28 |        6 |     72% |78-82, 102-105, 116, 171-179, 226-\>228, 229, 231-247, 285-\>290 |
 | app/sep/sync/syncers/system\_facts/payload.py                                                                   |      235 |       19 |       78 |       12 |     90% |52-\>58, 147-148, 176, 222-224, 231, 233-\>229, 244-251, 261-\>263, 263-\>265, 265-\>267, 282-284, 290-292, 316, 415-\>417, 417-\>419, 522, 533 |
 | app/sep/sync/syncers/system\_facts/syncer.py                                                                    |      118 |        7 |       28 |        3 |     93% |104, 169-170, 245, 256-\>254, 310-311, 350 |
 | app/sep/tasks.py                                                                                                |       31 |        0 |       12 |        1 |     98% |   69-\>84 |
@@ -342,7 +342,7 @@
 | app/tasks/connectivity/routes.py                                                                                |       16 |        0 |        2 |        0 |    100% |           |
 | app/tasks/connectivity/service.py                                                                               |      134 |        2 |       46 |        5 |     96% |172, 415-\>414, 430, 435-\>434, 446-\>445 |
 | app/tasks/crud.py                                                                                               |      254 |        3 |       64 |        4 |     98% |437-\>439, 570, 701, 703 |
-| app/tasks/db/engine.py                                                                                          |        8 |        0 |        0 |        0 |    100% |           |
+| app/tasks/db/engine.py                                                                                          |        7 |        0 |        0 |        0 |    100% |           |
 | app/tasks/db/seed.py                                                                                            |       68 |       25 |       24 |        3 |     57% |480-\>493, 494-\>508, 510-568, 597 |
 | app/tasks/deps.py                                                                                               |      101 |        3 |       30 |        1 |     97% |61-63, 115-\>124 |
 | app/tasks/execution/exceptions.py                                                                               |        8 |        0 |        0 |        0 |    100% |           |
@@ -403,7 +403,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       55 |        4 |       12 |        3 |     90% |61-65, 108-\>110, 130-133 |
 | app/tasks/routes.py                                                                                             |      227 |       28 |       44 |        2 |     87% |140-144, 201, 222-228, 261, 317, 324, 368-369, 397, 437, 456, 596, 620, 633-634, 642-645, 668, 675, 681, 697-698 |
 | app/tasks/settings/routes.py                                                                                    |       11 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **27913** | **4183** | **6922** |  **639** | **83%** |           |
+| **TOTAL**                                                                                                       | **27929** | **4184** | **6922** |  **638** | **83%** |           |
 
 
 ## Setup coverage badge
