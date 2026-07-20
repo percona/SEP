@@ -171,6 +171,8 @@ async def check_connectivity(
     if queue_item.id is None:
         raise RuntimeError("dispatch_queue_item returned a queue item without an ID")
     queue_item_id = queue_item.id
+    # The payload gate's FAILED short-circuit returns through this same session,
+    # so the result is always attached (a FAILED status then skips the poll loop).
     await session.refresh(queue_item, attribute_names=["execution_request"])
 
     queue_item = await _expire_and_fetch(session, queue_item_id)

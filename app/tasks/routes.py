@@ -320,6 +320,8 @@ async def execute_task_name(
         )
     else:
         history_recorded = await dispatch_queue_item(queue_item, session)
+    # The payload gate's FAILED short-circuit returns through this same session,
+    # so the result is always attached and its deferred column needs reloading.
     await session.refresh(history_recorded, attribute_names=["execution_request"])
     return history_recorded
 

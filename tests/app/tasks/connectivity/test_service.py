@@ -311,6 +311,38 @@ class TestCheckConnectivityRealSession:
             session, result.task_history_id
         )
 
+    async def test_unresolvable_payload_fails_terminally(
+        self,
+        session: AsyncSession,
+        run_python_task: Task,
+        async_session_maker,
+    ) -> None:
+        """Assert an unresolvable payload yields a terminal FAILED history.
+
+        The check builds ``queue_item`` with its ``task`` relationship attached to
+        the caller ``session``. The payload gate must persist the FAILED row
+        through that same session; persisting through a second one would raise
+        ``InvalidRequestError`` and surface as an HTTP 500. Here the real
+        ``dispatch_queue_item`` runs (unmocked) so that path stays observable.
+        """
+        request = _make_request(timeout=POLL_INTERVAL * 2)
+
+        with (
+            patch(
+                "app.tasks.connectivity.service.PAYLOAD_PATH",
+                "/nonexistent/connectivity_payload",
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_async_session_maker",
+                return_value=async_session_maker,
+            ),
+        ):
+            result = await check_connectivity(session, request)
+
+        assert result.success is False
+        saved = await TaskHistoryManager.get_or_404(session, id=result.task_history_id)
+        assert saved.status == TaskHistoryStatusEnum.FAILED
+
     async def test_failure_connection_refused(
         self,
         session: AsyncSession,

@@ -1397,8 +1397,8 @@ class TestExecuteTaskQueue:
                 )
             )
             mock_dispatch = mocker.patch(
-                "app.tasks.celery.dispatch_queue_item",
-                side_effect=_fake_dispatch_mark_running,
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
             )
             mock_alert = mocker.patch.object(
                 AlertService, "trigger", new_callable=AsyncMock
@@ -1407,7 +1407,9 @@ class TestExecuteTaskQueue:
             with patch.object(celery_module.celery, "loop", test_loop):
                 result = celery_module.execute_task_queue.__wrapped__(history.id)
 
-            mock_dispatch.assert_not_called()
+            # The real centralized gate short-circuits before the internal
+            # dispatch, and persists exactly one FAILED row for this entry point.
+            mock_dispatch.assert_not_awaited()
             mock_alert.assert_awaited_once()
             rows = test_loop.run_until_complete(
                 _list_histories(async_session_maker, task.id)
@@ -1603,6 +1605,42 @@ class TestDispatchChainedTask:
         assert dispatched_history.execution_request.target == "host1"
         assert dispatched_history.execution_request.meta.get("_chain_depth") == 1
         assert mock_dispatch.await_args.kwargs.get("await_annotations") is True
+
+    def test_unresolvable_payload_fails_terminally(self, mocker) -> None:
+        """Assert a chained task with an unresolvable payload persists FAILED, never dispatching."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            chain_task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="chain-task",
+                    backend=TaskBackendEnum.PROXY,
+                    data={
+                        "task": "wrapped",
+                        "payload": "file:///nonexistent/x_payload",
+                    },
+                )
+            )
+            parent_history = _make_chain_history(
+                _make_chain_task("main-task"),
+                TaskHistoryStatusEnum.SUCCESS,
+                {"_chain_task_names": ["chain-task"]},
+            )
+            mock_internal = mocker.patch(
+                "app.tasks.celery._dispatch_queue_item", new_callable=AsyncMock
+            )
+
+            test_loop.run_until_complete(
+                _dispatch_chained_task("chain-task", parent_history)
+            )
+
+            # The gate short-circuits before the internal dispatch and persists a
+            # single terminal FAILED row rather than letting the chain hop raise.
+            mock_internal.assert_not_awaited()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, chain_task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
 
     @pytest.mark.asyncio
     async def test_unknown_task_logs_warning(self) -> None:
@@ -3224,9 +3262,22 @@ class TestPreDispatchPayloadCheck:
                     data=self._BROKEN_DATA,
                 )
             )
+            # The PROXY health check resolves and probes the NOMAD root before the
+            # payload gate runs, so a healthy root must exist for execution to
+            # reach the gate.
+            test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker, name="wrapped", backend=TaskBackendEnum.NOMAD
+                )
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts.return_value = {"node-1": "10.0.0.1"}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
             mock_dispatch = mocker.patch(
-                "app.tasks.celery.dispatch_queue_item",
-                side_effect=_fake_dispatch_mark_running,
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
             )
             mock_alert = mocker.patch.object(
                 AlertService, "trigger", new_callable=AsyncMock
@@ -3234,7 +3285,9 @@ class TestPreDispatchPayloadCheck:
 
             result = _run_skip_gate(test_loop, task_name="test-task")
 
-            mock_dispatch.assert_not_called()
+            # The real centralized gate short-circuits before the internal
+            # dispatch, and persists exactly one FAILED row for this entry point.
+            mock_dispatch.assert_not_awaited()
             mock_alert.assert_awaited_once()
             alert_payload = mock_alert.await_args.args[0]
             assert alert_payload["class"] == "task_dispatch_failure"
@@ -3268,9 +3321,22 @@ class TestPreDispatchPayloadCheck:
                     data=self._BROKEN_DATA,
                 )
             )
+            # The PROXY health check resolves and probes the NOMAD root before the
+            # payload gate runs, so a healthy root must exist for execution to
+            # reach the gate.
+            test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker, name="wrapped", backend=TaskBackendEnum.NOMAD
+                )
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts.return_value = {"node-1": "10.0.0.1"}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
             mock_dispatch = mocker.patch(
-                "app.tasks.celery.dispatch_queue_item",
-                side_effect=_fake_dispatch_mark_running,
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
             )
             mock_alert = mocker.patch.object(
                 AlertService, "trigger", new_callable=AsyncMock
@@ -3278,7 +3344,7 @@ class TestPreDispatchPayloadCheck:
 
             _run_skip_gate(test_loop, task_name="test-task")
 
-            mock_dispatch.assert_not_called()
+            mock_dispatch.assert_not_awaited()
             mock_alert.assert_not_awaited()
             rows = test_loop.run_until_complete(
                 _list_histories(async_session_maker, task.id)
@@ -3337,6 +3403,43 @@ class TestPreDispatchPayloadCheck:
             unreadable.read_text.side_effect = PermissionError("denied")
             mocker.patch(
                 "app.tasks.models.resolve_payload_reference", return_value=unreadable
+            )
+            task_history = test_loop.run_until_complete(
+                prepare_periodic_task_history(
+                    "test-task", {"meta": {"target": "node-1"}}
+                )
+            )
+
+            result = test_loop.run_until_complete(
+                celery_module._pre_dispatch_payload_check(
+                    task_history, "test-task", None
+                )
+            )
+
+            assert result is not None
+            assert result.status == TaskHistoryStatusEnum.FAILED
+
+    def test_undecodable_payload_persists_failed(self, mocker):
+        """Assert a resolvable payload with non-UTF-8 bytes (decode error) persists FAILED."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data={
+                        "task": "wrapped",
+                        "payload": "file://app/sep/plugins/mysql_backups/binlog_payload",
+                    },
+                )
+            )
+            undecodable = mocker.MagicMock()
+            undecodable.read_text.side_effect = UnicodeDecodeError(
+                "utf-8", b"\xff\xfe", 0, 1, "invalid start byte"
+            )
+            mocker.patch(
+                "app.tasks.models.resolve_payload_reference", return_value=undecodable
             )
             task_history = test_loop.run_until_complete(
                 prepare_periodic_task_history(
