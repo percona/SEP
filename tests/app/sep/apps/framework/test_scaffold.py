@@ -39,6 +39,7 @@ import pytest
 from fastapi import APIRouter, FastAPI, status
 from fastapi.testclient import TestClient
 from rich.prompt import Confirm, Prompt
+from starlette.datastructures import URL
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.requests.remote_api import RemoteAPI
@@ -57,6 +58,7 @@ from app.sep.apps.framework.registry import build_app_registry
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.config import App
 from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
+from app.sep.snippets.config import snippets_settings
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
     build_contract_client,
@@ -211,9 +213,18 @@ _GOLDEN_FILES = {
 
 @pytest.mark.parametrize("flavor", list(scaffold.Flavor))
 def test_default_render_is_byte_identical(
-    tmp_settings: Path, flavor: scaffold.Flavor
+    tmp_settings: Path, flavor: scaffold.Flavor, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Assert each flavor's default render is byte-identical to its golden snapshot."""
+    """Assert each flavor's default render is byte-identical to its golden snapshot.
+
+    The goldens are the raw template substitution. ``ruff`` ships in the optional
+    ``audit`` poetry group, which the CI test job (``poetry sync --no-root``) does
+    not install, so the scaffolder's post-render ``_ruff_fix`` no-ops there and the
+    goldens stay ruff-version-independent. A dev venv that installed the ``audit``
+    group would otherwise reformat the render, so the pass is stubbed to a no-op to
+    keep this comparison deterministic across environments.
+    """
+    monkeypatch.setattr(scaffold, "_ruff_fix", lambda *_: None)
     name, filenames = _GOLDEN_FILES[flavor]
     with _scaffolded(name, flavor) as result:
         for filename in filenames:
@@ -568,9 +579,12 @@ def test_task_flavor_scaffolds_conformant_app(
 
 
 def test_script_flavor_scaffolds_snippet_routes(
-    tmp_settings: Path, regular_user: CasdoorUser
+    tmp_settings: Path, regular_user: CasdoorUser, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Assert a scaffolded ``script`` app derives the ``/snippet/*`` routes, no Jinja."""
+    monkeypatch.setattr(
+        snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
+    )
     name = "_scaffold_smoke_script"
     with _scaffolded(name, scaffold.Flavor.SCRIPT):
         importlib.import_module(f"app.sep.apps.{name}")
@@ -828,6 +842,10 @@ def test_run_python_inferred_from_payload(tmp_settings: Path, tmp_path: Path) ->
             ["--name", "x", "--type", "base", "--description", "d", "--no-input"],
             id="description-on-base",
         ),
+        pytest.param(
+            ["--name", "x", "--type", "task", "--script", "s.sh", "--no-input"],
+            id="script-on-task",
+        ),
     ],
 )
 def test_run_mode_matrix_invalid_combos_exit(argv: list[str]) -> None:
@@ -1039,7 +1057,10 @@ def test_makefile_forwards_quoted_values() -> None:
         # normalise the literal's quote style (double → single to avoid escapes), so
         # assert on the value content rather than a fixed quote form.
         assert "description=" in rendered
-        assert f"description={json.dumps(description)}" in rendered
+        assert (
+            f"description={json.dumps(description)}" in rendered
+            or f"description={description!r}" in rendered
+        )
     finally:
         scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
