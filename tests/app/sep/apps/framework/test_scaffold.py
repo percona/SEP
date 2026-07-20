@@ -1118,3 +1118,44 @@ def test_makefile_forwards_quoted_values() -> None:
     finally:
         scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
+
+
+def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
+    """Seed a supplied script through ``make startapp SCRIPT=<file>``.
+
+    The ``SCRIPT`` make variable forwards to the scaffolder's ``--script`` flag the
+    way ``PAYLOAD`` forwards ``--payload``, so the script flavor is reachable through
+    the ``make startapp`` entry point. Exercises the real Makefile ``$$VAR``
+    forwarding, backing up and restoring ``settings.yaml`` like
+    :func:`test_makefile_forwards_quoted_values`.
+    """
+    name = "_scaffold_ci_scriptforward"
+    script_src = tmp_path / "seed.sh"
+    script_src.write_text("#!/usr/bin/env bash\necho hi\n")
+    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    venv_root = Path(sys.executable).resolve().parent.parent
+    try:
+        result = scaffold.subprocess.run(
+            [
+                "make",
+                "startapp",
+                f"NAME={name}",
+                "TYPE=script",
+                "NO_INPUT=1",
+                f"SCRIPT={script_src}",
+                f"VIRTUAL_ENV={venv_root}",
+            ],
+            cwd=scaffold._REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+        snippets_dir = scaffold.PLUGINS_DIR / name / "snippets"
+        assert (
+            snippets_dir / "seed.sh"
+        ).read_text() == "#!/usr/bin/env bash\necho hi\n"
+        assert not (snippets_dir / "sample.sh").exists()
+    finally:
+        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
+        _cleanup(name)
