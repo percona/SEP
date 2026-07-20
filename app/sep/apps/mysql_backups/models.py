@@ -648,7 +648,6 @@ class BackupTaskResponse(BackupTaskBase):
     """Represent a backup task API response.
 
     :param backup_type: The backup type recorded in task config.
-    :type backup_type: BackupType | None
     """
 
     backup_type: BackupType | None = None

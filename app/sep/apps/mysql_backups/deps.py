@@ -165,7 +165,6 @@ def build_mysql_backups_api_task_response(
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
     :return: A validated backup task API response object.
-    :rtype: BackupTaskResponse
     """
     hostname = None
     if task.data:

@@ -30,7 +30,6 @@ class BackupTaskBase(BaseTaskResponse):
     """Carry the backup-family fields shared across its API responses.
 
     :param hostname: The Nomad executor target the task runs on.
-    :type hostname: str | None
     """
 
     hostname: str | None = None
