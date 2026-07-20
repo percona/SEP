@@ -29,7 +29,8 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep.api.routes.apps import build_navigation_react_route
-from app.sep.apps.framework.registry import get_app_registry
+from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.registry import AppRegistry, get_app_registry
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -38,6 +39,26 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app
 from app.sep.models import AppLifecycleEnum, AppState
+
+
+def _synthetic_app(key: str, *, requires_apps: tuple[str, ...] = ()) -> BaseApp:
+    """Build a minimal top-level ``BaseApp`` carrying ``requires_apps``.
+
+    Used to inject dependency shapes the real registry does not have (an app with
+    two direct dependencies, or a three-hop chain) so the endpoint projection can
+    be exercised against them.
+
+    :param key: The app key.
+    :param requires_apps: The direct dependency keys.
+    :return: The constructed app.
+    """
+    return BaseApp(
+        key=key,
+        name=key,
+        display_name=key,
+        uri_path=f"/{key}",
+        requires_apps=requires_apps,
+    )
 
 
 @pytest_asyncio.fixture(name="override_session")
@@ -52,8 +73,11 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(name="api_user_client")
@@ -103,6 +127,7 @@ class TestListAppsForNavigation:
             "nav_order",
             "react_route",
             "nav_icon",
+            "blocking_dependencies",
         }
 
     async def test_additive_fields_carry_registry_values(
@@ -225,6 +250,154 @@ class TestListAppsForNavigation:
         snippets = next(e for e in response.json() if e["app_key"] == "snippets")
         assert snippets["enabled"] is False
         assert "lifecycle_state" not in snippets
+
+    async def test_atw_reported_disabled_when_snippets_disabled(
+        self, api_user_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Atw reports ``enabled=False`` when the ``snippets`` app it requires is disabled.
+
+        This pins the cross-app dependency on the nav surface: atw owns an
+        ``ENABLED`` row (or none) yet is projected disabled because a required
+        app is off, so the shell hides it.
+        """
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["snippets"]["enabled"] is False
+        assert entries["atw"]["enabled"] is False
+        # atw is dependency-disabled -> it names snippets as the blocker, while
+        # snippets is self-disabled -> it reports no blocker (generic splash).
+        assert entries["atw"]["blocking_dependencies"] == ["snippets"]
+        assert entries["snippets"]["blocking_dependencies"] == []
+
+    async def test_atw_reported_enabled_when_snippets_enabled(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Atw reports ``enabled=True`` when snippets is enabled (no regression)."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["snippets"]["enabled"] is True
+        assert entries["atw"]["enabled"] is True
+        assert entries["atw"]["blocking_dependencies"] == []
+
+    async def test_self_disabled_app_reports_no_blocking_dependency(
+        self, api_user_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Report no blocker for a directly-disabled app so the generic splash shows.
+
+        With atw's own state disabled (regardless of snippets), the disablement is
+        self-driven, so ``blocking_dependencies`` stays empty even though atw
+        declares ``requires_apps=("snippets",)``.
+        """
+        override_session.add(
+            AppState(app_key="atw", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["atw"]["enabled"] is False
+        assert entries["atw"]["blocking_dependencies"] == []
+
+    @pytest.mark.parametrize(
+        "state",
+        [AppLifecycleEnum.DISABLING, AppLifecycleEnum.ENABLING],
+    )
+    async def test_transitional_dependency_populates_blocking_dependencies(
+        self,
+        api_user_client: TestClient,
+        override_session: AsyncSession,
+        state: AppLifecycleEnum,
+    ) -> None:
+        """Name a dependency mid-transition as the blocker, since only ENABLED is on.
+
+        A dependency stuck in ``ENABLING``/``DISABLING`` is not effective-enabled,
+        so a dependent app is projected disabled and must still name it.
+        """
+        override_session.add(AppState(app_key="snippets", lifecycle_state=state))
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["atw"]["enabled"] is False
+        assert entries["atw"]["blocking_dependencies"] == ["snippets"]
+
+    async def test_protected_app_reports_no_blocking_dependency(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Report an empty blocker list for the protected ``inventory`` app."""
+        response = api_user_client.get("/api/apps/")
+        inventory = next(e for e in response.json() if e["app_key"] == "inventory")
+        assert inventory["blocking_dependencies"] == []
+
+    async def test_multiple_blocking_dependencies_preserve_declaration_order(
+        self,
+        api_user_client: TestClient,
+        override_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Emit every disabled direct dependency, in declaration order, through the API.
+
+        The real registry has no app declaring two direct dependencies, so inject a
+        synthetic registry to pin the projected list shape and ordering.
+        """
+        registry = AppRegistry(
+            [
+                _synthetic_app("a", requires_apps=("b", "c")),
+                _synthetic_app("b"),
+                _synthetic_app("c"),
+            ]
+        )
+        monkeypatch.setattr(
+            "app.sep.api.routes.apps.get_app_registry", lambda: registry
+        )
+        override_session.add(
+            AppState(app_key="b", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        override_session.add(
+            AppState(app_key="c", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["a"]["enabled"] is False
+        assert entries["a"]["blocking_dependencies"] == ["b", "c"]
+
+    async def test_transitive_disable_names_immediate_blocker_through_api(
+        self,
+        api_user_client: TestClient,
+        override_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Name the immediate dependency, not the deep cause, in the API projection.
+
+        With ``x -> y -> z`` and ``z`` disabled, ``x`` reports ``y`` (its immediate
+        effective-disabled dependency) while ``y`` reports ``z``.
+        """
+        registry = AppRegistry(
+            [
+                _synthetic_app("x", requires_apps=("y",)),
+                _synthetic_app("y", requires_apps=("z",)),
+                _synthetic_app("z"),
+            ]
+        )
+        monkeypatch.setattr(
+            "app.sep.api.routes.apps.get_app_registry", lambda: registry
+        )
+        override_session.add(
+            AppState(app_key="z", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["x"]["blocking_dependencies"] == ["y"]
+        assert entries["y"]["blocking_dependencies"] == ["z"]
 
     async def test_unauthenticated_returns_json_401(
         self, api_unauthenticated_client: TestClient

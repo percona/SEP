@@ -29,6 +29,7 @@ execute paths are tested against the same shapes production sees.
 from collections.abc import Sequence
 from datetime import datetime
 from itertools import count
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends
@@ -48,7 +49,8 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 from app.sep.apps.framework.responses import build_default_task_response
-from app.sep.apps.framework.schema import Capabilities, Column, ListView
+from app.sep.apps.framework.schema import AppSchema, Capabilities, Column, ListView
+from app.sep.apps.framework.script_source import ScriptSource
 from app.sep.apps.framework.spec import ResolvedEntities, RunCommandSpec
 from app.sep.apps.framework.task_status import batch_get_latest_statuses
 from app.sep.deps import TaskAPI
@@ -68,6 +70,7 @@ from tests.app.factories import (
 
 SYNTH_OWNER = "ARCHIVER"
 SYNTH_PREFIX = "/synthetic-app"
+SYNTH_SCRIPT_PREFIX = "/synthetic-script-app"
 SYNTH_SERVICE_HOST = "db-host"
 SYNTH_SERVICE_PORT = 3306
 SYNTH_EXECUTOR_HOST = "exec-node"
@@ -347,9 +350,14 @@ class MockInventoryAPI:
         ).model_dump(mode="json")
 
     def seed_table(self, table_id: int) -> None:
-        """Seed a created table at ``table_id``."""
+        """Seed a created table at ``table_id`` with an id-derived name.
+
+        The name is derived from ``table_id`` (not left to a random factory value) so
+        distinct table ids never collide by name — some task plugins guard against
+        operations where source and destination resolve to the same table name.
+        """
         self._entities["/tables"][table_id] = CreatedTableFactory.build(
-            id=table_id
+            id=table_id, name=f"tbl-{table_id}"
         ).model_dump(mode="json")
 
     async def get(self, path: str, **_: Any) -> dict[str, Any]:
@@ -665,3 +673,79 @@ def synth_app(**overrides: Any) -> TaskExecutionApp:
     if overrides.pop("connectivity_check", False):
         overrides.setdefault("create_model", SynthConnectivityForm)
     return TaskExecutionApp(**{**synth_app_kwargs(), **overrides})
+
+
+class _SynthScript:
+    """Represent a minimal script backing the synthetic script-flavored app."""
+
+    def __init__(self, filename: str = "synth.sh") -> None:
+        self.filename = filename
+
+    @property
+    def execution_task_name(self) -> str:
+        """Return the fixed Tasks-API task name the synthetic script runs under."""
+        return "synth-script-task"
+
+    def get_execution_model(self) -> type[BaseModel]:
+        """Return an empty execution-arguments model."""
+        return BaseModel
+
+
+class SynthScriptListRow(BaseModel):
+    """Represent the list-row projection for the synthetic script app."""
+
+    filename: str
+
+
+_SYNTH_SCRIPT_SCHEMA = AppSchema(
+    name="synthetic-script-app",
+    display_name="Synthetic Script App",
+    forms=[],
+    list_view=ListView(columns=[Column(key="filename", label="Filename")]),
+)
+
+
+def _synth_script_source(scripts: Sequence[_SynthScript]) -> ScriptSource[_SynthScript]:
+    """Build a minimal in-memory ``ScriptSource`` listing ``scripts``.
+
+    :param scripts: The scripts the source's ``list_scripts`` hook returns.
+    :return: A ``ScriptSource`` whose list route projects each script to a
+        :class:`SynthScriptListRow`.
+    """
+
+    async def _list_scripts() -> list[_SynthScript]:
+        return list(scripts)
+
+    async def _load_script(filename: str) -> _SynthScript:
+        return _SynthScript(filename)
+
+    return ScriptSource(
+        script_dir=Path("/synthetic-scripts"),
+        load_script=_load_script,
+        list_scripts=_list_scripts,
+        build_form_schema=lambda _script: _SYNTH_SCRIPT_SCHEMA,
+        build_execution_meta=lambda _script, _body: BaseModel(),
+        list_response=lambda script: SynthScriptListRow(filename=script.filename),
+        list_response_model=SynthScriptListRow,
+    )
+
+
+def synth_script_app(**overrides: Any) -> TaskExecutionApp:
+    """Build a minimal script-flavored ``TaskExecutionApp`` with optional overrides.
+
+    Mirror :func:`synth_app` for the ``script_source`` branch so the pagination
+    default and the ``NO_PAGINATION`` opt-out can be exercised end-to-end against a
+    script app, not only the CRUD flavor.
+
+    :param overrides: Fields merged over the canonical script-app kwargs; the
+        ``scripts`` key is popped to seed the source's listing.
+    :return: A validated script-flavored synthetic app definition.
+    """
+    scripts = overrides.pop("scripts", (_SynthScript(),))
+    kwargs = {
+        "name": "synthetic-script-app",
+        "uri_path": SYNTH_SCRIPT_PREFIX,
+        "owner": SYNTH_OWNER,
+        "script_source": _synth_script_source(scripts),
+    }
+    return TaskExecutionApp(**{**kwargs, **overrides})

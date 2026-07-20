@@ -79,7 +79,18 @@ export default function AppDisabledGuard({ appKey, children }: AppDisabledGuardP
 
   const app = apps?.find((a) => a.app_key === appKey);
   if (app && !app.enabled) {
-    return <AppDisabledPage />;
+    // Drop an unmappable key so a raw app key never reaches the UI; if none map
+    // (e.g. self-disabled, so no blockers) the splash stays generic.
+    const nameByKey = new Map((apps ?? []).map((a) => [a.app_key, a.display_name]));
+    const blockingDependencyNames = (app.blocking_dependencies ?? [])
+      .map((key) => nameByKey.get(key))
+      .filter((name): name is string => name !== undefined);
+    return (
+      <AppDisabledPage
+        appDisplayName={app.display_name}
+        blockingDependencyNames={blockingDependencyNames}
+      />
+    );
   }
 
   return <>{children}</>;

@@ -57,6 +57,7 @@ function mockApp(overrides: Partial<EnabledApp> & Pick<EnabledApp, 'app_key'>): 
     group: null,
     nav_order: null,
     nav_icon: null,
+    blocking_dependencies: [],
     uri_path: `/${app_key}`,
     display_name: app_key,
     ...rest,

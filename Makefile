@@ -215,11 +215,29 @@ changelog-check:
 changelog-list:
 	@$(PYTHON) scripts/changelog.py list
 
+# Bare `make startapp` (no NAME) drops into the interactive wizard. Each value is
+# forwarded through the recipe shell environment as "$$VAR" — command-line
+# variables are auto-exported, so the shell (not Make's textual expansion) supplies
+# the value and embedded spaces/quotes stay intact; a literal `$` must be written
+# `$$` on the command line. $(if ...) gates presence. Recognised variables: NAME
+# TYPE DISPLAY_NAME DESCRIPTION GROUP SERVICE_TYPE NAV_ICON RUN_MODE COMMAND PAYLOAD
+# NO_INPUT ENABLE DERIVE_UPDATE DERIVE_DELETE.
 startapp:
-ifndef NAME
-	$(error NAME is required. Usage: make startapp NAME=myapp [TYPE=task|script|base])
-endif
-	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py --name "$(NAME)" --type "$(or $(TYPE),task)"
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py \
+		$(if $(NAME),--name "$$NAME") \
+		$(if $(TYPE),--type "$$TYPE") \
+		$(if $(DISPLAY_NAME),--display-name "$$DISPLAY_NAME") \
+		$(if $(DESCRIPTION),--description "$$DESCRIPTION") \
+		$(if $(GROUP),--group "$$GROUP") \
+		$(if $(SERVICE_TYPE),--service-type "$$SERVICE_TYPE") \
+		$(if $(NAV_ICON),--nav-icon "$$NAV_ICON") \
+		$(if $(RUN_MODE),--run-mode "$$RUN_MODE") \
+		$(if $(COMMAND),--command "$$COMMAND") \
+		$(if $(PAYLOAD),--payload "$$PAYLOAD") \
+		$(if $(NO_INPUT),--no-input) \
+		$(if $(ENABLE),--enable) \
+		$(if $(filter false 0 no,$(DERIVE_UPDATE)),--no-derive-update) \
+		$(if $(filter false 0 no,$(DERIVE_DELETE)),--no-derive-delete)
 
 startapp-check:
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/startapp_check.py

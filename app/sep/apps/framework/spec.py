@@ -23,12 +23,25 @@ form plus resolved entities into a :class:`RunCommandSpec` / :class:`RunPythonSp
 service to a :class:`~app.tasks.models.TaskWrite` whose ``data`` dict is
 byte-uniform with the canonical hand-written envelopes in
 ``checksums/deps.py`` (run-command) and ``backup_pg/spec.py`` (run-python).
+
+A task-app's spec builder implements one of two blessed signatures:
+
+- The canonical ``(form, resolved) -> RunCommandSpec | RunPythonSpec`` feeds
+  :func:`assemble_envelope`, which supplies the executor ``target``,
+  ``_service_name``, and connectivity meta uniformly — used by archives,
+  checksums, backup_pg, mysql_backups, and now alters.
+- The connectivity-free ``(form, resolved) -> TaskWrite`` builds the envelope
+  directly via :func:`build_run_python_task` for the tasks whose payload
+  resolves no ``ServiceRef`` and so carries no connectivity meta — backup_mongo
+  and mysql_backups/restore.
 """
 
 import shlex
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast, Protocol
+
+from pydantic import BaseModel
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.utils.cli_args import (
@@ -40,9 +53,10 @@ from app.inventory.constants import DEFAULT_MYSQL_PORT, DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
-    ArgFormat,
+    find_arg_format,
     find_ref_marker,
     HostRef,
+    resolve_arg_template,
     SchemaRef,
     ServiceRef,
     TableRef,
@@ -274,10 +288,10 @@ def _select_primary_service(
 ) -> CreatedService | None:
     """Select the primary (connectivity) service from the resolved service refs.
 
-    A ``check_connectivity``-marked ref wins outright (the construction guard
-    permits at most one). Otherwise fall back to the last ref that resolved to a
-    real entity, preserving the pre-marker last-wins behaviour for the
-    single-service apps that declare no marker.
+    A designated primary — a ref marked ``check_connectivity`` or ``primary`` —
+    wins outright (the construction guard permits at most one). Otherwise fall
+    back to the last ref that resolved to a real entity, preserving the pre-marker
+    last-wins behaviour for the single-service apps that declare no marker.
 
     :param candidates: The ``(marker, resolved entity)`` pairs for every resolved
         ``ServiceRef`` field, in declaration order.
@@ -285,7 +299,7 @@ def _select_primary_service(
     """
     primary = None
     for ref, entity in candidates:
-        if ref.check_connectivity:
+        if ref.check_connectivity or ref.primary:
             return entity
         if entity is not None:
             primary = entity
@@ -305,9 +319,9 @@ async def resolve_refs(
     spec builder can fall back to the raw form value. A ``HostRef`` field's
     submitted value (free-typed or selected) is captured as the executor host
     without an inventory call, coerced to ``str``; a model declaring more than one
-    ``HostRef`` is rejected. The connectivity / primary service is the
-    ``check_connectivity``-marked ``ServiceRef`` when present, else the sole
-    resolved ``ServiceRef``.
+    ``HostRef`` is rejected. The primary service is the designated ``ServiceRef``
+    (marked ``check_connectivity`` or ``primary``) when present, else the sole /
+    last-resolved ``ServiceRef``.
 
     :param form: The validated create form instance.
     :param inventory_api: The inventory API client.
@@ -501,7 +515,7 @@ def build_run_python_task(
     )
 
 
-def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:
+def stamp_form_input(write: TaskWrite, form: BaseModel) -> None:
     """Persist the validated create-form body under ``write.data[RESERVED_FORM_KEY]``.
 
     Persist the create form verbatim so a derived ``PUT`` can prefill an edit form
@@ -510,7 +524,9 @@ def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:
     must re-validate against the app's ``create_model``.
 
     :param write: The assembled task envelope whose ``data`` carries the stamp.
-    :param form: The validated create-form instance to persist.
+    :param form: The validated create-form instance to persist. Any
+        :class:`pydantic.BaseModel` is accepted, not only ``AppFormModel`` — the
+        mongo apps stamp ``BaseCaseInsensitiveModel`` create forms.
     :raises ValueError: When ``write.data`` already carries the reserved key,
         which means a spec builder populated it; stamping would silently
         overwrite that app-provided data.
@@ -521,43 +537,6 @@ def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:
             f"{RESERVED_FORM_KEY!r}; a spec builder must not populate it"
         )
     write.data[RESERVED_FORM_KEY] = form.model_dump(mode="json")
-
-
-def _find_arg_format(name: str, metadata: list[Any]) -> ArgFormat | None:
-    """Return the field's single :class:`ArgFormat` marker, or ``None``.
-
-    :param name: The field name, used in the error message.
-    :param metadata: The field's ``FieldInfo.metadata`` list.
-    :return: The ``ArgFormat`` marker, or ``None`` when the field declares none.
-    :raises ValueError: When the field declares more than one ``ArgFormat`` marker.
-    """
-    found = [item for item in metadata if isinstance(item, ArgFormat)]
-    if len(found) > 1:
-        raise ValueError(
-            f"field {name!r} declares {len(found)} ArgFormat markers; at most one "
-            "is allowed per field"
-        )
-    return found[0] if found else None
-
-
-def _resolve_arg_template(name: str, annotation: Any, marker: ArgFormat) -> str:
-    """Return the field's explicit ``ArgFormat`` template, or derive it from the name.
-
-    A templateless marker (``template is None``) derives the conventional shape from
-    the field name and type: a non-``bool`` field becomes the value arg
-    ``--<kebab-field-name>=${value}`` and a ``bool`` field becomes the flag
-    ``--<kebab-field-name>``. A field declares an explicit template only when its CLI
-    spelling diverges from its name.
-
-    :param name: The field name, kebab-cased for the derived template.
-    :param annotation: The field's resolved type, selecting the value-vs-flag shape.
-    :param marker: The field's ``ArgFormat`` marker.
-    :return: The explicit template, or the derived default when none was given.
-    """
-    if marker.template is not None:
-        return marker.template
-    flag = "--" + name.replace("_", "-")
-    return flag if annotation is bool else f"{flag}=${{value}}"
 
 
 def build_command_args(form: AppFormModel) -> list[str]:
@@ -581,11 +560,11 @@ def build_command_args(form: AppFormModel) -> list[str]:
     value_args = []
     flag_args = []
     for name, field_info in type(form).model_fields.items():
-        marker = _find_arg_format(name, field_info.metadata)
+        marker = find_arg_format(name, field_info.metadata)
         if marker is None:
             continue
         value = getattr(form, name)
-        resolved = _resolve_arg_template(name, field_info.annotation, marker)
+        resolved = resolve_arg_template(name, field_info.annotation, marker)
         if is_value_arg_template(resolved):
             if value:
                 value_args.extend(render_value_arg(resolved, value))
@@ -596,27 +575,32 @@ def build_command_args(form: AppFormModel) -> list[str]:
 
 
 def validate_arg_formats(model: type[AppFormModel]) -> None:
-    """Reject an ``ArgFormat`` template :func:`build_command_args` would silently drop.
+    """Reject an ``ArgFormat`` template the forward or reverse arg path can't honour.
 
     Check each field's :class:`ArgFormat` marker against the value-vs-flag contract
-    the assembler enforces: a template may carry only the ``${value}`` placeholder,
-    and a flag template (no placeholder) must sit on a ``bool`` field. A typo'd
-    placeholder or a flag template on a non-``bool`` field would otherwise fall
-    through to the flag branch and be emitted only when the value is ``True`` —
-    dropping the argument with no error — so this surfaces the misconfiguration at
-    app construction instead of silently at task-creation time. A templateless
-    marker derives its template from the field name and type, so it is always
-    well-formed; only an explicit template can violate the contract.
+    both directions share: a template may carry only the ``${value}`` placeholder, a
+    value template must place it in the terminal ``=${value}`` position, and a flag
+    template (no placeholder) must sit on a ``bool`` field. A typo'd placeholder or a
+    flag template on a non-``bool`` field falls through to the flag branch and is
+    emitted only when the value is ``True`` — dropping the argument with no error. A
+    non-terminal ``${value}`` renders forward but breaks
+    :func:`~app.sep.apps.framework.form_dsl.pt_toolkit.derive_arg_parser_from_model`,
+    whose derived ``--flag=`` prefix and first-``=`` value split round-trip only the
+    terminal shape. Surfacing these at app construction beats a silent desync at
+    task-creation time. A templateless marker derives its template from the field name
+    and type, so it is always well-formed; only an explicit template can violate the
+    contract.
 
     :param model: The create model whose fields' ``ArgFormat`` markers are validated.
     :raises ValueError: When a template carries a placeholder other than ``value``,
-        or when a flag template is declared on a non-``bool`` field.
+        when a value template places ``${value}`` outside the terminal ``=${value}``
+        position, or when a flag template is declared on a non-``bool`` field.
     """
     for name, field_info in model.model_fields.items():
-        marker = _find_arg_format(name, field_info.metadata)
+        marker = find_arg_format(name, field_info.metadata)
         if marker is None:
             continue
-        template = _resolve_arg_template(name, field_info.annotation, marker)
+        template = resolve_arg_template(name, field_info.annotation, marker)
         identifiers = arg_template_identifiers(template)
         unsupported = identifiers - {"value"}
         if unsupported:
@@ -624,6 +608,13 @@ def validate_arg_formats(model: type[AppFormModel]) -> None:
                 f"field {name!r} ArgFormat template {template!r} uses "
                 f"unsupported placeholder(s) {sorted(unsupported)}; a value arg uses "
                 f"exactly ${{value}} and a flag uses none"
+            )
+        if "value" in identifiers and not template.endswith("=${value}"):
+            raise ValueError(
+                f"field {name!r} ArgFormat template {template!r} places its "
+                "${value} placeholder outside the terminal '=${value}' position; "
+                "the reverse parser derives a value arg by splitting on the first "
+                "'=', so a value arg must be spelled '--flag=${value}'"
             )
         if not identifiers and field_info.annotation is not bool:
             raise ValueError(

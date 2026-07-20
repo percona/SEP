@@ -32,6 +32,9 @@ jobs:
           pnpm --filter @sep/api codegen
           pnpm --filter @sep/api exec oxfmt --write src/generated
           git diff --exit-code -- packages/api/src/generated/
+          pnpm --filter @sep/shell codegen
+          pnpm --filter @sep/shell exec oxfmt --write src/generated
+          git diff --exit-code -- packages/shell/src/generated/
 
       - name: Lint (oxlint)
         run: pnpm lint

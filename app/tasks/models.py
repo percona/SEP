@@ -179,6 +179,13 @@ class TaskHistoryStatusEnum(StrEnum):
             TaskHistoryStatusEnum.STALE,
         ]
 
+    def is_terminal(self) -> bool:
+        """Check if task execution has reached a terminal state.
+
+        :return: True if task execution will not transition again.
+        """
+        return self.is_finished() or self == TaskHistoryStatusEnum.LOST
+
     @classmethod
     def active_statuses(cls) -> frozenset["TaskHistoryStatusEnum"]:
         """Return the statuses whose executions are still in flight.
@@ -952,11 +959,15 @@ GENERIC_EXECUTOR_TASK_NAMES: frozenset[str] = frozenset(
     }
 )
 
+INVENTORY_SYNC_TASK_NAME = "inventory-sync"
+SYNC_RUNNING_TASKS_TASK_NAME = "tasks__sync_running_tasks"
+CHECK_NOMAD_CERT_EXPIRY_TASK_NAME = "tasks__check_nomad_cert_expiry"
+
 INTERNAL_TASK_NAMES: frozenset[str] = frozenset(
     {
-        "inventory-sync",
-        "tasks__sync_running_tasks",
-        "tasks__check_nomad_cert_expiry",
+        INVENTORY_SYNC_TASK_NAME,
+        SYNC_RUNNING_TASKS_TASK_NAME,
+        CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
     }
 )
 

@@ -25,10 +25,10 @@ mapping upstream failures onto the SEP gateway error contract via
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, HTTPException, status
+from fastapi import APIRouter, Body, status
 
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
-from app.sep.api.proxy import reraise_upstream_tasks_error
+from app.sep.api.proxy import reraise_upstream_tasks_errors
 from app.sep.deps import TaskAPI
 
 router = APIRouter()
@@ -46,10 +46,8 @@ async def list_periodic_tasks(tasks_api: TaskAPI) -> list[dict[str, Any]]:
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
         or a connection-level ``OSError``.
     """
-    try:
+    with reraise_upstream_tasks_errors():
         result = await tasks_api.get("/periodic/")
-    except (HTTPException, OSError) as exc:
-        reraise_upstream_tasks_error(exc)
     return result if isinstance(result, list) else []
 
 
@@ -74,10 +72,8 @@ async def create_periodic_task(
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
         or a connection-level ``OSError``.
     """
-    try:
+    with reraise_upstream_tasks_errors():
         return await tasks_api.post(f"/{task_name}/periodic/", json=body)
-    except (HTTPException, OSError) as exc:
-        reraise_upstream_tasks_error(exc)
 
 
 @router.put("/{periodic_task_id}", responses=UPSTREAM_TASKS_502_RESPONSE)
@@ -97,10 +93,8 @@ async def update_periodic_task(
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
         or a connection-level ``OSError``.
     """
-    try:
+    with reraise_upstream_tasks_errors():
         return await tasks_api.put(f"/periodic/{periodic_task_id}", json=body)
-    except (HTTPException, OSError) as exc:
-        reraise_upstream_tasks_error(exc)
 
 
 @router.delete(
@@ -118,7 +112,5 @@ async def delete_periodic_task(periodic_task_id: int, tasks_api: TaskAPI) -> Non
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
         or a connection-level ``OSError``.
     """
-    try:
+    with reraise_upstream_tasks_errors():
         await tasks_api.delete(f"/periodic/{periodic_task_id}")
-    except (HTTPException, OSError) as exc:
-        reraise_upstream_tasks_error(exc)

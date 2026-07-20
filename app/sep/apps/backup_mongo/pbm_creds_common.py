@@ -60,7 +60,7 @@ def _creds_path(config_source: str) -> str:
     if config_yaml:
         try:
             config = yaml.safe_load(config_yaml)
-            if config:
+            if isinstance(config, dict):
                 path = config.get("credentials_path")
                 if path:
                     return path

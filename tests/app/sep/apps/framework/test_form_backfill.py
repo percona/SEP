@@ -80,8 +80,11 @@ async def tasks_session() -> AsyncIterator[AsyncSession]:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     session_maker = get_async_session_maker_from_engine(engine)
-    async with session_maker() as session:
-        yield session
+    try:
+        async with session_maker() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 async def _persisted_task(session: AsyncSession, *, data: dict) -> Task:

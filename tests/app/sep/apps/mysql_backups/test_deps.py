@@ -24,6 +24,7 @@ from app.core.utils.path import resolve_payload_reference
 from app.sep.apps.mysql_backups.deps import (
     _extract_backup_type_from_task,
     build_backup_task_payload,
+    build_mysql_backups_api_task_response,
     get_backups_task_info,
     parse_backup_task_data,
 )
@@ -650,3 +651,59 @@ def _task_with_raw_config(raw_config: str) -> Task:
 def test_extract_backup_type_handles_non_dict_yaml(raw_config: str):
     """Malformed/non-dict YAML must return ``None`` instead of raising."""
     assert _extract_backup_type_from_task(_task_with_raw_config(raw_config)) is None
+
+
+def _make_backup_task(
+    created_by: str | None = None, last_updated_by: str | None = None
+) -> Task:
+    """Build a minimal backups Task carrying the given user ids."""
+    return Task(
+        name="backup-task",
+        owner="BACKUPS",
+        data={"meta": {"target": "host1", "config": ""}},
+        created_by=created_by,
+        last_updated_by=last_updated_by,
+    )
+
+
+class TestBuildMysqlBackupsApiTaskResponse:
+    """Tests for build_mysql_backups_api_task_response username mapping."""
+
+    def test_created_by_resolved_to_username_when_mapping_provided(self):
+        """created_by is resolved when the mapping contains the id."""
+        task = _make_backup_task(created_by="uid-abc")
+
+        result = build_mysql_backups_api_task_response(
+            task, context={"uid-abc": "Alice"}
+        )
+
+        assert result.created_by == "Alice"
+
+    def test_created_by_falls_back_to_raw_id_when_not_in_mapping(self):
+        """created_by is preserved when the id is not in the mapping."""
+        task = _make_backup_task(created_by="uid-unknown")
+
+        result = build_mysql_backups_api_task_response(
+            task, context={"uid-other": "Bob"}
+        )
+
+        assert result.created_by == "uid-unknown"
+
+    def test_last_updated_by_resolved_via_mapping(self):
+        """last_updated_by is also resolved via the mapping."""
+        task = _make_backup_task(last_updated_by="uid-xyz")
+
+        result = build_mysql_backups_api_task_response(
+            task, context={"uid-xyz": "Carol"}
+        )
+
+        assert result.last_updated_by == "Carol"
+
+    def test_context_none_preserves_raw_ids(self):
+        """Raw ids are unchanged when no context is bound."""
+        task = _make_backup_task(created_by="uid-123", last_updated_by="uid-456")
+
+        result = build_mysql_backups_api_task_response(task)
+
+        assert result.created_by == "uid-123"
+        assert result.last_updated_by == "uid-456"

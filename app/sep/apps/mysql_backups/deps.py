@@ -23,7 +23,6 @@ import yaml
 from fastapi import Depends, Form
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_edit_form import parse_server_list_config
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import (
     assemble_envelope,
@@ -36,6 +35,7 @@ from app.sep.apps.mysql_backups.models import (
     OWNER,
 )
 from app.sep.apps.mysql_backups.spec import build_backup_spec
+from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -84,7 +84,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     Extracts configuration from an existing backup task to populate the edit form.
 
     Delegates the shared ``SERVER_LIST`` parsing to
-    :func:`~app.sep.apps.backup_edit_form.parse_server_list_config`, layering on the
+    :func:`~app.sep.apps.shared.backups.edit_form.parse_server_list_config`, layering on the
     mysql-specific alias, encryption recipient, and the mydumper / xtrabackup /
     binlog / upload-quiet keys.
 
@@ -155,6 +155,7 @@ def build_mysql_backups_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     last_executed_at: datetime | None = None,
+    context: dict[str, str] | None = None,
 ) -> BackupResponse:
     """Build a ``BackupResponse`` for the JSON API.
 
@@ -164,9 +165,14 @@ def build_mysql_backups_api_task_response(
     :type status: TaskHistoryStatusEnum | None
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
+    :param context: The username map bound by ``response_context_provider``,
+        used to remap ``created_by`` / ``last_updated_by`` user-ids to
+        usernames; falls back to the raw id when the map lacks an entry.
+    :type context: dict[str, str] | None
     :return: A validated backup task API response object.
     :rtype: BackupResponse
     """
+    mapping = context or {}
     hostname = None
     if task.data:
         meta = task.data.get("meta") or {}
@@ -180,6 +186,8 @@ def build_mysql_backups_api_task_response(
             "backup_type": _extract_backup_type_from_task(task),
             "hostname": hostname,
             "service_type": ServiceTypeEnum.MYSQL,
+            "created_by": mapping.get(task.created_by, task.created_by),
+            "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
         },
     )
 

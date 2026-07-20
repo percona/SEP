@@ -411,6 +411,27 @@ class _SoleUnmarkedServiceForm(AppFormModel):
     ] = None
 
 
+class _PrimaryDesignatedServiceForm(AppFormModel):
+    """Carry a ``primary`` source and an unmarked destination ``ServiceRef``.
+
+    The destination is declared *after* the source so the old last-wins
+    selection would pick it; the ``primary`` marker must instead keep the source
+    as ``resolved.service`` without enabling any probe.
+    """
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    source_id: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), primary=True),
+        Ui(label="Source", section="main"),
+    ] = None
+    dest_id: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="Dest", section="main"),
+    ] = None
+
+
 class _SourceByTable(BaseModel):
     """Carry a discriminated-union branch nesting a free-solo ``SchemaRef``."""
 
@@ -596,6 +617,59 @@ class TestResolveRefs:
         assert resolved.service is not None
         assert resolved.service.name == "source"
         assert resolved.entities["source_id"].name == "source"
+        assert resolved.entities["dest_id"].name == "dest"
+
+    @pytest.mark.asyncio
+    async def test_primary_marked_service_is_primary_without_probe(self) -> None:
+        """Select the ``primary`` service as primary, not the last-resolved ref."""
+        source = _service(
+            address="src-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="source",
+            port=3306,
+        )
+        dest = _service(
+            address="dst-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="dest",
+            port=3306,
+        )
+        inventory = _fake_inventory(
+            {
+                "/services/1": source.model_dump(mode="json"),
+                "/services/2": dest.model_dump(mode="json"),
+            }
+        )
+
+        resolved = await resolve_refs(
+            _PrimaryDesignatedServiceForm(source_id=1, dest_id=2), inventory
+        )
+
+        assert resolved.service is not None
+        assert resolved.service.name == "source"
+        assert resolved.entities["dest_id"].name == "dest"
+
+    @pytest.mark.asyncio
+    async def test_unfilled_primary_designation_yields_no_primary(self) -> None:
+        """Return no primary when the designated ``primary`` ref is left unfilled.
+
+        The designated ref wins outright even when it resolves to ``None``, so a
+        later resolved ``ServiceRef`` does not step in as the primary — leaving
+        ``assemble_envelope`` to trip its missing-service guard.
+        """
+        dest = _service(
+            address="dst-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="dest",
+            port=3306,
+        )
+        inventory = _fake_inventory({"/services/2": dest.model_dump(mode="json")})
+
+        resolved = await resolve_refs(
+            _PrimaryDesignatedServiceForm(source_id=None, dest_id=2), inventory
+        )
+
+        assert resolved.service is None
         assert resolved.entities["dest_id"].name == "dest"
 
     @pytest.mark.asyncio
@@ -788,6 +862,15 @@ class _FlagOnNonBoolForm(AppFormModel):
     ] = ""
 
 
+class _NonTerminalValueForm(AppFormModel):
+    """Carry a value template whose ``${value}`` is not in the terminal position."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    databases: Annotated[
+        str, ArgFormat("--databases=${value}s"), Ui(label="DB", section="main")
+    ] = ""
+
+
 class TestValidateArgFormats:
     """Cover the construction-time ``ArgFormat`` validation in ``validate_arg_formats``."""
 
@@ -804,6 +887,11 @@ class TestValidateArgFormats:
         """Reject a no-placeholder template on a field that is not ``bool``."""
         with pytest.raises(ValueError, match="bool field"):
             validate_arg_formats(_FlagOnNonBoolForm)
+
+    def test_non_terminal_value_placeholder_raises(self) -> None:
+        """Reject a value template whose ``${value}`` is not terminal (reverse-parse footgun)."""
+        with pytest.raises(ValueError, match="terminal"):
+            validate_arg_formats(_NonTerminalValueForm)
 
 
 class _DefaultArgForm(AppFormModel):
@@ -857,6 +945,13 @@ class _StampForm(AppFormModel):
     task_name: Annotated[str, Ui(label="Name", section="main")] = ""
 
 
+class _PlainStampForm(BaseModel):
+    """Declare a plain ``BaseModel`` form (not an ``AppFormModel``) for stamping."""
+
+    task_name: str
+    count: int = 3
+
+
 class TestStampFormInput:
     """Cover the reserved-key stamp written onto the task envelope ``data``."""
 
@@ -892,6 +987,15 @@ class TestStampFormInput:
 
         with pytest.raises(ValueError, match="reserved key"):
             stamp_form_input(write, _StampForm(task_name="task-1"))
+
+    def test_accepts_plain_basemodel_form(self) -> None:
+        """Accept a plain ``BaseModel`` form — the mongo apps pass non-``AppFormModel``."""
+        write = self._envelope()
+        form = _PlainStampForm(task_name="task-1")
+
+        stamp_form_input(write, form)
+
+        assert write.data[RESERVED_FORM_KEY] == form.model_dump(mode="json")
 
 
 class TestBuildRunPythonTask:
