@@ -27,7 +27,7 @@ def test_beat_engine_options_defaults_to_empty_dict():
     """Confirm beat_engine_options is empty for a standalone deployment."""
     options = CeleryOptions(broker_url=_BROKER_URL)
 
-    assert options.beat_engine_options == {}
+    assert options.beat_engine_options.model_dump(exclude_none=True) == {}
 
 
 def test_beat_engine_options_round_trip_through_model_dump():
@@ -44,7 +44,9 @@ def test_beat_engine_options_accepts_zero_max_overflow():
         broker_url=_BROKER_URL, beat_engine_options={"max_overflow": 0}
     )
 
-    assert options.beat_engine_options == {"max_overflow": 0}
+    assert options.beat_engine_options.model_dump(exclude_none=True) == {
+        "max_overflow": 0
+    }
 
 
 @pytest.mark.parametrize(
@@ -70,4 +72,6 @@ def test_beat_engine_options_allows_fractional_pool_timeout():
         broker_url=_BROKER_URL, beat_engine_options={"pool_timeout": 25.5}
     )
 
-    assert options.beat_engine_options == {"pool_timeout": 25.5}
+    assert options.beat_engine_options.model_dump(exclude_none=True) == {
+        "pool_timeout": 25.5
+    }

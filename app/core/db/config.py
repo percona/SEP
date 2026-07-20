@@ -15,10 +15,15 @@
 
 """Define database settings."""
 
-from typing import Annotated
-
-from annotated_types import Ge, Gt
-from pydantic import AnyUrl, BaseModel, computed_field, SecretStr
+from pydantic import (
+    AnyUrl,
+    BaseModel,
+    computed_field,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    SecretStr,
+)
 
 from app.core.utils.fields import AsyncDatabaseEngine
 
@@ -49,9 +54,9 @@ class DatabaseOptions(BaseModel):
     HOST: str | None = None
     PORT: int | None = None
     NAME: str
-    POOL_SIZE: Annotated[int, Ge(1)] | None = None
-    MAX_OVERFLOW: Annotated[int, Ge(0)] | None = None
-    POOL_TIMEOUT: Annotated[float, Gt(0)] | None = None
+    POOL_SIZE: PositiveInt | None = None
+    MAX_OVERFLOW: NonNegativeInt | None = None
+    POOL_TIMEOUT: PositiveFloat | None = None
 
     @computed_field(repr=False)
     @property

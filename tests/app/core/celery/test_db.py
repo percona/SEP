@@ -19,12 +19,14 @@ import importlib
 from unittest.mock import patch
 
 import app.core.celery.db as celery_db_module
+from app.core.celery.config import PoolEngineOptions
 from app.core.config import settings
 
 
 def test_worker_engine_forwards_beat_engine_options():
     """Forward the configured beat pool options into the worker create_async_engine call."""
-    options = {"pool_size": 20, "max_overflow": 5, "pool_timeout": 30}
+    options = PoolEngineOptions(pool_size=20, max_overflow=5, pool_timeout=30)
+    expected = options.model_dump(exclude_none=True)
     try:
         with (
             patch.object(settings.CELERY, "beat_engine_options", options),
@@ -32,7 +34,7 @@ def test_worker_engine_forwards_beat_engine_options():
         ):
             importlib.reload(celery_db_module)
             _, kwargs = create_engine.call_args
-            assert {key: kwargs[key] for key in options} == options
+            assert {key: kwargs[key] for key in expected} == expected
     finally:
         importlib.reload(celery_db_module)
 
@@ -41,7 +43,7 @@ def test_worker_engine_omits_pool_kwargs_by_default():
     """Omit pool kwargs when beat_engine_options is empty, preserving current behavior."""
     try:
         with (
-            patch.object(settings.CELERY, "beat_engine_options", {}),
+            patch.object(settings.CELERY, "beat_engine_options", PoolEngineOptions()),
             patch("sqlalchemy.ext.asyncio.create_async_engine") as create_engine,
         ):
             importlib.reload(celery_db_module)

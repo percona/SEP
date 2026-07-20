@@ -18,7 +18,16 @@
 from typing import Annotated, Self
 
 from annotated_types import Ge
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    model_validator,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+)
 
 from app.core.models import BaseLowercaseModel
 from app.core.utils.fields import StrCredentialAnyUrl, StrDatabaseUrl, StrRelativePath
@@ -27,14 +36,26 @@ from app.core.utils.fields import StrCredentialAnyUrl, StrDatabaseUrl, StrRelati
 #: they are not registry-derived; ``build_celery_include`` prepends them.
 STATIC_CELERY_INCLUDE: tuple[str, ...] = ("app.tasks.celery",)
 
-#: Pool kwargs the celery-beat scheduler forwards to ``create_engine``.
-BEAT_ENGINE_OPTION_KEYS: frozenset[str] = frozenset(
-    {"pool_size", "max_overflow", "pool_timeout"}
-)
 
-#: Beat pool keys that must be whole integers; ``pool_timeout`` alone may be
-#: fractional. Mirrors the ``int`` typing of the ``DatabaseOptions`` counterparts.
-BEAT_ENGINE_INTEGER_KEYS: frozenset[str] = frozenset({"pool_size", "max_overflow"})
+class PoolEngineOptions(BaseModel):
+    """Define validated SQLAlchemy pool options for the celery-beat engines.
+
+    Extra keys are rejected so a typo surfaces at config load rather than as a
+    silent no-op; whole-integer coercion and the bounds mirror the
+    ``DatabaseOptions`` pool counterparts (``pool_size``/``max_overflow`` are whole
+    integers, ``pool_timeout`` may be fractional).
+
+    :param pool_size: Maximum number of persistent pool connections. Must be
+        ``>= 1``.
+    :param max_overflow: Connections allowed beyond ``pool_size``. ``0`` disables
+        overflow.
+    :param pool_timeout: Seconds to wait for a free connection. Must be ``> 0``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    pool_size: PositiveInt | None = None
+    max_overflow: NonNegativeInt | None = None
+    pool_timeout: PositiveFloat | None = None
 
 
 class CeleryOptions(BaseLowercaseModel):
@@ -72,50 +93,22 @@ class CeleryOptions(BaseLowercaseModel):
     beat_schema: str | None = None
     max_retries: Annotated[int, Ge(0)] = 0
     global_expire_seconds: Annotated[int, Ge(0)] = 30
-    beat_engine_options: dict[str, int | float] = Field(default_factory=dict)
+    beat_engine_options: PoolEngineOptions = Field(default_factory=PoolEngineOptions)
 
-    @field_validator("beat_engine_options")
-    @classmethod
-    def validate_beat_engine_options(
-        cls, value: dict[str, int | float]
+    @field_serializer("beat_engine_options")
+    def serialize_beat_engine_options(
+        self, value: PoolEngineOptions
     ) -> dict[str, int | float]:
-        """Validate beat pool options against the known pool kwargs and bounds.
+        """Dump only the explicitly-set pool options as plain kwargs.
 
-        The scheduler forwards this dict straight to ``create_engine``; validating
-        here surfaces a typo, wrong-shape value, or out-of-range value at config
-        load rather than as a silent no-op or a late engine-creation error. Type
-        and bounds mirror ``DatabaseOptions`` -- ``pool_size``/``max_overflow`` are
-        whole integers, ``pool_timeout`` may be fractional -- and admit
-        ``max_overflow=0`` (no overflow).
+        ``model_dump`` feeds both ``Celery(**...)`` and the worker engine, so unset
+        fields must be omitted -- forwarding ``None`` pool kwargs would override
+        SQLAlchemy's own defaults instead of leaving them untouched.
 
-        :param value: The raw ``beat_engine_options`` mapping.
-        :return: The validated mapping.
-        :raises ValueError: If a key is unknown, a whole-integer key is fractional,
-            or a value is out of range.
+        :param value: The validated pool options.
+        :return: The set pool options keyed by their lowercase engine-kwarg names.
         """
-        unknown = set(value) - BEAT_ENGINE_OPTION_KEYS
-        if unknown:
-            raise ValueError(
-                f"Unknown beat_engine_options keys: {sorted(unknown)}. "
-                f"Allowed keys: {sorted(BEAT_ENGINE_OPTION_KEYS)}."
-            )
-        fractional = sorted(
-            key
-            for key in BEAT_ENGINE_INTEGER_KEYS & value.keys()
-            if isinstance(value[key], float) and not value[key].is_integer()
-        )
-        if fractional:
-            raise ValueError(
-                f"beat_engine_options must be whole integers, got fractional: "
-                f"{fractional}."
-            )
-        if "pool_size" in value and value["pool_size"] < 1:
-            raise ValueError("beat_engine_options 'pool_size' must be >= 1.")
-        if "max_overflow" in value and value["max_overflow"] < 0:
-            raise ValueError("beat_engine_options 'max_overflow' must be >= 0.")
-        if "pool_timeout" in value and value["pool_timeout"] <= 0:
-            raise ValueError("beat_engine_options 'pool_timeout' must be > 0.")
-        return value
+        return value.model_dump(exclude_none=True)
 
     @model_validator(mode="after")
     def set_default_beat_schema(self) -> Self:
