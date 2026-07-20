@@ -45,6 +45,7 @@ from app.sep.apps.framework import (
     build_default_task_response,
     extract_latest_task_status,
     get_task_latest_history,
+    make_parent_resolver,
     make_task_dep,
 )
 from app.sep.apps.framework.api import CascadeCreatePlan
@@ -342,30 +343,9 @@ async def build_backup_mongo_api_detail_response(
     )
 
 
-async def resolve_backup_parent_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Resolve a task name to its parent ``pbm_config`` task when linked.
-
-    When ``task_name`` refers to a derived sibling, fetches and returns the
-    parent config task. Otherwise returns the task unchanged.
-
-    :param task_name: The name of the task to resolve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The parent backup config task.
-    :rtype: Task
-    """
-    task = await get_backups_task(task_name, tasks_api)
-    parent = task.data.get("parent")
-    if parent:
-        return await get_backups_task(str(parent), tasks_api)
-    return task
-
-
 get_backups_task = make_task_dep(OWNER)
+
+resolve_backup_parent_task = make_parent_resolver(get_backups_task)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
