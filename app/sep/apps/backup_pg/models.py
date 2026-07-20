@@ -29,13 +29,13 @@ from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.core.utils.pydantic import blank_str_values_to_none
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_responses import BackupTaskBase
 from app.sep.apps.framework.form_dsl import (
     Choices,
     ServiceRef,
     TaskFormModel,
     Ui,
 )
+from app.sep.apps.shared.backups.responses import BackupTaskBase
 
 OWNER = "BACKUP_PG"
 

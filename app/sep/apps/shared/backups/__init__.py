@@ -17,5 +17,6 @@
 
 from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
+from app.sep.apps.shared.backups.responses import BackupTaskBase
 
-__all__ = ["BACKUP_TYPE_COLUMN", "parse_server_list_config"]
+__all__ = ["BACKUP_TYPE_COLUMN", "BackupTaskBase", "parse_server_list_config"]

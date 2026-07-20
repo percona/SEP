@@ -33,7 +33,6 @@ from app.core.utils.fields import (
     NonEmptyStr,
 )
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_responses import BackupTaskBase
 from app.sep.apps.framework.form_dsl import (
     Choices,
     Forbidden,
@@ -51,6 +50,7 @@ from app.sep.apps.framework.rules import (
     not_,
     truthy,
 )
+from app.sep.apps.shared.backups.responses import BackupTaskBase
 
 OWNER = "BACKUPS"
 

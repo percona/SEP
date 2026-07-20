@@ -24,7 +24,6 @@ from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_responses import BackupTaskBase
 from app.sep.apps.framework.form_dsl import (
     Choices,
     FieldWidget,
@@ -34,6 +33,7 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 from app.sep.apps.framework.rules import F
+from app.sep.apps.shared.backups.responses import BackupTaskBase
 from app.tasks.models import TaskHistoryStatusEnum
 
 OWNER = "BACKUP_MONGO"

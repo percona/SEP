@@ -13,15 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared backup response base for the backup task apps.
-
-Lives alongside (not inside) :mod:`app.sep.apps.framework` so the backup apps
-(``backup_mongo``, ``backup_pg``, ``mysql_backups``) can share this
-backup-family-specific response layer without importing ``framework.__init__``
-and unrelated SQLModel tables into scope. The framework package stays
-domain-neutral; the executor ``hostname`` surface that this base carries belongs
-to the backup family, not the framework.
-"""
+"""Define backup-family shared API response bases."""
 
 from app.sep.apps.framework import BaseTaskResponse
 
