@@ -29,6 +29,7 @@ rather than the framework's auto-resolve three-phase path; the model-first
 ``GET /schema`` and the create form.
 """
 
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pagination.deps import make_pagination_dep
 from app.sep.apps.framework.apps import (
     AppCapabilities,
@@ -47,8 +48,6 @@ from app.sep.apps.mysql_backups.restore.models import (
 from app.sep.apps.mysql_backups.restore.routes import router as jinja_router
 from app.sep.apps.mysql_backups.restore.views import restore_views
 
-RESTORES_MAX_PAGINATION_LIMIT = 50
-
 app = TaskExecutionApp(
     key="mysql_backups/restore",
     name="mysql_backups_restores",
@@ -66,7 +65,7 @@ app = TaskExecutionApp(
     views=restore_views,
     payload_builder=build_restore_payload,
     response_builder=build_restore_api_task_response,
-    pagination=make_pagination_dep(max_limit=RESTORES_MAX_PAGINATION_LIMIT),
+    pagination=make_pagination_dep(max_limit=DEFAULT_PAGINATION_LIMIT),
     capabilities=AppCapabilities(update=True, delete=True),
     list_filter=ListFilterConfig(status=True),
     jinja_router=jinja_router,
