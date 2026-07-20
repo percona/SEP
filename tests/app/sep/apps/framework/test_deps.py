@@ -130,3 +130,21 @@ class TestMakeParentResolver:
 
         assert result is parent
         assert get_task.await_args_list[1].args == ("42", tasks_api)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("parent_value", ["", 0])
+    async def test_falsy_parent_returns_original(self, parent_value: str | int) -> None:
+        """Treat falsy-but-present ``parent`` values as absent (passthrough)."""
+        task = TaskFactory.build(
+            name="parent-1",
+            owner="ARCHIVER",
+            data={"parent": parent_value},
+        )
+        get_task = AsyncMock(return_value=task)
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        resolve = make_parent_resolver(get_task)
+
+        result = await resolve("parent-1", tasks_api)
+
+        assert result is task
+        get_task.assert_awaited_once_with("parent-1", tasks_api)
