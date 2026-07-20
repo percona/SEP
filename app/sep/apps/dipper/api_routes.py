@@ -34,6 +34,7 @@ from fastapi import APIRouter, Request
 from fastapi import status as http_status
 
 from app.core.exceptions import HTTPNotFoundException, HTTPUnprocessableEntityException
+from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
 from app.sep.apps.dipper.constants import CollectorTypeEnum
 from app.sep.apps.dipper.deps import (
     build_dipper_execution_meta,
@@ -51,7 +52,8 @@ from app.sep.apps.dipper.models import (
 from app.sep.apps.dipper.schema import build_dipper_form_schema, dipper_schema
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.framework.schema import AppSchema
-from app.sep.apps.snippets.models import ScriptPreviewResponse
+from app.sep.apps.framework.script_helpers import post_task_execution
+from app.sep.apps.framework.script_source import ScriptPreviewResponse
 from app.sep.deps import ExecutorHosts, InventoryAPI, TaskAPI
 from app.sep.inventory import CreatedService
 
@@ -82,23 +84,26 @@ def _snippet_filename_for(history: dict[str, Any]) -> str | None:
 
 
 @router.get("/")
-async def dipper_api_list(tasks_api: TaskAPI) -> dict[str, Any]:
+async def dipper_api_list(
+    tasks_api: TaskAPI, pagination: PaginationDep
+) -> PaginatedResponse[dict[str, Any]]:
     """Return Dipper execution history rows.
 
     :param tasks_api: Async client for the tasks sub-app.
-    :type tasks_api: RemoteAPI
-    :return: Paginated task-history response filtered to Dipper runs.
-    :rtype: dict[str, Any]
+    :param pagination: Validated offset/limit forwarded to the upstream history call.
+    :return: A paginated envelope of task-history rows filtered to Dipper runs. Because
+        the ``dipper/`` filter runs client-side, ``total`` is the filtered count of the
+        current page, not a global count across all pages.
     """
-    response = await tasks_api.get("/history/")
+    response = await tasks_api.get(
+        "/history/", params={"offset": pagination.offset, "limit": pagination.limit}
+    )
     items = [
         item
         for item in response.get("items", [])
         if (_snippet_filename_for(item) or "").startswith("dipper/")
     ]
-    # total reflects all tasks in the upstream response, not just the Dipper-filtered
-    # subset; accurate Dipper-specific counts require server-side filtering support.
-    return {**response, "items": items}
+    return build_proxied_page(items, response, pagination, client_side_filtered=True)
 
 
 @router.get(
@@ -231,12 +236,9 @@ async def dipper_api_execute(
         execution_meta.snippet_filename,
         service.id,
     )
-    created = await tasks_api.post(
-        f"/execute/{execution_task_name}",
-        json={"meta": execution_meta.model_dump(by_alias=True, exclude_none=True)},
-    )
+    task_id = await post_task_execution(tasks_api, execution_task_name, execution_meta)
     return DipperExecutionResponse(
-        task_id=created.get("id") if isinstance(created, dict) else None,
+        task_id=task_id,
         task_name=execution_task_name,
         snippet_filename=execution_meta.snippet_filename,
         service_id=service.id,

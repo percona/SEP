@@ -33,6 +33,8 @@ from sqlmodel import col
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.utils import utc_now
 from app.sep.app_drain import track_app_task
+from app.sep.apps.framework.script_helpers import build_script_preview
+from app.sep.apps.framework.script_source import ScriptPreviewResponse
 from app.sep.apps.snippets.celery import update_snippets
 from app.sep.apps.snippets.deps import (
     IsManualSyncEnabled,
@@ -43,13 +45,12 @@ from app.sep.apps.snippets.models import (
     BatchApprovalResponse,
     build_snippet_response,
     RefreshResponse,
-    ScriptPreviewResponse,
     SnippetResponse,
 )
 from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import Snippet
-from app.sep.snippets.utils import guess_mime_type, mime_type_to_highlighter_language
+from app.sep.snippets.utils import guess_mime_type
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewRespo
         bytes that cannot be decoded as UTF-8.
     """
     try:
-        preview = await snippet.get_preview()
+        return await build_script_preview(snippet)
     except UnicodeDecodeError as exc:
         raise HTTPUnprocessableEntityException(
             detail=(
@@ -106,11 +107,6 @@ async def snippets_api_script_preview(snippet: SnippetDep) -> ScriptPreviewRespo
                 "preview is unavailable."
             ),
         ) from exc
-    return ScriptPreviewResponse(
-        content=preview.full_content,
-        language=mime_type_to_highlighter_language(guess_mime_type(snippet.path)),
-        is_truncated=preview.is_truncated,
-    )
 
 
 @artifact_router.get(

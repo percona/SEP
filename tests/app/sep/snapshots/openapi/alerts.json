@@ -1,12 +1,65 @@
 {
   "components": {
     "schemas": {
-      "BackupDetail": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "alerts__BackupDetail": {
         "description": "Describe the full detail response for a single backup.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param templates: Templates captured in the backup.\n:param rules: Rules captured in the backup.\n:param contact_points: Contact points captured in the backup.\n:param folders: Folders captured in the backup.\n:param notification_policy_receiver: Top-level receiver from the captured\n    notification policy, or ``None`` when no policy was captured.",
         "properties": {
           "contact_points": {
             "items": {
-              "$ref": "#/components/schemas/BackupDetailContactPoint"
+              "$ref": "#/components/schemas/alerts__BackupDetailContactPoint"
             },
             "title": "Contact Points",
             "type": "array"
@@ -18,7 +71,7 @@
           },
           "folders": {
             "items": {
-              "$ref": "#/components/schemas/BackupDetailFolder"
+              "$ref": "#/components/schemas/alerts__BackupDetailFolder"
             },
             "title": "Folders",
             "type": "array"
@@ -40,14 +93,14 @@
           },
           "rules": {
             "items": {
-              "$ref": "#/components/schemas/BackupDetailRule"
+              "$ref": "#/components/schemas/alerts__BackupDetailRule"
             },
             "title": "Rules",
             "type": "array"
           },
           "templates": {
             "items": {
-              "$ref": "#/components/schemas/BackupDetailTemplate"
+              "$ref": "#/components/schemas/alerts__BackupDetailTemplate"
             },
             "title": "Templates",
             "type": "array"
@@ -65,7 +118,7 @@
         "title": "BackupDetail",
         "type": "object"
       },
-      "BackupDetailContactPoint": {
+      "alerts__BackupDetailContactPoint": {
         "description": "Represent a contact-point entry inside a backup snapshot.\n\n:param name: The contact point name.\n:param type: The contact point type (e.g. ``\"pagerduty\"``).",
         "properties": {
           "name": {
@@ -84,7 +137,7 @@
         "title": "BackupDetailContactPoint",
         "type": "object"
       },
-      "BackupDetailFolder": {
+      "alerts__BackupDetailFolder": {
         "description": "Represent a folder entry inside a backup snapshot.\n\n:param title: The folder title.",
         "properties": {
           "title": {
@@ -98,7 +151,7 @@
         "title": "BackupDetailFolder",
         "type": "object"
       },
-      "BackupDetailRule": {
+      "alerts__BackupDetailRule": {
         "description": "Represent a rule entry inside a backup snapshot.\n\n:param title: The rule title.",
         "properties": {
           "title": {
@@ -112,7 +165,7 @@
         "title": "BackupDetailRule",
         "type": "object"
       },
-      "BackupDetailTemplate": {
+      "alerts__BackupDetailTemplate": {
         "description": "Represent a template entry inside a backup snapshot.\n\n:param name: The template name.\n:param summary: The template summary blurb.",
         "properties": {
           "name": {
@@ -131,7 +184,7 @@
         "title": "BackupDetailTemplate",
         "type": "object"
       },
-      "BackupSummary": {
+      "alerts__BackupSummary": {
         "description": "Represent a compact backup row used by the list endpoint.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param metadata: Summary counts persisted alongside the backup snapshot.",
         "properties": {
           "created_at": {
@@ -156,20 +209,7 @@
         "title": "BackupSummary",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "IndexBackupSummary": {
+      "alerts__IndexBackupSummary": {
         "description": "Represent a compact backup row for the index \"recent backups\" widget.\n\nLeaner than :class:`BackupSummary` (no ``metadata``): the list page only\nrenders the id and timestamp, so the index payload omits the summary counts.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.",
         "properties": {
           "created_at": {
@@ -189,7 +229,7 @@
         "title": "IndexBackupSummary",
         "type": "object"
       },
-      "IndexPagerDutyStatus": {
+      "alerts__IndexPagerDutyStatus": {
         "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:param uid: The contact point UID when configured, otherwise ``None``.",
         "properties": {
           "configured": {
@@ -214,12 +254,12 @@
         "title": "IndexPagerDutyStatus",
         "type": "object"
       },
-      "IndexResponse": {
+      "alerts__IndexResponse": {
         "description": "Describe the response body for ``GET /api/apps/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:param recent_backups: The most recent alert backups, newest first.",
         "properties": {
           "groups": {
             "items": {
-              "$ref": "#/components/schemas/IndexTemplateGroup"
+              "$ref": "#/components/schemas/alerts__IndexTemplateGroup"
             },
             "title": "Groups",
             "type": "array"
@@ -227,7 +267,7 @@
           "pagerduty": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/IndexPagerDutyStatus"
+                "$ref": "#/components/schemas/alerts__IndexPagerDutyStatus"
               },
               {
                 "type": "null"
@@ -240,7 +280,7 @@
           },
           "recent_backups": {
             "items": {
-              "$ref": "#/components/schemas/IndexBackupSummary"
+              "$ref": "#/components/schemas/alerts__IndexBackupSummary"
             },
             "title": "Recent Backups",
             "type": "array"
@@ -255,7 +295,7 @@
         "title": "IndexResponse",
         "type": "object"
       },
-      "IndexTemplate": {
+      "alerts__IndexTemplate": {
         "description": "Represent a single alert template row on the index page.\n\n:param name: The display name of the alert template.\n:param service_type: The service category this template applies to.\n:param expression: The PromQL expression backing the alert.\n:param default_threshold: The default numeric threshold for the UI.\n:param severity: The severity level (``\"info\"``, ``\"warning\"``, ``\"critical\"``).\n:param description: A human-readable description of the alert.\n:param summary: A short summary template for notifications.\n:param in_pmm: ``True`` when a template of this name is already present in PMM.",
         "properties": {
           "default_threshold": {
@@ -304,7 +344,7 @@
         "title": "IndexTemplate",
         "type": "object"
       },
-      "IndexTemplateGroup": {
+      "alerts__IndexTemplateGroup": {
         "description": "Group index templates by service type.\n\n:param service_type: The service type identifier (e.g. ``\"mysql\"``).\n:param label: The human-readable service type label (e.g. ``\"MySQL\"``).\n:param templates: The templates belonging to this service type.",
         "properties": {
           "label": {
@@ -317,7 +357,7 @@
           },
           "templates": {
             "items": {
-              "$ref": "#/components/schemas/IndexTemplate"
+              "$ref": "#/components/schemas/alerts__IndexTemplate"
             },
             "title": "Templates",
             "type": "array"
@@ -331,7 +371,7 @@
         "title": "IndexTemplateGroup",
         "type": "object"
       },
-      "PagerDutyRequest": {
+      "alerts__PagerDutyRequest": {
         "description": "Describe the request body for ``POST /api/apps/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.",
         "properties": {
           "integration_key": {
@@ -346,7 +386,7 @@
         "title": "PagerDutyRequest",
         "type": "object"
       },
-      "PagerDutyResponse": {
+      "alerts__PagerDutyResponse": {
         "description": "Describe the response body for the PagerDuty save / delete endpoints.\n\n:param status: ``\"created\"``, ``\"updated\"`` (save) or ``\"deleted\"`` (delete).",
         "properties": {
           "status": {
@@ -365,11 +405,11 @@
         "title": "PagerDutyResponse",
         "type": "object"
       },
-      "PaginatedResponse_BackupSummary_": {
+      "alerts__PaginatedResponse_BackupSummary_": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/BackupSummary"
+              "$ref": "#/components/schemas/alerts__BackupSummary"
             },
             "title": "Items",
             "type": "array"
@@ -396,7 +436,7 @@
         "title": "PaginatedResponse[BackupSummary]",
         "type": "object"
       },
-      "PushItemResult": {
+      "alerts__PushItemResult": {
         "description": "Represent a per-template result row returned by the push endpoint.\n\n:param name: The template name the result applies to.\n:param status: One of ``\"success\"``, ``\"skipped\"``, ``\"error\"``.\n:param message: A human-readable description of the outcome.",
         "properties": {
           "message": {
@@ -425,7 +465,7 @@
         "title": "PushItemResult",
         "type": "object"
       },
-      "PushRequest": {
+      "alerts__PushRequest": {
         "description": "Describe the request body for ``POST /api/apps/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.",
         "properties": {
           "selected_templates": {
@@ -444,12 +484,12 @@
         "title": "PushRequest",
         "type": "object"
       },
-      "PushResponse": {
+      "alerts__PushResponse": {
         "description": "Wrap the per-template results returned by the push endpoint.\n\n:param results: One :class:`PushItemResult` per template in the request.",
         "properties": {
           "results": {
             "items": {
-              "$ref": "#/components/schemas/PushItemResult"
+              "$ref": "#/components/schemas/alerts__PushItemResult"
             },
             "title": "Results",
             "type": "array"
@@ -461,7 +501,7 @@
         "title": "PushResponse",
         "type": "object"
       },
-      "RestoreRequest": {
+      "alerts__RestoreRequest": {
         "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.",
         "properties": {
           "backup_id": {
@@ -476,7 +516,7 @@
         "title": "RestoreRequest",
         "type": "object"
       },
-      "RestoreResponse": {
+      "alerts__RestoreResponse": {
         "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.",
         "properties": {
           "details": {
@@ -498,46 +538,6 @@
         ],
         "title": "RestoreResponse",
         "type": "object"
-      },
-      "ValidationError": {
-        "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError",
-        "type": "object"
       }
     }
   },
@@ -551,7 +551,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IndexResponse"
+                  "$ref": "#/components/schemas/alerts__IndexResponse"
                 }
               }
             },
@@ -598,7 +598,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_BackupSummary_"
+                  "$ref": "#/components/schemas/alerts__PaginatedResponse_BackupSummary_"
                 }
               }
             },
@@ -641,7 +641,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BackupDetail"
+                  "$ref": "#/components/schemas/alerts__BackupDetail"
                 }
               }
             },
@@ -672,7 +672,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PagerDutyRequest"
+                "$ref": "#/components/schemas/alerts__PagerDutyRequest"
               }
             }
           },
@@ -683,7 +683,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PagerDutyResponse"
+                  "$ref": "#/components/schemas/alerts__PagerDutyResponse"
                 }
               }
             },
@@ -715,7 +715,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PagerDutyResponse"
+                  "$ref": "#/components/schemas/alerts__PagerDutyResponse"
                 }
               }
             },
@@ -736,7 +736,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PushRequest"
+                "$ref": "#/components/schemas/alerts__PushRequest"
               }
             }
           },
@@ -747,7 +747,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PushResponse"
+                  "$ref": "#/components/schemas/alerts__PushResponse"
                 }
               }
             },
@@ -778,7 +778,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RestoreRequest"
+                "$ref": "#/components/schemas/alerts__RestoreRequest"
               }
             }
           },
@@ -789,7 +789,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RestoreResponse"
+                  "$ref": "#/components/schemas/alerts__RestoreResponse"
                 }
               }
             },

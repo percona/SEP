@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import (
+    dsn_safe,
     EmptyStrToNone,
     NonEmptyStr,
     TcpPort,
@@ -44,21 +45,6 @@ from app.sep.apps.framework.rules import (
     F,
     FailRule,
 )
-
-
-def _dsn_safe(value: str | None) -> str | None:
-    """Reject DSN delimiters (``,`` / ``=``) that could split a pt-archiver DSN.
-
-    :param value: The destination host or schema name to validate.
-    :return: The value unchanged when it carries no delimiter.
-    :raises ValueError: When the value contains a ``,`` or ``=`` character.
-    """
-    if value and ("," in value or "=" in value):
-        raise ValueError(
-            "Values cannot contain ',' or '=' characters (DSN delimiters)."
-        )
-    return value
-
 
 OWNER = "ARCHIVER"
 
@@ -151,7 +137,7 @@ class DestByTable(BaseModel):
         :param value: The submitted destination-schema value (id, name, or None).
         :return: The value unchanged when it carries no DSN delimiter.
         """
-        return _dsn_safe(value) if isinstance(value, str) else value
+        return dsn_safe(value) if isinstance(value, str) else value
 
 
 class DestByFile(BaseModel):
@@ -226,7 +212,7 @@ class HostManual(BaseModel):
         :param value: The submitted manual destination-host address.
         :return: The value unchanged when it carries no DSN delimiter.
         """
-        return _dsn_safe(value) or value
+        return dsn_safe(value)
 
 
 _ARCHIVES_FORM_RULES = FormRules(

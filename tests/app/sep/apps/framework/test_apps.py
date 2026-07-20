@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, ValidationError
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
@@ -44,6 +45,7 @@ from app.sep.apps.framework import (
 from app.sep.apps.framework.apps import (
     AppCapabilities,
     ListFilterConfig,
+    NO_PAGINATION,
     TaskExecutionApp,
     UNGUARDED,
     Views,
@@ -84,6 +86,7 @@ from tests.app.sep.apps.framework.kit import (
     synth_app,
     synth_app_kwargs,
     synth_reject_running_task,
+    synth_script_app,
     SynthExecuteResponse,
 )
 from tests.app.sep.apps.framework.kit import (
@@ -96,6 +99,9 @@ from tests.app.sep.apps.framework.kit import (
     SYNTH_PREFIX as _PREFIX,
 )
 from tests.app.sep.apps.framework.kit import (
+    SYNTH_SCRIPT_PREFIX as _SCRIPT_PREFIX,
+)
+from tests.app.sep.apps.framework.kit import (
     SYNTH_SERVICE_HOST as _SERVICE_HOST,
 )
 from tests.app.sep.apps.framework.kit import (
@@ -106,6 +112,7 @@ from tests.app.sep.apps.framework.kit import (
 )
 
 _BASE = f"/api/apps{_PREFIX}"
+_SCRIPT_BASE = f"/api/apps{_SCRIPT_PREFIX}"
 
 _LIST_VIEW = ListView(columns=[Column(key="name", label="Name")])
 
@@ -172,6 +179,90 @@ class _SoleMultiServiceForm(AppFormModel):
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), multiple=True),
         Ui(label="Services", section="main"),
     ]
+
+
+class _PrimaryDesignatedServiceForm(AppFormModel):
+    """Represent two services, one designated ``primary`` without a probe.
+
+    The primary is declared *before* an unmarked destination so the old
+    two-or-more-unmarked rejection no longer fires and the designation, not
+    last-wins, names the primary.
+    """
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), primary=True),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="B", section="main"),
+    ] = None
+
+
+class _PrimaryAndCheckConflictForm(AppFormModel):
+    """Represent a ``primary`` field conflicting with a ``check_connectivity`` field."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), primary=True),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="B", section="main"),
+    ] = None
+
+
+class _TwoPrimaryServiceForm(AppFormModel):
+    """Represent a create form designating two ``primary`` services."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), primary=True),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), primary=True),
+        Ui(label="B", section="main"),
+    ] = None
+
+
+class _PrimaryMultipleForm(AppFormModel):
+    """Represent a multi-value ``ServiceRef`` designated ``primary``."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    services: Annotated[
+        list[int],
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), multiple=True, primary=True),
+        Ui(label="Services", section="main"),
+    ]
+
+
+class _RedundantPrimaryProbeForm(AppFormModel):
+    """Represent a single field carrying both ``primary`` and ``check_connectivity``."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(
+            service_types=(ServiceTypeEnum.MYSQL,),
+            check_connectivity=True,
+            primary=True,
+        ),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="B", section="main"),
+    ] = None
 
 
 class _BadArgFormatForm(AppFormModel):
@@ -458,20 +549,48 @@ class TestCapabilitiesEndpoint:
 class TestListAndDetail:
     """Exercise the list and detail routes over HTTP."""
 
-    def test_list_returns_responses(self, regular_user: CasdoorUser) -> None:
-        """Assert ``GET /`` returns the derived list responses."""
+    def test_no_pagination_sentinel_returns_plain_list(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``pagination=NO_PAGINATION`` keeps ``GET /`` a plain list."""
         tasks_api = _make_tasks_api(list_items=[_task_dict("t-1")])
-        client = _client(_synth_app(), tasks_api, regular_user)
+        client = _client(_synth_app(pagination=NO_PAGINATION), tasks_api, regular_user)
 
         response = client.get(f"{_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
         assert [item["name"] for item in response.json()] == ["t-1"]
 
+    def test_distinct_no_pagination_instance_returns_plain_list(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Opt out of pagination for any sentinel instance, not just the singleton."""
+        tasks_api = _make_tasks_api(list_items=[_task_dict("t-1")])
+        client = _client(
+            _synth_app(pagination=type(NO_PAGINATION)()), tasks_api, regular_user
+        )
+
+        response = client.get(f"{_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["name"] for item in response.json()] == ["t-1"]
+
+    def test_default_list_is_paginated(self, regular_user: CasdoorUser) -> None:
+        """Assert the default ``GET /`` returns a ``PaginatedResponse`` envelope."""
+        tasks_api = _make_tasks_api(list_items=[_task_dict("t-1")], list_total=1)
+        client = _client(_synth_app(), tasks_api, regular_user)
+
+        response = client.get(f"{_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert [item["name"] for item in body["items"]] == ["t-1"]
+
     def test_paginated_list_returns_paginated_response(
         self, regular_user: CasdoorUser
     ) -> None:
-        """Assert a pagination dep switches the list to a ``PaginatedResponse``."""
+        """Assert a per-app ``make_pagination_dep`` override keeps the envelope."""
         tasks_api = _make_tasks_api(list_items=[_task_dict("t-1")], list_total=1)
         client = _client(
             _synth_app(pagination=make_pagination_dep(max_limit=50)),
@@ -495,6 +614,36 @@ class TestListAndDetail:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["name"] == "t-1"
+
+
+class TestScriptListRoute:
+    """Exercise the script-flavored derived list route over HTTP."""
+
+    def test_script_default_list_is_paginated(self, regular_user: CasdoorUser) -> None:
+        """Assert a script app's default ``GET /`` returns a paginated envelope."""
+        client = _client(synth_script_app(), _make_tasks_api(), regular_user)
+
+        response = client.get(f"{_SCRIPT_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert [item["filename"] for item in body["items"]] == ["synth.sh"]
+
+    def test_script_no_pagination_sentinel_returns_plain_list(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``pagination=NO_PAGINATION`` keeps a script app's list plain."""
+        client = _client(
+            synth_script_app(pagination=NO_PAGINATION),
+            _make_tasks_api(),
+            regular_user,
+        )
+
+        response = client.get(f"{_SCRIPT_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["filename"] for item in response.json()] == ["synth.sh"]
 
 
 class TestCreateRoute:
@@ -805,6 +954,39 @@ class TestDefinitionValidation:
         """Derive ``connectivity_check`` from a ``check_connectivity`` service."""
         assert _synth_app(connectivity_check=True).connectivity_check is True
 
+    def test_primary_marker_designates_without_probe(self) -> None:
+        """Accept two services with one ``primary`` designation and no probe."""
+        assert (
+            _synth_app(create_model=_PrimaryDesignatedServiceForm).connectivity_check
+            is False
+        )
+
+    def test_primary_and_check_connectivity_conflict_raises(self) -> None:
+        """Reject a ``primary`` field conflicting with a ``check_connectivity`` field."""
+        with pytest.raises(
+            ValueError, match="at most one service is the envelope primary"
+        ):
+            _synth_app(create_model=_PrimaryAndCheckConflictForm)
+
+    def test_two_primary_designations_raise(self) -> None:
+        """Reject a create_model designating more than one ``primary`` service."""
+        with pytest.raises(
+            ValueError, match="at most one service is the envelope primary"
+        ):
+            _synth_app(create_model=_TwoPrimaryServiceForm)
+
+    def test_primary_with_multiple_raises(self) -> None:
+        """Reject a multiple=True ServiceRef designated the primary."""
+        with pytest.raises(ValueError, match="multiple=True"):
+            _synth_app(create_model=_PrimaryMultipleForm)
+
+    def test_redundant_primary_and_probe_same_field_allowed(self) -> None:
+        """Accept one field marked both ``primary`` and ``check_connectivity``, probing."""
+        assert (
+            _synth_app(create_model=_RedundantPrimaryProbeForm).connectivity_check
+            is True
+        )
+
     def test_list_suppress_without_custom_list_raises(self) -> None:
         """Assert ``list=False`` with no custom ``GET /`` in extra_routes is rejected."""
         with pytest.raises(ValueError, match="capabilities.list"):
@@ -863,6 +1045,11 @@ class TestDefinitionValidation:
         """Reject a guard knob that is neither a ``Depends`` tuple nor ``UNGUARDED``."""
         with pytest.raises(ValidationError):
             _synth_app(update_guard="oops")
+
+    def test_pagination_none_is_rejected(self) -> None:
+        """Reject ``pagination=None`` — the public field type no longer accepts it."""
+        with pytest.raises(ValidationError):
+            _synth_app(pagination=None)
 
     def test_unguarded_opt_out_on_derived_routes_constructs(self) -> None:
         """Accept ``UNGUARDED`` on a derived PUT/DELETE and still register them."""
@@ -1094,7 +1281,7 @@ class TestDefaultResponseBuilder:
             app_def, tasks_api, regular_user, inventory_api=_make_inventory_api()
         )
 
-        item = client.get(f"{_BASE}/").json()[0]
+        item = client.get(f"{_BASE}/").json()["items"][0]
 
         assert item["service_type"] == ServiceTypeEnum.MYSQL.value
         assert item["created_by"] == "Alice"
@@ -1114,7 +1301,7 @@ class TestDefaultResponseBuilder:
             app_def, tasks_api, regular_user, inventory_api=_make_inventory_api()
         )
 
-        item = client.get(f"{_BASE}/").json()[0]
+        item = client.get(f"{_BASE}/").json()["items"][0]
 
         assert item["service_type"] == ServiceTypeEnum.MYSQL.value
         assert item["created_by"] == "uid-a"
@@ -1267,7 +1454,7 @@ class TestResponseAndFilterKnobs:
             and "GET" in route.methods
         )
 
-        assert list_route.response_model == list[_AltListResponse]
+        assert list_route.response_model == PaginatedResponse[_AltListResponse]
 
     def test_detail_response_builder_drives_detail_model(self) -> None:
         """Assert a ``detail_response_builder`` supplies the detail response model."""

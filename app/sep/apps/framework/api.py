@@ -25,6 +25,13 @@ wiring, or status-code conventions:
   route plus the standard list / detail / create (and optional update /
   delete) CRUD routes, composing the shared framework task helpers for the
   handler bodies.
+
+Pagination convention: paginate anything backed by an unbounded resource and
+return a :class:`~app.core.pagination.PaginatedResponse` envelope; a bare list
+is acceptable only for compile-time-bounded enumerations. Hand-written proxy
+list routes build the envelope with
+:func:`~app.core.pagination.build_proxied_page`, which corrects the ``total``
+when rows are filtered in-process.
 """
 
 import functools
@@ -54,6 +61,7 @@ from app.sep.apps.framework.responses import (
     TaskResponseBuilder,
 )
 from app.sep.apps.framework.schema import AppSchema
+from app.sep.apps.framework.script_helpers import post_task_execution
 from app.sep.apps.framework.script_source import (
     make_script_dep,
     ScriptExecuteWrite,
@@ -1809,13 +1817,10 @@ def derive_script_routes(
         meta = source.build_execution_meta(
             script, body.model_copy(update={"args": validated.model_dump()})
         )
-        created = await tasks_api.post(
-            f"/execute/{script.execution_task_name}",
-            json={"meta": meta.model_dump(by_alias=True, exclude_none=True)},
-        )
+        task_id = await post_task_execution(tasks_api, script.execution_task_name, meta)
         return ScriptExecutionResponse(
             task_name=script.execution_task_name,
-            task_id=created.get("id") if isinstance(created, dict) else None,
+            task_id=task_id,
             snippet_filename=script.filename,
         )
 

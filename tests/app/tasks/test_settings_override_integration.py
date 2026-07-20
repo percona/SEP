@@ -44,7 +44,10 @@ async def _override_session_maker() -> async_sessionmaker:
     )
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    return get_async_session_maker_from_engine(engine)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
 
 
 def _tasks_proxies() -> dict:

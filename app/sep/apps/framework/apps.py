@@ -37,7 +37,7 @@ from fastapi import APIRouter, Body, Depends, Form, params
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field, model_validator, PrivateAttr, SkipValidation
 
-from app.core.pagination import PaginationDependency
+from app.core.pagination import make_pagination_dep, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.api import (
     capabilities_endpoint,
@@ -81,6 +81,7 @@ from app.sep.deps import InventoryAPI, make_conflict_guard, protected_task_guard
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 __all__ = [
+    "NO_PAGINATION",
     "UNGUARDED",
     "AppCapabilities",
     "Cascade",
@@ -111,6 +112,25 @@ class _Unguarded:
 
 
 UNGUARDED = _Unguarded()
+
+
+class _NoPagination:
+    """Mark a derived list route as explicitly opting out of pagination.
+
+    A named singleton (mirroring :data:`UNGUARDED`) so an author's opt-out reads
+    as a greppable, importable :data:`NO_PAGINATION` rather than ``None`` — which
+    stays a purely internal route-shape switch in
+    :mod:`~app.sep.apps.framework.api`.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        """Return the marker name so tracebacks and reprs read ``NO_PAGINATION``."""
+        return "NO_PAGINATION"
+
+
+NO_PAGINATION = _NoPagination()
 
 
 class AppCapabilities(BaseModel):
@@ -288,8 +308,12 @@ class TaskExecutionApp(BaseApp):
         ``task_name``).
     :param capabilities: The verb toggles gating route derivation. Defaults to
         all-default :class:`AppCapabilities`.
-    :param pagination: A ``make_pagination_dep(...)`` callable; when set the list
-        route paginates. Defaults to ``None``.
+    :param pagination: The derived list route's pagination knob. Defaults to
+        ``make_pagination_dep()`` (page size 50, ceiling 200), so a list route
+        paginates unless overridden — a new app is bounded by default. Pass a
+        custom ``make_pagination_dep(max_limit=...)`` callable to change the
+        ceiling, or the :data:`NO_PAGINATION` sentinel to opt out and serve a plain
+        ``list[model]``.
     :param create_form_encoded: Whether the derived create route accepts a
         form-urlencoded body (``Form()``) instead of the default JSON body
         (``Body()``). A create-route option, so it is rejected unless
@@ -395,7 +419,7 @@ class TaskExecutionApp(BaseApp):
     script_source: SkipValidation[ScriptSource | None] = None
     get_task: Callable[..., Awaitable[Task]] | None = None
     capabilities: AppCapabilities = AppCapabilities()
-    pagination: PaginationDependency | None = None
+    pagination: PaginationDependency | _NoPagination = make_pagination_dep()
     create_form_encoded: bool = False
     cascade: SkipValidation[Cascade | None] = None
     extra_routes: tuple[APIRouter, ...] = ()
@@ -431,8 +455,9 @@ class TaskExecutionApp(BaseApp):
         An app probes iff the create capability is enabled and its ``create_model``
         declares a ``check_connectivity=True`` ``ServiceRef`` (top-level or nested
         in a one-of branch); that marked service is also the envelope's primary.
-        Replaces the former app-level flag, so a single per-reference marker drives
-        both the probe and the connectivity-service selection.
+        Probe enablement is keyed off ``check_connectivity`` alone — a ``ServiceRef``
+        marked ``primary=True`` designates the envelope primary without probing, so it
+        does not turn this on.
 
         :return: ``True`` when the app derives a probing create route.
         """
@@ -514,57 +539,58 @@ class TaskExecutionApp(BaseApp):
             )
 
     def _validate_connectivity_refs(self) -> None:
-        """Reject an ambiguous or unselectable connectivity-service configuration.
+        """Reject an ambiguous or unselectable primary-service configuration.
 
-        A model-first app probes the ``check_connectivity=True`` ``ServiceRef`` and
-        makes it the envelope's primary. At most one service may be marked — a
-        second would make the probe target ambiguous — and a model declaring two or
-        more ``ServiceRef`` fields with none marked has no determinable primary. A
-        single unmarked ``ServiceRef`` is valid: it is the sole primary and the app
-        does not probe. The two-or-more-unmarked rejection is about primary
-        disambiguation, not the probe: ``assemble_envelope`` unconditionally stamps
-        the primary service onto every task's connectivity host/port and
+        A model-first app names its envelope primary with a *designated* marker —
+        ``check_connectivity=True`` (which also probes) or ``primary=True`` (which
+        designates without probing). At most one ``ServiceRef`` may be designated
+        across both markers; a second designation makes the primary ambiguous. A
+        model declaring two or more ``ServiceRef`` fields with none designated has
+        no determinable primary. A single unmarked ``ServiceRef`` is valid: it is
+        the sole primary and the app does not probe. The disambiguation is about the
+        primary, not the probe: ``assemble_envelope`` unconditionally stamps the
+        primary service onto every task's connectivity host/port and
         ``service_name``, so the primary must be unambiguous even when no probe runs.
 
-        :raises ValueError: When a ``check_connectivity`` ``ServiceRef`` is also
-            marked ``multiple`` (a multi-value field has no single primary), when a
-            ``multiple=True`` ``ServiceRef`` would be the connectivity primary (no
-            scalar ``check_connectivity`` ref is marked to take its place), when
-            more than one ``ServiceRef`` is marked ``check_connectivity``, or when
-            two or more ``ServiceRef`` fields leave no determinable connectivity
-            primary.
+        :raises ValueError: When a designated ``ServiceRef`` is also marked
+            ``multiple`` (a multi-value field has no single primary), when a
+            ``multiple=True`` ``ServiceRef`` would be the primary with no scalar
+            designated ref to take its place, when more than one ``ServiceRef`` is
+            designated primary (via ``check_connectivity`` and/or ``primary``), or
+            when two or more ``ServiceRef`` fields leave no determinable primary.
         """
         if self.create_model is None:
             return
         refs = list(iter_service_refs(self.create_model))
-        marked = [ref for ref in refs if ref.check_connectivity]
-        if any(ref.multiple for ref in marked):
+        designated = [ref for ref in refs if ref.check_connectivity or ref.primary]
+        if any(ref.multiple for ref in designated):
             raise ValueError(
                 "TaskExecutionApp: a create_model declares a multiple=True ServiceRef "
-                "marked check_connectivity=True; the connectivity probe targets a "
-                "single primary service and cannot select one from a multi-value "
-                "field — set multiple=False or check_connectivity=False"
+                "designated primary (check_connectivity=True or primary=True); the "
+                "envelope primary is a single service and cannot be selected from a "
+                "multi-value field — set multiple=False, or drop the primary marker"
             )
-        if not marked and any(ref.multiple for ref in refs):
+        if not designated and any(ref.multiple for ref in refs):
             raise ValueError(
                 "TaskExecutionApp: a create_model declares a multiple=True ServiceRef "
-                "with no check_connectivity=True ServiceRef to serve as the "
-                "connectivity primary; a multi-value service field cannot resolve to "
-                "the single primary assemble_envelope stamps onto every task — mark a "
-                "scalar ServiceRef check_connectivity=True"
+                "with no designated primary ServiceRef to serve as the envelope "
+                "primary; a multi-value service field cannot resolve to the single "
+                "primary assemble_envelope stamps onto every task — mark a scalar "
+                "ServiceRef check_connectivity=True or primary=True"
             )
-        if len(marked) > 1:
+        if len(designated) > 1:
+            raise ValueError(
+                "TaskExecutionApp: a create_model designates "
+                f"{len(designated)} primary ServiceRef fields via check_connectivity "
+                "and/or primary; at most one service is the envelope primary — "
+                "designate exactly one"
+            )
+        if not designated and len(refs) > 1:
             raise ValueError(
                 "TaskExecutionApp: a create_model declares "
-                f"{len(marked)} check_connectivity=True ServiceRef fields; at most "
-                "one service is the connectivity primary — mark exactly one"
-            )
-        if not marked and len(refs) > 1:
-            raise ValueError(
-                "TaskExecutionApp: a create_model declares "
-                f"{len(refs)} ServiceRef fields with none marked "
-                "check_connectivity=True; no connectivity primary is determinable — "
-                "mark exactly one"
+                f"{len(refs)} ServiceRef fields with none designated primary "
+                "(check_connectivity=True or primary=True); no envelope primary "
+                "is determinable — designate exactly one"
             )
 
     def _validate_schema_source(self) -> None:
@@ -992,11 +1018,14 @@ class TaskExecutionApp(BaseApp):
 
         :return: The composed plugin ``APIRouter``.
         """
+        pagination_dep = (
+            None if isinstance(self.pagination, _NoPagination) else self.pagination
+        )
         if self.script_source is not None:
             router = derive_script_routes(
                 self.script_source,
                 name=self.name,
-                pagination_dep=self.pagination,
+                pagination_dep=pagination_dep,
             )
             if self.capabilities_provider is not None:
                 capabilities_endpoint(router, self.capabilities_provider)
@@ -1023,7 +1052,7 @@ class TaskExecutionApp(BaseApp):
             create_response_builder=self._build_create_response_builder(),
             connectivity_check=self.connectivity_check,
             detail_path_param=self.detail_path_param,
-            pagination_dep=self.pagination,
+            pagination_dep=pagination_dep,
             list_status_filter=self.list_filter.status,
             list_service_type=(
                 self.service_type if self.list_filter.service_type else None

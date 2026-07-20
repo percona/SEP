@@ -103,8 +103,8 @@ def dummy_context() -> dict[str, str]:
 def dummy_access_token() -> str:
     """Override get_access_token_from_cookie and return dummy access token."""
     fake_access_token = "access-token"
-    sep_app.dependency_overrides[get_access_token_from_cookie] = (
-        lambda: fake_access_token
+    sep_app.dependency_overrides[get_access_token_from_cookie] = lambda: (
+        fake_access_token
     )
     yield fake_access_token
     sep_app.dependency_overrides = {}
@@ -884,6 +884,34 @@ class TestAppStateGuards:
         await session.commit()
 
         response = guarded_client.get("/inventory/")
+
+        assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
+
+    @pytest.mark.asyncio
+    async def test_atw_json_route_503s_when_snippets_disabled(
+        self, guarded_client: TestClient, session
+    ) -> None:
+        """Atw's JSON route 503s when the ``snippets`` app it requires is disabled.
+
+        The gate reports atw's own key, so the user never sees the raw
+        ``App 'snippets' is currently disabled`` leak from the execute path.
+        """
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "atw" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_atw_json_route_reachable_when_snippets_enabled(
+        self, guarded_client: TestClient, session
+    ) -> None:
+        """Atw's JSON route is reachable when snippets is enabled (no regression)."""
+        response = guarded_client.get("/api/apps/atw/")
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
 

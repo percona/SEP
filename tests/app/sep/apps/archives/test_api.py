@@ -122,7 +122,7 @@ class TestArchivesApiReads:
         """List the archive tasks owned by the archiver."""
         response = client.get(f"{_BASE}/")
         assert response.status_code == status.HTTP_200_OK
-        assert any(item["name"] == _SEEDED for item in response.json())
+        assert any(item["name"] == _SEEDED for item in response.json()["items"])
 
     def test_detail_returns_task(self, client: Any) -> None:
         """Return a single archive task by name."""

@@ -37,6 +37,7 @@ export interface MockEnabledApp {
   nav_order: number | null;
   react_route: string;
   nav_icon: string | null;
+  blocking_dependencies: string[];
 }
 
 // Registry-driven nav app keys from shell/src/appNavConfig.ts — all enabled so
@@ -169,6 +170,7 @@ export const MOCK_ENABLED_APPS: MockEnabledApp[] = NAV_APP_KEYS.map((app_key) =>
   enabled: true,
   sidebar: true,
   custom_ui: false,
+  blocking_dependencies: [],
   ...NAV_APP_METADATA[app_key],
 }));
 
@@ -183,5 +185,30 @@ export function fulfillEnabledApps(route: Route): Promise<void> {
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(MOCK_ENABLED_APPS),
+  });
+}
+
+/** Per-app ``enabled`` / ``blocking_dependencies`` override for the apps payload. */
+export interface EnabledAppOverride {
+  enabled?: boolean;
+  blocking_dependencies?: string[];
+}
+
+/**
+ * Fulfill ``/api/apps/`` with per-app overrides applied over the all-enabled
+ * baseline. Keys not present in ``overrides`` stay enabled, so a test only
+ * declares the apps it disables (and the dependencies naming them).
+ */
+export function fulfillEnabledAppsWith(
+  route: Route,
+  overrides: Record<string, EnabledAppOverride>,
+): Promise<void> {
+  const body = MOCK_ENABLED_APPS.map((appEntry) =>
+    overrides[appEntry.app_key] ? { ...appEntry, ...overrides[appEntry.app_key] } : appEntry,
+  );
+  return route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
   });
 }

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Wire the << display_name >> plugin as a declarative ``TaskExecutionApp``.
+"""Wire the << display_name_doc >> plugin as a declarative ``TaskExecutionApp``.
 
 The registry discovers the exported ``app`` and mounts its derived router, which
 serves the schema, list, detail, create, update, execute, and delete surfaces.
@@ -25,16 +25,16 @@ from app.sep.apps.<< name >>.models import << class_prefix >>Form
 from app.sep.apps.<< name >>.spec import build_<< name >>_spec
 from app.sep.apps.<< name >>.views import << name >>_views
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
-from app.tasks.models import ANY_OWNER
+<< nav_icon_import_line >>from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(
     name="<< name >>",
-    display_name="<< display_name >>",
+    display_name=<< display_name_repr >>,
     uri_path="/<< name >>",
-    description="TODO: describe what the << display_name >> task does.",
+    description=<< description_repr >>,
     owner=ANY_OWNER,
     create_model=<< class_prefix >>Form,
     views=<< name >>_views,
     task_spec_builder=build_<< name >>_spec,
-    capabilities=AppCapabilities(update=True, delete=True),
-)
+    capabilities=AppCapabilities(update=<< derive_update >>, delete=<< derive_delete >>),
+<< group_line >><< nav_icon_kwarg_line >>)

@@ -116,9 +116,13 @@ def main() -> int:
     )
     args = parser.parse_args()
     apps = _load_apps()
+    # Imported after _load_apps() prepends REPO_ROOT to sys.path so the local
+    # worktree's app package is resolved, not the editable .pth worktree.
+    from app.core.utils.openapi import namespaced_openapi
+
     drift = []
     for name, fastapi_app in apps.items():
-        content = canonical(fastapi_app.openapi())
+        content = canonical(namespaced_openapi(fastapi_app))
         target = SPECS_DIR / f"{name}.json"
         if args.check:
             if not target.exists() or target.read_text(encoding="utf-8") != content:
