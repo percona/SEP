@@ -49,6 +49,7 @@ from app.core.config import (
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
+from app.core.requests.bundle_upload import CredentialPlacement, RESERVED_UPLOAD_FIELDS
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
@@ -62,6 +63,7 @@ from app.core.utils import (
 )
 from app.core.utils.fields import (
     CredentialHttpUrl,
+    NonEmptyStr,
     RelativeDirectoryPathField,
     StrImportableAttribute,
     StrRelativePath,
@@ -559,6 +561,123 @@ class HealthReportSettings(BaseLowercaseModel):
         return not self.upload_disabled_reasons
 
 
+class BundleUploadSettings(BaseLowercaseModel):
+    """Configure the generic bundle-upload client.
+
+    :param enabled: Master toggle for bundle upload. When ``False`` (the
+        default), uploading is disabled regardless of other fields.
+    :param endpoint: The upload intake endpoint URL.
+    :param credential: The upload credential.
+    :param credential_placement: Whether the credential rides in a request header
+        or a multipart form field.
+    :param credential_name: The header name or form-field name carrying the
+        credential.
+    :param credential_scheme: The header scheme prefix (e.g. ``Bearer``); empty
+        for a raw header value or a form-field credential.
+    :param client_id: The customer identifier sent with each upload.
+    :param metadata: Static form fields sent with every upload.
+    :param response_reference_key: The top-level response key whose value is read
+        into the upload result's reference.
+    :param timeout: The per-request upload timeout.
+    :param max_bundle_mb: The maximum accepted bundle size in megabytes.
+    """
+
+    enabled: bool = False
+    endpoint: str | None = None
+    credential: SecretStr | None = None
+    credential_placement: CredentialPlacement = CredentialPlacement.HEADER
+    credential_name: NonEmptyStr = "Authorization"
+    credential_scheme: str = "Bearer"
+    client_id: str | None = None
+    metadata: dict[str, str] = {}
+    response_reference_key: str | None = None
+    timeout: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(seconds=30)
+    max_bundle_mb: PositiveInt = 100
+
+    @field_validator("endpoint", "client_id", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @field_validator("endpoint", mode="after")
+    @classmethod
+    def _normalize_endpoint(cls, v: str | None) -> str | None:
+        if v is not None:
+            return v.rstrip("/")
+        return v
+
+    @field_validator("credential", mode="before")
+    @classmethod
+    def _empty_secret_to_none(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        raw = v.get_secret_value() if isinstance(v, SecretStr) else v
+        if isinstance(raw, str) and not raw.strip():
+            return None
+        return v
+
+    @field_validator("credential_placement", mode="before")
+    @classmethod
+    def _normalize_placement(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
+    @model_validator(mode="after")
+    def _reject_field_name_collisions(self) -> Self:
+        """Reject metadata / form-field-credential names that shadow reserved fields.
+
+        The uploader always emits ``RESERVED_UPLOAD_FIELDS``; letting an operator
+        name collide would silently overwrite a required field or the file part,
+        so a collision fails at config load rather than at upload time.
+
+        :return: The validated settings instance.
+        """
+        clashes = set(self.metadata) & RESERVED_UPLOAD_FIELDS
+        if clashes:
+            raise ValueError(
+                f"BUNDLE_UPLOAD.metadata keys collide with reserved upload fields: "
+                f"{sorted(clashes)}"
+            )
+        if self.credential_placement is CredentialPlacement.FORM_FIELD:
+            if self.credential_name in RESERVED_UPLOAD_FIELDS:
+                raise ValueError(
+                    f"BUNDLE_UPLOAD.credential_name '{self.credential_name}' is a "
+                    f"reserved upload field name under form-field placement"
+                )
+            if self.credential_name in self.metadata:
+                raise ValueError(
+                    f"BUNDLE_UPLOAD.credential_name '{self.credential_name}' "
+                    f"duplicates a metadata field name"
+                )
+        return self
+
+    @property
+    def upload_disabled_reasons(self) -> list[str]:
+        """Return the reasons upload is not possible; an empty list means ready."""
+        if not self.enabled:
+            return ["Upload is disabled"]
+        reasons = []
+        if self.endpoint is None:
+            reasons.append("Endpoint is not configured")
+        else:
+            parsed = urlparse(self.endpoint)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                reasons.append("Endpoint is not a valid HTTP/HTTPS address")
+        if self.credential is None:
+            reasons.append("Credential is not configured")
+        if self.client_id is None:
+            reasons.append("Client ID is not configured")
+        return reasons
+
+    @property
+    def is_upload_configured(self) -> bool:
+        """Return ``True`` when upload is enabled and fully configured."""
+        return not self.upload_disabled_reasons
+
+
 class AppDrainSettings(BaseLowercaseModel):
     """Configure the cooperative app-drain reconciler.
 
@@ -626,6 +745,8 @@ class SEPSettings(BaseYamlAppSettings):
         synchronization. Defaults to 5 seconds.
     :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
         Upload is disabled by default.
+    :param BUNDLE_UPLOAD: Configuration for the generic bundle-upload client.
+        Upload is disabled by default.
     :param APP_DRAIN: Operator-tunable settings for the cooperative app-drain
         reconciler (reconcile cadence and stale running-task TTL).
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
@@ -670,6 +791,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
     SYNC_REFRESH_TIME: int = hot_field(5)
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
+    BUNDLE_UPLOAD: BundleUploadSettings = BundleUploadSettings()
     APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
