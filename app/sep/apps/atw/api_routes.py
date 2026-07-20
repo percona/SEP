@@ -19,7 +19,7 @@ import logging
 from collections import defaultdict
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel, UUID4
+from pydantic import BaseModel
 
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
@@ -29,6 +29,7 @@ from app.sep.apps.atw.categories import (
     derive_category_root,
 )
 from app.sep.apps.atw.crud import AtwIncidentManager
+from app.sep.apps.atw.deps import AtwIncidentDep
 from app.sep.apps.atw.models import (
     AtwIncident,
     AtwIncidentResponse,
@@ -186,33 +187,26 @@ async def atw_list_incidents(
 
 
 @router.get("/incidents/{incident_id}")
-async def atw_get_incident(
-    session: SessionDep, incident_id: UUID4
-) -> AtwIncidentResponse:
+async def atw_get_incident(incident: AtwIncidentDep) -> AtwIncidentResponse:
     """Retrieve a single diagnostic incident by id.
 
-    :param session: The database session.
-    :param incident_id: The incident's UUID.
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
     :return: The matching incident.
-    :raises HTTPNotFoundException: If no incident has that id.
     """
-    incident = await AtwIncidentManager.get_or_404(session, id=incident_id)
     return AtwIncidentResponse.model_validate(incident)
 
 
 @router.patch("/incidents/{incident_id}")
 async def atw_update_incident(
-    session: SessionDep, incident_id: UUID4, body: AtwIncidentUpdate
+    session: SessionDep, incident: AtwIncidentDep, body: AtwIncidentUpdate
 ) -> AtwIncidentResponse:
     """Update a diagnostic incident's name or ServiceNow case reference.
 
     :param session: The database session.
-    :param incident_id: The incident's UUID.
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
     :param body: The partial update payload; unset fields are untouched.
     :return: The updated incident.
-    :raises HTTPNotFoundException: If no incident has that id.
     """
-    incident = await AtwIncidentManager.get_or_404(session, id=incident_id)
     updated = await AtwIncidentManager.update(session, incident, body)
     return AtwIncidentResponse.model_validate(updated)
 
@@ -221,12 +215,10 @@ async def atw_update_incident(
     "/incidents/{incident_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def atw_delete_incident(session: SessionDep, incident_id: UUID4) -> None:
+async def atw_delete_incident(session: SessionDep, incident: AtwIncidentDep) -> None:
     """Delete a diagnostic incident and cascade its execution rows.
 
     :param session: The database session.
-    :param incident_id: The incident's UUID.
-    :raises HTTPNotFoundException: If no incident has that id.
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
     """
-    incident = await AtwIncidentManager.get_or_404(session, id=incident_id)
     await AtwIncidentManager.delete(session, incident)

@@ -702,10 +702,8 @@ export interface paths {
      * Atw Get Incident
      * @description Retrieve a single diagnostic incident by id.
      *
-     *     :param session: The database session.
-     *     :param incident_id: The incident's UUID.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
      *     :return: The matching incident.
-     *     :raises HTTPNotFoundException: If no incident has that id.
      */
     get: operations['atw_atw_get_incident_api_apps_atw_incidents__incident_id__get'];
     put?: never;
@@ -715,8 +713,7 @@ export interface paths {
      * @description Delete a diagnostic incident and cascade its execution rows.
      *
      *     :param session: The database session.
-     *     :param incident_id: The incident's UUID.
-     *     :raises HTTPNotFoundException: If no incident has that id.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
      */
     delete: operations['atw_atw_delete_incident_api_apps_atw_incidents__incident_id__delete'];
     options?: never;
@@ -726,10 +723,9 @@ export interface paths {
      * @description Update a diagnostic incident's name or ServiceNow case reference.
      *
      *     :param session: The database session.
-     *     :param incident_id: The incident's UUID.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
      *     :param body: The partial update payload; unset fields are untouched.
      *     :return: The updated incident.
-     *     :raises HTTPNotFoundException: If no incident has that id.
      */
     patch: operations['atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch'];
     trace?: never;
