@@ -281,7 +281,6 @@ def build_disk_script_source(
     artifact_type: str,
     name: str,
     display_name: str,
-    list_response_model: type[BaseModel] | None = None,
 ) -> ScriptSource[_DiskScript]:
     """Wire a disk-backed ``BaseSnippet`` subclass into a framework ``ScriptSource``.
 
@@ -292,8 +291,6 @@ def build_disk_script_source(
         download URL (register it in the app's ``artifact_base_dirs``).
     :param name: The app name recorded on the derived schemas.
     :param display_name: The plugin-level display name served at ``GET /schema``.
-    :param list_response_model: The list-row response model typing ``GET /``;
-        defaults to :class:`DiskScriptListRow`.
     :return: A ``ScriptSource`` carrying the disk-backed listing, form, and execute
         hooks for ``derive_script_routes``.
     """
@@ -328,5 +325,5 @@ def build_disk_script_source(
         static_schema=AppSchema(
             name=name, display_name=display_name, list_view=_list_view()
         ),
-        list_response_model=list_response_model or DiskScriptListRow,
+        list_response_model=DiskScriptListRow,
     )
