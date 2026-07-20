@@ -1113,6 +1113,8 @@ class TaskExecutionApp(BaseApp):
         each re-deriving the one-of core schema.
         """
         self.create_model.model_rebuild(force=True)
+        # Built purely to force the one-of core schema into pydantic's shared
+        # definition cache now; the adapter itself is intentionally discarded.
         TypeAdapter(self.create_model)
 
     def _resolve_plugin_schema(self) -> AppSchema:

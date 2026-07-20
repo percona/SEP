@@ -76,9 +76,18 @@ _VALID_SYNTH_BODIES: list[dict[str, Any]] = [
     },
 ]
 
-_INVALID_DISCRIMINATOR: dict[str, Any] = {
-    "source": {"mode": "gamma", "alpha_value": "v"}
-}
+# Malformed one-of bodies that must 422 identically on both routes: an unknown
+# discriminator on the required union, a missing discriminator, and an unknown
+# discriminator on the *optional* sink union (the archives destination/host analog
+# the materialization fix touches — a naive fix could loosen it unnoticed).
+_INVALID_ONEOF_BODIES: list[dict[str, Any]] = [
+    {"source": {"mode": "gamma", "alpha_value": "v"}},
+    {"source": {"alpha_value": "v"}},
+    {
+        "source": {"mode": "alpha", "alpha_value": "v"},
+        "sink": {"mode": "nope", "file_path": "/tmp/out"},
+    },
+]
 
 
 def _synth_body(**overrides: Any) -> dict[str, Any]:
@@ -136,7 +145,7 @@ class TestDerivedOneOfBody:
     def test_create_accepted_body_is_update_accepted(
         self, regular_user: CasdoorUser, branch: dict[str, Any]
     ) -> None:
-        """Every one-of branch the create route accepts, the update route accepts."""
+        """Assert every branch create accepts, the update route accepts too."""
         client = _synth_client(regular_user)
         body = _synth_body(**branch)
         assert (
@@ -148,16 +157,17 @@ class TestDerivedOneOfBody:
             == status.HTTP_200_OK
         )
 
-    def test_invalid_discriminator_rejected_by_both_routes(
-        self, regular_user: CasdoorUser
+    @pytest.mark.parametrize("branch", _INVALID_ONEOF_BODIES)
+    def test_invalid_oneof_body_rejected_by_both_routes(
+        self, regular_user: CasdoorUser, branch: dict[str, Any]
     ) -> None:
-        """An unknown discriminator is a clean 422 on create and update.
+        """Assert a malformed one-of body is a clean 422 on create and update.
 
-        Guards against "fixing" the flake by loosening the union — a body with a
-        bogus discriminator must never validate on either route.
+        Guards against "fixing" the flake by loosening a union — a body with a
+        bogus or missing discriminator must never validate on either route.
         """
         client = _synth_client(regular_user)
-        body = _synth_body(**_INVALID_DISCRIMINATOR)
+        body = _synth_body(**branch)
         assert (
             client.post(f"{self._BASE}/", json=body).status_code
             == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -170,7 +180,7 @@ class TestDerivedOneOfBody:
     def test_archives_create_and_update_accept_the_same_body(
         self, regular_user: CasdoorUser
     ) -> None:
-        """The real archives one-of app accepts its valid body on both routes."""
+        """Assert the real archives one-of app accepts its valid body on both routes."""
         inventory = MockInventoryAPI()
         inventory.seed_table(MOCK_DESTINATION_TABLE_ID)
         tasks_api = MockTaskAPI()
@@ -201,12 +211,12 @@ class TestSharedCreateResponseModel:
     """Assert create and update render one shared response-model class (2b)."""
 
     def test_non_connectivity_app_shares_response_model(self) -> None:
-        """The create and update routes reference the same response model object."""
+        """Assert create and update reference the same response model object."""
         create, update = _create_and_update_routes(synth_oneof_app())
         assert create.response_model is update.response_model
 
     def test_connectivity_app_shares_one_derived_response_model(self) -> None:
-        """The auto-derived ``<App>CreateResponse`` is built once and shared.
+        """Assert the auto-derived ``<App>CreateResponse`` is built once and shared.
 
         Resolving it per route would mint two distinct classes carrying the same
         name, whose colliding schema refs are what perturbed the derived body
@@ -280,7 +290,7 @@ class TestMultiSeedBodySchema:
 
     @pytest.mark.parametrize("seed", range(8))
     def test_archives_valid_body_accepted_under_seed(self, seed: int) -> None:
-        """The archives create and update routes accept a valid body under ``seed``."""
+        """Assert the archives routes accept a valid body under ``seed``."""
         result = subprocess.run(
             [sys.executable, "-c", self._SUBPROCESS],
             env={**os.environ, "PYTHONHASHSEED": str(seed)},
