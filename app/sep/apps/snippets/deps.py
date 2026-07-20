@@ -37,14 +37,12 @@ from app.sep.apps.framework.script_helpers import (
     build_artifact_download_url,
     build_execution_meta,
 )
+from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.apps.snippets.models import (
     BatchApprovalErrorResponse,
     SnippetBatchApproveRequest,
 )
 from app.sep.apps.snippets.schema import evaluate_snippet_gates
-from app.sep.artifact_constants import (
-    ARTIFACT_TYPE_SNIPPET,
-)
 from app.sep.deps import SessionDep
 from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings
