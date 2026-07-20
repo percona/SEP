@@ -44,9 +44,10 @@ from pydantic import SecretStr
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils import json_serializer
+from app.core.utils.fields import EnumFieldMixin
 
 
-class CredentialPlacement(StrEnum):
+class CredentialPlacement(EnumFieldMixin, StrEnum):
     """Enumerate where the upload credential is carried on the request."""
 
     HEADER = auto()

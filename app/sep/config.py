@@ -618,13 +618,6 @@ class BundleUploadSettings(BaseLowercaseModel):
             return None
         return v
 
-    @field_validator("credential_placement", mode="before")
-    @classmethod
-    def _normalize_placement(cls, v: Any) -> Any:
-        if isinstance(v, str):
-            return v.lower()
-        return v
-
     @model_validator(mode="after")
     def _reject_field_name_collisions(self) -> Self:
         """Reject metadata / form-field-credential names that shadow reserved fields.
