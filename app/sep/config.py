@@ -589,7 +589,7 @@ class BundleUploadSettings(BaseLowercaseModel):
     credential_name: NonEmptyStr = "Authorization"
     credential_scheme: str = "Bearer"
     client_id: str | None = None
-    metadata: dict[str, str] = {}
+    metadata: dict[str, str] = Field(default_factory=dict)
     response_reference_key: str | None = None
     timeout: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(seconds=30)
     max_bundle_mb: PositiveInt = 100

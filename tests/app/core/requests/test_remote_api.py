@@ -117,6 +117,17 @@ def test_redact_headers_masks_within_context_only(remote_api):
     assert after == frozenset()
 
 
+def test_redact_headers_nesting_unions_with_outer_context(remote_api):
+    """Accumulate an inner ``redact_headers`` block's names on top of the outer set."""
+    with remote_api.redact_headers(["X-Outer"]):
+        with remote_api.redact_headers(["X-Inner"]):
+            nested = remote_api._extra_sensitive_headers.get()
+        restored = remote_api._extra_sensitive_headers.get()
+
+    assert nested == frozenset({"x-outer", "x-inner"})
+    assert restored == frozenset({"x-outer"})
+
+
 class TestUpload:
     """Cover the multipart ``RemoteAPI.upload`` primitive."""
 

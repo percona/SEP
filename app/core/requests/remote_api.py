@@ -405,7 +405,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :param names: Header names to mask, compared case-insensitively.
         :yield: The instance with the extra redaction set applied.
         """
-        token = self._extra_sensitive_headers.set(frozenset(n.lower() for n in names))
+        token = self._extra_sensitive_headers.set(
+            self._extra_sensitive_headers.get() | frozenset(n.lower() for n in names)
+        )
         try:
             yield self
         finally:
