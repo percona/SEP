@@ -60,7 +60,10 @@ async def _override_session_maker() -> async_sessionmaker:
     )
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    return get_async_session_maker_from_engine(engine)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
 
 
 def _sep_proxies() -> dict:
@@ -293,7 +296,10 @@ async def _beat_session_maker() -> async_sessionmaker:
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     async with engine.begin() as conn:
         await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
-    return get_async_session_maker_from_engine(engine)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
 
 
 async def _seed_snippets_task(
@@ -411,9 +417,13 @@ async def test_backup_interval_override_reseeds_alert_backup_beat_schedule_live(
     a runtime override updates the live beat row -- not just the proxy -- so Celery
     beat reloads it on its next tick without a restart. Mirrors the snippets case.
     """
-    # The alerts schedule is plugin-gated; force it on irrespective of the test
-    # settings.yaml so the task-set builder emits the alerts backup schedule.
-    monkeypatch.setattr("app.sep.db.seed._alerts_plugin_enabled", True)
+    # The alerts schedule is plugin-gated on the app owning a Celery module; force
+    # that lookup on irrespective of the test settings.yaml so the task-set builder
+    # emits the alerts backup schedule.
+    monkeypatch.setattr(
+        "app.sep.db.seed.app_celery_module_for",
+        lambda key, *_: "app.sep.apps.alerts.celery" if key == "alerts" else None,
+    )
     # Gated OFF so we can prove the re-seed preserves the ``enabled`` flag.
     await _seed_alert_backup_task(beat_session_maker, every=1, enabled=False)
     async with override_session_maker() as session:

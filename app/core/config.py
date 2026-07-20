@@ -75,7 +75,10 @@ from app.core.utils.fields import (
     TimedeltaSeconds,
     URL,
 )
-from app.core.utils.openapi import generate_tag_prefixed_unique_id
+from app.core.utils.openapi import (
+    generate_tag_prefixed_unique_id,
+    install_namespaced_openapi,
+)
 
 
 def _sanitize_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -750,4 +753,5 @@ def create_app(
         app.add_middleware(SecurityHeadersMiddleware, options=security_headers)
     for router in routers:
         app.include_router(router)
+    install_namespaced_openapi(app)
     return app

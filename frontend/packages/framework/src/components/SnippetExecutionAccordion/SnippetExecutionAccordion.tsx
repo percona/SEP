@@ -48,9 +48,6 @@ import {
 import { TaskLogViewer } from '../TaskLogViewer';
 import { useStopTaskHistory } from '../../hooks';
 
-/** Fields always hidden from the dynamic form. */
-const HIDDEN_FORM_FIELDS = new Set(['script_preview']);
-
 /** Fields excluded from the snippet `args` payload (handled at top level instead). */
 const ARGS_EXCLUDED_FIELDS = new Set(['executor_host', 'sudo', 'script_preview']);
 
@@ -150,10 +147,7 @@ export function SnippetExecutionAccordion({
   const hoistingHost = Boolean(executorHost);
   const filteredSections = (schemaQuery.data?.forms ?? []).map((section) => ({
     ...section,
-    fields: section.fields.filter(
-      (field) =>
-        !HIDDEN_FORM_FIELDS.has(field.name) && (field.name !== 'executor_host' || !hoistingHost),
-    ),
+    fields: section.fields.filter((field) => field.name !== 'executor_host' || !hoistingHost),
   }));
 
   const handleSubmit = (values: Record<string, unknown>) => {

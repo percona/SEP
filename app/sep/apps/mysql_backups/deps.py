@@ -155,6 +155,7 @@ def build_mysql_backups_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     last_executed_at: datetime | None = None,
+    context: dict[str, str] | None = None,
 ) -> BackupTaskResponse:
     """Build a ``BackupTaskResponse`` for the JSON API.
 
@@ -164,8 +165,13 @@ def build_mysql_backups_api_task_response(
     :type status: TaskHistoryStatusEnum | None
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
+    :param context: The username map bound by ``response_context_provider``,
+        used to remap ``created_by`` / ``last_updated_by`` user-ids to
+        usernames; falls back to the raw id when the map lacks an entry.
+    :type context: dict[str, str] | None
     :return: A validated backup task API response object.
     """
+    mapping = context or {}
     hostname = None
     if task.data:
         meta = task.data.get("meta") or {}
@@ -179,6 +185,8 @@ def build_mysql_backups_api_task_response(
             "backup_type": _extract_backup_type_from_task(task),
             "hostname": hostname,
             "service_type": ServiceTypeEnum.MYSQL,
+            "created_by": mapping.get(task.created_by, task.created_by),
+            "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
         },
     )
 

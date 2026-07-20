@@ -30,8 +30,14 @@ from celery.signals import (
 
 from app.core.config import settings
 from app.core.log import clear_log_context, correlation_id_var, set_log_context
+from app.sep.apps.framework.registry import build_celery_include
 
 logger = logging.getLogger(__name__)
+
+# Composed here, not in ``CeleryOptions.set_include``: reaching the registry during
+# core ``Settings`` construction re-enters the half-built lazy proxy. The worker
+# bootstrap composes the same helper, keeping the two include lists in lockstep.
+settings.CELERY.include = build_celery_include()
 
 celery = Celery("sep", **settings.CELERY.model_dump())
 

@@ -1,0 +1,44 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Build the run-python spec for the << display_name_doc >> app."""
+
+from app.core.utils.path import payload_uri
+from app.sep.apps.<< name >>.models import << class_prefix >>Form
+from app.sep.apps.framework.spec import ResolvedEntities, RunPythonSpec
+
+
+def build_<< name >>_spec(
+    form: << class_prefix >>Form, _resolved: ResolvedEntities
+) -> RunPythonSpec:
+    """Build the run-python spec from the validated form.
+
+    The framework's ``assemble_envelope`` fills ``target`` (the ``HostRef``
+    executor), ``_service_name``, and the connectivity keys around this spec; here
+    we own the serialized ``config`` the payload reads and the pip ``requirements``
+    it runs under. Replace ``requirements`` with the payload's pip dependencies and
+    adjust ``config`` to the shape the ``payload`` script expects; the ``payload``
+    file copied beside this module is the entrypoint.
+
+    :param form: The validated create form.
+    :param _resolved: The entities resolved from the form's reference fields, part
+        of the framework's ``(form, resolved) -> RunPythonSpec`` builder contract.
+    :return: The run-python spec consumed by ``assemble_envelope``.
+    """
+    return RunPythonSpec(
+        config=form.model_dump_json(),
+        requirements="",
+        payload=payload_uri(__file__, "payload"),
+    )

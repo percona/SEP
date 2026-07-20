@@ -457,8 +457,14 @@ async def session_fixture() -> AsyncSession:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        # ``StaticPool`` keeps the aiosqlite connection (and its non-daemon
+        # thread) alive until the engine is disposed; without this the thread
+        # survives to interpreter exit and blocks ``threading._shutdown``.
+        await engine.dispose()
 
 
 @pytest_asyncio.fixture(name="celery_beat_session")
@@ -475,8 +481,11 @@ async def celery_beat_session_fixture() -> AsyncSession:
     async with engine.begin() as conn:
         await conn.run_sync(metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture

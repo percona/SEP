@@ -19,7 +19,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import dsn_safe, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
     ArgFormat,
@@ -33,20 +33,6 @@ from app.sep.apps.framework.form_dsl import (
 )
 
 OWNER = "CHECKSUMS"
-
-
-def _dsn_safe(value: str) -> str:
-    """Reject DSN delimiters (``,`` / ``=``) that could split a CLI argument value.
-
-    :param value: The database or table name to validate.
-    :return: The value unchanged when it carries no delimiter.
-    :raises ValueError: When the value contains a ``,`` or ``=`` character.
-    """
-    if "," in value or "=" in value:
-        raise ValueError(
-            "Values cannot contain ',' or '=' characters (CLI argument delimiters)."
-        )
-    return value
 
 
 def coerce_target_list(value: Any) -> list[int | str]:
@@ -323,6 +309,6 @@ class ChecksumsForm(TaskFormModel):
         """Reject DSN delimiters in a free-typed schema or table name.
 
         :param value: The submitted target list (inventory ids and/or names).
-        :return: The value unchanged when no element carries a CLI delimiter.
+        :return: The value unchanged when no element carries a DSN delimiter.
         """
-        return [_dsn_safe(item) if isinstance(item, str) else item for item in value]
+        return [dsn_safe(item) if isinstance(item, str) else item for item in value]

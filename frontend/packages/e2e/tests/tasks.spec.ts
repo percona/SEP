@@ -175,7 +175,12 @@ async function mockTasksApis(page: Page): Promise<void> {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_TASK_LIST),
+        body: JSON.stringify({
+          items: MOCK_TASK_LIST,
+          total: MOCK_TASK_LIST.length,
+          offset: 0,
+          limit: 50,
+        }),
       });
     }
 

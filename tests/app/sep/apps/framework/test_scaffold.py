@@ -27,6 +27,7 @@ worker.
 """
 
 import importlib
+import json
 import shutil
 import sys
 from collections.abc import Iterator
@@ -37,9 +38,12 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import APIRouter, FastAPI, status
 from fastapi.testclient import TestClient
+from rich.prompt import Confirm, Prompt
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.requests.remote_api import RemoteAPI
+from app.core.utils.path import payload_uri, resolve_payload_reference
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import scaffold
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
@@ -50,6 +54,7 @@ from app.sep.apps.framework.conformance import (
     check_view_fields_reference_real_fields,
 )
 from app.sep.apps.framework.registry import build_app_registry
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.config import App
 from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
 from tests.app.sep.apps.framework.contract_suite import (
@@ -73,22 +78,105 @@ def tmp_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return copy
 
 
+def _cleanup(name: str) -> None:
+    """Remove a scaffolded app's trees and purge its ``sys.modules`` entries."""
+    shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
+    shutil.rmtree(scaffold.TESTS_DIR / name, ignore_errors=True)
+    for module in list(sys.modules):
+        if module == f"app.sep.apps.{name}" or module.startswith(
+            f"app.sep.apps.{name}."
+        ):
+            del sys.modules[module]
+    importlib.invalidate_caches()
+
+
+@contextmanager
+def _scaffolded_config(
+    config: scaffold.ScaffoldConfig,
+) -> Iterator[scaffold.ScaffoldResult]:
+    """Yield a scaffolded ``config``, removing the trees and module entries on exit."""
+    try:
+        yield scaffold.scaffold_app(config)
+    finally:
+        _cleanup(config.name)
+
+
 @contextmanager
 def _scaffolded(
     name: str, flavor: scaffold.Flavor
 ) -> Iterator[scaffold.ScaffoldResult]:
     """Yield a scaffolded ``name``, removing the trees and module entries on exit."""
-    try:
-        yield scaffold.scaffold_app(name, flavor)
-    finally:
-        shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
-        shutil.rmtree(scaffold.TESTS_DIR / name, ignore_errors=True)
-        for module in list(sys.modules):
-            if module == f"app.sep.apps.{name}" or module.startswith(
-                f"app.sep.apps.{name}."
-            ):
-                del sys.modules[module]
-        importlib.invalidate_caches()
+    with _scaffolded_config(scaffold.ScaffoldConfig.defaults(name, flavor)) as result:
+        yield result
+
+
+def _config_from_args(argv: list[str]) -> scaffold.ScaffoldConfig:
+    """Resolve a CLI ``argv`` (non-interactive) into a ``ScaffoldConfig``."""
+    parser = scaffold.build_parser()
+    return scaffold.resolve_config(parser, parser.parse_args(argv))
+
+
+def _force_wizard(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    prompt_answers: dict[str, object] | None = None,
+    confirm: object = True,
+) -> "_WizardStub":
+    """Force the interactive branch and stub the ``rich`` prompt seams.
+
+    :param monkeypatch: The pytest monkeypatch fixture.
+    :param prompt_answers: Per-prompt canned answers keyed by label prefix; a list
+        value is consumed one entry per re-prompt.
+    :param confirm: The ``Confirm.ask`` answer — a bool, or a callable raising to
+        simulate ``Ctrl-C``.
+    :return: The stub recording every prompt and confirm label asked.
+    """
+    stub = _WizardStub(prompt_answers, confirm)
+    monkeypatch.setattr(scaffold, "_stdin_is_tty", lambda: True)
+    monkeypatch.setattr(Prompt, "ask", staticmethod(stub.ask))
+    monkeypatch.setattr(Confirm, "ask", staticmethod(stub.confirm))
+    return stub
+
+
+class _WizardStub:
+    """Record wizard prompts and feed canned answers keyed by label prefix."""
+
+    def __init__(
+        self, prompt_answers: dict[str, object] | None, confirm: object
+    ) -> None:
+        self._answers = {
+            key: list(value) if isinstance(value, list) else [value]
+            for key, value in (prompt_answers or {}).items()
+        }
+        self._confirm = confirm
+        self.prompts: list[str] = []
+        self.confirms: list[str] = []
+
+    def ask(
+        self,
+        label: str,
+        *,
+        choices: list[str] | None = None,
+        default: object = None,
+        case_sensitive: bool | None = None,
+    ) -> object:
+        """Record ``label`` and return its canned answer (or a sensible fallback)."""
+        self.prompts.append(label)
+        for key, queue in self._answers.items():
+            if label.startswith(key):
+                return queue.pop(0) if len(queue) > 1 else queue[0]
+        if default is not None:
+            return default
+        if choices:
+            return choices[0]
+        return "value"
+
+    def confirm(self, label: str, *, default: bool | None = None) -> bool:
+        """Record ``label`` and return the canned confirm answer."""
+        self.confirms.append(label)
+        if callable(self._confirm):
+            return self._confirm(label)
+        return self._confirm
 
 
 def _task_conformance(app: TaskExecutionApp) -> list[str]:
@@ -112,6 +200,78 @@ def _mount_api_first(app_def: BaseApp, user: CasdoorUser) -> TestClient:
     return TestClient(fastapi_app, raise_server_exceptions=False)
 
 
+GOLDEN_DIR = Path(__file__).parent / "golden"
+
+_GOLDEN_FILES = {
+    scaffold.Flavor.TASK: ("golden_task", ("app.py", "models.py", "spec.py")),
+    scaffold.Flavor.SCRIPT: ("golden_script", ("app.py",)),
+    scaffold.Flavor.BASE: ("golden_base", ("app.py",)),
+}
+
+
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_default_render_is_byte_identical(
+    tmp_settings: Path, flavor: scaffold.Flavor
+) -> None:
+    """Assert each flavor's default render is byte-identical to its golden snapshot."""
+    name, filenames = _GOLDEN_FILES[flavor]
+    with _scaffolded(name, flavor) as result:
+        for filename in filenames:
+            rendered = (result.app_dir / filename).read_text()
+            expected = (GOLDEN_DIR / flavor.value / filename).read_text()
+            assert rendered == expected, f"{flavor.value}/{filename} drifted"
+        assert result.payload_written is None
+        assert not (result.app_dir / "payload").exists()
+
+    assert (
+        f"      - MODULE_NAME: {name}\n        ENABLED: false\n"
+        in tmp_settings.read_text()
+    )
+
+
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_free_text_display_name_escaped_in_every_rendered_file(
+    tmp_settings: Path, flavor: scaffold.Flavor
+) -> None:
+    """Ensure a hostile display name renders as valid Python in every generated file.
+
+    The chosen display name carries the exact sequences that break an unescaped
+    docstring interior: a triple-quote run (which would close the docstring early)
+    and bare backslash-x / backslash-u escapes (which raise SyntaxError outside a
+    raw string literal).
+    """
+    name = f"_scaffold_quote_{flavor.value}"
+    config = _config_from_args(
+        [
+            "--name",
+            name,
+            "--type",
+            flavor.value,
+            "--display-name",
+            r'Fast """ \x \u "Cool" \ Backup',
+            "--no-input",
+        ]
+    )
+    with _scaffolded_config(config) as result:
+        for rendered in result.written:
+            if rendered.suffix == ".py":
+                compile(rendered.read_text(), str(rendered), "exec")
+        importlib.import_module(f"app.sep.apps.{name}")
+
+
+def test_docstring_safe_preserves_plain_double_quotes() -> None:
+    """Keep plain double quotes untouched so generated docstrings stay lint-clean."""
+    assert scaffold._docstring_safe('My "Cool" App') == 'My "Cool" App'
+
+
+def test_docstring_safe_escapes_backslashes_and_triple_quote_runs() -> None:
+    """Escape only syntax-breaking sequences for triple-quoted docstring interiors."""
+    assert (
+        scaffold._docstring_safe(r'Fast """ \x \u "Cool" \ Backup')
+        == 'Fast \\""" \\\\x \\\\u "Cool" \\\\ Backup'
+    )
+
+
 @pytest.mark.parametrize(
     "bad_name", ["My App!", "123app", "", "demo-app", "___", "class", "Demo"]
 )
@@ -130,10 +290,10 @@ def test_accepts_valid_name(good_name: str) -> None:
 
 
 def test_type_defaults_to_task() -> None:
-    """Assert ``--type`` defaults to the ``task`` flavor when omitted."""
-    args = scaffold.build_parser().parse_args(["--name", "demo"])
+    """Resolve the ``task`` flavor when ``--type`` is omitted (non-interactive)."""
+    config = _config_from_args(["--name", "demo", "--no-input"])
 
-    assert args.type == scaffold.Flavor.TASK
+    assert config.flavor == scaffold.Flavor.TASK
 
 
 def test_unknown_flavor_rejected() -> None:
@@ -171,7 +331,9 @@ def test_refuses_to_clobber_existing_plugin(tmp_settings: Path) -> None:
     before = tmp_settings.read_text()
     try:
         with pytest.raises(FileExistsError):
-            scaffold.scaffold_app(name, scaffold.Flavor.TASK)
+            scaffold.scaffold_app(
+                scaffold.ScaffoldConfig.defaults(name, scaffold.Flavor.TASK)
+            )
 
         assert tmp_settings.read_text() == before
         assert not (scaffold.TESTS_DIR / name).exists()
@@ -188,7 +350,9 @@ def test_refuses_to_clobber_existing_tests_package(tmp_settings: Path) -> None:
     before = tmp_settings.read_text()
     try:
         with pytest.raises(FileExistsError):
-            scaffold.scaffold_app(name, scaffold.Flavor.TASK)
+            scaffold.scaffold_app(
+                scaffold.ScaffoldConfig.defaults(name, scaffold.Flavor.TASK)
+            )
 
         assert tmp_settings.read_text() == before
         assert not (scaffold.PLUGINS_DIR / name).exists()
@@ -253,7 +417,9 @@ def test_pycache_plus_real_file_still_aborts(tmp_settings: Path) -> None:
     before = tmp_settings.read_text()
     try:
         with pytest.raises(FileExistsError):
-            scaffold.scaffold_app(name, scaffold.Flavor.TASK)
+            scaffold.scaffold_app(
+                scaffold.ScaffoldConfig.defaults(name, scaffold.Flavor.TASK)
+            )
 
         assert tmp_settings.read_text() == before
     finally:
@@ -269,7 +435,9 @@ def test_broken_symlink_blocks_scaffold(tmp_settings: Path) -> None:
     try:
         assert not app_dir.exists()
         with pytest.raises(FileExistsError):
-            scaffold.scaffold_app(name, scaffold.Flavor.TASK)
+            scaffold.scaffold_app(
+                scaffold.ScaffoldConfig.defaults(name, scaffold.Flavor.TASK)
+            )
 
         assert tmp_settings.read_text() == before
     finally:
@@ -394,7 +562,7 @@ def test_task_flavor_scaffolds_conformant_app(
         base = app_base_url(app)
 
         assert client.get(f"{base}/schema").status_code == status.HTTP_200_OK
-        assert isinstance(client.get(f"{base}/").json(), list)
+        assert "items" in client.get(f"{base}/").json()
         body = build_valid_create_body(app)
         assert client.post(f"{base}/", json=body).status_code == status.HTTP_201_CREATED
 
@@ -453,3 +621,425 @@ def test_base_flavor_scaffolds_api_first_app(
 
         assert client.get(f"/api/apps/{name}/schema").status_code == status.HTTP_200_OK
         assert client.get(f"/api/apps/{name}/").status_code == status.HTTP_200_OK
+
+
+def test_insert_app_entry_enabled_writes_enabled_true() -> None:
+    """Write ``ENABLED: true`` when ``enabled=True`` is passed."""
+    text, changed = scaffold.insert_app_entry(
+        scaffold.SETTINGS_FILE.read_text(), "scaffold_enabled_demo", enabled=True
+    )
+
+    assert changed
+    assert "      - MODULE_NAME: scaffold_enabled_demo\n        ENABLED: true\n" in text
+
+
+def test_insert_app_entry_defaults_to_disabled() -> None:
+    """Keep ``ENABLED: false`` by default (the pre-wizard positional-caller contract)."""
+    text, changed = scaffold.insert_app_entry(
+        scaffold.SETTINGS_FILE.read_text(), "scaffold_disabled_demo"
+    )
+
+    assert changed
+    assert (
+        "      - MODULE_NAME: scaffold_disabled_demo\n        ENABLED: false\n" in text
+    )
+
+
+def test_service_types_mirror_matches_enum() -> None:
+    """Guard the stdlib-only service-type mirror against ``ServiceTypeEnum`` drift."""
+    assert tuple(member.name for member in ServiceTypeEnum) == scaffold._SERVICE_TYPES
+
+
+def test_nav_icons_mirror_matches_enum() -> None:
+    """Guard the stdlib-only nav-icon mirror against ``NavIcon`` drift."""
+    assert tuple(member.name for member in NavIcon) == scaffold._NAV_ICONS
+
+
+def test_no_input_without_name_errors() -> None:
+    """Raise ``SystemExit`` when ``--no-input`` is given without ``--name``."""
+    with pytest.raises(SystemExit) as exc_info:
+        scaffold.main(["--no-input"])
+
+    assert exc_info.value.code != 0
+
+
+def test_no_input_with_name_scaffolds_defaults(tmp_settings: Path) -> None:
+    """Generate a default scaffold when ``--no-input --name`` is supplied."""
+    name = "_scaffold_smoke_noinput"
+    try:
+        assert scaffold.main(["--no-input", "--name", name, "--type", "task"]) == 0
+        assert (scaffold.PLUGINS_DIR / name / "app.py").exists()
+    finally:
+        _cleanup(name)
+
+
+def test_scaffold_script_stays_stdlib_only() -> None:
+    """Assert loading ``scaffold.py`` by path and rendering pulls in no heavy deps."""
+    scaffolder = (
+        scaffold._REPO_ROOT / "app" / "sep" / "apps" / "framework" / "scaffold.py"
+    )
+    probe = (
+        "import importlib.util, sys\n"
+        f"spec = importlib.util.spec_from_file_location('scaffold', {str(scaffolder)!r})\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "sys.modules['scaffold'] = module\n"
+        "spec.loader.exec_module(module)\n"
+        "module.build_parser()\n"
+        "config = module.ScaffoldConfig.defaults('demo', module.Flavor.TASK)\n"
+        "module._build_context(config)\n"
+        "heavy = {'rich', 'app.inventory.models', 'sqlalchemy', 'pydantic'}\n"
+        "leaked = sorted(heavy & set(sys.modules))\n"
+        "print(leaked)\n"
+        "sys.exit(1 if leaked else 0)\n"
+    )
+    result = scaffold.subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=scaffold._REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        f"heavy modules leaked: {result.stdout}{result.stderr}"
+    )
+
+
+def test_run_command_spec_uses_supplied_command(tmp_settings: Path) -> None:
+    """Render ``spec.py`` with the supplied executable, keeping the declarative args."""
+    name = "_scaffold_smoke_command"
+    config = _config_from_args(
+        ["--name", name, "--command", "/usr/bin/mytool", "--no-input"]
+    )
+    with _scaffolded_config(config) as result:
+        spec = (result.app_dir / "spec.py").read_text()
+
+    assert 'command="/usr/bin/mytool"' in spec
+    assert "shlex.join(build_command_args(form))" in spec
+
+
+def test_run_python_spec_renders_and_copies_payload(
+    tmp_settings: Path, tmp_path: Path, regular_user: CasdoorUser
+) -> None:
+    """Render a ``RunPythonSpec`` ``spec.py``, copy the payload, and serve create."""
+    name = "_scaffold_smoke_runpython"
+    payload_src = tmp_path / "entrypoint.py"
+    payload_src.write_text("print('scaffolded payload')\n")
+    config = _config_from_args(
+        [
+            "--name",
+            name,
+            "--run-mode",
+            "run-python",
+            "--payload",
+            str(payload_src),
+            "--no-input",
+        ]
+    )
+    with _scaffolded_config(config) as result:
+        spec = (result.app_dir / "spec.py").read_text()
+        assert "RunPythonSpec" in spec
+        assert 'payload_uri(__file__, "payload")' in spec
+        assert not (result.app_dir / "spec_run_python.py").exists()
+        assert result.payload_written == result.app_dir / "payload"
+        assert (result.app_dir / "payload").is_file()
+        assert (
+            result.app_dir / "payload"
+        ).read_text() == "print('scaffolded payload')\n"
+
+        importlib.import_module(f"app.sep.apps.{name}")
+        spec_module = importlib.import_module(f"app.sep.apps.{name}.spec")
+        reference = payload_uri(spec_module.__file__, "payload")
+        assert (
+            resolve_payload_reference(reference).resolve()
+            == (result.app_dir / "payload").resolve()
+        )
+
+        registry = build_app_registry([App(module_name=name)])
+        app = registry.get(name)
+        assert isinstance(app, TaskExecutionApp)
+        assert not _task_conformance(app)
+
+        tasks_api = MockTaskAPI()
+        tasks_api.seed_task(SEEDED_TASK_NAME, owner=app.owner)
+        client = build_contract_client(
+            app,
+            user=regular_user,
+            tasks_api=tasks_api,
+            inventory_api=MockInventoryAPI(),
+        )
+        base = app_base_url(app)
+        body = build_valid_create_body(app)
+        assert client.post(f"{base}/", json=body).status_code == status.HTTP_201_CREATED
+
+
+def test_run_python_inferred_from_payload(tmp_settings: Path, tmp_path: Path) -> None:
+    """Resolve run-python when only ``--payload`` is given (no ``--run-mode``)."""
+    payload_src = tmp_path / "entrypoint.py"
+    payload_src.write_text("print('x')\n")
+    config = _config_from_args(
+        ["--name", "_scaffold_infer_py", "--payload", str(payload_src), "--no-input"]
+    )
+
+    assert config.run_mode is scaffold.RunMode.RUN_PYTHON
+    assert config.payload_path == payload_src
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(
+            [
+                "--name",
+                "x",
+                "--run-mode",
+                "run-command",
+                "--payload",
+                "/tmp/p",
+                "--no-input",
+            ],
+            id="run-command-with-payload",
+        ),
+        pytest.param(
+            [
+                "--name",
+                "x",
+                "--run-mode",
+                "run-python",
+                "--command",
+                "tool",
+                "--no-input",
+            ],
+            id="run-python-with-command",
+        ),
+        pytest.param(
+            ["--name", "x", "--run-mode", "run-python", "--no-input"],
+            id="run-python-without-payload",
+        ),
+        pytest.param(
+            ["--name", "x", "--command", "c", "--payload", "/tmp/p", "--no-input"],
+            id="command-and-payload-mutually-exclusive",
+        ),
+        pytest.param(
+            ["--name", "x", "--type", "base", "--service-type", "MYSQL", "--no-input"],
+            id="task-only-flag-on-base",
+        ),
+        pytest.param(
+            ["--name", "x", "--type", "base", "--description", "d", "--no-input"],
+            id="description-on-base",
+        ),
+    ],
+)
+def test_run_mode_matrix_invalid_combos_exit(argv: list[str]) -> None:
+    """Reject every invalid run-mode / flavor flag combination with a non-zero exit."""
+    parser = scaffold.build_parser()
+    with pytest.raises(SystemExit):
+        scaffold.resolve_config(parser, parser.parse_args(argv))
+
+
+def test_wizard_prompts_for_flavor_when_type_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Collect the flavor from a prompt when ``--type`` is unset; the answer drives gating."""
+    stub = _force_wizard(monkeypatch, prompt_answers={"Flavor": "script"})
+    parser = scaffold.build_parser()
+    config = scaffold.resolve_config(
+        parser, parser.parse_args(["--name", "wiz_flavor"])
+    )
+
+    assert any(p.startswith("Flavor") for p in stub.prompts)
+    assert config.flavor is scaffold.Flavor.SCRIPT
+    assert not any(p.startswith("Service type") for p in stub.prompts)
+
+
+def test_wizard_skips_flavor_prompt_when_type_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Skip the flavor prompt when ``--type`` is supplied on the command line."""
+    stub = _force_wizard(monkeypatch)
+    parser = scaffold.build_parser()
+    config = scaffold.resolve_config(
+        parser, parser.parse_args(["--name", "wiz_typed", "--type", "task"])
+    )
+
+    assert not any(p.startswith("Flavor") for p in stub.prompts)
+    assert config.flavor is scaffold.Flavor.TASK
+
+
+def test_wizard_task_flavor_prompts_full_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Assert the ``task`` wizard prompts for every task field."""
+    stub = _force_wizard(monkeypatch)
+    parser = scaffold.build_parser()
+    scaffold.resolve_config(
+        parser, parser.parse_args(["--name", "wiz_task", "--type", "task"])
+    )
+
+    assert any(p.startswith("Description") for p in stub.prompts)
+    assert any(p.startswith("Service type") for p in stub.prompts)
+    assert any(p.startswith("Run mode") for p in stub.prompts)
+    assert any(c.startswith("Derive a PUT") for c in stub.confirms)
+    assert any(c.startswith("Derive a DELETE") for c in stub.confirms)
+
+
+def test_wizard_script_flavor_skips_task_only_prompts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assert the ``script`` wizard prompts for description but not the task-only fields."""
+    stub = _force_wizard(monkeypatch)
+    parser = scaffold.build_parser()
+    scaffold.resolve_config(
+        parser, parser.parse_args(["--name", "wiz_script", "--type", "script"])
+    )
+
+    assert any(p.startswith("Description") for p in stub.prompts)
+    assert not any(p.startswith("Service type") for p in stub.prompts)
+    assert not any(p.startswith("Run mode") for p in stub.prompts)
+    assert not any(c.startswith("Derive") for c in stub.confirms)
+
+
+def test_wizard_base_flavor_skips_description_and_task_prompts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assert the ``base`` wizard prompts for neither description nor the task fields."""
+    stub = _force_wizard(monkeypatch)
+    parser = scaffold.build_parser()
+    scaffold.resolve_config(
+        parser, parser.parse_args(["--name", "wiz_base", "--type", "base"])
+    )
+
+    assert not any(p.startswith("Description") for p in stub.prompts)
+    assert not any(p.startswith("Service type") for p in stub.prompts)
+    assert not any(p.startswith("Run mode") for p in stub.prompts)
+    assert not any(c.startswith("Derive") for c in stub.confirms)
+    assert any(p.startswith("Display name") for p in stub.prompts)
+
+
+def test_wizard_supplied_flag_skips_its_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip a field's prompt when its value is supplied on the command line."""
+    stub = _force_wizard(monkeypatch)
+    parser = scaffold.build_parser()
+    config = scaffold.resolve_config(
+        parser,
+        parser.parse_args(
+            [
+                "--name",
+                "wiz_override",
+                "--display-name",
+                "Fixed Label",
+                "--service-type",
+                "POSTGRESQL",
+            ]
+        ),
+    )
+
+    assert config.display_name == "Fixed Label"
+    assert config.service_type == "POSTGRESQL"
+    assert not any(p.startswith("Display name") for p in stub.prompts)
+    assert not any(p.startswith("Service type") for p in stub.prompts)
+
+
+def test_wizard_reprompts_on_invalid_then_clobbering_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validate the module name at the prompt, re-prompting until it passes."""
+    name_answers = ["Bad-Name!", "_scaffold_wizard_valid"]
+    stub = _force_wizard(monkeypatch, prompt_answers={"Module name": name_answers})
+    parser = scaffold.build_parser()
+    config = scaffold.resolve_config(parser, parser.parse_args([]))
+
+    assert config.name == "_scaffold_wizard_valid"
+    name_prompts = [p for p in stub.prompts if p.startswith("Module name")]
+    assert len(name_prompts) == len(name_answers)
+
+
+def test_wizard_reprompts_on_invalid_then_real_payload_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reject an invalid run-python payload path, re-prompting until a real file."""
+    payload = tmp_path / "entrypoint.py"
+    payload.write_text("print('scaffolded payload')\n")
+    answers = [str(tmp_path / "missing.py"), str(payload)]
+    stub = _force_wizard(monkeypatch, prompt_answers={"Payload file path": answers})
+    parser = scaffold.build_parser()
+    config = scaffold.resolve_config(
+        parser,
+        parser.parse_args(
+            ["--name", "wiz_payload", "--type", "task", "--run-mode", "run-python"]
+        ),
+    )
+
+    assert config.run_mode is scaffold.RunMode.RUN_PYTHON
+    assert config.payload_path == payload
+    payload_prompts = [p for p in stub.prompts if p.startswith("Payload file path")]
+    assert len(payload_prompts) == len(answers)
+
+
+def test_wizard_final_decline_aborts_without_writing(
+    tmp_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Abort cleanly and write nothing when the final confirmation is declined."""
+    name = "_scaffold_smoke_decline"
+    before = tmp_settings.read_text()
+    _force_wizard(monkeypatch, confirm=False)
+
+    assert scaffold.main(["--name", name, "--type", "task"]) == 1
+    assert not (scaffold.PLUGINS_DIR / name).exists()
+    assert not (scaffold.TESTS_DIR / name).exists()
+    assert tmp_settings.read_text() == before
+
+
+def test_wizard_keyboard_interrupt_aborts_without_writing(
+    tmp_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Abort cleanly and write nothing when the wizard is interrupted."""
+
+    def _interrupt(_label: str) -> bool:
+        raise KeyboardInterrupt
+
+    name = "_scaffold_smoke_interrupt"
+    before = tmp_settings.read_text()
+    _force_wizard(monkeypatch, confirm=_interrupt)
+
+    assert scaffold.main(["--name", name, "--type", "task"]) == 1
+    assert not (scaffold.PLUGINS_DIR / name).exists()
+    assert not (scaffold.TESTS_DIR / name).exists()
+    assert tmp_settings.read_text() == before
+
+
+def test_makefile_forwards_quoted_values() -> None:
+    """Forward a description with spaces and a quote intact through ``make startapp``.
+
+    Exercises the real Makefile ``$$VAR`` shell-environment forwarding (not the
+    in-process ``tmp_settings`` copy), so it backs up and restores the worktree's
+    ``settings.yaml`` in a ``finally`` like ``startapp_check.py``.
+    """
+    name = "_scaffold_ci_makeforward"
+    description = 'describe the "cool" widget here'
+    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    venv_root = Path(sys.executable).resolve().parent.parent
+    try:
+        result = scaffold.subprocess.run(
+            [
+                "make",
+                "startapp",
+                f"NAME={name}",
+                "TYPE=task",
+                "NO_INPUT=1",
+                f"DESCRIPTION={description}",
+                f"VIRTUAL_ENV={venv_root}",
+            ],
+            cwd=scaffold._REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+        rendered = (scaffold.PLUGINS_DIR / name / "app.py").read_text()
+        # The value survives make → shell env → argv → json.dumps intact; ruff may
+        # normalise the literal's quote style (double → single to avoid escapes), so
+        # assert on the value content rather than a fixed quote form.
+        assert "description=" in rendered
+        assert f"description={json.dumps(description)}" in rendered
+    finally:
+        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
+        _cleanup(name)

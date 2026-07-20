@@ -76,7 +76,7 @@ from app.sep.middleware.csrf import (
     CSRF_FORM_FIELD,
     request_has_bearer_authorization,
 )
-from app.sep.models import AppLifecycleEnum, SyncInventoryEntityTypeEnum
+from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
     Task,
@@ -483,7 +483,12 @@ def require_app_enabled(app_key: str) -> Callable[[AsyncSession], Awaitable[None
     Used as ``dependencies=[Depends(require_app_enabled(<key>))]`` on each
     non-protected app's router at mount time. Raises
     :class:`app.core.exceptions.HTTPServiceUnavailableException` (HTTP 503) when
-    the app is disabled in :class:`app.sep.models.AppState`.
+    the app is not *effectively* enabled -- that is, when its own
+    :class:`app.sep.models.AppState` is disabled **or** any app it declares in
+    ``requires_apps`` is disabled. Resolution is delegated to
+    :meth:`AppRegistry.resolve_effective_enabled`, the single source of truth
+    shared with the sidebar filter and the ``GET /api/apps`` projection, so the
+    gate is passed the app's ``key`` (not ``state_key``) to resolve dependencies.
 
     The factory closure-captures ``app_key`` at router-mount time; the returned
     coroutine is invoked per request and queries the DB via the standard
@@ -503,8 +508,12 @@ def require_app_enabled(app_key: str) -> Callable[[AsyncSession], Awaitable[None
     """
 
     async def _gate(session: SessionDep) -> None:
+        # Deferred: the framework package __init__ imports back into this module,
+        # so a top-level import here would cycle.
+        from app.sep.apps.framework.registry import get_app_registry
+
         try:
-            enabled = await AppStateManager.is_enabled(session, app_key)
+            states = await AppStateManager.all_lifecycle_states(session)
         except SQLAlchemyError:
             logger.warning(
                 "Could not read app state for '%s'; allowing the request.",
@@ -512,7 +521,7 @@ def require_app_enabled(app_key: str) -> Callable[[AsyncSession], Awaitable[None
                 exc_info=True,
             )
             return
-        if not enabled:
+        if not get_app_registry().resolve_effective_enabled(app_key, states):
             raise HTTPServiceUnavailableException(
                 detail=f"App '{app_key}' is currently disabled.",
             )
@@ -575,13 +584,14 @@ async def get_default_context(
 ) -> dict[str, Any]:
     """Return the default context for templates.
 
-    The sidebar ``plugins`` list is filtered by runtime app state: protected
-    apps always pass through; every other app is shown unless the
-    :class:`app.sep.models.AppState` row governing it has
-    ``lifecycle_state != ENABLED`` (a missing row is treated as enabled). A child
-    app owns no row, so it resolves through its parent via
-    :attr:`~app.sep.apps.framework.base.BaseApp.state_key`. This is the single
-    source of truth that drives sidebar visibility.
+    The sidebar ``plugins`` list is filtered by *effective* app state via
+    :meth:`AppRegistry.resolve_effective_enabled`: protected apps always pass
+    through; every other app is shown only when its own
+    :class:`app.sep.models.AppState` row is ``ENABLED`` (a missing row is treated
+    as enabled) **and** every app it declares in ``requires_apps`` is itself
+    effectively enabled. A child app owns no row, so it resolves through its
+    parent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`. This
+    shares the one resolver used by the mount gate and the JSON app listing.
 
     :param request: The HTTP request object.
     :param user: The authenticated user.
@@ -603,12 +613,12 @@ async def get_default_context(
     # so a top-level import here would cycle.
     from app.sep.apps.framework.registry import get_app_registry
 
+    registry = get_app_registry()
+    memo: dict[str, bool] = {}
     plugins = [
         app
-        for app in get_app_registry()
-        if app.state_key in PROTECTED_APP_KEYS
-        or states.get(app.state_key, AppLifecycleEnum.ENABLED)
-        == AppLifecycleEnum.ENABLED
+        for app in registry
+        if registry.resolve_effective_enabled(app.key, states, memo)
     ]
     return {
         "user": user,

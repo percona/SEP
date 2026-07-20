@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Wire the << display_name >> plugin as a script-backed ``TaskExecutionApp``.
+"""Wire the << display_name_doc >> plugin as a script-backed ``TaskExecutionApp``.
 
 A script-flavored app derives its surface from the ``script_source`` seam: the
 listing, the per-script ``GET /snippet/schema``, the ``POST /snippet/execute``
@@ -22,13 +22,13 @@ delegation, and ``GET /snippet/history``. It declares no model-first CRUD.
 
 from app.sep.apps.<< name >>.source import << name >>_source
 from app.sep.apps.framework.apps import TaskExecutionApp
-from app.tasks.models import ANY_OWNER
+<< nav_icon_import_line >>from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(
     name="<< name >>",
-    display_name="<< display_name >>",
+    display_name=<< display_name_repr >>,
     uri_path="/<< name >>",
-    description="TODO: describe what the << display_name >> scripts do.",
+    description=<< description_repr >>,
     owner=ANY_OWNER,
     script_source=<< name >>_source,
-)
+<< group_line >><< nav_icon_kwarg_line >>)
