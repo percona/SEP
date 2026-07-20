@@ -82,48 +82,43 @@ function parentResetKey(parent: unknown): string {
   return 'id:none';
 }
 
-export function HostSelector({
+function isHydratedService(value: unknown): value is ServiceOption {
+  return Boolean(value && typeof value === 'object' && 'name' in value);
+}
+
+/**
+ * Cascade auto-select for a single host field. Mounted only when ``dependsOn``
+ * is set so ``useWatch`` always receives a real field name (never ``''``) and
+ * ``useServices`` runs only when the parent is an unresolved id — a hydrated
+ * ``ServiceOption`` from ServiceSelector already carries ``node``.
+ */
+function HostServiceCascade({
   name,
-  label,
-  required,
-  disabled,
-  helperText,
   dependsOn,
-  multiple,
-}: HostSelectorProps) {
-  const {
-    control,
-    formState: { errors },
-    setValue,
-    getValues,
-  } = useFormContext();
-  const { enqueueSnackbar } = useSnackbar();
+  hosts,
+}: {
+  name: string;
+  dependsOn: string;
+  hosts: HostOption[];
+}) {
+  const { setValue, getValues } = useFormContext();
+  const parent = useWatch({ name: dependsOn }) as
+    | ServiceOption
+    | number
+    | string
+    | null
+    | undefined;
 
-  const { data, isLoading, isError, error, refetch } = useHosts();
-  const hosts = data ?? EMPTY_HOSTS;
-
+  const unresolvedServiceId = isHydratedService(parent) ? null : extractId(parent);
   const { data: services = EMPTY_SERVICES } = useServices({
-    enabled: Boolean(dependsOn) && !multiple,
+    enabled: unresolvedServiceId !== null,
   });
 
-  const parent = useWatch({
-    control,
-    name: dependsOn ?? '',
-    disabled: !dependsOn || Boolean(multiple),
-  }) as ServiceOption | number | string | null | undefined;
-
-  const resetKey = dependsOn && !multiple ? parentResetKey(parent) : 'id:none';
+  const resetKey = parentResetKey(parent);
   const prevParentKeyRef = useRef<string | undefined>(undefined);
   const autoHostIdRef = useRef<string | undefined>(undefined);
 
-  // Cascade: on upstream service change, clear the host; then auto-select when
-  // a Dipper-order match exists and the field is empty or still holds the
-  // previous auto value (so a manual override is preserved).
   useEffect(() => {
-    if (!dependsOn || multiple) {
-      return;
-    }
-
     if (prevParentKeyRef.current === undefined) {
       prevParentKeyRef.current = resetKey;
     } else if (prevParentKeyRef.current !== resetKey) {
@@ -132,13 +127,11 @@ export function HostSelector({
       autoHostIdRef.current = undefined;
     }
 
-    const serviceId = extractId(parent);
-    const service: ServiceOption | undefined =
-      parent && typeof parent === 'object' && 'name' in parent
-        ? (parent as ServiceOption)
-        : serviceId !== null
-          ? services.find((svc) => svc.id === serviceId)
-          : undefined;
+    const service: ServiceOption | undefined = isHydratedService(parent)
+      ? parent
+      : unresolvedServiceId !== null
+        ? services.find((svc) => svc.id === unresolvedServiceId)
+        : undefined;
 
     if (!service || hosts.length === 0) {
       return;
@@ -154,7 +147,28 @@ export function HostSelector({
       setValue(name, match, { shouldDirty: false, shouldValidate: false });
       autoHostIdRef.current = match.id;
     }
-  }, [dependsOn, multiple, resetKey, parent, services, hosts, name, setValue, getValues]);
+  }, [resetKey, parent, unresolvedServiceId, services, hosts, name, setValue, getValues]);
+
+  return null;
+}
+
+export function HostSelector({
+  name,
+  label,
+  required,
+  disabled,
+  helperText,
+  dependsOn,
+  multiple,
+}: HostSelectorProps) {
+  const {
+    control,
+    formState: { errors },
+  } = useFormContext();
+  const { enqueueSnackbar } = useSnackbar();
+
+  const { data, isLoading, isError, error, refetch } = useHosts();
+  const hosts = data ?? EMPTY_HOSTS;
 
   const empty = !isLoading && !isError && hosts.length === 0;
 
@@ -203,25 +217,28 @@ export function HostSelector({
   }
 
   return (
-    <AutoCompleteInput<HostOption>
-      name={name}
-      label={label}
-      control={control}
-      isRequired={required}
-      loading={isLoading}
-      disabled={disabled || isError}
-      options={hosts}
-      controllerProps={{
-        name,
-        rules: required ? { required: `${label} is required` } : undefined,
-      }}
-      autoCompleteProps={{
-        getOptionLabel,
-        isOptionEqualToValue,
-        noOptionsText: isLoading ? 'Loading hosts…' : 'No hosts available',
-        onOpen: () => refetch(),
-      }}
-      textFieldProps={{ helperText: text, error: isError || !!fieldError }}
-    />
+    <>
+      {dependsOn ? <HostServiceCascade name={name} dependsOn={dependsOn} hosts={hosts} /> : null}
+      <AutoCompleteInput<HostOption>
+        name={name}
+        label={label}
+        control={control}
+        isRequired={required}
+        loading={isLoading}
+        disabled={disabled || isError}
+        options={hosts}
+        controllerProps={{
+          name,
+          rules: required ? { required: `${label} is required` } : undefined,
+        }}
+        autoCompleteProps={{
+          getOptionLabel,
+          isOptionEqualToValue,
+          noOptionsText: isLoading ? 'Loading hosts…' : 'No hosts available',
+          onOpen: () => refetch(),
+        }}
+        textFieldProps={{ helperText: text, error: isError || !!fieldError }}
+      />
+    </>
   );
 }

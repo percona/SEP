@@ -49,7 +49,7 @@ function serviceResetKey(value: unknown): string {
  * has not edited it. Mounted via the create-form ``renderField`` override so it
  * runs inside SchemaFormRenderer's FormProvider.
  */
-function SuggestedTaskNameEffect() {
+function SuggestedTaskNameEffect({ schemaDefault }: { schemaDefault?: string }) {
   const { setValue, getValues } = useFormContext();
   const service = useWatch({ name: 'service_id' });
   const resetKey = serviceResetKey(service);
@@ -69,14 +69,14 @@ function SuggestedTaskNameEffect() {
     }
 
     const current = String(getValues('task_name') ?? '');
-    if (!isAutoMongoBackupTaskName(current, autoRef.current)) {
+    if (!isAutoMongoBackupTaskName(current, autoRef.current, schemaDefault)) {
       return;
     }
 
     const next = suggestMongoBackupTaskName(serviceDisplayName(service));
     setValue('task_name', next, { shouldDirty: false, shouldValidate: false });
     autoRef.current = next;
-  }, [resetKey, service, setValue, getValues]);
+  }, [resetKey, schemaDefault, service, setValue, getValues]);
 
   return null;
 }
@@ -92,9 +92,11 @@ export const backupMongoCreateRenderField: RenderFieldOverride = ({
   if (field.name !== 'task_name') {
     return renderDefault();
   }
+  const schemaDefault = typeof field.default === 'string' ? field.default : undefined;
+
   return (
     <>
-      <SuggestedTaskNameEffect />
+      <SuggestedTaskNameEffect schemaDefault={schemaDefault} />
       {renderDefault()}
     </>
   );

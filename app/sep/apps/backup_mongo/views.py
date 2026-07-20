@@ -36,9 +36,9 @@ from app.sep.apps.framework.schema import (
 )
 from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
 
-#: Task section stays expanded; description surfaces the derived sibling types
-#: (logical, physical, status) produced by one create — cascade behavior is
-#: unchanged.
+#: Task section stays expanded; description surfaces the derived sibling
+#: types (logical, physical, status) produced by one create. This refers to
+#: derived-task fan-out only (not field-level host cascading).
 _TASK_SECTION_LAYOUT = SectionLayout(
     key="Task",
     title="Task",

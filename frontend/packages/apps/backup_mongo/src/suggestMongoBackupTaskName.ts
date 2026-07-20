@@ -16,12 +16,6 @@
  */
 
 /**
- * Schema-display default emitted by BackupForm's ``Ui(default=...)``. Treated as
- * still-auto so the client can replace it with a timestamped suggestion.
- */
-export const MONGO_BACKUP_TASK_NAME_SCHEMA_DEFAULT = 'mongodb-backup';
-
-/**
  * Slugify a service name for use in a task-name suggestion.
  *
  * Lowercases, replaces runs of non-alphanumeric characters with a single
@@ -64,11 +58,13 @@ export function suggestMongoBackupTaskName(
 export function isAutoMongoBackupTaskName(
   current: string,
   previousAuto: string | undefined,
+  schemaDefault?: string,
 ): boolean {
   const trimmed = current.trim();
+  const schemaTrimmed = schemaDefault?.trim();
   return (
     trimmed === '' ||
-    trimmed === MONGO_BACKUP_TASK_NAME_SCHEMA_DEFAULT ||
+    (schemaTrimmed !== undefined && schemaTrimmed !== '' && trimmed === schemaTrimmed) ||
     (previousAuto !== undefined && trimmed === previousAuto)
   );
 }

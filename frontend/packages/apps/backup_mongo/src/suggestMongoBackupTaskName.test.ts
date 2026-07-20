@@ -18,7 +18,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   isAutoMongoBackupTaskName,
-  MONGO_BACKUP_TASK_NAME_SCHEMA_DEFAULT,
   slugifyServiceName,
   suggestMongoBackupTaskName,
 } from './suggestMongoBackupTaskName';
@@ -49,9 +48,15 @@ describe('slugifyServiceName', () => {
 });
 
 describe('isAutoMongoBackupTaskName', () => {
+  const schemaDefault = 'mongodb-backup';
+
   it('treats empty and schema default as auto', () => {
     expect(isAutoMongoBackupTaskName('', undefined)).toBe(true);
-    expect(isAutoMongoBackupTaskName(MONGO_BACKUP_TASK_NAME_SCHEMA_DEFAULT, undefined)).toBe(true);
+    expect(isAutoMongoBackupTaskName(schemaDefault, undefined, schemaDefault)).toBe(true);
+  });
+
+  it('does not treat the schema default when none is provided', () => {
+    expect(isAutoMongoBackupTaskName(schemaDefault, undefined)).toBe(false);
   });
 
   it('treats the previous auto value as auto', () => {

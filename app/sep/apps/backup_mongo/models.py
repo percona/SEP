@@ -372,8 +372,9 @@ class BackupForm(TaskFormModel):
     presentation default for the task name, cascade the executor host from
     ``service_id``, and order the Task section as service → host. The
     ``alert_on_fail`` capability control stays inherited from
-    :class:`TaskFormModel` (``Hidden``, off-schema). The deriver emits no
-    min-length constraint, and this form is never validated as a request body.
+    :class:`TaskFormModel` (``Hidden``, off-schema). ``NonEmptyStr`` string
+    fields emit ``min_length: 1`` on the wire schema (e.g. ``task_name``);
+    ``HostRef`` selectors do not inherit string length constraints.
     """
 
     task_name: Annotated[
