@@ -211,9 +211,18 @@ _GOLDEN_FILES = {
 
 @pytest.mark.parametrize("flavor", list(scaffold.Flavor))
 def test_default_render_is_byte_identical(
-    tmp_settings: Path, flavor: scaffold.Flavor
+    tmp_settings: Path, flavor: scaffold.Flavor, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Assert each flavor's default render is byte-identical to its golden snapshot."""
+    """Assert each flavor's default render is byte-identical to its golden snapshot.
+
+    The goldens are the raw template substitution. ``ruff`` ships in the optional
+    ``audit`` poetry group, which the CI test job (``poetry sync --no-root``) does
+    not install, so the scaffolder's post-render ``_ruff_fix`` no-ops there and the
+    goldens stay ruff-version-independent. A dev venv that installed the ``audit``
+    group would otherwise reformat the render, so the pass is stubbed to a no-op to
+    keep this comparison deterministic across environments.
+    """
+    monkeypatch.setattr(scaffold, "_ruff_fix", lambda *_: None)
     name, filenames = _GOLDEN_FILES[flavor]
     with _scaffolded(name, flavor) as result:
         for filename in filenames:
@@ -1039,7 +1048,10 @@ def test_makefile_forwards_quoted_values() -> None:
         # normalise the literal's quote style (double → single to avoid escapes), so
         # assert on the value content rather than a fixed quote form.
         assert "description=" in rendered
-        assert f"description={json.dumps(description)}" in rendered
+        assert (
+            f"description={json.dumps(description)}" in rendered
+            or f"description={description!r}" in rendered
+        )
     finally:
         scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
