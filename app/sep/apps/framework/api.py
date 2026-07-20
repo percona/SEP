@@ -525,11 +525,10 @@ def _resolve_create_response_model(
 def _register_create_route(
     router: APIRouter,
     *,
-    plugin_schema: AppSchema,
     base_builder: TaskResponseBuilder[ListDetailResponseT],
     create_payload: Callable[..., Awaitable[TaskWrite]],
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
-    base_model: type[ListDetailResponseT],
+    create_response_model: type[BaseModel],
     connectivity_check: bool,
     context_provider: Callable[[], Awaitable[Any]] | None = None,
     extra_deps: Sequence[params.Depends] = (),
@@ -546,15 +545,16 @@ def _register_create_route(
     so the probe result has somewhere to land.
 
     :param router: The plugin router to register the create route on.
-    :param plugin_schema: The plugin schema seeding the auto-derived model name.
     :param base_builder: The fallback create builder when no explicit create builder
         is given — the detail builder when the app overrides detail, else the list
         builder — so a created resource is rendered like its detail view.
     :param create_payload: The create-payload dependency declaring the body.
     :param create_response_builder: An explicit create-response builder whose
         model wins when supplied.
-    :param base_model: The fallback create response model (detail model when the app
-        overrides detail, else the list model) used as the auto-derive base.
+    :param create_response_model: The response model the create and derived-update
+        routes share, resolved once by the caller so both routes render (and
+        register the OpenAPI component for) a single class rather than each
+        re-deriving it.
     :param connectivity_check: Whether to add the connectivity probe and the
         ``check_connectivity`` query parameter.
     :param context_provider: A zero-arg async provider whose once-awaited result
@@ -562,16 +562,8 @@ def _register_create_route(
         single create build. ``None`` (the default) leaves the builder unbound.
     :param extra_deps: Extra route dependencies appended after
         ``IsApiAuthenticated``, never replacing it.
-    :raises TypeError: If ``connectivity_check`` is on and an explicit
-        ``create_response_builder`` is given whose model omits a
-        ``connectivity_warning`` field.
     """
-    create_model = _resolve_create_response_model(
-        create_response_builder,
-        base_model,
-        connectivity_check=connectivity_check,
-        plugin_schema=plugin_schema,
-    )
+    create_model = create_response_model
 
     async def _build_create_response(
         tasks_api: TaskAPI,
@@ -648,12 +640,11 @@ def _register_create_route(
 def _register_update_route(
     router: APIRouter,
     *,
-    plugin_schema: AppSchema,
     get_task: Callable[..., Awaitable[Task]],
     base_builder: TaskResponseBuilder[ListDetailResponseT],
     create_payload: Callable[..., Awaitable[TaskWrite]],
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
-    base_model: type[ListDetailResponseT],
+    create_response_model: type[BaseModel],
     connectivity_check: bool,
     detail_path: str,
     context_provider: Callable[[], Awaitable[Any]] | None = None,
@@ -671,7 +662,6 @@ def _register_update_route(
     as create does.
 
     :param router: The plugin router to register the update route on.
-    :param plugin_schema: The schema seeding the auto-derived model name.
     :param get_task: The task-by-name dependency (resolves 404 and owns the path
         parameter); its inner parameter must equal the detail path parameter.
     :param base_builder: The fallback builder when no explicit create builder is
@@ -680,7 +670,9 @@ def _register_update_route(
     :param create_payload: The create-payload dependency declaring the body.
     :param create_response_builder: An explicit create-response builder whose
         model wins when supplied.
-    :param base_model: The fallback response model used as the auto-derive base.
+    :param create_response_model: The response model shared with the create route,
+        resolved once by the caller so both routes render (and register the OpenAPI
+        component for) a single class rather than each re-deriving it.
     :param connectivity_check: Whether to add the connectivity probe and the
         ``check_connectivity`` query parameter.
     :param detail_path: The ``/{detail}`` route template the PUT mounts on.
@@ -690,15 +682,8 @@ def _register_update_route(
     :param extra_deps: Route dependencies (guards) appended after
         ``IsApiAuthenticated``, never replacing it; the caller may resolve these to
         a default guard set rather than only per-route extras.
-    :raises TypeError: If ``connectivity_check`` is on and an explicit
-        ``create_response_builder``'s model omits a ``connectivity_warning`` field.
     """
-    update_model = _resolve_create_response_model(
-        create_response_builder,
-        base_model,
-        connectivity_check=connectivity_check,
-        plugin_schema=plugin_schema,
-    )
+    update_model = create_response_model
 
     async def _build_update_response(
         tasks_api: TaskAPI,
@@ -824,13 +809,12 @@ def _register_delete_route(
 def _register_mutation_routes(
     router: APIRouter,
     *,
-    plugin_schema: AppSchema,
     detail_path: str,
     get_task: Callable[..., Awaitable[Task]],
     detail_builder: TaskResponseBuilder[Any],
-    detail_model: type[BaseModel],
     create_payload: Callable[..., Awaitable[TaskWrite]] | None,
     create_response_builder: TaskResponseBuilder[Any] | None,
+    create_response_model: type[BaseModel] | None,
     connectivity_check: bool,
     context_provider: Callable[[], Awaitable[Any]] | None,
     update_enabled: bool,
@@ -848,14 +832,14 @@ def _register_mutation_routes(
     (guarded by ``delete_extra_deps``).
 
     :param router: The plugin router to register the mutation routes on.
-    :param plugin_schema: The schema seeding any auto-derived model name.
     :param detail_path: The ``/{detail}`` route template both verbs mount on.
     :param get_task: The task-by-name dependency owning the path parameter.
     :param detail_builder: The detail/create fallback builder for the derived PUT.
-    :param detail_model: The detail/create fallback model for the derived PUT.
     :param create_payload: The create-payload dependency the derived PUT rebuilds
         the body through; ``None`` when create is disabled.
     :param create_response_builder: The explicit create builder reused by the PUT.
+    :param create_response_model: The response model shared with the create route
+        (resolved once by the caller); ``None`` when create is disabled.
     :param connectivity_check: Whether the derived PUT runs the connectivity probe.
     :param context_provider: The once-per-request async context provider, or ``None``.
     :param update_enabled: Whether to derive the default PUT when no handler is set.
@@ -911,12 +895,11 @@ def _register_mutation_routes(
             )
         _register_update_route(
             router,
-            plugin_schema=plugin_schema,
             get_task=get_task,
             base_builder=detail_builder,
             create_payload=create_payload,
             create_response_builder=create_response_builder,
-            base_model=detail_model,
+            create_response_model=create_response_model,
             connectivity_check=connectivity_check,
             detail_path=detail_path,
             context_provider=context_provider,
@@ -1270,6 +1253,22 @@ def derive_crud_routes(
         list_detail_model,
     )
 
+    # Resolve the create/update response model exactly once and share the single
+    # class between both routes. Resolving it per route would mint two distinct
+    # ``create_model(name, ...)`` classes carrying the same name (see
+    # ``derive_create_response_model``), whose colliding schema refs make the
+    # derived body-schema construction order-sensitive under hash randomization.
+    create_response_model = (
+        _resolve_create_response_model(
+            create_response_builder,
+            detail_model,
+            connectivity_check=connectivity_check,
+            plugin_schema=plugin_schema,
+        )
+        if create_payload is not None
+        else None
+    )
+
     router = APIRouter()
     schema_endpoint(router, plugin_schema)
 
@@ -1328,11 +1327,10 @@ def derive_crud_routes(
     else:
         _register_create_route(
             router,
-            plugin_schema=plugin_schema,
             base_builder=detail_builder,
             create_payload=create_payload,
             create_response_builder=create_response_builder,
-            base_model=detail_model,
+            create_response_model=create_response_model,
             connectivity_check=connectivity_check,
             context_provider=context_provider,
             extra_deps=create_extra_deps,
@@ -1340,13 +1338,12 @@ def derive_crud_routes(
 
     _register_mutation_routes(
         router,
-        plugin_schema=plugin_schema,
         detail_path=detail_path,
         get_task=get_task,
         detail_builder=detail_builder,
-        detail_model=detail_model,
         create_payload=create_payload,
         create_response_builder=create_response_builder,
+        create_response_model=create_response_model,
         connectivity_check=connectivity_check,
         context_provider=context_provider,
         update_enabled=update_enabled,

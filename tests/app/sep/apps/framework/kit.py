@@ -30,15 +30,20 @@ from collections.abc import Sequence
 from datetime import datetime
 from itertools import count
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
-from app.sep.apps.framework.apps import ListFilterConfig, TaskExecutionApp, Views
+from app.sep.apps.framework.apps import (
+    AppCapabilities,
+    ListFilterConfig,
+    TaskExecutionApp,
+    Views,
+)
 from app.sep.apps.framework.deps import make_task_dep
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
@@ -80,6 +85,13 @@ SYNTH_CREATED_BY = "synth-user-id"
 SYNTH_CREATED_BY_NAME = "synth-username"
 
 _SYNTH_LAYOUT = FormLayout(sections=(SectionLayout(key="main", title="Main"),))
+_SYNTH_ONEOF_LAYOUT = FormLayout(
+    sections=(
+        SectionLayout(key="main", title="Main"),
+        SectionLayout(key="Source", title="Source"),
+        SectionLayout(key="Sink", title="Sink"),
+    )
+)
 _SYNTH_LIST_VIEW = ListView(columns=[Column(key="name", label="Name")])
 
 
@@ -408,6 +420,77 @@ class SynthConnectivityForm(SynthForm):
     ]
 
 
+class SynthSourceAlpha(BaseModel):
+    """Represent the ``alpha`` branch of the synthetic ``source`` one-of.
+
+    :param mode: The one-of discriminator (``"alpha"``).
+    :param alpha_value: The branch's scalar payload.
+    """
+
+    mode: Literal["alpha"] = "alpha"
+    alpha_value: Annotated[str, Ui(label="Alpha Value", section="Source")]
+
+
+class SynthSourceBeta(BaseModel):
+    """Represent the ``beta`` branch of the synthetic ``source`` one-of.
+
+    :param mode: The one-of discriminator (``"beta"``).
+    :param beta_count: The branch's scalar payload.
+    """
+
+    mode: Literal["beta"] = "beta"
+    beta_count: Annotated[int, Ui(label="Beta Count", section="Source")]
+
+
+class SynthSinkFile(BaseModel):
+    """Represent the ``file`` branch of the optional synthetic ``sink`` one-of.
+
+    :param mode: The one-of discriminator (``"file"``).
+    :param file_path: The branch's scalar payload.
+    """
+
+    mode: Literal["file"] = "file"
+    file_path: Annotated[str, Ui(label="File Path", section="Sink")]
+
+
+class SynthSinkTable(BaseModel):
+    """Represent the ``table`` branch of the optional synthetic ``sink`` one-of.
+
+    :param mode: The one-of discriminator (``"table"``).
+    :param table_name: The branch's scalar payload.
+    """
+
+    mode: Literal["table"] = "table"
+    table_name: Annotated[str, Ui(label="Table Name", section="Sink")]
+
+
+class SynthOneOfForm(SynthForm):
+    """Represent a synthetic create form carrying discriminated-union fields.
+
+    Mirrors the archives create model's shape — a required ``source`` one-of plus
+    an optional ``sink`` one-of defaulting to ``None`` — so the framework's derived
+    create and update routes both build a Pydantic v2 discriminated-union
+    request-body schema. The one-of branches carry only plain scalars (no nested
+    references), so the inherited top-level ``ServiceRef`` / ``HostRef`` still
+    drive resolution while the one-of body path is exercised.
+
+    :param source: The required ``alpha`` / ``beta`` one-of source selection.
+    :param sink: The optional ``file`` / ``table`` one-of sink selection; ``None``
+        omits it, mirroring archives' optional destination/host one-ofs.
+    """
+
+    source: Annotated[
+        SynthSourceAlpha | SynthSourceBeta,
+        Field(discriminator="mode"),
+        Ui(section="Source"),
+    ]
+    sink: Annotated[
+        SynthSinkFile | SynthSinkTable | None,
+        Field(discriminator="mode"),
+        Ui(section="Sink"),
+    ] = None
+
+
 class SynthResponse(BaseModel):
     """Represent the list/detail response built from the task dump plus status.
 
@@ -673,6 +756,29 @@ def synth_app(**overrides: Any) -> TaskExecutionApp:
     if overrides.pop("connectivity_check", False):
         overrides.setdefault("create_model", SynthConnectivityForm)
     return TaskExecutionApp(**{**synth_app_kwargs(), **overrides})
+
+
+def synth_oneof_app(**overrides: Any) -> TaskExecutionApp:
+    """Build a synthetic ``TaskExecutionApp`` whose create model uses one-of bodies.
+
+    Reuses the canonical synthetic kwargs but swaps in :class:`SynthOneOfForm`
+    (discriminated-union ``source`` / ``sink`` fields), a layout covering their
+    sections, and the update/delete capabilities — so the derived create *and*
+    update routes both build a one-of request-body schema. This is the reusable
+    fixture for the framework's one-of derived-router coverage.
+
+    :param overrides: Fields merged over the one-of app kwargs to derive variants.
+    :return: A validated synthetic one-of app definition.
+    """
+    kwargs = synth_app_kwargs()
+    kwargs["create_model"] = SynthOneOfForm
+    kwargs["views"] = Views(
+        layout=_SYNTH_ONEOF_LAYOUT,
+        list_view=_SYNTH_LIST_VIEW,
+        capabilities=Capabilities(alert_on_fail=True),
+    )
+    kwargs["capabilities"] = AppCapabilities(update=True, delete=True)
+    return TaskExecutionApp(**{**kwargs, **overrides})
 
 
 class _SynthScript:
