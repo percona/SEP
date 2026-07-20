@@ -2308,10 +2308,13 @@ async def _list_log_chunks(async_session_maker, task_history_id: int):
 
 
 async def _fake_dispatch_mark_running(
-    queue_item: TaskHistory, *, await_annotations: bool = False
+    queue_item: TaskHistory,
+    *,
+    await_annotations: bool = False,
+    periodic_task_name: str | None = None,
 ) -> TaskHistory:
     """Minimal dispatch stand-in: mark the item RUNNING and return it."""
-    del await_annotations
+    del await_annotations, periodic_task_name
     queue_item.status = TaskHistoryStatusEnum.RUNNING
     return queue_item
 
@@ -2358,6 +2361,10 @@ class TestExecuteTaskByName:
             _run_skip_gate(test_loop, task_name="test-task")
 
             assert mock_dispatch.call_count == 1
+            assert (
+                mock_dispatch.call_args.kwargs["periodic_task_name"]
+                == "periodic-test-task"
+            )
             mock_alert.assert_not_awaited()
 
     def test_unhealthy_target_skips_and_alerts(self, mocker):

@@ -237,7 +237,11 @@ def execute_task_by_name(
         if skipped is not None:
             return jsonable_encoder(skipped)
         task_history = celery.loop.run_until_complete(
-            dispatch_queue_item(task_history, await_annotations=True)
+            dispatch_queue_item(
+                task_history,
+                await_annotations=True,
+                periodic_task_name=periodic_task_name,
+            )
         )
     except BaseNomadException:
         alert_msg = (
@@ -424,8 +428,8 @@ async def _pre_dispatch_payload_check(
     leaves the history non-terminal. Return ``None`` to proceed with normal
     dispatch.
 
-    :param task_history: The unsaved TaskHistory from
-        :func:`prepare_periodic_task_history`.
+    :param task_history: The unsaved TaskHistory to dispatch, from any gated
+        path (sync, connectivity, chain, or periodic).
     :param task_name: The SEP task name (used for dedup key and alert source).
     :param periodic_task_name: The periodic-task name, if any (used to enrich
         the alert source).
@@ -588,6 +592,7 @@ async def dispatch_queue_item(
     session: AsyncSession | None = None,
     *,
     await_annotations: bool = False,
+    periodic_task_name: str | None = None,
 ) -> TaskHistory:
     """Process an item from the history table.
 
@@ -604,15 +609,18 @@ async def dispatch_queue_item(
         from Celery contexts that drive the event loop via discrete
         ``celery.loop.run_until_complete(...)`` calls; the FastAPI default
         (``False``) keeps the request path non-blocking.
+    :param periodic_task_name: The periodic-task name, if any, forwarded to the
+        payload gate so a periodic dispatch failure enriches the failure reason
+        and alert source consistently with :func:`_pre_dispatch_health_check`.
     :return: The TaskHistory object post execution, or the FAILED TaskHistory
         persisted by the payload gate when the payload cannot resolve.
-    :raises HTTPException: If the queue item status is not PENDING,
+    :raises HTTPConflictException: If the queue item status is not PENDING,
         raises a 409 Conflict error.
     :raises HTTPBadRequestException: If the task backend is unsupported,
         raises a 400 Bad Request error.
     """
     failed = await _pre_dispatch_payload_check(
-        queue_item, queue_item.execution_request.task, None, session
+        queue_item, queue_item.execution_request.task, periodic_task_name, session
     )
     if failed is not None:
         return failed
