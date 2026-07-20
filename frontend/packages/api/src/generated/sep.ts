@@ -5014,11 +5014,19 @@ export interface components {
     backup_mongo__RestoreTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Source */
       backup_source: string;
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['framework__ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -5041,6 +5049,7 @@ export interface components {
       owner: string;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5049,33 +5058,25 @@ export interface components {
      * RestoreTaskResponse
      * @description Represent a restore task API response.
      *
-     *     :param id: The unique identifier for the restore task.
-     *     :type id: int | None
-     *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
-     *     :param data: The raw configuration and parameters for the restore execution.
-     *     :type data: dict[str, Any]
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
-     *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
-     *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
-     *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
+     *     Carries the shared task fields from :class:`BaseTaskResponse` plus the
+     *     restore-specific additions from :class:`RestoreTaskBase`.
      */
     backup_mongo__RestoreTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Source */
       backup_source: string;
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['framework__ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -5096,6 +5097,7 @@ export interface components {
       owner: string;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
