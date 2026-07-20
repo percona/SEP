@@ -18,6 +18,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isAutoMongoRestoreTaskName,
+  isGeneratedMongoRestoreTaskName,
   slugifyServiceName,
   suggestMongoRestoreTaskName,
 } from './suggestMongoRestoreTaskName';
@@ -47,6 +48,18 @@ describe('slugifyServiceName', () => {
   });
 });
 
+describe('isGeneratedMongoRestoreTaskName', () => {
+  it('recognizes stamped restore names', () => {
+    expect(isGeneratedMongoRestoreTaskName('mongodb-restore-20260716T143022Z')).toBe(true);
+    expect(isGeneratedMongoRestoreTaskName('my-svc-restore-20260716T143022Z')).toBe(true);
+  });
+
+  it('rejects schema default and custom names', () => {
+    expect(isGeneratedMongoRestoreTaskName('mongodb-restore')).toBe(false);
+    expect(isGeneratedMongoRestoreTaskName('my-custom-name')).toBe(false);
+  });
+});
+
 describe('isAutoMongoRestoreTaskName', () => {
   const schemaDefault = 'mongodb-restore';
 
@@ -63,6 +76,10 @@ describe('isAutoMongoRestoreTaskName', () => {
     expect(
       isAutoMongoRestoreTaskName('svc-restore-20260716T143022Z', 'svc-restore-20260716T143022Z'),
     ).toBe(true);
+  });
+
+  it('treats any stamped generated name as auto (service can refresh it)', () => {
+    expect(isAutoMongoRestoreTaskName('mongodb-restore-20260716T143022Z', undefined)).toBe(true);
   });
 
   it('treats a manual edit as not auto', () => {

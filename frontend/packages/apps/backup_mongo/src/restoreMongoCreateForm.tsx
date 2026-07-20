@@ -15,9 +15,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import type { RenderFieldOverride } from '@sep/framework';
+import { SchemaFormRenderer, type RenderFieldOverride, type RenderFormSlot } from '@sep/framework';
 import {
   isAutoMongoRestoreTaskName,
   suggestMongoRestoreTaskName,
@@ -56,7 +56,10 @@ function SuggestedTaskNameEffect({ schemaDefault }: { schemaDefault?: string }) 
   const autoRef = useRef<string | undefined>(undefined);
   const prevServiceKeyRef = useRef<string | undefined>(undefined);
 
-  useEffect(() => {
+  // useLayoutEffect so the stamped name is visible on first paint; useEffect
+  // alone left the static schema default (`mongodb-restore`) on screen when the
+  // Controller committed before the post-paint setValue.
+  useLayoutEffect(() => {
     const isFirst = prevServiceKeyRef.current === undefined;
     const serviceChanged =
       prevServiceKeyRef.current !== undefined && prevServiceKeyRef.current !== resetKey;
@@ -101,3 +104,25 @@ export const restoreMongoCreateRenderField: RenderFieldOverride = ({
     </>
   );
 };
+
+/**
+ * Create-form slot: seed ``task_name`` with a stamped suggestion so the field
+ * does not flash (or stick on) the static schema default ``mongodb-restore``.
+ */
+export const restoreMongoCreateForm: RenderFormSlot = ({
+  sections,
+  onSubmit,
+  loading,
+  capabilities,
+  renderField,
+}) => (
+  <SchemaFormRenderer
+    sections={sections}
+    onSubmit={onSubmit}
+    loading={loading}
+    capabilities={capabilities}
+    renderField={renderField}
+    defaultValues={{ task_name: suggestMongoRestoreTaskName() }}
+    submitLabel="Create MongoDB Restores"
+  />
+);

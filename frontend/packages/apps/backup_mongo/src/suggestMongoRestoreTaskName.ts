@@ -51,6 +51,16 @@ export function suggestMongoRestoreTaskName(
   return `${base}-restore-${stamp}`;
 }
 
+/** Match ``{slug}-restore-YYYYMMDDTHHMMSSZ`` names produced by the suggester. */
+const GENERATED_RESTORE_TASK_NAME = /^.+-restore-\d{8}T\d{6}Z$/;
+
+/**
+ * Return whether ``current`` looks like a value this helper previously minted.
+ */
+export function isGeneratedMongoRestoreTaskName(current: string): boolean {
+  return GENERATED_RESTORE_TASK_NAME.test(current.trim());
+}
+
 /**
  * Return whether ``current`` is still an auto-generated / schema default value
  * that the suggestion helper may overwrite.
@@ -65,6 +75,7 @@ export function isAutoMongoRestoreTaskName(
   return (
     trimmed === '' ||
     (schemaTrimmed !== undefined && schemaTrimmed !== '' && trimmed === schemaTrimmed) ||
-    (previousAuto !== undefined && trimmed === previousAuto)
+    (previousAuto !== undefined && trimmed === previousAuto) ||
+    isGeneratedMongoRestoreTaskName(trimmed)
   );
 }
