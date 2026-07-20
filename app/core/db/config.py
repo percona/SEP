@@ -15,27 +15,37 @@
 
 """Define database settings."""
 
-from pydantic import AnyUrl, BaseModel, computed_field, SecretStr
+from pydantic import (
+    AnyUrl,
+    BaseModel,
+    computed_field,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    SecretStr,
+)
 
 from app.core.utils.fields import AsyncDatabaseEngine
 
 
 class DatabaseOptions(BaseModel):
-    """Configuration options for a database connection.
+    """Define configuration options for a database connection.
 
     :param ENGINE: The database engine to use (e.g., SQLite, MySQL, PostgreSQL).
         Defaults to SQLite.
-    :type ENGINE: AsyncDatabaseEngine
     :param USER: The username for the database connection.
-    :type USER: str | None
     :param PASSWORD: The password for the database connection.
-    :type PASSWORD: SecretStr | None
     :param HOST: The hostname or IP address of the database server.
-    :type HOST: str | None
     :param PORT: The port number on which the database is running.
-    :type PORT: int | None
     :param NAME: The name of the database.
-    :type NAME: str
+    :param POOL_SIZE: Maximum number of persistent pool connections. Unset keeps
+        SQLAlchemy's default. Must be ``>= 1``; ``0`` requests an unbounded pool,
+        a footgun under a shared connection cap.
+    :param MAX_OVERFLOW: Connections allowed beyond ``POOL_SIZE``. Unset keeps
+        SQLAlchemy's default. ``0`` disables overflow; ``-1`` (unlimited) is
+        rejected.
+    :param POOL_TIMEOUT: Seconds to wait for a free connection. Unset keeps
+        SQLAlchemy's default. Must be ``> 0``.
     """
 
     ENGINE: AsyncDatabaseEngine = AsyncDatabaseEngine.SQLITE
@@ -44,6 +54,9 @@ class DatabaseOptions(BaseModel):
     HOST: str | None = None
     PORT: int | None = None
     NAME: str
+    POOL_SIZE: PositiveInt | None = None
+    MAX_OVERFLOW: NonNegativeInt | None = None
+    POOL_TIMEOUT: PositiveFloat | None = None
 
     @computed_field(repr=False)
     @property
@@ -68,3 +81,22 @@ class DatabaseOptions(BaseModel):
                 path=name,
             ),
         )
+
+    @property
+    def pool_engine_kwargs(self) -> dict[str, int | float]:
+        """Return only the explicitly-set pool options as ``create_engine`` kwargs.
+
+        An unset field is omitted entirely so the engine keeps SQLAlchemy's own
+        default, leaving standalone deployments byte-for-byte unchanged.
+
+        :return: The set pool options keyed by their lowercase engine-kwarg names.
+        """
+        return {
+            key: value
+            for key, value in {
+                "pool_size": self.POOL_SIZE,
+                "max_overflow": self.MAX_OVERFLOW,
+                "pool_timeout": self.POOL_TIMEOUT,
+            }.items()
+            if value is not None
+        }
