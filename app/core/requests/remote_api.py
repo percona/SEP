@@ -133,6 +133,7 @@ def _sanitize_request_kwargs(
     kwargs: dict[str, Any],
     *,
     extra_sensitive_headers: frozenset[str] = frozenset(),
+    extra_sensitive_body_fields: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Return a shallow copy of request kwargs with credentials redacted.
 
@@ -146,9 +147,12 @@ def _sanitize_request_kwargs(
     :param kwargs: The request keyword arguments about to be logged.
     :param extra_sensitive_headers: Additional lowercase header names to mask,
         beyond the always-masked credential headers.
+    :param extra_sensitive_body_fields: Additional lowercase body field names to
+        mask, beyond the always-masked credential fields.
     :return: A copy safe to log, with sensitive header and body values masked.
     """
     sensitive_headers = _SENSITIVE_HEADERS | extra_sensitive_headers
+    sensitive_body_fields = _SENSITIVE_BODY_FIELDS | extra_sensitive_body_fields
     safe = {**kwargs}
     headers = kwargs.get("headers")
     if headers:
@@ -161,7 +165,7 @@ def _sanitize_request_kwargs(
         if isinstance(body, dict):
             safe[body_key] = {
                 key: (
-                    _REDACTED_VALUE if key.lower() in _SENSITIVE_BODY_FIELDS else value
+                    _REDACTED_VALUE if key.lower() in sensitive_body_fields else value
                 )
                 for key, value in body.items()
             }
@@ -271,6 +275,11 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     _extra_sensitive_headers: ContextVar[frozenset[str]] = PrivateAttr(
         default_factory=lambda: ContextVar(
             "api_extra_sensitive_headers", default=frozenset()
+        )
+    )
+    _extra_sensitive_body_fields: ContextVar[frozenset[str]] = PrivateAttr(
+        default_factory=lambda: ContextVar(
+            "api_extra_sensitive_body_fields", default=frozenset()
         )
     )
 
@@ -412,6 +421,27 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         finally:
             self._extra_sensitive_headers.reset(token)
 
+    @contextmanager
+    def redact_body_fields(self, names: Iterable[str]) -> Generator[Self]:
+        """Mask additional request-body fields in the debug request log for the call.
+
+        Register case-insensitive body keys whose values must be redacted in the
+        request-log line for the duration of the call, on top of the
+        always-masked credential fields. Use this to hide a custom-named
+        credential a caller posts in a JSON or form body.
+
+        :param names: Body field names to mask, compared case-insensitively.
+        :yield: The instance with the extra redaction set applied.
+        """
+        token = self._extra_sensitive_body_fields.set(
+            self._extra_sensitive_body_fields.get()
+            | frozenset(name.lower() for name in names)
+        )
+        try:
+            yield self
+        finally:
+            self._extra_sensitive_body_fields.reset(token)
+
     @cached_property
     def logger(self) -> logging.Logger:
         """Return logger object to use.
@@ -545,7 +575,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             method,
             path,
             _sanitize_request_kwargs(
-                kwargs, extra_sensitive_headers=self._extra_sensitive_headers.get()
+                kwargs,
+                extra_sensitive_headers=self._extra_sensitive_headers.get(),
+                extra_sensitive_body_fields=self._extra_sensitive_body_fields.get(),
             ),
         )
         async with self._session.request(method, prepared_path, **kwargs) as response:

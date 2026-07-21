@@ -32,8 +32,10 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadGatewayException
 from app.core.requests import RemoteAPI
+from app.core.requests.delivery_plan import DeliveryPlan
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
+from app.sep.config import sep_settings
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -287,6 +289,30 @@ class TestSepConfigExportYaml:
             == REDACTED_SECRET
         )
         assert "local-secret" not in yaml_text
+
+    async def test_delivery_plan_secrets_redacted_in_yaml(
+        self, api_admin_client: TestClient, mocker
+    ) -> None:
+        """Render every ``DIAGNOSTICS_DELIVERY`` secret as ``**********``."""
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY",
+            DeliveryPlan(
+                endpoint="https://snow.example.com/",
+                secrets={"api_key": "plan-secret"},
+                upload={
+                    "path": "attachment/upload",
+                    "headers": {"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+                },
+            ),
+        )
+        yaml_text = api_admin_client.get(EXPORT_URL).text
+        export = yaml.safe_load(yaml_text)
+        block = export[SettingClassEnum.SEP_SETTINGS.value]["DIAGNOSTICS_DELIVERY"]
+
+        assert block["secrets"]["api_key"] == REDACTED_SECRET
+        assert block["upload"]["path"] == "attachment/upload"
+        assert "plan-secret" not in yaml_text
 
     async def test_inventory_endpoint_redacted_in_yaml(
         self, api_admin_client: TestClient
