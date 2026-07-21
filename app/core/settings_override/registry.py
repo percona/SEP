@@ -633,12 +633,9 @@ def not_overridable_field(
     independent of the reload classification.
 
     :param default: The field's default value, passed positionally to ``Field``.
-    :type default: Any
     :param advanced: Whether to flag the field as ``advanced``.
     :param kwargs: Additional keyword arguments forwarded to ``Field``.
-    :type kwargs: Any
     :return: A Pydantic field marked NOT_OVERRIDABLE.
-    :rtype: FieldInfo
     """
     metadata = {
         FieldMarkerKey.RELOAD: ReloadClassification.NOT_OVERRIDABLE,

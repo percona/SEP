@@ -397,7 +397,7 @@ class TestDeliveryPlanExecutor:
     async def test_two_step_plan_chains_each_step_output_forward(
         self, api: RemoteAPI, bundle_path: Path
     ):
-        """Feed the first step's output into the second, then both into the upload."""
+        """Forward the first step's output into the second, then both to the upload."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_two_step_plan()), api)
         with aioresponses() as mock:
             mock.post(
