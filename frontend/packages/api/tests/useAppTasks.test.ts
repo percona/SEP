@@ -16,8 +16,52 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { buildEntityItemPath, isBackendUnavailable, unwrapTasks } from '../src/hooks/useAppTasks';
+import {
+  buildEntityItemPath,
+  isBackendUnavailable,
+  normalizeAppListResponse,
+  unwrapAppListResponse,
+  unwrapTasks,
+} from '../src/hooks/useAppTasks';
 import { ApiError } from '../src/errors';
+
+describe('normalizeAppListResponse', () => {
+  it('returns items with pagination null for a bare array', () => {
+    const items = [{ name: 'a' }, { name: 'b' }];
+    expect(normalizeAppListResponse(items)).toEqual({ items, pagination: null });
+  });
+
+  it('preserves pagination metadata for a full envelope', () => {
+    const items = [{ name: 'a' }];
+    expect(normalizeAppListResponse({ items, total: 120, offset: 50, limit: 50 })).toEqual({
+      items,
+      pagination: { total: 120, offset: 50, limit: 50 },
+    });
+  });
+
+  it('unwraps a partial items-only envelope without pagination metadata', () => {
+    const items = [{ name: 'a' }];
+    expect(normalizeAppListResponse({ items })).toEqual({ items, pagination: null });
+  });
+
+  it('returns empty items for null, undefined, or empty object', () => {
+    expect(normalizeAppListResponse(null)).toEqual({ items: [], pagination: null });
+    expect(normalizeAppListResponse(undefined)).toEqual({ items: [], pagination: null });
+    expect(normalizeAppListResponse({} as never)).toEqual({ items: [], pagination: null });
+  });
+
+  it('returns empty items when items is null in a partial envelope', () => {
+    expect(normalizeAppListResponse({ items: null })).toEqual({ items: [], pagination: null });
+  });
+});
+
+describe('unwrapAppListResponse', () => {
+  it('delegates to normalizeAppListResponse and returns items only', () => {
+    const items = [{ name: 'a' }];
+    expect(unwrapAppListResponse(items)).toEqual(items);
+    expect(unwrapAppListResponse({ items, total: 1, offset: 0, limit: 50 })).toEqual(items);
+  });
+});
 
 describe('unwrapTasks', () => {
   it('returns a legacy array response as-is', () => {

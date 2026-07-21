@@ -52,15 +52,64 @@ export type PaginatedAppList<T> = {
   limit: number;
 };
 
+export type AppListPagination = {
+  total: number;
+  offset: number;
+  limit: number;
+};
+
+export type AppListResult<T> = {
+  items: T[];
+  /** ``null`` when the backend returned a bare array (``NO_PAGINATION``). */
+  pagination: AppListPagination | null;
+};
+
+function isPaginatedAppListEnvelope<T>(data: unknown): data is PaginatedAppList<T> {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return false;
+  }
+  const candidate = data as PaginatedAppList<T>;
+  return (
+    Array.isArray(candidate.items) &&
+    typeof candidate.total === 'number' &&
+    typeof candidate.offset === 'number' &&
+    typeof candidate.limit === 'number'
+  );
+}
+
+/**
+ * Normalize a plugin list response to items plus optional pagination metadata.
+ *
+ * Bare arrays (``NO_PAGINATION``) yield ``pagination: null``; full
+ * ``{ items, total, offset, limit }`` envelopes preserve all four fields.
+ * Partial ``{ items }`` envelopes (legacy migration shape) unwrap items only.
+ */
+export function normalizeAppListResponse<T>(
+  data: T[] | PaginatedAppList<T> | { items: T[] | null } | null | undefined,
+): AppListResult<T> {
+  if (Array.isArray(data)) {
+    return { items: data, pagination: null };
+  }
+  if (isPaginatedAppListEnvelope<T>(data)) {
+    return {
+      items: data.items,
+      pagination: {
+        total: data.total,
+        offset: data.offset,
+        limit: data.limit,
+      },
+    };
+  }
+  if (data && typeof data === 'object' && 'items' in data) {
+    const items = (data as { items: T[] | null }).items;
+    return { items: items ?? [], pagination: null };
+  }
+  return { items: [], pagination: null };
+}
+
 /** Accept legacy flat lists or paginated ``{ items, total, offset, limit }`` envelopes. */
 export function unwrapAppListResponse<T>(data: T[] | PaginatedAppList<T>): T[] {
-  if (Array.isArray(data)) {
-    return data;
-  }
-  if (data && typeof data === 'object' && Array.isArray(data.items)) {
-    return data.items;
-  }
-  return [];
+  return normalizeAppListResponse(data).items;
 }
 
 /**
