@@ -16,7 +16,17 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, ApiError, type AppSchema } from '@sep/api';
+import {
+  apiClient,
+  ApiError,
+  DEFAULT_APP_LIST_LIMIT,
+  DEFAULT_APP_LIST_OFFSET,
+  normalizeAppListResponse,
+  type AppListQueryOptions,
+  type AppListResult,
+  type AppSchema,
+  type PaginatedAppList,
+} from '@sep/api';
 import {
   downloadBlob,
   SNIPPETS_APPS_API_BASE,
@@ -69,16 +79,21 @@ function extractBatchApprovalError(data: unknown): BatchApprovalErrorResponse | 
 }
 
 /**
- * Fetch the list of snippet entities discovered by the backend.
+ * Fetch a page of snippet entities discovered by the backend.
  */
-export function useSnippets() {
-  return useQuery<SnippetResponse[]>({
-    queryKey: ['snippets', 'list'],
+export function useSnippets(options?: AppListQueryOptions) {
+  const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
+  const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
+
+  return useQuery<AppListResult<SnippetResponse>>({
+    queryKey: ['snippets', 'list', { offset, limit }],
+    enabled: options?.enabled !== false,
     queryFn: async () => {
-      const { data } = await apiClient.get<SnippetResponse[] | { items: SnippetResponse[] }>(
+      const { data } = await apiClient.get<SnippetResponse[] | PaginatedAppList<SnippetResponse>>(
         `${SNIPPETS_BASE}/`,
+        { params: { offset, limit } },
       );
-      return Array.isArray(data) ? data : data.items;
+      return normalizeAppListResponse(data);
     },
   });
 }

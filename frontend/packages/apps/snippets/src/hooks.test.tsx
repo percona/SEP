@@ -32,6 +32,7 @@ interface CapturedRequestConfig {
   method?: string;
   responseType?: string;
   headers?: CapturedHeaders;
+  params?: Record<string, unknown>;
 }
 
 function makeWrapper() {
@@ -191,12 +192,15 @@ describe('useSnippetDownload', () => {
 
 describe('useSnippets', () => {
   let responseBody: unknown;
+  let lastConfig: CapturedRequestConfig | null = null;
 
   beforeEach(() => {
+    lastConfig = null;
     (apiClient.defaults as unknown as { adapter: unknown }).adapter = (
       config: CapturedRequestConfig,
-    ) =>
-      Promise.resolve({
+    ) => {
+      lastConfig = config;
+      return Promise.resolve({
         data: responseBody,
         status: 200,
         statusText: 'OK',
@@ -204,6 +208,7 @@ describe('useSnippets', () => {
         config,
         request: {},
       });
+    };
     setTokenProvider(() => 'test-access-token');
   });
 
@@ -212,7 +217,7 @@ describe('useSnippets', () => {
     setTokenProvider(() => null);
   });
 
-  it('unwraps a PaginatedResponse envelope to the items array', async () => {
+  it('returns items plus pagination metadata from the envelope', async () => {
     responseBody = {
       items: [{ filename: 'a.sh' }, { filename: 'b.sh' }],
       total: 2,
@@ -226,10 +231,28 @@ describe('useSnippets', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(result.current.data?.map((snippet) => snippet.filename)).toEqual(['a.sh', 'b.sh']);
+    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50 });
+    expect(result.current.data).toEqual({
+      items: [{ filename: 'a.sh' }, { filename: 'b.sh' }],
+      pagination: { total: 2, offset: 0, limit: 50 },
+    });
   });
 
-  it('returns a legacy flat array unchanged', async () => {
+  it('forwards offset/limit query params', async () => {
+    responseBody = { items: [], total: 0, offset: 50, limit: 50 };
+
+    const { result } = renderHook(() => useSnippets({ offset: 50, limit: 50 }), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.params).toEqual({ offset: 50, limit: 50 });
+  });
+
+  it('returns a legacy flat array with pagination null', async () => {
     responseBody = [{ filename: 'a.sh' }];
 
     const { result } = renderHook(() => useSnippets(), { wrapper: makeWrapper() });
@@ -238,6 +261,9 @@ describe('useSnippets', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(result.current.data?.map((snippet) => snippet.filename)).toEqual(['a.sh']);
+    expect(result.current.data).toEqual({
+      items: [{ filename: 'a.sh' }],
+      pagination: null,
+    });
   });
 });
