@@ -52,7 +52,7 @@ from pydantic import BaseModel, Field, model_validator, PositiveInt, SecretStr
 
 from app.core.requests.bundle_upload import UploadResult
 from app.core.requests.remote_api import RemoteAPI
-from app.core.utils import json_serializer
+from app.core.utils import json_serializer, remove_falsy_values_from_dict
 from app.core.utils.fields import CredentialHttpUrl, JsonPointerStr, NonEmptyStr
 from app.core.utils.json_pointer import (
     JsonPointerResolutionError,
@@ -453,15 +453,13 @@ class DeliveryPlanExecutor:
         :raises HTTPException: Propagates the project exception ``RemoteAPI``
             raises for an upstream error status.
         """
-        request_kwargs = {
-            keyword: resolved
-            for keyword, resolved in (
-                ("headers", self._resolve_map(step.headers, inputs, outputs)),
-                ("params", self._resolve_map(step.query, inputs, outputs)),
-                ("json", self._resolve_map(step.body, inputs, outputs)),
-            )
-            if resolved
-        }
+        request_kwargs = remove_falsy_values_from_dict(
+            {
+                "headers": self._resolve_map(step.headers, inputs, outputs),
+                "params": self._resolve_map(step.query, inputs, outputs),
+                "json": self._resolve_map(step.body, inputs, outputs),
+            }
+        )
         logger.debug("Delivery plan: running resolution step %r.", step.name)
         with (
             self._api.redact_headers(_secret_valued_keys(step.headers)),
@@ -542,15 +540,13 @@ class DeliveryPlanExecutor:
             raises for an upstream error status.
         """
         step = self._plan.upload
-        request_kwargs = {
-            keyword: resolved
-            for keyword, resolved in (
-                ("headers", self._resolve_map(step.headers, inputs, outputs)),
-                ("params", self._resolve_map(step.query, inputs, outputs)),
-                ("fields", self._resolve_map(step.fields, inputs, outputs)),
-            )
-            if resolved
-        }
+        request_kwargs = remove_falsy_values_from_dict(
+            {
+                "headers": self._resolve_map(step.headers, inputs, outputs),
+                "params": self._resolve_map(step.query, inputs, outputs),
+                "fields": self._resolve_map(step.fields, inputs, outputs),
+            }
+        )
         with (
             self._api.redact_headers(_secret_valued_keys(step.headers)),
             bundle_path.open("rb") as handle,
