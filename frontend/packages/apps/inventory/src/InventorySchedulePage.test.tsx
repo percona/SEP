@@ -127,6 +127,15 @@ describe('InventorySchedulePage', () => {
     });
   });
 
+  it('loads inventory tasks with fetchAllPages so schedule joins are not capped', async () => {
+    setupHooks([]);
+    renderPage();
+    await screen.findByTestId('inv-sched-panel');
+    expect(useAppTasksMock).toHaveBeenCalledWith('inventory', undefined, {
+      fetchAllPages: true,
+    });
+  });
+
   describe('empty state', () => {
     it('shows empty message when no schedules', async () => {
       setupHooks([]);
