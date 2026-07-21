@@ -58,11 +58,13 @@ const multiSchema: AppSchema = {
     {
       name: 'nodes',
       display_name: 'Nodes',
+      forms: [],
       list_view: { columns: [{ key: 'name', label: 'Name' }] },
     },
     {
       name: 'services',
       display_name: 'Services',
+      forms: [],
       list_view: { columns: [{ key: 'name', label: 'Name' }] },
     },
   ],

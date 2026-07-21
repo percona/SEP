@@ -185,7 +185,8 @@ describe('TasksListPage', () => {
     );
     mockUseTasksList.mockClear();
 
-    const pagination = schemaListViewMock.mock.calls.at(-1)?.[0]?.pagination;
+    const lastCall = schemaListViewMock.mock.calls[schemaListViewMock.mock.calls.length - 1];
+    const pagination = lastCall?.[0]?.pagination;
     act(() => {
       pagination.onChange({ offset: 50, limit: 50 });
     });
