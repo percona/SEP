@@ -17,8 +17,35 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FormProvider, useForm } from 'react-hook-form';
+import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { SuggestedTaskNameEffect } from './backupMongoCreateForm';
+
+/**
+ * Stub service resolution with hydrated options only. Scalar rehydration is
+ * covered by ``useResolvedServiceField`` tests in ``@sep/framework``.
+ */
+vi.mock('@sep/framework', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sep/framework')>();
+  return {
+    ...actual,
+    useResolvedServiceField(fieldName: string) {
+      const parent = useWatch({ name: fieldName }) as
+        | { id: number; name: string }
+        | null
+        | undefined;
+      const hydrated =
+        parent && typeof parent === 'object' && typeof parent.name === 'string'
+          ? parent
+          : undefined;
+      return {
+        parent,
+        service: hydrated,
+        resetKey: hydrated ? `id:${hydrated.id}` : 'id:none',
+        isResolving: false,
+      };
+    },
+  };
+});
 
 const SCHEMA_DEFAULT = 'mongodb-backup';
 const FIXED = new Date('2026-07-16T14:30:22.123Z');

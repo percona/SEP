@@ -16,49 +16,38 @@
  */
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
-import type { RenderFieldOverride } from '@sep/framework';
+import { useFormContext } from 'react-hook-form';
+import { useResolvedServiceField, type RenderFieldOverride } from '@sep/framework';
 import {
   isAutoMongoBackupTaskName,
   suggestMongoBackupTaskName,
 } from './suggestMongoBackupTaskName';
-
-function serviceDisplayName(value: unknown): string | undefined {
-  if (value && typeof value === 'object' && 'name' in value) {
-    const name = (value as { name: unknown }).name;
-    return typeof name === 'string' ? name : undefined;
-  }
-  return undefined;
-}
-
-function serviceResetKey(value: unknown): string {
-  if (value && typeof value === 'object' && 'id' in value) {
-    return `id:${String((value as { id: unknown }).id ?? 'none')}`;
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return `id:${value}`;
-  }
-  if (typeof value === 'string' && value.trim() !== '') {
-    return `raw:${value.trim()}`;
-  }
-  return 'id:none';
-}
 
 /**
  * Keep ``task_name`` filled with a service+timestamp suggestion while the user
  * has not edited it. Mounted via the create-form ``renderField`` override so it
  * runs inside SchemaFormRenderer's FormProvider.
  *
+ * Resolves scalar ``service_id`` values through {@link useResolvedServiceField}
+ * (same path as host cascade) so the suggestion uses the service name rather
+ * than falling back to the generic ``mongodb`` slug.
+ *
  * Exported for component tests that assert override-safe suggestion behaviour.
  */
 export function SuggestedTaskNameEffect({ schemaDefault }: { schemaDefault?: string }) {
   const { setValue, getValues } = useFormContext();
-  const service = useWatch({ name: 'service_id' });
-  const resetKey = serviceResetKey(service);
+  const { service, resetKey, isResolving } = useResolvedServiceField('service_id');
   const autoRef = useRef<string | undefined>(undefined);
   const prevServiceKeyRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
+    // Wait for scalar rehydration before advancing the reset-key cursor —
+    // otherwise a first paint with only an id would lock in the generic slug
+    // and skip the name-based suggestion once services arrive.
+    if (isResolving) {
+      return;
+    }
+
     const isFirst = prevServiceKeyRef.current === undefined;
     const serviceChanged =
       prevServiceKeyRef.current !== undefined && prevServiceKeyRef.current !== resetKey;
@@ -75,10 +64,10 @@ export function SuggestedTaskNameEffect({ schemaDefault }: { schemaDefault?: str
       return;
     }
 
-    const next = suggestMongoBackupTaskName(serviceDisplayName(service));
+    const next = suggestMongoBackupTaskName(service?.name);
     setValue('task_name', next, { shouldDirty: false, shouldValidate: false });
     autoRef.current = next;
-  }, [resetKey, schemaDefault, service, setValue, getValues]);
+  }, [resetKey, schemaDefault, service, isResolving, setValue, getValues]);
 
   return null;
 }

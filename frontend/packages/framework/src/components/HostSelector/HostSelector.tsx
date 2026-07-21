@@ -16,17 +16,16 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useSnackbar } from 'notistack';
 import { useHosts, type HostOption } from '../../hooks/useHosts';
-import { useServices, type ServiceOption, type ServiceType } from '../../hooks/useServices';
-import { extractId } from '../../utils/extractId';
+import { useResolvedServiceField } from '../../hooks/useResolvedServiceField';
+import type { ServiceType } from '../../hooks/useServices';
 import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 import { resolveExecutorHostForService } from './resolveExecutorHostForService';
 
 const EMPTY_HOSTS: HostOption[] = [];
-const EMPTY_SERVICES: ServiceOption[] = [];
 
 export interface HostSelectorProps {
   /**
@@ -75,31 +74,10 @@ function hostValueId(value: unknown): string | undefined {
   return undefined;
 }
 
-function parentResetKey(parent: unknown): string {
-  if (parent && typeof parent === 'object' && 'id' in parent) {
-    const id = (parent as { id: unknown }).id;
-    return `id:${id ?? 'none'}`;
-  }
-  if (typeof parent === 'number' && Number.isFinite(parent)) {
-    return `id:${parent}`;
-  }
-  if (typeof parent === 'string' && parent.trim() !== '') {
-    return /^\d+$/.test(parent.trim()) ? `id:${parent.trim()}` : `custom:${parent.trim()}`;
-  }
-  return 'id:none';
-}
-
-function isHydratedService(value: unknown): value is ServiceOption {
-  return Boolean(value && typeof value === 'object' && 'name' in value);
-}
-
 /**
  * Cascade auto-select for a single host field. Mounted only when ``dependsOn``
- * is set so ``useWatch`` always receives a real field name (never ``''``) and
- * ``useServices`` runs only when the parent is an unresolved id — a hydrated
- * ``ServiceOption`` from ServiceSelector already carries ``node``. Scalar ids
- * rehydrate via ``useServices({ serviceTypes })`` so the fetch stays bounded to
- * the parent field's declared types (and shares ServiceSelector's query cache).
+ * is set. Scalar parent ids rehydrate through {@link useResolvedServiceField}
+ * (same path as task-name suggestion and other service consumers).
  */
 function HostServiceCascade({
   name,
@@ -113,22 +91,7 @@ function HostServiceCascade({
   serviceTypes?: readonly ServiceType[];
 }) {
   const { setValue, getValues } = useFormContext();
-  const parent = useWatch({ name: dependsOn }) as
-    | ServiceOption
-    | number
-    | string
-    | null
-    | undefined;
-
-  const unresolvedServiceId = isHydratedService(parent) ? null : extractId(parent);
-  const { data: services = EMPTY_SERVICES } = useServices({
-    serviceTypes,
-    // Require an explicit type filter (including `[]` = all types) so we never
-    // page the untyped `/sep/services/` list from a missing `serviceTypes` prop.
-    enabled: unresolvedServiceId !== null && serviceTypes !== undefined,
-  });
-
-  const resetKey = parentResetKey(parent);
+  const { service, resetKey } = useResolvedServiceField(dependsOn, serviceTypes);
   const prevParentKeyRef = useRef<string | undefined>(undefined);
   const autoHostIdRef = useRef<string | undefined>(undefined);
 
@@ -141,12 +104,6 @@ function HostServiceCascade({
       autoHostIdRef.current = undefined;
     }
 
-    const service: ServiceOption | undefined = isHydratedService(parent)
-      ? parent
-      : unresolvedServiceId !== null
-        ? services.find((svc) => svc.id === unresolvedServiceId)
-        : undefined;
-
     if (!service || hosts.length === 0) {
       return;
     }
@@ -157,11 +114,11 @@ function HostServiceCascade({
     }
 
     const currentId = hostValueId(getValues(name));
-    if (currentId === undefined || currentId === '' || currentId === autoHostIdRef.current) {
+    if (currentId === undefined || currentId === autoHostIdRef.current) {
       setValue(name, match, { shouldDirty: false, shouldValidate: false });
       autoHostIdRef.current = match.id;
     }
-  }, [resetKey, parent, unresolvedServiceId, services, hosts, name, setValue, getValues]);
+  }, [resetKey, service, hosts, name, setValue, getValues]);
 
   return null;
 }

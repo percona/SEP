@@ -38,6 +38,8 @@ export type {
   ServiceType,
   UseServicesOptions,
 } from './useServices';
+export { useResolvedServiceField } from './useResolvedServiceField';
+export type { ResolvedServiceField } from './useResolvedServiceField';
 export { useSchemas } from './useSchemas';
 export type { SchemaOption, UseSchemasOptions } from './useSchemas';
 export { useTables } from './useTables';
