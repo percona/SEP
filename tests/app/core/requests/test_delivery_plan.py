@@ -33,11 +33,11 @@ from app.core.requests.delivery_plan import (
     DeliveryPlanError,
     DeliveryPlanExecutor,
 )
-from app.core.utils import json_serializer
 
 _BASE_URL = "http://localhost:8000/"
 _UPLOAD_URL = "http://localhost:8000/attachment/upload"
 _TICKET_URL = "http://localhost:8000/ticket_details"
+_ACCOUNT_URL = "http://localhost:8000/case_account"
 _MANIFEST: dict[str, Any] = {"bundle": "diag", "size": 12}
 
 
@@ -147,6 +147,28 @@ def _one_step_plan() -> dict[str, Any]:
             "reference_pointer": "/result/sys_id",
         },
     }
+
+
+def _two_step_plan() -> dict[str, Any]:
+    """Return a plan whose second resolution step consumes the first step's output."""
+    payload = _one_step_plan()
+    payload["resolution_steps"].append(
+        {
+            "name": "account",
+            "method": "POST",
+            "path": "case_account",
+            "body": {
+                "case": {"source": "output", "step": "lookup", "output": "sys_id"}
+            },
+            "outputs": {"account_id": "/result/account_id"},
+        }
+    )
+    payload["upload"]["fields"]["account_id"] = {
+        "source": "output",
+        "step": "account",
+        "output": "account_id",
+    }
+    return payload
 
 
 class TestDeliveryPlanValidation:
@@ -372,10 +394,48 @@ class TestDeliveryPlanExecutor:
         assert result.reference == "att-2"
         assert result.detail == {"result": {"sys_id": "att-2"}}
 
-    async def test_manifest_input_is_sent_as_compact_json(
+    async def test_two_step_plan_chains_each_step_output_forward(
         self, api: RemoteAPI, bundle_path: Path
     ):
-        """Serialize the manifest with the project JSON serializer for the wire."""
+        """Feed the first step's output into the second, then both into the upload."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_two_step_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"sys_id": "case-77"}},
+            )
+            mock.post(
+                _ACCOUNT_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"account_id": "acct-5"}},
+            )
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-3"}},
+            )
+            async with api:
+                result = await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle_path=bundle_path,
+                    case_ref="CS0001",
+                    manifest=_MANIFEST,
+                )
+            account = _recorded(mock, "case_account")
+            fields = _multipart_fields(
+                _recorded(mock, "attachment/upload").kwargs["data"]
+            )
+
+        assert account.kwargs["json"] == {"case": "case-77"}
+        assert fields["table_sys_id"] == "case-77"
+        assert fields["account_id"] == "acct-5"
+        assert result.reference == "att-3"
+
+    async def test_manifest_input_is_sent_as_json(
+        self, api: RemoteAPI, bundle_path: Path
+    ):
+        """Send the manifest as a JSON object string in its own multipart field."""
         payload = _upload_only_plan(
             fields={"manifest": {"source": "input", "field": "manifest"}},
             reference_pointer=None,
@@ -394,7 +454,7 @@ class TestDeliveryPlanExecutor:
                 next(iter(mock.requests.values()))[0].kwargs["data"]
             )
 
-        assert fields["manifest"] == json_serializer(_MANIFEST)
+        assert fields["manifest"] == '{"bundle": "diag", "size": 12}'
 
     async def test_oversized_bundle_fails_before_any_request(
         self, api: RemoteAPI, bundle_path: Path

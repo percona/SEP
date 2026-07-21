@@ -126,10 +126,11 @@ class TestResolveJsonPointer:
         with pytest.raises(JsonPointerResolutionError, match="traverse"):
             resolve_json_pointer({"a": 1}, "/a/b")
 
-    def test_non_integer_list_token_is_rejected(self):
-        """Reject a non-numeric token against a sequence."""
+    @pytest.mark.parametrize("token", ["x", "01", "-", "1.0"])
+    def test_non_index_list_token_is_rejected(self, token: str):
+        """Reject a token that is not the RFC 6901 spelling of an array index."""
         with pytest.raises(JsonPointerResolutionError, match="index"):
-            resolve_json_pointer({"items": [1, 2]}, "/items/x")
+            resolve_json_pointer({"items": [1, 2]}, f"/items/{token}")
 
     def test_out_of_range_list_index_is_rejected(self):
         """Reject an index past the end of a sequence."""
