@@ -46,6 +46,7 @@ from app.sep.apps.backup_mongo.restore.spec import (
 )
 from app.sep.apps.framework import (
     batch_get_latest_statuses,
+    build_default_task_response,
     extract_latest_task_status,
     get_task_latest_history,
     make_parent_resolver,
@@ -519,13 +520,17 @@ def build_restore_mongo_api_task_response(
     config = _parse_restore_task_config(task)
     meta = task.data.get("meta") or {}
     backup_type = config.get("backupType")
-    return RestoreTaskResponse(
-        **task.model_dump(),
-        hostname=meta.get("target"),
-        status=status,
+    return build_default_task_response(
+        RestoreTaskResponse,
+        task,
+        status,
         last_executed_at=last_executed_at,
-        backup_type=str(backup_type) if backup_type is not None else "",
-        backup_source=str(config.get("backupSource", "")),
+        extras={
+            "hostname": meta.get("target"),
+            "backup_type": str(backup_type) if backup_type is not None else "",
+            "backup_source": str(config.get("backupSource", "")),
+            "service_type": ServiceTypeEnum.MONGODB,
+        },
     )
 
 
@@ -649,7 +654,7 @@ async def build_restore_mongo_api_detail_response(
         last_executed_at=parent_latest.finished_at if parent_latest else None,
     )
     return RestoreTaskDetailResponse(
-        **base.model_dump(),
+        **base.model_dump(exclude=set(base.model_computed_fields)),
         derived_tasks=derived_tasks,
     )
 
