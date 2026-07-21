@@ -7743,12 +7743,12 @@ export interface components {
       xtrabackup_verify: boolean;
     };
     /**
-     * BackupResponse
+     * BackupTaskResponse
      * @description Represent a backup task API response.
      *
-     *     :param hostname: The executor hostname target.
+     *     :param backup_type: The backup type recorded in task config.
      */
-    mysql_backups__BackupResponse: {
+    mysql_backups__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       /** Anonymize Mask */
@@ -7798,10 +7798,10 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
-    /** PaginatedResponse[BackupResponse] */
-    mysql_backups__PaginatedResponse_BackupResponse_: {
+    /** PaginatedResponse[BackupTaskResponse] */
+    mysql_backups__PaginatedResponse_BackupTaskResponse_: {
       /** Items */
-      items: components['schemas']['mysql_backups__BackupResponse'][];
+      items: components['schemas']['mysql_backups__BackupTaskResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -11512,7 +11512,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupResponse_'];
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupTaskResponse_'];
         };
       };
       /** @description Validation Error */
@@ -11814,7 +11814,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['mysql_backups__BackupResponse'];
+          'application/json': components['schemas']['mysql_backups__BackupTaskResponse'];
         };
       };
       /** @description Validation Error */

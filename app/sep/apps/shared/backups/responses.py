@@ -13,10 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Expose shared backup-family helpers."""
+"""Define backup-family shared API response bases."""
 
-from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
-from app.sep.apps.shared.backups.edit_form import parse_server_list_config
-from app.sep.apps.shared.backups.responses import BackupTaskBase
+from app.sep.apps.framework import BaseTaskResponse
 
-__all__ = ["BACKUP_TYPE_COLUMN", "BackupTaskBase", "parse_server_list_config"]
+
+class BackupTaskBase(BaseTaskResponse):
+    """Carry the backup-family fields shared across its API responses.
+
+    :param hostname: The Nomad executor target the task runs on.
+    """
+
+    hostname: str | None = None
