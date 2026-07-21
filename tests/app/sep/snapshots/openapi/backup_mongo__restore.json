@@ -346,7 +346,7 @@
         "type": "object"
       },
       "backup_mongo__RestoreTaskResponse": {
-        "description": "Represent a restore task API response.\n\nCarries the shared task fields from :class:`BaseTaskResponse` plus the\nrestore-specific additions from :class:`RestoreTaskBase`.",
+        "description": "Represent a restore task API response.\n\nExtend the standard task-response surface with the restore destination facts\nthe API surfaces; the shared task identity, status, audit, anonymization, and\nconnectivity fields come from\n:class:`~app.sep.apps.framework.responses.BaseTaskResponse`.\n\n:param hostname: The target hostname for the task execution.\n:param backup_type: The PBM backup type for this restore.\n:param backup_source: The backup name or timestamp to restore from.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",

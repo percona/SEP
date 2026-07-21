@@ -5058,8 +5058,14 @@ export interface components {
      * RestoreTaskResponse
      * @description Represent a restore task API response.
      *
-     *     Carries the shared task fields from :class:`BaseTaskResponse` plus the
-     *     restore-specific additions from :class:`RestoreTaskBase`.
+     *     Extend the standard task-response surface with the restore destination facts
+     *     the API surfaces; the shared task identity, status, audit, anonymization, and
+     *     connectivity fields come from
+     *     :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
+     *
+     *     :param hostname: The target hostname for the task execution.
+     *     :param backup_type: The PBM backup type for this restore.
+     *     :param backup_source: The backup name or timestamp to restore from.
      */
     backup_mongo__RestoreTaskResponse: {
       /** Alert On Fail */

@@ -689,8 +689,8 @@ class RestoreDerivedTaskSummary(BaseModel):
     status: TaskHistoryStatusEnum | None = None
 
 
-class RestoreTaskBase(BaseTaskResponse):
-    """Represent the restore-specific additions to the shared task response.
+class RestoreTaskResponse(BaseTaskResponse):
+    """Represent a restore task API response.
 
     Extend the standard task-response surface with the restore destination facts
     the API surfaces; the shared task identity, status, audit, anonymization, and
@@ -705,14 +705,6 @@ class RestoreTaskBase(BaseTaskResponse):
     hostname: str | None = None
     backup_type: str
     backup_source: str
-
-
-class RestoreTaskResponse(RestoreTaskBase):
-    """Represent a restore task API response.
-
-    Carries the shared task fields from :class:`BaseTaskResponse` plus the
-    restore-specific additions from :class:`RestoreTaskBase`.
-    """
 
 
 class RestoreTaskDetailResponse(RestoreTaskResponse):
