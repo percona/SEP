@@ -4,7 +4,6 @@
 
 FROM localhost/sep:builder AS builder
 
-# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV FASTAPI_ENV=production_docker
@@ -17,7 +16,6 @@ ENV FASTAPI_ENV=production_docker
 # under one supervisord. No frontend SPA — the UI is served by PMM.
 FROM docker.io/library/python:3.11.14-slim
 
-# Install dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         g++ \
@@ -29,11 +27,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create the sep system user
 RUN groupadd --gid 1001 sep && \
     useradd --gid sep --shell /usr/sbin/nologin --home-dir /home/sep --uid 1001 --create-home sep
 
-# Create the appropriate directories
 ENV HOME=/home/sep
 ENV APP_HOME=$HOME/app
 RUN install -d -o 1001 -g 1001 -m 0750 $APP_HOME
@@ -62,17 +58,18 @@ COPY --chown=0:1001 --chmod=440 ./alembic.ini .
 COPY --chown=0:1001 --chmod=440 ./sidecar/supervisord.conf ./supervisord.conf
 COPY --chown=0:1001 --chmod=550 ./sidecar/healthcheck.sh ./healthcheck.sh
 
-# Copy project
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 
 # No compose file injects this for the side-car, so the loader would otherwise
 # fall back to the development defaults
 ENV FASTAPI_ENV=production_docker
 
-# Chown all the files to the sep system user
+# Every program's stdout is a supervisord pipe, not a tty, so unbuffer it to
+# keep `docker logs` complete when a program dies
+ENV PYTHONUNBUFFERED=1
+
 RUN chmod -R u+X,g+X $APP_HOME
 
-# Change to the sep system user
 USER sep
 
 HEALTHCHECK --interval=15s --timeout=15s --start-period=150s --retries=5 \
