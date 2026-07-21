@@ -15,7 +15,7 @@
 
 """Define the AppSchema for the ATW plugin."""
 
-from app.sep.apps.atw.models import ATWCategory, ParentCategory
+from app.sep.apps.atw.categories import ATWCategory, ParentCategory
 from app.sep.apps.framework.rules import (
     all_,
     any_,
