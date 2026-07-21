@@ -929,3 +929,26 @@ async def test_stream_chunks_maps_410_to_gone_with_headers(remote_api):
     assert type(exc_info.value) is HTTPGoneException
     assert exc_info.value.status_code == status.HTTP_410_GONE
     assert exc_info.value.headers == {"X-Error-Code": "TASK_GONE"}
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_coerces_numeric_error_code_to_str(remote_api):
+    """Coerce a numeric stream error code to str so the X-Error-Code header holds.
+
+    A gRPC-gateway body carries ``code`` as an int; without ``str()`` the header
+    build would raise ``AttributeError`` on the stream path, mirroring the
+    ``request()`` path covered by ``test_create_rule_raises_not_found_on_coded_404``.
+    """
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_404_NOT_FOUND
+    mock_response.json = AsyncMock(return_value={"detail": "missing", "code": 5})
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            with pytest.raises(HTTPNotFoundException) as exc_info:
+                [_ async for _ in remote_api.stream_chunks("/missing/")]
+
+    assert exc_info.value.headers == {"X-Error-Code": "5"}

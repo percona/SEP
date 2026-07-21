@@ -581,7 +581,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                         text = await response.text()
                         fallback = text or "An unexpected error occurred on the server."
                         self._raise_stream_http_error(
-                            response.status, detail=fallback, headers=None
+                            response.status,
+                            detail=fallback,
+                            headers={UPSTREAM_NON_JSON_HEADER: "1"},
                         )
                     error_detail = response_data.get(
                         detail_key, "An unexpected error occurred on the server."
