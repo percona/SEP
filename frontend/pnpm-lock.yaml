@@ -265,6 +265,9 @@ importers:
       react:
         specifier: ^19.0.0
         version: 19.2.6
+      react-hook-form:
+        specifier: ^7.72.1
+        version: 7.75.0(react@19.2.6)
       react-router-dom:
         specifier: ^7.0.0
         version: 7.18.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -275,6 +278,9 @@ importers:
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
+      vitest:
+        specifier: ^4.0.0
+        version: 4.1.5(@types/node@22.19.17)(jsdom@29.1.1)(msw@2.14.4(@types/node@22.19.17)(typescript@6.0.3))(vite@8.0.16(@types/node@22.19.17)(esbuild@0.28.1)(tsx@4.21.0))
 
   packages/apps/dipper:
     dependencies:

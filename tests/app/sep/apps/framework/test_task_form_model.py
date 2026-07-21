@@ -56,6 +56,11 @@ _PLUGIN_FORMS = [
     RestoreForm,
 ]
 
+# Forms that inherit ``TaskFormModel`` but redeclare ``task_name`` only so the
+# derived schema can carry a ``Ui(default=...)`` presentation default. ``hostname``
+# must still come from the base.
+_PLUGIN_FORMS_WITH_TASK_NAME_DEFAULT = (RestoreForm,)
+
 # ``AltersCreate`` is a deliberate carve-out, NOT an inheritor. It is also a
 # model-first task form, but it redeclares its identity fields locally
 # (``task_name``, ``hostname``) alongside its own Task-section fields
@@ -146,12 +151,33 @@ class TestPluginFormInheritance:
         """Reparent every task plugin form onto ``TaskFormModel``."""
         assert issubclass(form, TaskFormModel)
 
-    @pytest.mark.parametrize("form", _PLUGIN_FORMS, ids=lambda f: f.__name__)
+    @pytest.mark.parametrize(
+        "form",
+        [
+            form
+            for form in _PLUGIN_FORMS
+            if form not in _PLUGIN_FORMS_WITH_TASK_NAME_DEFAULT
+        ],
+        ids=lambda f: f.__name__,
+    )
     def test_does_not_redeclare_identity_fields(self, form: type) -> None:
         """Stop redeclaring the identity fields locally — inherit them instead."""
         own = set(getattr(form, "__annotations__", {}))
         assert "task_name" not in own
         assert "hostname" not in own
+
+    @pytest.mark.parametrize(
+        "form", _PLUGIN_FORMS_WITH_TASK_NAME_DEFAULT, ids=lambda f: f.__name__
+    )
+    def test_task_name_default_redeclares_only_task_name(self, form: type) -> None:
+        """Allow redeclaring ``task_name`` solely for a ``Ui(default=...)`` value."""
+        own = set(getattr(form, "__annotations__", {}))
+        assert "task_name" in own
+        assert "hostname" not in own
+        ui = _marker(form.model_fields["task_name"], Ui)
+        assert ui is not None
+        assert ui.has_default
+        assert ui.default
 
     @pytest.mark.parametrize("form", _PLUGIN_FORMS, ids=lambda f: f.__name__)
     def test_still_has_identity_fields(self, form: type) -> None:
