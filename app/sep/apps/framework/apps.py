@@ -1043,7 +1043,7 @@ class TaskExecutionApp(BaseApp):
         router = APIRouter()
         plugin_schema = self._resolve_plugin_schema()
 
-        if self.create_model is not None:
+        if self.create_model is not None and self.capabilities.create:
             self._materialize_create_model_schema()
 
         if self.capabilities_provider is not None:

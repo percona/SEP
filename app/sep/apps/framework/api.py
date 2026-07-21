@@ -538,19 +538,16 @@ def _register_create_route(
     With ``connectivity_check`` off, the handler builds the create response
     directly. With it on, the handler gains a ``check_connectivity`` query
     parameter, runs the post-creation connectivity probe, and attaches the
-    resulting ``connectivity_warning`` — auto-deriving the create model via
-    :func:`derive_create_response_model` when no explicit
-    ``create_response_builder`` is given. An explicit builder's model wins, but
-    with ``connectivity_check`` on it must itself declare ``connectivity_warning``
-    so the probe result has somewhere to land.
+    resulting ``connectivity_warning`` to the shared ``create_response_model``
+    the caller already resolved (see :func:`_resolve_create_response_model`).
 
     :param router: The plugin router to register the create route on.
     :param base_builder: The fallback create builder when no explicit create builder
         is given — the detail builder when the app overrides detail, else the list
         builder — so a created resource is rendered like its detail view.
     :param create_payload: The create-payload dependency declaring the body.
-    :param create_response_builder: An explicit create-response builder whose
-        model wins when supplied.
+    :param create_response_builder: The explicit create builder the handler renders
+        through, or ``None`` to render through ``base_builder``.
     :param create_response_model: The response model the create and derived-update
         routes share, resolved once by the caller so both routes render (and
         register the OpenAPI component for) a single class rather than each
@@ -667,8 +664,8 @@ def _register_update_route(
         given — the detail builder when the app overrides detail, else the list
         builder.
     :param create_payload: The create-payload dependency declaring the body.
-    :param create_response_builder: An explicit create-response builder whose
-        model wins when supplied.
+    :param create_response_builder: The explicit create builder the handler renders
+        through, or ``None`` to render through ``base_builder``.
     :param create_response_model: The response model shared with the create route,
         resolved once by the caller so both routes render (and register the OpenAPI
         component for) a single class rather than each re-deriving it.
@@ -1251,11 +1248,10 @@ def derive_crud_routes(
         list_detail_model,
     )
 
-    # Resolve the create/update response model exactly once and share the single
-    # class between both routes. Resolving it per route would mint two distinct
-    # ``create_model(name, ...)`` classes carrying the same name (see
-    # ``derive_create_response_model``), whose colliding schema refs make the
-    # derived body-schema construction order-sensitive under hash randomization.
+    # Resolving it per route would mint two distinct ``create_model(name, ...)``
+    # classes carrying the same name (see ``derive_create_response_model``), whose
+    # colliding schema refs make the derived body-schema construction
+    # order-sensitive under hash randomization.
     create_response_model = (
         _resolve_create_response_model(
             create_response_builder,

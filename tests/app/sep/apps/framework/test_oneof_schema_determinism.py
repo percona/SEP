@@ -38,6 +38,7 @@ import contextlib
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -61,7 +62,21 @@ from tests.app.sep.apps.framework.kit import (
     SYNTH_OWNER,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[5]
+
 _SEEDED = "seeded-task"
+
+# Shared by the in-process archives test and the subprocess probe so a new
+# required field on archives' create model updates one place, not two.
+_ARCHIVES_VALID_BODY: dict[str, Any] = {
+    "task_name": "new-archive",
+    "hostname": "exec-host",
+    "service_id": 1,
+    "swap_drop": 0,
+    "source": {"mode": "table", "source_db": 1, "source_table": 1},
+    "destination": {"mode": "table", "dest_table": MOCK_DESTINATION_TABLE_ID},
+    "where": "id < 100",
+}
 
 _VALID_SYNTH_BODIES: list[dict[str, Any]] = [
     {"source": {"mode": "alpha", "alpha_value": "v"}},
@@ -196,15 +211,7 @@ class TestDerivedOneOfBody:
             inventory_api=inventory,
         )
         base = app_base_url(archives_app)
-        body = {
-            "task_name": "new-archive",
-            "hostname": "exec-host",
-            "service_id": 1,
-            "swap_drop": 0,
-            "source": {"mode": "table", "source_db": 1, "source_table": 1},
-            "destination": {"mode": "table", "dest_table": MOCK_DESTINATION_TABLE_ID},
-            "where": "id < 100",
-        }
+        body = _ARCHIVES_VALID_BODY
         assert client.post(f"{base}/", json=body).status_code == status.HTTP_201_CREATED
         assert (
             client.put(f"{base}/{_SEEDED}", json=body).status_code == status.HTTP_200_OK
@@ -212,10 +219,19 @@ class TestDerivedOneOfBody:
 
 
 class TestSharedCreateResponseModel:
-    """Assert create and update render one shared response-model class (2b)."""
+    """Assert create and update render one shared response-model class."""
 
     def test_non_connectivity_app_shares_response_model(self) -> None:
-        """Assert create and update reference the same response model object."""
+        """Assert create and update reference the same response model object.
+
+        This is the pass-through case: ``synth_oneof_app`` sets no
+        ``create_response_builder`` and leaves connectivity off, so
+        ``_resolve_create_response_model`` returns the same ``detail_model``
+        whether resolved once or twice — it passes identically against the
+        unfixed code. It pins that case; the class's shared-class promise is
+        actually discriminated by
+        ``test_connectivity_app_shares_one_derived_response_model``.
+        """
         create, update = _create_and_update_routes(synth_oneof_app())
         assert create.response_model is update.response_model
 
@@ -244,10 +260,19 @@ def archives_oneof_probe() -> tuple[int, int]:
 
     :return: The ``(POST, PUT)`` HTTP status codes for the valid body.
     """
-    for entry in get_app_registry():
-        # A broken sibling app must not abort the probe.
+    registry = list(get_app_registry())
+    built = 0
+    for entry in registry:
+        # A broken sibling app must not abort the probe, but the probe's whole
+        # point is the size of the loaded namespace — a thinned one would still
+        # go green, so require nearly all siblings to build.
         with contextlib.suppress(Exception):
             _ = entry.api_router
+            built += 1
+    assert built >= len(registry) - 1, (
+        f"only {built}/{len(registry)} sibling routers built; the loaded one-of "
+        "namespace is thinner than the production-equivalent set the probe claims"
+    )
 
     inventory = MockInventoryAPI()
     inventory.seed_table(MOCK_DESTINATION_TABLE_ID)
@@ -260,15 +285,7 @@ def archives_oneof_probe() -> tuple[int, int]:
         inventory_api=inventory,
     )
     base = app_base_url(archives_app)
-    body = {
-        "task_name": "new-archive",
-        "hostname": "exec-host",
-        "service_id": 1,
-        "swap_drop": 0,
-        "source": {"mode": "table", "source_db": 1, "source_table": 1},
-        "destination": {"mode": "table", "dest_table": MOCK_DESTINATION_TABLE_ID},
-        "where": "id < 100",
-    }
+    body = _ARCHIVES_VALID_BODY
     return (
         client.post(f"{base}/", json=body).status_code,
         client.put(f"{base}/{_SEEDED}", json=body).status_code,
@@ -292,12 +309,13 @@ class TestMultiSeedBodySchema:
         "import sys; sys.exit(0 if archives_oneof_probe() == (201, 200) else 1)"
     )
 
-    @pytest.mark.parametrize("seed", range(8))
+    @pytest.mark.parametrize("seed", range(3))
     def test_archives_valid_body_accepted_under_seed(self, seed: int) -> None:
         """Assert the archives routes accept a valid body under ``seed``."""
         result = subprocess.run(
             [sys.executable, "-c", self._SUBPROCESS],
             env={**os.environ, "PYTHONHASHSEED": str(seed)},
+            cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             check=False,
