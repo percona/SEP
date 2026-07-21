@@ -30,7 +30,6 @@ import importlib
 import json
 import shutil
 import sys
-import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -205,27 +204,6 @@ def _mount_api_first(app_def: BaseApp, user: CasdoorUser) -> TestClient:
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
-
-def _ruff_normalize(source: str) -> str:
-    """Return ``source`` after the scaffolder's ruff step, or unchanged if ruff is absent.
-
-    The scaffolder runs ``ruff`` on its rendered output only when ruff is on
-    ``$PATH`` (see ``scaffold._ruff_fix``). The committed goldens capture the
-    pre-ruff render, so a byte comparison would drift in environments that have
-    ruff. Passing the golden through the same ruff step makes the comparison
-    hold in both environments: with ruff, both sides converge on the formatted
-    form; without it, both stay in the raw pre-ruff form.
-
-    :param source: The golden snapshot text to normalize.
-    :return: The ruff-formatted text, or ``source`` verbatim when ruff is absent.
-    """
-    with tempfile.TemporaryDirectory(dir=scaffold._REPO_ROOT) as tmp:
-        path = Path(tmp) / "golden.py"
-        path.write_text(source)
-        scaffold._ruff_fix([path])
-        return path.read_text()
-
-
 _GOLDEN_FILES = {
     scaffold.Flavor.TASK: ("golden_task", ("app.py", "models.py", "spec.py")),
     scaffold.Flavor.SCRIPT: ("golden_script", ("app.py",)),
@@ -251,9 +229,7 @@ def test_default_render_is_byte_identical(
     with _scaffolded(name, flavor) as result:
         for filename in filenames:
             rendered = (result.app_dir / filename).read_text()
-            expected = _ruff_normalize(
-                (GOLDEN_DIR / flavor.value / filename).read_text()
-            )
+            expected = (GOLDEN_DIR / flavor.value / filename).read_text()
             assert rendered == expected, f"{flavor.value}/{filename} drifted"
         assert result.payload_written is None
         assert not (result.app_dir / "payload").exists()
@@ -1131,9 +1107,9 @@ def test_makefile_forwards_quoted_values() -> None:
         )
         assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
         rendered = (scaffold.PLUGINS_DIR / name / "app.py").read_text()
-        # The value survives make → shell env → argv intact; ruff may normalise the
-        # literal's quote style (double → single to avoid escapes), so assert on the
-        # parsed value content rather than a fixed quote form.
+        # The value survives make → shell env → argv → json.dumps intact; ruff may
+        # normalise the literal's quote style (double → single to avoid escapes), so
+        # assert on the value content rather than a fixed quote form.
         assert "description=" in rendered
         assert (
             f"description={json.dumps(description)}" in rendered

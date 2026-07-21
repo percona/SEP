@@ -3552,6 +3552,7 @@
           "storage_filesystem_path": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -3563,6 +3564,7 @@
           "storage_s3_bucket": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -3585,6 +3587,7 @@
           "storage_s3_prefix": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -3596,6 +3599,7 @@
           "storage_s3_region": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {

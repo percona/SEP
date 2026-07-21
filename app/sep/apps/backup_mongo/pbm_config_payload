@@ -93,10 +93,15 @@ def _apply_pbm_config(config: dict) -> None:
     PBM storage is cluster-wide with no per-backup flag, so the per-task config
     (storage, priority, pitr) is applied here, before the backup runs, rather than
     relying on the separate Sync-config task having run. Writes the full config
-    (minus SEP-only keys) to the task dir and runs ``pbm config --file``. Exits
-    non-zero with an actionable message when PBM rejects the config -- for example
-    an unreachable or non-existent S3 bucket -- so the backup never silently falls
-    back to PBM's pre-existing cluster-wide storage.
+    (minus SEP-only keys) to the task dir and runs ``pbm config --file``.
+
+    Terminates the process (``sys.exit`` non-zero) rather than raising when the task
+    dir is unset, ``pbm`` cannot be run, or PBM rejects the config -- for example an
+    unreachable or non-existent S3 bucket -- so the backup never silently falls back
+    to PBM's pre-existing cluster-wide storage.
+
+    :param config: The parsed task config; SEP-only and ``None``-valued keys are
+        dropped before it is written to the PBM config file.
     """
     sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
     pbm_config = {

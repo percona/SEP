@@ -62,7 +62,6 @@ _ALL_PAYLOADS = {
     "config": _APP_DIR / "pbm_config_payload",
     **_BACKUP_PAYLOADS,
 }
-_BACKUP_TYPE = {"logical": "logical", "physical": "physical"}
 _PARAMETRIZE_BACKUP = pytest.mark.parametrize("payload", ["logical", "physical"])
 # An s3 backup runs two commands: apply the config, then take the backup.
 _APPLY_THEN_BACKUP = 2
@@ -84,6 +83,9 @@ def _exec_payload_capture_cmds(
     tmp_path: pathlib.Path,
     *,
     config_ret: int = 0,
+    captured: list[list[str]] | None = None,
+    set_task_dir: bool = True,
+    popen_error: Exception | None = None,
 ) -> list[list[str]]:
     """Exec a payload with a stubbed ``Popen`` and capture every command it runs.
 
@@ -92,10 +94,20 @@ def _exec_payload_capture_cmds(
     :param monkeypatch: pytest monkeypatch fixture.
     :param tmp_path: pytest tmp_path fixture for HOME, the task dir, and creds.
     :param config_ret: Return code the stub reports for a ``pbm config`` command.
+    :param captured: Out-parameter the captured commands are appended to; supply one
+        to read the commands back on the exit paths where the payload raises
+        ``SystemExit`` before this helper can return. A fresh list is used when None.
+    :param set_task_dir: Whether to set ``NOMAD_TASK_DIR``; pass False to exercise the
+        missing-task-dir abort path.
+    :param popen_error: Exception the stubbed ``Popen`` raises on construction, to
+        exercise the "``pbm`` binary cannot be run" path. None runs normally.
     :return: The list of argument lists passed to ``subprocess.Popen``, in order.
     """
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+    if set_task_dir:
+        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+    else:
+        monkeypatch.delenv("NOMAD_TASK_DIR", raising=False)
     (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
 
     if config is None:
@@ -103,10 +115,13 @@ def _exec_payload_capture_cmds(
     else:
         monkeypatch.setenv("NOMAD_META_CONFIG", yaml.safe_dump(config))
 
-    captured: list[list[str]] = []
+    if captured is None:
+        captured = []
 
     class _FakePopen:
         def __init__(self, cmd: list[str], *args: object, **kwargs: object):
+            if popen_error is not None:
+                raise popen_error
             captured.append(cmd)
             self._cmd = cmd
 
@@ -117,8 +132,6 @@ def _exec_payload_capture_cmds(
             if self._cmd[:2] == ["pbm", "config"]:
                 return config_ret
             return 0
-
-    import subprocess
 
     monkeypatch.setattr(subprocess, "Popen", _FakePopen)
 
@@ -145,7 +158,7 @@ class TestStorageAppliedBeforeBackup:
             "pbm",
             "backup",
             "--type",
-            _BACKUP_TYPE[payload],
+            payload,
             "--wait",
         ]
 
@@ -163,7 +176,7 @@ class TestStorageAppliedBeforeBackup:
                 "pbm",
                 "backup",
                 "--type",
-                _BACKUP_TYPE[payload],
+                payload,
                 "--wait",
                 "--compression",
                 "gzip",
@@ -177,7 +190,7 @@ class TestStorageAppliedBeforeBackup:
         """Run only ``pbm backup`` when NOMAD_META_CONFIG is absent."""
         cmds = _exec_payload_capture_cmds(payload, None, monkeypatch, tmp_path)
 
-        assert cmds == [["pbm", "backup", "--type", _BACKUP_TYPE[payload], "--wait"]]
+        assert cmds == [["pbm", "backup", "--type", payload, "--wait"]]
 
     @_PARAMETRIZE_BACKUP
     def test_config_failure_aborts_before_backup(
@@ -204,27 +217,15 @@ class TestStorageAppliedBeforeBackup:
     ):
         """Do not run ``pbm backup`` after a failed config apply."""
         captured: list[list[str]] = []
-
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
-        (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
-        monkeypatch.setenv("NOMAD_META_CONFIG", yaml.safe_dump(_S3_CONFIG))
-
-        class _FakePopen:
-            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
-                captured.append(cmd)
-
-            def wait(self) -> None:
-                return None
-
-            def poll(self) -> int:
-                return 1
-
-        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
-        path = _BACKUP_PAYLOADS[payload]
         with pytest.raises(SystemExit):
-            exec(compile(path.read_text(), str(path), "exec"), {})
-        os.environ.pop("PBM_MONGODB_URI", None)
+            _exec_payload_capture_cmds(
+                payload,
+                _S3_CONFIG,
+                monkeypatch,
+                tmp_path,
+                config_ret=1,
+                captured=captured,
+            )
 
         assert captured == [captured[0]]
         assert captured[0][:2] == ["pbm", "config"]
@@ -238,28 +239,16 @@ class TestStorageAppliedBeforeBackup:
         capsys: pytest.CaptureFixture,
     ):
         """Exit non-zero when NOMAD_TASK_DIR is unset so the config file can't be written."""
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.delenv("NOMAD_TASK_DIR", raising=False)
-        (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
-        monkeypatch.setenv("NOMAD_META_CONFIG", yaml.safe_dump(_S3_CONFIG))
-
         captured: list[list[str]] = []
-
-        class _FakePopen:
-            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
-                captured.append(cmd)
-
-            def wait(self) -> None:
-                return None
-
-            def poll(self) -> int:
-                return 0
-
-        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
-        path = _BACKUP_PAYLOADS[payload]
         with pytest.raises(SystemExit) as exc:
-            exec(compile(path.read_text(), str(path), "exec"), {})
-        os.environ.pop("PBM_MONGODB_URI", None)
+            _exec_payload_capture_cmds(
+                payload,
+                _S3_CONFIG,
+                monkeypatch,
+                tmp_path,
+                captured=captured,
+                set_task_dir=False,
+            )
 
         assert exc.value.code == 1
         assert "cannot write the PBM config file" in capsys.readouterr().err
@@ -274,20 +263,14 @@ class TestStorageAppliedBeforeBackup:
         capsys: pytest.CaptureFixture,
     ):
         """Exit non-zero with an actionable error when the ``pbm`` binary can't be run."""
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
-        (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
-        monkeypatch.setenv("NOMAD_META_CONFIG", yaml.safe_dump(_S3_CONFIG))
-
-        class _FakePopen:
-            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
-                raise OSError("No such file or directory: 'pbm'")
-
-        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
-        path = _BACKUP_PAYLOADS[payload]
         with pytest.raises(SystemExit) as exc:
-            exec(compile(path.read_text(), str(path), "exec"), {})
-        os.environ.pop("PBM_MONGODB_URI", None)
+            _exec_payload_capture_cmds(
+                payload,
+                _S3_CONFIG,
+                monkeypatch,
+                tmp_path,
+                popen_error=OSError("No such file or directory: 'pbm'"),
+            )
 
         assert exc.value.code == 1
         assert "Failed to run pbm config" in capsys.readouterr().err

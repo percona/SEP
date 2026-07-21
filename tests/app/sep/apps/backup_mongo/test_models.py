@@ -232,25 +232,6 @@ class TestValidateStorageConfig:
         with pytest.raises(ValueError, match="bucket"):
             _call_validate(s3_bucket=bucket)
 
-    @pytest.mark.parametrize(
-        "bucket",
-        [
-            "@@",
-            "UPPER",
-            "a",
-            "no_underscores",
-            "-lead",
-            "a..b",
-            "a.-b",
-            "a-.b",
-            "192.168.5.4",
-        ],
-    )
-    def test_rejects_malformed_bucket_name(self, bucket: str) -> None:
-        """Raise ValueError when the S3 bucket is present but not DNS-compliant."""
-        with pytest.raises(ValueError, match="valid DNS-compliant bucket name"):
-            _call_validate(s3_bucket=bucket)
-
     @pytest.mark.parametrize("region", [None, "", "   "])
     def test_rejects_s3_without_region(self, region: str | None) -> None:
         """Raise ValueError when S3 region is missing or blank."""
@@ -272,14 +253,6 @@ class TestValidateStorageConfig:
             )
             is None
         )
-
-    @pytest.mark.parametrize(
-        "url", ["not a url", "ftp://host", "example.com", "://x", "https://:443"]
-    )
-    def test_rejects_malformed_endpoint_url(self, url: str) -> None:
-        """Raise ValueError when the S3 endpoint URL is not a valid http(s) URL."""
-        with pytest.raises(ValueError, match="endpoint URL"):
-            _call_validate(s3_endpoint_url=url)
 
     def test_rejects_filesystem_path_set_for_s3(self) -> None:
         """Raise ValueError when a filesystem path is set alongside S3 storage."""
@@ -384,10 +357,35 @@ class TestStorageValidation:
             factory(**_s3_overrides(storage_type="gcs"))
 
     @pytest.mark.parametrize("factory", [_backup_create, _backup_write])
-    def test_rejects_malformed_bucket(self, factory) -> None:
-        """Reject a present-but-malformed S3 bucket name."""
+    @pytest.mark.parametrize(
+        "bucket",
+        [
+            "@@",
+            "UPPER",
+            "a",
+            "no_underscores",
+            "-lead",
+            "a..b",
+            "a.-b",
+            "a-.b",
+            "192.168.5.4",
+        ],
+    )
+    def test_rejects_malformed_bucket(self, factory, bucket: str) -> None:
+        """Reject a present-but-non-DNS-compliant S3 bucket name at the field level."""
         with pytest.raises(ValidationError):
-            factory(**_s3_overrides(storage_s3_bucket="@@"))
+            factory(**_s3_overrides(storage_s3_bucket=bucket))
+
+    @pytest.mark.parametrize("factory", [_backup_create, _backup_write])
+    def test_strips_surrounding_whitespace_on_s3_fields(self, factory) -> None:
+        """Trim padded S3 values so the untrimmed string never reaches the PBM config."""
+        model = factory(
+            **_s3_overrides(
+                storage_s3_bucket="  backups  ", storage_s3_region="  eu-west-1  "
+            )
+        )
+        assert model.storage_s3_bucket == "backups"
+        assert model.storage_s3_region == "eu-west-1"
 
     @pytest.mark.parametrize("factory", [_backup_create, _backup_write])
     def test_rejects_malformed_region_without_endpoint(self, factory) -> None:
@@ -407,10 +405,24 @@ class TestStorageValidation:
         assert model.storage_s3_endpoint_url == "https://minio.example.com"
 
     @pytest.mark.parametrize("factory", [_backup_create, _backup_write])
-    def test_rejects_malformed_endpoint_url(self, factory) -> None:
-        """Reject a malformed S3 endpoint URL."""
+    def test_normalizes_endpoint_trailing_slash(self, factory) -> None:
+        """Strip a trailing slash on the endpoint URL before it reaches the config builder."""
+        model = factory(
+            **_s3_overrides(
+                storage_s3_region="minio",
+                storage_s3_endpoint_url="https://minio.example.com/",
+            )
+        )
+        assert model.storage_s3_endpoint_url == "https://minio.example.com"
+
+    @pytest.mark.parametrize("factory", [_backup_create, _backup_write])
+    @pytest.mark.parametrize(
+        "url", ["not a url", "ftp://host", "example.com", "://x", "https://:443"]
+    )
+    def test_rejects_malformed_endpoint_url(self, factory, url: str) -> None:
+        """Reject a malformed S3 endpoint URL at the field level."""
         with pytest.raises(ValidationError):
-            factory(**_s3_overrides(storage_s3_endpoint_url="not a url"))
+            factory(**_s3_overrides(storage_s3_endpoint_url=url))
 
     @pytest.mark.parametrize("factory", [_backup_create, _backup_write])
     def test_rejects_s3_field_set_for_filesystem(self, factory) -> None:

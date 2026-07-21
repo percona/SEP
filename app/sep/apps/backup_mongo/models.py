@@ -18,7 +18,6 @@
 import re
 from enum import StrEnum
 from typing import Annotated
-from urllib.parse import urlparse
 
 import yaml
 from pydantic import (
@@ -31,12 +30,19 @@ from pydantic import (
 )
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    EnumFieldMixin,
+    NonEmptyStr,
+    StrHttpUrl,
+    StrippedNonEmptyStr,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
     Choices,
     FieldWidget,
     Forbidden,
+    Requires,
     ServiceRef,
     TaskFormModel,
     Ui,
@@ -151,7 +157,7 @@ def _validate_priority_yaml(value: str) -> str:
 # A non-empty Node Priority YAML string, validated as a node -> number mapping.
 BackupPriorityYaml = Annotated[NonEmptyStr, AfterValidator(_validate_priority_yaml)]
 
-# Storage backends SEP builds a PBM config for; ``StorageType.AZURE`` has no
+# Storage backends SEP builds a PBM config for; the ``azure`` backend has no
 # builder support and is not offered in the form, so it is rejected at create time.
 _SUPPORTED_STORAGE_TYPES = frozenset(
     {StorageType.S3.value, StorageType.FILESYSTEM.value}
@@ -178,10 +184,29 @@ def _is_blank(value: str | None) -> bool:
     return not (value and value.strip())
 
 
-def _is_http_url(value: str) -> bool:
-    """Return whether ``value`` is a well-formed ``http``/``https`` URL."""
-    parsed = urlparse(value.strip())
-    return parsed.scheme in ("http", "https") and bool(parsed.hostname)
+def _validate_s3_bucket_name(value: str) -> str:
+    """Validate a DNS-compliant, non-IP-formatted S3 bucket name.
+
+    A value-only check carried on the field annotation so a malformed bucket is
+    reported against its own input (a non-empty ``loc``, which the flash-message
+    helper needs to name the field) rather than the whole model.
+
+    :param value: The (already-stripped) S3 bucket name.
+    :return: The same value once it is confirmed DNS-compliant.
+    :raises ValueError: When the value is not a DNS-compliant bucket name or looks
+        like an IPv4 address.
+    """
+    if not _S3_BUCKET_RE.match(value) or _S3_BUCKET_IP_RE.match(value):
+        raise ValueError(
+            f"S3 bucket {value!r} is not a valid DNS-compliant bucket name "
+            "(3-63 chars: lowercase letters, digits, dots, hyphens; "
+            "no consecutive dots and not an IP address)"
+        )
+    return value
+
+
+# A stripped, non-empty, DNS-compliant S3 bucket name.
+S3BucketName = Annotated[StrippedNonEmptyStr, AfterValidator(_validate_s3_bucket_name)]
 
 
 def _validate_s3_storage(
@@ -191,33 +216,29 @@ def _validate_s3_storage(
     endpoint_url: str | None,
     filesystem_path: str | None,
 ) -> None:
-    """Validate the ``s3`` branch of :func:`validate_storage_config`.
+    """Validate the cross-field rules of the ``s3`` branch of :func:`validate_storage_config`.
 
-    :param bucket: The S3 bucket; required and DNS-compliant.
+    Value-only checks (DNS-compliant bucket, ``http(s)`` endpoint URL) live on the
+    field annotations; this helper covers only the rules that need cross-field
+    context: the other backend's fields being unset, the required fields being
+    present, and the AWS-region format being enforced only when no custom endpoint
+    marks the storage as S3-compatible (non-AWS).
+
+    :param bucket: The S3 bucket; required.
     :param region: The S3 region; required, and a valid AWS region unless a custom
         endpoint marks the storage as S3-compatible (non-AWS).
-    :param endpoint_url: The optional S3 endpoint URL; a valid ``http(s)`` URL when set.
+    :param endpoint_url: The optional S3 endpoint URL; its presence relaxes the
+        AWS-region format check.
     :param filesystem_path: The filesystem path, which must not be set for S3.
-    :raises ValueError: When a required field is missing or a field is malformed.
+    :raises ValueError: When a required field is missing or the region is malformed.
     """
     if not _is_blank(filesystem_path):
         raise ValueError("Filesystem path must not be set for S3 storage")
     if _is_blank(bucket):
         raise ValueError("S3 storage requires a non-empty bucket")
-    stripped_bucket = bucket.strip()
-    if not _S3_BUCKET_RE.match(stripped_bucket) or _S3_BUCKET_IP_RE.match(
-        stripped_bucket
-    ):
-        raise ValueError(
-            f"S3 bucket {bucket!r} is not a valid DNS-compliant bucket name "
-            "(3-63 chars: lowercase letters, digits, dots, hyphens; "
-            "no consecutive dots and not an IP address)"
-        )
     if _is_blank(region):
         raise ValueError("S3 storage requires a non-empty region")
-    if not _is_blank(endpoint_url) and not _is_http_url(endpoint_url):
-        raise ValueError(f"S3 endpoint URL {endpoint_url!r} is not a valid http(s) URL")
-    if _is_blank(endpoint_url) and not _AWS_REGION_RE.match(region.strip()):
+    if _is_blank(endpoint_url) and not _AWS_REGION_RE.match(region):
         raise ValueError(
             f"S3 region {region!r} is not a valid AWS region (e.g. us-east-1); "
             "set an endpoint URL for S3-compatible (non-AWS) storage"
@@ -271,24 +292,27 @@ def validate_storage_config(
     """Validate a per-task PBM storage configuration at create time.
 
     Ensure the selected backend is one SEP supports, that its required fields are
-    present and well-formed, and that fields belonging to the *other* backend are
-    not set — so an incomplete, malformed, or cross-wired storage config is rejected
-    with a 422 rather than silently accepted (and then partly ignored by the spec
-    builder) and never applied. The checks are structural; bucket reachability is
-    surfaced later, when the config is applied to PBM.
+    present, and that fields belonging to the *other* backend are not set — so an
+    incomplete, malformed, or cross-wired storage config is rejected at create time
+    (422 on the JSON API, a flash-redirect on the form path) rather than silently
+    accepted (and then partly ignored by the spec builder) and never applied. The
+    value-only field checks (DNS-compliant bucket, ``http(s)`` endpoint URL) run on
+    the field annotations; this helper covers the cross-field rules only. The checks
+    are structural; bucket reachability is surfaced later, when the config is applied
+    to PBM.
 
     :param storage_type: The selected storage backend (``s3`` or ``filesystem``).
-    :param s3_bucket: The S3 bucket; required (non-blank, DNS-compliant) when
-        ``storage_type`` is ``s3``, forbidden otherwise.
+    :param s3_bucket: The S3 bucket; required (non-blank) when ``storage_type`` is
+        ``s3``, forbidden otherwise.
     :param s3_region: The S3 region; required when ``storage_type`` is ``s3`` (and
         a valid AWS region unless a custom endpoint is set), forbidden otherwise.
     :param s3_prefix: The S3 key prefix; forbidden unless ``storage_type`` is ``s3``.
-    :param s3_endpoint_url: The S3 endpoint URL; a valid ``http(s)`` URL when set,
-        forbidden unless ``storage_type`` is ``s3``.
+    :param s3_endpoint_url: The S3 endpoint URL; its presence relaxes the AWS-region
+        format check, forbidden unless ``storage_type`` is ``s3``.
     :param filesystem_path: The filesystem path; required when ``storage_type`` is
         ``filesystem``, forbidden otherwise.
     :raises ValueError: When the storage type is unsupported, a required field is
-        missing or malformed, or a field of the other backend is set.
+        missing, the region is malformed, or a field of the other backend is set.
     """
     if storage_type not in _SUPPORTED_STORAGE_TYPES:
         raise ValueError(
@@ -478,7 +502,29 @@ class BackupConfig(BaseCaseInsensitiveModel):
     )
 
 
-class BackupCreate(BaseCaseInsensitiveModel):
+class _StorageConfigValidatorMixin:
+    """Carry the shared create-time storage-config validator.
+
+    Both request models (:class:`BackupCreate`, the Jinja form body, and
+    :class:`BackupTaskWrite`, the JSON body) run the same cross-field storage check.
+    Hosting it here keeps the validator from drifting between them.
+    """
+
+    @model_validator(mode="after")
+    def _validate_storage(self) -> "_StorageConfigValidatorMixin":
+        """Reject an incomplete or unsupported per-task storage config at create time."""
+        validate_storage_config(
+            self.storage_type,
+            s3_bucket=self.storage_s3_bucket,
+            s3_region=self.storage_s3_region,
+            s3_prefix=self.storage_s3_prefix,
+            s3_endpoint_url=self.storage_s3_endpoint_url,
+            filesystem_path=self.storage_filesystem_path,
+        )
+        return self
+
+
+class BackupCreate(_StorageConfigValidatorMixin, BaseCaseInsensitiveModel):
     """Represent a Backup creation form with proper case-insensitive fields.
 
     :param task_name: The PBM yaml payload to parse from CLI.
@@ -502,11 +548,11 @@ class BackupCreate(BaseCaseInsensitiveModel):
     pitr_enabled: bool = False
     pitr_compression: NonEmptyStr | EmptyStrToNone = None
     storage_type: NonEmptyStr | EmptyStrToNone = None
-    storage_s3_region: NonEmptyStr | EmptyStrToNone = None
-    storage_s3_bucket: NonEmptyStr | EmptyStrToNone = None
-    storage_s3_prefix: NonEmptyStr | EmptyStrToNone = None
-    storage_s3_endpoint_url: NonEmptyStr | EmptyStrToNone = None
-    storage_filesystem_path: NonEmptyStr | EmptyStrToNone = None
+    storage_s3_region: StrippedNonEmptyStr | EmptyStrToNone = None
+    storage_s3_bucket: S3BucketName | EmptyStrToNone = None
+    storage_s3_prefix: StrippedNonEmptyStr | EmptyStrToNone = None
+    storage_s3_endpoint_url: StrHttpUrl | EmptyStrToNone = None
+    storage_filesystem_path: StrippedNonEmptyStr | EmptyStrToNone = None
     # Backup options
     backup_priority: BackupPriorityYaml | EmptyStrToNone = None
     backup_compression: CompressionAlgorithm | EmptyStrToNone = None
@@ -517,20 +563,8 @@ class BackupCreate(BaseCaseInsensitiveModel):
     # Path to MongoDB URI credentials file on the Nomad node (passed as task meta, used by payloads).
     credentials_path: NonEmptyStr | EmptyStrToNone = None
 
-    @model_validator(mode="after")
-    def _validate_storage(self) -> "BackupCreate":
-        """Reject an incomplete or unsupported per-task storage config at create time."""
-        validate_storage_config(
-            self.storage_type,
-            s3_bucket=self.storage_s3_bucket,
-            s3_region=self.storage_s3_region,
-            s3_prefix=self.storage_s3_prefix,
-            s3_endpoint_url=self.storage_s3_endpoint_url,
-            filesystem_path=self.storage_filesystem_path,
-        )
-        return self
 
-
+_S3_STORAGE = Requires(when=F("storage_type") == StorageType.S3.value)
 _NOT_S3_STORAGE = Forbidden(when=F("storage_type") != StorageType.S3.value)
 _NOT_FILESYSTEM_STORAGE = Forbidden(
     when=F("storage_type") != StorageType.FILESYSTEM.value
@@ -574,6 +608,7 @@ class BackupForm(TaskFormModel):
     ] = StorageType.S3.value
     storage_s3_region: Annotated[
         str | None,
+        _S3_STORAGE,
         _NOT_S3_STORAGE,
         Ui(
             label="S3 Region",
@@ -583,6 +618,7 @@ class BackupForm(TaskFormModel):
     ] = None
     storage_s3_bucket: Annotated[
         str | None,
+        _S3_STORAGE,
         _NOT_S3_STORAGE,
         Ui(
             label="S3 Bucket",
@@ -643,7 +679,7 @@ class BackupForm(TaskFormModel):
     ] = None
 
 
-class BackupTaskWrite(BaseModel):
+class BackupTaskWrite(_StorageConfigValidatorMixin, BaseModel):
     """Represent a JSON request body for creating a backup task group.
 
     Mirrors :class:`BackupCreate` except ``backup_type``, which is always
@@ -701,11 +737,11 @@ class BackupTaskWrite(BaseModel):
     pitr_enabled: bool = False
     pitr_compression: str | None = None
     storage_type: str
-    storage_s3_region: str | None = None
-    storage_s3_bucket: str | None = None
-    storage_s3_prefix: str | None = None
-    storage_s3_endpoint_url: str | None = None
-    storage_filesystem_path: str | None = None
+    storage_s3_region: StrippedNonEmptyStr | EmptyStrToNone = None
+    storage_s3_bucket: S3BucketName | EmptyStrToNone = None
+    storage_s3_prefix: StrippedNonEmptyStr | EmptyStrToNone = None
+    storage_s3_endpoint_url: StrHttpUrl | EmptyStrToNone = None
+    storage_filesystem_path: StrippedNonEmptyStr | EmptyStrToNone = None
     backup_priority: BackupPriorityYaml | EmptyStrToNone = None
     backup_compression: CompressionAlgorithm | None = None
     backup_compression_level: int | None = None
@@ -713,19 +749,6 @@ class BackupTaskWrite(BaseModel):
     backup_oplog_span_min: float | None = None
     backup_num_parallel_collections: int | None = None
     credentials_path: str | None = None
-
-    @model_validator(mode="after")
-    def _validate_storage(self) -> "BackupTaskWrite":
-        """Reject an incomplete or unsupported per-task storage config at create time."""
-        validate_storage_config(
-            self.storage_type,
-            s3_bucket=self.storage_s3_bucket,
-            s3_region=self.storage_s3_region,
-            s3_prefix=self.storage_s3_prefix,
-            s3_endpoint_url=self.storage_s3_endpoint_url,
-            filesystem_path=self.storage_filesystem_path,
-        )
-        return self
 
 
 class BackupDerivedTaskSummary(BaseModel):
