@@ -391,4 +391,93 @@ describe('HostSelector', () => {
       expect.objectContaining({ hostname: 'node-a', service_id: 7 }),
     );
   });
+
+  it('rehydrates a scalar service_id with the parent service_types filter', async () => {
+    mocked.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/sep/hosts/') {
+        return Promise.resolve(
+          makeResponse([
+            { id: 'node-a', name: 'Display A', address: '10.0.0.1' },
+            { id: 'node-b', name: 'Display B', address: '10.0.0.2' },
+          ]),
+        );
+      }
+      if (url === '/sep/services/') {
+        expect(config?.params).toMatchObject({ service_type: 'mongodb' });
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                id: 7,
+                name: 'mongo-svc',
+                type: 'mongodb',
+                node: { name: 'node-b', address: '10.0.0.2', type: 'generic' },
+                node_id: 1,
+                schemas: [],
+              },
+            ],
+            total: 1,
+            offset: 0,
+            limit: 200,
+          },
+        });
+      }
+      return Promise.reject(new Error(`unexpected url ${url}`));
+    });
+
+    const onSubmit = vi.fn();
+    const sections: FormSection[] = [
+      {
+        title: 'Task',
+        fields: [
+          {
+            type: 'service',
+            name: 'service_id',
+            label: 'Database Service',
+            required: true,
+            service_types: ['mongodb'],
+          },
+          {
+            type: 'host',
+            name: 'hostname',
+            label: 'Execution Host',
+            required: true,
+            depends_on: 'service_id',
+          },
+        ],
+      },
+    ];
+
+    const client = makeClient();
+    render(
+      <Wrapper client={client}>
+        <SchemaFormRenderer
+          sections={sections}
+          onSubmit={onSubmit}
+          defaultValues={{ service_id: 7 }}
+        />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Execution Host\b/)).toHaveValue('Display B');
+    });
+
+    const servicesCalls = mocked.get.mock.calls.filter((c) => c[0] === '/sep/services/');
+    expect(servicesCalls.length).toBeGreaterThan(0);
+    for (const call of servicesCalls) {
+      expect(call[1]).toEqual(
+        expect.objectContaining({
+          params: expect.objectContaining({ service_type: 'mongodb' }),
+        }),
+      );
+    }
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ hostname: 'node-b', service_id: 7 }),
+    );
+  });
 });

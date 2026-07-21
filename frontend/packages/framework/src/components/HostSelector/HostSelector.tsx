@@ -20,7 +20,7 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useSnackbar } from 'notistack';
 import { useHosts, type HostOption } from '../../hooks/useHosts';
-import { useServices, type ServiceOption } from '../../hooks/useServices';
+import { useServices, type ServiceOption, type ServiceType } from '../../hooks/useServices';
 import { extractId } from '../../utils/extractId';
 import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 import { resolveExecutorHostForService } from './resolveExecutorHostForService';
@@ -44,6 +44,13 @@ export interface HostSelectorProps {
    * (node name → address → service name). The user may still override.
    */
   dependsOn?: string;
+  /**
+   * When resolving a scalar ``dependsOn`` id, bound the services fetch to these
+   * types (typically the parent ``ServiceField.service_types``). Omit only when
+   * the parent value is already a hydrated ``ServiceOption``; an unbound
+   * ``useServices()`` page-loop is intentionally not used here.
+   */
+  serviceTypes?: readonly ServiceType[];
   /**
    * Render a closed multi-value host selector committing a `(number | string)[]`.
    * Host free-solo is not offered, so multi-host is always a closed combobox.
@@ -90,16 +97,20 @@ function isHydratedService(value: unknown): value is ServiceOption {
  * Cascade auto-select for a single host field. Mounted only when ``dependsOn``
  * is set so ``useWatch`` always receives a real field name (never ``''``) and
  * ``useServices`` runs only when the parent is an unresolved id — a hydrated
- * ``ServiceOption`` from ServiceSelector already carries ``node``.
+ * ``ServiceOption`` from ServiceSelector already carries ``node``. Scalar ids
+ * rehydrate via ``useServices({ serviceTypes })`` so the fetch stays bounded to
+ * the parent field's declared types (and shares ServiceSelector's query cache).
  */
 function HostServiceCascade({
   name,
   dependsOn,
   hosts,
+  serviceTypes,
 }: {
   name: string;
   dependsOn: string;
   hosts: HostOption[];
+  serviceTypes?: readonly ServiceType[];
 }) {
   const { setValue, getValues } = useFormContext();
   const parent = useWatch({ name: dependsOn }) as
@@ -111,7 +122,10 @@ function HostServiceCascade({
 
   const unresolvedServiceId = isHydratedService(parent) ? null : extractId(parent);
   const { data: services = EMPTY_SERVICES } = useServices({
-    enabled: unresolvedServiceId !== null,
+    serviceTypes,
+    // Require an explicit type filter (including `[]` = all types) so we never
+    // page the untyped `/sep/services/` list from a missing `serviceTypes` prop.
+    enabled: unresolvedServiceId !== null && serviceTypes !== undefined,
   });
 
   const resetKey = parentResetKey(parent);
@@ -159,6 +173,7 @@ export function HostSelector({
   disabled,
   helperText,
   dependsOn,
+  serviceTypes,
   multiple,
 }: HostSelectorProps) {
   const {
@@ -218,7 +233,14 @@ export function HostSelector({
 
   return (
     <>
-      {dependsOn ? <HostServiceCascade name={name} dependsOn={dependsOn} hosts={hosts} /> : null}
+      {dependsOn ? (
+        <HostServiceCascade
+          name={name}
+          dependsOn={dependsOn}
+          hosts={hosts}
+          serviceTypes={serviceTypes}
+        />
+      ) : null}
       <AutoCompleteInput<HostOption>
         name={name}
         label={label}
