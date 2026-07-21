@@ -307,13 +307,17 @@ class RestoreForm(TaskFormModel):
     :class:`Ui` / reference / :class:`Choices` markers. It is *not* the JSON request
     body — :class:`RestoreTaskWrite` is — and is never validated as one;
     field-declaration order reproduces the schema's section and field order (Task,
-    Restore Options). The ``task_name`` / ``hostname`` Task-section fields and the
-    ``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`
-    (``alert_on_fail`` is ``Hidden``, off-schema). The inherited ``NonEmptyStr`` type
-    is used for those two fields, the deriver emits no min-length constraint, and
-    this form is never validated as a request body.
+    Restore Options). ``task_name`` is redeclared so the form can carry a
+    presentation default via ``Ui(default=...)``; ``hostname`` and the
+    ``alert_on_fail`` capability control stay inherited from
+    :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema). This form
+    is never validated as a request body.
     """
 
+    task_name: Annotated[
+        NonEmptyStr,
+        Ui(section="Task", default="mongodb-restore"),
+    ]
     service_id: Annotated[
         int | None,
         ServiceRef(service_types=(ServiceTypeEnum.MONGODB,)),

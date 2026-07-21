@@ -142,6 +142,34 @@ class TestRestoreMongoAppSchemaEndpoint:
 
         assert response.json()["name"] == "backup_mongo_restores"
 
+    def test_schema_collapses_restore_options_and_defaults_task_name(self, test_client):
+        """Collapse Restore Options by default and pre-fill task_name."""
+        response = test_client.get(f"{API_BASE}/schema")
+        body = response.json()
+        sections = {section["title"]: section for section in body["forms"]}
+
+        task = sections["Task"]
+        assert task["collapsible"] is False
+        assert task["collapsed_by_default"] is False
+        task_name = next(
+            field for field in task["fields"] if field["name"] == "task_name"
+        )
+        assert task_name["default"] == "mongodb-restore"
+
+        restore_options = sections["Restore Options"]
+        assert restore_options["collapsible"] is True
+        assert restore_options["collapsed_by_default"] is True
+        assert {field["name"] for field in restore_options["fields"]} == {
+            "restore_batch_size",
+            "restore_num_insertion_workers",
+            "restore_num_parallel_collections",
+            "restore_num_download_workers",
+            "restore_max_download_buffer_mb",
+            "restore_download_chunk_mb",
+            "restore_mongod_location",
+            "restore_mongod_location_map",
+        }
+
 
 class TestRestoreMongoApiList:
     """Tests for GET /api/apps/backup_mongo/restore/."""
