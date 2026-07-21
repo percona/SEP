@@ -8897,6 +8897,9 @@ export interface components {
      *     :param total_run_count: The total number of times the schedule has run,
      *         or ``None`` when unavailable.
      *     :type total_run_count: int | None
+     *     :param last_run_status: The result of this schedule's own most recent run,
+     *         or ``None`` when the schedule has never run.
+     *     :type last_run_status: TaskHistoryStatusEnum | None
      *     :param chain_task_names: Ordered task names in the periodic execution
      *         chain, if any.
      *     :type chain_task_names: list[str]
@@ -8910,6 +8913,7 @@ export interface components {
       id: number;
       /** Last Run At */
       last_run_at?: string | null;
+      last_run_status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Name */
       name: string;
       /** Next Run At */

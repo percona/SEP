@@ -35,6 +35,7 @@ from app.core.pagination import (
 from app.core.utils.date_time import utc_now
 from app.tasks.crud import (
     DispatchLockManager,
+    MAX_SYSTEM_STATUS_POINTS_PER_NAME,
     TaskHistoryLogManager,
     TaskHistoryManager,
     TaskManager,
@@ -42,6 +43,7 @@ from app.tasks.crud import (
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
+    SYSTEM_USER,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -107,6 +109,7 @@ async def _create_task_history(
     status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.SUCCESS,
     snippet_filename: str | None = None,
     finished_at: datetime | None = None,
+    executed_by: str | None = None,
 ) -> TaskHistory:
     """Create and persist a task history record.
 
@@ -120,6 +123,9 @@ async def _create_task_history(
     :type snippet_filename: str | None
     :param finished_at: Optional completion timestamp for the history row.
     :type finished_at: datetime | None
+    :param executed_by: Optional executor marker (e.g. ``SYSTEM_USER``) stamped
+        on the row; left at the model default when ``None``.
+    :type executed_by: str | None
     :return: The persisted task history.
     :rtype: TaskHistory
     """
@@ -130,6 +136,7 @@ async def _create_task_history(
         task_id=task.id,
         status=status,
         finished_at=finished_at,
+        executed_by=executed_by,
         execution_request={
             "task": task.name,
             "target": "localhost",
@@ -850,6 +857,170 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         assert latest is not None
         assert latest.status == TaskHistoryStatusEnum.FAILED
         assert latest.finished_at == row.finished_at
+
+    @pytest.mark.asyncio
+    async def test_no_executor_filter_returns_newest_regardless(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the latest-status lookup still returns the newest row's status.
+
+        Guards the existing ``POST /history/latest`` consumer, which reports the
+        newest run irrespective of executor.
+        """
+        task = await _create_task(session, name="latest-executor-default")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.RUNNING,
+            executed_by="test-user",
+        )
+
+        result = await TaskHistoryManager.latest_status_by_task_names(
+            session, [task.name]
+        )
+
+        latest = result[task.name]
+        assert latest is not None
+        assert latest.status == TaskHistoryStatusEnum.RUNNING
+
+
+class TestTaskHistoryManagerRecentSystemStatusPoints:
+    """Test TaskHistoryManager.recent_system_status_points_by_task_names."""
+
+    @pytest.mark.asyncio
+    async def test_returns_system_points_oldest_first(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert system-executed points are grouped by name, oldest first."""
+        task = await _create_task(session, name="points-order")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.FAILED,
+            executed_by=SYSTEM_USER,
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, [task.name]
+        )
+
+        assert [point.status for point in points[task.name]] == [
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.FAILED,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_excludes_non_system_rows(self, session: AsyncSession) -> None:
+        """Assert manual (non-system) runs are excluded from the points."""
+        task = await _create_task(session, name="points-non-system")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.RUNNING,
+            executed_by="test-user",
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, [task.name]
+        )
+
+        assert [point.status for point in points[task.name]] == [
+            TaskHistoryStatusEnum.SUCCESS
+        ]
+
+    @pytest.mark.asyncio
+    async def test_name_absent_when_only_non_system(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a name with only manual runs is absent from the mapping."""
+        task = await _create_task(session, name="points-only-manual")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by="test-user",
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, [task.name]
+        )
+
+        assert task.name not in points
+
+    @pytest.mark.asyncio
+    async def test_empty_names_returns_empty(self, session: AsyncSession) -> None:
+        """Assert an empty name list short-circuits to an empty mapping."""
+        assert (
+            await TaskHistoryManager.recent_system_status_points_by_task_names(
+                session, []
+            )
+            == {}
+        )
+
+    @pytest.mark.asyncio
+    async def test_groups_points_by_name(self, session: AsyncSession) -> None:
+        """Assert points are partitioned per task name, not mixed across names."""
+        first = await _create_task(session, name="points-first")
+        second = await _create_task(session, name="points-second")
+        await _create_task_history(
+            session,
+            first,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+        await _create_task_history(
+            session,
+            second,
+            status=TaskHistoryStatusEnum.FAILED,
+            executed_by=SYSTEM_USER,
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, [first.name, second.name]
+        )
+
+        assert [point.status for point in points[first.name]] == [
+            TaskHistoryStatusEnum.SUCCESS
+        ]
+        assert [point.status for point in points[second.name]] == [
+            TaskHistoryStatusEnum.FAILED
+        ]
+
+    @pytest.mark.asyncio
+    async def test_caps_points_per_name(self, session: AsyncSession) -> None:
+        """Assert only the newest ``MAX_SYSTEM_STATUS_POINTS_PER_NAME`` are kept."""
+        task = await _create_task(session, name="points-cap")
+        for _ in range(MAX_SYSTEM_STATUS_POINTS_PER_NAME + 5):
+            await _create_task_history(
+                session,
+                task,
+                status=TaskHistoryStatusEnum.SUCCESS,
+                executed_by=SYSTEM_USER,
+            )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, [task.name]
+        )
+
+        assert len(points[task.name]) == MAX_SYSTEM_STATUS_POINTS_PER_NAME
 
 
 # ---------------------------------------------------------------------------

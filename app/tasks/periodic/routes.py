@@ -20,11 +20,13 @@ import logging
 
 from fastapi import APIRouter, status
 from sqlalchemy_celery_beat import PeriodicTask
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
+from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.iterators import unique_everseen
-from app.tasks.crud import TaskManager
+from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import (
     get_executable_task_by_name,
     SessionDep,
@@ -43,6 +45,66 @@ router = APIRouter(prefix="/periodic", tags=["periodic", "schedule", "tasks"])
 logger = logging.getLogger(__name__)
 
 
+def _resolve_task_name(periodic_task: PeriodicTask) -> str | None:
+    """Return the SEP task name a beat-store schedule runs, or ``None``.
+
+    Mirror :meth:`PeriodicTaskResponse.populate_task_data`: the name comes from
+    ``args[0]`` and is overridden by ``kwargs["task_name"]`` when present.
+
+    :param periodic_task: The beat-store row to inspect.
+    :return: The resolved SEP task name, or ``None`` when it cannot be derived.
+    """
+    name: str | None = None
+    if periodic_task.args and (args := json.loads(periodic_task.args)):
+        name = args[0]
+    if periodic_task.kwargs and (kwargs := json.loads(periodic_task.kwargs)):
+        name = kwargs.get("task_name", name)
+    return name
+
+
+async def attach_last_run_status(
+    tasks_session: AsyncSession, periodic_tasks: list[PeriodicTask]
+) -> list[PeriodicTask]:
+    """Stamp each schedule's own last-run result onto its beat-store rows.
+
+    Resolve the SEP task name behind every schedule, fetch recent
+    system-triggered history points for those names in a single bulk query, then
+    attribute to each schedule the earliest point whose ``created_at`` is at or
+    after that schedule's ``last_run_at`` -- the beat store records
+    ``last_run_at`` when it dispatches, so the schedule's own run is the first
+    system row at or after that instant. A schedule that has never run
+    (``last_run_at is None``) is forced to ``None``. Correlating on the
+    schedule's own dispatch time keeps a later, unrelated system run of the same
+    task name (a chain child or connectivity check) from being reported as this
+    schedule's result. Two schedules that last ran at the same instant on the
+    same task name still resolve to the same point.
+
+    :param tasks_session: The tasks-database session used for the history lookup.
+    :param periodic_tasks: The beat-store rows to annotate in place.
+    :return: The same rows, each carrying a ``last_run_status`` attribute.
+    """
+    ran = [
+        (task, name, make_datetime_utc(task.last_run_at))
+        for task in periodic_tasks
+        if (name := _resolve_task_name(task)) and task.last_run_at is not None
+    ]
+    points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+        tasks_session, [name for _, name, _ in ran]
+    )
+    for task in periodic_tasks:
+        task.last_run_status = None
+    for task, name, run_at in ran:
+        task.last_run_status = next(
+            (
+                point.status
+                for point in points.get(name, ())
+                if make_datetime_utc(point.created_at) >= run_at
+            ),
+            None,
+        )
+    return periodic_tasks
+
+
 # TODO: Pagination  # noqa: TD002, TD003
 @router.get(
     "/",
@@ -57,22 +119,34 @@ async def list_periodic_tasks(
 ) -> list[PeriodicTask]:
     """List all periodic tasks."""
     if owner is None:
-        return await PeriodicTaskManager.list(session=session, enabled=enabled)
-    tasks_names = [
-        task.name
-        for task in await TaskManager.list_active(session=tasks_session, owner=owner)
-    ]
-    return await PeriodicTaskManager.list_by_task_names(
-        session, *tasks_names, enabled=enabled
-    )
+        periodic_tasks = await PeriodicTaskManager.list(
+            session=session, enabled=enabled
+        )
+    else:
+        tasks_names = [
+            task.name
+            for task in await TaskManager.list_active(
+                session=tasks_session, owner=owner
+            )
+        ]
+        periodic_tasks = await PeriodicTaskManager.list_by_task_names(
+            session, *tasks_names, enabled=enabled
+        )
+    return await attach_last_run_status(tasks_session, periodic_tasks)
 
 
-@router.get("/{periodic_task_id}", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/{periodic_task_id}",
+    dependencies=[IsAuthenticatedDep],
+    response_model=PeriodicTaskResponse,
+)
 async def retrieve_periodic_task(
     periodic_task: PeriodicTaskDep,
-) -> PeriodicTaskResponse:
+    tasks_session: SessionDep,
+) -> PeriodicTask:
     """Retrieve a periodic task by ID."""
-    return periodic_task
+    (annotated,) = await attach_last_run_status(tasks_session, [periodic_task])
+    return annotated
 
 
 @router.put(
@@ -141,7 +215,9 @@ async def update_periodic_task(
         )
 
     logger.debug("Updating periodic task %s", existing_task.id)
-    return await PeriodicTaskManager.update(session, existing_task, updated_task)
+    updated = await PeriodicTaskManager.update(session, existing_task, updated_task)
+    (annotated,) = await attach_last_run_status(tasks_session, [updated])
+    return annotated
 
 
 @router.delete(

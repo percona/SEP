@@ -924,6 +924,12 @@ export interface components {
      *     :type total_run_count: int
      *     :param date_changed: The datetime when the task was last changed.
      *     :type date_changed: UTCDatetime | None
+     *     :param last_run_status: The result of this schedule's own most recent
+     *         run, or ``None`` when the schedule has never run. Resolved as the
+     *         earliest system-triggered history for this task name at or after the
+     *         schedule's ``last_run_at``, so a later unrelated system run of the same
+     *         task name is not misattributed.
+     *     :type last_run_status: TaskHistoryStatusEnum | None
      *     :param interval: The interval schedule for the task. Defaults to None. This field
      *         is populated with the alias "model_intervalschedule".
      *     :type interval: IntervalSchedule | None
@@ -945,6 +951,7 @@ export interface components {
       interval?: components['schemas']['IntervalSchedule'] | null;
       /** Last Run At */
       last_run_at: string | null;
+      last_run_status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Name */
       name: string;
       /**
