@@ -578,7 +578,11 @@ class TestReferenceFields:
         )
 
     def test_multi_host_ref_depends_on_emitted_when_set(self) -> None:
-        """Emit ``depends_on`` on a MultiHostField when ``Ui(depends_on=...)`` is set."""
+        """Emit ``depends_on`` on MultiHostField for wire uniformity (no cascade).
+
+        Cascade auto-select is single-host only; this pins derivation still
+        forwards ``Ui(depends_on=...)`` onto the multi-value field.
+        """
         fields = _fields_by_name(_MultiHostCascadeModel)
         assert isinstance(fields["hosts"], MultiHostField)
         assert fields["hosts"].depends_on == "service_id"

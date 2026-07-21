@@ -222,8 +222,9 @@ export interface HostField extends BaseField {
 export interface MultiHostField extends BaseField {
   type: 'multi_host';
   /**
-   * Optional upstream field whose value drives the default executor
-   * selection. Omitted when the host list is not cascaded.
+   * Optional upstream field name mirrored from the schema. Cascade
+   * auto-select is single-host only; the multi-host renderer ignores this
+   * today. Omitted when unset.
    */
   depends_on?: string;
   /** Offer free-text (free-solo) entry alongside the inventory options. */

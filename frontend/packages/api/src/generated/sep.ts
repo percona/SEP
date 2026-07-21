@@ -6696,11 +6696,16 @@ export interface components {
      *     list of executor targets instead of a single one. Derived from a
      *     ``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
      *
+     *     Cascade auto-select is single-host only (:class:`HostField`). ``depends_on``
+     *     may still be emitted when ``Ui(depends_on=...)`` is set so derivation stays
+     *     uniform, but the multi-host renderer does not honour it today.
+     *
      *     :param field_type: The discriminator literal; always ``"multi_host"`` for
      *         this class. Serialised as the JSON key ``"type"``.
-     *     :param depends_on: Optional name of the field whose value drives the
-     *         default executor selection. ``None`` (the default) omits the key from
-     *         the wire so plugins that do not opt in stay byte-identical.
+     *     :param depends_on: Optional upstream field name mirrored from
+     *         ``Ui(depends_on=...)``. Emitted for wire uniformity with
+     *         :class:`HostField`; the current multi-host renderer ignores it (no
+     *         cascade). ``None`` (the default) omits the key from the wire.
      *     :param allow_custom: When ``True``, the selector also accepts free-typed
      *         values alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.

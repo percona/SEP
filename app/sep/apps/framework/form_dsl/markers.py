@@ -109,9 +109,9 @@ class Ui:
     :param depends_on: For a cascade reference (``SchemaRef`` / ``TableRef`` /
         ``HostRef``), the field name whose value drives this field's options or
         default selection. Required for ``SchemaRef`` / ``TableRef``; optional
-        for ``HostRef`` (when set, the renderer auto-selects an executor from
-        the upstream service). Ignored for other field kinds. Defaults to
-        ``None``.
+        for ``HostRef`` (when set on a single-value host field, the renderer
+        auto-selects an executor from the upstream service; multi-host ignores
+        it). Ignored for other field kinds. Defaults to ``None``.
     :param order: Sort position within the section; ties break on declaration
         order. Defaults to ``0``.
     :param required: Override for the wire ``required`` flag. ``None`` (the
@@ -300,9 +300,12 @@ class HostRef:
 
     Cascade from a service (or other upstream field) is declared via
     ``Ui(depends_on=...)``, the same way :class:`SchemaRef` / :class:`TableRef`
-    declare theirs. When set, the derived ``HostField`` carries ``depends_on``
-    on the wire and the renderer may auto-select an executor from the upstream
-    value; when omitted the field lists every available executor as before.
+    declare theirs. When set on a single-value field, the derived
+    ``HostField`` carries ``depends_on`` on the wire and the renderer may
+    auto-select an executor from the upstream value; when omitted the field
+    lists every available executor as before. Multi-value
+    (``multiple=True``) may still emit ``depends_on`` on ``MultiHostField``,
+    but cascade auto-select is single-host only today.
 
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value and emits ``allow_custom`` on the wire. Defaults to ``False``.

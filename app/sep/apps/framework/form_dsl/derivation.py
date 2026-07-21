@@ -449,6 +449,8 @@ def _build_ref_field(
     if isinstance(ref, HostRef):
         # Optional cascade: emit depends_on when Ui declares one; omit (None)
         # otherwise so exclude_none keeps other apps' wire schemas unchanged.
+        # MultiHostField may carry the key for wire uniformity, but only the
+        # single-value HostField renderer honours it today.
         return field_class(
             **common, allow_custom=allow_custom, depends_on=ui.depends_on
         )
