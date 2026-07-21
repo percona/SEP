@@ -10,13 +10,21 @@ conf=/home/sep/app/supervisord.conf
 # Only the migration one-shots may sit in EXITED; every other program must be
 # RUNNING. A failed upgrade also lands in EXITED and is indistinguishable here,
 # so completion is asserted separately via the sentinels each one-shot writes.
-not_up="$(supervisorctl -c "$conf" status |
-    grep -Ev '\bRUNNING\b' |
-    grep -Ev '^migrate-(sep|inventory|tasks)[[:space:]]+EXITED\b' || true)"
-if [[ -n $not_up ]]; then
-    printf 'unhealthy: program(s) not RUNNING:\n%s\n' "$not_up" >&2
+# Each program is asserted positively rather than by filtering status output, so
+# a supervisorctl that cannot reach the socket reports unhealthy instead of
+# yielding an empty diff.
+status="$(supervisorctl -c "$conf" status || true)"
+mapfile -t programs < <(sed -n 's/^\[program:\(.*\)\]$/\1/p' "$conf" | grep -v '^migrate-')
+if [[ ${#programs[@]} -eq 0 ]]; then
+    echo "unhealthy: no programs declared in $conf" >&2
     exit 1
 fi
+for prog in "${programs[@]}"; do
+    if ! grep -qE "^${prog}[[:space:]]+RUNNING([[:space:]]|$)" <<< "$status"; then
+        printf 'unhealthy: %s is not RUNNING:\n%s\n' "$prog" "$status" >&2
+        exit 1
+    fi
+done
 
 for svc in sep inventory tasks; do
     if [[ ! -f /tmp/migrate-$svc.ok ]]; then

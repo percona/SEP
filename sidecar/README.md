@@ -47,9 +47,11 @@ A conforming profile must provide:
 
 ## Volumes
 
-`$APP_HOME` is `0750 root:sep` with read-only files, so the `sep` user cannot
-create directories under it. Any path SEP writes to at runtime must be mounted
-as a writable volume — at minimum `SEP.artifact_dir`, which defaults to
+Everything shipped into `$APP_HOME` is `root:sep` and read-only to the `sep`
+user; the directory itself is `0750 sep:sep`, so `sep` can create new entries
+directly under it but cannot write inside any shipped subdirectory. Runtime
+artifacts survive a container replacement only if their path is mounted as a
+writable volume — at minimum `SEP.artifact_dir`, which defaults to
 `data/health-reports`:
 
 ```
