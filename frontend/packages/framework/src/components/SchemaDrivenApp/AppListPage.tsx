@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -26,7 +26,14 @@ import Tabs from '@mui/material/Tabs';
 import AddIcon from '@mui/icons-material/Add';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import { useSnackbar } from 'notistack';
-import { useDeleteAppEntity, useAppEntityList, useAppTasks, type AppSchema } from '@sep/api';
+import {
+  DEFAULT_APP_LIST_LIMIT,
+  DEFAULT_APP_LIST_OFFSET,
+  useDeleteAppEntity,
+  useAppEntityList,
+  useAppTasks,
+  type AppSchema,
+} from '@sep/api';
 import { SchemaListView, type RenderListColumnOverride } from '../SchemaListView';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
@@ -88,16 +95,34 @@ export function AppListPage({
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
 
-  const singleQuery = useAppTasks(pluginName, mockTasks, { enabled: !multi });
+  const [listPage, setListPage] = useState({
+    offset: DEFAULT_APP_LIST_OFFSET,
+    limit: DEFAULT_APP_LIST_LIMIT,
+  });
+
+  useEffect(() => {
+    setListPage({ offset: DEFAULT_APP_LIST_OFFSET, limit: DEFAULT_APP_LIST_LIMIT });
+  }, [pluginName, entityName]);
+
+  const listQueryOptions = {
+    offset: listPage.offset,
+    limit: listPage.limit,
+  };
+
+  const singleQuery = useAppTasks(pluginName, mockTasks, {
+    enabled: !multi,
+    ...listQueryOptions,
+  });
   const entityQuery = useAppEntityList(
     pluginName,
     entityName ?? '',
     multi ? mockEntityItems?.[entityName!] : undefined,
-    { enabled: multi },
+    { enabled: multi, ...listQueryOptions },
   );
 
   const { data: listResult, isLoading } = multi ? entityQuery : singleQuery;
   const rows = listResult?.items ?? [];
+  const listPagination = listResult?.pagination ?? null;
   const listView = multi ? entitySchema!.list_view : schema.list_view!;
   const title = multi ? entitySchema!.display_name : schema.display_name;
   const description = multi ? entitySchema?.description : schema.description;
@@ -223,6 +248,16 @@ export function AppListPage({
         data={rows}
         isLoading={isLoading}
         pluginName={pluginName}
+        pagination={
+          listPagination
+            ? {
+                total: listPagination.total,
+                offset: listPagination.offset,
+                limit: listPagination.limit,
+                onChange: setListPage,
+              }
+            : null
+        }
         onRowClick={
           listOnly
             ? undefined
