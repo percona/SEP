@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.mysql_backups.models import (
     BackupConfigAll,
-    BackupResponse,
+    BackupTaskResponse,
     BackupType,
 )
 from app.tasks.models import TaskBackendEnum
@@ -113,12 +113,12 @@ class TestUploadQuietField:
             BackupConfigAll.model_validate({"UPLOAD_QUIET": None})
 
 
-class TestBackupResponseModel:
-    """Tests for ``BackupResponse`` rebased onto ``BaseTaskResponse``."""
+class TestBackupTaskResponseModel:
+    """Verify ``BackupTaskResponse`` is rebased onto ``BaseTaskResponse``."""
 
     def test_exposes_inherited_task_response_surface(self) -> None:
         """Carry the shared anonymization and connectivity surface from the base."""
-        response = BackupResponse(
+        response = BackupTaskResponse(
             name="mysql-backup",
             owner="BACKUPS",
             backend=TaskBackendEnum.PROXY,
