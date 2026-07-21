@@ -18,15 +18,18 @@
 Section *membership* and *order* are declared on
 :class:`~app.sep.apps.backup_mongo.models.BackupForm` (via ``Ui(section=...)``
 and field-declaration order); what lives here is the part the model cannot
-express: the section titles, the collapse metadata, the read-only Task-section
-note about derived backup types, the list columns, and the UI capability flags.
-These feed the derived ``GET /schema``.
+express: the section titles, the collapse metadata, the list columns, and the
+UI capability flags. The Task-section note about derived sibling types is
+applied in :mod:`app.sep.apps.backup_mongo.schema` from
+:data:`~app.sep.apps.backup_mongo.schema.BACKUP_MONGO_DERIVED`. These feed the
+derived ``GET /schema``.
 """
 
 from app.sep.apps.framework.apps import Views
 from app.sep.apps.framework.form_dsl import (
     FormLayout,
     SectionLayout,
+    TASK_SECTION_LAYOUT,
 )
 from app.sep.apps.framework.schema import (
     Capabilities,
@@ -36,22 +39,10 @@ from app.sep.apps.framework.schema import (
 )
 from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
 
-#: Task section stays expanded; description surfaces the derived sibling
-#: types (logical, physical, status) produced by one create. This refers to
-#: derived-task fan-out only (not field-level host cascading).
-_TASK_SECTION_LAYOUT = SectionLayout(
-    key="Task",
-    title="Task",
-    description=(
-        "Creating this backup produces three sibling tasks: logical, physical, "
-        "and status."
-    ),
-)
-
 backup_mongo_views = Views(
     layout=FormLayout(
         sections=(
-            _TASK_SECTION_LAYOUT,
+            TASK_SECTION_LAYOUT,
             SectionLayout(
                 key="Storage",
                 title="Storage",
