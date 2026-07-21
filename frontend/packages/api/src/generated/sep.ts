@@ -658,6 +658,78 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/atw/incidents/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw List Incidents
+     * @description List diagnostic incidents, newest first.
+     *
+     *     :param session: The database session.
+     *     :param pagination: The offset/limit window for the page.
+     *     :return: A paginated page of incidents, newest first.
+     */
+    get: operations['atw_atw_list_incidents_api_apps_atw_incidents__get'];
+    put?: never;
+    /**
+     * Atw Create Incident
+     * @description Create a diagnostic incident owned by the current user.
+     *
+     *     :param session: The database session.
+     *     :param current_user: The authenticated user, stamped as ``created_by``.
+     *     :param body: The incident create payload.
+     *     :return: The created incident.
+     */
+    post: operations['atw_atw_create_incident_api_apps_atw_incidents__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Get Incident
+     * @description Retrieve a single diagnostic incident by id.
+     *
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :return: The matching incident.
+     */
+    get: operations['atw_atw_get_incident_api_apps_atw_incidents__incident_id__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Atw Delete Incident
+     * @description Delete a diagnostic incident and cascade its execution rows.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     */
+    delete: operations['atw_atw_delete_incident_api_apps_atw_incidents__incident_id__delete'];
+    options?: never;
+    head?: never;
+    /**
+     * Atw Update Incident
+     * @description Update a diagnostic incident's name or support-case reference.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param body: The partial update payload; unset fields are untouched.
+     *     :return: The updated incident.
+     */
+    patch: operations['atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch'];
+    trace?: never;
+  };
   '/api/apps/atw/schema': {
     parameters: {
       query?: never;
@@ -4738,6 +4810,80 @@ export interface components {
       title: string;
     };
     /**
+     * AtwIncidentResponse
+     * @description Represent a persisted diagnostic incident.
+     *
+     *     Every field is always present on a stored incident, so — unlike returning
+     *     the :class:`AtwIncident` table model directly — the generated client types
+     *     them as required rather than optional.
+     *
+     *     :param id: The incident's UUID primary key.
+     *     :param name: Human-readable incident label.
+     *     :param case_ref: Support-case reference, if set.
+     *     :param created_by: Username of the support engineer who created the incident.
+     *     :param created_at: When the incident was created.
+     *     :param updated_at: When the incident was last updated, if ever.
+     */
+    atw__AtwIncidentResponse: {
+      /** Case Ref */
+      case_ref: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By */
+      created_by: string;
+      /**
+       * Id
+       * Format: uuid4
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Updated At */
+      updated_at: string | null;
+    };
+    /**
+     * AtwIncidentUpdate
+     * @description Define the PATCH payload — all fields optional; unset fields are untouched.
+     *
+     *     :param name: New incident label. Non-nullable when provided: an omitted
+     *         ``name`` is left unchanged, while an explicit null or empty string is
+     *         rejected with 422 (the column is NOT NULL). Typing it as a non-optional
+     *         ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel
+     *         out of the JSON schema, so the generated client advertises ``name?: string``
+     *         (not ``string | null``) — matching what the route actually accepts.
+     *     :param case_ref: New support-case reference; an explicit null clears it.
+     */
+    atw__AtwIncidentUpdate: {
+      /** Case Ref */
+      case_ref?: string | null;
+      /** Name */
+      name?: string;
+    };
+    /**
+     * AtwIncidentWrite
+     * @description Define the create payload; ``name`` defaults and ``created_by`` is server-stamped.
+     */
+    atw__AtwIncidentWrite: {
+      /** Case Ref */
+      case_ref?: string | null;
+      /** Name */
+      name?: string;
+    };
+    /** PaginatedResponse[AtwIncidentResponse] */
+    atw__PaginatedResponse_AtwIncidentResponse_: {
+      /** Items */
+      items: components['schemas']['atw__AtwIncidentResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /**
      * BackupDerivedTaskSummary
      * @description Represent one derived sibling in a backup task detail response.
      *
@@ -5014,11 +5160,19 @@ export interface components {
     backup_mongo__RestoreTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Source */
       backup_source: string;
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['framework__ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -5041,6 +5195,7 @@ export interface components {
       owner: string;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5049,33 +5204,31 @@ export interface components {
      * RestoreTaskResponse
      * @description Represent a restore task API response.
      *
-     *     :param id: The unique identifier for the restore task.
-     *     :type id: int | None
-     *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
-     *     :param data: The raw configuration and parameters for the restore execution.
-     *     :type data: dict[str, Any]
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
-     *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
-     *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
-     *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
+     *     Extend the standard task-response surface with the restore destination facts
+     *     the API surfaces; the shared task identity, status, audit, anonymization, and
+     *     connectivity fields come from
+     *     :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
+     *
+     *     :param hostname: The target hostname for the task execution.
+     *     :param backup_type: The PBM backup type for this restore.
+     *     :param backup_source: The backup name or timestamp to restore from.
      */
     backup_mongo__RestoreTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Source */
       backup_source: string;
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['framework__ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -5096,6 +5249,7 @@ export interface components {
       owner: string;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -7735,12 +7889,12 @@ export interface components {
       xtrabackup_verify: boolean;
     };
     /**
-     * BackupResponse
+     * BackupTaskResponse
      * @description Represent a backup task API response.
      *
-     *     :param hostname: The executor hostname target.
+     *     :param backup_type: The backup type recorded in task config.
      */
-    mysql_backups__BackupResponse: {
+    mysql_backups__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       /** Anonymize Mask */
@@ -7790,10 +7944,10 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
-    /** PaginatedResponse[BackupResponse] */
-    mysql_backups__PaginatedResponse_BackupResponse_: {
+    /** PaginatedResponse[BackupTaskResponse] */
+    mysql_backups__PaginatedResponse_BackupTaskResponse_: {
       /** Items */
-      items: components['schemas']['mysql_backups__BackupResponse'][];
+      items: components['schemas']['mysql_backups__BackupTaskResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -10144,6 +10298,166 @@ export interface operations {
       };
     };
   };
+  atw_atw_list_incidents_api_apps_atw_incidents__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_AtwIncidentResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_create_incident_api_apps_atw_incidents__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__AtwIncidentWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_get_incident_api_apps_atw_incidents__incident_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_delete_incident_api_apps_atw_incidents__incident_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__AtwIncidentUpdate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   atw_get_schema_api_apps_atw_schema_get: {
     parameters: {
       query?: never;
@@ -11504,7 +11818,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupResponse_'];
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupTaskResponse_'];
         };
       };
       /** @description Validation Error */
@@ -11806,7 +12120,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['mysql_backups__BackupResponse'];
+          'application/json': components['schemas']['mysql_backups__BackupTaskResponse'];
         };
       };
       /** @description Validation Error */
