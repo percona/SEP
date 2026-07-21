@@ -13,26 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define database initialization and utility functions for the Inventory API."""
+"""Define tests for the app.inventory.db module."""
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
+import importlib
+from unittest.mock import MagicMock, patch
 
-from app.core.db.utils import (
-    create_app_async_engine,
-    get_async_session_maker_from_engine,
-)
+import app.inventory.db as inventory_db_module
 from app.inventory.config import inventory_settings
 
-engine = create_app_async_engine(inventory_settings.DATABASE)
 
-
-def get_async_session_maker() -> async_sessionmaker:
-    """Return a new asynchronous session maker for database operations.
-
-    This function creates a new SQLAlchemy asynchronous session maker using the
-    predefined engine configuration.
-
-    :return: A new asynchronous session maker.
-    :rtype: async_sessionmaker
-    """
-    return get_async_session_maker_from_engine(engine)
+def test_engine_built_from_inventory_database():
+    """Assert the Inventory engine is built via the shared factory from its own DATABASE."""
+    try:
+        with patch(
+            "app.core.db.utils.create_app_async_engine", return_value=MagicMock()
+        ) as create_engine:
+            importlib.reload(inventory_db_module)
+            create_engine.assert_called_once_with(inventory_settings.DATABASE)
+    finally:
+        importlib.reload(inventory_db_module)
