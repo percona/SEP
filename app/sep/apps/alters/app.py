@@ -29,6 +29,7 @@ verbatim, so its ``display_name`` stays ``"Alters"`` — distinct from the navig
 label ``"Schema Change"`` carried here. The Jinja UI router is threaded explicitly.
 """
 
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pagination.deps import make_pagination_dep
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.api_routes import router as alters_custom_router
@@ -44,8 +45,6 @@ from app.sep.apps.framework.apps import (
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.deps import get_username_mapping
 
-ALTERS_MAX_PAGINATION_LIMIT = 50
-
 app = TaskExecutionApp(
     name="alters",
     display_name="Schema Change",
@@ -59,7 +58,7 @@ app = TaskExecutionApp(
     response_builder=build_alters_api_list_response,
     response_context_provider=get_username_mapping,
     get_task=get_alters_task,
-    pagination=make_pagination_dep(max_limit=ALTERS_MAX_PAGINATION_LIMIT),
+    pagination=make_pagination_dep(max_limit=DEFAULT_PAGINATION_LIMIT),
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True, service_type=True, roots_only=True),
     capabilities=AppCapabilities(
