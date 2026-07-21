@@ -138,12 +138,12 @@ def pbm_creds(creds_path: str) -> str:
 
 # --- BEGIN GENERATED PBM CONFIG APPLY ---
 def _apply_pbm_config(config: dict) -> None:
-    """Apply the SEP-managed PBM config to the cluster via `pbm config --file`.
+    """Apply the SEP-managed PBM config to the cluster via ``pbm config --file``.
 
     PBM storage is cluster-wide with no per-backup flag, so the per-task config
     (storage, priority, pitr) is applied here, before the backup runs, rather than
     relying on the separate Sync-config task having run. Writes the full config
-    (minus SEP-only keys) to the task dir and runs `pbm config --file`. Exits
+    (minus SEP-only keys) to the task dir and runs ``pbm config --file``. Exits
     non-zero with an actionable message when PBM rejects the config -- for example
     an unreachable or non-existent S3 bucket -- so the backup never silently falls
     back to PBM's pre-existing cluster-wide storage.
@@ -152,7 +152,14 @@ def _apply_pbm_config(config: dict) -> None:
     pbm_config = {
         k: v for k, v in config.items() if k not in sep_only_keys and v is not None
     }
-    config_file = f"{os.environ['NOMAD_TASK_DIR']}/script_config"
+    task_dir = os.environ.get("NOMAD_TASK_DIR")
+    if not task_dir:
+        print(
+            "NOMAD_TASK_DIR is not set; cannot write the PBM config file.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    config_file = f"{task_dir}/script_config"
     with open(config_file, "w", encoding="utf-8") as f:
         yaml.dump(pbm_config, f, default_flow_style=False, allow_unicode=True)
     cmd = ["pbm", "config", "--file", config_file]

@@ -232,10 +232,23 @@ class TestValidateStorageConfig:
         with pytest.raises(ValueError, match="bucket"):
             _call_validate(s3_bucket=bucket)
 
-    @pytest.mark.parametrize("bucket", ["@@", "UPPER", "a", "no_underscores", "-lead"])
+    @pytest.mark.parametrize(
+        "bucket",
+        [
+            "@@",
+            "UPPER",
+            "a",
+            "no_underscores",
+            "-lead",
+            "a..b",
+            "a.-b",
+            "a-.b",
+            "192.168.5.4",
+        ],
+    )
     def test_rejects_malformed_bucket_name(self, bucket: str) -> None:
-        """Raise ValueError when the S3 bucket is present but not a valid name."""
-        with pytest.raises(ValueError, match="valid bucket name"):
+        """Raise ValueError when the S3 bucket is present but not DNS-compliant."""
+        with pytest.raises(ValueError, match="valid DNS-compliant bucket name"):
             _call_validate(s3_bucket=bucket)
 
     @pytest.mark.parametrize("region", [None, "", "   "])
@@ -260,7 +273,9 @@ class TestValidateStorageConfig:
             is None
         )
 
-    @pytest.mark.parametrize("url", ["not a url", "ftp://host", "example.com", "://x"])
+    @pytest.mark.parametrize(
+        "url", ["not a url", "ftp://host", "example.com", "://x", "https://:443"]
+    )
     def test_rejects_malformed_endpoint_url(self, url: str) -> None:
         """Raise ValueError when the S3 endpoint URL is not a valid http(s) URL."""
         with pytest.raises(ValueError, match="endpoint URL"):

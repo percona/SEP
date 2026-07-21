@@ -157,10 +157,17 @@ _SUPPORTED_STORAGE_TYPES = frozenset(
     {StorageType.S3.value, StorageType.FILESYSTEM.value}
 )
 
-# DNS-compliant S3 bucket names: 3-63 chars of lowercase letters, digits, dots and
-# hyphens, starting and ending alphanumeric. Rejects malformed names (e.g. ``@@``);
-# a well-formed but non-existent bucket is caught later, when the config is applied.
-_S3_BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+# DNS-compliant S3 bucket names: 3-63 chars, dot-separated labels of lowercase
+# letters, digits and hyphens, each label starting and ending alphanumeric -- so no
+# consecutive dots and no dot-adjacent hyphens (``a..b``, ``a.-b``). IP-address-formatted
+# names are rejected separately below. A well-formed but non-existent bucket is caught
+# later, when the config is applied.
+_S3_BUCKET_RE = re.compile(
+    r"^(?=.{3,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+    r"(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$"
+)
+# S3 bucket names must not be formatted as an IPv4 address (e.g. ``192.168.5.4``).
+_S3_BUCKET_IP_RE = re.compile(r"^\d+(?:\.\d+){3}$")
 # AWS region format (e.g. ``us-east-1``, ``us-gov-east-1``). Enforced only for native
 # AWS (no custom endpoint); with a custom endpoint the region is provider-defined.
 _AWS_REGION_RE = re.compile(r"^[a-z]{2}-[a-z-]+-\d+$")
@@ -174,7 +181,7 @@ def _is_blank(value: str | None) -> bool:
 def _is_http_url(value: str) -> bool:
     """Return whether ``value`` is a well-formed ``http``/``https`` URL."""
     parsed = urlparse(value.strip())
-    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    return parsed.scheme in ("http", "https") and bool(parsed.hostname)
 
 
 def _validate_s3_storage(
@@ -197,10 +204,14 @@ def _validate_s3_storage(
         raise ValueError("Filesystem path must not be set for S3 storage")
     if _is_blank(bucket):
         raise ValueError("S3 storage requires a non-empty bucket")
-    if not _S3_BUCKET_RE.match(bucket.strip()):
+    stripped_bucket = bucket.strip()
+    if not _S3_BUCKET_RE.match(stripped_bucket) or _S3_BUCKET_IP_RE.match(
+        stripped_bucket
+    ):
         raise ValueError(
-            f"S3 bucket {bucket!r} is not a valid bucket name "
-            "(3-63 chars: lowercase letters, digits, dots, hyphens)"
+            f"S3 bucket {bucket!r} is not a valid DNS-compliant bucket name "
+            "(3-63 chars: lowercase letters, digits, dots, hyphens; "
+            "no consecutive dots and not an IP address)"
         )
     if _is_blank(region):
         raise ValueError("S3 storage requires a non-empty region")
