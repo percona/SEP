@@ -302,8 +302,8 @@ class HostRef:
     ``Ui(depends_on=...)``, the same way :class:`SchemaRef` / :class:`TableRef`
     declare theirs. When set on a single-value field, the derived
     ``HostField`` carries ``depends_on`` on the wire and the renderer may
-    auto-select an executor from the upstream value; when omitted the field
-    lists every available executor as before. Multi-value
+    auto-select an executor from the upstream value; when omitted the
+    selector lists every available executor with no cascade. Multi-value
     (``multiple=True``) may still emit ``depends_on`` on ``MultiHostField``,
     but cascade auto-select is single-host only today.
 
