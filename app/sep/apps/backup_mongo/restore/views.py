@@ -18,9 +18,8 @@
 Section *membership* and *order* are declared on
 :class:`~app.sep.apps.backup_mongo.restore.models.RestoreForm` (via
 ``Ui(section=...)`` and field-declaration order); what lives here is the part the
-model cannot express: the section titles, the list columns, and the UI capability
-flags. These feed the derived ``GET /schema`` and are carried over from the previous
-hand-written ``AppSchema`` so the schema wire format is preserved.
+model cannot express: the section titles, the collapse metadata, the list columns,
+and the UI capability flags. These feed the derived ``GET /schema``.
 """
 
 from app.sep.apps.framework.apps import Views
@@ -42,7 +41,12 @@ restore_views = Views(
     layout=FormLayout(
         sections=(
             TASK_SECTION_LAYOUT,
-            SectionLayout(key="RestoreOptions", title="Restore Options"),
+            SectionLayout(
+                key="RestoreOptions",
+                title="Restore Options",
+                collapsible=True,
+                collapsed_by_default=True,
+            ),
         )
     ),
     list_view=ListView(
