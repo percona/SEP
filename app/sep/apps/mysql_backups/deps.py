@@ -30,7 +30,7 @@ from app.sep.apps.framework.spec import (
 )
 from app.sep.apps.mysql_backups.models import (
     BackupCreate,
-    BackupResponse,
+    BackupTaskResponse,
     BackupType,
     OWNER,
 )
@@ -156,8 +156,8 @@ def build_mysql_backups_api_task_response(
     *,
     last_executed_at: datetime | None = None,
     context: dict[str, str] | None = None,
-) -> BackupResponse:
-    """Build a ``BackupResponse`` for the JSON API.
+) -> BackupTaskResponse:
+    """Build a ``BackupTaskResponse`` for the JSON API.
 
     :param task: The backups task retrieved from the Tasks API.
     :type task: Task
@@ -170,7 +170,6 @@ def build_mysql_backups_api_task_response(
         usernames; falls back to the raw id when the map lacks an entry.
     :type context: dict[str, str] | None
     :return: A validated backup task API response object.
-    :rtype: BackupResponse
     """
     mapping = context or {}
     hostname = None
@@ -178,7 +177,7 @@ def build_mysql_backups_api_task_response(
         meta = task.data.get("meta") or {}
         hostname = meta.get("target")
     return build_default_task_response(
-        BackupResponse,
+        BackupTaskResponse,
         task,
         status,
         last_executed_at=last_executed_at,
