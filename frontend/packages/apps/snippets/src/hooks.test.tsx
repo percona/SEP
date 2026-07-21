@@ -18,9 +18,15 @@
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { apiClient, setTokenProvider } from '@sep/api';
+import { apiClient, setTokenProvider, type AppListResult } from '@sep/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useSnippetDownload, useSnippets } from './hooks';
+import {
+  useApproveSnippet,
+  useRemoveSnippetApproval,
+  useSnippetDownload,
+  useSnippets,
+} from './hooks';
+import type { SnippetResponse } from './types';
 
 type CapturedHeaders = {
   Authorization?: string;
@@ -35,10 +41,13 @@ interface CapturedRequestConfig {
   params?: Record<string, unknown>;
 }
 
-function makeWrapper() {
-  const client = new QueryClient({
+function makeQueryClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+}
+
+function makeWrapper(client = makeQueryClient()) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   };
@@ -265,5 +274,108 @@ describe('useSnippets', () => {
       items: [{ filename: 'a.sh' }],
       pagination: null,
     });
+  });
+});
+
+describe('snippet approval optimistic cache', () => {
+  const listKey = ['snippets', 'list', { offset: 0, limit: 50 }] as const;
+
+  const unapprovedList = {
+    items: [
+      { filename: 'check.sh', is_approved: false },
+      { filename: 'other.sh', is_approved: false },
+    ],
+    pagination: { total: 2, offset: 0, limit: 50 },
+  } as AppListResult<SnippetResponse>;
+
+  afterEach(() => {
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = originalAdapter;
+    setTokenProvider(() => null);
+  });
+
+  it('useApproveSnippet flips is_approved on the paginated list cache key', async () => {
+    const client = makeQueryClient();
+    client.setQueryData(listKey, unapprovedList);
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = () =>
+      new Promise(() => {
+        /* hang so optimistic data stays visible */
+      });
+    setTokenProvider(() => 'test-access-token');
+
+    const { result } = renderHook(() => useApproveSnippet('check.sh'), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData(listKey)).toEqual({
+        ...unapprovedList,
+        items: [{ ...unapprovedList.items[0], is_approved: true }, unapprovedList.items[1]],
+      });
+    });
+  });
+
+  it('useRemoveSnippetApproval clears is_approved on the paginated list cache key', async () => {
+    const client = makeQueryClient();
+    const approvedList: AppListResult<SnippetResponse> = {
+      ...unapprovedList,
+      items: unapprovedList.items.map((snippet) => ({ ...snippet, is_approved: true })),
+    };
+    client.setQueryData(listKey, approvedList);
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = () =>
+      new Promise(() => {
+        /* hang so optimistic data stays visible */
+      });
+    setTokenProvider(() => 'test-access-token');
+
+    const { result } = renderHook(() => useRemoveSnippetApproval('check.sh'), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData(listKey)).toEqual({
+        ...approvedList,
+        items: [{ ...approvedList.items[0], is_approved: false }, approvedList.items[1]],
+      });
+    });
+  });
+
+  it('rolls back the paginated list cache when approve fails', async () => {
+    const client = makeQueryClient();
+    client.setQueryData(listKey, unapprovedList);
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = () =>
+      Promise.reject({
+        response: { status: 500, data: { detail: 'boom' }, statusText: 'ERR', headers: {} },
+        config: {},
+        isAxiosError: true,
+        toJSON: () => ({}),
+        name: 'AxiosError',
+        message: 'Request failed',
+      });
+    setTokenProvider(() => 'test-access-token');
+
+    const { result } = renderHook(() => useApproveSnippet('check.sh'), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+
+    expect(client.getQueryData(listKey)).toEqual(unapprovedList);
   });
 });
