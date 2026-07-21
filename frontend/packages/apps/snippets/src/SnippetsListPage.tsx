@@ -48,12 +48,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
-import {
-  ApiError,
-  DEFAULT_APP_LIST_LIMIT,
-  DEFAULT_APP_LIST_OFFSET,
-  MAX_APP_LIST_LIMIT,
-} from '@sep/api';
+import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import {
   useSnippets,
   useApproveSnippet,
@@ -695,7 +690,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                   limit: Number(event.target.value),
                 });
               }}
-              rowsPerPageOptions={[DEFAULT_APP_LIST_LIMIT, 100, MAX_APP_LIST_LIMIT]}
+              rowsPerPageOptions={[DEFAULT_APP_LIST_LIMIT]}
             />
           )}
         </>

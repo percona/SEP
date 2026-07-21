@@ -723,8 +723,8 @@ describe('SnippetsListPage — server pagination', () => {
 
     render(<SnippetsListPage />);
 
-    expect(screen.getByRole('combobox', { name: /rows per page/i })).toBeInTheDocument();
     expect(screen.getByText(/1–50 of 120/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /go to next page/i })).toBeInTheDocument();
   });
 
   it('omits TablePagination when the hook returns a bare list', () => {
@@ -732,7 +732,8 @@ describe('SnippetsListPage — server pagination', () => {
 
     render(<SnippetsListPage />);
 
-    expect(screen.queryByRole('combobox', { name: /rows per page/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/of \d+/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /go to next page/i })).not.toBeInTheDocument();
   });
 
   it('refetches with the new offset when the next page is clicked', () => {

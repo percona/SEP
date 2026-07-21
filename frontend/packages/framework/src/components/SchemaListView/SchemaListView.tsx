@@ -25,12 +25,7 @@ import {
   type MRT_ColumnDef,
   type MRT_PaginationState,
 } from 'material-react-table';
-import {
-  DEFAULT_APP_LIST_LIMIT,
-  MAX_APP_LIST_LIMIT,
-  type ListColumn,
-  type ListView,
-} from '@sep/api';
+import { DEFAULT_APP_LIST_LIMIT, type ListColumn, type ListView } from '@sep/api';
 import { SEP_TABLE_CLASS } from '../../constants';
 import { ScheduleCell } from '../ScheduleCell';
 import {
@@ -355,7 +350,9 @@ function SchemaListViewCore({
       muiTablePaginationProps={
         manualPagination
           ? {
-              rowsPerPageOptions: [DEFAULT_APP_LIST_LIMIT, 100, MAX_APP_LIST_LIMIT],
+              // Stay at DEFAULT_APP_LIST_LIMIT: some plugins (e.g. mysql_backups)
+              // reject limit > 50 with HTTP 422.
+              rowsPerPageOptions: [DEFAULT_APP_LIST_LIMIT],
             }
           : undefined
       }

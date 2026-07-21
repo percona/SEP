@@ -23,7 +23,6 @@ import {
   fetchAppTasksList,
   fetchAppEntityList,
   isBackendUnavailable,
-  MAX_APP_LIST_LIMIT,
   normalizeAppListResponse,
   unwrapAppListResponse,
   unwrapTasks,
@@ -116,7 +115,7 @@ describe('fetchAppTasksList', () => {
           items: [{ name: 'a' }],
           total: 2,
           offset: 0,
-          limit: MAX_APP_LIST_LIMIT,
+          limit: DEFAULT_APP_LIST_LIMIT,
         },
       })
       .mockResolvedValueOnce({
@@ -124,19 +123,21 @@ describe('fetchAppTasksList', () => {
           items: [{ name: 'b' }],
           total: 2,
           offset: 1,
-          limit: MAX_APP_LIST_LIMIT,
+          limit: DEFAULT_APP_LIST_LIMIT,
         },
       });
 
     const result = await fetchAppTasksList('mysql_backups', { fetchAllPages: true });
 
+    expect(getMock).toHaveBeenCalledWith('/apps/mysql_backups/', {
+      params: { offset: 0, limit: DEFAULT_APP_LIST_LIMIT },
+    });
     expect(getMock).toHaveBeenCalledTimes(2);
     expect(result).toEqual({
       items: [{ name: 'a' }, { name: 'b' }],
       pagination: null,
     });
   });
-
   it('fetchAllPages returns the bare array on NO_PAGINATION routes', async () => {
     const items = [{ name: 'a' }, { name: 'b' }];
     getMock.mockResolvedValue({ data: items });
@@ -181,7 +182,7 @@ describe('fetchAppEntityList', () => {
           items: [{ id: 1 }],
           total: 2,
           offset: 0,
-          limit: MAX_APP_LIST_LIMIT,
+          limit: DEFAULT_APP_LIST_LIMIT,
         },
       })
       .mockResolvedValueOnce({
@@ -189,12 +190,15 @@ describe('fetchAppEntityList', () => {
           items: [{ id: 2 }],
           total: 2,
           offset: 1,
-          limit: MAX_APP_LIST_LIMIT,
+          limit: DEFAULT_APP_LIST_LIMIT,
         },
       });
 
     const result = await fetchAppEntityList('inventory', 'nodes', { fetchAllPages: true });
 
+    expect(getMock).toHaveBeenCalledWith('/apps/inventory/nodes/', {
+      params: { offset: 0, limit: DEFAULT_APP_LIST_LIMIT },
+    });
     expect(getMock).toHaveBeenCalledTimes(2);
     expect(result).toEqual({
       items: [{ id: 1 }, { id: 2 }],

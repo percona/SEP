@@ -165,7 +165,9 @@ async function fetchAllAppListPages<T extends Record<string, unknown>>(
 ): Promise<AppListResult<T>> {
   const out: T[] = [];
   let offset = 0;
-  const limit = MAX_APP_LIST_LIMIT;
+  // Stay at the default page size: some plugins cap ``limit`` at 50
+  // (``DEFAULT_PAGINATION_LIMIT``), so ``MAX_APP_LIST_LIMIT`` (200) 422s there.
+  const limit = DEFAULT_APP_LIST_LIMIT;
 
   for (let iter = 0; iter < MAX_FETCH_ALL_PAGES; iter++) {
     const { data } = await apiClient.get<AppListResponse<T>>(path, {

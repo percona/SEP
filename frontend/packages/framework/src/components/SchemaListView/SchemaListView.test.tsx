@@ -282,27 +282,6 @@ describe('SchemaListView — server pagination', () => {
     expect(onChange).toHaveBeenCalledWith({ offset: 100, limit: 50 });
   });
 
-  it('calls onChange with offset 0 when rows-per-page changes', async () => {
-    const onChange = vi.fn();
-    render(
-      <SchemaListView
-        listView={listView}
-        data={pageRows}
-        pagination={{
-          total: 120,
-          offset: 50,
-          limit: 50,
-          onChange,
-        }}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole('combobox', { name: /Rows per page/i }));
-    await userEvent.click(await screen.findByRole('option', { name: '100' }));
-
-    expect(onChange).toHaveBeenCalledWith({ offset: 0, limit: 100 });
-  });
-
   it('renders the full list when pagination metadata is omitted', () => {
     const data = Array.from({ length: 5 }, (_, i) => ({
       id: i + 1,
