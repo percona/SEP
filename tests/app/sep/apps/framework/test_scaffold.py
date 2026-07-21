@@ -787,6 +787,60 @@ def test_run_python_spec_renders_and_copies_payload(
         assert client.post(f"{base}/", json=body).status_code == status.HTTP_201_CREATED
 
 
+def test_script_flavor_copies_supplied_script_and_skips_sample(
+    tmp_settings: Path, tmp_path: Path
+) -> None:
+    """Copy a supplied ``--script`` into ``snippets/`` and skip the runnable sample."""
+    name = "_scaffold_smoke_seeded"
+    script_src = tmp_path / "diag.sh"
+    script_src.write_text("#!/usr/bin/env bash\necho hi\n")
+    config = _config_from_args(
+        ["--name", name, "--type", "script", "--script", str(script_src), "--no-input"]
+    )
+    with _scaffolded_config(config) as result:
+        copied = result.app_dir / "snippets" / "diag.sh"
+        assert result.script_written == copied
+        assert copied.read_text() == "#!/usr/bin/env bash\necho hi\n"
+        assert not (result.app_dir / "snippets" / "sample.sh").exists()
+        contract_test = (result.tests_dir / "test_contract.py").read_text()
+        assert '_SAMPLE = "diag.sh"' in contract_test
+
+
+def test_script_flag_rejects_non_script_extension(tmp_path: Path) -> None:
+    """Reject a ``--script`` whose file is not a ``.sh`` / ``.py`` script."""
+    bad = tmp_path / "notes.txt"
+    bad.write_text("nope\n")
+    parser = scaffold.build_parser()
+    with pytest.raises(SystemExit):
+        scaffold.resolve_config(
+            parser,
+            parser.parse_args(
+                ["--name", "x", "--type", "script", "--script", str(bad), "--no-input"]
+            ),
+        )
+
+
+def test_script_flag_rejects_missing_file(tmp_path: Path) -> None:
+    """Reject a ``--script`` that does not point at an existing file."""
+    missing = tmp_path / "gone.sh"
+    parser = scaffold.build_parser()
+    with pytest.raises(SystemExit):
+        scaffold.resolve_config(
+            parser,
+            parser.parse_args(
+                [
+                    "--name",
+                    "x",
+                    "--type",
+                    "script",
+                    "--script",
+                    str(missing),
+                    "--no-input",
+                ]
+            ),
+        )
+
+
 def test_run_python_inferred_from_payload(tmp_settings: Path, tmp_path: Path) -> None:
     """Resolve run-python when only ``--payload`` is given (no ``--run-mode``)."""
     payload_src = tmp_path / "entrypoint.py"
@@ -1061,6 +1115,47 @@ def test_makefile_forwards_quoted_values() -> None:
             f"description={json.dumps(description)}" in rendered
             or f"description={description!r}" in rendered
         )
+    finally:
+        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
+        _cleanup(name)
+
+
+def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
+    """Seed a supplied script through ``make startapp SCRIPT=<file>``.
+
+    The ``SCRIPT`` make variable forwards to the scaffolder's ``--script`` flag the
+    way ``PAYLOAD`` forwards ``--payload``, so the script flavor is reachable through
+    the ``make startapp`` entry point. Exercises the real Makefile ``$$VAR``
+    forwarding, backing up and restoring ``settings.yaml`` like
+    :func:`test_makefile_forwards_quoted_values`.
+    """
+    name = "_scaffold_ci_scriptforward"
+    script_src = tmp_path / "seed.sh"
+    script_src.write_text("#!/usr/bin/env bash\necho hi\n")
+    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    venv_root = Path(sys.executable).resolve().parent.parent
+    try:
+        result = scaffold.subprocess.run(
+            [
+                "make",
+                "startapp",
+                f"NAME={name}",
+                "TYPE=script",
+                "NO_INPUT=1",
+                f"SCRIPT={script_src}",
+                f"VIRTUAL_ENV={venv_root}",
+            ],
+            cwd=scaffold._REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+        snippets_dir = scaffold.PLUGINS_DIR / name / "snippets"
+        assert (
+            snippets_dir / "seed.sh"
+        ).read_text() == "#!/usr/bin/env bash\necho hi\n"
+        assert not (snippets_dir / "sample.sh").exists()
     finally:
         scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
