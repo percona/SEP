@@ -105,11 +105,11 @@ class TestRemoteAPIDefaults:
 
     def test_default_probe_path_is_root(self, remote_api: RemoteAPI) -> None:
         """Default the probe route to the root path."""
-        assert remote_api.connectivity_check_path == "/"
+        assert remote_api.CONNECTIVITY_CHECK_PATH == "/"
 
     def test_probe_path_not_a_model_field(self, remote_api: RemoteAPI) -> None:
         """Keep the probe path a ClassVar, out of the model field set."""
-        assert "connectivity_check_path" not in type(remote_api).model_fields
+        assert "CONNECTIVITY_CHECK_PATH" not in type(remote_api).model_fields
 
 
 class TestCheckConnectivity:

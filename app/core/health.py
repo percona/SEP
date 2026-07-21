@@ -35,9 +35,11 @@ def build_health_router(
 
     The probe confirms the server is accepting requests and its database is
     reachable via a ``SELECT 1`` round-trip. Schema currency is not re-checked
-    here: the container entrypoint runs ``alembic upgrade heads`` before the
-    server starts, so a reachable database behind a responding server already
-    implies migrations are applied.
+    here, so a reachable database behind a responding server implies migrations
+    are applied only where they finish before the server starts -- as under an
+    entrypoint that runs ``alembic upgrade heads`` first. A deployment that
+    starts migrations alongside the server, such as one process manager
+    supervising both, owes its own completion signal.
 
     :param session_maker_factory: The service's ``get_async_session_maker``;
         called per request to obtain a session bound to that service's engine.

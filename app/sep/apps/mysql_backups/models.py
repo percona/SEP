@@ -33,7 +33,6 @@ from app.core.utils.fields import (
     NonEmptyStr,
 )
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
     Choices,
     Forbidden,
@@ -51,6 +50,7 @@ from app.sep.apps.framework.rules import (
     not_,
     truthy,
 )
+from app.sep.apps.shared.backups.responses import BackupTaskBase
 
 OWNER = "BACKUPS"
 
@@ -644,19 +644,10 @@ class BackupConfig(BaseCaseInsensitiveModel):
     server_list: list[BackupConfigServer]
 
 
-class BackupTaskBase(BaseTaskResponse):
-    """Carry the mysql_backups-specific fields shared across its responses.
+class BackupTaskResponse(BackupTaskBase):
+    """Represent a backup task API response.
 
     :param backup_type: The backup type recorded in task config.
     """
 
     backup_type: BackupType | None = None
-
-
-class BackupResponse(BackupTaskBase):
-    """Represent a backup task API response.
-
-    :param hostname: The executor hostname target.
-    """
-
-    hostname: str | None = None
