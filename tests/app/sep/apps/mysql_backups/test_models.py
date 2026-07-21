@@ -114,7 +114,7 @@ class TestUploadQuietField:
 
 
 class TestBackupTaskResponseModel:
-    """Tests for ``BackupTaskResponse`` rebased onto ``BaseTaskResponse``."""
+    """Verify ``BackupTaskResponse`` is rebased onto ``BaseTaskResponse``."""
 
     def test_exposes_inherited_task_response_surface(self) -> None:
         """Carry the shared anonymization and connectivity surface from the base."""
