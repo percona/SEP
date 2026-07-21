@@ -899,7 +899,7 @@ export interface components {
     };
     /**
      * PeriodicTaskResponse
-     * @description Representing a response for a periodic task API call.
+     * @description Represent a response for a periodic task API call.
      *
      *     This model extends `BasePeriodicTask` and includes additional fields such as ID,
      *     last run time, total run count, and date changed.
