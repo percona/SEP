@@ -2900,8 +2900,19 @@
         "type": "object"
       },
       "atw__AtwIncidentResponse": {
-        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param servicenow_case: ServiceNow support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.",
+        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.",
         "properties": {
+          "case_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Ref"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -2921,17 +2932,6 @@
             "title": "Name",
             "type": "string"
           },
-          "servicenow_case": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Servicenow Case"
-          },
           "updated_at": {
             "anyOf": [
               {
@@ -2948,7 +2948,7 @@
         "required": [
           "id",
           "name",
-          "servicenow_case",
+          "case_ref",
           "created_by",
           "created_at",
           "updated_at"
@@ -2957,14 +2957,9 @@
         "type": "object"
       },
       "atw__AtwIncidentUpdate": {
-        "description": "Define the PATCH payload — all fields optional; unset fields are untouched.\n\n:param name: New incident label. Non-nullable when provided: an omitted\n    ``name`` is left unchanged, while an explicit null or empty string is\n    rejected with 422 (the column is NOT NULL). Typing it as a non-optional\n    ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel\n    out of the JSON schema, so the generated client advertises ``name?: string``\n    (not ``string | null``) — matching what the route actually accepts.\n:param servicenow_case: New ServiceNow case reference; an explicit null clears it.",
+        "description": "Define the PATCH payload — all fields optional; unset fields are untouched.\n\n:param name: New incident label. Non-nullable when provided: an omitted\n    ``name`` is left unchanged, while an explicit null or empty string is\n    rejected with 422 (the column is NOT NULL). Typing it as a non-optional\n    ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel\n    out of the JSON schema, so the generated client advertises ``name?: string``\n    (not ``string | null``) — matching what the route actually accepts.\n:param case_ref: New support-case reference; an explicit null clears it.",
         "properties": {
-          "name": {
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "servicenow_case": {
+          "case_ref": {
             "anyOf": [
               {
                 "type": "string"
@@ -2973,7 +2968,12 @@
                 "type": "null"
               }
             ],
-            "title": "Servicenow Case"
+            "title": "Case Ref"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
           }
         },
         "title": "AtwIncidentUpdate",
@@ -2982,12 +2982,7 @@
       "atw__AtwIncidentWrite": {
         "description": "Define the create payload; ``name`` defaults and ``created_by`` is server-stamped.",
         "properties": {
-          "name": {
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "servicenow_case": {
+          "case_ref": {
             "anyOf": [
               {
                 "type": "string"
@@ -2996,7 +2991,12 @@
                 "type": "null"
               }
             ],
-            "title": "Servicenow Case"
+            "title": "Case Ref"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
           }
         },
         "title": "AtwIncidentWrite",
@@ -14169,7 +14169,7 @@
         ]
       },
       "patch": {
-        "description": "Update a diagnostic incident's name or ServiceNow case reference.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param body: The partial update payload; unset fields are untouched.\n:return: The updated incident.",
+        "description": "Update a diagnostic incident's name or support-case reference.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param body: The partial update payload; unset fields are untouched.\n:return: The updated incident.",
         "operationId": "atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch",
         "parameters": [
           {

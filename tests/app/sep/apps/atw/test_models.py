@@ -48,13 +48,13 @@ class TestAtwIncidentModel:
         self, session: AsyncSession
     ) -> None:
         """Ensure an incident persists with a UUID id, default name, and null case."""
-        incident = AtwIncident(created_by="alice", servicenow_case=None)
+        incident = AtwIncident(created_by="alice", case_ref=None)
         session.add(incident)
         await session.commit()
         await session.refresh(incident)
 
         assert isinstance(incident.id, UUID)
-        assert incident.servicenow_case is None
+        assert incident.case_ref is None
         assert re.fullmatch(_INCIDENT_NAME_PATTERN, incident.name)
 
     @pytest.mark.asyncio
@@ -75,7 +75,7 @@ class TestAtwIncidentResponse:
         assert required == {
             "id",
             "name",
-            "servicenow_case",
+            "case_ref",
             "created_by",
             "created_at",
             "updated_at",

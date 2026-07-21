@@ -720,7 +720,7 @@ export interface paths {
     head?: never;
     /**
      * Atw Update Incident
-     * @description Update a diagnostic incident's name or ServiceNow case reference.
+     * @description Update a diagnostic incident's name or support-case reference.
      *
      *     :param session: The database session.
      *     :param incident: The incident resolved from the ``incident_id`` path parameter.
@@ -4819,12 +4819,14 @@ export interface components {
      *
      *     :param id: The incident's UUID primary key.
      *     :param name: Human-readable incident label.
-     *     :param servicenow_case: ServiceNow support-case reference, if set.
+     *     :param case_ref: Support-case reference, if set.
      *     :param created_by: Username of the support engineer who created the incident.
      *     :param created_at: When the incident was created.
      *     :param updated_at: When the incident was last updated, if ever.
      */
     atw__AtwIncidentResponse: {
+      /** Case Ref */
+      case_ref: string | null;
       /**
        * Created At
        * Format: date-time
@@ -4839,8 +4841,6 @@ export interface components {
       id: string;
       /** Name */
       name: string;
-      /** Servicenow Case */
-      servicenow_case: string | null;
       /** Updated At */
       updated_at: string | null;
     };
@@ -4854,23 +4854,23 @@ export interface components {
      *         ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel
      *         out of the JSON schema, so the generated client advertises ``name?: string``
      *         (not ``string | null``) — matching what the route actually accepts.
-     *     :param servicenow_case: New ServiceNow case reference; an explicit null clears it.
+     *     :param case_ref: New support-case reference; an explicit null clears it.
      */
     atw__AtwIncidentUpdate: {
+      /** Case Ref */
+      case_ref?: string | null;
       /** Name */
       name?: string;
-      /** Servicenow Case */
-      servicenow_case?: string | null;
     };
     /**
      * AtwIncidentWrite
      * @description Define the create payload; ``name`` defaults and ``created_by`` is server-stamped.
      */
     atw__AtwIncidentWrite: {
+      /** Case Ref */
+      case_ref?: string | null;
       /** Name */
       name?: string;
-      /** Servicenow Case */
-      servicenow_case?: string | null;
     };
     /** PaginatedResponse[AtwIncidentResponse] */
     atw__PaginatedResponse_AtwIncidentResponse_: {

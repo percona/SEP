@@ -200,7 +200,7 @@ async def atw_get_incident(incident: AtwIncidentDep) -> AtwIncidentResponse:
 async def atw_update_incident(
     session: SessionDep, incident: AtwIncidentDep, body: AtwIncidentUpdate
 ) -> AtwIncidentResponse:
-    """Update a diagnostic incident's name or ServiceNow case reference.
+    """Update a diagnostic incident's name or support-case reference.
 
     :param session: The database session.
     :param incident: The incident resolved from the ``incident_id`` path parameter.

@@ -45,11 +45,11 @@ class AtwIncidentBase(SQLModel):
     """Define the incident fields shared by the create payload and the DB table.
 
     :param name: Human-readable incident label; defaults to a timestamped name.
-    :param servicenow_case: Optional ServiceNow support-case reference.
+    :param case_ref: Optional support-case reference.
     """
 
     name: NonEmptyStr = SQLField(default_factory=_default_incident_name)
-    servicenow_case: str | None = SQLField(default=None)
+    case_ref: str | None = SQLField(default=None)
 
 
 class AtwIncident(BaseUUIDSQLModel, AtwIncidentBase, table=True):
@@ -81,11 +81,11 @@ class AtwIncidentUpdate(SQLModel):
         ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel
         out of the JSON schema, so the generated client advertises ``name?: string``
         (not ``string | null``) — matching what the route actually accepts.
-    :param servicenow_case: New ServiceNow case reference; an explicit null clears it.
+    :param case_ref: New support-case reference; an explicit null clears it.
     """
 
     name: NonEmptyStr = Field(default=None)
-    servicenow_case: str | None = None
+    case_ref: str | None = None
 
 
 class AtwIncidentResponse(BaseModel):
@@ -97,7 +97,7 @@ class AtwIncidentResponse(BaseModel):
 
     :param id: The incident's UUID primary key.
     :param name: Human-readable incident label.
-    :param servicenow_case: ServiceNow support-case reference, if set.
+    :param case_ref: Support-case reference, if set.
     :param created_by: Username of the support engineer who created the incident.
     :param created_at: When the incident was created.
     :param updated_at: When the incident was last updated, if ever.
@@ -107,7 +107,7 @@ class AtwIncidentResponse(BaseModel):
 
     id: UUID4
     name: NonEmptyStr
-    servicenow_case: str | None
+    case_ref: str | None
     created_by: str
     created_at: UTCDatetime
     updated_at: UTCDatetime | None

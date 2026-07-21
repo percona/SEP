@@ -42,7 +42,7 @@ def upgrade() -> None:
             "atw_incident",
             sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
             sa.Column(
-                "servicenow_case", sqlmodel.sql.sqltypes.AutoString(), nullable=True
+                "case_ref", sqlmodel.sql.sqltypes.AutoString(), nullable=True
             ),
             sa.Column("id", sa.Uuid(), autoincrement=False, nullable=False),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),

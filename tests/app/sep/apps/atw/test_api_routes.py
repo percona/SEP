@@ -364,10 +364,10 @@ async def seeded_incidents(session: AsyncSession) -> list[AtwIncident]:
 
 @pytest_asyncio.fixture
 async def seeded_incident(session: AsyncSession) -> AtwIncident:
-    """Seed one incident with a known name and ServiceNow case reference."""
+    """Seed one incident with a known name and support-case reference."""
     return await AtwIncidentManager.save(
         session,
-        AtwIncident(created_by="alice", name="Original", servicenow_case="SN-1"),
+        AtwIncident(created_by="alice", name="Original", case_ref="SN-1"),
     )
 
 
@@ -402,7 +402,7 @@ class TestAtwIncidentCreate:
         payload = response.json()
         assert re.fullmatch(_INCIDENT_NAME_PATTERN, payload["name"])
         assert payload["created_by"] == regular_user.username
-        assert payload["servicenow_case"] is None
+        assert payload["case_ref"] is None
 
     def test_create_with_custom_fields_echoes_values(
         self, api_client: TestClient
@@ -410,13 +410,13 @@ class TestAtwIncidentCreate:
         """Ensure a custom name and case persist and a UUID id is returned."""
         response = api_client.post(
             INCIDENTS_BASE,
-            json={"name": "Prod outage", "servicenow_case": "CS123"},
+            json={"name": "Prod outage", "case_ref": "CS123"},
         )
 
         assert response.status_code == status.HTTP_201_CREATED
         payload = response.json()
         assert payload["name"] == "Prod outage"
-        assert payload["servicenow_case"] == "CS123"
+        assert payload["case_ref"] == "CS123"
         assert UUID(payload["id"])
 
     def test_create_cookie_only_is_rejected(
@@ -501,7 +501,7 @@ class TestAtwIncidentRetrieve:
 class TestAtwIncidentUpdate:
     """Check the PATCH /api/apps/atw/incidents/{incident_id} route."""
 
-    def test_rename_leaves_servicenow_case_untouched(
+    def test_rename_leaves_case_ref_untouched(
         self, api_client: TestClient, seeded_incident: AtwIncident
     ) -> None:
         """Ensure a name-only PATCH does not clear the untouched case reference."""
@@ -512,20 +512,20 @@ class TestAtwIncidentUpdate:
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         assert payload["name"] == "Renamed"
-        assert payload["servicenow_case"] == "SN-1"
+        assert payload["case_ref"] == "SN-1"
 
-    def test_set_servicenow_case_leaves_name_untouched(
+    def test_set_case_ref_leaves_name_untouched(
         self, api_client: TestClient, seeded_incident: AtwIncident
     ) -> None:
         """Ensure a case-only PATCH does not overwrite the untouched name."""
         response = api_client.patch(
             f"{INCIDENTS_BASE}{seeded_incident.id}",
-            json={"servicenow_case": "CS999"},
+            json={"case_ref": "CS999"},
         )
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
-        assert payload["servicenow_case"] == "CS999"
+        assert payload["case_ref"] == "CS999"
         assert payload["name"] == "Original"
 
     def test_empty_name_is_rejected(
