@@ -119,7 +119,7 @@ class BasePeriodicTask(BaseModel):
 
 
 class PeriodicTaskResponse(BasePeriodicTask):
-    """Representing a response for a periodic task API call.
+    """Represent a response for a periodic task API call.
 
     This model extends `BasePeriodicTask` and includes additional fields such as ID,
     last run time, total run count, and date changed.

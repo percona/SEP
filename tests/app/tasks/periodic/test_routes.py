@@ -44,7 +44,7 @@ async def _add_periodic_task(
     name: str,
     task_name: str,
     enabled: bool = True,
-    last_run_at=None,
+    last_run_at: datetime | None = None,
 ) -> PeriodicTask:
     """Create and persist a periodic task bound to ``task_name``."""
     schedule = IntervalSchedule(every=10, period=Period.MINUTES)

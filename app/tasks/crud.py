@@ -693,7 +693,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         )
         query = (
             select(ranked.c.task_name, ranked.c.created_at, ranked.c.status)
-            .where(ranked.c.row_number <= MAX_SYSTEM_STATUS_POINTS_PER_NAME)
+            .where(ranked.c.row_number <= MAX_SYSTEM_STATUS_POINTS_PER_NAME + 1)
             .order_by(ranked.c.task_name, ranked.c.row_number.desc())
         )
         result = await cls._exec(session, query)
@@ -702,16 +702,20 @@ class TaskHistoryManager(BaseSQLModelManager):
             points.setdefault(row.task_name, []).append(
                 TaskHistoryStatusPoint(created_at=row.created_at, status=row.status)
             )
-        saturated = [
+        # Fetch one extra row per name so a full window proves real truncation
+        # rather than an exact-fit count, then trim the probe row back off.
+        truncated = [
             name
             for name, name_points in points.items()
-            if len(name_points) >= MAX_SYSTEM_STATUS_POINTS_PER_NAME
+            if len(name_points) > MAX_SYSTEM_STATUS_POINTS_PER_NAME
         ]
-        if saturated:
+        for name in truncated:
+            del points[name][:-MAX_SYSTEM_STATUS_POINTS_PER_NAME]
+        if truncated:
             logger.debug(
                 "Truncated system status points at %d per task name for: %s",
                 MAX_SYSTEM_STATUS_POINTS_PER_NAME,
-                ", ".join(saturated),
+                ", ".join(truncated),
             )
         return points
 
