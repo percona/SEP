@@ -48,8 +48,10 @@ function serviceResetKey(value: unknown): string {
  * Keep ``task_name`` filled with a service+timestamp suggestion while the user
  * has not edited it. Mounted via the create-form ``renderField`` override so it
  * runs inside SchemaFormRenderer's FormProvider.
+ *
+ * Exported for component tests that assert override-safe suggestion behaviour.
  */
-function SuggestedTaskNameEffect({ schemaDefault }: { schemaDefault?: string }) {
+export function SuggestedTaskNameEffect({ schemaDefault }: { schemaDefault?: string }) {
   const { setValue, getValues } = useFormContext();
   const service = useWatch({ name: 'service_id' });
   const resetKey = serviceResetKey(service);
