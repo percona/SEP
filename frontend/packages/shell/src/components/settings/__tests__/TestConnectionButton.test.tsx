@@ -197,9 +197,7 @@ describe('TestConnectionButton', () => {
     server.use(
       http.post(CONN_URL, async () => {
         posts();
-        // Keep the request in flight long enough for the second click under
-        // a loaded suite (short delays flake when import/setup is slow).
-        await delay(200);
+        await delay(50);
         return HttpResponse.json([
           { service: 'pmm', reachable: true, status: 'reachable', detail: 'OK' },
         ] satisfies ConnectivityResult[]);
@@ -210,8 +208,8 @@ describe('TestConnectionButton', () => {
     await userEvent.click(screen.getByRole('button', { name: /test connection/i }));
     // Disabled while pending — a second click must not fire another request.
     await waitFor(() => expect(screen.getByRole('button', { name: /testing/i })).toBeDisabled());
-    // pointerEventsCheck:0 bypasses MUI's `pointer-events: none`; the button
-    // handler's in-flight guard still drops the synthetic click.
+    // pointerEventsCheck:0 bypasses MUI's `pointer-events: none`; the disabled
+    // attribute still prevents the click event from firing a second request.
     await userEvent.click(screen.getByRole('button', { name: /testing/i }), {
       pointerEventsCheck: 0,
     });
