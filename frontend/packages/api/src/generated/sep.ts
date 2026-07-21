@@ -4876,8 +4876,8 @@ export interface components {
      *     :type pitr_enabled: bool
      *     :param pitr_compression: PITR compression algorithm.
      *     :type pitr_compression: str | None
-     *     :param storage_type: Storage backend type (``s3`` or ``filesystem``).
-     *     :type storage_type: str | None
+     *     :param storage_type: Storage backend type (``s3`` or ``filesystem``); required.
+     *     :type storage_type: str
      *     :param storage_s3_region: S3 region when ``storage_type`` is ``s3``.
      *     :type storage_s3_region: str | None
      *     :param storage_s3_bucket: S3 bucket when ``storage_type`` is ``s3``.
@@ -4947,7 +4947,7 @@ export interface components {
       /** Storage S3 Region */
       storage_s3_region?: string | null;
       /** Storage Type */
-      storage_type?: string | null;
+      storage_type: string;
       /** Task Name */
       task_name: string;
     };
