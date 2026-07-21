@@ -241,13 +241,12 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
+    :cvar CONNECTIVITY_CHECK_PATH: Lightweight route hit by
+        :meth:`RemoteAPI.check_connectivity` for a reachability probe. Never
+        enters the client-registry key or model serialization. Override per
+        client, or pass an explicit ``path`` to ``check_connectivity``.
     """
 
-    #: Lightweight route hit by :meth:`RemoteAPI.check_connectivity` for a
-    #: reachability probe. A ``ClassVar`` (not a model field) so it is purely
-    #: additive: existing subclasses and callers are unaffected, and it never
-    #: enters the client-registry key or model serialization. Override per
-    #: client, or pass an explicit ``path`` to ``check_connectivity``.
     CONNECTIVITY_CHECK_PATH: ClassVar[str] = "/"
     endpoint: CredentialHttpUrl = Field(..., frozen=True)
     verify_ssl: bool = Field(default=True, frozen=True)

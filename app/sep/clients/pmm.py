@@ -206,11 +206,12 @@ class PMMRemoteAPI(RemoteAPI):
     :param default_to_v3: Whether to default to PMM v3 API endpoints if the API version
         cannot be determined. Defaults to True.
     :type default_to_v3: bool
+    :cvar CONNECTIVITY_CHECK_PATH: PMM exposes its version (and proves
+        reachability) at this route, so the connectivity probe targets it
+        instead of the base ``/``.
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
-    #: PMM exposes its version (and proves reachability) at this route, so the
-    #: connectivity probe targets it instead of the base ``/``.
     CONNECTIVITY_CHECK_PATH: ClassVar[str] = "/v1/version"
     api_key: SecretStr
     error_detail_key: NonEmptyStr = "message"
