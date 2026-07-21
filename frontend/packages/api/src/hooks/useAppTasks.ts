@@ -126,8 +126,8 @@ export type AppListQueryOptions = {
   fetchAllPages?: boolean;
 };
 
-function mockTasksToResult<T>(mockTasks: T[]): AppListResult<T> {
-  return { items: mockTasks, pagination: null };
+function mockItemsToResult<T>(mockItems: T[]): AppListResult<T> {
+  return { items: mockItems, pagination: null };
 }
 
 function tasksQueryKey(
@@ -147,25 +147,28 @@ function tasksQueryKey(
 }
 
 /**
- * Plugin task list endpoint shape during the multi-plugin migration:
+ * Plugin list endpoint shape during the multi-plugin migration:
  * - Legacy plugins return `T[]` directly.
  * - Migrated plugins (e.g. mysql_backups) return `PaginatedResponse<T>`.
  */
-type AppTasksResponse<T> = T[] | PaginatedAppList<T> | { items: T[] | null };
+type AppListResponse<T> = T[] | PaginatedAppList<T> | { items: T[] | null };
+
+/** @deprecated alias kept for unwrapTasks callers in tests */
+type AppTasksResponse<T> = AppListResponse<T>;
 
 export function unwrapTasks<T>(data: AppTasksResponse<T> | null | undefined): T[] {
   return normalizeAppListResponse(data).items;
 }
 
-async function fetchAllAppTasksPages<T extends Record<string, unknown>>(
-  pluginName: string,
+async function fetchAllAppListPages<T extends Record<string, unknown>>(
+  path: string,
 ): Promise<AppListResult<T>> {
   const out: T[] = [];
   let offset = 0;
   const limit = MAX_APP_LIST_LIMIT;
 
   for (let iter = 0; iter < MAX_FETCH_ALL_PAGES; iter++) {
-    const { data } = await apiClient.get<AppTasksResponse<T>>(`/apps/${pluginName}/`, {
+    const { data } = await apiClient.get<AppListResponse<T>>(path, {
       params: { offset, limit },
     });
     const page = normalizeAppListResponse(data);
@@ -184,20 +187,36 @@ async function fetchAllAppTasksPages<T extends Record<string, unknown>>(
   return { items: out, pagination: null };
 }
 
+async function fetchAppList<T extends Record<string, unknown>>(
+  path: string,
+  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'> = {},
+): Promise<AppListResult<T>> {
+  if (options.fetchAllPages) {
+    return fetchAllAppListPages<T>(path);
+  }
+  const offset = options.offset ?? DEFAULT_APP_LIST_OFFSET;
+  const limit = options.limit ?? DEFAULT_APP_LIST_LIMIT;
+  const { data } = await apiClient.get<AppListResponse<T>>(path, {
+    params: { offset, limit },
+  });
+  return normalizeAppListResponse(data);
+}
+
 /** Fetch plugin task list rows, optionally across all pages. */
 export async function fetchAppTasksList<T extends Record<string, unknown>>(
   pluginName: string,
   options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'> = {},
 ): Promise<AppListResult<T>> {
-  if (options.fetchAllPages) {
-    return fetchAllAppTasksPages<T>(pluginName);
-  }
-  const offset = options.offset ?? DEFAULT_APP_LIST_OFFSET;
-  const limit = options.limit ?? DEFAULT_APP_LIST_LIMIT;
-  const { data } = await apiClient.get<AppTasksResponse<T>>(`/apps/${pluginName}/`, {
-    params: { offset, limit },
-  });
-  return normalizeAppListResponse(data);
+  return fetchAppList<T>(`/apps/${pluginName}/`, options);
+}
+
+/** Fetch rows for one entity of a multi-entity plugin, optionally across all pages. */
+export async function fetchAppEntityList<T extends Record<string, unknown>>(
+  pluginName: string,
+  entityName: string,
+  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'> = {},
+): Promise<AppListResult<T>> {
+  return fetchAppList<T>(`/apps/${pluginName}/${entityName}/`, options);
 }
 
 export function useAppTasks<T extends Record<string, unknown>>(
@@ -217,12 +236,12 @@ export function useAppTasks<T extends Record<string, unknown>>(
         return await fetchAppTasksList<T>(pluginName, { offset, limit, fetchAllPages });
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
-          return mockTasksToResult(mockTasks);
+          return mockItemsToResult(mockTasks);
         }
         throw error;
       }
     },
-    ...(MOCK_FALLBACKS_ENABLED && mockTasks && { placeholderData: mockTasksToResult(mockTasks) }),
+    ...(MOCK_FALLBACKS_ENABLED && mockTasks && { placeholderData: mockItemsToResult(mockTasks) }),
   });
 }
 
@@ -305,8 +324,23 @@ export function useUpdateAppTask<T extends Record<string, unknown>>(
   });
 }
 
-function entityQueryKey(pluginName: string, entityName: string) {
+function entityQueriesPrefix(pluginName: string, entityName: string) {
   return ['plugins', pluginName, 'entity', entityName] as const;
+}
+
+function entityListQueryKey(
+  pluginName: string,
+  entityName: string,
+  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'>,
+) {
+  return [
+    ...entityQueriesPrefix(pluginName, entityName),
+    {
+      offset: options.offset ?? DEFAULT_APP_LIST_OFFSET,
+      limit: options.limit ?? DEFAULT_APP_LIST_LIMIT,
+      fetchAllPages: options.fetchAllPages ?? false,
+    },
+  ] as const;
 }
 
 function entityQueriesRootKey(pluginName: string) {
@@ -329,25 +363,30 @@ export function useAppEntityList<T extends Record<string, unknown>>(
   pluginName: string,
   entityName: string,
   mockItems?: T[],
-  options?: { enabled?: boolean },
+  options?: AppListQueryOptions,
 ) {
-  return useQuery<T[]>({
-    queryKey: entityQueryKey(pluginName, entityName),
+  const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
+  const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
+  const fetchAllPages = options?.fetchAllPages ?? false;
+
+  return useQuery<AppListResult<T>>({
+    queryKey: entityListQueryKey(pluginName, entityName, { offset, limit, fetchAllPages }),
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<T[] | PaginatedAppList<T>>(
-          `/apps/${pluginName}/${entityName}/`,
-        );
-        return unwrapAppListResponse(data);
+        return await fetchAppEntityList<T>(pluginName, entityName, {
+          offset,
+          limit,
+          fetchAllPages,
+        });
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
-          return mockItems;
+          return mockItemsToResult(mockItems);
         }
         throw error;
       }
     },
-    ...(MOCK_FALLBACKS_ENABLED && mockItems && { placeholderData: mockItems }),
+    ...(MOCK_FALLBACKS_ENABLED && mockItems && { placeholderData: mockItemsToResult(mockItems) }),
   });
 }
 
@@ -359,7 +398,7 @@ export function useAppEntityDetail<T extends Record<string, unknown>>(
   options?: { enabled?: boolean },
 ) {
   return useQuery<T | undefined>({
-    queryKey: [...entityQueryKey(pluginName, entityName), itemId],
+    queryKey: [...entityQueriesPrefix(pluginName, entityName), itemId],
     enabled: options?.enabled !== false && !!itemId,
     queryFn: async () => {
       try {

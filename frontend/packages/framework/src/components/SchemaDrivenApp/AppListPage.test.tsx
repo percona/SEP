@@ -28,7 +28,7 @@ vi.mock('../SchemaListView', () => ({
 
 vi.mock('@sep/api', () => ({
   useAppTasks: () => ({ data: { items: [], pagination: null }, isLoading: false }),
-  useAppEntityList: () => ({ data: [], isLoading: false }),
+  useAppEntityList: () => ({ data: { items: [], pagination: null }, isLoading: false }),
   useDeleteAppEntity: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
 }));
 

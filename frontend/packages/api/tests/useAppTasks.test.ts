@@ -21,6 +21,7 @@ import {
   DEFAULT_APP_LIST_LIMIT,
   DEFAULT_APP_LIST_OFFSET,
   fetchAppTasksList,
+  fetchAppEntityList,
   isBackendUnavailable,
   MAX_APP_LIST_LIMIT,
   normalizeAppListResponse,
@@ -143,6 +144,33 @@ describe('fetchAppTasksList', () => {
     const result = await fetchAppTasksList('legacy_app', { fetchAllPages: true });
 
     expect(getMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ items, pagination: null });
+  });
+});
+
+describe('fetchAppEntityList', () => {
+  it('requests the entity list path with offset/limit', async () => {
+    getMock.mockResolvedValue({
+      data: { items: [{ id: 1 }], total: 1, offset: 0, limit: 50 },
+    });
+
+    const result = await fetchAppEntityList('inventory', 'nodes', { offset: 0, limit: 50 });
+
+    expect(getMock).toHaveBeenCalledWith('/apps/inventory/nodes/', {
+      params: { offset: 0, limit: 50 },
+    });
+    expect(result).toEqual({
+      items: [{ id: 1 }],
+      pagination: { total: 1, offset: 0, limit: 50 },
+    });
+  });
+
+  it('returns a bare array for NO_PAGINATION entity routes', async () => {
+    const items = [{ id: 1 }, { id: 2 }];
+    getMock.mockResolvedValue({ data: items });
+
+    const result = await fetchAppEntityList('legacy_app', 'items');
+
     expect(result).toEqual({ items, pagination: null });
   });
 });
