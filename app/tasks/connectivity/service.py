@@ -171,8 +171,6 @@ async def check_connectivity(
     if queue_item.id is None:
         raise RuntimeError("dispatch_queue_item returned a queue item without an ID")
     queue_item_id = queue_item.id
-    # The payload gate's FAILED short-circuit returns through this same session,
-    # so the result is always attached (a FAILED status then skips the poll loop).
     await session.refresh(queue_item, attribute_names=["execution_request"])
 
     queue_item = await _expire_and_fetch(session, queue_item_id)
@@ -383,6 +381,28 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     )
 
 
+async def _iter_logs(
+    session: AsyncSession,
+    task_history: TaskHistory,
+    source: str,
+) -> AsyncGenerator[TaskLog, None]:
+    """Yield ``source`` logs from either legacy or chunked storage.
+
+    :param session: The async database session.
+    :param task_history: The task history row being inspected.
+    :param source: The Nomad task/step name whose log chunks to yield.
+    :return: An async generator yielding log chunks for ``source``.
+    """
+    iter_logs = getattr(task_history, "iter_logs", None)
+    if callable(iter_logs):
+        for log in iter_logs(step=source):
+            yield log
+        return
+
+    async for log in iter_task_history_logs(session, task_history, source=source):
+        yield log
+
+
 async def _iter_run_script_logs(
     session: AsyncSession,
     task_history: TaskHistory,
@@ -393,13 +413,7 @@ async def _iter_run_script_logs(
     :param task_history: The task history row being inspected.
     :return: An async generator yielding log chunks for the ``run-script`` source.
     """
-    iter_logs = getattr(task_history, "iter_logs", None)
-    if callable(iter_logs):
-        for log in iter_logs(step="run-script"):
-            yield log
-        return
-
-    async for log in iter_task_history_logs(session, task_history, source="run-script"):
+    async for log in _iter_logs(session, task_history, "run-script"):
         yield log
 
 
@@ -419,6 +433,32 @@ async def _has_run_script_logs(
     return False
 
 
+async def _collect_failed_stderr(
+    session: AsyncSession, task_history: TaskHistory
+) -> str:
+    """Return the stderr behind a FAILED check, preferring run-script output.
+
+    Read the ``run-script`` stderr first; when it is empty fall back to the
+    ``execution`` source, where a pre-dispatch gate failure (which never runs
+    run-script) writes its reason, so that diagnostic stays reachable here.
+
+    :param session: The async database session.
+    :param task_history: The FAILED task history record.
+    :return: The concatenated, stripped stderr, or an empty string if none.
+    """
+    stderr = ""
+    async for log in _iter_run_script_logs(session, task_history):
+        if log.type == TaskLogType.STDERR:
+            stderr += log.msg or ""
+    stderr = stderr.strip()
+    if stderr:
+        return stderr
+    async for log in _iter_logs(session, task_history, "execution"):
+        if log.type == TaskLogType.STDERR:
+            stderr += log.msg or ""
+    return stderr.strip()
+
+
 async def _parse_check_result(
     session: AsyncSession, task_history: TaskHistory
 ) -> ConnectivityCheckResponse:
@@ -432,11 +472,7 @@ async def _parse_check_result(
         raise RuntimeError("_parse_check_result called with unsaved TaskHistory")
 
     if task_history.status == TaskHistoryStatusEnum.FAILED:
-        stderr = ""
-        async for log in _iter_run_script_logs(session, task_history):
-            if log.type == TaskLogType.STDERR:
-                stderr += log.msg or ""
-        stderr = stderr.strip()
+        stderr = await _collect_failed_stderr(session, task_history)
         return ConnectivityCheckResponse(
             success=False,
             error=stderr or "Task failed",

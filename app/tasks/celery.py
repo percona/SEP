@@ -22,7 +22,7 @@ along with utility functions to process queue items.
 import asyncio
 import json
 import logging
-from contextlib import suppress
+from contextlib import AsyncExitStack, suppress
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -231,6 +231,11 @@ def execute_task_by_name(
         prepare_periodic_task_history(task_name, execution_data)
     )
     try:
+        failed = celery.loop.run_until_complete(
+            _pre_dispatch_payload_check(task_history, task_name, periodic_task_name)
+        )
+        if failed is not None:
+            return jsonable_encoder(failed)
         skipped = celery.loop.run_until_complete(
             _pre_dispatch_health_check(task_history, task_name, periodic_task_name)
         )
@@ -330,7 +335,7 @@ async def _persist_failed_dispatch(
         already hold ``task_history`` (and its ``task`` relationship) attached to
         an open session must pass it so the save does not attach the instance to a
         second session; ``None`` opens a private internal session for callers whose
-        ``task_history`` is detached (the periodic path).
+        ``task_history`` is detached (the Celery queue, periodic, and chain paths).
     :return: The saved, FAILED TaskHistory.
     """
     target = task_history.execution_request.target
@@ -339,15 +344,15 @@ async def _persist_failed_dispatch(
     task_history.finished_at = utc_now()
 
     async_session = get_async_session_maker()
-    if session is not None:
-        saved = await TaskHistoryManager.save(session, task_history)
-        await session.refresh(saved, attribute_names=["execution_request"])
-    else:
-        async with async_session() as own_session:
-            saved = await TaskHistoryManager.save(own_session, task_history)
-            await own_session.refresh(saved, attribute_names=["execution_request"])
+    async with AsyncExitStack() as stack:
+        active = session or await stack.enter_async_context(async_session())
+        saved = await TaskHistoryManager.save(active, task_history)
+        await active.refresh(saved, attribute_names=["execution_request"])
 
-    async with async_session() as log_session:
+    async with AsyncExitStack() as stack:
+        # Write through the caller's session when passed: its engine may differ
+        # from the periodic maker's, and the chunk must land where callers read.
+        log_session = session or await stack.enter_async_context(async_session())
         try:
             await TaskHistoryLogWriter.append(
                 log_session,
@@ -428,8 +433,8 @@ async def _pre_dispatch_payload_check(
     leaves the history non-terminal. Return ``None`` to proceed with normal
     dispatch.
 
-    :param task_history: The unsaved TaskHistory to dispatch, from any gated
-        path (sync, connectivity, chain, or periodic).
+    :param task_history: The TaskHistory to dispatch, from any gated path
+        (sync, connectivity, chain, queue, or periodic).
     :param task_name: The SEP task name (used for dedup key and alert source).
     :param periodic_task_name: The periodic-task name, if any (used to enrich
         the alert source).

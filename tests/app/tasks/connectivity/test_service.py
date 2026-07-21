@@ -340,6 +340,8 @@ class TestCheckConnectivityRealSession:
             result = await check_connectivity(session, request)
 
         assert result.success is False
+        assert result.error is not None
+        assert "payload could not be resolved" in result.error
         saved = await TaskHistoryManager.get_or_404(session, id=result.task_history_id)
         assert saved.status == TaskHistoryStatusEnum.FAILED
 
