@@ -42,7 +42,7 @@ already imports, so the extracted region drops into a payload unchanged.
 """
 
 import os
-import subprocess
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -164,7 +164,7 @@ def _apply_pbm_config(config: dict) -> None:
         yaml.dump(pbm_config, f, default_flow_style=False, allow_unicode=True)
     cmd = ["pbm", "config", "--file", config_file]
     try:
-        proc = subprocess.Popen(cmd)  # noqa: S603
+        proc = subprocess.Popen(cmd)  # noqa: S603 # nosec B603
         proc.wait()
         ret_code = proc.poll()
         if ret_code != 0:
