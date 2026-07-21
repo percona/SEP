@@ -4,10 +4,6 @@
 
 FROM localhost/sep:builder AS builder
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV FASTAPI_ENV=production_docker
-
 #########
 # FINAL #
 #########
