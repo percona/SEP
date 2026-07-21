@@ -25,13 +25,21 @@ from fastapi import HTTPException, status
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.sep.apps.backup_mongo.models import BackupType
+from app.sep.apps.backup_mongo.restore.models import OWNER
 from app.sep.apps.backup_mongo.restore.spec import RESTORE_CONFIG_PAYLOAD_MARKER
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.inventory import CreatedService
+from app.tasks.anonymizer.config import anonymizer_settings
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/backup_mongo/restore"
+EMAIL_MASK = PIIEntity.encode_selection({PIIEntity.EMAIL_ADDRESS})
+EXPECTED_EMAIL_ENTITIES = [PIIEntity.EMAIL_ADDRESS.name]
+EXPECTED_DEFAULT_ENTITIES = sorted(
+    entity.name for entity in anonymizer_settings.DEFAULT_ENTITIES[OWNER]
+)
 EXPECTED_LOGICAL_RESTORE_POSTS = 3
 EXPECTED_PHYSICAL_RESTORE_POSTS = 4
 DEFAULT_PAGE_LIMIT = 50
@@ -123,6 +131,18 @@ def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
     return AsyncMock(side_effect=_mock_get)
 
 
+def mock_task_api_parent_list(*parents: dict) -> AsyncMock:
+    """Return a ``tasks_api.get`` mock serving ``parents`` as the null-parent page."""
+
+    async def _mock_get(path: str, **kwargs: Any) -> Any:
+        params = kwargs.get("params") or {}
+        if params.get("parent_is_null") == "true":
+            return {"items": list(parents), "total": len(parents)}
+        return {"items": [], "total": 0}
+
+    return AsyncMock(side_effect=_mock_get)
+
+
 class TestRestoreMongoAppSchemaEndpoint:
     """Tests for GET /api/apps/backup_mongo/restore/schema."""
 
@@ -138,6 +158,34 @@ class TestRestoreMongoAppSchemaEndpoint:
         response = test_client.get(f"{API_BASE}/schema")
 
         assert response.json()["name"] == "backup_mongo_restores"
+
+    def test_schema_collapses_restore_options_and_defaults_task_name(self, test_client):
+        """Collapse Restore Options by default and pre-fill task_name."""
+        response = test_client.get(f"{API_BASE}/schema")
+        body = response.json()
+        sections = {section["title"]: section for section in body["forms"]}
+
+        task = sections["Task"]
+        assert task["collapsible"] is False
+        assert task["collapsed_by_default"] is False
+        task_name = next(
+            field for field in task["fields"] if field["name"] == "task_name"
+        )
+        assert task_name["default"] == "mongodb-restore"
+
+        restore_options = sections["Restore Options"]
+        assert restore_options["collapsible"] is True
+        assert restore_options["collapsed_by_default"] is True
+        assert {field["name"] for field in restore_options["fields"]} == {
+            "restore_batch_size",
+            "restore_num_insertion_workers",
+            "restore_num_parallel_collections",
+            "restore_num_download_workers",
+            "restore_max_download_buffer_mb",
+            "restore_download_chunk_mb",
+            "restore_mongod_location",
+            "restore_mongod_location_map",
+        }
 
 
 class TestRestoreMongoApiList:
@@ -198,6 +246,43 @@ class TestRestoreMongoApiList:
             "/history/latest",
             json={"names": ["parent-restore", "legacy-self-parent-restore"]},
         )
+
+    def test_list_exposes_framework_task_fields(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Expose the shared BaseTaskResponse fields on list rows for API parity."""
+        parent = build_restore_task("parent-restore", anonymize_mask=EMAIL_MASK)
+
+        mock_task_api_dep.get = mock_task_api_parent_list(parent)
+        mock_task_api_dep.post = AsyncMock(return_value={})
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["anonymize_mask"] == EMAIL_MASK
+        assert item["anonymized_entities"] == EXPECTED_EMAIL_ENTITIES
+        assert item["connectivity_warning"] is None
+        assert item["service_type"] == "mongodb"
+        assert item["hostname"] == "mongo-restore-host"
+        assert item["backup_type"] == "pbm_logical"
+        assert item["backup_source"] == "2026-04-29T10:00:00"
+
+    def test_list_anonymized_entities_falls_back_when_mask_none(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Resolve anonymized_entities without erroring when anonymize_mask is null."""
+        parent = build_restore_task("parent-restore", anonymize_mask=None)
+
+        mock_task_api_dep.get = mock_task_api_parent_list(parent)
+        mock_task_api_dep.post = AsyncMock(return_value={})
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["anonymize_mask"] is None
+        assert item["anonymized_entities"] == EXPECTED_DEFAULT_ENTITIES
 
     def test_list_paginates_with_offset_and_limit(
         self, test_client, mock_task_api_dep
@@ -348,6 +433,16 @@ class TestRestoreMongoApiCreate:
         assert "service_id" in first_post["data"][RESERVED_FORM_KEY]
         restore_leg_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
         assert RESERVED_FORM_KEY not in restore_leg_post["data"]
+        body = response.json()
+        for field in (
+            "service_type",
+            "anonymize_mask",
+            "connectivity_warning",
+            "anonymized_entities",
+        ):
+            assert field in body
+        assert body["connectivity_warning"] is None
+        assert body["service_type"] == "mongodb"
 
     def test_create_physical_posts_four_tasks(
         self,
@@ -481,6 +576,54 @@ class TestRestoreMongoApiDetail:
             "parent-restore-pbm_logical",
             "parent-restore-pbm-list",
         }
+
+    def test_detail_exposes_framework_task_fields(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Expose the shared BaseTaskResponse fields on detail alongside children."""
+        parent = build_restore_task("parent-restore", anonymize_mask=EMAIL_MASK)
+        restore_leg = build_restore_task(
+            "parent-restore-pbm_logical",
+            data={"parent": "parent-restore"},
+        )
+        pbm_list = build_restore_task(
+            "parent-restore-pbm-list",
+            data={"parent": "parent-restore"},
+        )
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/parent-restore": parent,
+                "/parent-restore-pbm_logical": restore_leg,
+                "/parent-restore-pbm-list": pbm_list,
+            }
+        )
+
+        response = test_client.get(f"{API_BASE}/parent-restore")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["anonymize_mask"] == EMAIL_MASK
+        assert body["anonymized_entities"] == EXPECTED_EMAIL_ENTITIES
+        assert body["connectivity_warning"] is None
+        assert body["service_type"] == "mongodb"
+        assert body["hostname"] == "mongo-restore-host"
+        assert body["backup_type"] == "pbm_logical"
+        assert body["backup_source"] == "2026-04-29T10:00:00"
+        assert "derived_tasks" in body
+
+    def test_detail_anonymized_entities_falls_back_when_mask_none(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Recompute anonymized_entities after the detail dump round-trip when mask is null."""
+        parent = build_restore_task("parent-restore", anonymize_mask=None)
+        mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-restore": parent})
+
+        response = test_client.get(f"{API_BASE}/parent-restore")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["anonymize_mask"] is None
+        assert body["anonymized_entities"] == EXPECTED_DEFAULT_ENTITIES
 
     def test_detail_tolerates_history_fetch_failure_for_one_child(
         self, test_client, mock_task_api_dep

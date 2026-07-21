@@ -3613,6 +3613,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -3623,6 +3643,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -3715,6 +3745,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -3741,22 +3781,43 @@
         "required": [
           "name",
           "owner",
-          "backup_type",
-          "backup_source",
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "backup_source",
+          "anonymized_entities"
         ],
         "title": "RestoreTaskDetailResponse",
         "type": "object"
       },
       "backup_mongo__RestoreTaskResponse": {
-        "description": "Represent a restore task API response.\n\n:param id: The unique identifier for the restore task.\n:type id: int | None\n:param backend: The backend worker/engine executing the task.\n:type backend: TaskBackendEnum\n:param data: The raw configuration and parameters for the restore execution.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:type alert_on_fail: bool\n:param created_at: The timestamp when the task was first created.\n:type created_at: datetime | None\n:param updated_at: The timestamp of the last modification to the task.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a restore task API response.\n\nExtend the standard task-response surface with the restore destination facts\nthe API surfaces; the shared task identity, status, audit, anonymization, and\nconnectivity fields come from\n:class:`~app.sep.apps.framework.responses.BaseTaskResponse`.\n\n:param hostname: The target hostname for the task execution.\n:param backup_type: The PBM backup type for this restore.\n:param backup_source: The backup name or timestamp to restore from.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -3768,6 +3829,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -3853,6 +3924,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -3879,12 +3960,13 @@
         "required": [
           "name",
           "owner",
-          "backup_type",
-          "backup_source",
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "backup_source",
+          "anonymized_entities"
         ],
         "title": "RestoreTaskResponse",
         "type": "object"
@@ -9549,8 +9631,8 @@
         "title": "BackupCreate",
         "type": "object"
       },
-      "mysql_backups__BackupResponse": {
-        "description": "Represent a backup task API response.\n\n:param hostname: The executor hostname target.",
+      "mysql_backups__BackupTaskResponse": {
+        "description": "Represent a backup task API response.\n\n:param backup_type: The backup type recorded in task config.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -9725,7 +9807,7 @@
           "alert_on_fail",
           "anonymized_entities"
         ],
-        "title": "BackupResponse",
+        "title": "BackupTaskResponse",
         "type": "object"
       },
       "mysql_backups__BackupType": {
@@ -9749,11 +9831,11 @@
         "title": "CompressionAlgorithm",
         "type": "string"
       },
-      "mysql_backups__PaginatedResponse_BackupResponse_": {
+      "mysql_backups__PaginatedResponse_BackupTaskResponse_": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/mysql_backups__BackupResponse"
+              "$ref": "#/components/schemas/mysql_backups__BackupTaskResponse"
             },
             "title": "Items",
             "type": "array"
@@ -9777,7 +9859,7 @@
           "offset",
           "limit"
         ],
-        "title": "PaginatedResponse[BackupResponse]",
+        "title": "PaginatedResponse[BackupTaskResponse]",
         "type": "object"
       },
       "mysql_backups__PaginatedResponse_RestoresResponse_": {
@@ -15894,7 +15976,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/mysql_backups__PaginatedResponse_BackupResponse_"
+                  "$ref": "#/components/schemas/mysql_backups__PaginatedResponse_BackupTaskResponse_"
                 }
               }
             },
@@ -16353,7 +16435,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/mysql_backups__BackupResponse"
+                  "$ref": "#/components/schemas/mysql_backups__BackupTaskResponse"
                 }
               }
             },
