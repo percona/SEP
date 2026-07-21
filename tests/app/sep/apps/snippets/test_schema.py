@@ -796,3 +796,15 @@ async def test_pmm_mysql_payload_start_end_map_to_datetime_field():
         )
         assert param.py_type is SnippetMetaParameterType.DATETIME
         assert isinstance(field_for(param), DateTimeField)
+
+
+@pytest.mark.asyncio
+async def test_widened_helpers_accept_non_snippet_basesnippet():
+    """Accept a disk-backed ``BaseSnippet`` subclass, not only the DB ``Snippet``."""
+    script = await DipperScript.from_path("pcs-collect-pmm-mysql.py", update_meta=True)
+
+    schema = build_snippet_schema(script)
+    assert any(section.title == "Execution" for section in schema.forms)
+
+    execution_args = script.get_execution_model().model_construct(executor_host="host1")
+    assert isinstance(evaluate_snippet_gates(script, execution_args), list)
