@@ -61,7 +61,7 @@ from app.core.utils.json_pointer import (
 
 logger = logging.getLogger(__name__)
 
-_BYTES_PER_MB = 1024 * 1024
+_BYTES_PER_MIB = 1024 * 1024
 
 #: The value map whose contents land in the query string, where secrets are
 #: rejected because query strings are logged, cached and proxied unredacted.
@@ -380,10 +380,10 @@ class DeliveryPlanExecutor:
         :raises OSError: Propagates from stat-ing ``bundle_path``.
         """
         size = bundle_path.stat().st_size
-        if size > self._plan.max_bundle_size_mb * _BYTES_PER_MB:
+        if size > self._plan.max_bundle_size_mb * _BYTES_PER_MIB:
             raise DeliveryPlanError(
                 f"Bundle is {size} bytes, above the configured "
-                f"{self._plan.max_bundle_size_mb} MB limit."
+                f"{self._plan.max_bundle_size_mb} MiB limit."
             )
 
     def _resolve_value(
