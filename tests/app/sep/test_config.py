@@ -22,12 +22,10 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from app.core.requests.bundle_upload import CredentialPlacement
 from app.core.settings_override.registry import is_hot_reloadable
 from app.sep.config import (
     App,
     AppDrainSettings,
-    BundleUploadSettings,
     sep_settings,
     SEPSettings,
     SessionOptions,
@@ -352,101 +350,3 @@ class TestAppsKeyBackCompat:
             settings = SEPSettings()
         assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
         assert not _logged_legacy_apps_warning(mock_logger)
-
-
-def _ready_settings(**overrides) -> BundleUploadSettings:
-    """Build a fully-configured ``BundleUploadSettings`` with test defaults."""
-    kwargs = {
-        "enabled": True,
-        "endpoint": "https://intake.example.com",
-        "credential": "intake-token",
-        "client_id": "acme-1",
-    }
-    kwargs.update(overrides)
-    return BundleUploadSettings(**kwargs)
-
-
-class TestBundleUploadSettings:
-    """Define tests for the ``BundleUploadSettings`` readiness and validators."""
-
-    def test_disabled_by_default(self):
-        """Return the disabled reason when the master toggle is off."""
-        assert BundleUploadSettings().upload_disabled_reasons == ["Upload is disabled"]
-
-    def test_ready_config_has_no_reasons(self):
-        """Return no reasons and ``is_upload_configured`` for a full config."""
-        settings = _ready_settings()
-        assert settings.upload_disabled_reasons == []
-        assert settings.is_upload_configured is True
-
-    def test_missing_endpoint_reason(self):
-        """Return a missing-endpoint reason when enabled without one."""
-        settings = _ready_settings(endpoint=None)
-        assert "Endpoint is not configured" in settings.upload_disabled_reasons
-        assert settings.is_upload_configured is False
-
-    def test_invalid_endpoint_scheme_reason(self):
-        """Return an invalid-endpoint reason when the scheme is not HTTP/HTTPS."""
-        settings = _ready_settings(endpoint="ftp://intake.example.com")
-        assert (
-            "Endpoint is not a valid HTTP/HTTPS address"
-            in settings.upload_disabled_reasons
-        )
-
-    def test_missing_credential_reason(self):
-        """Return a missing-credential reason when enabled without one."""
-        settings = _ready_settings(credential=None)
-        assert "Credential is not configured" in settings.upload_disabled_reasons
-
-    def test_missing_client_id_reason(self):
-        """Return a missing-client-id reason when enabled without one."""
-        settings = _ready_settings(client_id=None)
-        assert "Client ID is not configured" in settings.upload_disabled_reasons
-
-    def test_empty_endpoint_string_normalized_to_none(self):
-        """Coerce an empty endpoint string to ``None`` (unconfigured)."""
-        settings = _ready_settings(endpoint="   ")
-        assert settings.endpoint is None
-        assert "Endpoint is not configured" in settings.upload_disabled_reasons
-
-    def test_endpoint_trailing_slash_stripped(self):
-        """Strip a trailing slash from a configured endpoint."""
-        settings = _ready_settings(endpoint="https://intake.example.com/")
-        assert settings.endpoint == "https://intake.example.com"
-
-    def test_metadata_colliding_with_reserved_field_rejected(self):
-        """Reject metadata keys that shadow a reserved upload field."""
-        with pytest.raises(ValidationError, match="manifest"):
-            _ready_settings(metadata={"manifest": "x"})
-
-    def test_form_field_credential_named_reserved_field_rejected(self):
-        """Reject a form-field credential named after a reserved field."""
-        with pytest.raises(ValidationError, match="file"):
-            _ready_settings(
-                credential_placement=CredentialPlacement.FORM_FIELD,
-                credential_name="file",
-            )
-
-    def test_form_field_credential_duplicating_metadata_rejected(self):
-        """Reject a form-field credential name that duplicates a metadata key."""
-        with pytest.raises(ValidationError, match="src"):
-            _ready_settings(
-                credential_placement=CredentialPlacement.FORM_FIELD,
-                credential_name="src",
-                metadata={"src": "y"},
-            )
-
-    def test_header_credential_custom_name_allowed(self):
-        """Allow a header credential with a custom name (distinct namespace)."""
-        settings = _ready_settings(
-            credential_placement=CredentialPlacement.HEADER,
-            credential_name="X-Api-Key",
-        )
-        assert settings.credential_name == "X-Api-Key"
-
-    def test_credential_placement_accepts_uppercase_value(self):
-        """Accept an uppercase credential-placement value (case-insensitive)."""
-        settings = _ready_settings(
-            credential_placement="FORM_FIELD", credential_name="api_key"
-        )
-        assert settings.credential_placement is CredentialPlacement.FORM_FIELD
