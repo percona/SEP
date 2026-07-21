@@ -69,7 +69,7 @@ _QUERY_MAP = "query"
 
 
 class LiteralValue(BaseModel):
-    """Supply a constant value written into the plan.
+    """Provide a constant value written into the plan.
 
     :param source: The discriminator tag, always ``"literal"``.
     :param value: The constant sent as-is.
@@ -80,7 +80,7 @@ class LiteralValue(BaseModel):
 
 
 class InputValue(BaseModel):
-    """Supply a value taken from the send inputs.
+    """Provide a value taken from the send inputs.
 
     :param source: The discriminator tag, always ``"input"``.
     :param field: Which send input to read.
@@ -91,7 +91,7 @@ class InputValue(BaseModel):
 
 
 class SecretValue(BaseModel):
-    """Supply a value taken from the plan's named secrets.
+    """Provide a value taken from the plan's named secrets.
 
     :param source: The discriminator tag, always ``"secret"``.
     :param name: The key into :attr:`DeliveryPlan.secrets`.
@@ -102,7 +102,7 @@ class SecretValue(BaseModel):
 
 
 class StepOutputValue(BaseModel):
-    """Supply a value extracted from an earlier resolution step's response.
+    """Provide a value extracted from an earlier resolution step's response.
 
     :param source: The discriminator tag, always ``"output"``.
     :param step: The name of the resolution step that produced the value.

@@ -79,7 +79,7 @@ class TestAmbientSessionSSO:
 
 
 class TestDiagnosticsDelivery:
-    """Test the ``DIAGNOSTICS_DELIVERY`` delivery-plan settings block."""
+    """Cover the ``DIAGNOSTICS_DELIVERY`` delivery-plan settings block."""
 
     @staticmethod
     def _plan_payload() -> dict:
@@ -94,7 +94,7 @@ class TestDiagnosticsDelivery:
         }
 
     def test_defaults_to_not_configured(self):
-        """Leave the block unset so a consumer can gate on ``None``."""
+        """Keep the block unset so a consumer can gate on ``None``."""
         assert SEPSettings(_env_file=None).DIAGNOSTICS_DELIVERY is None
 
     def test_is_not_overridable_from_the_database(self):

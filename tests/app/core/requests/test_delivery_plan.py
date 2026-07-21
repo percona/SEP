@@ -284,7 +284,7 @@ class TestDeliveryPlanExecutor:
     """Cover plan execution against a real ``RemoteAPI`` over mocked HTTP."""
 
     async def test_conforms_to_bundle_uploader_protocol(self, api: RemoteAPI):
-        """Satisfy the runtime-checkable ``BundleUploader`` protocol."""
+        """Expose the executor as a runtime-checkable ``BundleUploader``."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
 
         assert isinstance(executor, BundleUploader)
@@ -576,7 +576,7 @@ class TestDeliveryPlanExecutor:
     async def test_unresolvable_reference_pointer_keeps_the_detail(
         self, api: RemoteAPI, bundle_path: Path, caplog
     ):
-        """Warn and return no reference while preserving the response detail."""
+        """Preserve the response detail while reporting no reference, with a warning."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
         with aioresponses() as mock:
             mock.post(
