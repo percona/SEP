@@ -89,7 +89,7 @@ function renderPage(schedulingEnabled = true) {
 
 function setupHooks(periodic: PeriodicTaskResponse[]) {
   useAppTasksMock.mockReturnValue({
-    data: [{ name: TASK_NAME }],
+    data: { items: [{ name: TASK_NAME }], pagination: null },
     isLoading: false,
     isError: false,
   });

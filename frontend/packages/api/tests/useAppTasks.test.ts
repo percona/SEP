@@ -15,15 +15,33 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildEntityItemPath,
+  DEFAULT_APP_LIST_LIMIT,
+  DEFAULT_APP_LIST_OFFSET,
+  fetchAppTasksList,
   isBackendUnavailable,
+  MAX_APP_LIST_LIMIT,
   normalizeAppListResponse,
   unwrapAppListResponse,
   unwrapTasks,
 } from '../src/hooks/useAppTasks';
 import { ApiError } from '../src/errors';
+
+vi.mock('../src/client', () => ({
+  apiClient: {
+    get: vi.fn(),
+  },
+}));
+
+import { apiClient } from '../src/client';
+
+const getMock = vi.mocked(apiClient.get);
+
+beforeEach(() => {
+  getMock.mockReset();
+});
 
 describe('normalizeAppListResponse', () => {
   it('returns items with pagination null for a bare array', () => {
@@ -60,6 +78,72 @@ describe('unwrapAppListResponse', () => {
     const items = [{ name: 'a' }];
     expect(unwrapAppListResponse(items)).toEqual(items);
     expect(unwrapAppListResponse({ items, total: 1, offset: 0, limit: 50 })).toEqual(items);
+  });
+});
+
+describe('fetchAppTasksList', () => {
+  it('requests offset/limit query params for a single page', async () => {
+    getMock.mockResolvedValue({
+      data: { items: [{ name: 'a' }], total: 1, offset: 50, limit: 50 },
+    });
+
+    const result = await fetchAppTasksList('mysql_backups', { offset: 50, limit: 50 });
+
+    expect(getMock).toHaveBeenCalledWith('/apps/mysql_backups/', {
+      params: { offset: 50, limit: 50 },
+    });
+    expect(result).toEqual({
+      items: [{ name: 'a' }],
+      pagination: { total: 1, offset: 50, limit: 50 },
+    });
+  });
+
+  it('defaults offset/limit to backend defaults', async () => {
+    getMock.mockResolvedValue({ data: [] });
+
+    await fetchAppTasksList('mysql_backups');
+
+    expect(getMock).toHaveBeenCalledWith('/apps/mysql_backups/', {
+      params: { offset: DEFAULT_APP_LIST_OFFSET, limit: DEFAULT_APP_LIST_LIMIT },
+    });
+  });
+
+  it('fetchAllPages loops until total is reached', async () => {
+    getMock
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ name: 'a' }],
+          total: 2,
+          offset: 0,
+          limit: MAX_APP_LIST_LIMIT,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ name: 'b' }],
+          total: 2,
+          offset: 1,
+          limit: MAX_APP_LIST_LIMIT,
+        },
+      });
+
+    const result = await fetchAppTasksList('mysql_backups', { fetchAllPages: true });
+
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      items: [{ name: 'a' }, { name: 'b' }],
+      pagination: null,
+    });
+  });
+
+  it('fetchAllPages returns the bare array on NO_PAGINATION routes', async () => {
+    const items = [{ name: 'a' }, { name: 'b' }];
+    getMock.mockResolvedValue({ data: items });
+
+    const result = await fetchAppTasksList('legacy_app', { fetchAllPages: true });
+
+    expect(getMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ items, pagination: null });
   });
 });
 

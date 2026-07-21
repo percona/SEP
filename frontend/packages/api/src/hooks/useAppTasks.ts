@@ -112,52 +112,117 @@ export function unwrapAppListResponse<T>(data: T[] | PaginatedAppList<T>): T[] {
   return normalizeAppListResponse(data).items;
 }
 
-/**
- * Generic CRUD hooks for plugin tasks.
- *
- * The real API is always attempted first. When the backend is unavailable
- * (network error or 5xx), mock data is used as a fallback only when the
- * mock-fallback gate is on — that is, in dev builds, and in production
- * builds explicitly opted in via `VITE_MOCK_API=true` (the Playwright
- * preview target). Real production bundles never use the fallback.
- */
+export const DEFAULT_APP_LIST_OFFSET = 0;
+export const DEFAULT_APP_LIST_LIMIT = 50;
+export const MAX_APP_LIST_LIMIT = 200;
+
+const MAX_FETCH_ALL_PAGES = 50;
+
+export type AppListQueryOptions = {
+  enabled?: boolean;
+  offset?: number;
+  limit?: number;
+  /** When true, fetches every page and returns the full item set (for schedule joins). */
+  fetchAllPages?: boolean;
+};
+
+function mockTasksToResult<T>(mockTasks: T[]): AppListResult<T> {
+  return { items: mockTasks, pagination: null };
+}
+
+function tasksQueryKey(
+  pluginName: string,
+  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'>,
+) {
+  return [
+    'plugins',
+    pluginName,
+    'tasks',
+    {
+      offset: options.offset ?? DEFAULT_APP_LIST_OFFSET,
+      limit: options.limit ?? DEFAULT_APP_LIST_LIMIT,
+      fetchAllPages: options.fetchAllPages ?? false,
+    },
+  ] as const;
+}
 
 /**
  * Plugin task list endpoint shape during the multi-plugin migration:
  * - Legacy plugins return `T[]` directly.
  * - Migrated plugins (e.g. mysql_backups) return `PaginatedResponse<T>`.
- *
- * The hook unwraps both shapes to `T[]` so call sites stay stable.
  */
-type AppTasksResponse<T> = T[] | { items: T[] | null };
+type AppTasksResponse<T> = T[] | PaginatedAppList<T> | { items: T[] | null };
 
 export function unwrapTasks<T>(data: AppTasksResponse<T> | null | undefined): T[] {
-  if (Array.isArray(data)) {
-    return data;
+  return normalizeAppListResponse(data).items;
+}
+
+async function fetchAllAppTasksPages<T extends Record<string, unknown>>(
+  pluginName: string,
+): Promise<AppListResult<T>> {
+  const out: T[] = [];
+  let offset = 0;
+  const limit = MAX_APP_LIST_LIMIT;
+
+  for (let iter = 0; iter < MAX_FETCH_ALL_PAGES; iter++) {
+    const { data } = await apiClient.get<AppTasksResponse<T>>(`/apps/${pluginName}/`, {
+      params: { offset, limit },
+    });
+    const page = normalizeAppListResponse(data);
+
+    if (page.pagination === null) {
+      return { items: page.items, pagination: null };
+    }
+
+    out.push(...page.items);
+    offset += page.items.length;
+    if (offset >= page.pagination.total || page.items.length === 0) {
+      return { items: out, pagination: null };
+    }
   }
-  return data?.items ?? [];
+
+  return { items: out, pagination: null };
+}
+
+/** Fetch plugin task list rows, optionally across all pages. */
+export async function fetchAppTasksList<T extends Record<string, unknown>>(
+  pluginName: string,
+  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'> = {},
+): Promise<AppListResult<T>> {
+  if (options.fetchAllPages) {
+    return fetchAllAppTasksPages<T>(pluginName);
+  }
+  const offset = options.offset ?? DEFAULT_APP_LIST_OFFSET;
+  const limit = options.limit ?? DEFAULT_APP_LIST_LIMIT;
+  const { data } = await apiClient.get<AppTasksResponse<T>>(`/apps/${pluginName}/`, {
+    params: { offset, limit },
+  });
+  return normalizeAppListResponse(data);
 }
 
 export function useAppTasks<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
-  options?: { enabled?: boolean },
+  options?: AppListQueryOptions,
 ) {
-  return useQuery<T[]>({
-    queryKey: ['plugins', pluginName, 'tasks'],
+  const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
+  const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
+  const fetchAllPages = options?.fetchAllPages ?? false;
+
+  return useQuery<AppListResult<T>>({
+    queryKey: tasksQueryKey(pluginName, { offset, limit, fetchAllPages }),
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<AppTasksResponse<T>>(`/apps/${pluginName}/`);
-        return unwrapTasks(data);
+        return await fetchAppTasksList<T>(pluginName, { offset, limit, fetchAllPages });
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
-          return mockTasks;
+          return mockTasksToResult(mockTasks);
         }
         throw error;
       }
     },
-    ...(MOCK_FALLBACKS_ENABLED && mockTasks && { placeholderData: mockTasks }),
+    ...(MOCK_FALLBACKS_ENABLED && mockTasks && { placeholderData: mockTasksToResult(mockTasks) }),
   });
 }
 

@@ -50,8 +50,8 @@ export function useScheduledTasksForApp(
   options: UseScheduledTasksOptions = {},
 ) {
   const { pollingIntervalMs = POLL_INTERVAL_MS, disablePolling = false } = options;
-  const tasksQuery = useAppTasks<AppTask>(pluginName);
-  const pluginTaskNames = tasksQuery.data?.map((t) => t.name) ?? [];
+  const tasksQuery = useAppTasks<AppTask>(pluginName, undefined, { fetchAllPages: true });
+  const pluginTaskNames = tasksQuery.data?.items.map((t) => t.name) ?? [];
 
   const periodicQuery = useQuery<PeriodicTaskResponse[], Error, PeriodicTaskResponse[]>({
     queryKey: PERIODIC_LIST_KEY,
@@ -71,7 +71,7 @@ export function useScheduledTasksForApp(
 
   return {
     periodicTasks: filtered,
-    appTasks: tasksQuery.data ?? [],
+    appTasks: tasksQuery.data?.items ?? [],
     isLoading: tasksQuery.isLoading || periodicQuery.isLoading,
     isError: tasksQuery.isError || periodicQuery.isError,
     error: tasksQuery.error ?? periodicQuery.error,

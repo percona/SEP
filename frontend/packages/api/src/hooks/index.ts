@@ -30,8 +30,17 @@ export {
   useDeleteAppTask,
   unwrapAppListResponse,
   normalizeAppListResponse,
+  fetchAppTasksList,
+  DEFAULT_APP_LIST_OFFSET,
+  DEFAULT_APP_LIST_LIMIT,
+  MAX_APP_LIST_LIMIT,
 } from './useAppTasks';
-export type { AppListPagination, AppListResult, PaginatedAppList } from './useAppTasks';
+export type {
+  AppListPagination,
+  AppListQueryOptions,
+  AppListResult,
+  PaginatedAppList,
+} from './useAppTasks';
 export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
 export type { AlertConfig } from './useAlertConfig';
 export { useDashboardStats } from './useDashboardStats';

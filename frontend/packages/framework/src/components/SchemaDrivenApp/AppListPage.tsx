@@ -96,7 +96,8 @@ export function AppListPage({
     { enabled: multi },
   );
 
-  const { data: rows = [], isLoading } = multi ? entityQuery : singleQuery;
+  const { data: listResult, isLoading } = multi ? entityQuery : singleQuery;
+  const rows = listResult?.items ?? [];
   const listView = multi ? entitySchema!.list_view : schema.list_view!;
   const title = multi ? entitySchema!.display_name : schema.display_name;
   const description = multi ? entitySchema?.description : schema.description;

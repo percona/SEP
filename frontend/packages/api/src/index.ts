@@ -111,6 +111,10 @@ export {
   useAppEntityDetail,
   unwrapAppListResponse,
   normalizeAppListResponse,
+  fetchAppTasksList,
+  DEFAULT_APP_LIST_OFFSET,
+  DEFAULT_APP_LIST_LIMIT,
+  MAX_APP_LIST_LIMIT,
   useCreateAppEntity,
   useUpdateAppEntity,
   useDeleteAppEntity,
@@ -145,6 +149,7 @@ export type {
   EnabledApp,
   AppInfo,
   AppListPagination,
+  AppListQueryOptions,
   AppListResult,
   PaginatedAppList,
 } from './hooks';
