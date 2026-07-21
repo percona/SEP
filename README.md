@@ -45,9 +45,10 @@
 | app/core/pagination/deps.py                                                                                     |       17 |        0 |        2 |        0 |    100% |           |
 | app/core/pagination/models.py                                                                                   |       78 |        0 |       20 |        0 |    100% |           |
 | app/core/pmm.py                                                                                                 |       51 |        1 |       10 |        1 |     97% |        53 |
+| app/core/requests/bundle\_upload.py                                                                             |       10 |        0 |        0 |        0 |    100% |           |
 | app/core/requests/connectivity.py                                                                               |       29 |        0 |        8 |        0 |    100% |           |
 | app/core/requests/registry.py                                                                                   |       64 |        5 |       22 |        5 |     88% |101, 112, 152, 163, 173 |
-| app/core/requests/remote\_api.py                                                                                |      246 |        6 |       54 |        3 |     97% |203, 222, 570-573, 588-\>587 |
+| app/core/requests/remote\_api.py                                                                                |      269 |        6 |       60 |        3 |     97% |213, 232, 607-610, 625-\>624 |
 | app/core/security.py                                                                                            |        4 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/api/export.py                                                                       |       10 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/api/models.py                                                                       |       20 |        0 |        0 |        0 |    100% |           |
@@ -405,7 +406,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       55 |        4 |       12 |        3 |     90% |61-65, 108-\>110, 130-133 |
 | app/tasks/routes.py                                                                                             |      227 |       28 |       44 |        2 |     87% |140-144, 201, 222-228, 261, 317, 324, 368-369, 397, 437, 456, 596, 620, 633-634, 642-645, 668, 675, 681, 697-698 |
 | app/tasks/settings/routes.py                                                                                    |       11 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **28040** | **4194** | **6964** |  **645** | **83%** |           |
+| **TOTAL**                                                                                                       | **28073** | **4194** | **6970** |  **645** | **83%** |           |
 
 
 ## Setup coverage badge
