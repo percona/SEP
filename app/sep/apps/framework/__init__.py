@@ -41,7 +41,7 @@ from app.sep.apps.framework.connectivity import (
     maybe_record_connectivity_warning,
     record_connectivity_warning,
 )
-from app.sep.apps.framework.deps import make_task_dep
+from app.sep.apps.framework.deps import make_parent_resolver, make_task_dep
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
     check_form_conformance,
@@ -192,6 +192,7 @@ __all__ = [
     "falsy",
     "get_task_latest_history",
     "get_task_latest_status",
+    "make_parent_resolver",
     "make_task_dep",
     "maybe_record_connectivity_warning",
     "none_present",

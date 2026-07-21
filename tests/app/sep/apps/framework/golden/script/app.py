@@ -17,9 +17,12 @@
 
 A script-flavored app derives its surface from the ``script_source`` seam: the
 listing, the per-script ``GET /snippet/schema``, the ``POST /snippet/execute``
-delegation, and ``GET /snippet/history``. It declares no model-first CRUD.
+delegation, and ``GET /snippet/history``. It declares no model-first CRUD. The
+executor downloads each script from a signed ``/artifacts/download/{token}`` URL,
+so the script directory is registered under ``artifact_base_dirs``.
 """
 
+from app.sep.apps.golden_script.constants import ARTIFACT_TYPE_GOLDEN_SCRIPT, SCRIPT_DIR
 from app.sep.apps.golden_script.source import golden_script_source
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.tasks.models import ANY_OWNER
@@ -31,4 +34,5 @@ app = TaskExecutionApp(
     description="TODO: describe what the Golden Script scripts do.",
     owner=ANY_OWNER,
     script_source=golden_script_source,
+    artifact_base_dirs={ARTIFACT_TYPE_GOLDEN_SCRIPT: lambda: SCRIPT_DIR},
 )
