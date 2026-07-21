@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the ``pbm config`` storage-apply step in the backup payloads.
+"""Exercise the ``pbm config`` storage-apply step in the backup payloads.
 
 The logical and physical payloads apply the per-task PBM config (``pbm config
 --file``) before running ``pbm backup``, so a per-task S3 bucket/region is honored
@@ -26,11 +26,13 @@ matches the one canonical source in ``pbm_creds_common.py``.
 import importlib.util
 import os
 import pathlib
+import subprocess
 import sys
 
 import pytest
 import yaml
 
+from app.sep.apps.backup_mongo import pbm_creds_common
 from app.sep.apps.backup_mongo.models import BackupCreate, BackupType
 from app.sep.apps.backup_mongo.pbm_creds_common import (
     CONFIG_APPLY_BEGIN,
@@ -64,6 +66,8 @@ _BACKUP_TYPE = {"logical": "logical", "physical": "physical"}
 _PARAMETRIZE_BACKUP = pytest.mark.parametrize("payload", ["logical", "physical"])
 # An s3 backup runs two commands: apply the config, then take the backup.
 _APPLY_THEN_BACKUP = 2
+# Arbitrary non-zero code PBM reports when it rejects the applied config.
+_PBM_REJECT_CODE = 3
 
 _S3_CONFIG = {
     "storage": {
@@ -126,7 +130,7 @@ def _exec_payload_capture_cmds(
 
 
 class TestStorageAppliedBeforeBackup:
-    """The backup payloads apply the config before running ``pbm backup``."""
+    """Assert the backup payloads apply the config before running ``pbm backup``."""
 
     @_PARAMETRIZE_BACKUP
     def test_config_applied_before_backup_for_s3(
@@ -216,8 +220,6 @@ class TestStorageAppliedBeforeBackup:
             def poll(self) -> int:
                 return 1
 
-        import subprocess
-
         monkeypatch.setattr(subprocess, "Popen", _FakePopen)
         path = _BACKUP_PAYLOADS[payload]
         with pytest.raises(SystemExit):
@@ -227,9 +229,72 @@ class TestStorageAppliedBeforeBackup:
         assert captured == [captured[0]]
         assert captured[0][:2] == ["pbm", "config"]
 
+    @_PARAMETRIZE_BACKUP
+    def test_missing_task_dir_aborts_before_backup(
+        self,
+        payload: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture,
+    ):
+        """Exit non-zero when NOMAD_TASK_DIR is unset so the config file can't be written."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.delenv("NOMAD_TASK_DIR", raising=False)
+        (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
+        monkeypatch.setenv("NOMAD_META_CONFIG", yaml.safe_dump(_S3_CONFIG))
+
+        captured: list[list[str]] = []
+
+        class _FakePopen:
+            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
+                captured.append(cmd)
+
+            def wait(self) -> None:
+                return None
+
+            def poll(self) -> int:
+                return 0
+
+        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+        path = _BACKUP_PAYLOADS[payload]
+        with pytest.raises(SystemExit) as exc:
+            exec(compile(path.read_text(), str(path), "exec"), {})
+        os.environ.pop("PBM_MONGODB_URI", None)
+
+        assert exc.value.code == 1
+        assert "cannot write the PBM config file" in capsys.readouterr().err
+        assert captured == []
+
+    @_PARAMETRIZE_BACKUP
+    def test_pbm_binary_missing_aborts_before_backup(
+        self,
+        payload: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture,
+    ):
+        """Exit non-zero with an actionable error when the ``pbm`` binary can't be run."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+        (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
+        monkeypatch.setenv("NOMAD_META_CONFIG", yaml.safe_dump(_S3_CONFIG))
+
+        class _FakePopen:
+            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
+                raise OSError("No such file or directory: 'pbm'")
+
+        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+        path = _BACKUP_PAYLOADS[payload]
+        with pytest.raises(SystemExit) as exc:
+            exec(compile(path.read_text(), str(path), "exec"), {})
+        os.environ.pop("PBM_MONGODB_URI", None)
+
+        assert exc.value.code == 1
+        assert "Failed to run pbm config" in capsys.readouterr().err
+
 
 class TestRealSpecThreadsStorageIntoConfigFile:
-    """The real spec output applies its S3 storage through the payload's config file."""
+    """Assert the real spec output applies its S3 storage through the payload's config file."""
 
     @_PARAMETRIZE_BACKUP
     def test_s3_storage_reaches_applied_config_file(
@@ -263,7 +328,7 @@ class TestRealSpecThreadsStorageIntoConfigFile:
 
 
 class TestApplyHelperNoDrift:
-    """The ``_apply_pbm_config`` helper tracks one canonical generated source."""
+    """Assert the ``_apply_pbm_config`` helper tracks one canonical generated source."""
 
     def _region(self, path: pathlib.Path) -> str:
         """Return the config-apply region carried between the markers in ``path``."""
@@ -278,5 +343,119 @@ class TestApplyHelperNoDrift:
         assert self._region(_ALL_PAYLOADS[payload]) == config_apply_source()
 
     def test_check_mode_reports_no_drift(self) -> None:
-        """``gen_pbm_payloads.py --check`` accepts the checked-in config-apply region."""
+        """Accept the checked-in config-apply region under ``gen_pbm_payloads.py --check``."""
         assert gen_pbm_payloads.main(["--check"]) == 0
+
+
+class TestApplyPbmConfigCanonical:
+    """Exercise the importable ``_apply_pbm_config`` helper directly.
+
+    The payload copies are byte-identical to this canonical source (guarded by
+    ``TestApplyHelperNoDrift``), so calling the module helper covers the same
+    branches at the single source of truth.
+    """
+
+    @staticmethod
+    def _stub_popen(
+        monkeypatch: pytest.MonkeyPatch,
+        captured: list[list[str]],
+        *,
+        ret_code: int = 0,
+    ) -> None:
+        """Patch ``subprocess.Popen`` to record commands and report ``ret_code``."""
+
+        class _FakePopen:
+            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
+                captured.append(cmd)
+
+            def wait(self) -> None:
+                return None
+
+            def poll(self) -> int:
+                return ret_code
+
+        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+
+    def test_writes_config_file_and_runs_pbm_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Write the config (minus SEP-only/None keys) and run ``pbm config --file``."""
+        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+        captured: list[list[str]] = []
+        self._stub_popen(monkeypatch, captured)
+
+        pbm_creds_common._apply_pbm_config(
+            {
+                "storage": {"type": "s3", "s3": {"bucket": "backups"}},
+                "credentials_path": "/creds/uri",
+                "pitr": None,
+            }
+        )
+
+        assert captured == [["pbm", "config", "--file", f"{tmp_path}/script_config"]]
+        written = yaml.safe_load((tmp_path / "script_config").read_text())
+        assert written == {"storage": {"type": "s3", "s3": {"bucket": "backups"}}}
+        assert "credentials_path" not in written
+        assert "pitr" not in written
+
+    def test_exits_when_task_dir_unset(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ):
+        """Exit 1 when NOMAD_TASK_DIR is unset before touching ``pbm``."""
+        monkeypatch.delenv("NOMAD_TASK_DIR", raising=False)
+
+        with pytest.raises(SystemExit) as exc:
+            pbm_creds_common._apply_pbm_config({"storage": {"type": "s3"}})
+
+        assert exc.value.code == 1
+        assert "cannot write the PBM config file" in capsys.readouterr().err
+
+    def test_exits_with_pbm_return_code_on_rejection(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture,
+    ):
+        """Propagate PBM's non-zero exit code and emit an actionable error."""
+        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+        self._stub_popen(monkeypatch, [], ret_code=_PBM_REJECT_CODE)
+
+        with pytest.raises(SystemExit) as exc:
+            pbm_creds_common._apply_pbm_config({"storage": {"type": "s3"}})
+
+        assert exc.value.code == _PBM_REJECT_CODE
+        err = capsys.readouterr().err
+        assert "storage configuration" in err
+        assert "bucket/region/endpoint" in err
+
+    def test_exits_when_pbm_binary_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture,
+    ):
+        """Exit 1 when ``subprocess.Popen`` raises OSError (pbm not executable)."""
+        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+
+        class _FakePopen:
+            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
+                raise OSError("No such file or directory: 'pbm'")
+
+        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+
+        with pytest.raises(SystemExit) as exc:
+            pbm_creds_common._apply_pbm_config({"storage": {"type": "s3"}})
+
+        assert exc.value.code == 1
+        assert "Failed to run pbm config" in capsys.readouterr().err
+
+
+class TestRegionExtraction:
+    """Verify ``_region_between`` fails loudly when a generated-region marker is missing."""
+
+    def test_missing_marker_raises(self) -> None:
+        """Raise ValueError naming the missing marker when a marker line is absent."""
+        with pytest.raises(ValueError, match="missing a generated-region marker"):
+            pbm_creds_common._region_between("# NOPE BEGIN", "# NOPE END")
