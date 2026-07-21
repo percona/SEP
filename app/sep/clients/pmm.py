@@ -649,7 +649,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise exception_for_status(err.status, detail=err.message) from None
+                self._raise_upstream_no_body_error(response, err)
 
     async def update_rule(
         self,
@@ -762,11 +762,12 @@ class PMMRemoteAPI(RemoteAPI):
         """Translate an error from a no-JSON-body endpoint into a project exception.
 
         The provisioning PUT/DELETE endpoints return 202/204 with no body on
-        success, so on error there is no JSON detail to inspect -- only the
-        status. A reverse proxy failing in front of PMM can return an HTML 404,
-        which would otherwise map to :class:`HTTPNotFoundException` and be
-        swallowed by restore callers that treat a 404 as "not provisioned".
-        Stamp ``UPSTREAM_NON_JSON_HEADER`` on a non-JSON error so
+        success. On error, PMM itself answers with a Grafana JSON body
+        (``{"message": ...}``), but a reverse proxy failing in front of PMM can
+        return an HTML 404, which would otherwise map to
+        :class:`HTTPNotFoundException` and be swallowed by restore callers that
+        treat a 404 as "not provisioned". Inspect ``response.content_type`` and
+        stamp ``UPSTREAM_NON_JSON_HEADER`` on a non-JSON error body so
         :func:`exception_for_status` keeps a proxy 404 as a bare
         :class:`fastapi.HTTPException`.
 

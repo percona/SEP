@@ -588,9 +588,10 @@ class TestDeleteRule:
     async def test_delete_rule_raises_not_found_on_error_response(
         self, mocker, pmm_remote_api: PMMRemoteAPI
     ) -> None:
-        """Test delete_rule maps an upstream 404 to ``HTTPNotFoundException``."""
+        """Test delete_rule maps a JSON upstream 404 to ``HTTPNotFoundException``."""
         error_status = HTTP_404_NOT_FOUND
         mock_response = MagicMock(spec=ClientResponse)
+        mock_response.content_type = "application/json"
         mock_response.raise_for_status = MagicMock(
             side_effect=_client_response_error(error_status)
         )
@@ -606,6 +607,30 @@ class TestDeleteRule:
 
         assert type(exc_info.value) is HTTPNotFoundException
         assert exc_info.value.status_code == error_status
+
+    @pytest.mark.asyncio
+    async def test_delete_rule_non_json_404_stays_bare(
+        self, mocker, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Test a non-JSON (proxy) 404 stays a bare ``HTTPException``, not not-found."""
+        mock_response = MagicMock(spec=ClientResponse)
+        mock_response.content_type = "text/html"
+        mock_response.raise_for_status = MagicMock(
+            side_effect=_client_response_error(HTTP_404_NOT_FOUND)
+        )
+
+        @asynccontextmanager
+        async def fake_request(self_arg, method: str, path: str, **kwargs):
+            yield mock_response
+
+        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await pmm_remote_api.delete_rule("missing-uid")
+
+        assert type(exc_info.value) is HTTPException
+        assert not isinstance(exc_info.value, HTTPNotFoundException)
+        assert exc_info.value.status_code == HTTP_404_NOT_FOUND
 
 
 class TestUpdateRule:
