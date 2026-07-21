@@ -155,12 +155,11 @@ def test_prepare_path(endpoint: str, input_path: str, expected_path: str):
 
 @pytest.mark.asyncio
 async def test_request_error(remote_api):
-    """Raise a bare HTTPException for a coded error so the X-Error-Code header survives.
+    """Map a coded 409 to HTTPConflictException with the X-Error-Code header intact.
 
-    A mapped status (409) still falls back to :class:`fastapi.HTTPException`
-    rather than :class:`HTTPConflictException` when the body carries an error
-    code, because only :class:`HTTPGoneException` and :class:`HTTPNotFoundException`
-    can carry response headers.
+    Every mapped class now accepts a ``headers`` kwarg, so a coded body no longer
+    forces the bare-``HTTPException`` fallback: a JSON 409 surfaces as
+    :class:`HTTPConflictException` and the error-code header survives.
     """
     conflict_error_msg = "Task with the same name already exists."
     conflict_error_code = "DUP_ERROR"
@@ -183,12 +182,12 @@ async def test_request_error(remote_api):
     mock_context_manager.__aexit__.return_value = None
 
     with patch.object(remote_api, "_request", return_value=mock_context_manager):
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(HTTPConflictException) as exc_info:
             await remote_api.request("GET", "/non-existent-path")
+        assert type(exc_info.value) is HTTPConflictException
         assert exc_info.value.status_code == status.HTTP_409_CONFLICT
         assert exc_info.value.detail == conflict_error_msg
         assert exc_info.value.headers == {"X-Error-Code": conflict_error_code}
-        assert type(exc_info.value) is HTTPException
 
 
 @pytest.mark.parametrize(

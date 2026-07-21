@@ -49,13 +49,17 @@ class HTTPNotFoundException(HTTPException):
 class HTTPConflictException(HTTPException):
     """Define exception raised for resource conflict (HTTP 409).
 
-    :param detail: A message providing additional details about the exception.
-        Defaults to "Conflict".
-    :type detail: str
+    :param detail: A message, dict, or other JSON-serializable structure providing
+        additional details about the exception. Defaults to "Conflict".
+    :param headers: Optional response headers to preserve (e.g. ``X-Error-Code``).
     """
 
-    def __init__(self, detail: str = "Conflict") -> None:
-        super().__init__(status_code=status.HTTP_409_CONFLICT, detail=detail)
+    def __init__(
+        self, detail: Any = "Conflict", *, headers: dict[str, str] | None = None
+    ) -> None:
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT, detail=detail, headers=headers
+        )
 
 
 class HTTPBadRequestException(HTTPException):
@@ -63,11 +67,15 @@ class HTTPBadRequestException(HTTPException):
 
     :param detail: A message, dict, or other JSON-serializable structure providing
         additional details about the exception. Defaults to "Bad Request".
-    :type detail: Any
+    :param headers: Optional response headers to preserve (e.g. ``X-Error-Code``).
     """
 
-    def __init__(self, detail: Any = "Bad Request") -> None:
-        super().__init__(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+    def __init__(
+        self, detail: Any = "Bad Request", *, headers: dict[str, str] | None = None
+    ) -> None:
+        super().__init__(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=detail, headers=headers
+        )
 
 
 class HTTPUnprocessableEntityException(HTTPException):
@@ -76,12 +84,19 @@ class HTTPUnprocessableEntityException(HTTPException):
     :param detail: A message, list, dict, or other JSON-serializable structure
         providing additional details about the exception. Defaults to
         "Unprocessable Entity".
-    :type detail: Any
+    :param headers: Optional response headers to preserve (e.g. ``X-Error-Code``).
     """
 
-    def __init__(self, detail: Any = "Unprocessable Entity") -> None:
+    def __init__(
+        self,
+        detail: Any = "Unprocessable Entity",
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=detail,
+            headers=headers,
         )
 
 
@@ -94,37 +109,57 @@ class HTTPInternalServerErrorException(HTTPException):
 
     :param detail: Human-readable or structured error payload. Defaults to
         ``"Internal Server Error"``.
-    :type detail: Any
+    :param headers: Optional response headers to preserve (e.g. ``X-Error-Code``).
     """
 
-    def __init__(self, detail: Any = "Internal Server Error") -> None:
+    def __init__(
+        self,
+        detail: Any = "Internal Server Error",
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail,
+            headers=headers,
         )
 
 
 class HTTPBadGatewayException(HTTPException):
     """Define exception raised for bad gateway (HTTP 502).
 
-    :param detail: A message providing additional details about the exception.
-        Defaults to "Bad Gateway".
-    :type detail: str
+    :param detail: A message, dict, or other JSON-serializable structure providing
+        additional details about the exception. Defaults to "Bad Gateway".
+    :param headers: Optional response headers to preserve (e.g. ``X-Error-Code``).
     """
 
-    def __init__(self, detail: str = "Bad Gateway") -> None:
-        super().__init__(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+    def __init__(
+        self, detail: Any = "Bad Gateway", *, headers: dict[str, str] | None = None
+    ) -> None:
+        super().__init__(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=detail, headers=headers
+        )
 
 
 class HTTPServiceUnavailableException(HTTPException):
     """Define exception raised for service unavailable (HTTP 503).
 
-    :param detail: A message providing additional details about the exception.
-        Defaults to "Service Unavailable".
-    :type detail: str
+    :param detail: A message, dict, or other JSON-serializable structure providing
+        additional details about the exception. Defaults to "Service Unavailable".
+    :param headers: Optional response headers to preserve (e.g. ``X-Error-Code``).
     """
 
-    def __init__(self, detail: str = "Service Unavailable") -> None:
-        super().__init__(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+    def __init__(
+        self,
+        detail: Any = "Service Unavailable",
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=detail,
+            headers=headers,
+        )
 
 
 class HTTPGoneException(HTTPException):
