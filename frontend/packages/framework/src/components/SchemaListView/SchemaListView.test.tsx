@@ -276,9 +276,31 @@ describe('SchemaListView — server pagination', () => {
     );
 
     expect(screen.getByText('row-51')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Go to next page/i)).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText(/Go to next page/i));
 
     expect(onChange).toHaveBeenCalledWith({ offset: 100, limit: 50 });
+  });
+
+  it('calls onChange with offset 0 when rows-per-page changes', async () => {
+    const onChange = vi.fn();
+    render(
+      <SchemaListView
+        listView={listView}
+        data={pageRows}
+        pagination={{
+          total: 120,
+          offset: 50,
+          limit: 50,
+          onChange,
+        }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('combobox', { name: /Rows per page/i }));
+    await userEvent.click(await screen.findByRole('option', { name: '100' }));
+
+    expect(onChange).toHaveBeenCalledWith({ offset: 0, limit: 100 });
   });
 
   it('renders the full list when pagination metadata is omitted', () => {
@@ -293,5 +315,23 @@ describe('SchemaListView — server pagination', () => {
     for (const row of data) {
       expect(screen.getByText(row.name)).toBeInTheDocument();
     }
+    // Client-side MRT pagination still renders controls, but a 5-row list fits
+    // on one page so "next" stays disabled (no server fetch).
+    expect(screen.getByLabelText(/Go to next page/i)).toBeDisabled();
+  });
+
+  it('treats pagination null like a bare NO_PAGINATION list', () => {
+    const data = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      name: `bare-${i + 1}`,
+      status: 'completed',
+    }));
+
+    render(<SchemaListView listView={listView} data={data} pagination={null} />);
+
+    for (const row of data) {
+      expect(screen.getByText(row.name)).toBeInTheDocument();
+    }
+    expect(screen.getByLabelText(/Go to next page/i)).toBeDisabled();
   });
 });

@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSchema } from '@sep/api';
@@ -175,6 +175,26 @@ describe('TasksListPage', () => {
         pagination: null,
       }),
     );
+  });
+
+  it('refetches with the new offset when pagination changes', () => {
+    render(
+      <MemoryRouter>
+        <TasksListPage />
+      </MemoryRouter>,
+    );
+    mockUseTasksList.mockClear();
+
+    const pagination = schemaListViewMock.mock.calls.at(-1)?.[0]?.pagination;
+    act(() => {
+      pagination.onChange({ offset: 50, limit: 50 });
+    });
+
+    expect(mockUseTasksList).toHaveBeenCalledWith({
+      enabled: true,
+      offset: 50,
+      limit: 50,
+    });
   });
 
   it('navigates to the task detail route when a row is clicked', () => {

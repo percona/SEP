@@ -173,6 +173,34 @@ describe('fetchAppEntityList', () => {
 
     expect(result).toEqual({ items, pagination: null });
   });
+
+  it('fetchAllPages loops entity pages until total is reached', async () => {
+    getMock
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ id: 1 }],
+          total: 2,
+          offset: 0,
+          limit: MAX_APP_LIST_LIMIT,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ id: 2 }],
+          total: 2,
+          offset: 1,
+          limit: MAX_APP_LIST_LIMIT,
+        },
+      });
+
+    const result = await fetchAppEntityList('inventory', 'nodes', { fetchAllPages: true });
+
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      items: [{ id: 1 }, { id: 2 }],
+      pagination: null,
+    });
+  });
 });
 
 describe('unwrapTasks', () => {
