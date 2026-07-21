@@ -166,7 +166,7 @@ class UploadStep(BaseModel):
 
 
 def _check_value(
-    value: LiteralValue | InputValue | SecretValue | StepOutputValue,
+    value: PlanValue,
     *,
     where: str,
     secrets: Collection[str],
@@ -208,7 +208,7 @@ def _check_value(
 
 
 def _check_value_maps(
-    maps: Mapping[str, Mapping[str, Any]],
+    maps: Mapping[str, Mapping[str, PlanValue]],
     *,
     where_prefix: str,
     secrets: Collection[str],
@@ -237,7 +237,9 @@ def _check_value_maps(
 class DeliveryPlan(BaseModel):
     """Describe a complete bundle-delivery configuration.
 
-    :param endpoint: The receiver base URL every step is issued against.
+    :param endpoint: The receiver base URL every step's ``path`` is relative to.
+        The executor issues requests through the transport client it is handed,
+        so whoever builds that client is responsible for pointing it here.
     :param max_bundle_size_mb: The largest bundle the plan will send, in
         mebibytes; a larger bundle fails before any request is issued.
     :param secrets: Credential values keyed by the name secret values cite.
@@ -290,7 +292,7 @@ class DeliveryPlanError(Exception):
     """Signal that a delivery plan cannot be carried out as configured."""
 
 
-def _secret_valued_keys(values: Mapping[str, Any]) -> list[str]:
+def _secret_valued_keys(values: Mapping[str, PlanValue]) -> list[str]:
     """Return the keys of a value map whose values come from a named secret.
 
     :param values: A configured value map keyed by header or field name.
@@ -300,11 +302,17 @@ def _secret_valued_keys(values: Mapping[str, Any]) -> list[str]:
 
 
 def _as_scalar(value: Any) -> str | None:
-    """Return ``value`` stringified when it is a JSON scalar, else ``None``.
+    """Return ``value`` in its JSON spelling when it is a scalar, else ``None``.
+
+    A boolean renders as ``"true"`` / ``"false"`` rather than Python's ``"True"``
+    / ``"False"``, so a value read out of a JSON response reaches the receiver
+    spelled the way that receiver wrote it.
 
     :param value: The value a JSON Pointer addressed.
-    :return: The stringified scalar, or ``None`` for ``null`` and containers.
+    :return: The scalar as a string, or ``None`` for ``null`` and containers.
     """
+    if isinstance(value, bool):
+        return "true" if value else "false"
     if isinstance(value, str | int | float):
         return str(value)
     return None
@@ -380,7 +388,7 @@ class DeliveryPlanExecutor:
 
     def _resolve_value(
         self,
-        value: LiteralValue | InputValue | SecretValue | StepOutputValue,
+        value: PlanValue,
         inputs: Mapping[str, str | None],
         outputs: Mapping[str, Mapping[str, str]],
     ) -> str:
@@ -409,7 +417,7 @@ class DeliveryPlanExecutor:
 
     def _resolve_map(
         self,
-        values: Mapping[str, Any],
+        values: Mapping[str, PlanValue],
         inputs: Mapping[str, str | None],
         outputs: Mapping[str, Mapping[str, str]],
     ) -> dict[str, str]:

@@ -476,6 +476,34 @@ class TestDeliveryPlanExecutor:
         assert "/result/sys_id" in message
         assert "customer data" not in message
 
+    async def test_boolean_output_keeps_its_json_spelling(
+        self, api: RemoteAPI, bundle_path: Path
+    ):
+        """Forward a JSON ``true`` as ``"true"``, not Python's ``"True"``."""
+        payload = _one_step_plan()
+        payload["resolution_steps"][0]["outputs"] = {"eligible": "/result/eligible"}
+        payload["upload"]["fields"]["table_sys_id"]["output"] = "eligible"
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"eligible": True}},
+            )
+            mock.post(_UPLOAD_URL, status=status.HTTP_201_CREATED, payload={})
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle_path=bundle_path,
+                    case_ref="CS0001",
+                    manifest=_MANIFEST,
+                )
+            fields = _multipart_fields(
+                _recorded(mock, "attachment/upload").kwargs["data"]
+            )
+
+        assert fields["table_sys_id"] == "true"
+
     async def test_non_scalar_output_pointer_is_rejected(
         self, api: RemoteAPI, bundle_path: Path
     ):
@@ -650,6 +678,41 @@ class TestDeliveryPlanSecretRedaction:
         assert any(
             request.kwargs.get("json", {}).get("client_token") == "real-client-token"
             for request in requests
+        )
+
+    async def test_multipart_field_secret_is_sent_but_absent_from_logs(
+        self, api: RemoteAPI, bundle_path: Path, caplog
+    ):
+        """Send the real secret in a multipart field while no log record carries it.
+
+        This placement has no redaction context behind it -- the multipart body
+        is an opaque payload the request log never expands -- so assert the
+        guarantee directly on both sides: the receiver gets the real value, and
+        no captured record does.
+        """
+        payload = _upload_only_plan(
+            fields={"client_token": {"source": "secret", "name": "client_token"}},
+            reference_pointer=None,
+        )
+        payload["secrets"] = {"client_token": "real-client-token"}
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        with aioresponses() as mock:
+            mock.post(_UPLOAD_URL, status=status.HTTP_201_CREATED, payload={})
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle_path=bundle_path,
+                        case_ref=None,
+                        manifest=_MANIFEST,
+                    )
+            fields = _multipart_fields(
+                _recorded(mock, "attachment/upload").kwargs["data"]
+            )
+
+        assert fields["client_token"] == "real-client-token"
+        assert all(
+            "real-client-token" not in record.getMessage() for record in caplog.records
         )
 
     async def test_redaction_is_released_after_the_send(
