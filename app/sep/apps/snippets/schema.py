@@ -67,7 +67,7 @@ from app.sep.snippets.models.meta import (
     SnippetMetaParameterType,
     SnippetVisibilityCondition,
 )
-from app.sep.snippets.models.snippet import BaseSnippetArgs, Snippet
+from app.sep.snippets.models.snippet import BaseSnippet, BaseSnippetArgs
 
 _EXECUTOR_HOST_FIELD_NAME = "executor_host"
 _SUDO_FIELD_NAME = "sudo"
@@ -306,7 +306,7 @@ def field_for(parameter: SnippetMetaParameter) -> AnyField:
         field = cast(AnyField, _choice_field_for(parameter))
     else:
         field = cast(AnyField, _FIELD_BUILDERS[parameter.py_type](parameter))
-    update: dict[str, list[FieldGate]] = {}
+    update = {}
     requires = _requires_gates(parameter)
     if requires is not None:
         update["requires"] = requires
@@ -318,7 +318,7 @@ def field_for(parameter: SnippetMetaParameter) -> AnyField:
     return field
 
 
-def build_snippet_schema(snippet: Snippet) -> AppSchema:
+def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
     """Synthesise the per-snippet form schema for a single snippet.
 
     The schema includes one form section per parameter group declared in
@@ -329,10 +329,9 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
     from the parameter sections.
 
     :param snippet: The snippet whose schema to synthesise.
-    :type snippet: Snippet
     :return: The fully-validated plugin schema for this single snippet.
     """
-    parameter_sections: dict[str, list[AnyField]] = {}
+    parameter_sections = {}
     for parameter in snippet.validated_parameters.visible_parameters:
         section_title = parameter.group or "Parameters"
         parameter_sections.setdefault(section_title, []).append(field_for(parameter))
@@ -342,7 +341,7 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
         for title, fields in parameter_sections.items()
     ]
 
-    execution_fields: list[AnyField] = [
+    execution_fields = [
         cast(
             AnyField,
             HostField(
@@ -409,7 +408,7 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
 
 
 def evaluate_snippet_gates(
-    snippet: Snippet, execution_args: BaseSnippetArgs
+    snippet: BaseSnippet, execution_args: BaseSnippetArgs
 ) -> list[str]:
     """Return failure messages for any snippet field gate that fires.
 
