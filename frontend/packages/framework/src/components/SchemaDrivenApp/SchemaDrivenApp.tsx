@@ -98,6 +98,12 @@ interface SchemaDrivenAppProps {
   renderEditForm?: RenderFormSlot;
   /** Per-cell list column override (non-`actions` columns), threaded to the list page. */
   renderListColumn?: RenderListColumnOverride;
+  /**
+   * Disable the poll-while-running task-list refresh on the single-task list
+   * page. Threaded to {@link AppListPage} so stories/tests mounting a real list
+   * with a running row issue no repeat requests, mirroring `disableSchedulePolling`.
+   */
+  disableTaskPolling?: boolean;
 }
 
 function AppEditPage({
@@ -254,6 +260,7 @@ export function SchemaDrivenApp({
   renderCreateForm,
   renderEditForm,
   renderListColumn,
+  disableTaskPolling = false,
 }: SchemaDrivenAppProps) {
   const { pathname } = useLocation();
   const { data: schema, isLoading, error } = useAppSchema(pluginName, mockSchema);
@@ -367,6 +374,7 @@ export function SchemaDrivenApp({
     renderCreateForm,
     renderEditForm,
     renderListColumn,
+    disableTaskPolling,
   };
 
   const singleEntityRoutes = (
@@ -382,6 +390,7 @@ export function SchemaDrivenApp({
             listOnly={listOnly}
             hideCreate={browseOnly && !listOnly}
             renderListColumn={renderListColumn}
+            disableTaskPolling={disableTaskPolling}
           />
         }
       />
