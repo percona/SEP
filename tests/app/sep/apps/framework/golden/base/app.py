@@ -20,9 +20,9 @@ The registry mounts the exported ``app``'s ``api_router`` under
 that the app ships a bespoke React UI rather than the schema-driven one.
 """
 
+from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.golden_base.api_routes import router as api_router
 from app.sep.apps.golden_base.schema import golden_base_schema
-from app.sep.apps.framework.base import BaseApp
 
 app = BaseApp(
     name="golden_base",

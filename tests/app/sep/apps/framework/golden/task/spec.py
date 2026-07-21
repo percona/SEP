@@ -17,12 +17,12 @@
 
 import shlex
 
-from app.sep.apps.golden_task.models import GoldenTaskForm
 from app.sep.apps.framework.spec import (
     build_command_args,
     ResolvedEntities,
     RunCommandSpec,
 )
+from app.sep.apps.golden_task.models import GoldenTaskForm
 
 
 def build_golden_task_spec(

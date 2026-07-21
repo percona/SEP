@@ -21,10 +21,10 @@ Set ``group`` / ``nav_order`` to place the app in the sidebar, or
 ``service_type`` plus ``list_filter=ListFilterConfig(...)`` to expose list filters.
 """
 
+from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
 from app.sep.apps.golden_task.models import GoldenTaskForm
 from app.sep.apps.golden_task.spec import build_golden_task_spec
 from app.sep.apps.golden_task.views import golden_task_views
-from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
 from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(

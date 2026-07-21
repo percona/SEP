@@ -438,15 +438,17 @@ def render_app(config: ScaffoldConfig) -> list[Path]:
 def _ruff_fix(paths: list[Path]) -> None:
     """Run ruff lint-autofix and format on ``paths``.
 
-    Silently skips the step when ``ruff`` is not on ``$PATH`` so the
-    scaffolder stays usable in minimal environments.
+    Prefers ``{sys.prefix}/bin/ruff`` (the active venv) so ``make test`` and
+    bare ``pytest`` produce the same isort/quote output. Falls back to
+    ``$PATH``, then silently skips when neither is available.
 
     :param paths: The rendered files to lint-fix and format.
     """
     py_files = [str(p) for p in paths if p.suffix == ".py"]
     if not py_files:
         return
-    ruff = shutil.which("ruff")
+    venv_ruff = Path(sys.prefix) / "bin" / "ruff"
+    ruff = str(venv_ruff) if venv_ruff.is_file() else shutil.which("ruff")
     if ruff is None:
         return
     subprocess.run(  # noqa: S603 # nosec B603
