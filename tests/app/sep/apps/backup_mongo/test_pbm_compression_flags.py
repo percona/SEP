@@ -179,6 +179,8 @@ def _exec_payload_capture_cmd(
     :return: The argument list passed to ``subprocess.Popen``.
     """
     monkeypatch.setenv("HOME", str(tmp_path))
+    # An s3 config triggers `_apply_pbm_config`, which writes to NOMAD_TASK_DIR.
+    monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
     (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
 
     if nomad_meta_config is None:

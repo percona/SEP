@@ -455,6 +455,19 @@ class TestBackupMongoApiCreate:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
+    def test_create_rejects_s3_storage_without_bucket(self, test_client) -> None:
+        """Reject an S3 storage config missing a bucket with 422 on the JSON path."""
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(
+                storage_type="s3",
+                storage_s3_region="eu-west-1",
+                storage_filesystem_path=None,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
 
 class TestBackupMongoApiDetail:
     """Tests for GET /api/apps/backup_mongo/{task_name}."""
