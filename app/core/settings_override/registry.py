@@ -625,16 +625,17 @@ def not_overridable_field(
     Mirrors :func:`hot_field` but attaches
     ``{"reload": ReloadClassification.NOT_OVERRIDABLE}``. Use under a HOT or
     NESTED_ONLY parent when a specific nested leaf must NOT inherit the
-    parent's HOT-by-default child semantics. ``advanced`` rides the same channel
-    as on the other helpers and is independent of the reload classification.
+    parent's HOT-by-default child semantics, or on a top-level field that must
+    stay environment- and YAML-only -- a whole-object PATCH and every
+    ``__``-delimited leaf PATCH are both rejected, so a block whose validity
+    depends on cross-field validation is never assembled one leaf at a time.
+    ``advanced`` rides the same channel as on the other helpers and is
+    independent of the reload classification.
 
     :param default: The field's default value, passed positionally to ``Field``.
-    :type default: Any
     :param advanced: Whether to flag the field as ``advanced``.
     :param kwargs: Additional keyword arguments forwarded to ``Field``.
-    :type kwargs: Any
     :return: A Pydantic field marked NOT_OVERRIDABLE.
-    :rtype: FieldInfo
     """
     metadata = {
         FieldMarkerKey.RELOAD: ReloadClassification.NOT_OVERRIDABLE,

@@ -31,6 +31,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from fastapi import status
+from pytest_mock import MockerFixture
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
@@ -156,7 +157,7 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         assert mock_task_api.create_count == 0
 
     def test_create_connectivity_warning(
-        self, contract_client: Any, mocker: Any
+        self, contract_client: Any, mocker: MockerFixture
     ) -> None:
         """Attach the connectivity probe warning to the create response."""
         mocker.patch(
@@ -300,7 +301,7 @@ def test_update_returns_create_mirror_shape(regular_user: Any) -> None:
 
 
 def test_create_check_connectivity_false_skips_probe(
-    regular_user: Any, mocker: Any
+    regular_user: Any, mocker: MockerFixture
 ) -> None:
     """``?check_connectivity=false`` skips the probe, leaving ``connectivity_warning`` null."""
     probe = mocker.patch(

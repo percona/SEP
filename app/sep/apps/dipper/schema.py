@@ -32,11 +32,14 @@ from app.sep.apps.framework.schema import (
     DetailSection,
     DetailView,
     EXECUTION_HOST_LABEL,
+    EXECUTOR_HOST_FIELD_NAME,
     FormSection,
     HostField,
     ListView,
+    SCRIPT_PREVIEW_FIELD_NAME,
     ScriptPreviewField,
     ServiceField,
+    SUDO_FIELD_NAME,
 )
 from app.sep.apps.snippets.schema import field_for
 from app.sep.snippets.config import SnippetSudoOption
@@ -44,9 +47,6 @@ from app.sep.snippets.models.snippet import BaseSnippet
 
 _SERVICE_FIELD_NAME = "service_id"
 _COLLECTOR_FIELD_NAME = "collector_type"
-_EXECUTOR_HOST_FIELD_NAME = "executor_host"
-_SUDO_FIELD_NAME = "sudo"
-_SCRIPT_PREVIEW_FIELD_NAME = "script_preview"
 
 dipper_schema = AppSchema(
     name="dipper",
@@ -78,7 +78,7 @@ dipper_schema = AppSchema(
                     ],
                 ),
                 HostField(
-                    name=_EXECUTOR_HOST_FIELD_NAME,
+                    name=EXECUTOR_HOST_FIELD_NAME,
                     label=EXECUTION_HOST_LABEL,
                     required=True,
                 ),
@@ -214,7 +214,7 @@ def build_dipper_form_schema(
         cast(
             AnyField,
             HostField(
-                name=_EXECUTOR_HOST_FIELD_NAME,
+                name=EXECUTOR_HOST_FIELD_NAME,
                 label=EXECUTION_HOST_LABEL,
                 required=True,
             ),
@@ -225,7 +225,7 @@ def build_dipper_form_schema(
             cast(
                 AnyField,
                 BoolField(
-                    name=_SUDO_FIELD_NAME,
+                    name=SUDO_FIELD_NAME,
                     label="Run with sudo",
                     default=script.sudo.sudo_default,
                     description="Prepend sudo to the interpreter when the script is executed.",
@@ -237,7 +237,7 @@ def build_dipper_form_schema(
             cast(
                 AnyField,
                 BoolField(
-                    name=_SUDO_FIELD_NAME,
+                    name=SUDO_FIELD_NAME,
                     label="Run with sudo",
                     default=True,
                     description="This script is configured to always run with sudo.",
@@ -251,7 +251,7 @@ def build_dipper_form_schema(
         cast(
             AnyField,
             ScriptPreviewField(
-                name=_SCRIPT_PREVIEW_FIELD_NAME,
+                name=SCRIPT_PREVIEW_FIELD_NAME,
                 label="Script preview",
                 endpoint_url=f"/apps/dipper/script-preview?{preview_query}",
             ),

@@ -15,14 +15,30 @@
 
 """Tests for the ATW plugin JSON API routes under /api/apps/atw/."""
 
+import re
+from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch
+from uuid import UUID, uuid4
 
+import pytest
+import pytest_asyncio
 from fastapi import status
 from fastapi.testclient import TestClient
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.atw import api_routes as atw_api_routes
-from app.sep.apps.atw.models import ATWCategory, CATEGORY_ROOT_LABELS, ParentCategory
+from app.sep.apps.atw.categories import (
+    ATWCategory,
+    CATEGORY_ROOT_LABELS,
+    ParentCategory,
+)
+from app.sep.apps.atw.crud import AtwIncidentExecutionManager, AtwIncidentManager
+from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
+from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.snippets.models import Snippet
 
 _GENERIC_ROOT = CATEGORY_ROOT_LABELS["generic"]
@@ -322,3 +338,256 @@ class TestAtwSchemaEndpoint:
         expected_rules = 1 + len(ParentCategory)
         assert len(fail_when) == expected_rules
         assert "parent_category" in fail_when[0]["message"]
+
+
+INCIDENTS_BASE = "/api/apps/atw/incidents/"
+_INCIDENT_NAME_PATTERN = r"Incident \d{4}-\d\d-\d\d \d\d:\d\d"
+
+
+@pytest_asyncio.fixture
+async def seeded_incidents(session: AsyncSession) -> list[AtwIncident]:
+    """Seed two incidents with distinct creation times (returned newest-first)."""
+    older = await AtwIncidentManager.save(
+        session,
+        AtwIncident(
+            created_by="alice",
+            name="older",
+            created_at=utc_now() - timedelta(minutes=1),
+        ),
+    )
+    newer = await AtwIncidentManager.save(
+        session,
+        AtwIncident(created_by="alice", name="newer", created_at=utc_now()),
+    )
+    return [newer, older]
+
+
+@pytest_asyncio.fixture
+async def seeded_incident(session: AsyncSession) -> AtwIncident:
+    """Seed one incident with a known name and support-case reference."""
+    return await AtwIncidentManager.save(
+        session,
+        AtwIncident(created_by="alice", name="Original", case_ref="SN-1"),
+    )
+
+
+@pytest_asyncio.fixture
+async def incident_with_executions(session: AsyncSession) -> AtwIncident:
+    """Seed one incident owning two execution rows."""
+    incident = await AtwIncidentManager.save(
+        session, AtwIncident(created_by="alice", name="With executions")
+    )
+    for task_history_id in (1, 2):
+        await AtwIncidentExecutionManager.save(
+            session,
+            AtwIncidentExecution(
+                incident_id=incident.id,
+                task_history_id=task_history_id,
+                snippet_filename="diag.sh",
+            ),
+        )
+    return incident
+
+
+class TestAtwIncidentCreate:
+    """Check the POST /api/apps/atw/incidents/ route."""
+
+    def test_create_without_name_generates_default(
+        self, api_client: TestClient, regular_user: CasdoorUser
+    ) -> None:
+        """Ensure an omitted name gets the server default and created_by is stamped."""
+        response = api_client.post(INCIDENTS_BASE, json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        payload = response.json()
+        assert re.fullmatch(_INCIDENT_NAME_PATTERN, payload["name"])
+        assert payload["created_by"] == regular_user.username
+        assert payload["case_ref"] is None
+
+    def test_create_with_custom_fields_echoes_values(
+        self, api_client: TestClient
+    ) -> None:
+        """Ensure a custom name and case persist and a UUID id is returned."""
+        response = api_client.post(
+            INCIDENTS_BASE,
+            json={"name": "Prod outage", "case_ref": "CS123"},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        payload = response.json()
+        assert payload["name"] == "Prod outage"
+        assert payload["case_ref"] == "CS123"
+        assert UUID(payload["id"])
+
+    def test_create_cookie_only_is_rejected(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """Ensure a cookie-only create (no Bearer header) is rejected with 401."""
+        response = cookie_only_client.post(INCIDENTS_BASE, json={"name": "x"})
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
+
+class TestAtwIncidentList:
+    """Check the GET /api/apps/atw/incidents/ listing route."""
+
+    def test_list_returns_incidents_newest_first(
+        self, api_client: TestClient, seeded_incidents: list[AtwIncident]
+    ) -> None:
+        """Ensure the listing paginates and orders incidents newest-first."""
+        response = api_client.get(INCIDENTS_BASE)
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == len(seeded_incidents)
+        assert [item["name"] for item in payload["items"]] == ["newer", "older"]
+
+    def test_list_empty_returns_zero_total(self, api_client: TestClient) -> None:
+        """Ensure an empty listing returns an empty page with a zero total."""
+        response = api_client.get(INCIDENTS_BASE)
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["items"] == []
+        assert payload["total"] == 0
+
+    def test_list_pagination_window_echoed(
+        self, api_client: TestClient, seeded_incidents: list[AtwIncident]
+    ) -> None:
+        """Ensure offset/limit narrow the page and are echoed in the envelope."""
+        response = api_client.get(INCIDENTS_BASE, params={"limit": 1, "offset": 1})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == len(seeded_incidents)
+        assert len(payload["items"]) == 1
+        assert payload["offset"] == 1
+        assert payload["limit"] == 1
+        assert payload["items"][0]["name"] == "older"
+
+    @pytest.mark.parametrize(
+        "params",
+        [{"limit": 0}, {"offset": -1}, {"limit": 999}],
+    )
+    def test_list_rejects_out_of_bounds_pagination(
+        self, api_client: TestClient, params: dict[str, int]
+    ) -> None:
+        """Ensure pagination bounds (limit 1-200, offset >= 0) are enforced."""
+        response = api_client.get(INCIDENTS_BASE, params=params)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestAtwIncidentRetrieve:
+    """Check the GET /api/apps/atw/incidents/{incident_id} route."""
+
+    def test_get_existing_incident(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure an existing incident is retrievable by id."""
+        response = api_client.get(f"{INCIDENTS_BASE}{seeded_incident.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["id"] == str(seeded_incident.id)
+
+    def test_get_unknown_incident_returns_404(self, api_client: TestClient) -> None:
+        """Ensure a random incident id returns 404."""
+        response = api_client.get(f"{INCIDENTS_BASE}{uuid4()}")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestAtwIncidentUpdate:
+    """Check the PATCH /api/apps/atw/incidents/{incident_id} route."""
+
+    def test_rename_leaves_case_ref_untouched(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure a name-only PATCH does not clear the untouched case reference."""
+        response = api_client.patch(
+            f"{INCIDENTS_BASE}{seeded_incident.id}", json={"name": "Renamed"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["name"] == "Renamed"
+        assert payload["case_ref"] == "SN-1"
+
+    def test_set_case_ref_leaves_name_untouched(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure a case-only PATCH does not overwrite the untouched name."""
+        response = api_client.patch(
+            f"{INCIDENTS_BASE}{seeded_incident.id}",
+            json={"case_ref": "CS999"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["case_ref"] == "CS999"
+        assert payload["name"] == "Original"
+
+    def test_empty_name_is_rejected(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure renaming to an empty string is rejected by NonEmptyStr."""
+        response = api_client.patch(
+            f"{INCIDENTS_BASE}{seeded_incident.id}", json={"name": ""}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_explicit_null_name_is_rejected_without_touching_db(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure an explicit null name is a 422 (not a 500) and leaves the DB intact."""
+        response = api_client.patch(
+            f"{INCIDENTS_BASE}{seeded_incident.id}", json={"name": None}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        unchanged = api_client.get(f"{INCIDENTS_BASE}{seeded_incident.id}")
+        assert unchanged.json()["name"] == "Original"
+
+    def test_update_unknown_incident_returns_404(self, api_client: TestClient) -> None:
+        """Ensure updating a random incident id returns 404."""
+        response = api_client.patch(f"{INCIDENTS_BASE}{uuid4()}", json={"name": "x"})
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestAtwIncidentDelete:
+    """Check the DELETE /api/apps/atw/incidents/{incident_id} route."""
+
+    def test_delete_existing_incident(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure deleting an existing incident returns 204."""
+        response = api_client.delete(f"{INCIDENTS_BASE}{seeded_incident.id}")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_delete_unknown_incident_returns_404(self, api_client: TestClient) -> None:
+        """Ensure deleting a random incident id returns 404."""
+        response = api_client.delete(f"{INCIDENTS_BASE}{uuid4()}")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_delete_cascades_execution_rows(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+        incident_with_executions: AtwIncident,
+    ) -> None:
+        """Ensure deleting an incident cascades away its execution rows."""
+        response = await async_api_client.delete(
+            f"{INCIDENTS_BASE}{incident_with_executions.id}"
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        remaining = await AtwIncidentExecutionManager.count(
+            session, incident_id=incident_with_executions.id
+        )
+        assert remaining == 0
