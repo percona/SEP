@@ -17,7 +17,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
 import { AppListPage } from './AppListPage';
@@ -172,44 +172,47 @@ describe('AppListPage — list pagination', () => {
     });
   });
 
-  it('resets offset when the active entity tab changes', () => {
+  it('resets offset when the active entity tab changes', async () => {
     useAppEntityListMock.mockReturnValue({
       data: {
         items: [{ id: 1, name: 'node-a' }],
-        pagination: { total: 120, offset: 50, limit: 50 },
+        pagination: { total: 120, offset: 0, limit: 50 },
       },
       isLoading: false,
     });
 
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/inventory/:entityName',
+          element: <AppListPage schema={multiSchema} pluginName="inventory" />,
+        },
+      ],
+      { initialEntries: ['/inventory/nodes'] },
+    );
+
     render(
       <SnackbarProvider>
-        <MemoryRouter initialEntries={['/inventory/nodes']}>
-          <Routes>
-            <Route
-              path="/inventory/:entityName"
-              element={<AppListPage schema={multiSchema} pluginName="inventory" />}
-            />
-          </Routes>
-        </MemoryRouter>
+        <RouterProvider router={router} />
       </SnackbarProvider>,
     );
 
     const pagination = schemaListViewMock.mock.calls.at(-1)?.[0]?.pagination;
-    pagination.onChange({ offset: 50, limit: 50 });
+    act(() => {
+      pagination.onChange({ offset: 50, limit: 50 });
+    });
+
+    expect(useAppEntityListMock).toHaveBeenCalledWith('inventory', 'nodes', undefined, {
+      enabled: true,
+      offset: 50,
+      limit: 50,
+    });
+
     useAppEntityListMock.mockClear();
 
-    render(
-      <SnackbarProvider>
-        <MemoryRouter initialEntries={['/inventory/services']}>
-          <Routes>
-            <Route
-              path="/inventory/:entityName"
-              element={<AppListPage schema={multiSchema} pluginName="inventory" />}
-            />
-          </Routes>
-        </MemoryRouter>
-      </SnackbarProvider>,
-    );
+    await act(async () => {
+      await router.navigate('/inventory/services');
+    });
 
     expect(useAppEntityListMock).toHaveBeenCalledWith('inventory', 'services', undefined, {
       enabled: true,
