@@ -19,6 +19,28 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { ApiError } from '../errors';
+import type { components as TasksComponents } from '../generated/tasks';
+
+export type TaskHistoryStatus = TasksComponents['schemas']['TaskHistoryStatusEnum'];
+
+/**
+ * Task-history statuses that count as "still executing".
+ *
+ * Canonical source of truth for the poll-while-running convention. It lives in
+ * the ``api`` package because ``api`` is the lowest layer — ``framework`` and
+ * the apps depend on it, never the other way round — so both the list-page
+ * poll predicate here and the framework's ``useTaskHistory`` reuse the same
+ * set instead of drifting apart. ``framework`` re-exports these for callers
+ * that import from ``@sep/framework``.
+ */
+export const RUNNING_STATUSES: ReadonlySet<TaskHistoryStatus> = new Set(['running', 'pending']);
+
+export function isRunningStatus(status: TaskHistoryStatus): boolean {
+  return RUNNING_STATUSES.has(status);
+}
+
+/** Default poll cadence (ms) while a running task is visible; mirrors ``useTaskHistory``. */
+const DEFAULT_TASK_POLLING_INTERVAL_MS = 5000;
 
 // Mock-fallback gate. Active in dev builds (`pnpm dev`) and in production
 // builds explicitly opted-in via `VITE_MOCK_API=true` (e.g. the Playwright
@@ -89,11 +111,30 @@ export function unwrapTasks<T>(data: AppTasksResponse<T> | null | undefined): T[
   return data?.items ?? [];
 }
 
+/**
+ * Poll while any fetched row is still running; otherwise stay idle.
+ *
+ * Exported for tests; not part of the public hook surface.
+ */
+export function taskListRefetchInterval<T extends Record<string, unknown>>(
+  data: T[] | undefined,
+  pollingMs: number,
+  disabled: boolean,
+): number | false {
+  if (disabled || !data) {
+    return false;
+  }
+  const hasRunning = data.some((row) => RUNNING_STATUSES.has(row.status as TaskHistoryStatus));
+  return hasRunning ? pollingMs : false;
+}
+
 export function useAppTasks<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; disablePolling?: boolean; pollingIntervalMs?: number },
 ) {
+  const disablePolling = options?.disablePolling ?? false;
+  const pollingIntervalMs = options?.pollingIntervalMs ?? DEFAULT_TASK_POLLING_INTERVAL_MS;
   return useQuery<T[]>({
     queryKey: ['plugins', pluginName, 'tasks'],
     enabled: options?.enabled !== false,
@@ -108,6 +149,11 @@ export function useAppTasks<T extends Record<string, unknown>>(
         throw error;
       }
     },
+    // Keep the list live while something is running; an idle list issues no
+    // repeat requests. Polling reflects the task's actual current state rather
+    // than its state at page load.
+    refetchInterval: (query) =>
+      taskListRefetchInterval(query.state.data, pollingIntervalMs, disablePolling),
     ...(MOCK_FALLBACKS_ENABLED && mockTasks && { placeholderData: mockTasks }),
   });
 }
