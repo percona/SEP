@@ -18,6 +18,7 @@
 import os
 import pathlib
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -32,6 +33,8 @@ def _run_payload_capture_command(
     namespace: str | None,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    *,
+    restore_help: str,
 ) -> list[str]:
     """Execute the logical payload with a stubbed process and return its command.
 
@@ -39,6 +42,7 @@ def _run_payload_capture_command(
         to omit the key.
     :param monkeypatch: Pytest environment and process patch helper.
     :param tmp_path: Temporary directory for config and credentials.
+    :param restore_help: Fake ``pbm restore --help`` text used by the ``--yes`` probe.
     :return: The command passed to ``subprocess.Popen``.
     """
     task_dir = tmp_path / "task"
@@ -63,7 +67,13 @@ def _run_payload_capture_command(
         def poll(self) -> int:
             return 0
 
+    def _fake_run(cmd: list[str], *args: object, **kwargs: object) -> SimpleNamespace:
+        if cmd[:3] == ["pbm", "restore", "--help"]:
+            return SimpleNamespace(stdout=restore_help, stderr="", returncode=0)
+        raise AssertionError(f"Unexpected subprocess.run command: {cmd!r}")
+
     monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+    monkeypatch.setattr(subprocess, "run", _fake_run)
 
     namespace_globals: dict[str, object] = {}
     exec(compile(_PAYLOAD.read_text(), str(_PAYLOAD), "exec"), namespace_globals)
@@ -75,17 +85,19 @@ def test_namespace_filter_reaches_logical_restore_command(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Append the configured namespace before the wait flag."""
+    """Append ``--yes`` (when supported) and the namespace before ``--wait``."""
     command = _run_payload_capture_command(
         "db1.*,db2.collection",
         monkeypatch,
         tmp_path,
+        restore_help="Usage:\n  -y, --yes  Don't ask for confirmation\n",
     )
 
     assert command == [
         "pbm",
         "restore",
         "2026-04-29T10:00:00",
+        "--yes",
         "--ns",
         "db1.*,db2.collection",
         "--wait",
@@ -93,13 +105,39 @@ def test_namespace_filter_reaches_logical_restore_command(
 
 
 @pytest.mark.parametrize("namespace", [None, ""])
-def test_empty_namespace_keeps_logical_restore_command_bare(
+def test_empty_namespace_omits_ns_but_keeps_yes_when_supported(
     namespace: str | None,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Keep the existing bare restore command when no namespace is configured."""
-    command = _run_payload_capture_command(namespace, monkeypatch, tmp_path)
+    """Omit ``--ns`` when unset, but still pass ``--yes`` on modern PBM."""
+    command = _run_payload_capture_command(
+        namespace,
+        monkeypatch,
+        tmp_path,
+        restore_help="Usage:\n  -y, --yes  Don't ask for confirmation\n",
+    )
+
+    assert command == [
+        "pbm",
+        "restore",
+        "2026-04-29T10:00:00",
+        "--yes",
+        "--wait",
+    ]
+
+
+def test_old_pbm_without_yes_keeps_command_compatible(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Omit ``--yes`` when the installed PBM CLI does not advertise it."""
+    command = _run_payload_capture_command(
+        None,
+        monkeypatch,
+        tmp_path,
+        restore_help="Usage:\n  -w, --wait  Wait for the restore to finish\n",
+    )
 
     assert command == [
         "pbm",

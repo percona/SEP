@@ -105,8 +105,22 @@ def pbm():
         print("Error: BACKUP_SOURCE (backup name) is required")
         sys.exit(1)
 
-    # Build restore command
-    cmd = ['pbm', 'restore', backup_name, '--wait']
+    # Build restore command. PBM >=2.14 prompts for confirmation unless --yes is
+    # passed; older builds do not know that flag, so only add it when supported.
+    cmd = ['pbm', 'restore', backup_name]
+    try:
+        help_proc = subprocess.run(
+            ['pbm', 'restore', '--help'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        help_text = f'{help_proc.stdout or ""}{help_proc.stderr or ""}'
+        if '--yes' in help_text:
+            cmd.append('--yes')
+    except OSError as err:
+        print(f'Could not probe pbm restore --help for --yes support: {err}', file=sys.stderr)
+    cmd.append('--wait')
 
     proc = subprocess.Popen(cmd)
     proc.wait()
