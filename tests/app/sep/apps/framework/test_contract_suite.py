@@ -459,7 +459,7 @@ class _FirstArm(BaseModel):
 
 
 class _SecondArm(BaseModel):
-    """A second model arm, present so the union is not a degenerate single type."""
+    """Represent a second model arm so the union is not a degenerate single type."""
 
     other: str
 
