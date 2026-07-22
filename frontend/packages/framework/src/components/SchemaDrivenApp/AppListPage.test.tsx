@@ -16,21 +16,29 @@
  */
 
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
-import { AppListPage } from './AppListPage';
+
+// `vi.mock` is hoisted above imports, so the factory must not close over
+// module-scope bindings (TDZ risk). Route the useAppTasks mock through a
+// `vi.hoisted` spy — the same pattern as ScheduledTasksPanel.test.tsx — so it
+// both supplies the rows and captures the options the page passes in.
+const { useAppTasksMock } = vi.hoisted(() => ({ useAppTasksMock: vi.fn() }));
 
 vi.mock('../SchemaListView', () => ({
   SchemaListView: () => <div>list</div>,
 }));
 
 vi.mock('@sep/api', () => ({
-  useAppTasks: () => ({ data: [], isLoading: false }),
+  RUNNING_STATUSES: new Set(['running', 'pending']),
+  useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
   useAppEntityList: () => ({ data: [], isLoading: false }),
   useDeleteAppEntity: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
 }));
+
+import { AppListPage } from './AppListPage';
 
 const schema: AppSchema = {
   name: 'sched',
@@ -38,6 +46,10 @@ const schema: AppSchema = {
   capabilities: { scheduling: true },
   list_view: { columns: [{ key: 'name', label: 'Name' }] },
 };
+
+function setTaskRows(rows: Record<string, unknown>[]) {
+  useAppTasksMock.mockReturnValue({ data: rows, isLoading: false });
+}
 
 function renderPage(props: Partial<Parameters<typeof AppListPage>[0]> = {}) {
   return render(
@@ -49,6 +61,11 @@ function renderPage(props: Partial<Parameters<typeof AppListPage>[0]> = {}) {
   );
 }
 
+beforeEach(() => {
+  useAppTasksMock.mockReset();
+  setTaskRows([]);
+});
+
 describe('AppListPage — generic Schedules button', () => {
   it('renders the generic Schedules button by default when scheduling is enabled', () => {
     renderPage();
@@ -58,5 +75,52 @@ describe('AppListPage — generic Schedules button', () => {
   it('suppresses the generic Schedules button when hideScheduleButton is set', () => {
     renderPage({ hideScheduleButton: true });
     expect(screen.queryByTestId('plugin-schedule-link')).not.toBeInTheDocument();
+  });
+});
+
+describe('AppListPage — "Currently running" affordance', () => {
+  it('shows the count of running/pending tasks when at least one is running', () => {
+    setTaskRows([
+      { name: 'a', status: 'running' },
+      { name: 'b', status: 'success' },
+      { name: 'c', status: 'pending' },
+    ]);
+    renderPage();
+    expect(screen.getByTestId('currently-running')).toHaveTextContent('Currently running (2)');
+  });
+
+  it('renders no affordance when nothing is running', () => {
+    setTaskRows([
+      { name: 'a', status: 'success' },
+      { name: 'b', status: 'failed' },
+    ]);
+    renderPage();
+    expect(screen.queryByTestId('currently-running')).not.toBeInTheDocument();
+  });
+
+  it('renders no affordance for an empty list', () => {
+    setTaskRows([]);
+    renderPage();
+    expect(screen.queryByTestId('currently-running')).not.toBeInTheDocument();
+  });
+});
+
+describe('AppListPage — poll-while-running escape hatch', () => {
+  it('leaves task-list polling enabled by default', () => {
+    renderPage();
+    expect(useAppTasksMock).toHaveBeenCalledWith(
+      'sched',
+      undefined,
+      expect.objectContaining({ disablePolling: false }),
+    );
+  });
+
+  it('forwards disableTaskPolling to useAppTasks so tests/stories issue no repeats', () => {
+    renderPage({ disableTaskPolling: true });
+    expect(useAppTasksMock).toHaveBeenCalledWith(
+      'sched',
+      undefined,
+      expect.objectContaining({ disablePolling: true }),
+    );
   });
 });

@@ -89,15 +89,65 @@ def render(text: str, region: str, begin_marker: str, end_marker: str) -> str:
     return "\n".join(rebuilt)
 
 
+def _sync_region(
+    root: Path,
+    label: str,
+    begin_marker: str,
+    end_marker: str,
+    region: str,
+    *,
+    check: bool,
+) -> tuple[list[Path], list[Path], list[Path]]:
+    """Sync one marked region across every payload that opts into it.
+
+    A payload opts into a region by carrying ``begin_marker``; markerless payloads
+    are skipped, so a region carried by only a subset of payloads (e.g. the
+    config-apply block) syncs to exactly that subset.
+
+    :param root: The directory tree scanned for opted-in payloads.
+    :param label: Human-readable region name used in log/error output.
+    :param begin_marker: The BEGIN marker line delimiting the region.
+    :param end_marker: The END marker line delimiting the region.
+    :param region: The canonical region body to materialize between the markers.
+    :param check: When ``True``, report drift without writing.
+    :return: The ``(payloads, drift, rewritten)`` paths for this region.
+    """
+    payloads = find_payloads(root, begin_marker)
+    if not payloads:
+        print(f"No payloads carry the {label} marker under {root}", file=sys.stderr)
+        return [], [], []
+
+    drift = []
+    rewritten = []
+    for path in payloads:
+        rel = path.relative_to(REPO_ROOT)
+        current = path.read_text(encoding="utf-8")
+        updated = render(current, region, begin_marker, end_marker)
+        if updated == current:
+            print(f"unchanged  [{label}] {rel}")
+            continue
+        if check:
+            drift.append(path)
+            print(f"drifted    [{label}] {rel}")
+        else:
+            path.write_text(updated, encoding="utf-8")
+            rewritten.append(path)
+            print(f"rewrote    [{label}] {rel}")
+    return payloads, drift, rewritten
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Rewrite or check the payload preambles against the canonical region.
+    """Rewrite or check the payload generated regions against their canonical sources.
 
     :param argv: The CLI arguments (defaults to ``sys.argv``).
     :return: ``0`` when every payload is in sync (or was rewritten); ``1`` when
-        ``--check`` finds drift or no opted-in payload exists.
+        ``--check`` finds drift or a region has no opted-in payload.
     """
     sys.path.insert(0, str(REPO_ROOT))
     from app.sep.apps.backup_mongo.pbm_creds_common import (
+        CONFIG_APPLY_BEGIN,
+        CONFIG_APPLY_END,
+        config_apply_source,
         PREAMBLE_BEGIN,
         PREAMBLE_END,
         preamble_source,
@@ -117,49 +167,48 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    region = preamble_source()
-    payloads = find_payloads(args.root, PREAMBLE_BEGIN)
-    if not payloads:
-        print(
-            f"No payloads carry a PBM CREDS PREAMBLE marker under {args.root}",
-            file=sys.stderr,
+    regions = (
+        ("creds preamble", PREAMBLE_BEGIN, PREAMBLE_END, preamble_source()),
+        ("config apply", CONFIG_APPLY_BEGIN, CONFIG_APPLY_END, config_apply_source()),
+    )
+
+    total_payloads = 0
+    total_drift: list[Path] = []
+    total_rewritten: list[Path] = []
+    missing = False
+    for label, begin, end, region in regions:
+        payloads, drift, rewritten = _sync_region(
+            args.root, label, begin, end, region, check=args.check
         )
+        if not payloads:
+            missing = True
+            continue
+        total_payloads += len(payloads)
+        total_drift += drift
+        total_rewritten += rewritten
+
+    if missing:
         return 1
 
-    drift = []
-    rewritten = []
-    for path in payloads:
-        rel = path.relative_to(REPO_ROOT)
-        current = path.read_text(encoding="utf-8")
-        updated = render(current, region, PREAMBLE_BEGIN, PREAMBLE_END)
-        if updated == current:
-            print(f"unchanged  {rel}")
-            continue
-        if args.check:
-            drift.append(path)
-            print(f"drifted    {rel}")
-        else:
-            path.write_text(updated, encoding="utf-8")
-            rewritten.append(path)
-            print(f"rewrote    {rel}")
-
     if args.check:
-        if drift:
-            rels = [str(path.relative_to(REPO_ROOT)) for path in drift]
+        if total_drift:
+            rels = [str(path.relative_to(REPO_ROOT)) for path in total_drift]
             print(
-                f"PBM creds preamble drift: {rels}; regenerate with "
+                f"PBM payload region drift: {rels}; regenerate with "
                 "`python scripts/gen_pbm_payloads.py`",
                 file=sys.stderr,
             )
             return 1
         print(
-            f"All {len(payloads)} PBM payloads are in sync with the canonical region."
+            f"All {total_payloads} PBM payload regions are in sync with their "
+            "canonical sources."
         )
         return 0
 
     print(
-        f"Synced {len(payloads)} PBM payloads: "
-        f"{len(rewritten)} rewritten, {len(payloads) - len(rewritten)} already in sync."
+        f"Synced {total_payloads} PBM payload regions: "
+        f"{len(total_rewritten)} rewritten, "
+        f"{total_payloads - len(total_rewritten)} already in sync."
     )
     return 0
 

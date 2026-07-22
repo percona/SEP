@@ -105,6 +105,8 @@ export {
   useAppSchema,
   useAppTasks,
   useAppTask,
+  RUNNING_STATUSES,
+  isRunningStatus,
   useCreateAppTask,
   useUpdateAppTask,
   useAppEntityList,
@@ -138,7 +140,14 @@ export {
   useAppInfo,
   APP_INFO_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats, EnabledApp, AppInfo, PaginatedAppList } from './hooks';
+export type {
+  AlertConfig,
+  DashboardStats,
+  EnabledApp,
+  AppInfo,
+  PaginatedAppList,
+  TaskHistoryStatus,
+} from './hooks';
 export type { ConnectivityCheckRequest, ConnectivityResult, ConnectivityStatus } from './hooks';
 export type {
   AdminApp,
