@@ -137,8 +137,10 @@ def _exec_payload_capture_cmds(
 
     namespace: dict[str, object] = {}
     path = _ALL_PAYLOADS[payload]
-    exec(compile(path.read_text(), str(path), "exec"), namespace)
-    os.environ.pop("PBM_MONGODB_URI", None)
+    try:
+        exec(compile(path.read_text(), str(path), "exec"), namespace)
+    finally:
+        os.environ.pop("PBM_MONGODB_URI", None)
     return captured
 
 
