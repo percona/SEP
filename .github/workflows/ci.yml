@@ -95,6 +95,9 @@ jobs:
               - 'alembic.ini'
             sidecar:
               - 'sidecar/**'
+              - 'Containerfile.base'
+              - 'alembic.ini'
+              - 'Makefile'
 
   precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
