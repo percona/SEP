@@ -790,10 +790,11 @@ export interface paths {
      *     failed attempt produces no task-history row to reference, so it is reported
      *     here rather than persisted.
      *
-     *     Every per-item guard rolls the shared session back before the loop continues,
+     *     The row-write guard rolls the shared session back before the loop continues,
      *     or one failed write would leave the transaction aborted and doom every later
-     *     item on PostgreSQL. ``incident.id`` is read once up front for the same reason:
-     *     a rollback expires the instance, and re-reading it would trigger a lazy load.
+     *     item on PostgreSQL; the dispatch guard rolls back defensively, having written
+     *     nothing itself. ``incident.id`` is read once up front because both a commit and
+     *     a rollback expire the instance, and re-reading it would trigger a lazy load.
      *
      *     :param session: The database session.
      *     :param incident: The incident resolved from the ``incident_id`` path parameter.
@@ -4847,7 +4848,12 @@ export interface components {
      */
     atw__ATWBatchExecuteItemResponse: {
       /** Error */
-      error?: unknown | null;
+      error?:
+        | string
+        | {
+            [key: string]: unknown;
+          }[]
+        | null;
       /** Snippet Filename */
       snippet_filename: string;
       /** Task History Id */
@@ -4896,7 +4902,8 @@ export interface components {
      *         option is not optional ignore it.
      *     :param shared_args: Arguments offered to every item, filtered per snippet to
      *         the parameters that snippet declares.
-     *     :param items: The snippets to execute, at least one.
+     *     :param items: The snippets to execute, at least one and at most
+     *         ``MAX_BATCH_SNIPPETS``.
      */
     atw__ATWBatchExecuteWrite: {
       /** Execution Host */
@@ -5902,7 +5909,9 @@ export interface components {
      */
     dipper__DipperExecuteWrite: {
       /** Args */
-      args?: Record<string, never>;
+      args?: {
+        [key: string]: unknown;
+      };
       /** @default environment */
       collector_type: components['schemas']['dipper__CollectorTypeEnum'];
       /** Execution Host */
