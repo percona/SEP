@@ -19,7 +19,14 @@ __all__ = ["UPSTREAM_NON_JSON_HEADER", "BaseRemoteAPI", "RemoteAPI"]
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Generator, Iterable, Mapping
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterable,
+    AsyncIterator,
+    Generator,
+    Iterable,
+    Mapping,
+)
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from functools import cached_property, lru_cache
@@ -88,9 +95,13 @@ _REDACTED_VALUE = "****"
 # apart from an app-level JSON error at the same status code.
 UPSTREAM_NON_JSON_HEADER = "X-Upstream-Non-JSON"
 
-#: A single multipart file part: ``(filename, content, content_type)``. ``content``
-#: is either the raw bytes or an open binary handle streamed by aiohttp.
-FileSpec = tuple[str, bytes | BinaryIO, str]
+#: The body of a single multipart file part: raw bytes held in memory, an open
+#: binary handle, or an async iterator of chunks. aiohttp streams the latter two,
+#: so a caller forwarding a file it never has on disk passes the iterator through.
+FileContent = bytes | BinaryIO | AsyncIterable[bytes]
+
+#: A single multipart file part: ``(filename, content, content_type)``.
+FileSpec = tuple[str, FileContent, str]
 
 # Maps an upstream error status to the project exception that represents it, so
 # RemoteAPI raises app/core/exceptions classes instead of a bare HTTPException.
@@ -133,6 +144,7 @@ def _sanitize_request_kwargs(
     kwargs: dict[str, Any],
     *,
     extra_sensitive_headers: frozenset[str] = frozenset(),
+    extra_sensitive_body_fields: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Return a shallow copy of request kwargs with credentials redacted.
 
@@ -146,9 +158,12 @@ def _sanitize_request_kwargs(
     :param kwargs: The request keyword arguments about to be logged.
     :param extra_sensitive_headers: Additional lowercase header names to mask,
         beyond the always-masked credential headers.
+    :param extra_sensitive_body_fields: Additional lowercase body field names to
+        mask, beyond the always-masked credential fields.
     :return: A copy safe to log, with sensitive header and body values masked.
     """
     sensitive_headers = _SENSITIVE_HEADERS | extra_sensitive_headers
+    sensitive_body_fields = _SENSITIVE_BODY_FIELDS | extra_sensitive_body_fields
     safe = {**kwargs}
     headers = kwargs.get("headers")
     if headers:
@@ -161,7 +176,7 @@ def _sanitize_request_kwargs(
         if isinstance(body, dict):
             safe[body_key] = {
                 key: (
-                    _REDACTED_VALUE if key.lower() in _SENSITIVE_BODY_FIELDS else value
+                    _REDACTED_VALUE if key.lower() in sensitive_body_fields else value
                 )
                 for key, value in body.items()
             }
@@ -271,6 +286,11 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     _extra_sensitive_headers: ContextVar[frozenset[str]] = PrivateAttr(
         default_factory=lambda: ContextVar(
             "api_extra_sensitive_headers", default=frozenset()
+        )
+    )
+    _extra_sensitive_body_fields: ContextVar[frozenset[str]] = PrivateAttr(
+        default_factory=lambda: ContextVar(
+            "api_extra_sensitive_body_fields", default=frozenset()
         )
     )
 
@@ -412,6 +432,27 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         finally:
             self._extra_sensitive_headers.reset(token)
 
+    @contextmanager
+    def redact_body_fields(self, names: Iterable[str]) -> Generator[Self]:
+        """Mask additional request-body fields in the debug request log for the call.
+
+        Register case-insensitive body keys whose values must be redacted in the
+        request-log line for the duration of the call, on top of the
+        always-masked credential fields. Use this to hide a custom-named
+        credential a caller posts in a JSON or form body.
+
+        :param names: Body field names to mask, compared case-insensitively.
+        :yield: The instance with the extra redaction set applied.
+        """
+        token = self._extra_sensitive_body_fields.set(
+            self._extra_sensitive_body_fields.get()
+            | frozenset(name.lower() for name in names)
+        )
+        try:
+            yield self
+        finally:
+            self._extra_sensitive_body_fields.reset(token)
+
     @cached_property
     def logger(self) -> logging.Logger:
         """Return logger object to use.
@@ -545,7 +586,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             method,
             path,
             _sanitize_request_kwargs(
-                kwargs, extra_sensitive_headers=self._extra_sensitive_headers.get()
+                kwargs,
+                extra_sensitive_headers=self._extra_sensitive_headers.get(),
+                extra_sensitive_body_fields=self._extra_sensitive_body_fields.get(),
             ),
         )
         async with self._session.request(method, prepared_path, **kwargs) as response:
@@ -952,7 +995,8 @@ class RemoteAPI(BaseRemoteAPI):
         :param path: The API endpoint path to POST to.
         :param files: Multipart file parts keyed by field name; each value is a
             ``(filename, content, content_type)`` tuple. Pass an open binary file
-            handle as ``content`` to stream a large bundle with bounded memory.
+            handle or an async byte iterator as ``content`` to stream a large
+            bundle with bounded memory.
         :param fields: Scalar form fields sent alongside the files.
         :param kwargs: Additional keyword arguments passed through to the request.
         :return: The parsed JSON response, or ``None`` on a ``2xx`` response with
