@@ -49,11 +49,11 @@ from app.sep.apps.framework.task_status import batch_get_latest_statuses
 from app.sep.deps import IsApiAuthenticated, TaskAPI
 from app.tasks.models import LATEST_HISTORY_STATUS_NAMES_MAX, TaskHistoryStatusEnum
 from tests.app.sep.apps.framework.contract_suite import (
-    _select_branch,
     app_base_url,
     build_contract_client,
     build_valid_create_body,
     DerivedRouterContractTests,
+    select_branch,
 )
 from tests.app.sep.apps.framework.kit import (
     MockInventoryAPI,
@@ -465,7 +465,7 @@ class _SecondArm(BaseModel):
 
 
 class _SelectBranchModel(BaseModel):
-    """Carry each shape ``_select_branch`` must classify.
+    """Carry each shape ``select_branch`` must classify.
 
     ``one_of`` is a genuine model union (recurse into its first arm); ``optional_one_of``
     adds a ``None`` arm (recurse, dropping ``None``); ``items`` is a container that also
@@ -483,13 +483,13 @@ class _SelectBranchModel(BaseModel):
 
 
 class TestSelectBranch:
-    """Pin which annotations ``_select_branch`` treats as a model union to recurse into."""
+    """Pin which annotations ``select_branch`` treats as a model union to recurse into."""
 
     def test_selects_first_model_union_arm(self) -> None:
         """Return the first model arm for a genuine union, dropping any ``None`` arm."""
         fields = _SelectBranchModel.model_fields
-        assert _select_branch(fields["one_of"]) is _FirstArm
-        assert _select_branch(fields["optional_one_of"]) is _FirstArm
+        assert select_branch(fields["one_of"]) is _FirstArm
+        assert select_branch(fields["optional_one_of"]) is _FirstArm
 
     def test_ignores_container_and_non_model_shapes(self) -> None:
         """Return ``None`` for a container, scalar, or model/scalar mix — never collapsing shape.
@@ -500,10 +500,10 @@ class TestSelectBranch:
         reference, not a one-of group, so it is left to the generic factory.
         """
         fields = _SelectBranchModel.model_fields
-        assert _select_branch(fields["items"]) is None
-        assert _select_branch(fields["mixed"]) is None
-        assert _select_branch(fields["scalar"]) is None
-        assert _select_branch(fields["scalar_union"]) is None
+        assert select_branch(fields["items"]) is None
+        assert select_branch(fields["mixed"]) is None
+        assert select_branch(fields["scalar"]) is None
+        assert select_branch(fields["scalar_union"]) is None
 
 
 # Pins the archives one-of create model's validator-/rule-constrained scalars so the

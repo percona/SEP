@@ -192,7 +192,7 @@ def build_contract_client(
     return TestClient(app, raise_server_exceptions=False)
 
 
-def _select_branch(field: FieldInfo) -> type[BaseModel] | None:
+def select_branch(field: FieldInfo) -> type[BaseModel] | None:
     """Return the first model branch of a union field, or ``None`` for a non-union.
 
     Drops the ``None`` arm of an optional union (``X | Y | None``) and returns the
@@ -238,7 +238,7 @@ def _ref_overrides(model: type[BaseModel]) -> dict[str, Any]:
             )
         elif (mock_id := _REF_MOCK_IDS.get(type(ref))) is not None:
             overrides[name] = [mock_id] if ref.multiple else mock_id
-        elif (branch := _select_branch(field)) is not None:
+        elif (branch := select_branch(field)) is not None:
             overrides[name] = ModelFactory.create_factory(branch).build(
                 **_ref_overrides(branch)
             )
