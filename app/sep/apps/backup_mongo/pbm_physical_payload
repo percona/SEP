@@ -125,11 +125,63 @@ def _compression_flags(config):
     return flags
 
 
+# --- BEGIN GENERATED PBM CONFIG APPLY ---
+def _apply_pbm_config(config: dict) -> None:
+    """Apply the SEP-managed PBM config to the cluster via ``pbm config --file``.
+
+    PBM storage is cluster-wide with no per-backup flag, so the per-task config
+    (storage, priority, pitr) is applied here, before the backup runs, rather than
+    relying on the separate Sync-config task having run. Writes the full config
+    (minus SEP-only keys) to the task dir and runs ``pbm config --file``.
+
+    Terminates the process (``sys.exit`` non-zero) rather than raising when the task
+    dir is unset, ``pbm`` cannot be run, or PBM rejects the config -- for example an
+    unreachable or non-existent S3 bucket -- so the backup never silently falls back
+    to PBM's pre-existing cluster-wide storage.
+
+    :param config: The parsed task config; SEP-only and ``None``-valued keys are
+        dropped before it is written to the PBM config file.
+    """
+    sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
+    pbm_config = {
+        k: v for k, v in config.items() if k not in sep_only_keys and v is not None
+    }
+    task_dir = os.environ.get("NOMAD_TASK_DIR")
+    if not task_dir:
+        print(
+            "NOMAD_TASK_DIR is not set; cannot write the PBM config file.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    config_file = f"{task_dir}/script_config"
+    with open(config_file, "w", encoding="utf-8") as f:
+        yaml.dump(pbm_config, f, default_flow_style=False, allow_unicode=True)
+    cmd = ["pbm", "config", "--file", config_file]
+    try:
+        proc = subprocess.Popen(cmd)  # noqa: S603 # nosec B603
+        proc.wait()
+        ret_code = proc.poll()
+        if ret_code != 0:
+            print(
+                "Failed to apply the task storage configuration to PBM "
+                f"(pbm config --file exited {ret_code}). Verify the configured S3 "
+                "bucket/region/endpoint exist and are reachable.",
+                file=sys.stderr,
+            )
+            sys.exit(ret_code)
+    except OSError as err:
+        print(f"Failed to run pbm config: {err}", file=sys.stderr)
+        sys.exit(1)
+# --- END GENERATED PBM CONFIG APPLY ---
+
+
 def pbm():
     """ PBM Physical Payload """
 
     os.environ['PBM_MONGODB_URI'] = pbm_creds(_creds_path('backup'))
     config = _load_config()
+    if isinstance(config.get('storage'), dict):
+        _apply_pbm_config(config)
     cmd = ['pbm', 'backup', '--type', 'physical', '--wait'] + _compression_flags(config)
 
     try:

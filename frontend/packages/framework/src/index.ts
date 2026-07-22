@@ -61,6 +61,7 @@ export type { TaskLogViewerProps, BadgeStatus } from './components/TaskLogViewer
 export {
   TaskHistoryTable,
   TaskHistoryStatusBadge,
+  isTaskHistoryStatus,
   ChainDisplay,
 } from './components/TaskHistoryTable';
 export type {

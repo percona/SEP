@@ -31,7 +31,7 @@ const listView: ListView = {
 };
 
 const data = [
-  { id: 1, name: 'nightly-checksum', progress: 100, status: 'completed' },
+  { id: 1, name: 'nightly-checksum', progress: 100, status: 'success' },
   { id: 2, name: 'weekly-rebuild', progress: 42, status: 'running' },
   { id: 3, name: 'adhoc-verify', progress: 0, status: 'failed' },
 ];

@@ -1966,6 +1966,65 @@ async def test_execute_task_name_response_serializes_deferred_execution_request(
 
 
 @pytest.mark.asyncio
+async def test_execute_task_name_unresolvable_payload_fails_terminally(
+    test_client, session, mocker
+):
+    """Assert POST /execute/{task_name} with an unresolvable payload returns FAILED.
+
+    The prepared ``queue_item`` (and its ``task`` relationship) is attached to the
+    request session, so the payload gate must persist the terminal FAILED row
+    through that same session — persisting through a second one would raise
+    ``InvalidRequestError`` and surface as an HTTP 500. The route must also still
+    eagerly load the deferred ``execution_request`` before serialization. The real
+    ``dispatch_queue_item`` runs here (only the internal dispatch is stubbed) so
+    the gate short-circuit stays observable.
+    """
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="wrapped-root",
+                backend=TaskBackendEnum.NOMAD,
+                anonymize_mask=0,
+            )
+        ),
+    )
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="proxy-task",
+                backend=TaskBackendEnum.PROXY,
+                alert_on_fail=False,
+                anonymize_mask=0,
+                data={
+                    "task": "wrapped-root",
+                    "payload": "file:///nonexistent/x_payload",
+                },
+            )
+        ),
+    )
+
+    fake_executor = MagicMock(spec=BaseExecutor)
+    fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
+    spy_internal = mocker.patch(
+        "app.tasks.celery._dispatch_queue_item", new_callable=AsyncMock
+    )
+
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["status"] == TaskHistoryStatusEnum.FAILED.value
+    assert data["execution_request"]["task"] == task.name
+    spy_internal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_execute_task_name_with_eta_serializes_deferred_execution_request(
     test_client, session, mocker
 ):

@@ -50,7 +50,12 @@ export function useScheduledTasksForApp(
   options: UseScheduledTasksOptions = {},
 ) {
   const { pollingIntervalMs = POLL_INTERVAL_MS, disablePolling = false } = options;
-  const tasksQuery = useAppTasks<AppTask>(pluginName);
+  // Forward the escape hatch: `useAppTasks` now polls while a task row is
+  // running, so without this a story/test that sets `disablePolling` would
+  // still spin up a live task-list refetch. The task-list poll keeps its own
+  // default cadence — the schedule `pollingIntervalMs` governs periodic-task
+  // freshness, a separate concern.
+  const tasksQuery = useAppTasks<AppTask>(pluginName, undefined, { disablePolling });
   const pluginTaskNames = tasksQuery.data?.map((t) => t.name) ?? [];
 
   const periodicQuery = useQuery<PeriodicTaskResponse[], Error, PeriodicTaskResponse[]>({
