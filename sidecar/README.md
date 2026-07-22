@@ -53,8 +53,9 @@ mode-`0600` Valkey config at `/tmp/valkey.conf`, and exports
 `CELERY__BROKER_URL` / `CELERY__RESULT_BACKEND` carrying it. Environment
 outranks the mounted `settings.yaml`, so a profile whose broker URL has no
 password — like the reference profile above — keeps working unchanged; the
-exported value wins. Nothing external supplies the credential and nothing needs
-to know it.
+exported value wins. It also supersedes a `CELERY__BROKER_URL` passed to
+`docker run`, since only the generated credential opens the bundled broker.
+Nothing external supplies the credential and nothing needs to know it.
 
 The password never reaches the command line, of either `valkey-server` or the
 `healthcheck.sh` probe (which reads it back from the config file and passes it
@@ -94,8 +95,8 @@ roughly 75-80s.
 The bundled Valkey binds `127.0.0.1:6379` inside the container's own network
 namespace. If the side-car is ever deployed sharing a namespace with PMM (a
 Kubernetes pod, or `--network container:pmm-server`), that port collides with
-PMM's own Valkey and Celery may attach to the wrong broker. Give the side-car
-its own namespace, or re-point the broker.
+PMM's own Valkey and Celery then fails to reach its own broker. Give the
+side-car its own namespace, or re-point the broker.
 
 Authentication is what keeps that shared-namespace case from also being an
 exposure: the loopback bind is no boundary there, so the broker requires the

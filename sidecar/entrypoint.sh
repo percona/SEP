@@ -19,6 +19,10 @@ valkey_password="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 # rather than a follow-up chmod so the value is never briefly world-readable.
 (
     umask 077
+    # /tmp survives a container restart, so a leftover path could be a symlink
+    # the redirection would follow -- and umask does not apply to an existing
+    # target.
+    rm -f "$valkey_conf"
     cat > "$valkey_conf" << EOF
 port 6379
 bind 127.0.0.1
@@ -35,4 +39,4 @@ EOF
 export CELERY__BROKER_URL="redis://:${valkey_password}@127.0.0.1:6379/0"
 export CELERY__RESULT_BACKEND="redis://:${valkey_password}@127.0.0.1:6379/1"
 
-exec supervisord -c /home/sep/app/supervisord.conf
+exec supervisord -c /home/sep/app/supervisord.conf "$@"
