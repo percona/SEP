@@ -53,13 +53,16 @@ from app.sep.apps.framework.schema import (
     ColumnFormat,
     DateTimeField,
     EXECUTION_HOST_LABEL,
+    EXECUTOR_HOST_FIELD_NAME,
     FloatField,
     FormSection,
     HostField,
     IntegerField,
     ListView,
+    SCRIPT_PREVIEW_FIELD_NAME,
     ScriptPreviewField,
     StringField,
+    SUDO_FIELD_NAME,
 )
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.meta import (
@@ -68,11 +71,6 @@ from app.sep.snippets.models.meta import (
     SnippetVisibilityCondition,
 )
 from app.sep.snippets.models.snippet import BaseSnippet, BaseSnippetArgs
-
-EXECUTOR_HOST_FIELD_NAME = "executor_host"
-SUDO_FIELD_NAME = "sudo"
-SCRIPT_PREVIEW_FIELD_NAME = "script_preview"
-
 
 SNIPPETS_PLUGIN_SCHEMA = AppSchema(
     name="snippets",
