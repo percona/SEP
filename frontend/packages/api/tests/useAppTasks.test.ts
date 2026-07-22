@@ -24,8 +24,6 @@ import {
   fetchAppEntityList,
   isBackendUnavailable,
   normalizeAppListResponse,
-  unwrapAppListResponse,
-  unwrapTasks,
 } from '../src/hooks/useAppTasks';
 import { ApiError } from '../src/errors';
 
@@ -70,14 +68,6 @@ describe('normalizeAppListResponse', () => {
 
   it('returns empty items when items is null in a partial envelope', () => {
     expect(normalizeAppListResponse({ items: null })).toEqual({ items: [], pagination: null });
-  });
-});
-
-describe('unwrapAppListResponse', () => {
-  it('delegates to normalizeAppListResponse and returns items only', () => {
-    const items = [{ name: 'a' }];
-    expect(unwrapAppListResponse(items)).toEqual(items);
-    expect(unwrapAppListResponse({ items, total: 1, offset: 0, limit: 50 })).toEqual(items);
   });
 });
 
@@ -204,35 +194,6 @@ describe('fetchAppEntityList', () => {
       items: [{ id: 1 }, { id: 2 }],
       pagination: null,
     });
-  });
-});
-
-describe('unwrapTasks', () => {
-  it('returns a legacy array response as-is', () => {
-    const tasks = [{ name: 'a' }, { name: 'b' }];
-    expect(unwrapTasks(tasks)).toEqual(tasks);
-  });
-
-  it('unwraps a PaginatedResponse envelope to its items', () => {
-    const tasks = [{ name: 'a' }];
-    expect(unwrapTasks({ items: tasks, total: 1, offset: 0, limit: 50 })).toEqual(tasks);
-  });
-
-  it('returns an empty array for an empty envelope', () => {
-    expect(unwrapTasks({ items: [], total: 0, offset: 0, limit: 50 })).toEqual([]);
-  });
-
-  it('returns [] when items is null', () => {
-    expect(unwrapTasks({ items: null } as never)).toEqual([]);
-  });
-
-  it('returns [] when payload is an empty object', () => {
-    expect(unwrapTasks({} as never)).toEqual([]);
-  });
-
-  it('returns [] when payload is null or undefined', () => {
-    expect(unwrapTasks(null as never)).toEqual([]);
-    expect(unwrapTasks(undefined as never)).toEqual([]);
   });
 });
 

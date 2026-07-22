@@ -107,14 +107,8 @@ export function normalizeAppListResponse<T>(
   return { items: [], pagination: null };
 }
 
-/** Accept legacy flat lists or paginated ``{ items, total, offset, limit }`` envelopes. */
-export function unwrapAppListResponse<T>(data: T[] | PaginatedAppList<T>): T[] {
-  return normalizeAppListResponse(data).items;
-}
-
 export const DEFAULT_APP_LIST_OFFSET = 0;
 export const DEFAULT_APP_LIST_LIMIT = 50;
-export const MAX_APP_LIST_LIMIT = 200;
 
 const MAX_FETCH_ALL_PAGES = 50;
 
@@ -153,20 +147,13 @@ function tasksQueryKey(
  */
 type AppListResponse<T> = T[] | PaginatedAppList<T> | { items: T[] | null };
 
-/** @deprecated alias kept for unwrapTasks callers in tests */
-type AppTasksResponse<T> = AppListResponse<T>;
-
-export function unwrapTasks<T>(data: AppTasksResponse<T> | null | undefined): T[] {
-  return normalizeAppListResponse(data).items;
-}
-
 async function fetchAllAppListPages<T extends Record<string, unknown>>(
   path: string,
 ): Promise<AppListResult<T>> {
   const out: T[] = [];
   let offset = 0;
   // Stay at the default page size: some plugins cap ``limit`` at 50
-  // (``DEFAULT_PAGINATION_LIMIT``), so ``MAX_APP_LIST_LIMIT`` (200) 422s there.
+  // (``DEFAULT_PAGINATION_LIMIT``), so a larger client limit would 422 there.
   const limit = DEFAULT_APP_LIST_LIMIT;
 
   for (let iter = 0; iter < MAX_FETCH_ALL_PAGES; iter++) {
