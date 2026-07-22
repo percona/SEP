@@ -43,6 +43,15 @@ from app.core.utils.fields import NonEmptyStr
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
+ARBITRARY_ARGS_SCHEMA = {"additionalProperties": True}
+"""Advertise a free-form argument map.
+
+A ``dict[str, object]`` field otherwise serialises as a bare ``type: object``,
+which the TypeScript generator reads as ``Record<string, never>`` — a map no
+typed caller can populate. Naming the open contract keeps the generated client
+usable for every script app's execute payload.
+"""
+
 
 @runtime_checkable
 class ScriptProtocol(Protocol):
@@ -86,7 +95,7 @@ class ScriptExecuteWrite(BaseModel):
 
     executor_host: NonEmptyStr = Field(title=EXECUTION_HOST_LABEL)
     sudo: bool = False
-    args: dict[str, object] = {}
+    args: dict[str, object] = Field(default={}, json_schema_extra=ARBITRARY_ARGS_SCHEMA)
 
 
 class ScriptExecutionResponse(BaseModel):

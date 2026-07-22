@@ -43,9 +43,8 @@ from dataclasses import dataclass
 from typing import Annotated, Any, cast, TypeVar
 
 from fastapi import APIRouter, Depends, params, Query, status
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
-from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
@@ -61,7 +60,7 @@ from app.sep.apps.framework.responses import (
     TaskResponseBuilder,
 )
 from app.sep.apps.framework.schema import AppSchema
-from app.sep.apps.framework.script_helpers import post_task_execution
+from app.sep.apps.framework.script_helpers import execute_script
 from app.sep.apps.framework.script_source import (
     make_script_dep,
     ScriptExecuteWrite,
@@ -1801,18 +1800,6 @@ def derive_script_routes(
         tasks_api: TaskAPI,
     ) -> ScriptExecutionResponse:
         """Validate the args, assemble the meta, and dispatch the execution."""
-        try:
-            validated = script.get_execution_model().model_validate(body.args)
-        except ValidationError as exc:
-            raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
-        meta = source.build_execution_meta(
-            script, body.model_copy(update={"args": validated.model_dump()})
-        )
-        task_id = await post_task_execution(tasks_api, script.execution_task_name, meta)
-        return ScriptExecutionResponse(
-            task_name=script.execution_task_name,
-            task_id=task_id,
-            snippet_filename=script.filename,
-        )
+        return await execute_script(source, script, body, tasks_api)
 
     return router
