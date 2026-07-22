@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -95,18 +95,32 @@ export function AppListPage({
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
 
+  const paginationScope = `${pluginName}:${entityName ?? ''}`;
   const [listPage, setListPage] = useState({
+    scope: paginationScope,
     offset: DEFAULT_APP_LIST_OFFSET,
     limit: DEFAULT_APP_LIST_LIMIT,
   });
 
-  useEffect(() => {
-    setListPage({ offset: DEFAULT_APP_LIST_OFFSET, limit: DEFAULT_APP_LIST_LIMIT });
-  }, [pluginName, entityName]);
+  // Derive the active page from scope so a tab change uses offset 0 on the
+  // same render (a post-paint useEffect would still fire one stale-offset
+  // request and flash an empty page when the new entity has fewer rows).
+  const activeListPage =
+    listPage.scope === paginationScope
+      ? listPage
+      : {
+          scope: paginationScope,
+          offset: DEFAULT_APP_LIST_OFFSET,
+          limit: DEFAULT_APP_LIST_LIMIT,
+        };
+
+  if (listPage.scope !== paginationScope) {
+    setListPage(activeListPage);
+  }
 
   const listQueryOptions = {
-    offset: listPage.offset,
-    limit: listPage.limit,
+    offset: activeListPage.offset,
+    limit: activeListPage.limit,
   };
 
   const singleQuery = useAppTasks(pluginName, mockTasks, {
@@ -254,7 +268,8 @@ export function AppListPage({
                 total: listPagination.total,
                 offset: listPagination.offset,
                 limit: listPagination.limit,
-                onChange: setListPage,
+                onChange: ({ offset, limit }) =>
+                  setListPage({ scope: paginationScope, offset, limit }),
               }
             : null
         }

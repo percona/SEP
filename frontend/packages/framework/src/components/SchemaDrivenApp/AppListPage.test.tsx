@@ -219,5 +219,11 @@ describe('AppListPage — list pagination', () => {
       offset: 0,
       limit: 50,
     });
+    expect(useAppEntityListMock).not.toHaveBeenCalledWith(
+      'inventory',
+      'services',
+      undefined,
+      expect.objectContaining({ offset: 50 }),
+    );
   });
 });
