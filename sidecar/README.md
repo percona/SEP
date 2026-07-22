@@ -93,8 +93,9 @@ roughly 75-80s.
 The bundled Valkey binds `127.0.0.1:6379` inside the container's own network
 namespace. If the side-car is ever deployed sharing a namespace with PMM (a
 Kubernetes pod, or `--network container:pmm-server`), that port collides with
-PMM's own Valkey and Celery then fails to reach its own broker. Give the
-side-car its own namespace, or re-point the broker.
+PMM's own Valkey, and Celery then fails to reach its own broker. Give the
+side-car its own network namespace — the generated broker URL is not
+deployer-overridable, so re-pointing Celery elsewhere is not an option.
 
 Authentication is what keeps that shared-namespace case from also being an
 exposure: the loopback bind is no boundary there, so the broker requires the
