@@ -106,7 +106,11 @@ def pbm():
         sys.exit(1)
 
     # Build restore command
-    cmd = ['pbm', 'restore', backup_name, '--wait']
+    cmd = ['pbm', 'restore', backup_name]
+    namespace = config.get('namespace')
+    if namespace:
+        cmd.extend(['--ns', namespace])
+    cmd.append('--wait')
 
     proc = subprocess.Popen(cmd)
     proc.wait()

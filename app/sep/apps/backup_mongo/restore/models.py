@@ -171,6 +171,8 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     :param backupType: Type of backup to restore from.
         This is not part of PBM config but needed for restore operations.
     :type backupType: BackupType
+    :param namespace: Optional namespace filter for selective logical restores.
+    :type namespace: NonEmptyStr | EmptyStrToNone
     :param credentials_path: Path to MongoDB URI credentials file on the Nomad node
         (SEP-only, not part of PBM config; used by payloads).
     :type credentials_path: NonEmptyStr | EmptyStrToNone
@@ -188,6 +190,11 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     backup_type: BackupType = Field(
         validation_alias=AliasChoices("backupType", "BACKUP_TYPE", "backup_type"),
         serialization_alias="backupType",
+    )
+    namespace: NonEmptyStr | EmptyStrToNone = Field(
+        None,
+        validation_alias=AliasChoices("namespace", "NAMESPACE"),
+        serialization_alias="namespace",
     )
     credentials_path: NonEmptyStr | EmptyStrToNone = Field(
         None,
@@ -214,6 +221,9 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     :type backup_type: BackupType
     :param backup_source: Source location of the backup (backup name or timestamp).
     :type backup_source: NonEmptyStr
+    :param restore_namespace_filter: Optional database or collection namespace
+        filter for a logical restore.
+    :type restore_namespace_filter: NonEmptyStr | EmptyStrToNone
     :param restore_batch_size: Number of documents to buffer.
     :type restore_batch_size: int | None
     :param restore_num_insertion_workers: Number of insertion workers to run concurrently per collection.
@@ -239,6 +249,7 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     service_id: NonEmptyStr | EmptyStrToNone = None
     backup_type: BackupType
     backup_source: NonEmptyStr
+    restore_namespace_filter: NonEmptyStr | EmptyStrToNone = None
     restore_batch_size: int | EmptyStrToNone = None
     restore_num_insertion_workers: int | EmptyStrToNone = None
     restore_num_parallel_collections: int | EmptyStrToNone = None
@@ -272,6 +283,22 @@ class RestoreCreate(BaseCaseInsensitiveModel):
             if isinstance(sid, int):
                 return {**data, "service_id": str(sid)}
         return data
+
+    @model_validator(mode="after")
+    def _reject_namespace_filter_for_physical_restore(self) -> Self:
+        """Reject selective namespace restores for physical backups.
+
+        :return: The validated restore request.
+        :raises ValueError: If a physical restore includes a namespace filter.
+        """
+        if (
+            self.backup_type == BackupType.PBM_PHYSICAL
+            and self.restore_namespace_filter
+        ):
+            raise ValueError(
+                "Namespace Filter is only supported for logical MongoDB restores"
+            )
+        return self
 
 
 def restore_config_restore_from_form(
@@ -347,6 +374,17 @@ class RestoreForm(TaskFormModel):
             description="Optional path to MongoDB URI credentials on the Nomad node",
         ),
     ] = None
+    restore_namespace_filter: Annotated[
+        str | None,
+        Ui(
+            label="Namespace Filter",
+            section="RestoreOptions",
+            description=(
+                "Optional database or collection patterns to restore, separated by "
+                "commas (for example, db1.*,db2.collection)"
+            ),
+        ),
+    ] = None
     restore_batch_size: Annotated[
         int | None, Ui(label="Batch Size", section="RestoreOptions")
     ] = None
@@ -400,6 +438,9 @@ class RestoreTaskWrite(BaseModel):
     :type backup_type: BackupType
     :param backup_source: Backup name or timestamp to restore from.
     :type backup_source: NonEmptyStr
+    :param restore_namespace_filter: Optional database or collection namespace
+        filter for a logical restore.
+    :type restore_namespace_filter: str | None
     :param restore_batch_size: Number of documents to buffer.
     :type restore_batch_size: int | None
     :param restore_num_insertion_workers: Insertion workers per collection.
@@ -425,6 +466,7 @@ class RestoreTaskWrite(BaseModel):
     service_id: int | None = None
     backup_type: BackupType
     backup_source: NonEmptyStr
+    restore_namespace_filter: str | None = None
     restore_batch_size: int | None = None
     restore_num_insertion_workers: int | None = None
     restore_num_parallel_collections: int | None = None
@@ -434,6 +476,22 @@ class RestoreTaskWrite(BaseModel):
     restore_mongod_location: str | None = None
     restore_mongod_location_map: str | None = None
     credentials_path: str | None = None
+
+    @model_validator(mode="after")
+    def _reject_namespace_filter_for_physical_restore(self) -> Self:
+        """Reject selective namespace restores for physical JSON requests.
+
+        :return: The validated restore request.
+        :raises ValueError: If a physical restore includes a namespace filter.
+        """
+        if (
+            self.backup_type == BackupType.PBM_PHYSICAL
+            and self.restore_namespace_filter
+        ):
+            raise ValueError(
+                "Namespace Filter is only supported for logical MongoDB restores"
+            )
+        return self
 
 
 class RestoreTaskLegModel(BaseModel):
@@ -520,6 +578,8 @@ class RestoreLegPayloadModel(BaseModel):
     :type backup_source: NonEmptyStr
     :param backup_type: Backup type for restore execution.
     :type backup_type: BackupType
+    :param namespace: Optional namespace filter for selective logical restores.
+    :type namespace: NonEmptyStr | EmptyStrToNone
     :param credentials_path: Optional path to MongoDB URI credentials.
     :type credentials_path: NonEmptyStr | EmptyStrToNone
     :param service_name: Optional PMM service name annotation.
@@ -530,6 +590,7 @@ class RestoreLegPayloadModel(BaseModel):
     hostname: NonEmptyStr
     backup_source: NonEmptyStr
     backup_type: BackupType
+    namespace: NonEmptyStr | EmptyStrToNone = None
     credentials_path: NonEmptyStr | EmptyStrToNone = None
     service_name: NonEmptyStr | None = None
 
@@ -545,6 +606,7 @@ class RestoreLegPayloadModel(BaseModel):
             hostname=form.hostname,
             backup_source=form.backup_source,
             backup_type=form.backup_type,
+            namespace=form.restore_namespace_filter or None,
             credentials_path=form.credentials_path or None,
             service_name=service_name,
         )
