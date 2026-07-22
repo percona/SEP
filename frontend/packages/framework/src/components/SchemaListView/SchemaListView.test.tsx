@@ -49,8 +49,8 @@ const listView: ListView = {
 };
 
 const rows = [
-  { id: 1, name: 'alpha', status: 'completed' },
-  { id: 2, name: 'beta', status: 'failed' },
+  { id: 1, name: 'alpha', status: 'success' },
+  { id: 2, name: 'beta', status: 'running' },
 ];
 
 describe('SchemaListView — renderListColumn override', () => {
@@ -63,19 +63,31 @@ describe('SchemaListView — renderListColumn override', () => {
     render(<SchemaListView listView={listView} data={rows} renderListColumn={renderListColumn} />);
 
     // status column → override
-    expect(screen.getByTestId('custom-status-1')).toHaveTextContent('custom:completed');
-    expect(screen.getByTestId('custom-status-2')).toHaveTextContent('custom:failed');
+    expect(screen.getByTestId('custom-status-1')).toHaveTextContent('custom:success');
+    expect(screen.getByTestId('custom-status-2')).toHaveTextContent('custom:running');
     // name column → no override returned (undefined) → default formatCellValue (plain text)
     expect(screen.getByText('alpha')).toBeInTheDocument();
     expect(screen.getByText('beta')).toBeInTheDocument();
   });
 
   it('renders default formatCellValue for every column when no override is supplied', () => {
-    render(<SchemaListView listView={listView} data={rows} />);
+    const { container } = render(<SchemaListView listView={listView} data={rows} />);
     expect(screen.getByText('alpha')).toBeInTheDocument();
-    // status format renders a chip with the raw label text
-    expect(screen.getByText('completed')).toBeInTheDocument();
+    // status format renders the shared TaskHistoryStatusBadge: mapped label text
+    // and a data-status attribute, with `running` in the distinct animated state.
+    expect(screen.getByText('Done')).toBeInTheDocument();
+    expect(screen.getByText('Running')).toBeInTheDocument();
+    expect(container.querySelector('[data-status="success"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-status="running"]')).toBeInTheDocument();
     expect(screen.queryByTestId('custom-status-1')).toBeNull();
+  });
+
+  it('falls back to a plain chip for an unrecognized status value', () => {
+    const { container } = render(
+      <SchemaListView listView={listView} data={[{ id: 1, name: 'alpha', status: 'weird' }]} />,
+    );
+    expect(screen.getByText('weird')).toBeInTheDocument();
+    expect(container.querySelector('[data-status]')).toBeNull();
   });
 
   it('never routes the actions column through the override', () => {
