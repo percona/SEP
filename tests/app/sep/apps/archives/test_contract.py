@@ -20,22 +20,17 @@ shared :class:`DerivedRouterContractTests`. The generic body generator recurses
 into the ``source`` / ``destination`` / ``host`` union groups and resolves their
 nested inventory references against the seeded mock inventory; the app-specific
 values the generic generator cannot infer are pinned through
-``create_body_overrides``:
-
-* ``delete_data`` / ``destination`` — a *delete-without-archiving* create, so no
-  destination is posted. The generator seeds both the source and destination table
-  references from the one seeded ``MOCK_CREATED_TABLE_ID``, which the route's
-  "source and destination tables cannot be the same" rule rejects; dropping the
-  destination sidesteps the collision while the ``source`` and ``host`` groups still
-  exercise the generator's nested-reference recursion. Setting ``delete_data`` keeps
-  the ``_check_destination_presence`` validator satisfied with an absent destination.
-  The same-table rule itself is covered by the archives dep tests.
-* ``swap_drop`` — the ``__form_rules__`` ``FailRule`` accepts only ``PURGE_ONLY``.
-* ``where`` — the field's ``Requires`` rule makes it mandatory unless ``SWAP_DROP``.
+:data:`~tests.app.sep.apps.archives.build_pins.ARCHIVES_DELETE_PINS` — a
+*delete-without-archiving* create that drops the ``destination`` (and its
+``host``) so the seeded source and destination table references never collide,
+while the ``source`` group still exercises the generator's nested-reference
+recursion. The archive-*with*-destination path is covered in-process by
+``test_oneof_schema_determinism`` and by the builder-level unit tests. See the
+pin module for the per-field rationale.
 """
 
 from app.sep.apps.archives.app import app as archives_app
-from app.sep.apps.archives.constants import SwapDropEnum
+from tests.app.sep.apps.archives.build_pins import ARCHIVES_DELETE_PINS
 from tests.app.sep.apps.framework.contract_suite import DerivedRouterContractTests
 
 
@@ -50,9 +45,4 @@ class TestArchivesContract(DerivedRouterContractTests):
 
     app_def = archives_app
     remapped_username = None
-    create_body_overrides = {
-        "swap_drop": SwapDropEnum.PURGE_ONLY,
-        "where": "id < 100",
-        "delete_data": True,
-        "destination": None,
-    }
+    create_body_overrides = ARCHIVES_DELETE_PINS

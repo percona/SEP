@@ -216,7 +216,9 @@ def select_branch(field: FieldInfo) -> type[BaseModel] | None:
     return args[0]
 
 
-def _ref_overrides(model: type[BaseModel]) -> dict[str, Any]:
+def _ref_overrides(
+    model: type[BaseModel], *, skip: frozenset[str] = frozenset()
+) -> dict[str, Any]:
     """Return the override map pinning ``model``'s inventory references to seeded ids.
 
     Maps each ``ServiceRef`` / ``SchemaRef`` / ``TableRef`` field to its seeded
@@ -226,11 +228,24 @@ def _ref_overrides(model: type[BaseModel]) -> dict[str, Any]:
     recursively-resolved references — so a body whose references live inside union
     branches still resolves against the seeded mock inventory.
 
+    Only top-level fields are reachable from a caller's ``create_body_overrides``. A
+    reference nested inside a union branch is resolved by this recursion, but a
+    *rule-/validator-constrained non-ref scalar* nested inside a branch has no
+    override hook: the generic factory generates it freely and the body would fail to
+    build if a validator or ``__form_rules__`` rule constrains it. No current one-of
+    app hits this; a future one would need the constraint lifted to the branch model
+    or an override mechanism that reaches into branches.
+
     :param model: The create or branch model whose fields are inspected.
+    :param skip: Field names the caller pins itself; building them here (recursing into
+        a union branch only to have the caller discard it) is wasted, so they are
+        skipped.
     :return: A field-name → override-value map for ``ModelFactory.build``.
     """
     overrides: dict[str, Any] = {}
     for name, field in model.model_fields.items():
+        if name in skip:
+            continue
         ref = find_ref_marker(list(field.metadata))
         if isinstance(ref, HostRef):
             overrides[name] = (
@@ -271,7 +286,10 @@ def build_valid_create_body(
     model = app_def.create_model
     if model is None:
         return None
-    overrides: dict[str, Any] = {"task_name": task_name, **_ref_overrides(model)}
+    overrides: dict[str, Any] = {
+        "task_name": task_name,
+        **_ref_overrides(model, skip=frozenset(create_body_overrides or ())),
+    }
     if create_body_overrides:
         overrides.update(create_body_overrides)
     instance = ModelFactory.create_factory(model).build(**overrides)
