@@ -839,7 +839,14 @@ export function AppDetailPage({
             <Typography variant="h4">
               {title} #{id}
             </Typography>
-            {isTaskHistoryStatus(task.status) && <TaskHistoryStatusBadge status={task.status} />}
+            {isTaskHistoryStatus(task.status) ? (
+              <TaskHistoryStatusBadge status={task.status} />
+            ) : typeof task.status === 'string' ? (
+              // Unrecognized string status (unexpected/older value): fall back to
+              // a plain chip so status never silently disappears, matching
+              // SchemaListView's status-cell fallback.
+              <Chip label={task.status} size="small" />
+            ) : null}
             {multi && !browseOnly && (
               <>
                 <Button
@@ -950,7 +957,14 @@ export function AppDetailPage({
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, ml: 5 }}>
         <Typography variant="h4">{taskName}</Typography>
-        {isTaskHistoryStatus(task.status) && <TaskHistoryStatusBadge status={task.status} />}
+        {isTaskHistoryStatus(task.status) ? (
+          <TaskHistoryStatusBadge status={task.status} />
+        ) : typeof task.status === 'string' ? (
+          // Unrecognized string status (unexpected/older value): fall back to a
+          // plain chip so status never silently disappears, matching
+          // SchemaListView's status-cell fallback.
+          <Chip label={task.status} size="small" />
+        ) : null}
       </Box>
 
       <ActionBar

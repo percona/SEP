@@ -988,14 +988,19 @@ describe('AppDetailPage — header status badge', () => {
     expect(container.querySelector('[data-status="running"]')).toBeInTheDocument();
   });
 
-  it('renders no badge for an unrecognized status (no grey default fallback)', () => {
+  it('falls back to a plain chip (no badge) for an unrecognized status', () => {
     mockUseAppTask.mockReturnValue({
-      data: { id: 1, name: 'FECHK', status: 'completed' },
+      data: { id: 1, name: 'FECHK', status: 'weird' },
       isLoading: false,
     });
 
     const { container } = renderAt('/apps/checksums/task/FECHK');
 
+    // Unrecognized string still shows the raw value in a plain header chip so
+    // status never silently disappears, but without the badge's data-status
+    // attribute. (The Overview field also echoes the raw value, hence getAll.)
+    expect(screen.getAllByText('weird').length).toBeGreaterThan(0);
+    expect(container.querySelector('.MuiChip-root')).toHaveTextContent('weird');
     expect(container.querySelector('[data-status]')).toBeNull();
   });
 
