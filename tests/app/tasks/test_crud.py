@@ -35,7 +35,6 @@ from app.core.pagination import (
 from app.core.utils.date_time import utc_now
 from app.tasks.crud import (
     DispatchLockManager,
-    MAX_SYSTEM_STATUS_POINTS_PER_NAME,
     TaskHistoryLogManager,
     TaskHistoryManager,
     TaskManager,
@@ -110,6 +109,7 @@ async def _create_task_history(
     snippet_filename: str | None = None,
     finished_at: datetime | None = None,
     executed_by: str | None = None,
+    created_at: datetime | None = None,
 ) -> TaskHistory:
     """Create and persist a task history record.
 
@@ -126,6 +126,9 @@ async def _create_task_history(
     :param executed_by: Optional executor marker (e.g. ``SYSTEM_USER``) stamped
         on the row; left at the model default when ``None``.
     :type executed_by: str | None
+    :param created_at: Optional ``created_at`` to force on the row; left at the
+        model default (``utc_now``) when ``None``.
+    :type created_at: datetime | None
     :return: The persisted task history.
     :rtype: TaskHistory
     """
@@ -143,6 +146,7 @@ async def _create_task_history(
             "meta": meta,
             "tracking": {"allocation_id": None, "evaluation_id": None},
         },
+        **({"created_at": created_at} if created_at is not None else {}),
     )
     return await TaskHistoryManager.save(session, history)
 
@@ -913,7 +917,7 @@ class TestTaskHistoryManagerRecentSystemStatusPoints:
         )
 
         points = await TaskHistoryManager.recent_system_status_points_by_task_names(
-            session, [task.name]
+            session, {task.name: utc_now() - timedelta(days=1)}
         )
 
         assert [point.status for point in points[task.name]] == [
@@ -939,7 +943,7 @@ class TestTaskHistoryManagerRecentSystemStatusPoints:
         )
 
         points = await TaskHistoryManager.recent_system_status_points_by_task_names(
-            session, [task.name]
+            session, {task.name: utc_now() - timedelta(days=1)}
         )
 
         assert [point.status for point in points[task.name]] == [
@@ -960,17 +964,17 @@ class TestTaskHistoryManagerRecentSystemStatusPoints:
         )
 
         points = await TaskHistoryManager.recent_system_status_points_by_task_names(
-            session, [task.name]
+            session, {task.name: utc_now() - timedelta(days=1)}
         )
 
         assert task.name not in points
 
     @pytest.mark.asyncio
-    async def test_empty_names_returns_empty(self, session: AsyncSession) -> None:
-        """Assert an empty name list short-circuits to an empty mapping."""
+    async def test_empty_thresholds_returns_empty(self, session: AsyncSession) -> None:
+        """Assert an empty threshold map short-circuits to an empty mapping."""
         assert (
             await TaskHistoryManager.recent_system_status_points_by_task_names(
-                session, []
+                session, {}
             )
             == {}
         )
@@ -994,7 +998,11 @@ class TestTaskHistoryManagerRecentSystemStatusPoints:
         )
 
         points = await TaskHistoryManager.recent_system_status_points_by_task_names(
-            session, [first.name, second.name]
+            session,
+            {
+                first.name: utc_now() - timedelta(days=1),
+                second.name: utc_now() - timedelta(days=1),
+            },
         )
 
         assert [point.status for point in points[first.name]] == [
@@ -1005,10 +1013,30 @@ class TestTaskHistoryManagerRecentSystemStatusPoints:
         ]
 
     @pytest.mark.asyncio
-    async def test_caps_points_per_name(self, session: AsyncSession) -> None:
-        """Assert only the newest ``MAX_SYSTEM_STATUS_POINTS_PER_NAME`` are kept."""
-        task = await _create_task(session, name="points-cap")
-        for _ in range(MAX_SYSTEM_STATUS_POINTS_PER_NAME + 5):
+    async def test_excludes_points_before_cutoff(self, session: AsyncSession) -> None:
+        """Assert rows older than a name's cutoff are excluded."""
+        task = await _create_task(session, name="points-cutoff")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, {task.name: utc_now() + timedelta(days=1)}
+        )
+
+        assert task.name not in points
+
+    @pytest.mark.asyncio
+    async def test_returns_all_points_at_or_after_cutoff(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the query is time-bound, not capped at a fixed row count."""
+        task = await _create_task(session, name="points-uncapped")
+        row_count = 55
+        for _ in range(row_count):
             await _create_task_history(
                 session,
                 task,
@@ -1017,10 +1045,42 @@ class TestTaskHistoryManagerRecentSystemStatusPoints:
             )
 
         points = await TaskHistoryManager.recent_system_status_points_by_task_names(
-            session, [task.name]
+            session, {task.name: utc_now() - timedelta(days=1)}
         )
 
-        assert len(points[task.name]) == MAX_SYSTEM_STATUS_POINTS_PER_NAME
+        assert len(points[task.name]) == row_count
+
+    @pytest.mark.asyncio
+    async def test_cutoff_is_per_name(self, session: AsyncSession) -> None:
+        """Assert each name is filtered by its own cutoff, not a shared bound."""
+        included = await _create_task(session, name="points-cutoff-included")
+        excluded = await _create_task(session, name="points-cutoff-excluded")
+        base = utc_now()
+        await _create_task_history(
+            session,
+            included,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+            created_at=base,
+        )
+        await _create_task_history(
+            session,
+            excluded,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+            created_at=base,
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session,
+            {
+                included.name: base - timedelta(minutes=5),
+                excluded.name: base + timedelta(minutes=5),
+            },
+        )
+
+        assert included.name in points
+        assert excluded.name not in points
 
 
 # ---------------------------------------------------------------------------

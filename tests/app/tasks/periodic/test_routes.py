@@ -29,6 +29,7 @@ from app.core.utils.date_time import utc_now
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.models import (
     SYSTEM_USER,
+    Task,
     TaskHistory,
     TaskHistoryStatusEnum,
     TaskWrite,
@@ -92,7 +93,7 @@ async def _add_history(
 
 async def _add_history_row(
     tasks_session: AsyncSession,
-    task,
+    task: Task,
     *,
     task_status: TaskHistoryStatusEnum,
     created_at: datetime,
@@ -318,6 +319,60 @@ class TestPeriodicTaskLastRunStatus:
         assert statuses["schedule-two"] == "success"
 
     @pytest_asyncio.fixture
+    async def seeded_staggered_schedules(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed two schedules on one task name dispatched minutes apart.
+
+        Each schedule must resolve to the system run that followed its own
+        dispatch, not the other schedule's run -- the shared name's query cutoff
+        is the earlier dispatch, so both runs are in play for both schedules.
+        """
+        early = utc_now() - timedelta(minutes=10)
+        late = utc_now()
+        await _add_periodic_task(
+            celery_beat_session,
+            name="early-schedule",
+            task_name="staggered-task",
+            last_run_at=early,
+        )
+        await _add_periodic_task(
+            celery_beat_session,
+            name="late-schedule",
+            task_name="staggered-task",
+            last_run_at=late,
+        )
+        task = await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="staggered-task")),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=early + timedelta(seconds=1),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.FAILED,
+            created_at=late + timedelta(seconds=1),
+        )
+
+    def test_staggered_schedules_resolve_own_runs(
+        self, periodic_test_client, seeded_staggered_schedules
+    ):
+        """Assert each schedule on a shared name resolves to its own dispatch."""
+        response = periodic_test_client.get("/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        statuses = {row["name"]: row["last_run_status"] for row in response.json()}
+
+        assert statuses["early-schedule"] == "success"
+        assert statuses["late-schedule"] == "failed"
+
+    @pytest_asyncio.fixture
     async def seeded_retrieve(
         self,
         celery_beat_session: AsyncSession,
@@ -458,6 +513,84 @@ class TestPeriodicTaskLastRunStatus:
         assert response.status_code == status.HTTP_200_OK
         row = next(row for row in response.json() if row["name"] == "later-run")
         assert row["last_run_status"] == "success"
+
+    @pytest_asyncio.fixture
+    async def seeded_subsecond_dispatch(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed a schedule whose ``last_run_at`` carries sub-second precision.
+
+        ``last_run_at`` keeps microseconds while ``TaskHistory.created_at`` is
+        floored to whole seconds, so comparing at the finer granularity would
+        place the schedule's own history row just before the dispatch and miss it.
+        """
+        base = utc_now()
+        await _add_periodic_task(
+            celery_beat_session,
+            name="subsecond",
+            task_name="subsecond-task",
+            last_run_at=base + timedelta(microseconds=412000),
+        )
+        task = await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="subsecond-task")),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=base,
+        )
+
+    def test_subsecond_dispatch_reports_own_run(
+        self, periodic_test_client, seeded_subsecond_dispatch
+    ):
+        """Assert a sub-second last_run_at still matches its whole-second row."""
+        response = periodic_test_client.get("/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        row = next(row for row in response.json() if row["name"] == "subsecond")
+        assert row["last_run_status"] == "success"
+
+
+class TestListPeriodicTasksByTaskName:
+    """Test last-run-status population on GET /{task_name}/periodic/."""
+
+    @pytest_asyncio.fixture
+    async def seeded_by_task_name(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed an executable task, a run schedule for it, and a system history row."""
+        ran_at = utc_now()
+        task = await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="by-name-task")),
+        )
+        await _add_periodic_task(
+            celery_beat_session,
+            name="by-name-schedule",
+            task_name="by-name-task",
+            last_run_at=ran_at,
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=ran_at,
+        )
+
+    def test_list_by_task_name_reports_last_run_status(
+        self, periodic_test_client, seeded_by_task_name
+    ):
+        """Assert the by-task-name list route also carries last_run_status."""
+        response = periodic_test_client.get("/by-name-task/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["last_run_status"] == "success"
 
 
 class TestUpdatePeriodicTask:

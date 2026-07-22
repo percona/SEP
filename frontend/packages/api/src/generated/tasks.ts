@@ -929,7 +929,6 @@ export interface components {
      *         earliest system-triggered history for this task name at or after the
      *         schedule's ``last_run_at``, so a later unrelated system run of the same
      *         task name is not misattributed.
-     *     :type last_run_status: TaskHistoryStatusEnum | None
      *     :param interval: The interval schedule for the task. Defaults to None. This field
      *         is populated with the alias "model_intervalschedule".
      *     :type interval: IntervalSchedule | None

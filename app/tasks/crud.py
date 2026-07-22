@@ -16,10 +16,10 @@
 """Define database operations for the Tasks API."""
 
 import logging
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import datetime
 
-from sqlalchemy import CursorResult, delete, func, literal, update
+from sqlalchemy import CursorResult, delete, func, literal, or_, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
@@ -53,8 +53,6 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 SYSTEM_EXECUTOR_IDS = frozenset({SYSTEM_USER, str(SERVICE_PRINCIPAL_ID)})
-
-MAX_SYSTEM_STATUS_POINTS_PER_NAME = 50
 
 
 class TaskManager(BaseSQLModelManager):
@@ -643,79 +641,63 @@ class TaskHistoryManager(BaseSQLModelManager):
     async def recent_system_status_points_by_task_names(
         cls,
         session: AsyncSession,
-        names: Sequence[str],
+        thresholds: Mapping[str, datetime],
     ) -> dict[str, list[TaskHistoryStatusPoint]]:
-        """Return recent system-triggered status observations per task name.
+        """Return system-triggered status observations per task name from a cutoff.
 
-        For each task name, collect the ``created_at``/``status`` of its most
-        recent history rows executed by a system identity
-        (:data:`SYSTEM_EXECUTOR_IDS`), so a caller can attribute a specific
-        periodic schedule's run by comparing against that schedule's own
+        For each ``name -> cutoff`` entry, collect the ``created_at``/``status``
+        of every history row for that name executed by a system identity
+        (:data:`SYSTEM_EXECUTOR_IDS`) whose ``created_at`` is at or after
+        ``cutoff``, so a caller can attribute a specific periodic schedule's run
+        by taking the earliest point at or after that schedule's own
         ``last_run_at``. Points are grouped by name and returned oldest-first.
 
-        Only the newest :data:`MAX_SYSTEM_STATUS_POINTS_PER_NAME` rows per name
-        are kept -- a schedule's own run is its most recent dispatch, so it sits
-        within that window. Names whose window is saturated are logged at debug
-        level.
+        Bounding by time rather than a fixed row count guarantees a schedule's own
+        run is never evicted by later same-name runs (chain children, other
+        schedules, a frequently-firing name); the caller passes each name's cutoff
+        as the earliest ``last_run_at`` among the schedules being resolved for it.
 
         :param session: The asynchronous session used for query execution.
-        :param names: Task names to resolve. Duplicates are ignored.
+        :param thresholds: Map of task name to the earliest ``created_at`` to
+            include. Empty short-circuits to an empty mapping.
         :return: A mapping of task name to its system-run status points, ascending
             by ``created_at`` then ``id``; names with no such history are absent.
         """
-        unique_names = list(dict.fromkeys(names))
-        if not unique_names:
+        if not thresholds:
             return {}
 
-        ranked = (
+        query = (
             select(
                 col(Task.name).label("task_name"),
                 col(TaskHistory.created_at).label("created_at"),
                 col(TaskHistory.status).label("status"),
-                func.row_number()
-                .over(
-                    partition_by=col(Task.name),
-                    order_by=(
-                        col(TaskHistory.created_at).desc(),
-                        col(TaskHistory.id).desc(),
-                    ),
-                )
-                .label("row_number"),
             )
             .select_from(TaskHistory)
             .join(Task)
             .where(
-                col(Task.name).in_(unique_names),
                 col(TaskHistory.status).isnot(None),
                 col(TaskHistory.executed_by).in_(SYSTEM_EXECUTOR_IDS),
+                or_(
+                    *(
+                        and_(
+                            col(Task.name) == name,
+                            col(TaskHistory.created_at) >= cutoff,
+                        )
+                        for name, cutoff in thresholds.items()
+                    )
+                ),
             )
-            .subquery()
-        )
-        query = (
-            select(ranked.c.task_name, ranked.c.created_at, ranked.c.status)
-            .where(ranked.c.row_number <= MAX_SYSTEM_STATUS_POINTS_PER_NAME + 1)
-            .order_by(ranked.c.task_name, ranked.c.row_number.desc())
+            .order_by(
+                col(Task.name),
+                col(TaskHistory.created_at),
+                col(TaskHistory.id),
+            )
         )
         result = await cls._exec(session, query)
         points: dict[str, list[TaskHistoryStatusPoint]] = {}
         for row in result.all():
             points.setdefault(row.task_name, []).append(
                 TaskHistoryStatusPoint(created_at=row.created_at, status=row.status)
-            )
-        # Fetch one extra row per name so a full window proves real truncation
-        # rather than an exact-fit count, then trim the probe row back off.
-        truncated = [
-            name
-            for name, name_points in points.items()
-            if len(name_points) > MAX_SYSTEM_STATUS_POINTS_PER_NAME
-        ]
-        for name in truncated:
-            del points[name][:-MAX_SYSTEM_STATUS_POINTS_PER_NAME]
-        if truncated:
-            logger.debug(
-                "Truncated system status points at %d per task name for: %s",
-                MAX_SYSTEM_STATUS_POINTS_PER_NAME,
-                ", ".join(truncated),
             )
         return points
 

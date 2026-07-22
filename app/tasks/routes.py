@@ -91,7 +91,7 @@ from app.tasks.models import (
 )
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.models import PeriodicTaskCreate, PeriodicTaskResponse
-from app.tasks.periodic.routes import attach_last_run_status
+from app.tasks.periodic.utils import attach_last_run_status
 
 logger = logging.getLogger(__name__)
 
