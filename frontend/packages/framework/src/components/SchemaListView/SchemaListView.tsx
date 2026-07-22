@@ -24,6 +24,7 @@ import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
 import type { ListColumn, ListView } from '@sep/api';
 import { SEP_TABLE_CLASS } from '../../constants';
 import { ScheduleCell } from '../ScheduleCell';
+import { TaskHistoryStatusBadge, isTaskHistoryStatus } from '../TaskHistoryTable';
 import {
   selectSchedule,
   useScheduledTasksForApp,
@@ -91,20 +92,12 @@ function formatCellValue(value: unknown, format: ListColumn['format']): ReactNod
     case 'chip':
       return <Chip label={str} size="small" />;
     case 'status':
-      return (
-        <Chip
-          label={str}
-          size="small"
-          color={
-            str === 'completed' || str === 'success'
-              ? 'success'
-              : str === 'failed' || str === 'error'
-                ? 'error'
-                : str === 'running' || str === 'in_progress'
-                  ? 'info'
-                  : 'default'
-          }
-        />
+      // Unrecognized values (no live backend producer) fall back to a plain
+      // chip rather than indexing StatusBadge's STATUS_MAP with an unknown key.
+      return isTaskHistoryStatus(str) ? (
+        <TaskHistoryStatusBadge status={str} />
+      ) : (
+        <Chip label={str} size="small" />
       );
     case 'date':
       return new Date(str).toLocaleDateString();

@@ -51,7 +51,12 @@ import {
   type AppSchema,
 } from '@sep/api';
 import { resolvePath } from '../../utils/resolvePath';
-import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
+import {
+  TaskHistoryTable,
+  TaskHistoryStatusBadge,
+  isTaskHistoryStatus,
+  type TaskHistoryEntry,
+} from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { ScheduleSummary } from '../ScheduleSummary';
 import {
@@ -834,19 +839,7 @@ export function AppDetailPage({
             <Typography variant="h4">
               {title} #{id}
             </Typography>
-            {typeof task.status === 'string' && (
-              <Chip
-                label={task.status}
-                size="small"
-                color={
-                  task.status === 'completed' || task.status === 'success'
-                    ? 'success'
-                    : task.status === 'failed'
-                      ? 'error'
-                      : 'default'
-                }
-              />
-            )}
+            {isTaskHistoryStatus(task.status) && <TaskHistoryStatusBadge status={task.status} />}
             {multi && !browseOnly && (
               <>
                 <Button
@@ -957,19 +950,7 @@ export function AppDetailPage({
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, ml: 5 }}>
         <Typography variant="h4">{taskName}</Typography>
-        {typeof task.status === 'string' && (
-          <Chip
-            label={task.status}
-            size="small"
-            color={
-              task.status === 'completed' || task.status === 'success'
-                ? 'success'
-                : task.status === 'failed'
-                  ? 'error'
-                  : 'default'
-            }
-          />
-        )}
+        {isTaskHistoryStatus(task.status) && <TaskHistoryStatusBadge status={task.status} />}
       </Box>
 
       <ActionBar
