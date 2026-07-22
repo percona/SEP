@@ -210,11 +210,33 @@ class TestCredsPathFromConfig:
         """Return ``credentials_path`` straight from the parsed config dict."""
         assert _creds_path_from_config({"credentials_path": "/s/uri"}) == "/s/uri"
 
-    @pytest.mark.parametrize("config", [None, {}, {"other": 1}])
+    @pytest.mark.parametrize(
+        "config",
+        [None, {}, {"other": 1}, "a bare scalar", ["a", "list"], 42],
+    )
     def test_falls_back_to_home(self, monkeypatch, config) -> None:
-        """Fall back to ``$HOME`` for missing/empty/path-less configs."""
+        """Fall back to ``$HOME`` for missing/empty/path-less/non-dict configs.
+
+        ``yaml.safe_load`` can legally return a truthy non-dict (a bare scalar or a
+        list); those must be treated as missing config rather than raising
+        ``AttributeError`` from a ``.get()`` call on a non-dict.
+        """
         monkeypatch.setenv("HOME", "/home/pbm")
         assert _creds_path_from_config(config) == "/home/pbm/.mongodb_uri"
+
+    @pytest.mark.parametrize("config", ["a bare scalar", ["a", "list"], 42])
+    def test_exits_on_non_dict_when_home_unset(
+        self, monkeypatch, capsys, config
+    ) -> None:
+        """Exit 1 with the exact stderr for a non-dict config when HOME is unset."""
+        monkeypatch.delenv("HOME", raising=False)
+        with pytest.raises(SystemExit) as exc:
+            _creds_path_from_config(config, "backup")
+        assert exc.value.code == 1
+        assert capsys.readouterr().err == (
+            "PBM credentials path not set (credentials_path in backup config) "
+            "and HOME is unset\n"
+        )
 
     def test_defaults_to_restore_label_on_exit(self, monkeypatch, capsys) -> None:
         """Default the error label to ``restore`` when HOME is unset."""
