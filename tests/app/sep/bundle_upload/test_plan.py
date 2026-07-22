@@ -16,7 +16,7 @@
 """Define tests for the config-driven delivery plan schema and executor."""
 
 import re
-from pathlib import Path
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -32,7 +32,7 @@ from app.sep.bundle_upload.plan import (
     DeliveryPlanError,
     DeliveryPlanExecutor,
 )
-from app.sep.bundle_upload.seam import BundleUploader
+from app.sep.bundle_upload.seam import BundleSource, BundleUploader
 
 _BASE_URL = "http://localhost:8000/"
 _UPLOAD_URL = "http://localhost:8000/attachment/upload"
@@ -47,12 +47,21 @@ def api_fixture() -> RemoteAPI:
     return RemoteAPI(endpoint=_BASE_URL)
 
 
-@pytest.fixture(name="bundle_path")
-def bundle_path_fixture(tmp_path: Path) -> Path:
-    """Write a small bundle file and return its path."""
-    path = tmp_path / "bundle.tar.gz"
-    path.write_bytes(b"bundle-bytes")
-    return path
+@pytest.fixture(name="bundle")
+def bundle_fixture() -> BundleSource:
+    """Provide a small in-memory bundle source."""
+    content = b"bundle-bytes"
+    return BundleSource(filename="bundle.tar.gz", content=content, size=len(content))
+
+
+async def _chunks(content: bytes) -> AsyncIterator[bytes]:
+    """Yield ``content`` one byte at a time as an upstream stream would.
+
+    :param content: The bundle bytes to hand out in chunks.
+    :return: An async iterator over single-byte chunks.
+    """
+    for index in range(len(content)):
+        yield content[index : index + 1]
 
 
 def _multipart_fields(payload: MultipartWriter) -> dict[str, str]:
@@ -68,6 +77,22 @@ def _multipart_fields(payload: MultipartWriter) -> dict[str, str]:
         if name and "filename=" not in disposition:
             fields[name.group(1)] = part.decode()
     return fields
+
+
+async def _multipart_body(payload: MultipartWriter) -> bytes:
+    """Serialize a recorded multipart body, draining any streamed part.
+
+    :param payload: The multipart body aiohttp was handed for the upload.
+    :return: The encoded body, headers and boundaries included.
+    """
+    collected: list[bytes] = []
+
+    class _Collector:
+        async def write(self, chunk: bytes, **_kwargs: Any) -> None:
+            collected.append(bytes(chunk))
+
+    await payload.write(_Collector())
+    return b"".join(collected)
 
 
 def _file_part_dispositions(payload: MultipartWriter) -> list[str]:
@@ -312,7 +337,7 @@ class TestDeliveryPlanExecutor:
         assert isinstance(executor, BundleUploader)
 
     async def test_zero_step_plan_issues_only_the_upload(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Send exactly one multipart POST carrying the literal and input fields."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
@@ -325,7 +350,7 @@ class TestDeliveryPlanExecutor:
             async with api:
                 result = await executor.upload_bundle(
                     source_ref="src-9",
-                    bundle_path=bundle_path,
+                    bundle=bundle,
                     case_ref=None,
                     manifest=_MANIFEST,
                 )
@@ -338,8 +363,35 @@ class TestDeliveryPlanExecutor:
         assert result.reference == "att-1"
         assert result.detail == {"result": {"sys_id": "att-1"}}
 
+    async def test_streamed_bundle_reaches_the_multipart_body(self, api: RemoteAPI):
+        """Carry a bundle that arrives as an async byte stream, never buffering it."""
+        streamed = BundleSource(
+            filename="bundle.tar.gz", content=_chunks(b"bundle-bytes"), size=12
+        )
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-1"}},
+            )
+            async with api:
+                result = await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=streamed,
+                    case_ref=None,
+                    manifest=_MANIFEST,
+                )
+            body = await _multipart_body(
+                _recorded(mock, "attachment/upload").kwargs["data"]
+            )
+
+        assert b'filename="bundle.tar.gz"' in body
+        assert b"bundle-bytes" in body
+        assert result.reference == "att-1"
+
     async def test_zero_step_plan_omits_empty_request_maps(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Omit query parameters entirely when the plan declares none."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
@@ -348,7 +400,7 @@ class TestDeliveryPlanExecutor:
             async with api:
                 await executor.upload_bundle(
                     source_ref="src-9",
-                    bundle_path=bundle_path,
+                    bundle=bundle,
                     case_ref=None,
                     manifest=_MANIFEST,
                 )
@@ -357,7 +409,7 @@ class TestDeliveryPlanExecutor:
         assert "params" not in request.kwargs
 
     async def test_one_step_plan_feeds_output_into_the_upload(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Issue the lookup then the upload, carrying the extracted value forward."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
@@ -375,7 +427,7 @@ class TestDeliveryPlanExecutor:
             async with api:
                 result = await executor.upload_bundle(
                     source_ref="src-9",
-                    bundle_path=bundle_path,
+                    bundle=bundle,
                     case_ref="CS0001",
                     manifest=_MANIFEST,
                 )
@@ -395,7 +447,7 @@ class TestDeliveryPlanExecutor:
         assert result.detail == {"result": {"sys_id": "att-2"}}
 
     async def test_two_step_plan_chains_each_step_output_forward(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Forward the first step's output into the second, then both to the upload."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_two_step_plan()), api)
@@ -418,7 +470,7 @@ class TestDeliveryPlanExecutor:
             async with api:
                 result = await executor.upload_bundle(
                     source_ref="src-9",
-                    bundle_path=bundle_path,
+                    bundle=bundle,
                     case_ref="CS0001",
                     manifest=_MANIFEST,
                 )
@@ -433,7 +485,7 @@ class TestDeliveryPlanExecutor:
         assert result.reference == "att-3"
 
     async def test_manifest_input_is_sent_as_json(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Send the manifest as a JSON object string in its own multipart field."""
         payload = _upload_only_plan(
@@ -446,7 +498,7 @@ class TestDeliveryPlanExecutor:
             async with api:
                 await executor.upload_bundle(
                     source_ref="src-9",
-                    bundle_path=bundle_path,
+                    bundle=bundle,
                     case_ref=None,
                     manifest=_MANIFEST,
                 )
@@ -456,13 +508,15 @@ class TestDeliveryPlanExecutor:
 
         assert fields["manifest"] == '{"bundle": "diag", "size": 12}'
 
-    async def test_oversized_bundle_fails_before_any_request(
-        self, api: RemoteAPI, bundle_path: Path
-    ):
-        """Reject an over-cap bundle without touching the session."""
+    async def test_oversized_bundle_fails_before_any_request(self, api: RemoteAPI):
+        """Reject a bundle whose stated size is over cap without touching the session."""
         payload = _upload_only_plan()
         payload["max_bundle_size_mb"] = 1
-        bundle_path.write_bytes(b"x" * (1024 * 1024 + 1))
+        oversized = BundleSource(
+            filename="bundle.tar.gz",
+            content=_chunks(b"bundle-bytes"),
+            size=1024 * 1024 + 1,
+        )
         executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
 
         with aioresponses() as mock:
@@ -470,14 +524,14 @@ class TestDeliveryPlanExecutor:
                 with pytest.raises(DeliveryPlanError, match="limit"):
                     await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=oversized,
                         case_ref=None,
                         manifest=_MANIFEST,
                     )
             assert mock.requests == {}
 
     async def test_missing_case_ref_input_is_reported(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Fail with the input name when the plan needs a ``case_ref`` and none came."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
@@ -487,14 +541,14 @@ class TestDeliveryPlanExecutor:
                 with pytest.raises(DeliveryPlanError, match="case_ref"):
                     await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref=None,
                         manifest=_MANIFEST,
                     )
             assert mock.requests == {}
 
     async def test_step_without_body_but_with_outputs_fails(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Fail naming the step when a 204 leaves declared outputs unextractable."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
@@ -504,7 +558,7 @@ class TestDeliveryPlanExecutor:
                 with pytest.raises(DeliveryPlanError, match="lookup") as excinfo:
                     await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref="CS0001",
                         manifest=_MANIFEST,
                     )
@@ -512,7 +566,7 @@ class TestDeliveryPlanExecutor:
         assert "no body" in str(excinfo.value)
 
     async def test_unresolvable_output_pointer_reports_step_and_pointer(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Fail naming the step and pointer without echoing the response body."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
@@ -526,7 +580,7 @@ class TestDeliveryPlanExecutor:
                 with pytest.raises(DeliveryPlanError) as excinfo:
                     await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref="CS0001",
                         manifest=_MANIFEST,
                     )
@@ -537,7 +591,7 @@ class TestDeliveryPlanExecutor:
         assert "customer data" not in message
 
     async def test_boolean_output_keeps_its_json_spelling(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Forward a JSON ``true`` as ``"true"``, not Python's ``"True"``."""
         payload = _one_step_plan()
@@ -554,7 +608,7 @@ class TestDeliveryPlanExecutor:
             async with api:
                 await executor.upload_bundle(
                     source_ref="src-9",
-                    bundle_path=bundle_path,
+                    bundle=bundle,
                     case_ref="CS0001",
                     manifest=_MANIFEST,
                 )
@@ -565,7 +619,7 @@ class TestDeliveryPlanExecutor:
         assert fields["table_sys_id"] == "true"
 
     async def test_non_scalar_output_pointer_is_rejected(
-        self, api: RemoteAPI, bundle_path: Path
+        self, api: RemoteAPI, bundle: BundleSource
     ):
         """Fail when a declared output pointer resolves to a container."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
@@ -579,7 +633,7 @@ class TestDeliveryPlanExecutor:
                 with pytest.raises(DeliveryPlanError, match="non-scalar"):
                     await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref="CS0001",
                         manifest=_MANIFEST,
                     )
@@ -594,7 +648,7 @@ class TestDeliveryPlanExecutor:
     async def test_step_error_propagates_and_stops_the_plan(
         self,
         api: RemoteAPI,
-        bundle_path: Path,
+        bundle: BundleSource,
         http_status: int,
         expected_exception: type[Exception],
     ):
@@ -606,7 +660,7 @@ class TestDeliveryPlanExecutor:
                 with pytest.raises(expected_exception):
                     await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref="CS0001",
                         manifest=_MANIFEST,
                     )
@@ -615,7 +669,7 @@ class TestDeliveryPlanExecutor:
         assert len(requests) == 1
 
     async def test_non_json_upload_response_yields_an_empty_result(
-        self, api: RemoteAPI, bundle_path: Path, caplog
+        self, api: RemoteAPI, bundle: BundleSource, caplog
     ):
         """Return an empty result and warn when a 2xx carries no JSON object."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
@@ -630,7 +684,7 @@ class TestDeliveryPlanExecutor:
                 async with api:
                     result = await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref=None,
                         manifest=_MANIFEST,
                     )
@@ -640,7 +694,7 @@ class TestDeliveryPlanExecutor:
         assert any("NoneType" in record.getMessage() for record in caplog.records)
 
     async def test_list_upload_response_yields_an_empty_result(
-        self, api: RemoteAPI, bundle_path: Path, caplog
+        self, api: RemoteAPI, bundle: BundleSource, caplog
     ):
         """Return an empty result and warn when the receiver answers with a list."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
@@ -652,7 +706,7 @@ class TestDeliveryPlanExecutor:
                 async with api:
                     result = await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref=None,
                         manifest=_MANIFEST,
                     )
@@ -662,7 +716,7 @@ class TestDeliveryPlanExecutor:
         assert any("list" in record.getMessage() for record in caplog.records)
 
     async def test_unresolvable_reference_pointer_keeps_the_detail(
-        self, api: RemoteAPI, bundle_path: Path, caplog
+        self, api: RemoteAPI, bundle: BundleSource, caplog
     ):
         """Preserve the response detail while reporting no reference, with a warning."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
@@ -674,7 +728,7 @@ class TestDeliveryPlanExecutor:
                 async with api:
                     result = await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref=None,
                         manifest=_MANIFEST,
                     )
@@ -688,7 +742,7 @@ class TestDeliveryPlanExecutor:
 class TestDeliveryPlanSecretRedaction:
     """Cover that plan-supplied secrets reach the wire but never the logs."""
 
-    async def _run_one_step(self, api: RemoteAPI, bundle_path: Path, caplog) -> list:
+    async def _run_one_step(self, api: RemoteAPI, bundle: BundleSource, caplog) -> list:
         """Run the ServiceNow-shaped plan and return the recorded requests."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
         with aioresponses() as mock:
@@ -706,17 +760,17 @@ class TestDeliveryPlanSecretRedaction:
                 async with api:
                     await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref="CS0001",
                         manifest=_MANIFEST,
                     )
             return [req for reqs in mock.requests.values() for req in reqs]
 
     async def test_header_secret_is_sent_but_masked_in_logs(
-        self, api: RemoteAPI, bundle_path: Path, caplog
+        self, api: RemoteAPI, bundle: BundleSource, caplog
     ):
         """Send the real API key on the wire while the debug log shows only a mask."""
-        requests = await self._run_one_step(api, bundle_path, caplog)
+        requests = await self._run_one_step(api, bundle, caplog)
 
         messages = [record.getMessage() for record in caplog.records]
         assert any("Sending" in message for message in messages)
@@ -728,10 +782,10 @@ class TestDeliveryPlanSecretRedaction:
         )
 
     async def test_body_secret_is_sent_but_masked_in_logs(
-        self, api: RemoteAPI, bundle_path: Path, caplog
+        self, api: RemoteAPI, bundle: BundleSource, caplog
     ):
         """Send the real client token in the JSON body while the log shows a mask."""
-        requests = await self._run_one_step(api, bundle_path, caplog)
+        requests = await self._run_one_step(api, bundle, caplog)
 
         messages = [record.getMessage() for record in caplog.records]
         assert all("real-client-token" not in message for message in messages)
@@ -741,7 +795,7 @@ class TestDeliveryPlanSecretRedaction:
         )
 
     async def test_multipart_field_secret_is_sent_but_absent_from_logs(
-        self, api: RemoteAPI, bundle_path: Path, caplog
+        self, api: RemoteAPI, bundle: BundleSource, caplog
     ):
         """Send the real secret in a multipart field while no log record carries it.
 
@@ -762,7 +816,7 @@ class TestDeliveryPlanSecretRedaction:
                 async with api:
                     await executor.upload_bundle(
                         source_ref="src-9",
-                        bundle_path=bundle_path,
+                        bundle=bundle,
                         case_ref=None,
                         manifest=_MANIFEST,
                     )
@@ -776,10 +830,10 @@ class TestDeliveryPlanSecretRedaction:
         )
 
     async def test_redaction_is_released_after_the_send(
-        self, api: RemoteAPI, bundle_path: Path, caplog
+        self, api: RemoteAPI, bundle: BundleSource, caplog
     ):
         """Restore the empty redaction sets once the plan finishes."""
-        await self._run_one_step(api, bundle_path, caplog)
+        await self._run_one_step(api, bundle, caplog)
 
         assert api._extra_sensitive_headers.get() == frozenset()
         assert api._extra_sensitive_body_fields.get() == frozenset()

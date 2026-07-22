@@ -19,7 +19,14 @@ __all__ = ["UPSTREAM_NON_JSON_HEADER", "BaseRemoteAPI", "RemoteAPI"]
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Generator, Iterable, Mapping
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterable,
+    AsyncIterator,
+    Generator,
+    Iterable,
+    Mapping,
+)
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from functools import cached_property, lru_cache
@@ -88,9 +95,13 @@ _REDACTED_VALUE = "****"
 # apart from an app-level JSON error at the same status code.
 UPSTREAM_NON_JSON_HEADER = "X-Upstream-Non-JSON"
 
-#: A single multipart file part: ``(filename, content, content_type)``. ``content``
-#: is either the raw bytes or an open binary handle streamed by aiohttp.
-FileSpec = tuple[str, bytes | BinaryIO, str]
+#: The body of a single multipart file part: raw bytes held in memory, an open
+#: binary handle, or an async iterator of chunks. aiohttp streams the latter two,
+#: so a caller forwarding a file it never has on disk passes the iterator through.
+FileContent = bytes | BinaryIO | AsyncIterable[bytes]
+
+#: A single multipart file part: ``(filename, content, content_type)``.
+FileSpec = tuple[str, FileContent, str]
 
 # Maps an upstream error status to the project exception that represents it, so
 # RemoteAPI raises app/core/exceptions classes instead of a bare HTTPException.
@@ -984,7 +995,8 @@ class RemoteAPI(BaseRemoteAPI):
         :param path: The API endpoint path to POST to.
         :param files: Multipart file parts keyed by field name; each value is a
             ``(filename, content, content_type)`` tuple. Pass an open binary file
-            handle as ``content`` to stream a large bundle with bounded memory.
+            handle or an async byte iterator as ``content`` to stream a large
+            bundle with bounded memory.
         :param fields: Scalar form fields sent alongside the files.
         :param kwargs: Additional keyword arguments passed through to the request.
         :return: The parsed JSON response, or ``None`` on a ``2xx`` response with

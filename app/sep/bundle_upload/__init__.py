@@ -27,9 +27,10 @@ from app.sep.bundle_upload.plan import (
     StepOutputValue,
     UploadStep,
 )
-from app.sep.bundle_upload.seam import BundleUploader, UploadResult
+from app.sep.bundle_upload.seam import BundleSource, BundleUploader, UploadResult
 
 __all__ = [
+    "BundleSource",
     "BundleUploader",
     "DeliveryPlan",
     "DeliveryPlanError",

@@ -46,7 +46,6 @@ __all__ = [
 
 import logging
 from collections.abc import Collection, Mapping
-from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 
 from fastapi import HTTPException
@@ -59,7 +58,7 @@ from app.core.utils.json_pointer import (
     JsonPointerResolutionError,
     resolve_json_pointer,
 )
-from app.sep.bundle_upload.seam import UploadResult
+from app.sep.bundle_upload.seam import BundleSource, UploadResult
 
 logger = logging.getLogger(__name__)
 
@@ -341,15 +340,15 @@ class DeliveryPlanExecutor:
         self,
         *,
         source_ref: str,
-        bundle_path: Path,
+        bundle: BundleSource,
         case_ref: str | None,
         manifest: Mapping[str, Any],
     ) -> UploadResult:
-        """Run the plan and upload the bundle at ``bundle_path``.
+        """Run the plan and upload ``bundle``.
 
         :param source_ref: An opaque reference string identifying the upload's
             origin.
-        :param bundle_path: The path to the bundle file to send.
+        :param bundle: The bundle bytes and the metadata describing them.
         :param case_ref: An optional case reference, or ``None`` to omit it.
         :param manifest: The bundle manifest sent alongside the file.
         :return: The extracted upload reference and the response detail; both
@@ -357,13 +356,10 @@ class DeliveryPlanExecutor:
         :raises DeliveryPlanError: When the bundle exceeds the configured size
             cap, the plan cites a send input the caller did not supply, or a
             declared output cannot be extracted from a step's response.
-        :raises OSError: Propagates from stat-ing and opening ``bundle_path``
-            (``FileNotFoundError`` when the bundle is gone, ``PermissionError``
-            when it is unreadable).
         :raises HTTPException: Propagates the project exception ``RemoteAPI``
             raises for an upstream error status.
         """
-        self._check_bundle_size(bundle_path)
+        self._check_bundle_size(bundle.size)
         inputs = {
             "source_ref": source_ref,
             "case_ref": case_ref,
@@ -372,16 +368,14 @@ class DeliveryPlanExecutor:
         outputs = {}
         for step in self._plan.resolution_steps:
             outputs[step.name] = await self._run_resolution_step(step, inputs, outputs)
-        return await self._run_upload_step(bundle_path, inputs, outputs)
+        return await self._run_upload_step(bundle, inputs, outputs)
 
-    def _check_bundle_size(self, bundle_path: Path) -> None:
+    def _check_bundle_size(self, size: int) -> None:
         """Reject an over-cap bundle before the transport is touched.
 
-        :param bundle_path: The bundle file to measure.
-        :raises DeliveryPlanError: When the file exceeds ``max_bundle_size_mb``.
-        :raises OSError: Propagates from stat-ing ``bundle_path``.
+        :param size: The bundle's size in bytes, as stated by its producer.
+        :raises DeliveryPlanError: When the size exceeds ``max_bundle_size_mb``.
         """
-        size = bundle_path.stat().st_size
         if size > self._plan.max_bundle_size_mb * _BYTES_PER_MIB:
             raise DeliveryPlanError(
                 f"Bundle is {size} bytes, above the configured "
@@ -521,23 +515,23 @@ class DeliveryPlanExecutor:
 
     async def _run_upload_step(
         self,
-        bundle_path: Path,
+        bundle: BundleSource,
         inputs: Mapping[str, str | None],
         outputs: Mapping[str, Mapping[str, str]],
     ) -> UploadResult:
         """Send the bundle in the plan's terminal multipart step.
 
-        The bundle is passed as an open handle so aiohttp streams it from disk.
-        Only the headers need masking here: the multipart body is an opaque
-        payload the request log never expands.
+        The bundle's content is handed to the transport as it arrived, so a
+        handle or an async iterator streams rather than being buffered. Only the
+        headers need masking here: the multipart body is an opaque payload the
+        request log never expands.
 
-        :param bundle_path: The bundle file to stream.
+        :param bundle: The bundle bytes and the metadata describing them.
         :param inputs: The send inputs keyed by their plan-facing names.
         :param outputs: Outputs extracted by the resolution steps.
         :return: The extracted upload reference and the response detail.
         :raises DeliveryPlanError: When a configured value cites a send input
             the caller did not supply.
-        :raises OSError: Propagates from opening ``bundle_path`` for reading.
         :raises HTTPException: Propagates the project exception ``RemoteAPI``
             raises for an upstream error status.
         """
@@ -549,16 +543,13 @@ class DeliveryPlanExecutor:
                 "fields": self._resolve_map(step.fields, inputs, outputs),
             }
         )
-        with (
-            self._api.redact_headers(_secret_valued_keys(step.headers)),
-            bundle_path.open("rb") as handle,
-        ):
+        with self._api.redact_headers(_secret_valued_keys(step.headers)):
             response = await self._api.upload(
                 step.path,
                 files={
                     step.file_field: (
-                        bundle_path.name,
-                        handle,
+                        bundle.filename,
+                        bundle.content,
                         step.file_content_type,
                     )
                 },
