@@ -257,6 +257,74 @@ class TestCredsPathFromConfig:
         assert "credentials_path in backup config" in capsys.readouterr().err
 
 
+class TestPerPayloadPreambleBehavior:
+    """Exercise each shipped payload's own copy of the preamble functions.
+
+    ``TestPerPayloadAssembly.test_region_matches_canonical`` guards that every
+    payload's marked region is byte-identical to the canonical source, but a
+    payload's own ``pbm()`` body only calls a subset of the preamble helpers (see
+    ``_EXPECTED_PBM_URI_CALLS``), leaving the other helper uncovered *in that
+    payload's copy* even though the identical code is covered elsewhere. Coverage
+    is tracked per source file, so exec'ing each payload's region directly here
+    closes that gap uniformly instead of leaving it to whichever payload happens
+    to call a given helper from its own ``pbm()``.
+    """
+
+    @staticmethod
+    def _load_region(payload: Path) -> dict[str, object]:
+        """Exec a payload's imports plus its marked preamble region into a namespace.
+
+        The imports (``os``/``sys``/``yaml``) precede the marker in every payload,
+        so including everything up to and including the region keeps the helpers'
+        module-level dependencies available without running the payload's ``pbm()``.
+
+        :param payload: The payload file to load the region from.
+        :return: The namespace populated by the region's function definitions.
+        """
+        text = payload.read_text(encoding="utf-8")
+        lines = text.split("\n")
+        end = lines.index(PREAMBLE_END)
+        namespace: dict[str, object] = {}
+        exec(compile("\n".join(lines[: end + 1]), str(payload), "exec"), namespace)
+        return namespace
+
+    @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
+    def test_creds_path_returns_config_path(
+        self, payload: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return the configured ``credentials_path`` from ``NOMAD_META_CONFIG``."""
+        namespace = self._load_region(payload)
+        monkeypatch.setenv("NOMAD_META_CONFIG", "credentials_path: /secrets/uri")
+        assert namespace["_creds_path"]("backup") == "/secrets/uri"
+
+    @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
+    def test_creds_path_falls_back_to_home(
+        self, payload: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fall back to ``$HOME/.mongodb_uri`` when ``NOMAD_META_CONFIG`` is unset."""
+        namespace = self._load_region(payload)
+        monkeypatch.delenv("NOMAD_META_CONFIG", raising=False)
+        monkeypatch.setenv("HOME", "/home/pbm")
+        assert namespace["_creds_path"]("backup") == "/home/pbm/.mongodb_uri"
+
+    @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
+    def test_creds_path_from_config_returns_dict_path(self, payload: Path) -> None:
+        """Return ``credentials_path`` straight from a parsed config dict."""
+        namespace = self._load_region(payload)
+        creds_path_from_config = namespace["_creds_path_from_config"]
+        assert creds_path_from_config({"credentials_path": "/s/uri"}) == "/s/uri"
+
+    @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
+    def test_creds_path_from_config_falls_back_on_non_dict(
+        self, payload: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fall back to ``$HOME`` for a non-dict config in every payload's copy."""
+        namespace = self._load_region(payload)
+        monkeypatch.setenv("HOME", "/home/pbm")
+        creds_path_from_config = namespace["_creds_path_from_config"]
+        assert creds_path_from_config(["a", "list"]) == "/home/pbm/.mongodb_uri"
+
+
 class TestPbmCreds:
     """Cover ``pbm_creds`` (reading the resolved credentials file)."""
 

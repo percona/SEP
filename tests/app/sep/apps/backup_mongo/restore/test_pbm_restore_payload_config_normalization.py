@@ -103,6 +103,30 @@ class TestLogicalAndPhysicalRestoreConfigNormalization:
 class TestRestoreConfigPayloadNormalization:
     """Cover the two ``script_config`` / ``current_pbm_config`` load sites."""
 
+    def test_unreadable_script_config_exits_cleanly(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture,
+    ):
+        """Exit 1 with the documented message when ``script_config`` can't be read.
+
+        Covers the ``except`` branch around the ``script_config`` load, distinct
+        from the non-dict normalization it wraps.
+        """
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+        (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
+        # No script_config file is written, so the open() call raises.
+
+        path = _APP_DIR / "pbm_restore_config_payload"
+        namespace: dict[str, object] = {}
+        with pytest.raises(SystemExit) as exc:
+            exec(compile(path.read_text(), str(path), "exec"), namespace)
+
+        assert exc.value.code == 1
+        assert "Error reading script_config" in capsys.readouterr().err
+
     @pytest.mark.parametrize("malformed", sorted(_MALFORMED_CONFIGS))
     def test_non_dict_script_config_skips_restore_update_cleanly(
         self,
