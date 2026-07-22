@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the ATW batch-execution surface under /api/apps/atw/.
+"""Cover the ATW batch-execution surface under /api/apps/atw/.
 
 Covers the merged execution schema, the incident-scoped batch execute, and the
 incident-scoped execution history. All three consume the snippets
@@ -22,7 +22,7 @@ so the suite points ``script_source.get_async_session_maker`` at the in-memory
 test session (mirroring ``tests/app/sep/apps/snippets/conftest.py``).
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -33,6 +33,7 @@ import pytest_asyncio
 from fastapi import status
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import URL
 
@@ -80,7 +81,7 @@ def executions_url(incident_id: object) -> str:
 
 
 @pytest.fixture(autouse=True)
-def request_less_session(session: AsyncSession, mocker: Any) -> AsyncSession:
+def request_less_session(session: AsyncSession, mocker: MockerFixture) -> AsyncSession:
     """Bind the snippets request-less session maker to the test session.
 
     The ATW batch endpoints resolve snippets through ``snippet_source.load_script``,
@@ -144,7 +145,7 @@ def create_snippet(
 
 
 @pytest.fixture
-def tasks_api() -> AsyncMock:
+def tasks_api() -> Iterator[AsyncMock]:
     """Replace the Tasks API dependency with a spec'd async mock."""
     mock = AsyncMock(spec=RemoteAPI)
     mock.post.return_value = {"id": _DEFAULT_TASK_ID}
@@ -623,7 +624,7 @@ class TestAtwBatchExecute:
         incident: AtwIncident,
         tasks_api: AsyncMock,
         session: AsyncSession,
-        mocker: Any,
+        mocker: MockerFixture,
     ) -> None:
         """Roll back a failed row write so the next item still records its execution."""
         await create_snippet("a.sh", parameters=[])
@@ -863,7 +864,7 @@ class TestAtwBatchExecuteOnRealPostgres:
         snippets_dir: Path,
         regular_user: CasdoorUser,
         tasks_api: AsyncMock,
-        mocker: Any,
+        mocker: MockerFixture,
     ) -> None:
         """Record the second item after the first item's row write aborts the transaction.
 
