@@ -1011,7 +1011,7 @@ def _health_report_plan(
     return DeliveryPlan(
         endpoint=origin,
         max_bundle_size_mb=_MAX_UPLOAD_SIZE_MB,
-        secrets={"api_key": upload.api_key.get_secret_value()},
+        secrets={"api_key": upload.api_key},
         upload=UploadStep(
             path=path,
             query={
