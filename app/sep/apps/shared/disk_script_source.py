@@ -49,9 +49,11 @@ from app.sep.apps.framework.schema import (
     BoolField,
     Column,
     EXECUTION_HOST_LABEL,
+    EXECUTOR_HOST_FIELD_NAME,
     FormSection,
     HostField,
     ListView,
+    SUDO_FIELD_NAME,
 )
 from app.sep.apps.framework.script_helpers import (
     build_artifact_download_url,
@@ -71,9 +73,6 @@ __all__ = [
     "DiskScriptListRow",
     "build_disk_script_source",
 ]
-
-_EXECUTOR_HOST_FIELD_NAME = "executor_host"
-_SUDO_FIELD_NAME = "sudo"
 
 
 class DiskScriptListRow(BaseModel):
@@ -180,13 +179,13 @@ def _build_form_schema(script: _DiskScript, *, name: str) -> AppSchema:
 
     execution_fields = [
         HostField(
-            name=_EXECUTOR_HOST_FIELD_NAME, label=EXECUTION_HOST_LABEL, required=True
+            name=EXECUTOR_HOST_FIELD_NAME, label=EXECUTION_HOST_LABEL, required=True
         )
     ]
     if snippet.sudo.is_optional:
         execution_fields.append(
             BoolField(
-                name=_SUDO_FIELD_NAME,
+                name=SUDO_FIELD_NAME,
                 label="Run with sudo",
                 default=snippet.sudo.sudo_default,
                 description="Prepend sudo to the interpreter when the script is executed.",
@@ -195,7 +194,7 @@ def _build_form_schema(script: _DiskScript, *, name: str) -> AppSchema:
     elif snippet.sudo is SnippetSudoOption.ALWAYS:
         execution_fields.append(
             BoolField(
-                name=_SUDO_FIELD_NAME,
+                name=SUDO_FIELD_NAME,
                 label="Run with sudo",
                 default=True,
                 description="This script is configured to always run with sudo.",

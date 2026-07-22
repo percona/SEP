@@ -107,6 +107,35 @@ def test_extra_sensitive_headers_defaults_to_existing_behavior():
     assert safe["headers"]["X-Custom-Token"] == "raw-secret"
 
 
+def test_extra_sensitive_body_fields_masked():
+    """Mask a caller-supplied custom body key via the extra-redaction keyword."""
+    safe = _sanitize_request_kwargs(
+        {"json": {"client_token": "raw-secret", "ticket_number": "CS0001"}},
+        extra_sensitive_body_fields=frozenset({"client_token"}),
+    )
+
+    assert safe["json"]["client_token"] == _REDACTED_VALUE
+    assert safe["json"]["ticket_number"] == "CS0001"
+
+
+def test_extra_sensitive_body_fields_defaults_to_existing_behavior():
+    """Keep a custom body key untouched when no extra redaction is requested."""
+    safe = _sanitize_request_kwargs({"json": {"client_token": "raw-secret"}})
+
+    assert safe["json"]["client_token"] == "raw-secret"
+
+
+def test_extra_sensitive_body_fields_keeps_built_in_masking():
+    """Mask the always-sensitive body keys alongside the caller-supplied ones."""
+    safe = _sanitize_request_kwargs(
+        {"json": {"password": "pw", "client_token": "raw-secret"}},
+        extra_sensitive_body_fields=frozenset({"client_token"}),
+    )
+
+    assert safe["json"]["password"] == _REDACTED_VALUE
+    assert safe["json"]["client_token"] == _REDACTED_VALUE
+
+
 def test_redact_headers_masks_within_context_only(remote_api):
     """Mask extra header names only for the duration of the ``redact_headers`` block."""
     with remote_api.redact_headers(["X-Custom-Token"]):
@@ -126,6 +155,27 @@ def test_redact_headers_nesting_unions_with_outer_context(remote_api):
 
     assert nested == frozenset({"x-outer", "x-inner"})
     assert restored == frozenset({"x-outer"})
+
+
+def test_redact_body_fields_masks_within_context_only(remote_api):
+    """Mask extra body keys only for the duration of the ``redact_body_fields`` block."""
+    with remote_api.redact_body_fields(["Client_Token"]):
+        active = remote_api._extra_sensitive_body_fields.get()
+    after = remote_api._extra_sensitive_body_fields.get()
+
+    assert active == frozenset({"client_token"})
+    assert after == frozenset()
+
+
+def test_redact_body_fields_nesting_unions_with_outer_context(remote_api):
+    """Accumulate an inner ``redact_body_fields`` block's keys on top of the outer set."""
+    with remote_api.redact_body_fields(["outer_token"]):
+        with remote_api.redact_body_fields(["inner_token"]):
+            nested = remote_api._extra_sensitive_body_fields.get()
+        restored = remote_api._extra_sensitive_body_fields.get()
+
+    assert nested == frozenset({"outer_token", "inner_token"})
+    assert restored == frozenset({"outer_token"})
 
 
 class TestUpload:

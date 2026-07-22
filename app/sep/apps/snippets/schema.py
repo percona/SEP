@@ -53,13 +53,16 @@ from app.sep.apps.framework.schema import (
     ColumnFormat,
     DateTimeField,
     EXECUTION_HOST_LABEL,
+    EXECUTOR_HOST_FIELD_NAME,
     FloatField,
     FormSection,
     HostField,
     IntegerField,
     ListView,
+    SCRIPT_PREVIEW_FIELD_NAME,
     ScriptPreviewField,
     StringField,
+    SUDO_FIELD_NAME,
 )
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.meta import (
@@ -68,11 +71,6 @@ from app.sep.snippets.models.meta import (
     SnippetVisibilityCondition,
 )
 from app.sep.snippets.models.snippet import BaseSnippet, BaseSnippetArgs
-
-_EXECUTOR_HOST_FIELD_NAME = "executor_host"
-_SUDO_FIELD_NAME = "sudo"
-_SCRIPT_PREVIEW_FIELD_NAME = "script_preview"
-
 
 SNIPPETS_PLUGIN_SCHEMA = AppSchema(
     name="snippets",
@@ -345,7 +343,7 @@ def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
         cast(
             AnyField,
             HostField(
-                name=_EXECUTOR_HOST_FIELD_NAME,
+                name=EXECUTOR_HOST_FIELD_NAME,
                 label=EXECUTION_HOST_LABEL,
                 required=True,
             ),
@@ -356,7 +354,7 @@ def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
             cast(
                 AnyField,
                 BoolField(
-                    name=_SUDO_FIELD_NAME,
+                    name=SUDO_FIELD_NAME,
                     label="Run with sudo",
                     default=snippet.sudo.sudo_default,
                     description="Prepend sudo to the interpreter when the snippet is executed.",
@@ -368,7 +366,7 @@ def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
             cast(
                 AnyField,
                 BoolField(
-                    name=_SUDO_FIELD_NAME,
+                    name=SUDO_FIELD_NAME,
                     label="Run with sudo",
                     default=True,
                     description=("This snippet is configured to always run with sudo."),
@@ -383,7 +381,7 @@ def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
                 cast(
                     AnyField,
                     ScriptPreviewField(
-                        name=_SCRIPT_PREVIEW_FIELD_NAME,
+                        name=SCRIPT_PREVIEW_FIELD_NAME,
                         label="Snippet file",
                         endpoint_url=(
                             "/apps/snippets/snippet/preview?"
