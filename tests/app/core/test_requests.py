@@ -319,6 +319,49 @@ async def test_request_non_json_404_stays_bare_http_exception(remote_api):
         assert exc_info.value.headers == {UPSTREAM_NON_JSON_HEADER: "1"}
 
 
+@pytest.mark.parametrize(
+    ("error_status", "exc_class"),
+    [
+        (status.HTTP_502_BAD_GATEWAY, HTTPBadGatewayException),
+        (status.HTTP_503_SERVICE_UNAVAILABLE, HTTPServiceUnavailableException),
+    ],
+)
+@pytest.mark.asyncio
+async def test_request_non_json_mapped_non_404_keeps_mapping_with_header(
+    remote_api, error_status, exc_class
+):
+    """Map a non-JSON error at a mapped non-404 status to its class, header stamped.
+
+    Only a non-JSON 404 degrades to a bare HTTPException (a proxy 404 must not be
+    mistaken for a real "resource absent"). Every other mapped status keeps its
+    class on a non-JSON body just as it does on a JSON body, carrying
+    ``UPSTREAM_NON_JSON_HEADER`` -- so an nginx-in-front-of-PMM 502/503 surfaces as
+    ``HTTPBadGatewayException`` / ``HTTPServiceUnavailableException`` and reaches
+    ``json_exception_handler`` rather than falling back to a flash-and-redirect.
+    """
+    mock_response = AsyncMock()
+    mock_response.json = AsyncMock(
+        side_effect=ContentTypeError(
+            request_info=None,
+            history=(),
+            status=error_status,
+        )
+    )
+    mock_response.status = error_status
+    mock_response.content = b"<html>bad gateway</html>"
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    with patch.object(remote_api, "_request", return_value=mock_context_manager):
+        with pytest.raises(exc_class) as exc_info:
+            await remote_api.request("GET", "/proxy-5xx")
+        assert type(exc_info.value) is exc_class
+        assert exc_info.value.status_code == error_status
+        assert exc_info.value.headers == {UPSTREAM_NON_JSON_HEADER: "1"}
+
+
 @pytest.mark.asyncio
 async def test_request_unmapped_status_raises_bare_http_exception(remote_api):
     """Raise a bare HTTPException for an error status with no mapped project class."""
@@ -952,3 +995,37 @@ async def test_stream_chunks_coerces_numeric_error_code_to_str(remote_api):
                 [_ async for _ in remote_api.stream_chunks("/missing/")]
 
     assert exc_info.value.headers == {"X-Error-Code": "5"}
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_non_json_error_stamps_upstream_header(remote_api):
+    """Stamp a non-JSON stream error with UPSTREAM_NON_JSON_HEADER and keep its mapping.
+
+    When the error body is not JSON (an HTML proxy page), ``stream_chunks`` falls
+    back to the raw text and marks it non-JSON, mirroring ``RemoteAPI.request`` so
+    the stream path classifies a proxy/gateway failure identically -- a 502 stays
+    ``HTTPBadGatewayException`` carrying the header, not a bare HTTPException.
+    """
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_502_BAD_GATEWAY
+    mock_response.json = AsyncMock(
+        side_effect=ContentTypeError(
+            request_info=None,
+            history=(),
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    )
+    mock_response.text = AsyncMock(return_value="<html>502 Bad Gateway</html>")
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            with pytest.raises(HTTPBadGatewayException) as exc_info:
+                [_ async for _ in remote_api.stream_chunks("/proxy-5xx/")]
+
+    assert type(exc_info.value) is HTTPBadGatewayException
+    assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+    assert exc_info.value.detail == "<html>502 Bad Gateway</html>"
+    assert exc_info.value.headers == {UPSTREAM_NON_JSON_HEADER: "1"}
