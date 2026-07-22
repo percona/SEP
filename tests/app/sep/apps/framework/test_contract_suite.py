@@ -453,7 +453,7 @@ def test_build_valid_create_body_wraps_multi_value_refs() -> None:
 
 
 class _FirstArm(BaseModel):
-    """The first-declared model arm a union branch pick must return."""
+    """Represent the first-declared model arm a union branch pick must return."""
 
     value: int
 
