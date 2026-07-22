@@ -31,12 +31,28 @@ import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+from urllib.parse import parse_qsl, urlparse
 
-from fastapi import status as http_status
 from weasyprint import CSS, HTML
 
+from app.core.config import settings
+from app.core.exceptions import HTTPServiceUnavailableException
+from app.core.requests import RemoteAPI
+from app.sep.bundle_upload.plan import (
+    DeliveryPlan,
+    DeliveryPlanExecutor,
+    LiteralValue,
+    ManifestValue,
+    SecretValue,
+    UploadStep,
+)
+from app.sep.bundle_upload.seam import BundleSource
 from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.config import HealthReportSettings, sep_settings
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 from .models import (
     AdvisorCheck,
@@ -951,63 +967,119 @@ async def generate_pdf_report(report: ReportData) -> bytes:
 # ServiceNow upload
 
 _MAX_UPLOAD_SIZE_MB = 30
-_MAX_UPLOAD_SIZE_BYTES = _MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 
-async def upload_pdf_report(report: ReportData, pdf_bytes: bytes) -> dict[str, Any]:
-    """Upload a PDF report to the ServiceNow API.
+def _split_endpoint(endpoint: str) -> tuple[str, str, dict[str, str]]:
+    """Split a configured endpoint into origin, request path, and query pairs.
 
-    :param report: The report metadata used to populate upload fields.
-    :type report: ReportData
-    :param pdf_bytes: The rendered PDF file contents.
-    :type pdf_bytes: bytes
-    :return: The JSON response body from the upload API.
-    :rtype: dict[str, Any]
-    :raises ValueError: If the PDF exceeds the 30 MB API size limit.
-    :raises RuntimeError: If the upload API returns a non-200 status.
+    The transport client is pooled per origin and derives its own base path, so
+    the path and query travel in the plan instead. Repeated query keys collapse
+    to the last occurrence.
+
+    :param endpoint: The configured upload endpoint URL.
+    :return: The scheme-and-host origin, the request path, and the query pairs.
     """
-    from aiohttp import ClientSession, FormData
+    parsed = urlparse(endpoint)
+    return (
+        f"{parsed.scheme}://{parsed.netloc}",
+        parsed.path or "/",
+        dict(parse_qsl(parsed.query)),
+    )
 
-    from app.sep.config import sep_settings
 
+def _health_report_plan(
+    upload: HealthReportSettings,
+    *,
+    origin: str,
+    path: str,
+    query: Mapping[str, str],
+) -> DeliveryPlan:
+    """Build the delivery plan describing one health-report upload.
+
+    The plan is derived from the configured ``HEALTH_REPORT`` keys on every
+    send, so the intake contract stays in code while deployments keep the
+    settings block they already have. No ``Authorization`` header is sent: the
+    intake authenticates on the ``api_key`` and ``client_identifier`` form
+    fields alone.
+
+    :param upload: The configured health-report upload settings.
+    :param origin: The intake origin the transport client is pointed at.
+    :param path: The request path the upload step targets.
+    :param query: Query-string parameters carried by the configured endpoint.
+    :return: The validated single-step delivery plan.
+    """
+    return DeliveryPlan(
+        endpoint=origin,
+        max_bundle_size_mb=_MAX_UPLOAD_SIZE_MB,
+        secrets={"api_key": upload.api_key.get_secret_value()},
+        upload=UploadStep(
+            path=path,
+            query={
+                key: LiteralValue(source="literal", value=value)
+                for key, value in query.items()
+            },
+            fields={
+                "api_key": SecretValue(source="secret", name="api_key"),
+                "client_identifier": LiteralValue(
+                    source="literal", value=upload.client_id
+                ),
+                "report_type": LiteralValue(
+                    source="literal", value="security_and_health_status"
+                ),
+                "report_week": ManifestValue(source="manifest_key", key="report_week"),
+                "report_period": ManifestValue(
+                    source="manifest_key", key="report_period"
+                ),
+                "report_generated_on": ManifestValue(
+                    source="manifest_key", key="report_generated_on"
+                ),
+            },
+            file_field="file",
+            file_content_type="application/pdf",
+        ),
+    )
+
+
+async def upload_pdf_report(
+    report: ReportData, pdf_bytes: bytes
+) -> dict[str, Any] | None:
+    """Upload a PDF report to the ServiceNow intake via the shared delivery plan.
+
+    :param report: The report metadata used to populate the upload fields.
+    :param pdf_bytes: The rendered PDF file contents.
+    :return: The intake's parsed JSON response, or ``None`` when it answers a
+        success status with a body that is not a JSON object.
+    :raises HTTPServiceUnavailableException: When upload is not configured.
+    :raises DeliveryPlanError: When the PDF exceeds the size cap.
+    :raises HTTPException: Propagates the project exception the transport maps
+        an intake error status to.
+    :raises OSError: Propagates connection and timeout failures.
+    """
     upload = sep_settings.HEALTH_REPORT
     if not upload.is_upload_configured:
-        raise RuntimeError("Report upload is not configured")
+        raise HTTPServiceUnavailableException(detail="Report upload is not configured")
 
-    if len(pdf_bytes) > _MAX_UPLOAD_SIZE_BYTES:
-        raise ValueError(
-            f"PDF size ({len(pdf_bytes)} bytes) exceeds the "
-            f"{_MAX_UPLOAD_SIZE_MB} MB upload limit"
-        )
-
-    filename = f"Health_and_Security_Report_{report.metadata.generated_at:%Y-%m-%d}.pdf"
-
-    form = FormData()
-    form.add_field("api_key", upload.api_key.get_secret_value())
-    form.add_field("client_identifier", upload.client_id)
-    form.add_field("report_type", "security_and_health_status")
-    form.add_field("report_week", report.metadata.report_week)
-    form.add_field("report_period", report.metadata.report_interval)
-    form.add_field(
-        "report_generated_on",
-        report.metadata.generated_at.strftime("%Y-%m-%d %H:%M:%S %Z"),
+    origin, path, query = _split_endpoint(upload.endpoint)
+    api = await settings.get_remote_api(RemoteAPI, endpoint=origin)
+    result = await DeliveryPlanExecutor(
+        _health_report_plan(upload, origin=origin, path=path, query=query), api
+    ).upload_bundle(
+        source_ref=f"health-report/{report.metadata.report_week}",
+        bundle=BundleSource(
+            filename=(
+                "Health_and_Security_Report_"
+                f"{report.metadata.generated_at:%Y-%m-%d}.pdf"
+            ),
+            content=pdf_bytes,
+            size=len(pdf_bytes),
+        ),
+        case_ref=None,
+        manifest={
+            "report_week": report.metadata.report_week,
+            "report_period": report.metadata.report_interval,
+            "report_generated_on": report.metadata.generated_at.strftime(
+                "%Y-%m-%d %H:%M:%S %Z"
+            ),
+        },
     )
-    form.add_field(
-        "file",
-        pdf_bytes,
-        filename=filename,
-        content_type="application/pdf",
-    )
-
-    async with (
-        ClientSession() as session,
-        session.post(
-            upload.endpoint,
-            data=form,
-            headers={"accept": "application/json"},
-        ) as resp,
-    ):
-        body = await resp.json()
-        if resp.status != http_status.HTTP_200_OK:
-            raise RuntimeError(f"Upload failed with status {resp.status}: {body}")
-        return body
+    return None if result.detail is None else dict(result.detail)

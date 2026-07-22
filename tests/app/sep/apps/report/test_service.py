@@ -17,11 +17,22 @@
 
 from __future__ import annotations
 
+import logging
+from contextlib import contextmanager
 from datetime import datetime, timedelta, UTC
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from aioresponses import aioresponses
+from fastapi import status
 
+from app.core.config import Settings
+from app.core.exceptions import (
+    HTTPInternalServerErrorException,
+    HTTPServiceUnavailableException,
+)
+from app.core.requests import RemoteAPI
 from app.sep.apps.report.models import (
     BackupStatus,
     InventorySection,
@@ -36,7 +47,6 @@ from app.sep.apps.report.service import (
     _find_labels,
     _get_metrics_datasource,
     _interval_ms,
-    _MAX_UPLOAD_SIZE_BYTES,
     _parse_failed_checks,
     _refresh_checks,
     collect_advisors,
@@ -49,7 +59,9 @@ from app.sep.apps.report.service import (
     generate_report,
     upload_pdf_report,
 )
+from app.sep.bundle_upload.plan import DeliveryPlanError
 from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.config import HealthReportSettings
 
 
 @pytest.fixture
@@ -1493,9 +1505,12 @@ class TestGenerateReportPdf:
 
 # upload_pdf_report
 class TestUploadPdfReport:
-    """Test the ``upload_pdf_report`` helper."""
+    """Cover the health-report upload through the shared delivery plan."""
 
-    def _make_report(self) -> ReportData:
+    pytestmark = pytest.mark.asyncio
+
+    @staticmethod
+    def _make_report() -> ReportData:
         return ReportData(
             metadata=ReportMetadata(
                 title="Weekly Health Report",
@@ -1505,105 +1520,163 @@ class TestUploadPdfReport:
             ),
         )
 
-    @pytest.mark.asyncio
+    @staticmethod
+    def _upload_settings(**overrides: Any) -> HealthReportSettings:
+        return HealthReportSettings(
+            **{
+                "upload": True,
+                "endpoint": "https://intake.example.com/v1/upload/",
+                "api_key": "test-api-key",
+                "client_id": "test-client-id",
+                **overrides,
+            }
+        )
+
+    @contextmanager
+    def _wired(self, upload_settings: HealthReportSettings, upload_mock: AsyncMock):
+        """Wire the report settings and the transport boundary for one send."""
+        api = RemoteAPI(endpoint="https://intake.example.com")
+        get_remote_api = AsyncMock(return_value=api)
+        with (
+            patch("app.sep.apps.report.service.sep_settings") as mock_settings,
+            patch.object(RemoteAPI, "upload", new=upload_mock),
+            patch.object(Settings, "get_remote_api", new=get_remote_api),
+        ):
+            mock_settings.HEALTH_REPORT = upload_settings
+            yield get_remote_api
+
     async def test_raises_when_not_configured(self):
-        """Assert RuntimeError is raised when upload is not configured."""
-        from app.sep.config import HealthReportSettings
+        """Refuse the send, and never build a client, when upload is unconfigured."""
+        upload = AsyncMock()
+        with (
+            self._wired(HealthReportSettings(), upload) as get_remote_api,
+            pytest.raises(HTTPServiceUnavailableException),
+        ):
+            await upload_pdf_report(self._make_report(), b"%PDF-1.4")
 
-        settings = HealthReportSettings()
-        with patch(
-            "app.sep.config.sep_settings",
-        ) as mock_settings:
-            mock_settings.HEALTH_REPORT = settings
-            with pytest.raises(RuntimeError, match="not configured"):
-                await upload_pdf_report(self._make_report(), b"%PDF-1.4")
+        get_remote_api.assert_not_awaited()
+        upload.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_raises_when_pdf_exceeds_size_limit(self):
-        """Assert ValueError is raised for oversized PDFs."""
-        from app.sep.config import HealthReportSettings
-
-        settings = HealthReportSettings(
-            upload=True,
-            endpoint="https://example.com/upload",
-            api_key="key",
-            client_id="cid",
-        )
-        oversized = b"x" * (_MAX_UPLOAD_SIZE_BYTES + 1)
-        with patch(
-            "app.sep.config.sep_settings",
-        ) as mock_settings:
-            mock_settings.HEALTH_REPORT = settings
-            with pytest.raises(ValueError, match="exceeds"):
-                await upload_pdf_report(self._make_report(), oversized)
-
-    @pytest.mark.asyncio
-    async def test_posts_multipart_form_to_endpoint(self):
-        """Assert the upload sends correct multipart fields."""
-        from app.sep.config import HealthReportSettings
-
-        settings = HealthReportSettings(
-            upload=True,
-            endpoint="https://servicenow.example.com/api/upload",
-            api_key="test-api-key",
-            client_id="test-client-id",
-        )
-
-        mock_resp = AsyncMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value={"status": "ok"})
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.post = MagicMock(return_value=mock_resp)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-
+        """Reject an over-cap PDF before any request reaches the transport."""
+        oversized = b"x" * (30 * 1024 * 1024 + 1)
+        upload = AsyncMock()
         with (
-            patch(
-                "app.sep.config.sep_settings",
-            ) as mock_settings,
-            patch("aiohttp.ClientSession", return_value=mock_session),
+            self._wired(self._upload_settings(), upload),
+            pytest.raises(DeliveryPlanError, match="MiB limit"),
         ):
-            mock_settings.HEALTH_REPORT = settings
-            result = await upload_pdf_report(self._make_report(), b"%PDF-1.4 content")
+            await upload_pdf_report(self._make_report(), oversized)
 
+        upload.assert_not_awaited()
+
+    async def test_uploads_via_the_delivery_plan(self):
+        """Send the seven documented fields and the PDF part to the intake path."""
+        upload = AsyncMock(return_value={"status": "ok"})
+        with self._wired(self._upload_settings(), upload):
+            result = await upload_pdf_report(self._make_report(), b"%PDF-1.4")
+
+        upload.assert_awaited_once()
+        assert upload.await_args.args[0] == "/v1/upload/"
+        assert upload.await_args.kwargs["files"] == {
+            "file": (
+                "Health_and_Security_Report_2026-03-31.pdf",
+                b"%PDF-1.4",
+                "application/pdf",
+            )
+        }
+        assert upload.await_args.kwargs["fields"] == {
+            "api_key": "test-api-key",
+            "client_identifier": "test-client-id",
+            "report_type": "security_and_health_status",
+            "report_week": "2026 - Week 14",
+            "report_period": "now-7d to now",
+            "report_generated_on": "2026-03-31 12:00:00 UTC",
+        }
         assert result == {"status": "ok"}
-        mock_session.post.assert_called_once()
-        call_kwargs = mock_session.post.call_args
-        assert call_kwargs.args[0] == "https://servicenow.example.com/api/upload"
-        assert call_kwargs.kwargs["headers"] == {"accept": "application/json"}
 
-    @pytest.mark.asyncio
-    async def test_raises_on_non_200_response(self):
-        """Assert RuntimeError is raised when the API returns a non-200 status."""
-        from app.sep.config import HealthReportSettings
+    async def test_upload_targets_the_endpoint_origin(self):
+        """Point the pooled client at the origin, leaving the path to the plan."""
+        upload = AsyncMock(return_value={})
+        with self._wired(self._upload_settings(), upload) as get_remote_api:
+            await upload_pdf_report(self._make_report(), b"%PDF-1.4")
 
-        settings = HealthReportSettings(
-            upload=True,
-            endpoint="https://servicenow.example.com/api/upload",
-            api_key="test-api-key",
-            client_id="test-client-id",
+        assert (
+            get_remote_api.await_args.kwargs["endpoint"] == "https://intake.example.com"
         )
 
-        mock_resp = AsyncMock()
-        mock_resp.status = 500
-        mock_resp.json = AsyncMock(return_value={"error": "internal"})
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
+    async def test_upload_preserves_an_endpoint_query_string(self):
+        """Carry a query-bearing endpoint's parameters into the upload request."""
+        upload = AsyncMock(return_value={})
+        settings = self._upload_settings(
+            endpoint="https://intake.example.com/v1/upload/?tenant=acme"
+        )
+        with self._wired(settings, upload):
+            await upload_pdf_report(self._make_report(), b"%PDF-1.4")
 
-        mock_session = AsyncMock()
-        mock_session.post = MagicMock(return_value=mock_resp)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
+        assert upload.await_args.args[0] == "/v1/upload/"
+        assert upload.await_args.kwargs["params"] == {"tenant": "acme"}
 
+    async def test_upload_error_propagates_unwrapped(self):
+        """Let the transport's mapped project exception reach the caller as-is."""
+        upload = AsyncMock(side_effect=HTTPInternalServerErrorException())
         with (
-            patch(
-                "app.sep.config.sep_settings",
-            ) as mock_settings,
-            patch("aiohttp.ClientSession", return_value=mock_session),
+            self._wired(self._upload_settings(), upload),
+            pytest.raises(HTTPInternalServerErrorException),
+        ):
+            await upload_pdf_report(self._make_report(), b"%PDF-1.4")
+
+    async def test_non_mapping_response_returns_none(self):
+        """Return ``None`` when the intake answers 2xx with a non-object body."""
+        upload = AsyncMock(return_value=[{"status": "ok"}])
+        with self._wired(self._upload_settings(), upload):
+            result = await upload_pdf_report(self._make_report(), b"%PDF-1.4")
+
+        assert result is None
+
+    async def test_api_key_reaches_the_intake_but_never_a_log_record(self, caplog):
+        """Send the real credential on the wire while no log record carries it.
+
+        Drives the real transport so the request logging that would leak the
+        credential actually runs; mocking the upload would skip it entirely.
+        """
+        secret = "super-secret-api-key-value"
+        settings = self._upload_settings(api_key=secret)
+        api = RemoteAPI(endpoint="https://intake.example.com")
+        with (
+            patch("app.sep.apps.report.service.sep_settings") as mock_settings,
+            patch.object(Settings, "get_remote_api", new=AsyncMock(return_value=api)),
+            aioresponses() as mock_http,
         ):
             mock_settings.HEALTH_REPORT = settings
-            with pytest.raises(RuntimeError, match="status 500"):
-                await upload_pdf_report(self._make_report(), b"%PDF-1.4")
+            mock_http.post(
+                "https://intake.example.com/v1/upload/",
+                status=status.HTTP_200_OK,
+                payload={"ok": True},
+            )
+            async with api:
+                with caplog.at_level(logging.DEBUG):
+                    result = await upload_pdf_report(self._make_report(), b"%PDF-1.4")
+            body = await _multipart_body(
+                next(iter(mock_http.requests.values()))[0].kwargs["data"]
+            )
+
+        assert result == {"ok": True}
+        assert secret.encode() in body
+        assert caplog.records
+        assert all(secret not in record.getMessage() for record in caplog.records)
+
+
+async def _multipart_body(payload: Any) -> bytes:
+    """Serialize a recorded multipart body so its parts can be inspected.
+
+    :param payload: The multipart body aiohttp was handed for the upload.
+    :return: The encoded body, headers and boundaries included.
+    """
+    collected = []
+
+    class _Collector:
+        async def write(self, chunk: bytes, **_kwargs: Any) -> None:
+            collected.append(bytes(chunk))
+
+    await payload.write(_Collector())
+    return b"".join(collected)

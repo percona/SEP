@@ -18,8 +18,9 @@
 A delivery plan is an ordered list of HTTP resolution steps followed by exactly
 one terminal multipart upload step that carries the bundle file. The schema is
 linear by construction: paths are literal strings, every value comes from one of
-four typed sources (a literal, a send input, a named secret, or an earlier step's
-extracted output), and no conditional, loop, or templating construct exists.
+five typed sources (a literal, a send input, a named secret, an earlier step's
+extracted output, or one key of the send's manifest), and no conditional, loop,
+or templating construct exists.
 :class:`DeliveryPlanExecutor` runs a plan over a
 :class:`~app.core.requests.remote_api.RemoteAPI` transport and satisfies the
 :class:`~app.sep.bundle_upload.seam.BundleUploader` protocol.
@@ -37,6 +38,7 @@ __all__ = [
     "DeliveryPlanExecutor",
     "InputValue",
     "LiteralValue",
+    "ManifestValue",
     "PlanValue",
     "ResolutionStep",
     "SecretValue",
@@ -115,9 +117,26 @@ class StepOutputValue(BaseModel):
     output: NonEmptyStr
 
 
+class ManifestValue(BaseModel):
+    """Provide a value read from one key of the send's manifest.
+
+    Unlike an ``input`` value naming the whole manifest, which reaches the
+    receiver as one JSON string, this addresses a single key so a plan can send
+    per-send scalars as their own fields. Whether the key is present is knowable
+    only at send time, so the plan validator cross-references nothing here and a
+    missing or non-scalar key fails the send.
+
+    :param source: The discriminator tag, always ``"manifest_key"``.
+    :param key: The manifest key to read.
+    """
+
+    source: Literal["manifest_key"]
+    key: NonEmptyStr
+
+
 #: One configured value, tagged by the ``source`` it is drawn from.
 PlanValue = Annotated[
-    LiteralValue | InputValue | SecretValue | StepOutputValue,
+    LiteralValue | InputValue | SecretValue | StepOutputValue | ManifestValue,
     Field(discriminator="source"),
 ]
 
@@ -367,8 +386,10 @@ class DeliveryPlanExecutor:
         }
         outputs = {}
         for step in self._plan.resolution_steps:
-            outputs[step.name] = await self._run_resolution_step(step, inputs, outputs)
-        return await self._run_upload_step(bundle, inputs, outputs)
+            outputs[step.name] = await self._run_resolution_step(
+                step, inputs, outputs, manifest
+            )
+        return await self._run_upload_step(bundle, inputs, outputs, manifest)
 
     def _check_bundle_size(self, size: int) -> None:
         """Reject an over-cap bundle before the transport is touched.
@@ -387,15 +408,18 @@ class DeliveryPlanExecutor:
         value: PlanValue,
         inputs: Mapping[str, str | None],
         outputs: Mapping[str, Mapping[str, str]],
+        manifest: Mapping[str, Any],
     ) -> str:
         """Resolve one configured value to the string sent over the wire.
 
         :param value: The typed value to resolve.
         :param inputs: The send inputs keyed by their plan-facing names.
         :param outputs: Extracted outputs keyed by step then output name.
+        :param manifest: The send's manifest, read key-wise by manifest values.
         :return: The resolved string.
         :raises DeliveryPlanError: When the value cites a send input the caller
-            did not supply.
+            did not supply, or a manifest key the send did not carry as a
+            scalar.
         """
         if isinstance(value, LiteralValue):
             return value.value
@@ -403,6 +427,19 @@ class DeliveryPlanExecutor:
             return self._plan.secrets[value.name].get_secret_value()
         if isinstance(value, StepOutputValue):
             return outputs[value.step][value.output]
+        if isinstance(value, ManifestValue):
+            if value.key not in manifest:
+                raise DeliveryPlanError(
+                    f"The plan reads manifest key {value.key!r}, which this "
+                    f"send's manifest does not carry."
+                )
+            scalar = _as_scalar(manifest[value.key])
+            if scalar is None:
+                raise DeliveryPlanError(
+                    f"The plan reads manifest key {value.key!r}, whose value is "
+                    f"not a scalar."
+                )
+            return scalar
         resolved = inputs[value.field]
         if resolved is None:
             raise DeliveryPlanError(
@@ -416,18 +453,21 @@ class DeliveryPlanExecutor:
         values: Mapping[str, PlanValue],
         inputs: Mapping[str, str | None],
         outputs: Mapping[str, Mapping[str, str]],
+        manifest: Mapping[str, Any],
     ) -> dict[str, str]:
         """Resolve a whole configured value map.
 
         :param values: The configured value map to resolve.
         :param inputs: The send inputs keyed by their plan-facing names.
         :param outputs: Extracted outputs keyed by step then output name.
+        :param manifest: The send's manifest, read key-wise by manifest values.
         :return: The resolved strings keyed by the map's own keys.
         :raises DeliveryPlanError: When a value cites a send input the caller
-            did not supply.
+            did not supply, or a manifest key the send did not carry as a
+            scalar.
         """
         return {
-            key: self._resolve_value(value, inputs, outputs)
+            key: self._resolve_value(value, inputs, outputs, manifest)
             for key, value in values.items()
         }
 
@@ -436,24 +476,26 @@ class DeliveryPlanExecutor:
         step: ResolutionStep,
         inputs: Mapping[str, str | None],
         outputs: Mapping[str, Mapping[str, str]],
+        manifest: Mapping[str, Any],
     ) -> dict[str, str]:
         """Issue one resolution step and extract the outputs it declares.
 
         :param step: The resolution step to run.
         :param inputs: The send inputs keyed by their plan-facing names.
         :param outputs: Outputs extracted by the steps that ran before this one.
+        :param manifest: The send's manifest, read key-wise by manifest values.
         :return: This step's extracted outputs keyed by output name.
         :raises DeliveryPlanError: When a configured value cites a missing send
-            input, the response carries no body while outputs are declared, or a
-            pointer fails to address a scalar.
+            input or manifest key, the response carries no body while outputs
+            are declared, or a pointer fails to address a scalar.
         :raises HTTPException: Propagates the project exception ``RemoteAPI``
             raises for an upstream error status.
         """
         request_kwargs = remove_falsy_values_from_dict(
             {
-                "headers": self._resolve_map(step.headers, inputs, outputs),
-                "params": self._resolve_map(step.query, inputs, outputs),
-                "json": self._resolve_map(step.body, inputs, outputs),
+                "headers": self._resolve_map(step.headers, inputs, outputs, manifest),
+                "params": self._resolve_map(step.query, inputs, outputs, manifest),
+                "json": self._resolve_map(step.body, inputs, outputs, manifest),
             }
         )
         logger.debug("Delivery plan: running resolution step %r.", step.name)
@@ -463,7 +505,10 @@ class DeliveryPlanExecutor:
         ):
             try:
                 response = await self._api.request(
-                    step.method, step.path, **request_kwargs
+                    step.method,
+                    step.path,
+                    allow_redirects=False,
+                    **request_kwargs,
                 )
             except HTTPException as err:
                 logger.warning(
@@ -518,6 +563,7 @@ class DeliveryPlanExecutor:
         bundle: BundleSource,
         inputs: Mapping[str, str | None],
         outputs: Mapping[str, Mapping[str, str]],
+        manifest: Mapping[str, Any],
     ) -> UploadResult:
         """Send the bundle in the plan's terminal multipart step.
 
@@ -526,21 +572,29 @@ class DeliveryPlanExecutor:
         headers need masking here: the multipart body is an opaque payload the
         request log never expands.
 
+        Redirects are not followed. A receiver that answers a credential-bearing
+        request with a redirect would have the body replayed to the new
+        location, which may downgrade to plaintext; failing on the redirect
+        status surfaces the misconfiguration instead of leaking the credential.
+
         :param bundle: The bundle bytes and the metadata describing them.
         :param inputs: The send inputs keyed by their plan-facing names.
         :param outputs: Outputs extracted by the resolution steps.
+        :param manifest: The send's manifest, read key-wise by manifest values.
         :return: The extracted upload reference and the response detail.
         :raises DeliveryPlanError: When a configured value cites a send input
-            the caller did not supply.
+            the caller did not supply, or a manifest key the send did not carry
+            as a scalar.
         :raises HTTPException: Propagates the project exception ``RemoteAPI``
-            raises for an upstream error status.
+            raises for an upstream error status, including a redirect the
+            receiver answered with.
         """
         step = self._plan.upload
         request_kwargs = remove_falsy_values_from_dict(
             {
-                "headers": self._resolve_map(step.headers, inputs, outputs),
-                "params": self._resolve_map(step.query, inputs, outputs),
-                "fields": self._resolve_map(step.fields, inputs, outputs),
+                "headers": self._resolve_map(step.headers, inputs, outputs, manifest),
+                "params": self._resolve_map(step.query, inputs, outputs, manifest),
+                "fields": self._resolve_map(step.fields, inputs, outputs, manifest),
             }
         )
         with self._api.redact_headers(_secret_valued_keys(step.headers)):
@@ -553,6 +607,7 @@ class DeliveryPlanExecutor:
                         step.file_content_type,
                     )
                 },
+                allow_redirects=False,
                 **request_kwargs,
             )
         return self._build_result(response)
