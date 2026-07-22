@@ -39,6 +39,7 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.core.utils import json_serializer
+from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
     get_api_authenticated_user,
@@ -56,6 +57,16 @@ from app.sep.snippets.config import (
     SnippetFilterType,
     snippets_settings,
 )
+
+_DELIVERY_PLAN_PAYLOAD: dict[str, Any] = {
+    "endpoint": "https://snow.example.com/",
+    "secrets": {"api_key": "plan-secret"},
+    "upload": {
+        "path": "attachment/upload",
+        "headers": {"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+        "fields": {"table_name": {"source": "literal", "value": "case"}},
+    },
+}
 
 
 def _mock_tasks_api() -> AsyncMock:
@@ -590,6 +601,60 @@ class TestSepSettingsPatch:
             json={"ARTIFACT_DOWNLOAD_TTL": -1},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("DIAGNOSTICS_DELIVERY", _DELIVERY_PLAN_PAYLOAD),
+            ("DIAGNOSTICS_DELIVERY__secrets", {"api_key": "plan-secret"}),
+            ("DIAGNOSTICS_DELIVERY__upload__path", "elsewhere"),
+        ],
+    )
+    async def test_diagnostics_delivery_patch_rejected(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        key: str,
+        value: Any,
+    ) -> None:
+        """Reject whole-plan and per-leaf overrides of the delivery plan alike.
+
+        A per-leaf override would merge without re-running the plan's
+        cross-reference validator, and a whole-object write stores every secret
+        as its mask literal, so no row may be written for this block.
+        """
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={key: value},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            entry["type"] == ReloadClassification.NOT_OVERRIDABLE.value
+            for entry in detail
+        )
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert rows == []
+
+    async def test_diagnostics_delivery_secrets_are_masked_on_read(
+        self, api_admin_client: TestClient, mocker
+    ) -> None:
+        """Mask every plan secret in the settings LIST projection."""
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY",
+            DeliveryPlan(**_DELIVERY_PLAN_PAYLOAD),
+        )
+        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        entry = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, "DIAGNOSTICS_DELIVERY"
+        )
+
+        assert entry["value"]["secrets"]["api_key"] == "**********"
+        assert "plan-secret" not in json_serializer(list_payload)
 
     async def test_app_drain_nested_leaf_patch_creates_override(
         self,
