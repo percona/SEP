@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   apiClient,
   DEFAULT_APP_LIST_LIMIT,
@@ -54,6 +54,7 @@ export function useTasksList(options?: AppListQueryOptions) {
       );
       return normalizeAppListResponse(data);
     },
+    placeholderData: keepPreviousData,
   });
 }
 

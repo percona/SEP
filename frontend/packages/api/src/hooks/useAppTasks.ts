@@ -16,7 +16,7 @@
  */
 
 /// <reference path="../vite-env.d.ts" />
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { ApiError } from '../errors';
 
@@ -243,7 +243,9 @@ export function useAppTasks<T extends Record<string, unknown>>(
         throw error;
       }
     },
-    ...(MOCK_FALLBACKS_ENABLED && mockTasks && { placeholderData: mockItemsToResult(mockTasks) }),
+    // Keep the previous page while the next offset/limit key fetches so lists
+    // do not blank into a full-page spinner / empty MRT loading state.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -388,7 +390,7 @@ export function useAppEntityList<T extends Record<string, unknown>>(
         throw error;
       }
     },
-    ...(MOCK_FALLBACKS_ENABLED && mockItems && { placeholderData: mockItemsToResult(mockItems) }),
+    placeholderData: keepPreviousData,
   });
 }
 

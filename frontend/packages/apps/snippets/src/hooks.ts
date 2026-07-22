@@ -19,6 +19,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  keepPreviousData,
   type QueryClient,
   type QueryKey,
 } from '@tanstack/react-query';
@@ -138,6 +139,7 @@ export function useSnippets(options?: AppListQueryOptions) {
       );
       return normalizeAppListResponse(data);
     },
+    placeholderData: keepPreviousData,
   });
 }
 
