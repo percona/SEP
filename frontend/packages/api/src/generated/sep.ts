@@ -648,8 +648,40 @@ export interface paths {
      *
      *     Categories with no matching snippets are omitted to keep the payload small;
      *     the ATW enum still defines the full taxonomy for validation (plugin schema).
+     *
+     *     :param session: The database session.
+     *     :return: One listing row per category that has at least one snippet.
      */
     get: operations['atw_atw_api_list_api_apps_atw__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/execution-schema/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Execution Schema
+     * @description Build one execution form covering several snippets, merging common parameters.
+     *
+     *     Unknown or unsafe filenames fail the whole request — a form the caller cannot
+     *     fill for every selected snippet is not a partial success.
+     *
+     *     :param snippet_filename: The selected snippet filenames, repeated per snippet
+     *         and deduplicated order-preserving.
+     *     :return: The shared section followed by each snippet's remaining fields.
+     *     :raises HTTPBadRequestException: When a filename attempts directory traversal.
+     *     :raises HTTPNotFoundException: When a filename matches no snippet.
+     */
+    get: operations['atw_atw_execution_schema_api_apps_atw_execution_schema__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -728,6 +760,53 @@ export interface paths {
      *     :return: The updated incident.
      */
     patch: operations['atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch'];
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/executions/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw List Incident Executions
+     * @description List one incident's snippet executions, newest first, with live task status.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param pagination: The offset/limit window for the page.
+     *     :param tasks_api: The authenticated Tasks API client.
+     *     :return: A paginated page of executions hydrated from the Tasks API.
+     */
+    get: operations['atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get'];
+    put?: never;
+    /**
+     * Atw Batch Execute
+     * @description Execute several snippets against one incident, reporting each item separately.
+     *
+     *     One failing item never blocks the rest: each is dispatched and recorded inside
+     *     its own guard, and the response always carries an entry per requested item. A
+     *     failed attempt produces no task-history row to reference, so it is reported
+     *     here rather than persisted.
+     *
+     *     The row-write guard rolls the shared session back before the loop continues,
+     *     or one failed write would leave the transaction aborted and doom every later
+     *     item on PostgreSQL; the dispatch guard rolls back defensively, having written
+     *     nothing itself. ``incident.id`` is read once up front because both a commit and
+     *     a rollback expire the instance, and re-reading it would trigger a lazy load.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param body: The batch payload.
+     *     :param tasks_api: The authenticated Tasks API client.
+     *     :return: One outcome entry per requested item, in request order.
+     */
+    post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   '/api/apps/atw/schema': {
@@ -4756,6 +4835,95 @@ export interface components {
       source_table: number | string;
     };
     /**
+     * ATWBatchExecuteItemResponse
+     * @description Describe the outcome of one item in a batch execution.
+     *
+     *     :param snippet_filename: The snippet this item requested.
+     *     :param task_name: The Tasks-API task name the snippet dispatched under, when
+     *         the dispatch itself succeeded.
+     *     :param task_history_id: The created task-history id, when the Tasks API
+     *         returned one.
+     *     :param error: The failure detail when the item did not complete — a message
+     *         or a validation-error list, depending on what rejected it.
+     */
+    atw__ATWBatchExecuteItemResponse: {
+      /** Error */
+      error?:
+        | string
+        | {
+            [key: string]: unknown;
+          }[]
+        | null;
+      /** Snippet Filename */
+      snippet_filename: string;
+      /** Task History Id */
+      task_history_id?: number | null;
+      /** Task Name */
+      task_name?: string | null;
+    };
+    /**
+     * ATWBatchExecuteItemWrite
+     * @description Define one snippet execution within a batch.
+     *
+     *     :param snippet_filename: The snippet to execute.
+     *     :param args: Per-snippet arguments keyed by frontmatter parameter name;
+     *         they override same-named entries in the batch's ``shared_args``.
+     */
+    atw__ATWBatchExecuteItemWrite: {
+      /**
+       * Args
+       * @default {}
+       */
+      args: {
+        [key: string]: unknown;
+      };
+      /** Snippet Filename */
+      snippet_filename: string;
+    };
+    /**
+     * ATWBatchExecuteResponse
+     * @description Collect every item's outcome for one batch execution.
+     *
+     *     Partial success lives in the body: the request is created (``201``) whenever
+     *     the incident resolves, and each item carries its own dispatch result or error.
+     *
+     *     :param items: One entry per requested item, in request order.
+     */
+    atw__ATWBatchExecuteResponse: {
+      /** Items */
+      items: components['schemas']['atw__ATWBatchExecuteItemResponse'][];
+    };
+    /**
+     * ATWBatchExecuteWrite
+     * @description Define the batch-execute payload for one incident.
+     *
+     *     :param executor_host: The executor every item in the batch runs on.
+     *     :param sudo: The sudo choice applied to every item; snippets whose sudo
+     *         option is not optional ignore it.
+     *     :param shared_args: Arguments offered to every item, filtered per snippet to
+     *         the parameters that snippet declares.
+     *     :param items: The snippets to execute, at least one and at most
+     *         ``MAX_BATCH_SNIPPETS``.
+     */
+    atw__ATWBatchExecuteWrite: {
+      /** Execution Host */
+      executor_host: string;
+      /** Items */
+      items: components['schemas']['atw__ATWBatchExecuteItemWrite'][];
+      /**
+       * Shared Args
+       * @default {}
+       */
+      shared_args: {
+        [key: string]: unknown;
+      };
+      /**
+       * Sudo
+       * @default false
+       */
+      sudo: boolean;
+    };
+    /**
      * ATWCategoryListing
      * @description Represent one ATW category row and its snippet members.
      *
@@ -4789,6 +4957,120 @@ export interface components {
       snippet_count: number;
       /** Snippets */
       snippets: components['schemas']['atw__ATWSnippetSummary'][];
+    };
+    /**
+     * ATWIncidentExecutionResponse
+     * @description Represent one recorded incident execution, hydrated with live task status.
+     *
+     *     The hydrated fields are ``None`` when the Tasks API could not be reached for
+     *     that row; the locally-recorded fields are always present.
+     *
+     *     :param id: The execution row's UUID primary key.
+     *     :param snippet_filename: The executed snippet's filename.
+     *     :param task_history_id: The tasks-service execution this row references.
+     *     :param created_at: When the execution was recorded.
+     *     :param task_status: The upstream execution status.
+     *     :param started_at: When the upstream execution started.
+     *     :param finished_at: When the upstream execution finished.
+     *     :param has_logs: Whether the upstream execution has readable logs.
+     */
+    atw__ATWIncidentExecutionResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Finished At */
+      finished_at?: string | null;
+      /** Has Logs */
+      has_logs?: boolean | null;
+      /**
+       * Id
+       * Format: uuid4
+       */
+      id: string;
+      /** Snippet Filename */
+      snippet_filename: string;
+      /** Started At */
+      started_at?: string | null;
+      /** Task History Id */
+      task_history_id: number;
+      task_status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+    };
+    /**
+     * ATWMergedSchemaResponse
+     * @description Represent the execution form for a batch of selected snippets.
+     *
+     *     A purpose-built DTO rather than a plain
+     *     :class:`~app.sep.apps.framework.schema.AppSchema`: the renderer needs to map
+     *     every non-shared field back to the snippet that declared it, and an
+     *     ``AppSchema`` section carries only a display title.
+     *
+     *     :param shared: The batch-level execution fields followed by every parameter
+     *         the selection declares identically.
+     *     :param per_snippet: The remaining per-snippet fields, in request order.
+     */
+    atw__ATWMergedSchemaResponse: {
+      /** Per Snippet */
+      per_snippet: components['schemas']['atw__ATWSnippetSchema'][];
+      /** Shared */
+      shared: (
+        | components['schemas']['framework__BoolField']
+        | components['schemas']['framework__ChoiceField']
+        | components['schemas']['framework__DateTimeField']
+        | components['schemas']['framework__FileField']
+        | components['schemas']['framework__FloatField']
+        | components['schemas']['framework__HostField']
+        | components['schemas']['framework__IntegerField']
+        | components['schemas']['framework__MultiChoiceField']
+        | components['schemas']['framework__MultiHostField']
+        | components['schemas']['framework__MultiSchemaField']
+        | components['schemas']['framework__MultiServiceField']
+        | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__SchemaField']
+        | components['schemas']['framework__ScriptPreviewField']
+        | components['schemas']['framework__ServiceField']
+        | components['schemas']['framework__StringField']
+        | components['schemas']['framework__TableField']
+        | components['schemas']['framework__TextAreaField']
+        | components['schemas']['framework__YamlField']
+        | components['schemas']['framework__OneOfGroup']
+      )[];
+    };
+    /**
+     * ATWSnippetSchema
+     * @description Represent the fields one selected snippet still owns after merging.
+     *
+     *     :param snippet_filename: The snippet the remaining fields belong to.
+     *     :param fields: The snippet's parameter fields that did not merge into the
+     *         shared section.
+     */
+    atw__ATWSnippetSchema: {
+      /** Fields */
+      fields: (
+        | components['schemas']['framework__BoolField']
+        | components['schemas']['framework__ChoiceField']
+        | components['schemas']['framework__DateTimeField']
+        | components['schemas']['framework__FileField']
+        | components['schemas']['framework__FloatField']
+        | components['schemas']['framework__HostField']
+        | components['schemas']['framework__IntegerField']
+        | components['schemas']['framework__MultiChoiceField']
+        | components['schemas']['framework__MultiHostField']
+        | components['schemas']['framework__MultiSchemaField']
+        | components['schemas']['framework__MultiServiceField']
+        | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__SchemaField']
+        | components['schemas']['framework__ScriptPreviewField']
+        | components['schemas']['framework__ServiceField']
+        | components['schemas']['framework__StringField']
+        | components['schemas']['framework__TableField']
+        | components['schemas']['framework__TextAreaField']
+        | components['schemas']['framework__YamlField']
+        | components['schemas']['framework__OneOfGroup']
+      )[];
+      /** Snippet Filename */
+      snippet_filename: string;
     };
     /**
      * ATWSnippetSummary
@@ -4871,6 +5153,17 @@ export interface components {
       case_ref?: string | null;
       /** Name */
       name?: string;
+    };
+    /** PaginatedResponse[ATWIncidentExecutionResponse] */
+    atw__PaginatedResponse_ATWIncidentExecutionResponse_: {
+      /** Items */
+      items: components['schemas']['atw__ATWIncidentExecutionResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[AtwIncidentResponse] */
     atw__PaginatedResponse_AtwIncidentResponse_: {
@@ -5616,7 +5909,9 @@ export interface components {
      */
     dipper__DipperExecuteWrite: {
       /** Args */
-      args?: Record<string, never>;
+      args?: {
+        [key: string]: unknown;
+      };
       /** @default environment */
       collector_type: components['schemas']['dipper__CollectorTypeEnum'];
       /** Execution Host */
@@ -7118,9 +7413,7 @@ export interface components {
       /** Name */
       name: string;
       /**
-       * Type
-       * @default one_of
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'one_of';
@@ -7236,7 +7529,9 @@ export interface components {
        * Args
        * @default {}
        */
-      args: Record<string, never>;
+      args: {
+        [key: string]: unknown;
+      };
       /** Execution Host */
       executor_host: string;
       /**
@@ -10298,6 +10593,38 @@ export interface operations {
       };
     };
   };
+  atw_atw_execution_schema_api_apps_atw_execution_schema__get: {
+    parameters: {
+      query: {
+        /** @description Snippet filenames to build a batch form for. */
+        snippet_filename: string[];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__ATWMergedSchemaResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   atw_atw_list_incidents_api_apps_atw_incidents__get: {
     parameters: {
       query?: {
@@ -10445,6 +10772,75 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_ATWIncidentExecutionResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__ATWBatchExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__ATWBatchExecuteResponse'];
         };
       };
       /** @description Validation Error */
