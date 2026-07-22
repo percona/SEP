@@ -44,15 +44,13 @@ A conforming profile must provide:
 | `AUTH.PROVIDER` | `grafana` | PMM's Grafana is the identity provider; there is no Casdoor. |
 | Celery broker | `redis://127.0.0.1:6379` | Served by the bundled Valkey. The credential is added at runtime — see below. |
 
-`env/spikes/SEP-1578/settings-spike.yaml` is a working reference profile.
-
 ### The broker credential is generated, not configured
 
 `entrypoint.sh` mints a random password per container start, writes it into a
 mode-`0600` Valkey config at `/tmp/valkey.conf`, and exports
 `CELERY__BROKER_URL` / `CELERY__RESULT_BACKEND` carrying it. Environment
-outranks the mounted `settings.yaml`, so a profile whose broker URL has no
-password — like the reference profile above — keeps working unchanged; the
+outranks the mounted `settings.yaml`, so a profile carrying the password-less
+`redis://127.0.0.1:6379` from the table above keeps working unchanged; the
 exported value wins. It also supersedes a `CELERY__BROKER_URL` passed to
 `docker run`, since only the generated credential opens the bundled broker.
 Nothing external supplies the credential and nothing needs to know it.
