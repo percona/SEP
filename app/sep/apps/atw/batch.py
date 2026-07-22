@@ -51,6 +51,23 @@ from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.sep.apps.snippets.script_source import snippet_source, SnippetScript
 from app.tasks.models import TaskHistoryStatusEnum
 
+__all__ = [
+    "MAX_BATCH_SNIPPETS",
+    "ATWBatchExecuteItemResponse",
+    "ATWBatchExecuteItemWrite",
+    "ATWBatchExecuteResponse",
+    "ATWBatchExecuteWrite",
+    "ATWIncidentExecutionResponse",
+    "ATWMergedSchemaResponse",
+    "ATWSnippetSchema",
+    "batch_execution_fields",
+    "dispatch_batch_item",
+    "fetch_task_history",
+    "parameter_fields",
+    "resolve_snippet",
+    "shared_field_names",
+]
+
 logger = logging.getLogger(__name__)
 
 ATW_HYDRATION_WARNING = (
@@ -341,21 +358,3 @@ async def fetch_task_history(
     except (HTTPException, OSError):
         logger.warning(ATW_HYDRATION_WARNING, task_history_id, exc_info=True)
         return {}
-
-
-__all__ = [
-    "MAX_BATCH_SNIPPETS",
-    "ATWBatchExecuteItemResponse",
-    "ATWBatchExecuteItemWrite",
-    "ATWBatchExecuteResponse",
-    "ATWBatchExecuteWrite",
-    "ATWIncidentExecutionResponse",
-    "ATWMergedSchemaResponse",
-    "ATWSnippetSchema",
-    "batch_execution_fields",
-    "dispatch_batch_item",
-    "fetch_task_history",
-    "parameter_fields",
-    "resolve_snippet",
-    "shared_field_names",
-]
