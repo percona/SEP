@@ -62,6 +62,11 @@ export type AppListResult<T> = {
   items: T[];
   /** ``null`` when the backend returned a bare array (``NO_PAGINATION``). */
   pagination: AppListPagination | null;
+  /**
+   * Set when ``fetchAllPages`` stopped at the page cap before reaching
+   * ``total``. Absent (or false) when the fetch completed or was not used.
+   */
+  truncated?: boolean;
 };
 
 function isPaginatedAppListEnvelope<T>(data: unknown): data is PaginatedAppList<T> {
@@ -110,13 +115,19 @@ export function normalizeAppListResponse<T>(
 export const DEFAULT_APP_LIST_OFFSET = 0;
 export const DEFAULT_APP_LIST_LIMIT = 50;
 
+/** Soft cap on pages walked by ``fetchAllPages`` (~2500 rows at the default limit). */
 const MAX_FETCH_ALL_PAGES = 50;
 
 export type AppListQueryOptions = {
   enabled?: boolean;
   offset?: number;
   limit?: number;
-  /** When true, fetches every page and returns the full item set (for schedule joins). */
+  /**
+   * Walk paginated list pages for schedule joins (e.g. SchemaListView schedule
+   * columns). Caps at ``MAX_FETCH_ALL_PAGES`` × ``DEFAULT_APP_LIST_LIMIT``
+   * (2500 items); if ``total`` is larger the result sets ``truncated: true``
+   * and logs a warning. Issues up to that many sequential GETs.
+   */
   fetchAllPages?: boolean;
 };
 
@@ -152,6 +163,7 @@ async function fetchAllAppListPages<T extends Record<string, unknown>>(
 ): Promise<AppListResult<T>> {
   const out: T[] = [];
   let offset = 0;
+  let lastTotal: number | null = null;
   // Stay at the default page size: some plugins cap ``limit`` at 50
   // (``DEFAULT_PAGINATION_LIMIT``), so a larger client limit would 422 there.
   const limit = DEFAULT_APP_LIST_LIMIT;
@@ -166,6 +178,7 @@ async function fetchAllAppListPages<T extends Record<string, unknown>>(
       return { items: page.items, pagination: null };
     }
 
+    lastTotal = page.pagination.total;
     out.push(...page.items);
     offset += page.items.length;
     if (offset >= page.pagination.total || page.items.length === 0) {
@@ -173,7 +186,12 @@ async function fetchAllAppListPages<T extends Record<string, unknown>>(
     }
   }
 
-  return { items: out, pagination: null };
+  // eslint-disable-next-line no-console -- surface silent schedule-join truncation
+  console.warn(
+    `[api] fetchAllPages truncated ${path} at ${out.length} of ${lastTotal ?? '?'} items ` +
+      `(cap ${MAX_FETCH_ALL_PAGES}×${limit})`,
+  );
+  return { items: out, pagination: null, truncated: true };
 }
 
 async function fetchAppList<T extends Record<string, unknown>>(

@@ -137,6 +137,31 @@ describe('fetchAppTasksList', () => {
     expect(getMock).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ items, pagination: null });
   });
+
+  it('fetchAllPages sets truncated and warns when the page cap is hit', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    getMock.mockImplementation(async (path, config) => {
+      const offset = Number((config as { params: { offset: number } }).params.offset);
+      return {
+        data: {
+          items: Array.from({ length: DEFAULT_APP_LIST_LIMIT }, (_, i) => ({
+            name: `t${offset + i}`,
+          })),
+          total: 3000,
+          offset,
+          limit: DEFAULT_APP_LIST_LIMIT,
+        },
+      };
+    });
+
+    const result = await fetchAppTasksList('mysql_backups', { fetchAllPages: true });
+
+    expect(getMock).toHaveBeenCalledTimes(50);
+    expect(result.items).toHaveLength(50 * DEFAULT_APP_LIST_LIMIT);
+    expect(result.truncated).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('fetchAllPages truncated'));
+    warn.mockRestore();
+  });
 });
 
 describe('fetchAppEntityList', () => {

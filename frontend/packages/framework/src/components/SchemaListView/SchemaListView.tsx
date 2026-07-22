@@ -179,6 +179,9 @@ export function SchemaListView(props: SchemaListViewProps) {
  * Fetches the plugin's periodic tasks, builds the by-name lookup, and renders
  * the table. Isolated from {@link SchemaListView} so the schedule hook is only
  * mounted when a schedule column is actually present.
+ *
+ * ``useScheduledTasksForApp`` uses ``fetchAllPages``, so this path may issue up
+ * to ~50 sequential task-list requests alongside the paged list fetch.
  */
 function ScheduleJoinedListView(props: SchemaListViewProps & { pluginName: string }) {
   const { pluginName, disableSchedulePolling = false } = props;
