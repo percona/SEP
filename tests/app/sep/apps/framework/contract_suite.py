@@ -31,7 +31,8 @@ methods request (``contract_client``, ``unauthenticated_contract_client``,
 ``mock_task_api``, ``mock_inventory_api``), each reading ``request.cls.app_def``.
 """
 
-from typing import Any, ClassVar
+from types import NoneType, UnionType
+from typing import Any, ClassVar, get_args, get_origin, Union
 from unittest.mock import AsyncMock
 
 import pytest
@@ -39,6 +40,8 @@ from fastapi import APIRouter, FastAPI, status
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from polyfactory.factories.pydantic_factory import ModelFactory
+from pydantic import BaseModel
+from pydantic.fields import FieldInfo
 from pytest_mock import MockerFixture
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
@@ -189,26 +192,44 @@ def build_contract_client(
     return TestClient(app, raise_server_exceptions=False)
 
 
-def build_valid_create_body(
-    app_def: TaskExecutionApp, *, task_name: str = _NEW_TASK_NAME
-) -> dict[str, Any] | None:
-    """Build a valid create form body for a model-first ``app_def``.
+def _select_branch(field: FieldInfo) -> type[BaseModel] | None:
+    """Return the first model branch of a union field, or ``None`` for a non-union.
 
-    Generates a body over ``app_def.create_model`` via polyfactory, then overrides
-    each inventory reference field with its seeded ``MOCK_*_ID`` (wrapped in a
-    one-element list when the marker declares ``multiple=True``), each ``HostRef``
-    field with ``SYNTH_EXECUTOR_HOST``, and ``task_name`` with a known value.
-    Returns ``None`` for a transitional ``schema=`` app, which has no
-    ``create_model`` to introspect.
+    Drops the ``None`` arm of an optional union (``X | Y | None``) and returns the
+    first remaining ``BaseModel`` arm **in declaration order** — a deterministic
+    pick that never depends on set or hash ordering, the flake class the derived
+    one-of body schema was hardened against. Returns ``None`` when the field is not
+    a union at all (a scalar, or a container such as ``list[ChildModel]`` whose
+    ``get_args`` also yields a model but must keep its container shape), or is a
+    union that mixes in a non-model arm (a collapsed ``int | str`` reference).
 
-    :param app_def: The app definition whose create model drives the body.
-    :param task_name: The task name to set on the generated body.
-    :return: A form-field mapping, or ``None`` when no body can be derived.
+    :param field: The create- or branch-model field being inspected.
+    :return: The first model branch to build, or ``None``.
     """
-    model = app_def.create_model
-    if model is None:
+    if get_origin(field.annotation) not in (Union, UnionType):
         return None
-    overrides = {"task_name": task_name}
+    args = [arg for arg in get_args(field.annotation) if arg is not NoneType]
+    if not args or not all(
+        isinstance(arg, type) and issubclass(arg, BaseModel) for arg in args
+    ):
+        return None
+    return args[0]
+
+
+def _ref_overrides(model: type[BaseModel]) -> dict[str, Any]:
+    """Return the override map pinning ``model``'s inventory references to seeded ids.
+
+    Maps each ``ServiceRef`` / ``SchemaRef`` / ``TableRef`` field to its seeded
+    ``MOCK_*_ID`` (wrapped in a one-element list when the marker declares
+    ``multiple=True``), each ``HostRef`` field to ``SYNTH_EXECUTOR_HOST``, and each
+    discriminated-union field to a built first-branch instance carrying its own
+    recursively-resolved references — so a body whose references live inside union
+    branches still resolves against the seeded mock inventory.
+
+    :param model: The create or branch model whose fields are inspected.
+    :return: A field-name → override-value map for ``ModelFactory.build``.
+    """
+    overrides: dict[str, Any] = {}
     for name, field in model.model_fields.items():
         ref = find_ref_marker(list(field.metadata))
         if isinstance(ref, HostRef):
@@ -217,6 +238,42 @@ def build_valid_create_body(
             )
         elif (mock_id := _REF_MOCK_IDS.get(type(ref))) is not None:
             overrides[name] = [mock_id] if ref.multiple else mock_id
+        elif (branch := _select_branch(field)) is not None:
+            overrides[name] = ModelFactory.create_factory(branch).build(
+                **_ref_overrides(branch)
+            )
+    return overrides
+
+
+def build_valid_create_body(
+    app_def: TaskExecutionApp,
+    *,
+    task_name: str = _NEW_TASK_NAME,
+    create_body_overrides: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Build a valid create form body for a model-first ``app_def``.
+
+    Generates a body over ``app_def.create_model`` via polyfactory, then overrides
+    each inventory reference with its seeded ``MOCK_*_ID`` / ``SYNTH_EXECUTOR_HOST``
+    — recursing into discriminated-union fields so references nested inside union
+    branches resolve too — and ``task_name`` with a known value. ``create_body_overrides``
+    is applied last, so a subclass always wins over a generated value; it feeds the
+    ``build`` call (not only the dumped body) so a scalar a ``__form_rules__`` rule or
+    a model validator constrains is pinned before validation runs. Returns ``None`` for
+    a transitional ``schema=`` app, which has no ``create_model`` to introspect.
+
+    :param app_def: The app definition whose create model drives the body.
+    :param task_name: The task name to set on the generated body.
+    :param create_body_overrides: Field values a subclass pins over the generated
+        body (for example a form-rule- or validator-constrained scalar).
+    :return: A form-field mapping, or ``None`` when no body can be derived.
+    """
+    model = app_def.create_model
+    if model is None:
+        return None
+    overrides: dict[str, Any] = {"task_name": task_name, **_ref_overrides(model)}
+    if create_body_overrides:
+        overrides.update(create_body_overrides)
     instance = ModelFactory.create_factory(model).build(**overrides)
     return instance.model_dump(mode="json")
 
@@ -254,14 +311,19 @@ def host_ref_field_name(app_def: TaskExecutionApp) -> str | None:
     return None
 
 
-def build_invalid_create_body(app_def: TaskExecutionApp) -> dict[str, Any] | None:
+def build_invalid_create_body(
+    app_def: TaskExecutionApp, *, create_body_overrides: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     """Build a create body missing one required field, to drive the create 422.
 
     :param app_def: The app definition whose create model drives the body.
+    :param create_body_overrides: Field values a subclass pins over the generated
+        body, threaded through so the body 422s on the dropped required field rather
+        than on an unrelated form-rule violation.
     :return: A body with one required field dropped, or ``None`` when no body or
         no required field can be derived.
     """
-    body = build_valid_create_body(app_def)
+    body = build_valid_create_body(app_def, create_body_overrides=create_body_overrides)
     if body is None:
         return None
     required = [
@@ -296,10 +358,16 @@ class DerivedRouterContractTests:
     provider remaps the seeded ``created_by`` to; leave it ``None`` for an app whose
     provider is not deterministic under test (for example a real Casdoor lookup), so
     the injected-extras tests assert only the deterministic ``service_type`` extra.
+
+    Set :attr:`create_body_overrides` to pin fields the generic body generator cannot
+    satisfy on its own — a scalar a ``__form_rules__`` rule or a model validator
+    constrains (for example a one-of app whose form rule accepts only one enum value).
+    It wins over every generated value on the create and update bodies the suite posts.
     """
 
     app_def: ClassVar[TaskExecutionApp]
     remapped_username: ClassVar[str | None] = SYNTH_CREATED_BY_NAME
+    create_body_overrides: ClassVar[dict[str, Any]] = {}
 
     def test_schema_200(self, contract_client: TestClient) -> None:
         """Assert ``GET /schema`` serves the derived plugin schema."""
@@ -369,7 +437,9 @@ class DerivedRouterContractTests:
         """Assert a real form POST creates a task and returns 201."""
         if not self.app_def.capabilities.create:
             pytest.skip("create capability disabled")
-        body = build_valid_create_body(self.app_def)
+        body = build_valid_create_body(
+            self.app_def, create_body_overrides=self.create_body_overrides
+        )
         if body is None:
             pytest.skip("no derivable create body (schema= passthrough)")
         base = app_base_url(self.app_def)
@@ -385,7 +455,9 @@ class DerivedRouterContractTests:
         """Assert create stamps the validated form body under ``data['_form']``."""
         if not self.app_def.capabilities.create:
             pytest.skip("create capability disabled")
-        body = build_valid_create_body(self.app_def)
+        body = build_valid_create_body(
+            self.app_def, create_body_overrides=self.create_body_overrides
+        )
         if body is None:
             pytest.skip("no derivable create body (schema= passthrough)")
         base = app_base_url(self.app_def)
@@ -411,7 +483,9 @@ class DerivedRouterContractTests:
         """Assert a body missing a required field 422s before any upstream POST."""
         if not self.app_def.capabilities.create:
             pytest.skip("create capability disabled")
-        body = build_invalid_create_body(self.app_def)
+        body = build_invalid_create_body(
+            self.app_def, create_body_overrides=self.create_body_overrides
+        )
         if body is None:
             pytest.skip("no derivable invalid create body")
         base = app_base_url(self.app_def)
@@ -427,7 +501,9 @@ class DerivedRouterContractTests:
         """Assert ``connectivity_check`` attaches the probe warning to the response."""
         if not self.app_def.connectivity_check:
             pytest.skip("connectivity check disabled")
-        body = build_valid_create_body(self.app_def)
+        body = build_valid_create_body(
+            self.app_def, create_body_overrides=self.create_body_overrides
+        )
         if body is None:
             pytest.skip("no derivable create body (schema= passthrough)")
         mocker.patch(
@@ -498,7 +574,9 @@ class DerivedRouterContractTests:
         host_field = host_ref_field_name(self.app_def)
         if host_field is None:
             pytest.skip("no HostRef field")
-        body = build_valid_create_body(self.app_def)
+        body = build_valid_create_body(
+            self.app_def, create_body_overrides=self.create_body_overrides
+        )
         base = app_base_url(self.app_def)
 
         response = post_create_body(contract_client, f"{base}/", self.app_def, body)
@@ -662,7 +740,9 @@ class DerivedRouterContractTests:
             pytest.skip("no detail response builder")
         if not self.app_def.capabilities.create:
             pytest.skip("create capability disabled")
-        body = build_valid_create_body(self.app_def)
+        body = build_valid_create_body(
+            self.app_def, create_body_overrides=self.create_body_overrides
+        )
         if body is None:
             pytest.skip("no derivable create body (schema= passthrough)")
         base = app_base_url(self.app_def)
@@ -678,7 +758,9 @@ class DerivedRouterContractTests:
             pytest.skip("create capability disabled")
         if self.app_def.response_context_provider is None:
             pytest.skip("no response context provider")
-        body = build_valid_create_body(self.app_def)
+        body = build_valid_create_body(
+            self.app_def, create_body_overrides=self.create_body_overrides
+        )
         if body is None:
             pytest.skip("no derivable create body (schema= passthrough)")
         base = app_base_url(self.app_def)
@@ -697,7 +779,9 @@ class DerivedRouterContractTests:
         """Assert a ``create_extra_deps`` guard rejects create with a 409."""
         if not self.app_def.create_extra_deps:
             pytest.skip("no create extra deps")
-        body = build_valid_create_body(self.app_def)
+        body = build_valid_create_body(
+            self.app_def, create_body_overrides=self.create_body_overrides
+        )
         if body is None:
             pytest.skip("no derivable create body (schema= passthrough)")
         mock_task_api.seed_running(_CONFLICT_TASK_NAME, owner=self.app_def.owner)
@@ -779,7 +863,11 @@ class DerivedRouterContractTests:
         """Assert a real ``PUT /{detail}`` updates the task and returns 200."""
         if not self.app_def.capabilities.update:
             pytest.skip("update capability disabled")
-        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        body = build_valid_create_body(
+            self.app_def,
+            task_name=SEEDED_TASK_NAME,
+            create_body_overrides=self.create_body_overrides,
+        )
         if body is None:
             pytest.skip("no derivable update body (schema= passthrough)")
         base = app_base_url(self.app_def)
@@ -804,7 +892,11 @@ class DerivedRouterContractTests:
         ):
             pytest.skip("no derived create+update round-trip")
         task_name = "contract-roundtrip-task"
-        body = build_valid_create_body(self.app_def, task_name=task_name)
+        body = build_valid_create_body(
+            self.app_def,
+            task_name=task_name,
+            create_body_overrides=self.create_body_overrides,
+        )
         if body is None:
             pytest.skip("no derivable create body (schema= passthrough)")
         base = app_base_url(self.app_def)
@@ -823,7 +915,11 @@ class DerivedRouterContractTests:
         """Assert ``PUT /{detail}`` 404s for an unknown task name."""
         if not self.app_def.capabilities.update:
             pytest.skip("update capability disabled")
-        body = build_valid_create_body(self.app_def, task_name=_UNKNOWN_TASK_NAME)
+        body = build_valid_create_body(
+            self.app_def,
+            task_name=_UNKNOWN_TASK_NAME,
+            create_body_overrides=self.create_body_overrides,
+        )
         if body is None:
             pytest.skip("no derivable update body (schema= passthrough)")
         base = app_base_url(self.app_def)
@@ -840,7 +936,11 @@ class DerivedRouterContractTests:
             pytest.skip("no derived update route")
         if self.app_def.response_context_provider is None:
             pytest.skip("no response context provider")
-        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        body = build_valid_create_body(
+            self.app_def,
+            task_name=SEEDED_TASK_NAME,
+            create_body_overrides=self.create_body_overrides,
+        )
         if body is None:
             pytest.skip("no derivable update body (schema= passthrough)")
         base = app_base_url(self.app_def)
@@ -864,7 +964,11 @@ class DerivedRouterContractTests:
         :return: A valid PUT body, or ``None`` for a ``schema=`` passthrough app
             with no derivable body.
         """
-        return build_valid_create_body(self.app_def, task_name=task_name)
+        return build_valid_create_body(
+            self.app_def,
+            task_name=task_name,
+            create_body_overrides=self.create_body_overrides,
+        )
 
     def test_update_guard_409(
         self, contract_client: TestClient, mock_task_api: Any
