@@ -352,11 +352,12 @@ jobs:
 
       - name: Smoke test - verify HEALTHCHECK instruction
         run: |
-          healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "sep:HEAD-sidecar")
-          if [ -z "$healthcheck" ] || [ "$healthcheck" = "null" ]; then
-            echo "::error::HEALTHCHECK instruction is missing from the side-car image"
+          healthcheck_test=$(docker inspect --format='{{json .Config.Healthcheck.Test}}' "sep:HEAD-sidecar")
+          if [ -z "$healthcheck_test" ] || [ "$healthcheck_test" = "null" ] || [ "$healthcheck_test" = "[\"NONE\"]" ]; then
+            echo "::error::HEALTHCHECK instruction is missing or disabled (HEALTHCHECK NONE) in the side-car image"
             exit 1
           fi
+          healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "sep:HEAD-sidecar")
           echo "HEALTHCHECK present: $healthcheck"
 
   ci-success:
