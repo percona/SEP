@@ -22,15 +22,33 @@ from resolved inputs, the signed artifact-download URL, and the "POST
 ``/execute/{name}`` then read the created task id" execute tail. Each helper here
 takes the *already-resolved* script / meta, so every app keeps its own
 script-resolution keying while sharing the body.
+
+:func:`execute_script` sits one level above those: it is the whole validate →
+coerce → build-meta → dispatch sequence the derived ``POST /snippet/execute``
+route performs, factored out so a caller that dispatches several scripts in one
+request (the ATW batch endpoint) drives the identical sequence instead of
+re-rolling its subtle arg-coercion contract.
 """
 
+from typing import TypeVar
+
 from fastapi import Request
+from pydantic import ValidationError
 
 from app.core.config import settings
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import (
+    HTTPBadRequestException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
-from app.sep.apps.framework.script_source import ScriptPreviewResponse
+from app.sep.apps.framework.script_source import (
+    ScriptExecuteWrite,
+    ScriptExecutionResponse,
+    ScriptPreviewResponse,
+    ScriptProtocol,
+    ScriptSource,
+)
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.deps import get_base_url
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
@@ -45,8 +63,11 @@ __all__ = [
     "build_artifact_download_url",
     "build_execution_meta",
     "build_script_preview",
+    "execute_script",
     "post_task_execution",
 ]
+
+S = TypeVar("S", bound=ScriptProtocol)
 
 
 async def build_script_preview(script: BaseSnippet) -> ScriptPreviewResponse:
@@ -156,3 +177,47 @@ async def post_task_execution(
         json={"meta": meta.model_dump(by_alias=True, exclude_none=True)},
     )
     return created.get("id") if isinstance(created, dict) else None
+
+
+async def execute_script(
+    source: ScriptSource[S],
+    script: S,
+    body: ScriptExecuteWrite,
+    tasks_api: RemoteAPI,
+) -> ScriptExecutionResponse:
+    """Validate the args, assemble the meta, and dispatch one script execution.
+
+    ``body.args`` arrives keyed by the script's *frontmatter* parameter names, so
+    it is validated against the script's dynamic execution model and the model's
+    **coerced** dump (keyed by Python attribute name) is what reaches
+    ``build_execution_meta`` — that hook rebuilds the engine model with
+    ``model_construct`` and would reject a re-validated, alias-keyed payload.
+
+    :param source: The script source whose ``build_execution_meta`` assembles the
+        meta posted to the Tasks API.
+    :param script: The already-resolved script to execute.
+    :param body: The execute request carrying the executor host, sudo choice, and
+        per-parameter arguments.
+    :param tasks_api: The authenticated Tasks API client.
+    :return: The dispatched task name, the created task-history id, and the
+        script's filename.
+    :raises HTTPUnprocessableEntityException: When ``body.args`` fails validation
+        against the script's execution model.
+    :raises HTTPException: Propagated from ``build_execution_meta`` (approval and
+        field-gate enforcement) and from an error status on the Tasks API dispatch.
+    :raises OSError: Propagated from the Tasks API dispatch when the transport
+        itself fails (``aiohttp``'s connection errors are ``OSError`` subclasses).
+    """
+    try:
+        validated = script.get_execution_model().model_validate(body.args)
+    except ValidationError as exc:
+        raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
+    meta = source.build_execution_meta(
+        script, body.model_copy(update={"args": validated.model_dump()})
+    )
+    task_id = await post_task_execution(tasks_api, script.execution_task_name, meta)
+    return ScriptExecutionResponse(
+        task_name=script.execution_task_name,
+        task_id=task_id,
+        snippet_filename=script.filename,
+    )

@@ -16,10 +16,9 @@
 """Define tests for the ``BundleUploader`` protocol surface."""
 
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Any
 
-from app.core.requests.bundle_upload import BundleUploader, UploadResult
+from app.sep.bundle_upload.seam import BundleSource, BundleUploader, UploadResult
 
 
 class _MinimalBundleUploader:
@@ -29,7 +28,7 @@ class _MinimalBundleUploader:
         self,
         *,
         source_ref: str,
-        bundle_path: Path,
+        bundle: BundleSource,
         case_ref: str | None,
         manifest: Mapping[str, Any],
     ) -> UploadResult:
