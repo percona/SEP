@@ -353,8 +353,7 @@ function SchemaListViewCore({
       muiTablePaginationProps={
         manualPagination
           ? {
-              // Stay at DEFAULT_APP_LIST_LIMIT: some plugins (e.g. mysql_backups)
-              // reject limit > 50 with HTTP 422.
+              // Single option: MUI hides the select; see DEFAULT_APP_LIST_LIMIT.
               rowsPerPageOptions: [DEFAULT_APP_LIST_LIMIT],
             }
           : undefined

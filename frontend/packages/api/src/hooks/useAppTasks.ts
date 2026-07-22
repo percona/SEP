@@ -113,6 +113,11 @@ export function normalizeAppListResponse<T>(
 }
 
 export const DEFAULT_APP_LIST_OFFSET = 0;
+/**
+ * Default page size for plugin list requests. Keep list UI page-size options at
+ * this value: some plugins (``DEFAULT_PAGINATION_LIMIT``) reject ``limit`` > 50
+ * with HTTP 422.
+ */
 export const DEFAULT_APP_LIST_LIMIT = 50;
 
 /** Soft cap on pages walked by ``fetchAllPages`` (~2500 rows at the default limit). */
@@ -164,8 +169,6 @@ async function fetchAllAppListPages<T extends Record<string, unknown>>(
   const out: T[] = [];
   let offset = 0;
   let lastTotal: number | null = null;
-  // Stay at the default page size: some plugins cap ``limit`` at 50
-  // (``DEFAULT_PAGINATION_LIMIT``), so a larger client limit would 422 there.
   const limit = DEFAULT_APP_LIST_LIMIT;
 
   for (let iter = 0; iter < MAX_FETCH_ALL_PAGES; iter++) {

@@ -684,12 +684,6 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                   limit: prev.limit,
                 }));
               }}
-              onRowsPerPageChange={(event) => {
-                setListPage({
-                  offset: DEFAULT_APP_LIST_OFFSET,
-                  limit: Number(event.target.value),
-                });
-              }}
               rowsPerPageOptions={[DEFAULT_APP_LIST_LIMIT]}
             />
           )}
