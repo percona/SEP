@@ -22,11 +22,13 @@ four typed sources (a literal, a send input, a named secret, or an earlier step'
 extracted output), and no conditional, loop, or templating construct exists.
 :class:`DeliveryPlanExecutor` runs a plan over a
 :class:`~app.core.requests.remote_api.RemoteAPI` transport and satisfies the
-:class:`~app.core.requests.bundle_upload.BundleUploader` protocol.
+:class:`~app.sep.bundle_upload.seam.BundleUploader` protocol.
 
 Resolution-step responses are read only for the outputs the plan declares and are
 then discarded -- they may carry data the caller must neither retain nor return.
-This module is core infrastructure and must not import from ``app.sep``.
+This module lives in ``app.sep`` but imports only from ``app.core`` and no other
+``app.sep`` module, keeping it promotable to core if a second service ever
+becomes a real consumer.
 """
 
 __all__ = [
@@ -50,7 +52,6 @@ from typing import Annotated, Any, Literal, Self
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, model_validator, PositiveInt, SecretStr
 
-from app.core.requests.bundle_upload import UploadResult
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils import json_serializer, remove_falsy_values_from_dict
 from app.core.utils.fields import CredentialHttpUrl, JsonPointerStr, NonEmptyStr
@@ -58,6 +59,7 @@ from app.core.utils.json_pointer import (
     JsonPointerResolutionError,
     resolve_json_pointer,
 )
+from app.sep.bundle_upload.seam import UploadResult
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +323,7 @@ def _as_scalar(value: Any) -> str | None:
 class DeliveryPlanExecutor:
     """Run a :class:`DeliveryPlan` over a ``RemoteAPI`` transport.
 
-    Satisfies the :class:`~app.core.requests.bundle_upload.BundleUploader`
+    Satisfies the :class:`~app.sep.bundle_upload.seam.BundleUploader`
     protocol: issue the plan's resolution steps in declaration order, then send
     the bundle in the terminal multipart upload step.
     """

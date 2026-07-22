@@ -27,12 +27,12 @@ from pydantic import ValidationError
 
 from app.core.exceptions import HTTPBadGatewayException, HTTPConflictException
 from app.core.requests import RemoteAPI
-from app.core.requests.bundle_upload import BundleUploader
-from app.core.requests.delivery_plan import (
+from app.sep.bundle_upload.plan import (
     DeliveryPlan,
     DeliveryPlanError,
     DeliveryPlanExecutor,
 )
+from app.sep.bundle_upload.seam import BundleUploader
 
 _BASE_URL = "http://localhost:8000/"
 _UPLOAD_URL = "http://localhost:8000/attachment/upload"

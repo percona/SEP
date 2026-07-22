@@ -49,7 +49,6 @@ from app.core.config import (
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
-from app.core.requests.delivery_plan import DeliveryPlan
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
@@ -72,6 +71,7 @@ from app.core.utils.fields import (
     URIPath,
 )
 from app.sep.apps.nav_icons import NavIcon
+from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 

@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from app.core.requests.bundle_upload import BundleUploader, UploadResult
+from app.sep.bundle_upload.seam import BundleUploader, UploadResult
 
 
 class _MinimalBundleUploader:

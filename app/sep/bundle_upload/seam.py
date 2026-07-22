@@ -20,6 +20,10 @@ endpoint. :class:`BundleUploader` is the narrow protocol a send pipeline program
 against, backed by :meth:`app.core.requests.remote_api.RemoteAPI.upload`.
 ``source_ref`` is an opaque reference string, not a domain concept, so this
 module stays vendor-neutral.
+
+This module lives in ``app.sep`` but imports only from ``app.core`` and no other
+``app.sep`` module, keeping it promotable to core if a second service ever
+becomes a real consumer.
 """
 
 __all__ = [
