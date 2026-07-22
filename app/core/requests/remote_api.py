@@ -661,11 +661,14 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                         self._raise_stream_http_error(
                             response.status, detail=fallback, headers=None
                         )
-                    error_detail = response_data.get(
+                    error_body = (
+                        response_data if isinstance(response_data, Mapping) else {}
+                    )
+                    error_detail = error_body.get(
                         detail_key, "An unexpected error occurred on the server."
                     )
                     error_headers = None
-                    if code_key and (error_code := response_data.get(code_key)):
+                    if code_key and (error_code := error_body.get(code_key)):
                         error_headers = {"X-Error-Code": error_code}
                     self._raise_stream_http_error(
                         response.status,
