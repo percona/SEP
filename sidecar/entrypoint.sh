@@ -10,7 +10,6 @@ set -o errexit -o nounset -o pipefail
 
 valkey_conf=/tmp/valkey.conf
 
-# openssl is absent from the slim base; python3 runs the SEP services themselves.
 valkey_password="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 
 # A password in argv is readable by every process in the container's PID
