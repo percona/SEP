@@ -373,10 +373,12 @@ class DeliveryPlanExecutor:
         :return: The extracted upload reference and the response detail; both
             are ``None`` when the receiver answers with a non-mapping body.
         :raises DeliveryPlanError: When the bundle exceeds the configured size
-            cap, the plan cites a send input the caller did not supply, or a
+            cap, the plan cites a send input the caller did not supply, the plan
+            reads a manifest key this send does not carry as a scalar, or a
             declared output cannot be extracted from a step's response.
         :raises HTTPException: Propagates the project exception ``RemoteAPI``
-            raises for an upstream error status.
+            raises for an upstream error status, including a redirect the
+            receiver answered with.
         """
         self._check_bundle_size(bundle.size)
         inputs = {

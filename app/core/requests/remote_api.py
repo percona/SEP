@@ -117,6 +117,15 @@ _HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
 }
 
 
+def _is_redirect(status_code: int) -> bool:
+    """Return whether ``status_code`` is a 3xx redirect.
+
+    :param status_code: The upstream HTTP status to classify.
+    :return: ``True`` for any 3xx status.
+    """
+    return status.HTTP_300_MULTIPLE_CHOICES <= status_code < status.HTTP_400_BAD_REQUEST
+
+
 def _exception_for_status(
     status_code: int, *, detail: Any, headers: dict[str, str] | None = None
 ) -> HTTPException:
@@ -858,10 +867,27 @@ class RemoteAPI(BaseRemoteAPI):
             project exception mapped to the status (a subclass of
             :class:`fastapi.HTTPException`), or a bare :class:`fastapi.HTTPException`
             when the status is unmapped or carries headers the mapped class cannot.
+            A ``3xx`` response also raises when the caller passed
+            ``allow_redirects=False``: the redirect was not followed, so the
+            status is reported rather than treated as a result.
         """
+        follows_redirects = kwargs.get("allow_redirects", True)
         async with self._request(method, path, **kwargs) as response:
             if response.status == status.HTTP_204_NO_CONTENT:
                 return None
+            if not follows_redirects and _is_redirect(response.status):
+                self.logger.warning(
+                    "RemoteAPI (%s): %s request to %s answered %s, which this "
+                    "caller does not follow.",
+                    redact_credential_url(str(self.endpoint)),
+                    method,
+                    path,
+                    response.status,
+                )
+                raise _exception_for_status(
+                    response.status,
+                    detail="The server answered with an unfollowed redirect.",
+                )
             try:
                 response_data = await response.json()
                 self.logger.debug(

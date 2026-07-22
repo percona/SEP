@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 from aiohttp import MultipartWriter
 from aioresponses import aioresponses
-from fastapi import status
+from fastapi import HTTPException, status
 from pydantic import ValidationError
 
 from app.core.exceptions import HTTPBadGatewayException, HTTPConflictException
@@ -751,107 +751,6 @@ class TestDeliveryPlanExecutor:
         assert result.detail == {"other": "x"}
         assert any("/result/sys_id" in record.getMessage() for record in caplog.records)
 
-
-@pytest.mark.asyncio
-class TestDeliveryPlanSecretRedaction:
-    """Cover that plan-supplied secrets reach the wire but never the logs."""
-
-    async def _run_one_step(self, api: RemoteAPI, bundle: BundleSource, caplog) -> list:
-        """Run the ServiceNow-shaped plan and return the recorded requests."""
-        executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
-        with aioresponses() as mock:
-            mock.post(
-                _TICKET_URL,
-                status=status.HTTP_200_OK,
-                payload={"result": {"sys_id": "case-77"}},
-            )
-            mock.post(
-                _UPLOAD_URL,
-                status=status.HTTP_201_CREATED,
-                payload={"result": {"sys_id": "att-2"}},
-            )
-            with caplog.at_level("DEBUG", logger=api.logger.name):
-                async with api:
-                    await executor.upload_bundle(
-                        source_ref="src-9",
-                        bundle=bundle,
-                        case_ref="CS0001",
-                        manifest=_MANIFEST,
-                    )
-            return [req for reqs in mock.requests.values() for req in reqs]
-
-    async def test_header_secret_is_sent_but_masked_in_logs(
-        self, api: RemoteAPI, bundle: BundleSource, caplog
-    ):
-        """Send the real API key on the wire while the debug log shows only a mask."""
-        requests = await self._run_one_step(api, bundle, caplog)
-
-        messages = [record.getMessage() for record in caplog.records]
-        assert any("Sending" in message for message in messages)
-        assert all("real-api-key" not in message for message in messages)
-        assert any("****" in message for message in messages)
-        assert any(
-            request.kwargs.get("headers", {}).get("x-sn-apikey") == "real-api-key"
-            for request in requests
-        )
-
-    async def test_body_secret_is_sent_but_masked_in_logs(
-        self, api: RemoteAPI, bundle: BundleSource, caplog
-    ):
-        """Send the real client token in the JSON body while the log shows a mask."""
-        requests = await self._run_one_step(api, bundle, caplog)
-
-        messages = [record.getMessage() for record in caplog.records]
-        assert all("real-client-token" not in message for message in messages)
-        assert any(
-            request.kwargs.get("json", {}).get("client_token") == "real-client-token"
-            for request in requests
-        )
-
-    async def test_multipart_field_secret_is_sent_but_absent_from_logs(
-        self, api: RemoteAPI, bundle: BundleSource, caplog
-    ):
-        """Send the real secret in a multipart field while no log record carries it.
-
-        This placement has no redaction context behind it -- the multipart body
-        is an opaque payload the request log never expands -- so assert the
-        guarantee directly on both sides: the receiver gets the real value, and
-        no captured record does.
-        """
-        payload = _upload_only_plan(
-            fields={"client_token": {"source": "secret", "name": "client_token"}},
-            reference_pointer=None,
-        )
-        payload["secrets"] = {"client_token": "real-client-token"}
-        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
-        with aioresponses() as mock:
-            mock.post(_UPLOAD_URL, status=status.HTTP_201_CREATED, payload={})
-            with caplog.at_level("DEBUG", logger=api.logger.name):
-                async with api:
-                    await executor.upload_bundle(
-                        source_ref="src-9",
-                        bundle=bundle,
-                        case_ref=None,
-                        manifest=_MANIFEST,
-                    )
-            fields = _multipart_fields(
-                _recorded(mock, "attachment/upload").kwargs["data"]
-            )
-
-        assert fields["client_token"] == "real-client-token"
-        assert all(
-            "real-client-token" not in record.getMessage() for record in caplog.records
-        )
-
-    async def test_redaction_is_released_after_the_send(
-        self, api: RemoteAPI, bundle: BundleSource, caplog
-    ):
-        """Restore the empty redaction sets once the plan finishes."""
-        await self._run_one_step(api, bundle, caplog)
-
-        assert api._extra_sensitive_headers.get() == frozenset()
-        assert api._extra_sensitive_body_fields.get() == frozenset()
-
     async def test_manifest_key_field_resolves_from_the_send_manifest(
         self, api: RemoteAPI, bundle: BundleSource
     ):
@@ -983,3 +882,151 @@ class TestDeliveryPlanSecretRedaction:
             lookup = _recorded(mock, "ticket_details")
 
         assert lookup.kwargs["allow_redirects"] is False
+
+    async def test_upload_raises_on_a_redirect_instead_of_reporting_success(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Fail loudly when the receiver answers the upload with a redirect."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_307_TEMPORARY_REDIRECT,
+                body="",
+                content_type="text/html",
+                headers={"Location": "http://localhost:8000/attachment/upload/"},
+            )
+            async with api:
+                with pytest.raises(HTTPException) as exc_info:
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref=None,
+                        manifest=_MANIFEST,
+                    )
+
+        assert exc_info.value.status_code == status.HTTP_307_TEMPORARY_REDIRECT
+
+    async def test_upload_raises_on_a_redirect_carrying_a_json_body(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Fail loudly on a redirect even when it carries a parseable JSON body."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_308_PERMANENT_REDIRECT,
+                payload={"detail": "moved"},
+                headers={"Location": "http://localhost:8000/attachment/upload/"},
+            )
+            async with api:
+                with pytest.raises(HTTPException) as exc_info:
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref=None,
+                        manifest=_MANIFEST,
+                    )
+
+        assert exc_info.value.status_code == status.HTTP_308_PERMANENT_REDIRECT
+
+
+@pytest.mark.asyncio
+class TestDeliveryPlanSecretRedaction:
+    """Cover that plan-supplied secrets reach the wire but never the logs."""
+
+    async def _run_one_step(self, api: RemoteAPI, bundle: BundleSource, caplog) -> list:
+        """Run the ServiceNow-shaped plan and return the recorded requests."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"sys_id": "case-77"}},
+            )
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-2"}},
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+            return [req for reqs in mock.requests.values() for req in reqs]
+
+    async def test_header_secret_is_sent_but_masked_in_logs(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Send the real API key on the wire while the debug log shows only a mask."""
+        requests = await self._run_one_step(api, bundle, caplog)
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("Sending" in message for message in messages)
+        assert all("real-api-key" not in message for message in messages)
+        assert any("****" in message for message in messages)
+        assert any(
+            request.kwargs.get("headers", {}).get("x-sn-apikey") == "real-api-key"
+            for request in requests
+        )
+
+    async def test_body_secret_is_sent_but_masked_in_logs(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Send the real client token in the JSON body while the log shows a mask."""
+        requests = await self._run_one_step(api, bundle, caplog)
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert all("real-client-token" not in message for message in messages)
+        assert any(
+            request.kwargs.get("json", {}).get("client_token") == "real-client-token"
+            for request in requests
+        )
+
+    async def test_multipart_field_secret_is_sent_but_absent_from_logs(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Send the real secret in a multipart field while no log record carries it.
+
+        This placement has no redaction context behind it -- the multipart body
+        is an opaque payload the request log never expands -- so assert the
+        guarantee directly on both sides: the receiver gets the real value, and
+        no captured record does.
+        """
+        payload = _upload_only_plan(
+            fields={"client_token": {"source": "secret", "name": "client_token"}},
+            reference_pointer=None,
+        )
+        payload["secrets"] = {"client_token": "real-client-token"}
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        with aioresponses() as mock:
+            mock.post(_UPLOAD_URL, status=status.HTTP_201_CREATED, payload={})
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref=None,
+                        manifest=_MANIFEST,
+                    )
+            fields = _multipart_fields(
+                _recorded(mock, "attachment/upload").kwargs["data"]
+            )
+
+        assert fields["client_token"] == "real-client-token"
+        assert all(
+            "real-client-token" not in record.getMessage() for record in caplog.records
+        )
+
+    async def test_redaction_is_released_after_the_send(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Restore the empty redaction sets once the plan finishes."""
+        await self._run_one_step(api, bundle, caplog)
+
+        assert api._extra_sensitive_headers.get() == frozenset()
+        assert api._extra_sensitive_body_fields.get() == frozenset()
