@@ -16,10 +16,10 @@
 """Define database operations for the Tasks API."""
 
 import logging
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import datetime
 
-from sqlalchemy import CursorResult, delete, func, literal, update
+from sqlalchemy import CursorResult, delete, func, literal, or_, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
@@ -46,6 +46,7 @@ from app.tasks.models import (
     TaskHistoryLog,
     TaskHistoryLogState,
     TaskHistoryStatusEnum,
+    TaskHistoryStatusPoint,
     TaskLogType,
 )
 
@@ -635,6 +636,70 @@ class TaskHistoryManager(BaseSQLModelManager):
         }
 
         return {name: latest_by_name.get(name) for name in unique_names}
+
+    @classmethod
+    async def recent_system_status_points_by_task_names(
+        cls,
+        session: AsyncSession,
+        thresholds: Mapping[str, datetime],
+    ) -> dict[str, list[TaskHistoryStatusPoint]]:
+        """Return system-triggered status observations per task name from a cutoff.
+
+        For each ``name -> cutoff`` entry, collect the ``created_at``/``status``
+        of every history row for that name executed by a system identity
+        (:data:`SYSTEM_EXECUTOR_IDS`) whose ``created_at`` is at or after
+        ``cutoff``, so a caller can attribute a specific periodic schedule's run
+        by taking the earliest point at or after that schedule's own
+        ``last_run_at``. Points are grouped by name and returned oldest-first.
+
+        Bounding by time rather than a fixed row count guarantees a schedule's own
+        run is never evicted by later same-name runs (chain children, other
+        schedules, a frequently-firing name); the caller passes each name's cutoff
+        as the earliest ``last_run_at`` among the schedules being resolved for it.
+
+        :param session: The asynchronous session used for query execution.
+        :param thresholds: Map of task name to the earliest ``created_at`` to
+            include. Empty short-circuits to an empty mapping.
+        :return: A mapping of task name to its system-run status points, ascending
+            by ``created_at`` then ``id``; names with no such history are absent.
+        """
+        if not thresholds:
+            return {}
+
+        query = (
+            select(
+                col(Task.name).label("task_name"),
+                col(TaskHistory.created_at).label("created_at"),
+                col(TaskHistory.status).label("status"),
+            )
+            .select_from(TaskHistory)
+            .join(Task)
+            .where(
+                col(TaskHistory.status).isnot(None),
+                col(TaskHistory.executed_by).in_(SYSTEM_EXECUTOR_IDS),
+                or_(
+                    *(
+                        and_(
+                            col(Task.name) == name,
+                            col(TaskHistory.created_at) >= cutoff,
+                        )
+                        for name, cutoff in thresholds.items()
+                    )
+                ),
+            )
+            .order_by(
+                col(Task.name),
+                col(TaskHistory.created_at),
+                col(TaskHistory.id),
+            )
+        )
+        result = await cls._exec(session, query)
+        points: dict[str, list[TaskHistoryStatusPoint]] = {}
+        for row in result.all():
+            points.setdefault(row.task_name, []).append(
+                TaskHistoryStatusPoint(created_at=row.created_at, status=row.status)
+            )
+        return points
 
 
 class TaskHistoryLogManager(BaseSQLModelManager):
