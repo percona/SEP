@@ -830,6 +830,8 @@
           "data_overrides": {
             "anyOf": [
               {
+                "additionalProperties": true,
+                "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                 "type": "object"
               },
               {
@@ -3825,7 +3827,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Snippets Snippets Api Script History Api Apps Snippets Snippet History Get",
+                  "additionalProperties": true,
+                  "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }
               }

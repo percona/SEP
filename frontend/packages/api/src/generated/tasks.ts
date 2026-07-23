@@ -893,7 +893,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never>;
+      meta: {
+        [key: string]: unknown;
+      };
       /** Payload */
       payload?: string | null;
     };
@@ -1257,7 +1259,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never>;
+      meta: {
+        [key: string]: unknown;
+      };
       /** Payload */
       payload?: string | null;
     };
@@ -1285,7 +1289,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never> | null;
+      meta: {
+        [key: string]: unknown;
+      } | null;
       /** Payload */
       payload?: string | null;
       /** Target */
@@ -1296,7 +1302,9 @@ export interface components {
        * Tracking
        * @default {}
        */
-      tracking: Record<string, never> | null;
+      tracking: {
+        [key: string]: unknown;
+      } | null;
     } & {
       [key: string]: unknown;
     };
@@ -1541,7 +1549,9 @@ export interface components {
       /** Created By */
       created_by: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Deleted At */
       deleted_at: string | null;
       /** Id */
@@ -1585,7 +1595,9 @@ export interface components {
        *     :return: A dictionary summarizing average, last, and total task durations.
        *     :rtype: dict[str, Any]
        */
-      readonly duration: Record<string, never>;
+      readonly duration: {
+        [key: string]: unknown;
+      };
       /**
        * Engine
        * @default nomad
@@ -1606,7 +1618,9 @@ export interface components {
        *     :return: A dictionary summarizing the number of passed and failed tasks.
        *     :rtype: dict[str, int]
        */
-      readonly status: Record<string, never>;
+      readonly status: {
+        [key: string]: unknown;
+      };
       /**
        * Total
        * @description Return the total number of tasks.
@@ -1646,7 +1660,9 @@ export interface components {
       /** @default nomad */
       backend: components['schemas']['TaskBackendEnum'];
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /**
        * Is Template
        * @default false

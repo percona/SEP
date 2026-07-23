@@ -20,6 +20,7 @@
           "config": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -48,6 +49,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -105,6 +107,7 @@
           "config": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -117,6 +120,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -811,6 +815,7 @@
           "custom_labels": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -931,6 +936,7 @@
           "custom_labels": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -1063,6 +1069,7 @@
           "custom_labels": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -1291,6 +1298,7 @@
           "custom_labels": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -1585,6 +1593,7 @@
             "title": "Id"
           },
           "keys": {
+            "additionalProperties": true,
             "title": "Keys",
             "type": "object"
           },
@@ -1648,6 +1657,7 @@
             "title": "Id"
           },
           "keys": {
+            "additionalProperties": true,
             "title": "Keys",
             "type": "object"
           },
@@ -1709,6 +1719,7 @@
             "title": "Id"
           },
           "keys": {
+            "additionalProperties": true,
             "title": "Keys",
             "type": "object"
           },
@@ -1753,6 +1764,7 @@
             "type": "string"
           },
           "keys": {
+            "additionalProperties": true,
             "title": "Keys",
             "type": "object"
           },

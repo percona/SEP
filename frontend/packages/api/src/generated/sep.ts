@@ -3450,6 +3450,19 @@ export interface components {
       /** Updated At */
       updated_at?: string | null;
     };
+    /** PaginatedResponse[Annotated[dict[str, Any], WithJsonSchema]] */
+    PaginatedResponse_Annotated_dict_str__Any___WithJsonSchema__: {
+      /** Items */
+      items: {
+        [key: string]: unknown;
+      }[];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[Any] */
     PaginatedResponse_Any_: {
       /** Items */
@@ -3476,17 +3489,6 @@ export interface components {
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
       items: components['schemas']['TaskHistoryResponse'][];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
-    };
-    /** PaginatedResponse[dict[str, Any]] */
-    PaginatedResponse_dict_str__Any__: {
-      /** Items */
-      items: Record<string, never>[];
       /** Limit */
       limit: number;
       /** Offset */
@@ -3603,7 +3605,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -3861,7 +3865,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never> | null;
+      meta: {
+        [key: string]: unknown;
+      } | null;
       /** Payload */
       payload?: string | null;
       /** Target */
@@ -3872,7 +3878,9 @@ export interface components {
        * Tracking
        * @default {}
        */
-      tracking: Record<string, never> | null;
+      tracking: {
+        [key: string]: unknown;
+      } | null;
     } & {
       [key: string]: unknown;
     };
@@ -4032,7 +4040,9 @@ export interface components {
       /** Created By */
       created_by: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Deleted At */
       deleted_at: string | null;
       /** Id */
@@ -4239,7 +4249,9 @@ export interface components {
       /** Id */
       id: number;
       /** Metadata */
-      metadata: Record<string, never>;
+      metadata: {
+        [key: string]: unknown;
+      };
     };
     /**
      * IndexBackupSummary
@@ -4439,7 +4451,9 @@ export interface components {
      */
     alerts__RestoreResponse: {
       /** Details */
-      details: Record<string, never>;
+      details: {
+        [key: string]: unknown;
+      };
       /**
        * Status
        * @constant
@@ -4613,7 +4627,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -5224,7 +5240,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Derived Tasks */
       derived_tasks?: components['schemas']['backup_mongo__BackupDerivedTaskSummary'][];
       /** Hostname */
@@ -5273,7 +5291,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -5471,7 +5491,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Derived Tasks */
       derived_tasks?: components['schemas']['backup_mongo__RestoreDerivedTaskSummary'][];
       /** Hostname */
@@ -5527,7 +5549,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -5700,7 +5724,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Host */
       host?: string | null;
       /** Hostname */
@@ -5749,7 +5775,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -5968,7 +5996,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -6007,7 +6037,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -6178,7 +6210,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Host */
       host?: string | null;
       /** Hostname */
@@ -6264,7 +6298,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -6675,7 +6711,9 @@ export interface components {
         [key: string]: string;
       } | null;
       /** Data Overrides */
-      data_overrides?: Record<string, never> | null;
+      data_overrides?: {
+        [key: string]: unknown;
+      } | null;
       /** Name Suffix */
       name_suffix: string;
       /**
@@ -7321,7 +7359,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -8207,7 +8247,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -8445,7 +8487,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Host */
       host?: string | null;
       /** Hostname */
@@ -8731,7 +8775,9 @@ export interface components {
        */
       name: string;
       /** Period */
-      period?: Record<string, never>;
+      period?: {
+        [key: string]: unknown;
+      };
       /**
        * Size
        * @default 0
@@ -9013,12 +9059,9 @@ export interface components {
        */
       pdf_ready: boolean;
       /** Result */
-      result?:
-        | {
-            [key: string]: unknown;
-          }
-        | Record<string, never>
-        | null;
+      result?: {
+        [key: string]: unknown;
+      } | null;
       /** Status */
       status: string;
     };
@@ -9381,7 +9424,9 @@ export interface components {
      */
     tasks__TaskDetailResponse: {
       /** Execution History */
-      execution_history?: Record<string, never>;
+      execution_history?: {
+        [key: string]: unknown;
+      };
       /** Executor Hosts */
       executor_hosts?: components['schemas']['tasks__ExecutorHostMetadata'][];
       /** Periodic Summary */
@@ -9451,7 +9496,9 @@ export interface components {
      */
     topology__DualPrimaryEdge: {
       /** Data */
-      data?: Record<string, never>;
+      data?: {
+        [key: string]: unknown;
+      };
       /** Id */
       id: string;
       /** Source */
@@ -11730,7 +11777,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PaginatedResponse_dict_str__Any__'];
+          'application/json': components['schemas']['PaginatedResponse_Annotated_dict_str__Any___WithJsonSchema__'];
         };
       };
       /** @description Validation Error */
@@ -13118,7 +13165,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -13624,7 +13673,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>[];
+          'application/json': {
+            [key: string]: unknown;
+          }[];
         };
       };
       /** @description Upstream Tasks API failure. */
@@ -13651,7 +13702,9 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': Record<string, never>;
+        'application/json': {
+          [key: string]: unknown;
+        };
       };
     };
     responses: {
@@ -13661,7 +13714,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -13737,7 +13792,9 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': Record<string, never>;
+        'application/json': {
+          [key: string]: unknown;
+        };
       };
     };
     responses: {
@@ -13747,7 +13804,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -13934,7 +13993,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -13976,7 +14037,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */

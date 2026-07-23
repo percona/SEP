@@ -526,7 +526,9 @@ export interface components {
      */
     HostSystemObservationResponse: {
       /** Config */
-      config?: Record<string, never> | null;
+      config?: {
+        [key: string]: unknown;
+      } | null;
       /**
        * Created At
        * Format: date-time
@@ -535,7 +537,11 @@ export interface components {
       /** Id */
       id: number | null;
       /** Installed Packages */
-      installed_packages?: Record<string, never>[] | null;
+      installed_packages?:
+        | {
+            [key: string]: unknown;
+          }[]
+        | null;
       /** Node Id */
       node_id: number;
       /**
@@ -565,9 +571,15 @@ export interface components {
      */
     HostSystemObservationWrite: {
       /** Config */
-      config?: Record<string, never> | null;
+      config?: {
+        [key: string]: unknown;
+      } | null;
       /** Installed Packages */
-      installed_packages?: Record<string, never>[] | null;
+      installed_packages?:
+        | {
+            [key: string]: unknown;
+          }[]
+        | null;
       /** Node Id */
       node_id?: number | null;
       /**
@@ -989,7 +1001,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1052,7 +1066,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1118,7 +1134,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1257,7 +1275,9 @@ export interface components {
       /** Cluster */
       cluster?: string | null;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1477,7 +1497,9 @@ export interface components {
       /** Id */
       id: number | null;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1518,7 +1540,9 @@ export interface components {
       /** Id */
       id: number | null;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1556,7 +1580,9 @@ export interface components {
       /** Id */
       id: number | null;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1579,7 +1605,9 @@ export interface components {
       /** Create */
       create: string;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */

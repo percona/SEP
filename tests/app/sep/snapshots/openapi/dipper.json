@@ -14,10 +14,12 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
-      "PaginatedResponse_dict_str__Any__": {
+      "PaginatedResponse_Annotated_dict_str__Any___WithJsonSchema__": {
         "properties": {
           "items": {
             "items": {
+              "additionalProperties": true,
+              "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
               "type": "object"
             },
             "title": "Items",
@@ -42,7 +44,7 @@
           "offset",
           "limit"
         ],
-        "title": "PaginatedResponse[dict[str, Any]]",
+        "title": "PaginatedResponse[Annotated[dict[str, Any], WithJsonSchema]]",
         "type": "object"
       },
       "ServiceTypeEnum": {
@@ -949,6 +951,8 @@
           "data_overrides": {
             "anyOf": [
               {
+                "additionalProperties": true,
+                "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                 "type": "object"
               },
               {
@@ -3319,7 +3323,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_dict_str__Any__"
+                  "$ref": "#/components/schemas/PaginatedResponse_Annotated_dict_str__Any___WithJsonSchema__"
                 }
               }
             },

@@ -394,6 +394,7 @@
             "title": "Eta"
           },
           "meta": {
+            "additionalProperties": true,
             "default": {},
             "title": "Meta",
             "type": "object"
@@ -866,6 +867,7 @@
             "title": "Eta"
           },
           "meta": {
+            "additionalProperties": true,
             "default": {},
             "title": "Meta",
             "type": "object"
@@ -904,6 +906,9 @@
           "meta": {
             "anyOf": [
               {
+                "additionalProperties": true,
+                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
+                "readOnly": true,
                 "type": "object"
               },
               {
@@ -935,6 +940,9 @@
           "tracking": {
             "anyOf": [
               {
+                "additionalProperties": true,
+                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
+                "readOnly": true,
                 "type": "object"
               },
               {
@@ -1306,6 +1314,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -1393,6 +1402,7 @@
         "description": "Model for task statistics.\n\n:param engine: The backend engine used for task execution. Defaults to \"nomad\".\n:type engine: str\n:param tasks: A list of task execution histories.\n:type tasks: list[TaskHistory]",
         "properties": {
           "duration": {
+            "additionalProperties": true,
             "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
             "readOnly": true,
             "title": "Duration",
@@ -1417,6 +1427,7 @@
             "title": "Last Finished At"
           },
           "status": {
+            "additionalProperties": true,
             "description": "Return the task status summary.\n\n:return: A dictionary summarizing the number of passed and failed tasks.\n:rtype: dict[str, int]",
             "readOnly": true,
             "title": "Status",
@@ -1473,6 +1484,7 @@
             "default": "nomad"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },

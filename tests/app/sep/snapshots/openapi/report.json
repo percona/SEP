@@ -306,6 +306,7 @@
             "type": "string"
           },
           "period": {
+            "additionalProperties": true,
             "title": "Period",
             "type": "object"
           },
@@ -658,9 +659,10 @@
             "type": "boolean"
           },
           "result": {
-            "additionalProperties": true,
             "anyOf": [
               {
+                "additionalProperties": true,
+                "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                 "type": "object"
               },
               {

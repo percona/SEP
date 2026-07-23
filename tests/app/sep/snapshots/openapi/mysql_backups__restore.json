@@ -889,6 +889,8 @@
           "data_overrides": {
             "anyOf": [
               {
+                "additionalProperties": true,
+                "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                 "type": "object"
               },
               {
@@ -3857,6 +3859,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
