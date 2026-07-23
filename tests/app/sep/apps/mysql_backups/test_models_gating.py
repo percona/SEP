@@ -139,10 +139,15 @@ class TestPerModeBoolGates:
 
 
 class TestEncryptionGate:
-    """``encryption_recipient`` is required iff ``encrypt`` is truthy."""
+    """Enforce the master-switch encryption model.
+
+    ``encrypt`` is the master switch; ``encrypt_using_tmpdir`` and
+    ``post_run_encrypt`` each require it and are mutually exclusive; and
+    ``encryption_recipient`` is required iff ``encrypt`` is truthy.
+    """
 
     def test_defaults_yield_valid_disabled_config(self):
-        """Untouched Encryption section (all defaults) is a valid, disabled config."""
+        """Accept an untouched Encryption section (all defaults) as a disabled config."""
         form = BackupCreate(**_base_payload(BackupType.MYDUMPER))
         assert form.encrypt is False
         assert form.encrypt_using_tmpdir is False
@@ -176,7 +181,7 @@ class TestEncryptionGate:
             )
 
     def test_tmpdir_with_encrypt_ok(self):
-        """encrypt=True + encrypt_using_tmpdir + recipient validates (tmpdir mode)."""
+        """Accept encrypt with encrypt_using_tmpdir and a recipient (tmpdir mode)."""
         BackupCreate(
             **_base_payload(
                 BackupType.MYDUMPER,
@@ -187,7 +192,7 @@ class TestEncryptionGate:
         )
 
     def test_post_run_with_encrypt_ok(self):
-        """encrypt=True + post_run_encrypt + recipient validates (post-run mode)."""
+        """Accept encrypt with post_run_encrypt and a recipient (post-run mode)."""
         BackupCreate(
             **_base_payload(
                 BackupType.MYDUMPER,
@@ -198,19 +203,19 @@ class TestEncryptionGate:
         )
 
     def test_tmpdir_without_encrypt_fails(self):
-        """encrypt_using_tmpdir=True with encrypt=False → 422."""
+        """Reject encrypt_using_tmpdir when encrypt is off."""
         with pytest.raises(ValidationError, match="encrypt_using_tmpdir"):
             BackupCreate(
                 **_base_payload(BackupType.MYDUMPER, encrypt_using_tmpdir=True)
             )
 
     def test_post_run_without_encrypt_fails(self):
-        """post_run_encrypt=True with encrypt=False → 422."""
+        """Reject post_run_encrypt when encrypt is off."""
         with pytest.raises(ValidationError, match="post_run_encrypt"):
             BackupCreate(**_base_payload(BackupType.MYDUMPER, post_run_encrypt=True))
 
     def test_tmpdir_and_post_run_together_fails(self):
-        """encrypt_using_tmpdir and post_run_encrypt are mutually exclusive → 422."""
+        """Reject encrypt_using_tmpdir combined with post_run_encrypt."""
         with pytest.raises(ValidationError, match="encrypt_using_tmpdir"):
             BackupCreate(
                 **_base_payload(

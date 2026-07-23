@@ -228,7 +228,10 @@ class BackupCreate(TaskFormModel):
     declaration order, so the order here reproduces the hand-written schema
     byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-    encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+    master-switch encryption gates — ``encrypt_using_tmpdir`` and
+    ``post_run_encrypt`` each require ``encrypt`` and are mutually exclusive, and
+    ``encryption_recipient`` is required iff ``encrypt`` — and the per-mode bool
+    ``FailRule``s in
     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
     into the conditional-rule plan at class definition, so no
     ``@apply_conditional_rules`` decorator is needed. The config sub-models

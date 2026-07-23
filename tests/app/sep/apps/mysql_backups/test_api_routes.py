@@ -379,7 +379,7 @@ class TestCreateEndpoint:
     def test_create_rejects_tmpdir_without_encrypt(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
     ):
-        """encrypt_using_tmpdir without encrypt=True is rejected with 422."""
+        """Reject encrypt_using_tmpdir without encrypt with 422."""
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
         )
@@ -396,7 +396,7 @@ class TestCreateEndpoint:
     def test_create_rejects_post_run_without_encrypt(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
     ):
-        """post_run_encrypt without encrypt=True is rejected with 422."""
+        """Reject post_run_encrypt without encrypt with 422."""
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
         )
@@ -413,7 +413,7 @@ class TestCreateEndpoint:
     def test_create_rejects_tmpdir_and_post_run_together(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
     ):
-        """encrypt_using_tmpdir with post_run_encrypt is rejected with 422."""
+        """Reject encrypt_using_tmpdir combined with post_run_encrypt with 422."""
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
         )
@@ -429,6 +429,40 @@ class TestCreateEndpoint:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
+
+    def test_create_serializes_encryption_config(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """Serialize the encryption YAML and recipient through the derived POST surface."""
+        task = build_backup_task()
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.post = AsyncMock(return_value=task)
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            backup_type=BackupType.MYDUMPER,
+            encrypt=True,
+            post_run_encrypt=True,
+            encryption_recipient="ops@example.com",
+        )
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+
+        create_call = next(
+            call
+            for call in mock_task_api_dep.post.await_args_list
+            if call.args and call.args[0] == "/"
+        )
+        config = yaml.safe_load(create_call.kwargs["json"]["data"]["meta"]["config"])
+        assert config["ALL_SERVERS"]["ENCRYPT"] is True
+        assert config["ALL_SERVERS"]["POST_RUN_ENCRYPT"] is True
+        assert config["ALL_SERVERS"]["ENCRYPT_USING_TMPDIR"] is False
+        assert config["SERVER_LIST"][0]["DIR_ENCRYPT_CONFIG"] == {
+            "encryption recipient": "ops@example.com"
+        }
 
     def test_create_rejects_missing_required_fields(
         self, test_client, mock_task_api_dep
