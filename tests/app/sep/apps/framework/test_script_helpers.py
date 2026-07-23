@@ -21,13 +21,19 @@ a hand-constructed expected value — the same guarantee the unchanged OpenAPI
 snapshots prove end-to-end.
 """
 
-from unittest.mock import AsyncMock
+from dataclasses import dataclass
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from pydantic import BaseModel
 from starlette.datastructures import URL
 from starlette.requests import Request
 
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import (
+    HTTPBadRequestException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.sep.apps.dipper.constants import ARTIFACT_TYPE_DIPPER
@@ -35,8 +41,10 @@ from app.sep.apps.framework.script_helpers import (
     build_artifact_download_url,
     build_execution_meta,
     build_script_preview,
+    execute_script,
     post_task_execution,
 )
+from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
 from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.snippets.config import snippets_settings
@@ -50,6 +58,7 @@ from app.sep.snippets.models.snippet import (
 from app.sep.snippets.utils import guess_mime_type, mime_type_to_highlighter_language
 
 _MD5 = "a" * 32
+_CREATED_TASK_ID = 42
 
 
 def _snippet(*, filename: str = "script.sh", sudo: str | None = None) -> Snippet:
@@ -327,3 +336,103 @@ class TestPostTaskExecution:
         tasks_api.post.return_value = []
 
         assert await post_task_execution(tasks_api, "run_snippet", self._meta()) is None
+
+
+class _StubArgs(BaseModel):
+    """Validate a single integer argument, standing in for a script's exec model."""
+
+    minutes: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class _StubScript:
+    """Implement the framework's ``ScriptProtocol`` without a snippet row."""
+
+    filename: str = "script.sh"
+
+    @property
+    def execution_task_name(self) -> str:
+        """Return the task name the stub script dispatches under."""
+        return "run_snippet"
+
+    def get_execution_model(self) -> type[_StubArgs]:
+        """Return the stub execution model the framework validates args against."""
+        return _StubArgs
+
+
+class TestExecuteScript:
+    """Cover the shared validate/coerce/build-meta/dispatch execute sequence."""
+
+    @staticmethod
+    def _source(seen: list[ScriptExecuteWrite]) -> ScriptSource:
+        """Return a script source recording the body its meta hook receives."""
+
+        def _build_execution_meta(
+            script: _StubScript, body: ScriptExecuteWrite
+        ) -> SnippetExecutionMeta:
+            seen.append(body)
+            return SnippetExecutionMeta(
+                target=body.executor_host,
+                interpreter="bash",
+                snippet_source="https://x/y",
+                snippet_filename=script.filename,
+                md5_checksum=_MD5,
+            )
+
+        return ScriptSource(
+            script_dir=Path("/nonexistent"),
+            load_script=AsyncMock(),
+            list_scripts=AsyncMock(),
+            build_form_schema=Mock(),
+            build_execution_meta=_build_execution_meta,
+            list_response=Mock(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatches_and_returns_created_task(self) -> None:
+        """Send the assembled meta and return the created task id and script name."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.post.return_value = {"id": _CREATED_TASK_ID}
+        script = _StubScript()
+
+        result = await execute_script(
+            self._source([]),
+            script,
+            ScriptExecuteWrite(executor_host="host1", args={"minutes": 5}),
+            tasks_api,
+        )
+
+        assert result.task_id == _CREATED_TASK_ID
+        assert result.task_name == script.execution_task_name
+        assert result.snippet_filename == script.filename
+
+    @pytest.mark.asyncio
+    async def test_meta_hook_receives_the_coerced_args(self) -> None:
+        """Send the meta hook the execution model's coerced dump, not the raw args."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.post.return_value = {"id": 1}
+        seen = []
+
+        await execute_script(
+            self._source(seen),
+            _StubScript(),
+            ScriptExecuteWrite(executor_host="host1", args={"minutes": "5"}),
+            tasks_api,
+        )
+
+        assert seen[0].args == {"minutes": 5}
+
+    @pytest.mark.asyncio
+    async def test_invalid_args_raise_422(self) -> None:
+        """Reject args the script's execution model cannot validate with a 422."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await execute_script(
+                self._source([]),
+                _StubScript(),
+                ScriptExecuteWrite(executor_host="host1", args={"minutes": "abc"}),
+                tasks_api,
+            )
+
+        tasks_api.post.assert_not_awaited()

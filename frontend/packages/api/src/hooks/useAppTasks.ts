@@ -19,6 +19,28 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { ApiError } from '../errors';
+import type { components as TasksComponents } from '../generated/tasks';
+
+export type TaskHistoryStatus = TasksComponents['schemas']['TaskHistoryStatusEnum'];
+
+/**
+ * Task-history statuses that count as "still executing".
+ *
+ * Canonical source of truth for the poll-while-running convention. It lives in
+ * the ``api`` package because ``api`` is the lowest layer — ``framework`` and
+ * the apps depend on it, never the other way round — so both the list-page
+ * poll predicate here and the framework's ``useTaskHistory`` reuse the same
+ * set instead of drifting apart. ``framework`` re-exports these for callers
+ * that import from ``@sep/framework``.
+ */
+export const RUNNING_STATUSES: ReadonlySet<TaskHistoryStatus> = new Set(['running', 'pending']);
+
+export function isRunningStatus(status: TaskHistoryStatus): boolean {
+  return RUNNING_STATUSES.has(status);
+}
+
+/** Default poll cadence (ms) while a running task is visible; mirrors ``useTaskHistory``. */
+const DEFAULT_TASK_POLLING_INTERVAL_MS = 5000;
 
 // Mock-fallback gate. Active in dev builds (`pnpm dev`) and in production
 // builds explicitly opted-in via `VITE_MOCK_API=true` (e.g. the Playwright
@@ -134,6 +156,10 @@ export type AppListQueryOptions = {
    * and logs a warning. Issues up to that many sequential GETs.
    */
   fetchAllPages?: boolean;
+  /** Disable poll-while-running (stories, tests). */
+  disablePolling?: boolean;
+  /** Override poll cadence (ms) while a running task is visible. */
+  pollingIntervalMs?: number;
 };
 
 function mockItemsToResult<T>(mockItems: T[]): AppListResult<T> {
@@ -229,6 +255,23 @@ export async function fetchAppEntityList<T extends Record<string, unknown>>(
   return fetchAppList<T>(`/apps/${pluginName}/${entityName}/`, options);
 }
 
+/**
+ * Poll while any fetched row is still running; otherwise stay idle.
+ *
+ * Exported for tests; not part of the public hook surface.
+ */
+export function taskListRefetchInterval<T extends Record<string, unknown>>(
+  data: T[] | undefined,
+  pollingMs: number,
+  disabled: boolean,
+): number | false {
+  if (disabled || !data) {
+    return false;
+  }
+  const hasRunning = data.some((row) => RUNNING_STATUSES.has(row.status as TaskHistoryStatus));
+  return hasRunning ? pollingMs : false;
+}
+
 export function useAppTasks<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
@@ -237,6 +280,8 @@ export function useAppTasks<T extends Record<string, unknown>>(
   const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
   const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
   const fetchAllPages = options?.fetchAllPages ?? false;
+  const disablePolling = options?.disablePolling ?? false;
+  const pollingIntervalMs = options?.pollingIntervalMs ?? DEFAULT_TASK_POLLING_INTERVAL_MS;
 
   return useQuery<AppListResult<T>>({
     queryKey: tasksQueryKey(pluginName, { offset, limit, fetchAllPages }),
@@ -255,6 +300,11 @@ export function useAppTasks<T extends Record<string, unknown>>(
     // plugin switch that leaves the list mounted (would flash the wrong rows).
     placeholderData: (previousData, previousQuery) =>
       previousQuery?.queryKey[1] === pluginName ? previousData : undefined,
+    // Keep the list live while something is running; an idle list issues no
+    // repeat requests. Polling reflects the task's actual current state rather
+    // than its state at page load.
+    refetchInterval: (query) =>
+      taskListRefetchInterval(query.state.data?.items, pollingIntervalMs, disablePolling),
   });
 }
 

@@ -109,6 +109,69 @@ default:
       ARTIFACT_DIR: data/health-reports  # Shared staging dir (mount in worker + web)
       ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
       CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
+    # Diagnostic bundle delivery plan - unset by default (no receiver configured).
+    # Settable through this file and environment variables only: the whole plan is
+    # cross-validated as a unit at settings load, so the settings API rejects both a
+    # whole-object and a per-leaf write.
+    #
+    # NOTE: unlike its neighbours, the keys inside this block are case-SENSITIVE and
+    # lowercase. Header names, secret names and multipart field names go on the wire
+    # verbatim, so nothing here is case-folded for you.
+    #
+    # A plan is zero or more HTTP resolution steps followed by exactly one multipart
+    # upload step carrying the bundle. Every header/query/body/field value declares
+    # where it comes from via `source`:
+    #   {source: literal, value: "..."}                          constant from config
+    #   {source: input, field: source_ref|case_ref|manifest}     from the send call
+    #   {source: secret, name: <key in secrets>}                 masked credential
+    #   {source: output, step: <step>, output: <name>}           an earlier step's value
+    #   {source: manifest_key, key: <manifest key>}              one manifest scalar
+    # `input` with field `manifest` sends the whole manifest as one JSON string;
+    # `manifest_key` sends a single key as its own value. A key that the send's
+    # manifest does not carry as a scalar fails that send.
+    # Secrets are rejected in `query` (query strings reach logs, caches and proxies
+    # unredacted) - place them in `headers`, `body`, or the upload's `fields`.
+    #
+    # Single-request intake receiver (no resolution steps):
+    #   DIAGNOSTICS_DELIVERY:
+    #     endpoint: https://intake.example.com/
+    #     max_bundle_size_mb: 30                  # mebibytes; checked before any request
+    #     secrets:
+    #       api_key: "..."                        # masked in the API and in exports
+    #     upload:
+    #       path: attachment/upload
+    #       headers:
+    #         x-api-key: {source: secret, name: api_key}
+    #       fields:
+    #         source: {source: input, field: source_ref}
+    #         collected_at: {source: manifest_key, key: collected_at}
+    #       file_field: file                      # multipart part carrying the bundle
+    #       file_content_type: application/octet-stream
+    #       reference_pointer: /result/sys_id     # JSON Pointer to the upload reference
+    #
+    # Lookup-then-attach (one resolution step feeding the upload):
+    #   DIAGNOSTICS_DELIVERY:
+    #     endpoint: https://snow.example.com/
+    #     secrets:
+    #       api_key: "..."
+    #     resolution_steps:
+    #       - name: lookup
+    #         method: POST                        # GET or POST
+    #         path: ticket_details
+    #         headers:
+    #           x-sn-apikey: {source: secret, name: api_key}
+    #         body:
+    #           ticket_number: {source: input, field: case_ref}
+    #         outputs:
+    #           sys_id: /result/sys_id            # JSON Pointer into this step's response
+    #     upload:
+    #       path: attachment/upload
+    #       headers:
+    #         x-sn-apikey: {source: secret, name: api_key}
+    #       fields:
+    #         table_name: {source: literal, value: sn_customerservice_case}
+    #         table_sys_id: {source: output, step: lookup, output: sys_id}
+    #       reference_pointer: /result/sys_id
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null

@@ -95,9 +95,11 @@ describe('ScheduledTasksPanel', () => {
     renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
 
     await waitFor(() => {
-      expect(useAppTasksMock).toHaveBeenCalledWith('myplugin', undefined, {
-        fetchAllPages: true,
-      });
+      expect(useAppTasksMock).toHaveBeenCalledWith(
+        'myplugin',
+        undefined,
+        expect.objectContaining({ fetchAllPages: true }),
+      );
     });
   });
 

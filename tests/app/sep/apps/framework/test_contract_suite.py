@@ -26,12 +26,13 @@ trusts.
 """
 
 import functools
-from typing import Annotated, Any
+from typing import Annotated
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import APIRouter, Body, status
 from fastapi.routing import APIRoute
+from pytest_mock import MockerFixture
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination.deps import make_pagination_dep
@@ -320,7 +321,7 @@ def test_default_guard_rides_only_the_derived_verb(regular_user: CasdoorUser) ->
 
 
 def test_default_guards_share_one_task_fetch(
-    regular_user: CasdoorUser, mocker: Any
+    regular_user: CasdoorUser, mocker: MockerFixture
 ) -> None:
     """Assert the two default guards and the handler share one cached task fetch.
 
@@ -445,7 +446,7 @@ def test_build_valid_create_body_wraps_multi_value_refs() -> None:
 
 
 def test_create_response_builder_pins_stable_component(
-    regular_user: CasdoorUser, mocker: Any
+    regular_user: CasdoorUser, mocker: MockerFixture
 ) -> None:
     """Assert an explicit ``create_response_builder`` pins the stable create model.
 

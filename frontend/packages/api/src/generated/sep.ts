@@ -648,10 +648,161 @@ export interface paths {
      *
      *     Categories with no matching snippets are omitted to keep the payload small;
      *     the ATW enum still defines the full taxonomy for validation (plugin schema).
+     *
+     *     :param session: The database session.
+     *     :return: One listing row per category that has at least one snippet.
      */
     get: operations['atw_atw_api_list_api_apps_atw__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/execution-schema/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Execution Schema
+     * @description Build one execution form covering several snippets, merging common parameters.
+     *
+     *     Unknown or unsafe filenames fail the whole request — a form the caller cannot
+     *     fill for every selected snippet is not a partial success.
+     *
+     *     :param snippet_filename: The selected snippet filenames, repeated per snippet
+     *         and deduplicated order-preserving.
+     *     :return: The shared section followed by each snippet's remaining fields.
+     *     :raises HTTPBadRequestException: When a filename attempts directory traversal.
+     *     :raises HTTPNotFoundException: When a filename matches no snippet.
+     */
+    get: operations['atw_atw_execution_schema_api_apps_atw_execution_schema__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw List Incidents
+     * @description List diagnostic incidents, newest first.
+     *
+     *     :param session: The database session.
+     *     :param pagination: The offset/limit window for the page.
+     *     :return: A paginated page of incidents, newest first.
+     */
+    get: operations['atw_atw_list_incidents_api_apps_atw_incidents__get'];
+    put?: never;
+    /**
+     * Atw Create Incident
+     * @description Create a diagnostic incident owned by the current user.
+     *
+     *     :param session: The database session.
+     *     :param current_user: The authenticated user, stamped as ``created_by``.
+     *     :param body: The incident create payload.
+     *     :return: The created incident.
+     */
+    post: operations['atw_atw_create_incident_api_apps_atw_incidents__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Get Incident
+     * @description Retrieve a single diagnostic incident by id.
+     *
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :return: The matching incident.
+     */
+    get: operations['atw_atw_get_incident_api_apps_atw_incidents__incident_id__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Atw Delete Incident
+     * @description Delete a diagnostic incident and cascade its execution rows.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     */
+    delete: operations['atw_atw_delete_incident_api_apps_atw_incidents__incident_id__delete'];
+    options?: never;
+    head?: never;
+    /**
+     * Atw Update Incident
+     * @description Update a diagnostic incident's name or support-case reference.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param body: The partial update payload; unset fields are untouched.
+     *     :return: The updated incident.
+     */
+    patch: operations['atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch'];
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/executions/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw List Incident Executions
+     * @description List one incident's snippet executions, newest first, with live task status.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param pagination: The offset/limit window for the page.
+     *     :param tasks_api: The authenticated Tasks API client.
+     *     :return: A paginated page of executions hydrated from the Tasks API.
+     */
+    get: operations['atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get'];
+    put?: never;
+    /**
+     * Atw Batch Execute
+     * @description Execute several snippets against one incident, reporting each item separately.
+     *
+     *     One failing item never blocks the rest: each is dispatched and recorded inside
+     *     its own guard, and the response always carries an entry per requested item. A
+     *     failed attempt produces no task-history row to reference, so it is reported
+     *     here rather than persisted.
+     *
+     *     The row-write guard rolls the shared session back before the loop continues,
+     *     or one failed write would leave the transaction aborted and doom every later
+     *     item on PostgreSQL; the dispatch guard rolls back defensively, having written
+     *     nothing itself. ``incident.id`` is read once up front because both a commit and
+     *     a rollback expire the instance, and re-reading it would trigger a lazy load.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param body: The batch payload.
+     *     :param tasks_api: The authenticated Tasks API client.
+     *     :return: One outcome entry per requested item, in request order.
+     */
+    post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -4684,6 +4835,95 @@ export interface components {
       source_table: number | string;
     };
     /**
+     * ATWBatchExecuteItemResponse
+     * @description Describe the outcome of one item in a batch execution.
+     *
+     *     :param snippet_filename: The snippet this item requested.
+     *     :param task_name: The Tasks-API task name the snippet dispatched under, when
+     *         the dispatch itself succeeded.
+     *     :param task_history_id: The created task-history id, when the Tasks API
+     *         returned one.
+     *     :param error: The failure detail when the item did not complete — a message
+     *         or a validation-error list, depending on what rejected it.
+     */
+    atw__ATWBatchExecuteItemResponse: {
+      /** Error */
+      error?:
+        | string
+        | {
+            [key: string]: unknown;
+          }[]
+        | null;
+      /** Snippet Filename */
+      snippet_filename: string;
+      /** Task History Id */
+      task_history_id?: number | null;
+      /** Task Name */
+      task_name?: string | null;
+    };
+    /**
+     * ATWBatchExecuteItemWrite
+     * @description Define one snippet execution within a batch.
+     *
+     *     :param snippet_filename: The snippet to execute.
+     *     :param args: Per-snippet arguments keyed by frontmatter parameter name;
+     *         they override same-named entries in the batch's ``shared_args``.
+     */
+    atw__ATWBatchExecuteItemWrite: {
+      /**
+       * Args
+       * @default {}
+       */
+      args: {
+        [key: string]: unknown;
+      };
+      /** Snippet Filename */
+      snippet_filename: string;
+    };
+    /**
+     * ATWBatchExecuteResponse
+     * @description Collect every item's outcome for one batch execution.
+     *
+     *     Partial success lives in the body: the request is created (``201``) whenever
+     *     the incident resolves, and each item carries its own dispatch result or error.
+     *
+     *     :param items: One entry per requested item, in request order.
+     */
+    atw__ATWBatchExecuteResponse: {
+      /** Items */
+      items: components['schemas']['atw__ATWBatchExecuteItemResponse'][];
+    };
+    /**
+     * ATWBatchExecuteWrite
+     * @description Define the batch-execute payload for one incident.
+     *
+     *     :param executor_host: The executor every item in the batch runs on.
+     *     :param sudo: The sudo choice applied to every item; snippets whose sudo
+     *         option is not optional ignore it.
+     *     :param shared_args: Arguments offered to every item, filtered per snippet to
+     *         the parameters that snippet declares.
+     *     :param items: The snippets to execute, at least one and at most
+     *         ``MAX_BATCH_SNIPPETS``.
+     */
+    atw__ATWBatchExecuteWrite: {
+      /** Execution Host */
+      executor_host: string;
+      /** Items */
+      items: components['schemas']['atw__ATWBatchExecuteItemWrite'][];
+      /**
+       * Shared Args
+       * @default {}
+       */
+      shared_args: {
+        [key: string]: unknown;
+      };
+      /**
+       * Sudo
+       * @default false
+       */
+      sudo: boolean;
+    };
+    /**
      * ATWCategoryListing
      * @description Represent one ATW category row and its snippet members.
      *
@@ -4719,6 +4959,120 @@ export interface components {
       snippets: components['schemas']['atw__ATWSnippetSummary'][];
     };
     /**
+     * ATWIncidentExecutionResponse
+     * @description Represent one recorded incident execution, hydrated with live task status.
+     *
+     *     The hydrated fields are ``None`` when the Tasks API could not be reached for
+     *     that row; the locally-recorded fields are always present.
+     *
+     *     :param id: The execution row's UUID primary key.
+     *     :param snippet_filename: The executed snippet's filename.
+     *     :param task_history_id: The tasks-service execution this row references.
+     *     :param created_at: When the execution was recorded.
+     *     :param task_status: The upstream execution status.
+     *     :param started_at: When the upstream execution started.
+     *     :param finished_at: When the upstream execution finished.
+     *     :param has_logs: Whether the upstream execution has readable logs.
+     */
+    atw__ATWIncidentExecutionResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Finished At */
+      finished_at?: string | null;
+      /** Has Logs */
+      has_logs?: boolean | null;
+      /**
+       * Id
+       * Format: uuid4
+       */
+      id: string;
+      /** Snippet Filename */
+      snippet_filename: string;
+      /** Started At */
+      started_at?: string | null;
+      /** Task History Id */
+      task_history_id: number;
+      task_status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+    };
+    /**
+     * ATWMergedSchemaResponse
+     * @description Represent the execution form for a batch of selected snippets.
+     *
+     *     A purpose-built DTO rather than a plain
+     *     :class:`~app.sep.apps.framework.schema.AppSchema`: the renderer needs to map
+     *     every non-shared field back to the snippet that declared it, and an
+     *     ``AppSchema`` section carries only a display title.
+     *
+     *     :param shared: The batch-level execution fields followed by every parameter
+     *         the selection declares identically.
+     *     :param per_snippet: The remaining per-snippet fields, in request order.
+     */
+    atw__ATWMergedSchemaResponse: {
+      /** Per Snippet */
+      per_snippet: components['schemas']['atw__ATWSnippetSchema'][];
+      /** Shared */
+      shared: (
+        | components['schemas']['framework__BoolField']
+        | components['schemas']['framework__ChoiceField']
+        | components['schemas']['framework__DateTimeField']
+        | components['schemas']['framework__FileField']
+        | components['schemas']['framework__FloatField']
+        | components['schemas']['framework__HostField']
+        | components['schemas']['framework__IntegerField']
+        | components['schemas']['framework__MultiChoiceField']
+        | components['schemas']['framework__MultiHostField']
+        | components['schemas']['framework__MultiSchemaField']
+        | components['schemas']['framework__MultiServiceField']
+        | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__SchemaField']
+        | components['schemas']['framework__ScriptPreviewField']
+        | components['schemas']['framework__ServiceField']
+        | components['schemas']['framework__StringField']
+        | components['schemas']['framework__TableField']
+        | components['schemas']['framework__TextAreaField']
+        | components['schemas']['framework__YamlField']
+        | components['schemas']['framework__OneOfGroup']
+      )[];
+    };
+    /**
+     * ATWSnippetSchema
+     * @description Represent the fields one selected snippet still owns after merging.
+     *
+     *     :param snippet_filename: The snippet the remaining fields belong to.
+     *     :param fields: The snippet's parameter fields that did not merge into the
+     *         shared section.
+     */
+    atw__ATWSnippetSchema: {
+      /** Fields */
+      fields: (
+        | components['schemas']['framework__BoolField']
+        | components['schemas']['framework__ChoiceField']
+        | components['schemas']['framework__DateTimeField']
+        | components['schemas']['framework__FileField']
+        | components['schemas']['framework__FloatField']
+        | components['schemas']['framework__HostField']
+        | components['schemas']['framework__IntegerField']
+        | components['schemas']['framework__MultiChoiceField']
+        | components['schemas']['framework__MultiHostField']
+        | components['schemas']['framework__MultiSchemaField']
+        | components['schemas']['framework__MultiServiceField']
+        | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__SchemaField']
+        | components['schemas']['framework__ScriptPreviewField']
+        | components['schemas']['framework__ServiceField']
+        | components['schemas']['framework__StringField']
+        | components['schemas']['framework__TableField']
+        | components['schemas']['framework__TextAreaField']
+        | components['schemas']['framework__YamlField']
+        | components['schemas']['framework__OneOfGroup']
+      )[];
+      /** Snippet Filename */
+      snippet_filename: string;
+    };
+    /**
      * ATWSnippetSummary
      * @description Represent one snippet entry under an ATW category.
      *
@@ -4736,6 +5090,91 @@ export interface components {
       name: string;
       /** Title */
       title: string;
+    };
+    /**
+     * AtwIncidentResponse
+     * @description Represent a persisted diagnostic incident.
+     *
+     *     Every field is always present on a stored incident, so — unlike returning
+     *     the :class:`AtwIncident` table model directly — the generated client types
+     *     them as required rather than optional.
+     *
+     *     :param id: The incident's UUID primary key.
+     *     :param name: Human-readable incident label.
+     *     :param case_ref: Support-case reference, if set.
+     *     :param created_by: Username of the support engineer who created the incident.
+     *     :param created_at: When the incident was created.
+     *     :param updated_at: When the incident was last updated, if ever.
+     */
+    atw__AtwIncidentResponse: {
+      /** Case Ref */
+      case_ref: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By */
+      created_by: string;
+      /**
+       * Id
+       * Format: uuid4
+       */
+      id: string;
+      /** Name */
+      name: string;
+      /** Updated At */
+      updated_at: string | null;
+    };
+    /**
+     * AtwIncidentUpdate
+     * @description Define the PATCH payload — all fields optional; unset fields are untouched.
+     *
+     *     :param name: New incident label. Non-nullable when provided: an omitted
+     *         ``name`` is left unchanged, while an explicit null or empty string is
+     *         rejected with 422 (the column is NOT NULL). Typing it as a non-optional
+     *         ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel
+     *         out of the JSON schema, so the generated client advertises ``name?: string``
+     *         (not ``string | null``) — matching what the route actually accepts.
+     *     :param case_ref: New support-case reference; an explicit null clears it.
+     */
+    atw__AtwIncidentUpdate: {
+      /** Case Ref */
+      case_ref?: string | null;
+      /** Name */
+      name?: string;
+    };
+    /**
+     * AtwIncidentWrite
+     * @description Define the create payload; ``name`` defaults and ``created_by`` is server-stamped.
+     */
+    atw__AtwIncidentWrite: {
+      /** Case Ref */
+      case_ref?: string | null;
+      /** Name */
+      name?: string;
+    };
+    /** PaginatedResponse[ATWIncidentExecutionResponse] */
+    atw__PaginatedResponse_ATWIncidentExecutionResponse_: {
+      /** Items */
+      items: components['schemas']['atw__ATWIncidentExecutionResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[AtwIncidentResponse] */
+    atw__PaginatedResponse_AtwIncidentResponse_: {
+      /** Items */
+      items: components['schemas']['atw__AtwIncidentResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /**
      * BackupDerivedTaskSummary
@@ -4876,8 +5315,8 @@ export interface components {
      *     :type pitr_enabled: bool
      *     :param pitr_compression: PITR compression algorithm.
      *     :type pitr_compression: str | None
-     *     :param storage_type: Storage backend type (``s3`` or ``filesystem``).
-     *     :type storage_type: str | None
+     *     :param storage_type: Storage backend type (``s3`` or ``filesystem``); required.
+     *     :type storage_type: str
      *     :param storage_s3_region: S3 region when ``storage_type`` is ``s3``.
      *     :type storage_s3_region: str | None
      *     :param storage_s3_bucket: S3 bucket when ``storage_type`` is ``s3``.
@@ -4947,7 +5386,7 @@ export interface components {
       /** Storage S3 Region */
       storage_s3_region?: string | null;
       /** Storage Type */
-      storage_type?: string | null;
+      storage_type: string;
       /** Task Name */
       task_name: string;
     };
@@ -5014,11 +5453,19 @@ export interface components {
     backup_mongo__RestoreTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Source */
       backup_source: string;
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['framework__ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -5041,6 +5488,7 @@ export interface components {
       owner: string;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5049,33 +5497,31 @@ export interface components {
      * RestoreTaskResponse
      * @description Represent a restore task API response.
      *
-     *     :param id: The unique identifier for the restore task.
-     *     :type id: int | None
-     *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
-     *     :param data: The raw configuration and parameters for the restore execution.
-     *     :type data: dict[str, Any]
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
-     *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
-     *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
-     *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
+     *     Extend the standard task-response surface with the restore destination facts
+     *     the API surfaces; the shared task identity, status, audit, anonymization, and
+     *     connectivity fields come from
+     *     :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
+     *
+     *     :param hostname: The target hostname for the task execution.
+     *     :param backup_type: The PBM backup type for this restore.
+     *     :param backup_source: The backup name or timestamp to restore from.
      */
     backup_mongo__RestoreTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Source */
       backup_source: string;
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['framework__ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -5096,6 +5542,7 @@ export interface components {
       owner: string;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5462,7 +5909,9 @@ export interface components {
      */
     dipper__DipperExecuteWrite: {
       /** Args */
-      args?: Record<string, never>;
+      args?: {
+        [key: string]: unknown;
+      };
       /** @default environment */
       collector_type: components['schemas']['dipper__CollectorTypeEnum'];
       /** Execution Host */
@@ -6964,9 +7413,7 @@ export interface components {
       /** Name */
       name: string;
       /**
-       * Type
-       * @default one_of
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'one_of';
@@ -7082,7 +7529,9 @@ export interface components {
        * Args
        * @default {}
        */
-      args: Record<string, never>;
+      args: {
+        [key: string]: unknown;
+      };
       /** Execution Host */
       executor_host: string;
       /**
@@ -7735,12 +8184,12 @@ export interface components {
       xtrabackup_verify: boolean;
     };
     /**
-     * BackupResponse
+     * BackupTaskResponse
      * @description Represent a backup task API response.
      *
-     *     :param hostname: The executor hostname target.
+     *     :param backup_type: The backup type recorded in task config.
      */
-    mysql_backups__BackupResponse: {
+    mysql_backups__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       /** Anonymize Mask */
@@ -7790,10 +8239,10 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
-    /** PaginatedResponse[BackupResponse] */
-    mysql_backups__PaginatedResponse_BackupResponse_: {
+    /** PaginatedResponse[BackupTaskResponse] */
+    mysql_backups__PaginatedResponse_BackupTaskResponse_: {
       /** Items */
-      items: components['schemas']['mysql_backups__BackupResponse'][];
+      items: components['schemas']['mysql_backups__BackupTaskResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -10144,6 +10593,267 @@ export interface operations {
       };
     };
   };
+  atw_atw_execution_schema_api_apps_atw_execution_schema__get: {
+    parameters: {
+      query: {
+        /** @description Snippet filenames to build a batch form for. */
+        snippet_filename: string[];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__ATWMergedSchemaResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_list_incidents_api_apps_atw_incidents__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_AtwIncidentResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_create_incident_api_apps_atw_incidents__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__AtwIncidentWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_get_incident_api_apps_atw_incidents__incident_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_delete_incident_api_apps_atw_incidents__incident_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__AtwIncidentUpdate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_ATWIncidentExecutionResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__ATWBatchExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__ATWBatchExecuteResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   atw_get_schema_api_apps_atw_schema_get: {
     parameters: {
       query?: never;
@@ -11504,7 +12214,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupResponse_'];
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupTaskResponse_'];
         };
       };
       /** @description Validation Error */
@@ -11806,7 +12516,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['mysql_backups__BackupResponse'];
+          'application/json': components['schemas']['mysql_backups__BackupTaskResponse'];
         };
       };
       /** @description Validation Error */

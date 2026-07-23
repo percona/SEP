@@ -51,6 +51,7 @@ from app.core.utils.imports import (
     validate_module_is_importable,
 )
 from app.core.utils.iterators import unique_everseen
+from app.core.utils.json_pointer import validate_json_pointer
 from app.core.utils.path import resolve_relative_path
 
 E = TypeVar("E", bound=Enum)
@@ -705,6 +706,13 @@ URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]
 
 This annotated type ensures that the string starts with a forward slash and does
 not contain any whitespace characters.
+"""
+
+JsonPointerStr = Annotated[str, AfterValidator(validate_json_pointer)]
+"""Define a string field holding an RFC 6901 JSON Pointer.
+
+The empty string is the valid root pointer; any other value must start with a
+forward slash and use ``~`` only in a ``~0`` or ``~1`` escape.
 """
 
 StrImportableModule = Annotated[str, AfterValidator(validate_module_is_importable)]

@@ -19,6 +19,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Tab from '@mui/material/Tab';
@@ -29,10 +30,12 @@ import { useSnackbar } from 'notistack';
 import {
   DEFAULT_APP_LIST_LIMIT,
   DEFAULT_APP_LIST_OFFSET,
+  RUNNING_STATUSES,
   useDeleteAppEntity,
   useAppEntityList,
   useAppTasks,
   type AppSchema,
+  type TaskHistoryStatus,
 } from '@sep/api';
 import { SchemaListView, type RenderListColumnOverride } from '../SchemaListView';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
@@ -65,6 +68,12 @@ interface AppListPageProps {
   allowListEntityDelete?: boolean;
   /** Optional per-cell override for non-`actions` columns (falls back to `formatCellValue`). */
   renderListColumn?: RenderListColumnOverride;
+  /**
+   * Disable the poll-while-running task-list refresh. Opt-in escape hatch for
+   * tests and stories so they issue no repeat requests, mirroring
+   * ``SchemaListView``'s ``disableSchedulePolling``.
+   */
+  disableTaskPolling?: boolean;
 }
 
 export function AppListPage({
@@ -80,6 +89,7 @@ export function AppListPage({
   rowClickHref,
   allowListEntityDelete = false,
   renderListColumn,
+  disableTaskPolling = false,
 }: AppListPageProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
@@ -125,6 +135,7 @@ export function AppListPage({
 
   const singleQuery = useAppTasks(pluginName, mockTasks, {
     enabled: !multi,
+    disablePolling: disableTaskPolling,
     ...listQueryOptions,
   });
   const entityQuery = useAppEntityList(
@@ -137,6 +148,16 @@ export function AppListPage({
   const { data: listResult, isLoading } = multi ? entityQuery : singleQuery;
   const rows = listResult?.items ?? [];
   const listPagination = listResult?.pagination ?? null;
+  // "Currently running" summarises the task list only. Entity lists are not
+  // task lists (they carry no running state and are not polled), so the count
+  // stays at zero there and the affordance never renders.
+  const runningCount = useMemo(
+    () =>
+      multi
+        ? 0
+        : rows.filter((row) => RUNNING_STATUSES.has(row.status as TaskHistoryStatus)).length,
+    [multi, rows],
+  );
   const listView = multi ? entitySchema!.list_view : schema.list_view!;
   const title = multi ? entitySchema!.display_name : schema.display_name;
   const description = multi ? entitySchema?.description : schema.description;
@@ -211,7 +232,17 @@ export function AppListPage({
         }}
       >
         <Box>
-          <Typography variant="h4">{title}</Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Typography variant="h4">{title}</Typography>
+            {runningCount > 0 && (
+              <Chip
+                size="small"
+                color="info"
+                label={`Currently running (${runningCount})`}
+                data-testid="currently-running"
+              />
+            )}
+          </Stack>
           {description && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {description}

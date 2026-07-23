@@ -16,7 +16,6 @@
 """Define models for the Restore plugin."""
 
 import logging
-from datetime import datetime
 from typing import Annotated, Any, NamedTuple, Self
 
 import yaml
@@ -32,6 +31,7 @@ from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import BackupType
+from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
     Choices,
     FieldWidget,
@@ -40,7 +40,6 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 from app.tasks.models import (
-    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskWrite,
 )
@@ -690,60 +689,22 @@ class RestoreDerivedTaskSummary(BaseModel):
     status: TaskHistoryStatusEnum | None = None
 
 
-class RestoreTaskBase(BaseModel):
-    """Define the common fields shared across restore task API responses.
-
-    :param name: The name of the restore task.
-    :param owner: The entity or user that owns the task.
-    :param hostname: The target hostname for the task execution.
-    :param status: The current execution status of the task.
-    :param backup_type: The PBM backup type for this restore.
-    :param backup_source: The backup name or timestamp to restore from.
-    :param last_executed_at: The task's most recent finish time (``max``
-        ``finished_at``), or ``None`` until it has finished once.
-    """
-
-    name: str
-    owner: str
-    hostname: str | None = None
-    status: TaskHistoryStatusEnum | None = None
-    backup_type: str
-    backup_source: str
-    last_executed_at: datetime | None = None
-
-
-class RestoreTaskResponse(RestoreTaskBase):
+class RestoreTaskResponse(BaseTaskResponse):
     """Represent a restore task API response.
 
-    :param id: The unique identifier for the restore task.
-    :type id: int | None
-    :param backend: The backend worker/engine executing the task.
-    :type backend: TaskBackendEnum
-    :param data: The raw configuration and parameters for the restore execution.
-    :type data: dict[str, Any]
-    :param protected: Whether the task is protected from deletion or modification.
-    :type protected: bool
-    :param alert_on_fail: If True, notifications are sent upon task failure.
-    :type alert_on_fail: bool
-    :param created_at: The timestamp when the task was first created.
-    :type created_at: datetime | None
-    :param updated_at: The timestamp of the last modification to the task.
-    :type updated_at: datetime | None
-    :param created_by: The user who initiated the task.
-    :type created_by: str | None
-    :param last_updated_by: The user who last modified the task record.
-    :type last_updated_by: str | None
+    Extend the standard task-response surface with the restore destination facts
+    the API surfaces; the shared task identity, status, audit, anonymization, and
+    connectivity fields come from
+    :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
+
+    :param hostname: The target hostname for the task execution.
+    :param backup_type: The PBM backup type for this restore.
+    :param backup_source: The backup name or timestamp to restore from.
     """
 
-    id: int | None = None
-    backend: TaskBackendEnum
-    data: dict[str, Any]
-    protected: bool
-    alert_on_fail: bool
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
+    hostname: str | None = None
+    backup_type: str
+    backup_source: str
 
 
 class RestoreTaskDetailResponse(RestoreTaskResponse):

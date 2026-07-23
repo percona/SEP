@@ -31,12 +31,15 @@ export {
   normalizeAppListResponse,
   DEFAULT_APP_LIST_OFFSET,
   DEFAULT_APP_LIST_LIMIT,
+  RUNNING_STATUSES,
+  isRunningStatus,
 } from './useAppTasks';
 export type {
   AppListPagination,
   AppListQueryOptions,
   AppListResult,
   PaginatedAppList,
+  TaskHistoryStatus,
 } from './useAppTasks';
 export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
 export type { AlertConfig } from './useAlertConfig';

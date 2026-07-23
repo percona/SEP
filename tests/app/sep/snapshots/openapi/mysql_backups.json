@@ -4004,8 +4004,8 @@
         "title": "BackupCreate",
         "type": "object"
       },
-      "mysql_backups__BackupResponse": {
-        "description": "Represent a backup task API response.\n\n:param hostname: The executor hostname target.",
+      "mysql_backups__BackupTaskResponse": {
+        "description": "Represent a backup task API response.\n\n:param backup_type: The backup type recorded in task config.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -4180,7 +4180,7 @@
           "alert_on_fail",
           "anonymized_entities"
         ],
-        "title": "BackupResponse",
+        "title": "BackupTaskResponse",
         "type": "object"
       },
       "mysql_backups__BackupType": {
@@ -4204,11 +4204,11 @@
         "title": "CompressionAlgorithm",
         "type": "string"
       },
-      "mysql_backups__PaginatedResponse_BackupResponse_": {
+      "mysql_backups__PaginatedResponse_BackupTaskResponse_": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/mysql_backups__BackupResponse"
+              "$ref": "#/components/schemas/mysql_backups__BackupTaskResponse"
             },
             "title": "Items",
             "type": "array"
@@ -4232,7 +4232,7 @@
           "offset",
           "limit"
         ],
-        "title": "PaginatedResponse[BackupResponse]",
+        "title": "PaginatedResponse[BackupTaskResponse]",
         "type": "object"
       },
       "mysql_backups__UploadProvider": {
@@ -4297,7 +4297,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/mysql_backups__PaginatedResponse_BackupResponse_"
+                  "$ref": "#/components/schemas/mysql_backups__PaginatedResponse_BackupTaskResponse_"
                 }
               }
             },
@@ -4445,7 +4445,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/mysql_backups__BackupResponse"
+                  "$ref": "#/components/schemas/mysql_backups__BackupTaskResponse"
                 }
               }
             },

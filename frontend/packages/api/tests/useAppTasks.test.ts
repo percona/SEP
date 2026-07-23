@@ -23,8 +23,11 @@ import {
   fetchAppTasksList,
   fetchAppEntityList,
   isBackendUnavailable,
+  isRunningStatus,
   MAX_FETCH_ALL_PAGES,
   normalizeAppListResponse,
+  RUNNING_STATUSES,
+  taskListRefetchInterval,
 } from '../src/hooks/useAppTasks';
 import { ApiError } from '../src/errors';
 
@@ -247,6 +250,53 @@ describe('buildEntityItemPath', () => {
     expect(buildEntityItemPath('p', 'e', '550e8400-e29b-41d4-a716-446655440000')).toBe(
       '/apps/p/e/550e8400-e29b-41d4-a716-446655440000',
     );
+  });
+});
+
+describe('isRunningStatus / RUNNING_STATUSES', () => {
+  it('treats running and pending as still-executing', () => {
+    expect(isRunningStatus('running')).toBe(true);
+    expect(isRunningStatus('pending')).toBe(true);
+  });
+
+  it('treats terminal statuses as not running', () => {
+    for (const status of ['success', 'failed', 'stopped'] as const) {
+      expect(isRunningStatus(status)).toBe(false);
+    }
+  });
+
+  it('RUNNING_STATUSES holds exactly running and pending', () => {
+    expect([...RUNNING_STATUSES].sort()).toEqual(['pending', 'running']);
+  });
+});
+
+describe('taskListRefetchInterval (poll-while-running)', () => {
+  const polling = 5000;
+
+  it('polls while any row is running', () => {
+    const rows = [{ status: 'success' }, { status: 'running' }];
+    expect(taskListRefetchInterval(rows, polling, false)).toBe(polling);
+  });
+
+  it('polls while any row is pending', () => {
+    expect(taskListRefetchInterval([{ status: 'pending' }], polling, false)).toBe(polling);
+  });
+
+  it('stays idle when no row is running (no repeat requests)', () => {
+    const rows = [{ status: 'success' }, { status: 'failed' }, { status: 'stopped' }];
+    expect(taskListRefetchInterval(rows, polling, false)).toBe(false);
+  });
+
+  it('stays idle for an empty list', () => {
+    expect(taskListRefetchInterval([], polling, false)).toBe(false);
+  });
+
+  it('stays idle before the first fetch resolves', () => {
+    expect(taskListRefetchInterval(undefined, polling, false)).toBe(false);
+  });
+
+  it('never polls when disabled, even with a running row', () => {
+    expect(taskListRefetchInterval([{ status: 'running' }], polling, true)).toBe(false);
   });
 });
 

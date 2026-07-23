@@ -36,6 +36,7 @@ from app.inventory.models import (
 )
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.archives.models import ArchivesCreate
+from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.tasks.models import (
     Task,
@@ -112,6 +113,14 @@ class TaskFactory(ModelFactory[Task]):
 
 class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
     """Define factory for PeriodicTasks instances."""
+
+
+class AtwIncidentFactory(SQLAlchemyFactory[AtwIncident]):
+    """Define factory for AtwIncident instances."""
+
+
+class AtwIncidentExecutionFactory(SQLAlchemyFactory[AtwIncidentExecution]):
+    """Define factory for AtwIncidentExecution instances."""
 
 
 class GeneratedTaskFactory(ModelFactory[TaskWrite]):

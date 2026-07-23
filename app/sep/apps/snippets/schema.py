@@ -53,13 +53,16 @@ from app.sep.apps.framework.schema import (
     ColumnFormat,
     DateTimeField,
     EXECUTION_HOST_LABEL,
+    EXECUTOR_HOST_FIELD_NAME,
     FloatField,
     FormSection,
     HostField,
     IntegerField,
     ListView,
+    SCRIPT_PREVIEW_FIELD_NAME,
     ScriptPreviewField,
     StringField,
+    SUDO_FIELD_NAME,
 )
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.meta import (
@@ -67,12 +70,7 @@ from app.sep.snippets.models.meta import (
     SnippetMetaParameterType,
     SnippetVisibilityCondition,
 )
-from app.sep.snippets.models.snippet import BaseSnippetArgs, Snippet
-
-_EXECUTOR_HOST_FIELD_NAME = "executor_host"
-_SUDO_FIELD_NAME = "sudo"
-_SCRIPT_PREVIEW_FIELD_NAME = "script_preview"
-
+from app.sep.snippets.models.snippet import BaseSnippet, BaseSnippetArgs
 
 SNIPPETS_PLUGIN_SCHEMA = AppSchema(
     name="snippets",
@@ -306,7 +304,7 @@ def field_for(parameter: SnippetMetaParameter) -> AnyField:
         field = cast(AnyField, _choice_field_for(parameter))
     else:
         field = cast(AnyField, _FIELD_BUILDERS[parameter.py_type](parameter))
-    update: dict[str, list[FieldGate]] = {}
+    update = {}
     requires = _requires_gates(parameter)
     if requires is not None:
         update["requires"] = requires
@@ -318,7 +316,7 @@ def field_for(parameter: SnippetMetaParameter) -> AnyField:
     return field
 
 
-def build_snippet_schema(snippet: Snippet) -> AppSchema:
+def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
     """Synthesise the per-snippet form schema for a single snippet.
 
     The schema includes one form section per parameter group declared in
@@ -329,10 +327,9 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
     from the parameter sections.
 
     :param snippet: The snippet whose schema to synthesise.
-    :type snippet: Snippet
     :return: The fully-validated plugin schema for this single snippet.
     """
-    parameter_sections: dict[str, list[AnyField]] = {}
+    parameter_sections = {}
     for parameter in snippet.validated_parameters.visible_parameters:
         section_title = parameter.group or "Parameters"
         parameter_sections.setdefault(section_title, []).append(field_for(parameter))
@@ -342,11 +339,11 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
         for title, fields in parameter_sections.items()
     ]
 
-    execution_fields: list[AnyField] = [
+    execution_fields = [
         cast(
             AnyField,
             HostField(
-                name=_EXECUTOR_HOST_FIELD_NAME,
+                name=EXECUTOR_HOST_FIELD_NAME,
                 label=EXECUTION_HOST_LABEL,
                 required=True,
             ),
@@ -357,7 +354,7 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
             cast(
                 AnyField,
                 BoolField(
-                    name=_SUDO_FIELD_NAME,
+                    name=SUDO_FIELD_NAME,
                     label="Run with sudo",
                     default=snippet.sudo.sudo_default,
                     description="Prepend sudo to the interpreter when the snippet is executed.",
@@ -369,7 +366,7 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
             cast(
                 AnyField,
                 BoolField(
-                    name=_SUDO_FIELD_NAME,
+                    name=SUDO_FIELD_NAME,
                     label="Run with sudo",
                     default=True,
                     description=("This snippet is configured to always run with sudo."),
@@ -384,7 +381,7 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
                 cast(
                     AnyField,
                     ScriptPreviewField(
-                        name=_SCRIPT_PREVIEW_FIELD_NAME,
+                        name=SCRIPT_PREVIEW_FIELD_NAME,
                         label="Snippet file",
                         endpoint_url=(
                             "/apps/snippets/snippet/preview?"
@@ -409,7 +406,7 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
 
 
 def evaluate_snippet_gates(
-    snippet: Snippet, execution_args: BaseSnippetArgs
+    snippet: BaseSnippet, execution_args: BaseSnippetArgs
 ) -> list[str]:
     """Return failure messages for any snippet field gate that fires.
 

@@ -45,6 +45,7 @@
 /docker-compose.yml                @percona/gas-admin
 /entrypoint.sh                     @percona/gas-admin
 /entrypoint_celery.sh              @percona/gas-admin
+/sidecar/                          @percona/gas-admin
 /sep_installer.sh                  @maxbube @yyyyyyyan
 /sep_installer.sha256              @maxbube @yyyyyyyan
 /CHANGELOG.md                      @maxbube @yyyyyyyan

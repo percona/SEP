@@ -105,6 +105,8 @@ export {
   useAppSchema,
   useAppTasks,
   useAppTask,
+  RUNNING_STATUSES,
+  isRunningStatus,
   useCreateAppTask,
   useUpdateAppTask,
   useAppEntityList,
@@ -149,6 +151,7 @@ export type {
   AppListQueryOptions,
   AppListResult,
   PaginatedAppList,
+  TaskHistoryStatus,
 } from './hooks';
 export type { ConnectivityCheckRequest, ConnectivityResult, ConnectivityStatus } from './hooks';
 export type {
