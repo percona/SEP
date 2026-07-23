@@ -16,8 +16,9 @@
 """Cover the snippets ``ScriptSource`` hooks directly against a real session.
 
 The hooks are exercised through the public :data:`snippet_source` surface
-(``load_script`` / ``list_scripts`` / ``build_form_schema`` / ``build_execution_meta``
-/ ``list_response``) rather than the private module functions, mirroring the
+(``load_script`` / ``list_scripts`` / ``load_scripts`` / ``build_form_schema``
+/ ``build_execution_meta`` / ``list_response``) rather than the private module
+functions, mirroring the
 framework's own ``test_script_source.py``. ``load_script`` / ``list_scripts`` open
 their own request-less session, so the suite points
 ``script_source.get_async_session_maker`` at the in-memory test session (the same

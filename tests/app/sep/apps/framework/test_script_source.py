@@ -319,7 +319,7 @@ class TestScriptSourceHooks:
 
 
 class TestBatchResolve:
-    """Cover ``resolve_scripts`` (AC #1-3, #7: hook, fallback, per-filename result)."""
+    """Cover ``resolve_scripts``: batch hook, sequential fallback, per-filename result."""
 
     pytestmark = pytest.mark.asyncio
 

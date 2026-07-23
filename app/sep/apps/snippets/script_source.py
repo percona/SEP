@@ -16,7 +16,7 @@
 """Back the snippets plugin's JSON surface with the framework ``ScriptSource`` seam.
 
 This adapter is the first real adoption of
-:class:`~app.sep.apps.framework.script_source.ScriptSource`: it wires the six
+:class:`~app.sep.apps.framework.script_source.ScriptSource`: it wires the
 hooks ``derive_script_routes`` needs around the existing snippets engine
 (``app/sep/snippets/``), so :data:`~app.sep.apps.snippets.app.app` can declare
 ``script_source=`` instead of hand-wiring the listing / per-script schema /
@@ -30,10 +30,12 @@ Three real couplings the synthetic kit deferred are bridged here:
   ``-hostname-``). :class:`SnippetScript.get_execution_model` returns an *args-only*
   subclass that makes ``executor_host`` optional so that validation succeeds; the
   execute hook re-attaches the real host via ``model_construct``.
-* **The request-less listing.** ``load_script`` / ``list_scripts`` are plain
-  callables with no request or session, so they open their own request-less
-  session (mirroring ``app/sep/apps/snippets/celery.py``). Only loaded columns and file/meta
-  ``cached_property`` values are read after it closes — never a lazy relationship.
+* **The request-less listing.** ``load_script`` / ``list_scripts`` /
+  ``load_scripts`` are plain callables with no request or session, so they open
+  their own request-less session (mirroring ``app/sep/apps/snippets/celery.py``).
+  ``load_scripts`` resolves a whole selection in one ``IN`` query. Only loaded
+  columns and file/meta ``cached_property`` values are read after it closes —
+  never a lazy relationship.
 * **The request-less artifact URL.** :func:`build_snippet_source` reads
   ``SNIPPETS_BASE_URL`` / ``BASE_URL`` rather than the legacy request-derived
   fallback, so an unconfigured deployment fails loudly instead of emitting an

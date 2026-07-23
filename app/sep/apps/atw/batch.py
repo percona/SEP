@@ -80,10 +80,9 @@ ATW_HYDRATION_WARNING = (
 MAX_BATCH_SNIPPETS = 50
 """Cap a batch selection.
 
-Each selected snippet costs one snippet lookup on its own request-less session,
-and each dispatched item adds an upstream call and a write, all in request order.
-The ceiling keeps one request's cost bounded; it sits far above any realistic
-diagnostic selection.
+The whole selection resolves in a single lookup, and each dispatched item then
+adds an upstream call and a write, all in request order. The ceiling keeps one
+request's cost bounded; it sits far above any realistic diagnostic selection.
 """
 
 ArbitraryMapping = Annotated[
