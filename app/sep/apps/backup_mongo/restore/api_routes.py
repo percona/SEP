@@ -29,18 +29,19 @@ import logging
 from fastapi import APIRouter
 from fastapi import status as http_status
 
+from app.core.exceptions import HTTPInternalServerErrorException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.sep.apps.backup_mongo.restore.deps import (
     build_restore_mongo_api_detail_response,
     build_restore_mongo_api_task_response,
     delete_restore_task_group,
+    EditableRestoreParent,
     get_restore_mongo_api_task_responses,
     get_restores_task,
     RestoreCascadePlan,
     RestoreParentTask,
     RestoreUpdateFormFromBody,
-    UnprotectedRestoreParentTask,
     update_restore_task_group,
 )
 from app.sep.apps.backup_mongo.restore.models import (
@@ -50,7 +51,6 @@ from app.sep.apps.backup_mongo.restore.models import (
 from app.sep.apps.framework import get_task_latest_history
 from app.sep.apps.framework.api import derive_cascade_create_route
 from app.sep.deps import (
-    HasNoConflictedRunningTasks,
     InventoryAPI,
     TaskAPI,
 )
@@ -96,12 +96,9 @@ derive_cascade_create_route(
 )
 
 
-@router.put(
-    "/{task_name}",
-    dependencies=[HasNoConflictedRunningTasks],
-)
+@router.put("/{task_name}")
 async def restore_mongo_api_update(
-    parent_task: UnprotectedRestoreParentTask,
+    parent_task: EditableRestoreParent,
     form: RestoreUpdateFormFromBody,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
@@ -109,15 +106,25 @@ async def restore_mongo_api_update(
     """Update a restore task from a JSON payload request body.
 
     PUTs the parent config payload to the config task name and refreshes each
-    child leg (restore, pbm-list, optional force-resync) in place.
+    child leg (restore, pbm-list, optional force-resync) in place. The
+    ``EditableRestoreParent`` dependency resolves a satellite URL to the parent
+    and blocks protected or in-flight groups before any write.
     """
     logger.debug("Update backup_mongo restore task (JSON path): %s", parent_task.name)
-    updated_task = await update_restore_task_group(
+    result = await update_restore_task_group(
         tasks_api,
         parent_task,
         form,
         inventory_api,
     )
+    if not result.success:
+        failed = [
+            (failure.task_name, str(failure.exception)) for failure in result.failures
+        ]
+        raise HTTPInternalServerErrorException(
+            detail=f"Partial update failure; inconsistent task group: {failed}"
+        )
+    updated_task = await get_restores_task(parent_task.name, tasks_api)
     latest = await get_task_latest_history(tasks_api, updated_task.name)
     return build_restore_mongo_api_task_response(
         updated_task, status=latest.status, last_executed_at=latest.finished_at

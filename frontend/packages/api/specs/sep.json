@@ -15320,7 +15320,7 @@
         ]
       },
       "put": {
-        "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place.",
+        "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place. The\n``EditableRestoreParent`` dependency resolves a satellite URL to the parent\nand blocks protected or in-flight groups before any write.",
         "operationId": "backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put",
         "parameters": [
           {
@@ -15518,6 +15518,57 @@
           }
         },
         "summary": "Backup Mongo Api Detail",
+        "tags": [
+          "backup_mongo"
+        ]
+      },
+      "put": {
+        "description": "Update a backup task group from a JSON payload request body.\n\nCascade-updates the parent ``pbm_config`` task and its derived logical,\nphysical, and status siblings, re-stamping ``_form`` so the edit page keeps\nprefilling. The ``EditableBackupParent`` dependency resolves a satellite URL\nto the parent and blocks protected or in-flight groups before any write.\nRejects a parent rename with a conflict and surfaces a partial cascade\nfailure as an HTTP 500 naming the failed legs.",
+        "operationId": "backup_mongo_backup_mongo_api_update_api_apps_backup_mongo__task_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/backup_mongo__BackupTaskWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backup_mongo__BackupTaskDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Backup Mongo Api Update",
         "tags": [
           "backup_mongo"
         ]

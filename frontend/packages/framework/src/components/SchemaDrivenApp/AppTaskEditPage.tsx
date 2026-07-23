@@ -197,6 +197,8 @@ export function AppTaskEditPage({
         defaultValues: normalizedDefaults,
         capabilities: schema.capabilities,
         renderField,
+        submitError,
+        fieldErrors,
       }) ?? (
         <SchemaFormRenderer
           sections={editableSections}

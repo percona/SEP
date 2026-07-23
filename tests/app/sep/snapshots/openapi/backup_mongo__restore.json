@@ -4090,7 +4090,7 @@
         ]
       },
       "put": {
-        "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place.",
+        "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place. The\n``EditableRestoreParent`` dependency resolves a satellite URL to the parent\nand blocks protected or in-flight groups before any write.",
         "operationId": "backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put",
         "parameters": [
           {

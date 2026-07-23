@@ -29,7 +29,11 @@ import {
   getRestoreMongoHistoryTaskNames,
   RestoreMongoTaskDetailExtras,
 } from './restoreMongoTaskDetail';
-import { restoreMongoCreateForm, restoreMongoCreateRenderField } from './restoreMongoCreateForm';
+import {
+  restoreMongoCreateForm,
+  restoreMongoCreateRenderField,
+  restoreMongoEditForm,
+} from './restoreMongoCreateForm';
 import { BACKUP_APP_NAME, MONGODB_BASE_PATH, RESTORE_APP_NAME } from './routes';
 
 const BACKUP_DETAIL_SUPPRESS_KEYS = ['derived_tasks', 'latest_pbm_status'];
@@ -110,6 +114,7 @@ export function BackupMongoApp() {
               suppressDetailKeys={RESTORE_DETAIL_SUPPRESS_KEYS}
               renderField={restoreMongoCreateRenderField}
               renderCreateForm={restoreMongoCreateForm}
+              renderEditForm={restoreMongoEditForm}
               renderTaskDetailChildren={({ task }) => <RestoreMongoTaskDetailExtras task={task} />}
             />
           }

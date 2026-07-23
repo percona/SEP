@@ -17,7 +17,7 @@
 
 import hmac
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
@@ -1292,6 +1292,23 @@ async def check_for_conflicted_running_tasks(
 
 
 HasNoConflictedRunningTasks = Depends(check_for_conflicted_running_tasks)
+
+
+async def check_group_for_conflicted_running_tasks(
+    task_names: Sequence[str], tasks_api: TaskAPI
+) -> None:
+    """Raise if any task in a group has a running or pending run.
+
+    Backup and restore groups run on their derived/child legs, not on the parent
+    config task, so gating an edit on the parent name alone lets an edit slip
+    through mid-run. Check every group member.
+
+    :param task_names: The parent and derived/child leg names to inspect.
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :raises HTTPConflictException: If any named task has a running or pending run.
+    """
+    for name in task_names:
+        await check_for_conflicted_running_tasks(name, tasks_api)
 
 
 def reject_if_protected(task: Task, *, action: str = "edit") -> Task:
