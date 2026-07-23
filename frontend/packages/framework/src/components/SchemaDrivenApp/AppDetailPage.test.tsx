@@ -49,7 +49,7 @@ vi.mock('@sep/api', () => ({
   // the summary renders its "Not scheduled" state, leaving the execute/delete
   // flows under test untouched.
   useAppTasks: () => ({
-    data: [],
+    data: { items: [], pagination: null },
     isLoading: false,
     isError: false,
     error: null,
