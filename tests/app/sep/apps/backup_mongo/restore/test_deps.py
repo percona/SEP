@@ -19,6 +19,7 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
@@ -328,3 +329,21 @@ def test_build_restore_update_form_from_body_pins_parent_identity(
     assert result.backup_type == BackupType.PBM_LOGICAL
     assert result.hostname == body.hostname
     assert result.backup_source == body.backup_source
+
+
+def test_build_restore_update_rejects_namespace_for_physical_parent(
+    restore_task_write: RestoreTaskWrite,
+) -> None:
+    """Validate the namespace filter after pinning the parent's physical type."""
+    parent_task = _restore_parent_task(
+        config=yaml.dump({"backupType": BackupType.PBM_PHYSICAL.value}),
+    )
+    body = restore_task_write.model_copy(
+        update={"restore_namespace_filter": "db.collection"}
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="Namespace Filter is only supported for logical MongoDB restores",
+    ):
+        build_restore_update_form_from_body(body, parent_task)
