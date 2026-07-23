@@ -34,7 +34,7 @@ Bandit (ruff `S` rules) catches generic findings automatically — flag those on
 - **`subprocess`** — input sanitized, `shell=True` not used, args passed as a list.
 - **External API calls** — responses validated by a Pydantic model before downstream use.
 - **File uploads** — content-type / extension / size validated before persistence.
-- **Redirect URLs** — enforce same-origin containment: reject protocol-relative `//host` and backslashed `/\host`, and require an empty `urlsplit(value).netloc`. A path-shape check or `URIPath` alone is insufficient — both admit `//host`, which browsers follow off-origin.
+- **Redirect URLs** — enforce same-origin containment: require `urlsplit(value).scheme == ""` and `urlsplit(value).netloc == ""` (reject `javascript:` / `http:`), and reject protocol-relative `//host` and backslashed `/\host`. A path-shape check or `URIPath` alone is insufficient — both admit `//host`, which browsers follow off-origin.
 
 ## Input validation primitives to prefer
 
