@@ -31,12 +31,13 @@ from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/backup_mongo"
-EXPECTED_CASCADE_POSTS = 4
-EXPECTED_CASCADE_PUTS = 4
+EXPECTED_CASCADE_POSTS = 5
+EXPECTED_CASCADE_PUTS = 5
 DEFAULT_PAGE_LIMIT = 50
 THREE_PARENT_FIXTURE_TOTAL = 3
 TWO_PARENT_FIXTURE_TOTAL = 2
 TWO_DERIVED_SIBLINGS = 2
+THREE_DERIVED_SIBLINGS = 3
 
 
 def build_backup_task(name: str = "mongo-backup-task", **overrides: Any) -> dict:
@@ -159,7 +160,7 @@ class TestBackupMongoAppSchemaEndpoint:
         assert "application/json" in response.headers["content-type"]
 
     def test_schema_declares_derived_cascade(self, test_client):
-        """Ensure the schema exposes the three derived backup legs."""
+        """Ensure the schema exposes the four derived backup legs."""
         response = test_client.get(f"{API_BASE}/schema")
 
         derived = response.json()["derived"]
@@ -167,6 +168,7 @@ class TestBackupMongoAppSchemaEndpoint:
             "-logical",
             "-physical",
             "-status",
+            "-incremental",
         ]
 
     def test_schema_storage_fields_use_forbidden_gates(self, test_client):
@@ -376,7 +378,7 @@ class TestBackupMongoApiCreate:
         mock_inventory_api_dep,
         mongo_service: CreatedService,
     ) -> None:
-        """POST creates the parent and three derived tasks via cascade."""
+        """POST creates the parent and four derived tasks via cascade."""
         mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
         mock_task_api_dep.post = AsyncMock(
             side_effect=[
@@ -399,6 +401,13 @@ class TestBackupMongoApiCreate:
                     "mongo-backup-task-status",
                     data={
                         "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                build_backup_task(
+                    "mongo-backup-task-incremental",
+                    data={
+                        "backup_type": BackupType.PBM_INCREMENTAL.value,
                         "parent": "mongo-backup-task",
                     },
                 ),
@@ -425,6 +434,13 @@ class TestBackupMongoApiCreate:
                     "mongo-backup-task-status",
                     data={
                         "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                "/mongo-backup-task-incremental": build_backup_task(
+                    "mongo-backup-task-incremental",
+                    data={
+                        "backup_type": BackupType.PBM_INCREMENTAL.value,
                         "parent": "mongo-backup-task",
                     },
                 ),
@@ -541,12 +557,20 @@ class TestBackupMongoApiDetail:
                 "parent": "parent-backup",
             },
         )
+        incremental = build_backup_task(
+            "parent-backup-incremental",
+            data={
+                "backup_type": BackupType.PBM_INCREMENTAL.value,
+                "parent": "parent-backup",
+            },
+        )
         mock_task_api_dep.get = mock_task_api_get_by_path(
             {
                 "/parent-backup": parent,
                 "/parent-backup-logical": logical,
                 "/parent-backup-physical": physical,
                 "/parent-backup-status": status_task,
+                "/parent-backup-incremental": incremental,
             }
         )
 
@@ -563,6 +587,7 @@ class TestBackupMongoApiDetail:
             "parent-backup-logical",
             "parent-backup-physical",
             "parent-backup-status",
+            "parent-backup-incremental",
         }
 
     def test_detail_tolerates_history_fetch_failure_for_one_derived(
@@ -591,12 +616,20 @@ class TestBackupMongoApiDetail:
                 "parent": "parent-backup",
             },
         )
+        incremental = build_backup_task(
+            "parent-backup-incremental",
+            data={
+                "backup_type": BackupType.PBM_INCREMENTAL.value,
+                "parent": "parent-backup",
+            },
+        )
         history_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         tasks_by_path = {
             "/parent-backup": parent,
             "/parent-backup-logical": logical,
             "/parent-backup-physical": physical,
             "/parent-backup-status": status_task,
+            "/parent-backup-incremental": incremental,
         }
 
         async def _mock_get(path: str, **kwargs: Any) -> Any:
@@ -614,11 +647,12 @@ class TestBackupMongoApiDetail:
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert len(body["derived_tasks"]) == TWO_DERIVED_SIBLINGS
+        assert len(body["derived_tasks"]) == THREE_DERIVED_SIBLINGS
         derived_names = {item["name"] for item in body["derived_tasks"]}
         assert derived_names == {
             "parent-backup-logical",
             "parent-backup-status",
+            "parent-backup-incremental",
         }
 
 
@@ -640,6 +674,7 @@ class TestBackupMongoApiDelete:
             call("/parent-backup-logical"),
             call("/parent-backup-physical"),
             call("/parent-backup-status"),
+            call("/parent-backup-incremental"),
             call("/parent-backup"),
         ]
 
@@ -700,6 +735,13 @@ class TestBackupMongoApiUpdate:
                         "parent": "parent-backup",
                     },
                 ),
+                "/parent-backup-incremental": build_backup_task(
+                    "parent-backup-incremental",
+                    data={
+                        "backup_type": BackupType.PBM_INCREMENTAL.value,
+                        "parent": "parent-backup",
+                    },
+                ),
             }
         )
         mock_task_api_dep.put = AsyncMock(return_value=parent)
@@ -757,6 +799,13 @@ class TestBackupMongoApiUpdate:
                     "parent-backup-status",
                     data={
                         "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+                "/parent-backup-incremental": build_backup_task(
+                    "parent-backup-incremental",
+                    data={
+                        "backup_type": BackupType.PBM_INCREMENTAL.value,
                         "parent": "parent-backup",
                     },
                 ),

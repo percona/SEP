@@ -38,15 +38,26 @@
         "pbm_config": "pbm_logical",
         "pbm_logical": "pbm_status"
       }
+    },
+    {
+      "data_overrides": {
+        "backup_type": "pbm_incremental"
+      },
+      "name_suffix": "-incremental",
+      "parent_link": true,
+      "payload_substitutions": {
+        "pbm_config": "pbm_logical",
+        "pbm_logical": "pbm_incremental"
+      }
     }
   ],
-  "description": "Configure Percona Backup for MongoDB (PBM) and manage logical, physical, and status backup tasks.",
+  "description": "Configure Percona Backup for MongoDB (PBM) and manage logical, physical, status, and incremental backup tasks.",
   "display_name": "MongoDB Backups",
   "forms": [
     {
       "collapsed_by_default": false,
       "collapsible": false,
-      "description": "Creating this backup produces sibling tasks: logical, physical, status.",
+      "description": "Creating this backup produces sibling tasks: logical, physical, status, incremental.",
       "fields": [
         {
           "default": "mongodb-backup",
@@ -325,6 +336,21 @@
           "name": "backup_num_parallel_collections",
           "required": false,
           "type": "integer"
+        },
+        {
+          "description": "Optional comma-separated db.collection or db.* list. Applied as pbm backup --ns on logical and physical siblings only.",
+          "label": "Namespaces (selective)",
+          "name": "backup_namespaces",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": false,
+          "description": "Pass --with-users-and-roles with selective backup. Valid only when every namespace is database-level (db.*).",
+          "label": "Include users and roles",
+          "name": "backup_with_users_and_roles",
+          "required": false,
+          "type": "bool"
         }
       ],
       "render_after_submit": false,

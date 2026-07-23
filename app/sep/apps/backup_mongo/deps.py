@@ -95,7 +95,7 @@ def backup_create_from_write(body: BackupTaskWrite) -> BackupCreate:
     """Convert a :class:`BackupTaskWrite` body into a :class:`BackupCreate` model.
 
     Always sets ``backup_type`` to ``pbm_config``; POST creates the parent
-    config task and derived logical, physical, and status siblings.
+    config task and derived logical, physical, status, and incremental siblings.
 
     :param body: The JSON request body for backup task creation.
     :type body: BackupTaskWrite
@@ -153,7 +153,8 @@ async def build_backup_cascade_plan(
 
     Convert the body to a :class:`BackupCreate` form, assemble the parent
     ``pbm_config`` write, and bind a cascade closure that POSTs the parent plus
-    its derived ``pbm_logical`` / ``pbm_physical`` / ``pbm_status`` siblings. The
+    its derived ``pbm_logical`` / ``pbm_physical`` / ``pbm_status`` /
+    ``pbm_incremental`` siblings. The
     parent is re-serialised *inside* the closure so it carries the form stamp
     :func:`~app.sep.apps.framework.api.derive_cascade_create_route` applies first.
 
@@ -302,8 +303,8 @@ async def build_backup_mongo_api_detail_response(
     """Build a backup task detail response for the JSON API.
 
     Aggregates latest execution status for the parent ``pbm_config`` task and
-    each derived logical, physical, and status sibling. When a status sibling
-    exists, includes a tail of its latest stdout for the PBM status panel.
+    each derived logical, physical, status, and incremental sibling. When a status
+    sibling exists, includes a tail of its latest stdout for the PBM status panel.
 
     :param task: The parent backup config task.
     :type task: Task
@@ -420,7 +421,7 @@ async def update_backup_task_group(
 
     Rebuilds the parent ``pbm_config`` payload, re-stamps ``_form`` so the edit
     page keeps prefilling across repeated edits, and PUTs the parent plus its
-    derived logical, physical, and status legs in place. Returns the per-leg
+    derived logical, physical, status, and incremental legs in place. Returns the per-leg
     outcome; the caller raises on partial failure.
 
     :param tasks_api: The TaskAPI instance used to update tasks.

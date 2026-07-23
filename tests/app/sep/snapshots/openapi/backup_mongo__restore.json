@@ -97,6 +97,7 @@
         "enum": [
           "pbm_logical",
           "pbm_physical",
+          "pbm_incremental",
           "pbm_snapshot",
           "pbm_config",
           "pbm_status"

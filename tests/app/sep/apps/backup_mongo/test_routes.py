@@ -22,7 +22,7 @@ from fastapi import status
 from app.sep.apps.backup_mongo.models import BackupCreate
 from app.sep.inventory import CreatedService
 
-EXPECTED_PBM_TASK_POSTS = 4
+EXPECTED_PBM_TASK_POSTS = 5
 
 
 def test_pbm_backups_create_full_form_dependency_chain_without_payload_override(

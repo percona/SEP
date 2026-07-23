@@ -125,6 +125,20 @@ async def pbm_backups_create(
         json=status_task.model_dump(),
     )
 
+    # Create an incremental backup task
+    incremental_task = task.model_copy()
+    incremental_task.data["backup_type"] = "pbm_incremental"
+    incremental_task.name = f"{task.name}-incremental"
+    incremental_task.data["parent"] = task.name
+    incremental_task.data["payload"] = logical_task.data["payload"].replace(
+        "pbm_logical", "pbm_incremental"
+    )
+
+    await task_api.post(
+        "/",
+        json=incremental_task.model_dump(),
+    )
+
     task_path = request.url_for("pbm_backups_detail", task_name=task.name)
     return RedirectResponse(
         task_path,
