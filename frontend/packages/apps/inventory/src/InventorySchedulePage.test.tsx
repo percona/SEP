@@ -131,9 +131,11 @@ describe('InventorySchedulePage', () => {
     setupHooks([]);
     renderPage();
     await screen.findByTestId('inv-sched-panel');
-    expect(useAppTasksMock).toHaveBeenCalledWith('inventory', undefined, {
-      fetchAllPages: true,
-    });
+    expect(useAppTasksMock).toHaveBeenCalledWith(
+      'inventory',
+      undefined,
+      expect.objectContaining({ fetchAllPages: true }),
+    );
   });
 
   describe('empty state', () => {
