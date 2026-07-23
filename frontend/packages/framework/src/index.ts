@@ -63,12 +63,14 @@ export {
   TaskHistoryStatusBadge,
   isTaskHistoryStatus,
   ChainDisplay,
+  TaskFilesDialog,
 } from './components/TaskHistoryTable';
 export type {
   TaskHistoryTableProps,
   TaskHistoryEntry,
   TaskHistoryStatus,
   PaginatedTaskHistory,
+  TaskFilesDialogProps,
 } from './components/TaskHistoryTable';
 export { SnippetExecutionAccordion } from './components/SnippetExecutionAccordion';
 export type { SnippetExecutionAccordionProps } from './components/SnippetExecutionAccordion';
