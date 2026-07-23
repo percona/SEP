@@ -12,6 +12,7 @@ overrides:
   undici@^7.0.0: 7.28.0
   ws@8.20.1: 8.21.0
   '@babel/core': 7.29.6
+  immutable@<5.1.8: ^5.1.8
 
 importers:
 
@@ -2749,8 +2750,8 @@ packages:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
 
-  immutable@5.1.5:
-    resolution: {integrity: sha512-t7xcm2siw+hlUM68I+UEOK+z84RzmN59as9DZ7P1l0994DKUWV7UXBMQZVxaoMSRQ+PBZbHCOoBt7a2wxOMt+A==}
+  immutable@5.1.9:
+    resolution: {integrity: sha512-m8nVez3rwrgmWxtLMt1ZYXB2Lv7OKYn/disyxAlSDYAlKSlFoPPfIAmAM/M5xqL4m4C/wAPw7S2/CNaUii1Hxg==}
 
   import-fresh@3.3.1:
     resolution: {integrity: sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==}
@@ -4167,7 +4168,7 @@ snapshots:
   '@melloware/react-logviewer@6.5.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       hotkeys-js: 4.0.3
-      immutable: 5.1.5
+      immutable: 5.1.9
       mitt: 3.0.1
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
@@ -5375,7 +5376,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  immutable@5.1.5: {}
+  immutable@5.1.9: {}
 
   import-fresh@3.3.1:
     dependencies:
