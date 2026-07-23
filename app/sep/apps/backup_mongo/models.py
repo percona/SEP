@@ -67,14 +67,18 @@ class BackupType(EnumFieldMixin, StrEnum):
     PBM_STATUS = "pbm_status"
 
 
-#: One ``db.collection`` or database-level ``db.*`` selective namespace token.
-_NAMESPACE_TOKEN_RE = re.compile(r"^[^.\s]+\.(\*|[^.]+)$")
+#: Database name portion of a selective namespace (before the first ``.``).
+_NAMESPACE_DB_RE = re.compile(r"^[^.*\s]+$")
 #: Database-level selective namespace (``db.*``) required for ``--with-users-and-roles``.
-_DB_LEVEL_NAMESPACE_RE = re.compile(r"^[^.\s]+\.\*$")
+_DB_LEVEL_NAMESPACE_RE = re.compile(r"^[^.*\s]+\.\*$")
 
 
 def parse_backup_namespaces(namespaces: str) -> list[str]:
     """Parse a comma-separated selective namespace list into tokens.
+
+    PBM splits each token at the first ``.``, so collection names may contain
+    additional dots (for example ``db.orders.archive``). Empty comma-separated
+    entries and database wildcards such as ``*.users`` are rejected.
 
     :param namespaces: Raw ``db.collection`` / ``db.*`` list from the form.
     :return: Non-empty stripped namespace tokens, preserving order.
@@ -82,12 +86,18 @@ def parse_backup_namespaces(namespaces: str) -> list[str]:
         ``db.collection`` / ``db.*`` shape.
     """
     tokens = [part.strip() for part in namespaces.split(",")]
-    tokens = [token for token in tokens if token]
-    if not tokens:
+    if not tokens or any(not token for token in tokens):
         raise ValueError(
             "Backup namespaces must list at least one db.collection or db.* entry"
         )
-    invalid = [token for token in tokens if not _NAMESPACE_TOKEN_RE.fullmatch(token)]
+    invalid: list[str] = []
+    for token in tokens:
+        if "." not in token:
+            invalid.append(token)
+            continue
+        database, collection = token.split(".", 1)
+        if not _NAMESPACE_DB_RE.fullmatch(database) or not collection:
+            invalid.append(token)
     if invalid:
         raise ValueError(
             "Backup namespaces must be comma-separated db.collection or db.* "
@@ -461,7 +471,7 @@ class BackupConfigBackup(BaseCaseInsensitiveModel):
     :type oplogSpanMin: float | EmptyStrToNone
     :param numParallelCollections: Number of parallel collections to process during logical backup.
     :type numParallelCollections: int | EmptyStrToNone
-    :param namespaces: Comma-separated selective namespaces for logical/physical backups.
+    :param namespaces: Comma-separated selective namespaces for logical backups.
     :type namespaces: str | EmptyStrToNone
     :param withUsersAndRoles: Whether to include users and roles with database-level selective.
     :type withUsersAndRoles: bool | EmptyStrToNone
@@ -807,7 +817,8 @@ class BackupForm(TaskFormModel):
             section="BackupOptions",
             description=(
                 "Optional comma-separated db.collection or db.* list. Applied as "
-                "pbm backup --ns on logical and physical siblings only."
+                "pbm backup --ns on the logical sibling only (PBM rejects --ns for "
+                "physical and incremental backups)."
             ),
         ),
     ] = None
@@ -872,7 +883,7 @@ class BackupTaskWrite(
     :type backup_oplog_span_min: float | None
     :param backup_num_parallel_collections: Parallel collections for logical backup.
     :type backup_num_parallel_collections: int | None
-    :param backup_namespaces: Selective ``--ns`` namespaces for logical/physical.
+    :param backup_namespaces: Selective ``--ns`` namespaces for logical backups.
     :type backup_namespaces: str | None
     :param backup_with_users_and_roles: Opt-in ``--with-users-and-roles`` for ``db.*``.
     :type backup_with_users_and_roles: bool

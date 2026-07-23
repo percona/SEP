@@ -102,7 +102,7 @@ def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
             return {"items": []}
         if path in tasks_by_path:
             return tasks_by_path[path]
-        raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+        raise HTTPNotFoundException(f"Task not found: {path}")
 
     return AsyncMock(side_effect=_mock_get)
 
@@ -967,6 +967,7 @@ class TestBackupMongoApiUpdate:
         parent = build_backup_task("parent-backup")
         mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
         mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-backup": parent})
+        mock_task_api_dep.post = AsyncMock(return_value={})
         derived_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         async def _put(path: str, **kwargs: Any) -> Any:
@@ -986,6 +987,66 @@ class TestBackupMongoApiUpdate:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert "parent-backup-physical" in response.json()["detail"]
+
+    def test_update_backfills_missing_incremental_sibling(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Create a missing ``-incremental`` sibling before cascading PUTs.
+
+        Pre-SEP-1373 groups lack the incremental leg. Updating must backfill it
+        rather than partially mutate the group and then 500 on a missing PUT.
+        """
+        parent = build_backup_task("parent-backup")
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/parent-backup": parent,
+                "/parent-backup-logical": build_backup_task(
+                    "parent-backup-logical",
+                    data={
+                        "backup_type": BackupType.PBM_LOGICAL.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+                "/parent-backup-physical": build_backup_task(
+                    "parent-backup-physical",
+                    data={
+                        "backup_type": BackupType.PBM_PHYSICAL.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+                "/parent-backup-status": build_backup_task(
+                    "parent-backup-status",
+                    data={
+                        "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={})
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup",
+            json=build_backup_write_body(
+                task_name="parent-backup",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_task_api_dep.post.assert_awaited_once()
+        posted = mock_task_api_dep.post.await_args.kwargs["json"]
+        assert posted["name"] == "parent-backup-incremental"
+        assert posted["data"]["backup_type"] == BackupType.PBM_INCREMENTAL.value
+        assert mock_task_api_dep.put.await_count == EXPECTED_CASCADE_PUTS
+        put_paths = [call.args[0] for call in mock_task_api_dep.put.await_args_list]
+        assert "/parent-backup-incremental" in put_paths
 
     def test_update_returns_404_for_unknown_task(
         self, test_client, mock_task_api_dep

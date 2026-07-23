@@ -32,10 +32,24 @@ class TestParseBackupNamespaces:
         """Trim tokens and rejoin with commas."""
         assert parse_backup_namespaces(" db1.* , db2.coll ") == ["db1.*", "db2.coll"]
 
+    def test_accepts_dotted_collection_name(self) -> None:
+        """Allow collection names that contain additional dots (PBM first-dot split)."""
+        assert parse_backup_namespaces("db.orders.archive") == ["db.orders.archive"]
+
     def test_rejects_invalid_token(self) -> None:
         """Reject tokens that are not ``db.collection`` / ``db.*``."""
         with pytest.raises(ValueError, match="invalid"):
             parse_backup_namespaces("db1,db2.coll")
+
+    def test_rejects_database_wildcard(self) -> None:
+        """Reject ``*.collection`` database wildcards."""
+        with pytest.raises(ValueError, match="invalid"):
+            parse_backup_namespaces("*.users")
+
+    def test_rejects_empty_comma_token(self) -> None:
+        """Reject empty entries in a comma-separated list."""
+        with pytest.raises(ValueError, match="at least one"):
+            parse_backup_namespaces("db1.*,,db2.coll")
 
 
 class TestUsersAndRolesGate:

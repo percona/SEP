@@ -36,6 +36,8 @@ from app.sep.apps.backup_mongo.deps import (
     BackupsIndexContextDep,
     BackupsTask,
 )
+from app.sep.apps.backup_mongo.schema import BACKUP_MONGO_DERIVED
+from app.sep.apps.framework.cascade import cascade_create_tasks
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -77,67 +79,7 @@ async def pbm_backups_create(
     """Create new backups task."""
     logger.debug("Create backups task: %s", task)
 
-    # Create the config task
-    await task_api.post(
-        "/",
-        json=task.model_dump(),
-    )
-
-    # Create a logical backup task
-    logical_task = task.model_copy()
-    logical_task.data["backup_type"] = "pbm_logical"
-    logical_task.name = f"{task.name}-logical"
-    logical_task.data["parent"] = task.name
-    logical_task.data["payload"] = logical_task.data["payload"].replace(
-        "pbm_config", "pbm_logical"
-    )
-
-    await task_api.post(
-        "/",
-        json=logical_task.model_dump(),
-    )
-
-    # Create a physical backup task
-    physical_task = task.model_copy()
-    physical_task.data["backup_type"] = "pbm_physical"
-    physical_task.name = f"{task.name}-physical"
-    physical_task.data["parent"] = task.name
-    physical_task.data["payload"] = logical_task.data["payload"].replace(
-        "pbm_logical", "pbm_physical"
-    )
-
-    await task_api.post(
-        "/",
-        json=physical_task.model_dump(),
-    )
-
-    # Create a physical backup task
-    status_task = task.model_copy()
-    status_task.data["backup_type"] = "pbm_status"
-    status_task.name = f"{task.name}-status"
-    status_task.data["parent"] = task.name
-    status_task.data["payload"] = logical_task.data["payload"].replace(
-        "pbm_physical", "pbm_status"
-    )
-
-    await task_api.post(
-        "/",
-        json=status_task.model_dump(),
-    )
-
-    # Create an incremental backup task
-    incremental_task = task.model_copy()
-    incremental_task.data["backup_type"] = "pbm_incremental"
-    incremental_task.name = f"{task.name}-incremental"
-    incremental_task.data["parent"] = task.name
-    incremental_task.data["payload"] = logical_task.data["payload"].replace(
-        "pbm_logical", "pbm_incremental"
-    )
-
-    await task_api.post(
-        "/",
-        json=incremental_task.model_dump(),
-    )
+    await cascade_create_tasks(task_api, task.model_dump(), BACKUP_MONGO_DERIVED)
 
     task_path = request.url_for("pbm_backups_detail", task_name=task.name)
     return RedirectResponse(
@@ -177,6 +119,9 @@ async def pbm_backups_detail(
         "physical_backup_url": request.url_for(
             "pbm_backups_execute", task_name=task.name + "-physical"
         ),
+        "incremental_backup_url": request.url_for(
+            "pbm_backups_execute", task_name=task.name + "-incremental"
+        ),
         "alert_on_fail": task.alert_on_fail,
     }
 
@@ -187,6 +132,8 @@ async def pbm_backups_detail(
     context["history_logical"] = response["items"]
     response = await tasks_api.get(f"/{task.name}-physical/history/")
     context["history_physical"] = response["items"]
+    response = await tasks_api.get(f"/{task.name}-incremental/history/")
+    context["history_incremental"] = response["items"]
     response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
@@ -198,6 +145,11 @@ async def pbm_backups_detail(
     context["running_tasks"] += response["items"]
     response = await tasks_api.get(
         f"/{task.name}-physical/history/",
+        params={"status": TaskHistoryStatusEnum.RUNNING},
+    )
+    context["running_tasks"] += response["items"]
+    response = await tasks_api.get(
+        f"/{task.name}-incremental/history/",
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["running_tasks"] += response["items"]

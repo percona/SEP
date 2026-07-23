@@ -50,6 +50,7 @@ from app.sep.apps.framework import (
 )
 from app.sep.apps.framework.api import CascadeCreatePlan
 from app.sep.apps.framework.cascade import (
+    build_derived_payload,
     cascade_create_tasks,
     cascade_update_tasks,
     CascadeResult,
@@ -411,6 +412,30 @@ def ensure_backup_group_update_preserves_names(
         raise HTTPConflictException(_BACKUP_GROUP_RENAME_MESSAGE)
 
 
+async def ensure_backup_derived_siblings(
+    tasks_api: TaskAPI,
+    parent_name: str,
+    parent_payload: dict[str, Any],
+) -> None:
+    """POST any missing derived siblings before a cascade update.
+
+    Groups created before incremental was added lack ``-incremental``. Creating
+    the missing sibling first keeps :func:`cascade_update_tasks` from partially
+    mutating the group and then failing on a 404 PUT.
+
+    :param tasks_api: The TaskAPI used to GET existing legs and POST missing ones.
+    :param parent_name: The parent ``pbm_config`` task name.
+    :param parent_payload: The updated parent payload used to build missing children.
+    """
+    for spec in BACKUP_MONGO_DERIVED:
+        derived_name = f"{parent_name}{spec.name_suffix}"
+        try:
+            await tasks_api.get(f"/{derived_name}")
+        except HTTPNotFoundException:
+            child_payload = build_derived_payload(parent_payload, spec)
+            await tasks_api.post("/", json=child_payload)
+
+
 async def update_backup_task_group(
     tasks_api: TaskAPI,
     parent_task: Task,
@@ -420,9 +445,10 @@ async def update_backup_task_group(
     """Cascade-update the parent backup task and its derived siblings.
 
     Rebuilds the parent ``pbm_config`` payload, re-stamps ``_form`` so the edit
-    page keeps prefilling across repeated edits, and PUTs the parent plus its
-    derived logical, physical, status, and incremental legs in place. Returns the per-leg
-    outcome; the caller raises on partial failure.
+    page keeps prefilling across repeated edits, backfills any missing derived
+    siblings (for example ``-incremental`` on pre-SEP-1373 groups), and PUTs the
+    parent plus its derived logical, physical, status, and incremental legs in
+    place. Returns the per-leg outcome; the caller raises on partial failure.
 
     :param tasks_api: The TaskAPI instance used to update tasks.
     :param parent_task: The parent backup config task.
@@ -433,10 +459,12 @@ async def update_backup_task_group(
     """
     updated_parent = await build_backup_task_payload(form, inventory_api)
     stamp_form_input(updated_parent, form)
+    parent_payload = updated_parent.model_dump()
+    await ensure_backup_derived_siblings(tasks_api, parent_task.name, parent_payload)
     return await cascade_update_tasks(
         tasks_api,
         parent_task.name,
-        updated_parent.model_dump(),
+        parent_payload,
         backup_derived_task_names(parent_task.name),
         BACKUP_MONGO_DERIVED,
     )

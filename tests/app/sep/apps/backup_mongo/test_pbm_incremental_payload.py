@@ -113,15 +113,13 @@ class TestIncrementalBaseDetection:
         assert cmd == ["pbm", "backup", "--type", "incremental", "--wait"]
         assert "--base" not in cmd
 
-    def test_list_failure_assumes_base_needed(
+    def test_list_failure_aborts(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """Treat a failed ``pbm list`` as needing ``--base``."""
-        captured = _run_incremental(
-            monkeypatch, tmp_path, list_stdout="", list_returncode=1
-        )
-        cmd = _backup_cmd(captured)
-        assert "--base" in cmd
+        """Abort when ``pbm list`` fails rather than guessing ``--base``."""
+        with pytest.raises(SystemExit) as exc_info:
+            _run_incremental(monkeypatch, tmp_path, list_stdout="", list_returncode=1)
+        assert exc_info.value.code == 1
 
     def test_namespaces_never_emitted(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path

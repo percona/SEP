@@ -89,10 +89,10 @@ def pbm_creds(creds_path: str) -> str:
 
 
 def _load_config():
-    """ Return NOMAD_META_CONFIG parsed as a dict, or {} when absent/invalid/non-mapping.
+    """Return NOMAD_META_CONFIG parsed as a dict, or {} when absent.
 
-    A present-but-unparseable or non-mapping config logs to stderr and yields {} so the
-    backup still runs on PBM's default compression rather than aborting.
+    A present-but-unparseable or non-mapping config aborts rather than silently
+    running a full backup (or using stale cluster-wide storage).
     """
     config_yaml = os.environ.get('NOMAD_META_CONFIG')
     if not config_yaml:
@@ -100,12 +100,12 @@ def _load_config():
     try:
         config = yaml.safe_load(config_yaml)
     except yaml.YAMLError as err:
-        print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}. Proceeding without compression flags.', file=sys.stderr)
-        return {}
+        print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}', file=sys.stderr)
+        sys.exit(1)
     if isinstance(config, dict):
         return config
-    print('NOMAD_META_CONFIG did not parse to a mapping. Proceeding without compression flags.', file=sys.stderr)
-    return {}
+    print('NOMAD_META_CONFIG did not parse to a mapping.', file=sys.stderr)
+    sys.exit(1)
 
 
 def _compression_flags(config):
@@ -128,11 +128,12 @@ def _compression_flags(config):
 
 
 def _selective_flags(config):
-    """ Build pbm backup --ns / --with-users-and-roles flags from the backup config.
+    """Build pbm backup --ns / --with-users-and-roles flags from the backup config.
 
-    Selective namespaces apply only to logical/physical runners. Returns [] when
-    namespaces are unset. --with-users-and-roles is emitted only when explicitly
-    enabled alongside namespaces (create-time validation already requires db.*).
+    Selective namespaces apply only to logical backups (PBM rejects ``--ns`` for
+    physical/incremental). Returns [] when namespaces are unset.
+    ``--with-users-and-roles`` is emitted only when explicitly enabled alongside
+    namespaces (create-time validation already requires ``db.*``).
     """
     backup = config.get('backup')
     if not isinstance(backup, dict):

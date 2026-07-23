@@ -89,10 +89,10 @@ def pbm_creds(creds_path: str) -> str:
 
 
 def _load_config():
-    """ Return NOMAD_META_CONFIG parsed as a dict, or {} when absent/invalid/non-mapping.
+    """Return NOMAD_META_CONFIG parsed as a dict, or {} when absent.
 
-    A present-but-unparseable or non-mapping config logs to stderr and yields {} so the
-    backup still runs on PBM's default compression rather than aborting.
+    A present-but-unparseable or non-mapping config aborts rather than silently
+    running a full backup (or using stale cluster-wide storage).
     """
     config_yaml = os.environ.get('NOMAD_META_CONFIG')
     if not config_yaml:
@@ -100,12 +100,12 @@ def _load_config():
     try:
         config = yaml.safe_load(config_yaml)
     except yaml.YAMLError as err:
-        print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}. Proceeding without compression flags.', file=sys.stderr)
-        return {}
+        print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}', file=sys.stderr)
+        sys.exit(1)
     if isinstance(config, dict):
         return config
-    print('NOMAD_META_CONFIG did not parse to a mapping. Proceeding without compression flags.', file=sys.stderr)
-    return {}
+    print('NOMAD_META_CONFIG did not parse to a mapping.', file=sys.stderr)
+    sys.exit(1)
 
 
 def _compression_flags(config):
@@ -195,8 +195,8 @@ def _needs_incremental_base() -> bool:
     """Return True when the cluster has no incremental backup base yet.
 
     Inspect ``pbm list -o json`` for any snapshot whose type mentions
-    incremental. When listing fails or returns no incremental entries, the
-    first run must pass ``--base``.
+    incremental. Abort when listing fails or cannot be parsed — guessing
+    ``--base`` on a transient failure would start an unintended new chain.
     """
     try:
         result = subprocess.run(  # noqa: S603 # nosec B603
@@ -211,18 +211,15 @@ def _needs_incremental_base() -> bool:
     if result.returncode != 0:
         print(
             'Failed to query pbm list for incremental base '
-            f'(exited {result.returncode}); assuming no base exists yet.',
+            f'(exited {result.returncode}).',
             file=sys.stderr,
         )
-        return True
+        sys.exit(1)
     try:
         payload = yaml.safe_load(result.stdout or '') or {}
     except yaml.YAMLError as err:
-        print(
-            f'Failed to parse pbm list JSON: {err}; assuming no base exists yet.',
-            file=sys.stderr,
-        )
-        return True
+        print(f'Failed to parse pbm list JSON: {err}', file=sys.stderr)
+        sys.exit(1)
     snapshots = []
     if isinstance(payload, dict):
         for key in ('snapshots', 'backups', 'storage'):

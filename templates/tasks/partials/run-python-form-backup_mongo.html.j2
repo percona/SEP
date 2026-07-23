@@ -113,6 +113,12 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
             <span class="material-symbols-outlined">send</span>
             <span class="label">Run Physical Backup</span>
         </button>
+        <button type="submit"
+                class="text medium send-button submitButton"
+                form="{{ task.name }}-incremental-send">
+            <span class="material-symbols-outlined">send</span>
+            <span class="label">Run Incremental Backup</span>
+        </button>
         {% if not task.protected %}
             <button class="text medium delete-button submitButton delete-tasks-button"
                     form="delete-task-form">
@@ -134,6 +140,13 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
       data-confirm-message='Are you sure you want to run a physical backup for "{{ task.name }}"?'
       method="post"
       action="{{ task.physical_backup_url }}">
+    <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
+</form>
+<form class="send-form"
+      id="{{ task.name }}-incremental-send"
+      data-confirm-message='Are you sure you want to run an incremental backup for "{{ task.name }}"?'
+      method="post"
+      action="{{ task.incremental_backup_url }}">
     <input type="hidden" name="csrf-token" value="{{ csrf_token }}" />
 </form>
 <form class="delete-task-form"
