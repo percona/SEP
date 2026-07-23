@@ -196,27 +196,6 @@ class TestDerivedOneOfBody:
             == status.HTTP_422_UNPROCESSABLE_ENTITY
         )
 
-    def test_archives_create_and_update_accept_the_same_body(
-        self, regular_user: CasdoorUser
-    ) -> None:
-        """Assert the real archives one-of app accepts its valid body on both routes."""
-        inventory = MockInventoryAPI()
-        inventory.seed_table(MOCK_DESTINATION_TABLE_ID)
-        tasks_api = MockTaskAPI()
-        tasks_api.seed_task(_SEEDED, owner=archives_app.owner)
-        client = build_contract_client(
-            archives_app,
-            user=regular_user,
-            tasks_api=tasks_api,
-            inventory_api=inventory,
-        )
-        base = app_base_url(archives_app)
-        body = _ARCHIVES_VALID_BODY
-        assert client.post(f"{base}/", json=body).status_code == status.HTTP_201_CREATED
-        assert (
-            client.put(f"{base}/{_SEEDED}", json=body).status_code == status.HTTP_200_OK
-        )
-
 
 class TestSharedCreateResponseModel:
     """Assert create and update render one shared response-model class."""
@@ -248,6 +227,40 @@ class TestSharedCreateResponseModel:
         )
         create, update = _create_and_update_routes(app_def)
         assert create.response_model is update.response_model
+
+
+class TestArchivesPopulatedDestination:
+    """Assert the real archives app accepts an archive-*with*-destination body.
+
+    The generic contract suite binds archives with a delete-without-archiving body
+    (``destination=None``) to sidestep the seeded source/destination same-table
+    collision, so this restores the one in-process, single-seed assertion that a
+    populated ``destination`` one-of branch round-trips through the derived create and
+    update routes — the archive path the multi-seed subprocess sweep otherwise guards
+    alone.
+    """
+
+    def test_create_and_update_accept_a_populated_destination(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a populated-destination body 201s on create and 200s on update."""
+        inventory = MockInventoryAPI()
+        inventory.seed_table(MOCK_DESTINATION_TABLE_ID)
+        tasks_api = MockTaskAPI()
+        tasks_api.seed_task(_SEEDED, owner=archives_app.owner)
+        client = build_contract_client(
+            archives_app,
+            user=regular_user,
+            tasks_api=tasks_api,
+            inventory_api=inventory,
+        )
+        base = app_base_url(archives_app)
+        body = _ARCHIVES_VALID_BODY
+
+        assert client.post(f"{base}/", json=body).status_code == status.HTTP_201_CREATED
+        assert (
+            client.put(f"{base}/{_SEEDED}", json=body).status_code == status.HTTP_200_OK
+        )
 
 
 def archives_oneof_probe() -> tuple[int, int]:
