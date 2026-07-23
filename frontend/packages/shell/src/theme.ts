@@ -101,13 +101,6 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
           }),
         },
       },
-      MuiAccordionDetails: {
-        styleOverrides: {
-          root: ({ theme }) => ({
-            paddingRight: theme.spacing(2) + ' !important',
-          }),
-        },
-      },
     },
   };
 

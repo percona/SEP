@@ -122,7 +122,7 @@ function ExecutionRow({
           )}
         </Stack>
       </AccordionSummary>
-      <AccordionDetails>
+      <AccordionDetails sx={(theme) => ({ paddingRight: theme.spacing(2) + ' !important' })}>
         <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
           <Button
             size="small"
