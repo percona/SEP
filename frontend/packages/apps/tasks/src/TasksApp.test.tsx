@@ -79,7 +79,7 @@ describe('TasksApp', () => {
       error: null,
     } as ReturnType<typeof useTasksAppSchema>);
     mockUseTasksList.mockReturnValue({
-      data: [],
+      data: { items: [], pagination: null },
       isLoading: false,
       error: null,
     } as unknown as ReturnType<typeof useTasksList>);

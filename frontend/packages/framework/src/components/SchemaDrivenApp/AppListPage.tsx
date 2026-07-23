@@ -28,6 +28,8 @@ import AddIcon from '@mui/icons-material/Add';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import { useSnackbar } from 'notistack';
 import {
+  DEFAULT_APP_LIST_LIMIT,
+  DEFAULT_APP_LIST_OFFSET,
   RUNNING_STATUSES,
   useDeleteAppEntity,
   useAppEntityList,
@@ -103,18 +105,49 @@ export function AppListPage({
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
 
+  const paginationScope = `${pluginName}:${entityName ?? ''}`;
+  const [listPage, setListPage] = useState({
+    scope: paginationScope,
+    offset: DEFAULT_APP_LIST_OFFSET,
+    limit: DEFAULT_APP_LIST_LIMIT,
+  });
+
+  // Derive the active page from scope so a tab change uses offset 0 on the
+  // same render (a post-paint useEffect would still fire one stale-offset
+  // request and flash an empty page when the new entity has fewer rows).
+  const activeListPage =
+    listPage.scope === paginationScope
+      ? listPage
+      : {
+          scope: paginationScope,
+          offset: DEFAULT_APP_LIST_OFFSET,
+          limit: DEFAULT_APP_LIST_LIMIT,
+        };
+
+  if (listPage.scope !== paginationScope) {
+    setListPage(activeListPage);
+  }
+
+  const listQueryOptions = {
+    offset: activeListPage.offset,
+    limit: activeListPage.limit,
+  };
+
   const singleQuery = useAppTasks(pluginName, mockTasks, {
     enabled: !multi,
     disablePolling: disableTaskPolling,
+    ...listQueryOptions,
   });
   const entityQuery = useAppEntityList(
     pluginName,
     entityName ?? '',
     multi ? mockEntityItems?.[entityName!] : undefined,
-    { enabled: multi },
+    { enabled: multi, ...listQueryOptions },
   );
 
-  const { data: rows = [], isLoading } = multi ? entityQuery : singleQuery;
+  const { data: listResult, isLoading } = multi ? entityQuery : singleQuery;
+  const rows = listResult?.items ?? [];
+  const listPagination = listResult?.pagination ?? null;
   // "Currently running" summarises the task list only. Entity lists are not
   // task lists (they carry no running state and are not polled), so the count
   // stays at zero there and the affordance never renders.
@@ -260,6 +293,17 @@ export function AppListPage({
         data={rows}
         isLoading={isLoading}
         pluginName={pluginName}
+        pagination={
+          listPagination
+            ? {
+                total: listPagination.total,
+                offset: listPagination.offset,
+                limit: listPagination.limit,
+                onChange: ({ offset, limit }) =>
+                  setListPage({ scope: paginationScope, offset, limit }),
+              }
+            : null
+        }
         onRowClick={
           listOnly
             ? undefined
