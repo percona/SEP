@@ -21,7 +21,7 @@ import Tooltip from '@mui/material/Tooltip';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 export interface FieldHelpIconProps {
-  /** Tooltip body; the icon is omitted when this is empty. */
+  /** Tooltip body shown on hover. */
   description: string;
   /** Used in the hover target's accessible name (`Help for ${label}`). */
   label: string;
@@ -30,6 +30,7 @@ export interface FieldHelpIconProps {
 /**
  * Info-icon tooltip for schema form field help. Uses a non-button span so it
  * can sit inside MUI floating labels without nesting interactive controls.
+ * Callers must omit this component when there is no description to show.
  */
 export function FieldHelpIcon({ description, label }: FieldHelpIconProps) {
   return (
@@ -55,7 +56,9 @@ export function FieldHelpIcon({ description, label }: FieldHelpIconProps) {
 }
 
 export interface FieldLabelWithHelpProps {
+  /** Visible field label text. */
   label: string;
+  /** Optional help text; when set, an info-icon tooltip is rendered next to the label. */
   description?: string;
 }
 
