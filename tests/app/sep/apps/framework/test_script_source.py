@@ -395,6 +395,36 @@ class TestBatchResolve:
         assert seen == [["report.sh", "x.sh"]]
         assert set(resolved) == {"report.sh", "x.sh"}
 
+    @pytest.mark.parametrize("unsafe", ["../secret.sh", "a\\b.sh"])
+    async def test_traversal_guard_runs_before_the_batch_hook(
+        self, scripts_dir: Path, unsafe: str
+    ) -> None:
+        """Reject an unsafe filename with 400 before a batch hook can run."""
+        source = _make_source(scripts_dir)
+
+        async def _fail_batch(filenames: Sequence[str]) -> dict[str, _FixtureScript]:
+            raise AssertionError("load_scripts must not run for an unsafe filename")
+
+        object.__setattr__(source, "load_scripts", _fail_batch)
+        with pytest.raises(HTTPBadRequestException):
+            await resolve_scripts(source, ["report.sh", unsafe])
+
+    async def test_empty_selection_resolves_without_touching_a_loader(
+        self, scripts_dir: Path
+    ) -> None:
+        """Resolve an empty selection to an empty mapping, calling no loader."""
+        source = _make_source(scripts_dir)
+
+        async def _fail_load(filename: str) -> _FixtureScript:
+            raise AssertionError("no loader must run for an empty selection")
+
+        async def _fail_batch(filenames: Sequence[str]) -> dict[str, _FixtureScript]:
+            raise AssertionError("no loader must run for an empty selection")
+
+        object.__setattr__(source, "load_script", _fail_load)
+        object.__setattr__(source, "load_scripts", _fail_batch)
+        assert await resolve_scripts(source, []) == {}
+
 
 class TestDerivedRouteSurface:
     """Inspect the derived router without HTTP."""

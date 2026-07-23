@@ -233,7 +233,8 @@ async def resolve_scripts(
     the failure policy: a schema route can raise its whole-request 404 for the
     first missing key, while an execute route can turn a missing key into a
     per-item error. Traversal is still fatal — an unsafe filename raises before
-    any lookup, matching the single-script dependency.
+    any lookup, matching the single-script dependency. An empty selection
+    resolves to an empty mapping without touching either loader.
 
     :param source: The script source whose loader(s) resolve the filenames.
     :param filenames: The requested filenames, possibly with duplicates.
@@ -242,6 +243,8 @@ async def resolve_scripts(
     :raises HTTPBadRequestException: When any filename fails the traversal guard.
     """
     unique = list(dict.fromkeys(filenames))
+    if not unique:
+        return {}
     for filename in unique:
         _validate_script_filename(filename)
     if source.load_scripts is not None:
