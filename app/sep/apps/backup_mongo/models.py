@@ -71,7 +71,7 @@ class StorageType(StrEnum):
 
     S3 = "s3"
     FILESYSTEM = "filesystem"
-    AZUER = "azure"
+    AZURE = "azure"
 
 
 class S3Provider(StrEnum):
