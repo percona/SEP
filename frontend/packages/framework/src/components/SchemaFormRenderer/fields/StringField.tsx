@@ -17,6 +17,7 @@
 
 import { useFormContext } from 'react-hook-form';
 import { TextInput } from '@percona/percona-ui';
+import { FieldLabelWithHelp } from '../FieldLabelWithHelp';
 import type { StringField as StringFieldType } from '../types';
 import { buildValidationRules } from '../utils/validationMapper';
 
@@ -33,6 +34,8 @@ export function StringField({ field }: StringFieldProps) {
       isRequired={field.required}
       control={control}
       textFieldProps={{
+        // textFieldProps.label overrides TextInput's string label (MUI accepts ReactNode).
+        label: <FieldLabelWithHelp label={field.label} description={field.description} />,
         placeholder: field.placeholder,
         helperText: field.description,
         fullWidth: true,
