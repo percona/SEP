@@ -48,7 +48,7 @@ export interface ResultsPaneProps {
  * The Results pane: lists the incident's executions, each with its status, logs,
  * and downloadable file listing.
  *
- * This is the pane shell only. The SEP-1595 "send to ServiceNow" action
+ * This is the pane shell only. A future "send to ServiceNow" action
  * (execution selection, case-ref prefill, job progress) will add a cross-row
  * selection model and an action bar here — row state currently lives in
  * {@link ExecutionRow} and will need lifting when that lands.
