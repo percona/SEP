@@ -21,6 +21,8 @@ import pytest
 from celery.exceptions import Ignore
 
 import app.sep.apps.report.celery as report_celery
+from app.core.exceptions import HTTPInternalServerErrorException
+from app.sep.bundle_upload.plan import DeliveryPlanError
 
 MODULE = "app.sep.apps.report.celery"
 
@@ -98,6 +100,43 @@ class TestGenerateHealthReportCooperativeCancel:
         generate.assert_awaited_once()
         generate_pdf.assert_awaited_once_with(report)
         upload.assert_awaited_once_with(report, b"%PDF-1.4")
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            HTTPInternalServerErrorException(),
+            DeliveryPlanError("Bundle is 1 bytes, above the configured 30 MiB limit."),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_scheduled_upload_failure_is_logged_not_raised(
+        self, mocker, caplog, failure
+    ):
+        """Keep the scheduled task alive when the upload fails, logging the cause."""
+        mocker.patch(
+            "app.sep.apps.report.deps.get_pmm_api",
+            new=AsyncMock(return_value=MagicMock()),
+        )
+        mock_settings = mocker.patch(f"{MODULE}.sep_settings")
+        mock_settings.HEALTH_REPORT.is_upload_configured = True
+        mocker.patch(
+            "app.sep.apps.report.service.generate_report",
+            new=AsyncMock(return_value=self._mock_report()),
+        )
+        mocker.patch(
+            "app.sep.apps.report.service.generate_pdf_report",
+            new=AsyncMock(return_value=b"%PDF-1.4"),
+        )
+        mocker.patch(
+            "app.sep.apps.report.service.upload_pdf_report",
+            new=AsyncMock(side_effect=failure),
+        )
+        mocker.patch(f"{MODULE}.should_cancel", new=AsyncMock(return_value=False))
+
+        with caplog.at_level("ERROR", logger=MODULE):
+            await report_celery._generate_health_report(upload=True)
+
+        assert "Failed to upload health report" in caplog.text
 
 
 class TestReportSnapshotJobs:
