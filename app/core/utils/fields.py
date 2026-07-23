@@ -41,7 +41,7 @@ from pydantic import (
     UrlConstraints,
     WrapSerializer,
 )
-from pydantic.json_schema import JsonSchemaValue
+from pydantic.json_schema import JsonSchemaValue, WithJsonSchema
 from pydantic_core import core_schema, Url
 from starlette.datastructures import URL as StarletteURL  # noqa: N811
 
@@ -424,6 +424,28 @@ def database_url_normalized_scheme_field_factory(
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
+
+ARBITRARY_ARGS_SCHEMA = {"additionalProperties": True}
+"""Advertise a free-form argument map.
+
+A bare ``dict[str, Any]`` / ``dict[str, object]`` field otherwise serialises as
+``type: object`` with no ``additionalProperties``, which the TypeScript
+generator reads as ``Record<string, never>`` — a map no typed caller can
+populate. Use this as ``Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)`` on a
+plain Pydantic field, or nest it under ``SQLField(..., schema_extra=...)`` for
+SQLModel.
+"""
+
+ArbitraryMapping = Annotated[
+    dict[str, Any], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
+]
+"""Carry a free-form mapping that survives TypeScript generation.
+
+``ARBITRARY_ARGS_SCHEMA`` reaches a top-level field through
+``json_schema_extra``; this alias carries the same open contract on a nested or
+nullable mapping, where a sibling-level ``additionalProperties`` would land
+outside the ``anyOf`` and leave ``Record<string, never>`` as a union member.
+"""
 
 
 def dsn_safe(value: str) -> str:

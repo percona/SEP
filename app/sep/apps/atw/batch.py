@@ -24,14 +24,18 @@ field types, the snippets schema vocabulary, and the tasks-service status enum.
 """
 
 import logging
-from typing import Annotated, Any, cast
+from typing import Any, cast
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, UUID4
-from pydantic.json_schema import WithJsonSchema
 
 from app.core.requests import RemoteAPI
-from app.core.utils.fields import NonEmptyStr, UTCDatetime
+from app.core.utils.fields import (
+    ARBITRARY_ARGS_SCHEMA,
+    ArbitraryMapping,
+    NonEmptyStr,
+    UTCDatetime,
+)
 from app.sep.apps.framework.schema import (
     AnyField,
     BoolField,
@@ -42,7 +46,6 @@ from app.sep.apps.framework.schema import (
 )
 from app.sep.apps.framework.script_helpers import execute_script
 from app.sep.apps.framework.script_source import (
-    ARBITRARY_ARGS_SCHEMA,
     make_script_dep,
     ScriptExecuteWrite,
     ScriptExecutionResponse,
@@ -60,6 +63,7 @@ __all__ = [
     "ATWIncidentExecutionResponse",
     "ATWMergedSchemaResponse",
     "ATWSnippetSchema",
+    "ArbitraryMapping",
     "batch_execution_fields",
     "dispatch_batch_item",
     "fetch_task_history",
@@ -81,16 +85,6 @@ Each selected snippet costs one snippet lookup on its own request-less session,
 and each dispatched item adds an upstream call and a write, all in request order.
 The ceiling keeps one request's cost bounded; it sits far above any realistic
 diagnostic selection.
-"""
-
-ArbitraryMapping = Annotated[
-    dict[str, Any], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
-]
-"""Carry a free-form mapping that survives TypeScript generation.
-
-``ARBITRARY_ARGS_SCHEMA`` reaches a top-level field through ``json_schema_extra``;
-this alias carries the same open contract on a *nested* mapping, where a bare
-``dict[str, Any]`` would otherwise serialise as ``Record<string, never>``.
 """
 
 _MIN_SHARED_DECLARERS = 2
