@@ -36,7 +36,6 @@ entirely.
 """
 
 import importlib.util
-import pkgutil
 import sys
 from pathlib import Path
 
@@ -77,6 +76,38 @@ def _load_models_module(full_name: str, models_path: Path) -> None:
         raise
 
 
+def discover_plugin_version_dirs(apps_root: Path | None = None) -> list[str]:
+    """Return sorted migration ``versions/`` dirs for plugins that own migrations.
+
+    Filesystem-only: does not import or load any plugin ``models.py``. A
+    plugin participates only when ``migrations/versions/`` exists on disk
+    (migrations-first). Does not consult ``sep_settings.APPS``.
+
+    :param apps_root: Directory of plugin packages to scan. Defaults to
+        every entry on ``app.sep.apps.__path__``.
+    :type apps_root: Path | None
+    :return: Absolute paths to each participating plugin's migration
+        ``versions/`` directory, sorted for stable ordering.
+    :rtype: list[str]
+    """
+    roots = (
+        [apps_root]
+        if apps_root is not None
+        else [Path(entry) for entry in plugins_pkg.__path__]
+    )
+    version_dirs: list[str] = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for plugin_dir in root.iterdir():
+            if not plugin_dir.is_dir():
+                continue
+            versions_dir = plugin_dir / "migrations" / "versions"
+            if versions_dir.is_dir():
+                version_dirs.append(str(versions_dir))
+    return sorted(version_dirs)
+
+
 def discover_plugin_migrations_and_models() -> list[str]:
     """Return migration ``versions/`` dirs for installed plugins that own migrations.
 
@@ -89,25 +120,19 @@ def discover_plugin_migrations_and_models() -> list[str]:
 
     Discovery is **migrations-first**: a plugin only participates in
     Alembic if it has a ``migrations/versions/`` directory on disk.
-    Filesystem-based walk over ``pkgutil.iter_modules(plugins_pkg.__path__)``;
+    Delegates the directory walk to :func:`discover_plugin_version_dirs`;
     does NOT consult ``sep_settings.APPS``. Schema management follows
     installed code, not enablement in configuration.
 
     :return: Absolute paths to each participating plugin's migration
-        ``versions/`` directory, in iteration order.
+        ``versions/`` directory, sorted for stable ordering.
     :rtype: list[str]
     """
-    version_dirs = []
-    for finder, name, is_pkg in pkgutil.iter_modules(plugins_pkg.__path__):
-        if not is_pkg:
-            continue
-        plugin_dir = Path(finder.path) / name
-        versions_dir = plugin_dir / "migrations" / "versions"
-        if not versions_dir.is_dir():
-            continue
+    version_dirs = discover_plugin_version_dirs()
+    for versions_dir_str in version_dirs:
+        plugin_dir = Path(versions_dir_str).parent.parent
         models_path = plugin_dir / "models.py"
         if models_path.is_file():
-            full_name = f"{plugins_pkg.__name__}.{name}.models"
+            full_name = f"{plugins_pkg.__name__}.{plugin_dir.name}.models"
             _load_models_module(full_name, models_path)
-        version_dirs.append(str(versions_dir))
     return version_dirs
