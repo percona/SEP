@@ -47,6 +47,17 @@ for port in (9000, 9001, 9002):
         sys.exit(f"unhealthy: :{port}/health -> {exc}")
 PY
 
+# The generated broker config is the only channel for the credential: this runs
+# in a fresh process that sees the image's ENV, not what the entrypoint exported.
+# REDISCLI_AUTH rather than --pass keeps it out of this probe's own argv.
+valkey_conf=/tmp/valkey.conf
+REDISCLI_AUTH="$(sed -n 's/^requirepass //p' "$valkey_conf" 2> /dev/null || true)"
+if [[ -z $REDISCLI_AUTH ]]; then
+    echo "unhealthy: no broker credential in $valkey_conf" >&2
+    exit 1
+fi
+export REDISCLI_AUTH
+
 if [[ "$(valkey-cli -p 6379 ping 2> /dev/null)" != "PONG" ]]; then
     echo 'unhealthy: valkey broker did not answer PING' >&2
     exit 1
