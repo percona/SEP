@@ -25,6 +25,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.testclient import TestClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.apps.alerts.crud import AlertBackupManager
 from app.sep.apps.alerts.deps import (
     get_alert_templates,
@@ -984,8 +985,8 @@ class TestRestoreApi:
                 settings={"integrationKey": "old"},
             ),
         ]
-        mock_pmm_api.update_contact_point.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="not provisioned"
+        mock_pmm_api.update_contact_point.side_effect = HTTPNotFoundException(
+            "not provisioned"
         )
 
         response = api_client.post(
@@ -1011,11 +1012,11 @@ class TestRestoreApi:
                 settings={"integrationKey": "old"},
             ),
         ]
-        mock_pmm_api.update_contact_point.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="not provisioned"
+        mock_pmm_api.update_contact_point.side_effect = HTTPNotFoundException(
+            "not provisioned"
         )
-        mock_pmm_api.delete_contact_point.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="not provisioned"
+        mock_pmm_api.delete_contact_point.side_effect = HTTPNotFoundException(
+            "not provisioned"
         )
 
         response = api_client.post(

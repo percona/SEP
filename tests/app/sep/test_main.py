@@ -501,6 +501,46 @@ class TestExceptionHandlers:
         ("exc", "expected_status"),
         [
             pytest.param(
+                HTTPBadGatewayException("PMM is unreachable"),
+                status.HTTP_502_BAD_GATEWAY,
+                id="bad_gateway",
+            ),
+            pytest.param(
+                HTTPServiceUnavailableException("PMM is unavailable"),
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                id="service_unavailable",
+            ),
+        ],
+    )
+    def test_gateway_error_handler_returns_json_on_browser_path(
+        self, mocker, dummy_context, test_client, exc, expected_status
+    ):
+        """Answer a gateway error with JSON even on a browser/session path.
+
+        ``json_exception_handler`` is registered for the gateway exceptions, so a
+        502/503 answers in JSON regardless of path or auth mode -- it does not fall
+        through to ``default_exception_handler``'s flash-and-redirect. This pins the
+        behaviour after the upstream-error mapping was widened so a header-bearing
+        gateway error resolves to its mapped class instead of a bare HTTPException.
+        """
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=exc,
+        )
+        messages_error_mock = mocker.patch("app.sep.main.messages.error")
+
+        response = test_client.get(
+            "/", headers={"Referer": "/fake-page"}, follow_redirects=False
+        )
+
+        assert response.status_code == expected_status
+        assert response.json()["detail"] == exc.detail
+        messages_error_mock.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("exc", "expected_status"),
+        [
+            pytest.param(
                 HTTPUnauthorizedException(),
                 status.HTTP_401_UNAUTHORIZED,
                 id="bearer_unauthorized",
