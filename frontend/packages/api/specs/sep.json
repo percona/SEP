@@ -12228,7 +12228,7 @@
         "type": "object"
       },
       "tasks__PeriodicTaskSummary": {
-        "description": "Represent read-only periodic-schedule metadata for a single task.\n\n:param id: The periodic task's database identifier.\n:type id: int\n:param name: The periodic task's display name.\n:type name: str\n:param enabled: Whether the periodic schedule is currently enabled.\n:type enabled: bool\n:param period: A human-readable schedule description (cron or interval),\n    or ``None`` when unavailable.\n:type period: str | None\n:param next_run_at: The next scheduled run time in ISO 8601 format, or\n    ``None`` when not scheduled.\n:type next_run_at: UTCDatetime | None\n:param last_run_at: The last run time in ISO 8601 format, or ``None`` if\n    the schedule has never run.\n:type last_run_at: UTCDatetime | None\n:param total_run_count: The total number of times the schedule has run,\n    or ``None`` when unavailable.\n:type total_run_count: int | None\n:param chain_task_names: Ordered task names in the periodic execution\n    chain, if any.\n:type chain_task_names: list[str]",
+        "description": "Represent read-only periodic-schedule metadata for a single task.\n\n:param id: The periodic task's database identifier.\n:type id: int\n:param name: The periodic task's display name.\n:type name: str\n:param enabled: Whether the periodic schedule is currently enabled.\n:type enabled: bool\n:param period: A human-readable schedule description (cron or interval),\n    or ``None`` when unavailable.\n:type period: str | None\n:param next_run_at: The next scheduled run time in ISO 8601 format, or\n    ``None`` when not scheduled.\n:type next_run_at: UTCDatetime | None\n:param last_run_at: The last run time in ISO 8601 format, or ``None`` if\n    the schedule has never run.\n:type last_run_at: UTCDatetime | None\n:param total_run_count: The total number of times the schedule has run,\n    or ``None`` when unavailable.\n:type total_run_count: int | None\n:param last_run_status: The result of this schedule's own most recent run,\n    or ``None`` when the schedule has never run.\n:param chain_task_names: Ordered task names in the periodic execution\n    chain, if any.\n:type chain_task_names: list[str]",
         "properties": {
           "chain_task_names": {
             "items": {
@@ -12256,6 +12256,16 @@
               }
             ],
             "title": "Last Run At"
+          },
+          "last_run_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
             "title": "Name",

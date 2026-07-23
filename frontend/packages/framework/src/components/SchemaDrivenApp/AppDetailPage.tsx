@@ -380,15 +380,43 @@ function OverviewTab({
   const columns = schema.list_view!.columns;
   const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
 
-  const suppressedFields = useMemo(
-    () =>
-      new Set([...BASELINE_OVERVIEW_HIDDEN_FIELDS, ...(schemaHiddenFields ?? []), ...hiddenFields]),
-    [schemaHiddenFields, hiddenFields],
+  const suppressedFields = useMemo(() => {
+    // Fields the single-task detail header already surfaces authoritatively:
+    // `name` (the h4 task title) and `status` (the header chip). Each is only
+    // suppressed under the exact condition the header renders it: the h4 shows
+    // `task.name` only when it's a string (otherwise it falls back to the route
+    // id), and the chip renders only for a string status. Matching those guards
+    // keeps a non-string value from being dropped from both the header and the
+    // card. They are the single source of truth for those values, so we
+    // de-duplicate them out of the Task information card rather than repeating
+    // them below the header.
+    const headerShownFields: string[] = [];
+    if (typeof task.name === 'string') {
+      headerShownFields.push('name');
+    }
+    if (typeof task.status === 'string') {
+      headerShownFields.push('status');
+    }
+    return new Set([
+      ...BASELINE_OVERVIEW_HIDDEN_FIELDS,
+      ...headerShownFields,
+      ...(schemaHiddenFields ?? []),
+      ...hiddenFields,
+    ]);
+  }, [task.name, task.status, schemaHiddenFields, hiddenFields]);
+
+  // `list_view.columns` targets the table view; in the detail Overview we drop
+  // any suppressed column (header/status-chip fields, baseline noise, or
+  // backend-curated `overview_hidden_fields`) so no field renders twice.
+  const visibleColumns = useMemo(
+    () => columns.filter((col) => !suppressedFields.has(col.key)),
+    [columns, suppressedFields],
   );
 
   // Extra fields beyond the schema's list_view columns, excluding internal
   // noise. Lets future app schemas surface fields without listing them
-  // in `list_view.columns` (which is meant for the table view).
+  // in `list_view.columns` (which is meant for the table view). Matched against
+  // the full column set so a suppressed column can't reappear here as an extra.
   const extraEntries = Object.entries(task).filter(
     ([key]) => !columns.some((c) => c.key === key) && !suppressedFields.has(key),
   );
@@ -407,7 +435,7 @@ function OverviewTab({
 
       <SectionCard title="Task information">
         <Grid container spacing={2}>
-          {columns.map((col) => (
+          {visibleColumns.map((col) => (
             <TaskOverviewDetailField key={col.key} label={col.label} value={task[col.key]} />
           ))}
           {extraEntries.map(([key, value]) => (
@@ -883,7 +911,12 @@ export function AppDetailPage({
         <Paper sx={{ p: 2 }}>
           <Grid container spacing={2}>
             {listView.columns
-              .filter((col) => col.format !== 'actions' && col.key !== '_actions')
+              .filter(
+                (col) =>
+                  col.format !== 'actions' &&
+                  col.key !== '_actions' &&
+                  !(listView.overview_hidden_fields ?? []).includes(col.key),
+              )
               .map((col) => (
                 <EntityDetailField
                   key={col.key}
