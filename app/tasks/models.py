@@ -1177,6 +1177,17 @@ class TaskHistoryLatestStatus(BaseModel):
     finished_at: datetime | None = None
 
 
+class TaskHistoryStatusPoint(BaseModel):
+    """Represent one system-triggered run observation for a task name.
+
+    :param created_at: When the history row was recorded.
+    :param status: The recorded execution status.
+    """
+
+    created_at: datetime
+    status: TaskHistoryStatusEnum
+
+
 class TransformPayloadRequest(BaseModel):
     """Define the request body for the /transform/ API route.
 
