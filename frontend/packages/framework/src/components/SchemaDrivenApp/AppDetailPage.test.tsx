@@ -973,6 +973,54 @@ describe('AppDetailPage — overview_hidden_fields', () => {
   });
 });
 
+describe('AppDetailPage — Overview de-duplicates header fields', () => {
+  function schemaWithExtraColumn(): AppSchema {
+    return {
+      pluginName: 'checksums',
+      display_name: 'Checksum',
+      description: 'Test',
+      capabilities: {},
+      list_view: {
+        columns: [
+          { key: 'name', label: 'Name' },
+          { key: 'status', label: 'Status', format: 'status' },
+          { key: 'created_at', label: 'Created At' },
+        ],
+        default_sort: '-name',
+      },
+      formSchema: { sections: [] },
+    } as unknown as AppSchema;
+  }
+
+  it('omits name and status from Task information while keeping them in the header', () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'success',
+        created_at: '2026-01-15T12:00:00Z',
+        extra_visible: 'hello',
+      },
+      isLoading: false,
+    });
+
+    const { container } = renderWithSchema(schemaWithExtraColumn());
+
+    // Header still shows the task name and status badge
+    expect(screen.getByRole('heading', { level: 4, name: 'FECHK' })).toBeInTheDocument();
+    expect(container.querySelector('[data-status="success"]')).toBeInTheDocument();
+
+    const taskInfo = screen.getByText('Task information').closest('div');
+    expect(taskInfo).not.toBeNull();
+    // Caption labels for header fields must not reappear in the card
+    expect(within(taskInfo!).queryByText('Name')).toBeNull();
+    expect(within(taskInfo!).queryByText('Status')).toBeNull();
+    // Non-header column and non-suppressed extra still render once
+    expect(within(taskInfo!).getByText('Created At')).toBeInTheDocument();
+    expect(within(taskInfo!).getByText('Extra Visible')).toBeInTheDocument();
+  });
+});
+
 describe('AppDetailPage — header status badge', () => {
   it('renders the shared status badge for the single-task header, with running in the animated state', () => {
     mockUseAppTask.mockReturnValue({

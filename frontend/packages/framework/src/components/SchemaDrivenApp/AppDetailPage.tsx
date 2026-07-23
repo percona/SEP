@@ -217,6 +217,10 @@ const BASELINE_OVERVIEW_HIDDEN_FIELDS = [
   'anonymized_entities',
 ] as const;
 
+// Fields already rendered in the detail page header (task name + status badge/chip).
+// Omit them from the Overview "Task information" card so they are not duplicated.
+const HEADER_DISPLAYED_FIELDS = ['name', 'status'] as const;
+
 function formatLabel(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -376,8 +380,20 @@ function OverviewTab({
 
   const suppressedFields = useMemo(
     () =>
-      new Set([...BASELINE_OVERVIEW_HIDDEN_FIELDS, ...(schemaHiddenFields ?? []), ...hiddenFields]),
+      new Set([
+        ...BASELINE_OVERVIEW_HIDDEN_FIELDS,
+        ...HEADER_DISPLAYED_FIELDS,
+        ...(schemaHiddenFields ?? []),
+        ...hiddenFields,
+      ]),
     [schemaHiddenFields, hiddenFields],
+  );
+
+  // Skip fields the detail header already renders (name + status). Other
+  // list_view.columns still appear once here; baseline/schema hidden fields
+  // only filter the extras loop below.
+  const overviewColumns = columns.filter(
+    (col) => !(HEADER_DISPLAYED_FIELDS as readonly string[]).includes(col.key),
   );
 
   // Extra fields beyond the schema's list_view columns, excluding internal
@@ -400,7 +416,7 @@ function OverviewTab({
         )}
 
       <SectionCard title="Task information">
-        {columns.map((col) => (
+        {overviewColumns.map((col) => (
           <TaskOverviewDetailField key={col.key} label={col.label} value={task[col.key]} />
         ))}
         {extraEntries.map(([key, value]) => (
