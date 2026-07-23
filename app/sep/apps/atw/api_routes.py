@@ -26,7 +26,6 @@ from pydantic import BaseModel
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
-from app.core.utils.iterators import unique_everseen
 from app.sep.apps.atw.batch import (
     ATWBatchExecuteItemResponse,
     ATWBatchExecuteResponse,
@@ -271,7 +270,7 @@ async def atw_execution_schema(
     :raises HTTPBadRequestException: When a filename attempts directory traversal.
     :raises HTTPNotFoundException: When a filename matches no snippet.
     """
-    unique = list(unique_everseen(snippet_filename))
+    unique = list(dict.fromkeys(snippet_filename))
     resolved = await resolve_snippets(unique)
     missing = [filename for filename in unique if filename not in resolved]
     if missing:
@@ -324,10 +323,13 @@ async def atw_batch_execute(
 ) -> ATWBatchExecuteResponse:
     """Execute several snippets against one incident, reporting each item separately.
 
-    One failing item never blocks the rest: each is dispatched and recorded inside
-    its own guard, and the response always carries an entry per requested item. A
-    failed attempt produces no task-history row to reference, so it is reported
-    here rather than persisted.
+    A malformed selection fails the whole request up front: ``resolve_snippets``
+    runs the traversal guard over every filename before dispatch, so an unsafe
+    filename raises before any item runs. Past that guard, one failing item never
+    blocks the rest: each is dispatched and recorded inside its own guard, and the
+    response always carries an entry per requested item — an unresolved filename
+    becomes that item's error. A failed attempt produces no task-history row to
+    reference, so it is reported here rather than persisted.
 
     The row-write guard rolls the shared session back before the loop continues,
     or one failed write would leave the transaction aborted and doom every later
@@ -340,6 +342,8 @@ async def atw_batch_execute(
     :param body: The batch payload.
     :param tasks_api: The authenticated Tasks API client.
     :return: One outcome entry per requested item, in request order.
+    :raises HTTPBadRequestException: When any filename attempts directory traversal,
+        failing the whole request before any item is dispatched.
     """
     incident_id = incident.id
     resolved = await resolve_snippets([item.snippet_filename for item in body.items])

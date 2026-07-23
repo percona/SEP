@@ -48,6 +48,7 @@ from functools import lru_cache
 
 from pydantic import create_model, Field
 from sqlmodel import col
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import (
@@ -155,12 +156,26 @@ def build_snippet_source(snippet: Snippet) -> str:
     )
 
 
+def _detach(session: AsyncSession, snippet: Snippet) -> Snippet:
+    """Expunge a snippet from its session so it stays usable after the session closes.
+
+    The request-less loaders below each read only loaded columns and file/meta
+    ``cached_property`` values once their session closes — never a lazy
+    relationship — so detaching the row keeps it usable without a live session.
+
+    :param session: The open session the snippet was loaded in.
+    :param snippet: The loaded snippet row.
+    :return: The now-detached snippet.
+    """
+    session.expunge(snippet)
+    return snippet
+
+
 async def _load_script(filename: str) -> SnippetScript:
     """Resolve a snippet filename to a detached :class:`SnippetScript`.
 
-    Opens a request-less session, fetches the row, and expunges it so the script
-    stays usable after the session closes (only loaded columns and file/meta
-    ``cached_property`` values are read thereafter).
+    Opens a request-less session, fetches the row, and detaches it via
+    :func:`_detach` so the script stays usable after the session closes.
 
     :param filename: The snippet filename.
     :return: The wrapped, detached snippet.
@@ -174,8 +189,7 @@ async def _load_script(filename: str) -> SnippetScript:
         snippet = await SnippetManager.get_or_404(session, filename=filename)
         if not snippet.path.is_file():
             raise HTTPNotFoundException(detail=f"Snippet {filename!r} not found.")
-        session.expunge(snippet)
-    return SnippetScript(snippet)
+        return SnippetScript(_detach(session, snippet))
 
 
 async def _list_scripts() -> list[SnippetScript]:
@@ -183,9 +197,8 @@ async def _list_scripts() -> list[SnippetScript]:
     async_session = get_async_session_maker()
     async with async_session() as session:
         snippets = await SnippetManager.list(session)
-        for snippet in snippets:
-            session.expunge(snippet)
-    return [SnippetScript(snippet) for snippet in snippets]
+        detached = [_detach(session, snippet) for snippet in snippets]
+    return [SnippetScript(snippet) for snippet in detached]
 
 
 async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
@@ -193,14 +206,16 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
 
     The batch counterpart of :func:`_load_script`: one request-less session and a
     single ``filename IN (...)`` query answer the whole selection instead of one
-    session and one query per filename. Each returned row is expunged before the
-    session closes so the scripts stay usable afterwards (only loaded columns and
-    file/meta ``cached_property`` values are read thereafter). A filename whose
-    row is absent, or whose file is missing on disk, is simply left out of the
-    result — the framework's caller decides what an unresolved filename means.
+    session and one query per filename. Each returned row is detached via
+    :func:`_detach` before the session closes so the scripts stay usable
+    afterwards. A filename whose row is absent, or whose file is missing on disk,
+    is simply left out of the result — the framework's caller decides what an
+    unresolved filename means.
 
-    :param filenames: The snippet filenames to resolve; already deduplicated and
-        traversal-checked by :func:`~app.sep.apps.framework.script_source.resolve_scripts`.
+    :param filenames: The snippet filenames to resolve. Callers routing through
+        :func:`~app.sep.apps.framework.script_source.resolve_scripts` pass a
+        deduplicated, traversal-checked selection, but the hook is independently
+        callable, so it re-validates each filename and tolerates duplicates.
     :return: A mapping of each resolved filename to its detached
         :class:`SnippetScript`; unresolved filenames are absent.
     :raises HTTPBadRequestException: When any filename is unsafe or malformed (the
@@ -217,8 +232,7 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
         for snippet in snippets:
             if not snippet.path.is_file():
                 continue
-            session.expunge(snippet)
-            resolved[snippet.filename] = snippet
+            resolved[snippet.filename] = _detach(session, snippet)
     return {filename: SnippetScript(snippet) for filename, snippet in resolved.items()}
 
 
