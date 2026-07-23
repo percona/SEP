@@ -236,11 +236,13 @@ def restore_update_form_from_write(
     :return: A :class:`RestoreCreate` instance for payload construction.
     :rtype: RestoreCreate
     """
-    return restore_create_from_write(body).model_copy(
-        update={
+    return RestoreCreate.model_validate(
+        {
+            **body.model_dump(mode="json"),
             "task_name": parent_task.name,
             "backup_type": _backup_type_from_parent(parent_task),
-        }
+        },
+        from_attributes=False,
     )
 
 
