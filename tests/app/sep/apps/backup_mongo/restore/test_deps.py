@@ -328,3 +328,24 @@ def test_build_restore_update_form_from_body_pins_parent_identity(
     assert result.backup_type == BackupType.PBM_LOGICAL
     assert result.hostname == body.hostname
     assert result.backup_source == body.backup_source
+
+
+class TestRestoreFormRoundTrip:
+    """Guard the create-stamp -> edit-PUT body round-trip."""
+
+    def test_stamped_create_form_revalidates_as_put_body(
+        self, restore_create: RestoreCreate
+    ) -> None:
+        """Re-validate the stored create form as the PUT body model.
+
+        The generic edit page resubmits the stored ``_form`` (a
+        :class:`RestoreCreate` dump) as the PUT body; :class:`RestoreTaskWrite`
+        must accept it so the round-trip does not fail validation.
+        """
+        stamped = restore_create.model_dump(mode="json")
+
+        body = RestoreTaskWrite.model_validate(stamped)
+
+        assert body.task_name == restore_create.task_name
+        assert body.backup_type == restore_create.backup_type
+        assert body.hostname == restore_create.hostname

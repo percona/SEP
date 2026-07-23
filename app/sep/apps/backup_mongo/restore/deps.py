@@ -65,7 +65,6 @@ from app.sep.deps import (
     get_created_entity,
     get_tasks_context,
     InventoryAPI,
-    protected_task_guard,
     reject_if_protected,
     TaskAPI,
 )
@@ -679,14 +678,6 @@ async def get_restore_parent_task(
 RestoreParentTask = Annotated[Task, Depends(get_restore_parent_task)]
 
 
-get_unprotected_restore_parent_task = protected_task_guard(get_restore_parent_task)
-
-UnprotectedRestoreParentTask = Annotated[
-    Task,
-    Depends(get_unprotected_restore_parent_task),
-]
-
-
 async def get_editable_restore_parent_task(
     task_name: str,
     tasks_api: TaskAPI,
@@ -719,20 +710,19 @@ EditableRestoreParent = Annotated[
 
 def build_restore_update_form_from_body(
     body: RestoreTaskWrite,
-    parent_task: UnprotectedRestoreParentTask,
+    parent_task: EditableRestoreParent,
 ) -> RestoreCreate:
     """Build a restore update form from a JSON API request body.
 
     Converts the body to :class:`RestoreCreate` with ``task_name`` and
-    ``backup_type`` pinned from the path parent. Does not mutate tasks; callers
-    pass the result to :func:`update_restore_task_group`.
+    ``backup_type`` pinned from the path parent (rename is not supported on
+    edit). Does not mutate tasks; callers pass the result to
+    :func:`update_restore_task_group`. Depends on the same editable-parent gate
+    as the route so FastAPI resolves and gates the parent once per request.
 
     :param body: The JSON request body for restore task update.
-    :type body: RestoreTaskWrite
-    :param parent_task: The unprotected parent restore config task from the URL path.
-    :type parent_task: Task
+    :param parent_task: The editable parent restore config task from the URL path.
     :return: A :class:`RestoreCreate` instance for payload construction.
-    :rtype: RestoreCreate
     """
     return restore_update_form_from_write(body, parent_task)
 

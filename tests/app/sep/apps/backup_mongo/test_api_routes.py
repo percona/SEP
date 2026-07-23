@@ -890,6 +890,21 @@ class TestBackupMongoApiUpdate:
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert "parent-backup-physical" in response.json()["detail"]
 
+    def test_update_returns_404_for_unknown_task(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return 404 when the PUT addresses an unknown task name."""
+        mock_task_api_dep.get = AsyncMock(side_effect=HTTPNotFoundException())
+        mock_task_api_dep.put = AsyncMock()
+
+        response = test_client.put(
+            f"{API_BASE}/ghost-task",
+            json=build_backup_write_body(task_name="ghost-task", service_id=1),
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_task_api_dep.put.assert_not_awaited()
+
 
 class TestBackupMongoApiExecute:
     """Tests for POST /api/apps/backup_mongo/{task_name}/execute."""
