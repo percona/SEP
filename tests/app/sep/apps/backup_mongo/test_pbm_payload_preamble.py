@@ -210,11 +210,33 @@ class TestCredsPathFromConfig:
         """Return ``credentials_path`` straight from the parsed config dict."""
         assert _creds_path_from_config({"credentials_path": "/s/uri"}) == "/s/uri"
 
-    @pytest.mark.parametrize("config", [None, {}, {"other": 1}])
+    @pytest.mark.parametrize(
+        "config",
+        [None, {}, {"other": 1}, "a bare scalar", ["a", "list"], 42],
+    )
     def test_falls_back_to_home(self, monkeypatch, config) -> None:
-        """Fall back to ``$HOME`` for missing/empty/path-less configs."""
+        """Fall back to ``$HOME`` for missing/empty/path-less/non-dict configs.
+
+        ``yaml.safe_load`` can legally return a truthy non-dict (a bare scalar or a
+        list); those must be treated as missing config rather than raising
+        ``AttributeError`` from a ``.get()`` call on a non-dict.
+        """
         monkeypatch.setenv("HOME", "/home/pbm")
         assert _creds_path_from_config(config) == "/home/pbm/.mongodb_uri"
+
+    @pytest.mark.parametrize("config", ["a bare scalar", ["a", "list"], 42])
+    def test_exits_on_non_dict_when_home_unset(
+        self, monkeypatch, capsys, config
+    ) -> None:
+        """Exit 1 with the exact stderr for a non-dict config when HOME is unset."""
+        monkeypatch.delenv("HOME", raising=False)
+        with pytest.raises(SystemExit) as exc:
+            _creds_path_from_config(config, "backup")
+        assert exc.value.code == 1
+        assert capsys.readouterr().err == (
+            "PBM credentials path not set (credentials_path in backup config) "
+            "and HOME is unset\n"
+        )
 
     def test_defaults_to_restore_label_on_exit(self, monkeypatch, capsys) -> None:
         """Default the error label to ``restore`` when HOME is unset."""
@@ -233,6 +255,74 @@ class TestCredsPathFromConfig:
         with pytest.raises(SystemExit):
             _creds_path_from_config(None, "backup")
         assert "credentials_path in backup config" in capsys.readouterr().err
+
+
+class TestPerPayloadPreambleBehavior:
+    """Exercise each shipped payload's own copy of the preamble functions.
+
+    ``TestPerPayloadAssembly.test_region_matches_canonical`` guards that every
+    payload's marked region is byte-identical to the canonical source, but a
+    payload's own ``pbm()`` body only calls a subset of the preamble helpers (see
+    ``_EXPECTED_PBM_URI_CALLS``), leaving the other helper uncovered *in that
+    payload's copy* even though the identical code is covered elsewhere. Coverage
+    is tracked per source file, so exec'ing each payload's region directly here
+    closes that gap uniformly instead of leaving it to whichever payload happens
+    to call a given helper from its own ``pbm()``.
+    """
+
+    @staticmethod
+    def _load_region(payload: Path) -> dict[str, object]:
+        """Exec a payload's imports plus its marked preamble region into a namespace.
+
+        The imports (``os``/``sys``/``yaml``) precede the marker in every payload,
+        so including everything up to and including the region keeps the helpers'
+        module-level dependencies available without running the payload's ``pbm()``.
+
+        :param payload: The payload file to load the region from.
+        :return: The namespace populated by the region's function definitions.
+        """
+        text = payload.read_text(encoding="utf-8")
+        lines = text.split("\n")
+        end = lines.index(PREAMBLE_END)
+        namespace: dict[str, object] = {}
+        exec(compile("\n".join(lines[: end + 1]), str(payload), "exec"), namespace)
+        return namespace
+
+    @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
+    def test_creds_path_returns_config_path(
+        self, payload: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return the configured ``credentials_path`` from ``NOMAD_META_CONFIG``."""
+        namespace = self._load_region(payload)
+        monkeypatch.setenv("NOMAD_META_CONFIG", "credentials_path: /secrets/uri")
+        assert namespace["_creds_path"]("backup") == "/secrets/uri"
+
+    @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
+    def test_creds_path_falls_back_to_home(
+        self, payload: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fall back to ``$HOME/.mongodb_uri`` when ``NOMAD_META_CONFIG`` is unset."""
+        namespace = self._load_region(payload)
+        monkeypatch.delenv("NOMAD_META_CONFIG", raising=False)
+        monkeypatch.setenv("HOME", "/home/pbm")
+        assert namespace["_creds_path"]("backup") == "/home/pbm/.mongodb_uri"
+
+    @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
+    def test_creds_path_from_config_returns_dict_path(self, payload: Path) -> None:
+        """Return ``credentials_path`` straight from a parsed config dict."""
+        namespace = self._load_region(payload)
+        creds_path_from_config = namespace["_creds_path_from_config"]
+        assert creds_path_from_config({"credentials_path": "/s/uri"}) == "/s/uri"
+
+    @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
+    def test_creds_path_from_config_falls_back_on_non_dict(
+        self, payload: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fall back to ``$HOME`` for a non-dict config in every payload's copy."""
+        namespace = self._load_region(payload)
+        monkeypatch.setenv("HOME", "/home/pbm")
+        creds_path_from_config = namespace["_creds_path_from_config"]
+        assert creds_path_from_config(["a", "list"]) == "/home/pbm/.mongodb_uri"
 
 
 class TestPbmCreds:
