@@ -22,9 +22,9 @@ executor downloads each script from a signed ``/artifacts/download/{token}`` URL
 so the script directory is registered under ``artifact_base_dirs``.
 """
 
-from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.golden_script.constants import ARTIFACT_TYPE_GOLDEN_SCRIPT, SCRIPT_DIR
 from app.sep.apps.golden_script.source import golden_script_source
+from app.sep.apps.framework.apps import TaskExecutionApp
 from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(
