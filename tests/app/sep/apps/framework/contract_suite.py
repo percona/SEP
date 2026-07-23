@@ -216,7 +216,7 @@ def select_branch(field: FieldInfo) -> type[BaseModel] | None:
     return args[0]
 
 
-def _ref_overrides(
+def ref_overrides(
     model: type[BaseModel], *, skip: frozenset[str] = frozenset()
 ) -> dict[str, Any]:
     """Return the override map pinning ``model``'s inventory references to seeded ids.
@@ -255,7 +255,7 @@ def _ref_overrides(
             overrides[name] = [mock_id] if ref.multiple else mock_id
         elif (branch := select_branch(field)) is not None:
             overrides[name] = ModelFactory.create_factory(branch).build(
-                **_ref_overrides(branch)
+                **ref_overrides(branch)
             )
     return overrides
 
@@ -288,7 +288,7 @@ def build_valid_create_body(
         return None
     overrides: dict[str, Any] = {
         "task_name": task_name,
-        **_ref_overrides(model, skip=frozenset(create_body_overrides or ())),
+        **ref_overrides(model, skip=frozenset(create_body_overrides or ())),
     }
     if create_body_overrides:
         overrides.update(create_body_overrides)

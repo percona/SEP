@@ -49,11 +49,11 @@ from app.sep.deps import IsApiAuthenticated, TaskAPI
 from app.tasks.models import LATEST_HISTORY_STATUS_NAMES_MAX, TaskHistoryStatusEnum
 from tests.app.sep.apps.archives.build_pins import ARCHIVES_ARCHIVE_PINS
 from tests.app.sep.apps.framework.contract_suite import (
-    _ref_overrides,
     app_base_url,
     build_contract_client,
     build_valid_create_body,
     DerivedRouterContractTests,
+    ref_overrides,
     select_branch,
 )
 from tests.app.sep.apps.framework.kit import (
@@ -507,9 +507,6 @@ class TestSelectBranch:
         assert select_branch(fields["scalar_union"]) is None
 
 
-_ARCHIVES_BUILD_PINS = ARCHIVES_ARCHIVE_PINS
-
-
 class TestBuildValidCreateBodyRecursion:
     """Pin how the body generator recurses into one-of branches and applies overrides."""
 
@@ -528,7 +525,7 @@ class TestBuildValidCreateBodyRecursion:
         )
 
         body = build_valid_create_body(
-            archives_app, create_body_overrides=_ARCHIVES_BUILD_PINS
+            archives_app, create_body_overrides=ARCHIVES_ARCHIVE_PINS
         )
 
         assert body is not None
@@ -548,16 +545,16 @@ class TestBuildValidCreateBodyRecursion:
     def test_skips_recursion_for_overridden_fields(self) -> None:
         """Skip building a union branch a ``create_body_overrides`` key will replace.
 
-        ``_ref_overrides`` recurses into ``destination`` by default, but building that
+        ``ref_overrides`` recurses into ``destination`` by default, but building that
         branch is wasted when the caller pins the field, so a name in ``skip`` is left
         out of the map entirely while every other reference still resolves.
         """
         from app.sep.apps.archives.models import ArchivesCreate
 
-        full = _ref_overrides(ArchivesCreate)
+        full = ref_overrides(ArchivesCreate)
         assert "destination" in full
 
-        skipped = _ref_overrides(ArchivesCreate, skip=frozenset({"destination"}))
+        skipped = ref_overrides(ArchivesCreate, skip=frozenset({"destination"}))
         assert "destination" not in skipped
         assert skipped["service_id"] == full["service_id"]
 
@@ -573,7 +570,7 @@ class TestBuildValidCreateBodyRecursion:
         body = build_valid_create_body(
             archives_app,
             create_body_overrides={
-                **_ARCHIVES_BUILD_PINS,
+                **ARCHIVES_ARCHIVE_PINS,
                 "service_id": pinned_service_id,
             },
         )
@@ -611,7 +608,7 @@ def run_archives_branch_probe() -> int:
 
     try:
         body = build_valid_create_body(
-            archives_app, create_body_overrides=_ARCHIVES_BUILD_PINS
+            archives_app, create_body_overrides=ARCHIVES_ARCHIVE_PINS
         )
         if body is None:
             return _BRANCH_PROBE_BUILD_FAILED
