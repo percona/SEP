@@ -213,6 +213,7 @@ class TestRestoreMongoAppSchemaEndpoint:
         assert restore_options["collapsible"] is True
         assert restore_options["collapsed_by_default"] is True
         assert {field["name"] for field in restore_options["fields"]} == {
+            "restore_namespace_filter",
             "restore_batch_size",
             "restore_num_insertion_workers",
             "restore_num_parallel_collections",
@@ -546,6 +547,27 @@ class TestRestoreMongoApiCreate:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert mock_task_api_dep.post.await_count == EXPECTED_PHYSICAL_RESTORE_POSTS
+
+    def test_create_rejects_namespace_filter_for_physical_restore(
+        self,
+        test_client,
+        mock_task_api_dep,
+    ) -> None:
+        """Reject selective physical restores before creating any tasks."""
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_restore_write_body(
+                backup_type=BackupType.PBM_PHYSICAL.value,
+                restore_namespace_filter="db.collection",
+            ),
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert (
+            "Namespace Filter is only supported for logical MongoDB restores"
+            in response.text
+        )
+        mock_task_api_dep.post.assert_not_awaited()
 
     def test_create_rolls_back_on_mid_chain_failure(
         self,

@@ -75,6 +75,13 @@
       "collapsible": true,
       "fields": [
         {
+          "description": "Optional database or collection patterns to restore, separated by commas (for example, db1.*,db2.collection)",
+          "label": "Namespace Filter",
+          "name": "restore_namespace_filter",
+          "required": false,
+          "type": "string"
+        },
+        {
           "label": "Batch Size",
           "name": "restore_batch_size",
           "required": false,
