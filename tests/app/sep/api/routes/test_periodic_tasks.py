@@ -61,6 +61,19 @@ class TestSepPeriodicTasksEndpoint:
         assert response.json() == payload
         mock_task_api_dep.get.assert_awaited_once_with("/periodic/")
 
+    def test_list_preserves_last_run_status(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Forward the upstream ``last_run_status`` field through the proxy."""
+        payload = [
+            {"id": 1, "name": "run_x", "last_run_status": "success"},
+            {"id": 2, "name": "run_y", "last_run_status": None},
+        ]
+        mock_task_api_dep.get.return_value = payload
+        response = test_client.get("/api/sep/periodic-tasks/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == payload
+
     def test_list_empty_upstream_returns_empty_list(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock
     ) -> None:

@@ -37,6 +37,7 @@ import {
   TableBody,
   TableCell,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Tooltip,
@@ -47,7 +48,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
-import { ApiError } from '@sep/api';
+import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import {
   useSnippets,
   useApproveSnippet,
@@ -192,7 +193,20 @@ function ApproveButton({
  */
 export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const navigate = useNavigate();
-  const { data: snippets = [], isLoading, error } = useSnippets();
+  const [listPage, setListPage] = useState({
+    offset: DEFAULT_APP_LIST_OFFSET,
+    limit: DEFAULT_APP_LIST_LIMIT,
+  });
+  const {
+    data: listResult,
+    isLoading,
+    error,
+  } = useSnippets({
+    offset: listPage.offset,
+    limit: listPage.limit,
+  });
+  const snippets = listResult?.items ?? [];
+  const listPagination = listResult?.pagination ?? null;
   const batchApprove = useBatchApproveSnippets();
   const { data: capabilities } = useSnippetsCapabilities();
   const refresh = useRefreshSnippets();
@@ -211,8 +225,8 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
 
   const showRefresh = isAdmin && capabilities?.manual_sync_enabled;
 
-  // Service-type options derived from the loaded snippets. Snippets with no
-  // service_type contribute the "Uncategorized" bucket instead of being dropped.
+  // Service-type options derived from the current page of snippets. Snippets with
+  // no service_type contribute the "Uncategorized" bucket instead of being dropped.
   const { serviceTypes, hasUncategorized } = useMemo(() => {
     const types = new Set<string>();
     let uncategorized = false;
@@ -230,8 +244,8 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
     };
   }, [snippets]);
 
-  // Client-side filtering over the already-loaded list (AND semantics across
-  // free-text search, approval status, and service type). No server round-trip.
+  // Client-side filtering over the current page only (AND semantics across
+  // free-text search, approval status, and service type). Does not refetch.
   const filteredSnippets = useMemo(() => {
     const query = search.trim().toLowerCase();
     return snippets.filter((snippet) => {
@@ -656,6 +670,22 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                 ))}
               </TableBody>
             </Table>
+          )}
+
+          {listPagination && (
+            <TablePagination
+              component="div"
+              count={listPagination.total}
+              page={Math.floor(listPagination.offset / Math.max(listPagination.limit, 1))}
+              rowsPerPage={listPagination.limit}
+              onPageChange={(_event, newPage) => {
+                setListPage((prev) => ({
+                  offset: newPage * prev.limit,
+                  limit: prev.limit,
+                }));
+              }}
+              rowsPerPageOptions={[DEFAULT_APP_LIST_LIMIT]}
+            />
           )}
         </>
       )}
