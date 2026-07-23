@@ -122,6 +122,15 @@ _HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
 }
 
 
+def _is_redirect(status_code: int) -> bool:
+    """Return whether ``status_code`` is a 3xx redirect.
+
+    :param status_code: The upstream HTTP status to classify.
+    :return: ``True`` for any 3xx status.
+    """
+    return status.HTTP_300_MULTIPLE_CHOICES <= status_code < status.HTTP_400_BAD_REQUEST
+
+
 def exception_for_status(
     status_code: int, *, detail: Any, headers: dict[str, str] | None = None
 ) -> HTTPException:
@@ -664,11 +673,14 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                             detail=fallback,
                             headers={UPSTREAM_NON_JSON_HEADER: "1"},
                         )
-                    error_detail = response_data.get(
+                    error_body = (
+                        response_data if isinstance(response_data, Mapping) else {}
+                    )
+                    error_detail = error_body.get(
                         detail_key, "An unexpected error occurred on the server."
                     )
                     error_headers = None
-                    if code_key and (error_code := response_data.get(code_key)):
+                    if code_key and (error_code := error_body.get(code_key)):
                         error_headers = {"X-Error-Code": str(error_code)}
                     self._raise_stream_http_error(
                         response.status,
@@ -869,11 +881,28 @@ class RemoteAPI(BaseRemoteAPI):
         :raises HTTPException: If the request returns an error response -- the
             project exception mapped to the status (a subclass of
             :class:`fastapi.HTTPException`), or a bare :class:`fastapi.HTTPException`
-            when the status is unmapped or carries headers the mapped class cannot.
+            when the status is unmapped or a non-JSON 404 must stay unmapped.
+            A ``3xx`` response also raises when the caller passed
+            ``allow_redirects=False``: the redirect was not followed, so the
+            status is reported rather than treated as a result.
         """
+        follows_redirects = kwargs.get("allow_redirects", True)
         async with self._request(method, path, **kwargs) as response:
             if response.status == status.HTTP_204_NO_CONTENT:
                 return None
+            if not follows_redirects and _is_redirect(response.status):
+                self.logger.warning(
+                    "RemoteAPI (%s): %s request to %s answered %s, which this "
+                    "caller does not follow.",
+                    redact_credential_url(str(self.endpoint)),
+                    method,
+                    path,
+                    response.status,
+                )
+                raise exception_for_status(
+                    response.status,
+                    detail="The server answered with an unfollowed redirect.",
+                )
             try:
                 response_data = await response.json()
                 self.logger.debug(
@@ -901,12 +930,13 @@ class RemoteAPI(BaseRemoteAPI):
                     headers={UPSTREAM_NON_JSON_HEADER: "1"},
                 ) from None
             except ClientResponseError as err:
-                error_detail = response_data.get(
+                error_body = response_data if isinstance(response_data, Mapping) else {}
+                error_detail = error_body.get(
                     self.error_detail_key, "An unexpected error occurred on the server."
                 )
                 error_headers = None
                 if self.error_code_key and (
-                    error_code := response_data.get(self.error_code_key)
+                    error_code := error_body.get(self.error_code_key)
                 ):
                     error_headers = {"X-Error-Code": str(error_code)}
                 raise exception_for_status(

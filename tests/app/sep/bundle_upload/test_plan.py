@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 from aiohttp import MultipartWriter
 from aioresponses import aioresponses
-from fastapi import status
+from fastapi import HTTPException, status
 from pydantic import ValidationError
 
 from app.core.exceptions import HTTPBadGatewayException, HTTPConflictException
@@ -322,6 +322,20 @@ class TestDeliveryPlanValidation:
         payload = _upload_only_plan(
             fields={"who": {"source": "input", "field": "hostname"}}
         )
+        with pytest.raises(ValidationError):
+            DeliveryPlan(**payload)
+
+    def test_manifest_key_is_allowed_in_query(self):
+        """Accept a manifest-key value in the query map, which rejects secrets."""
+        payload = _upload_only_plan(
+            query={"week": {"source": "manifest_key", "key": "report_week"}}
+        )
+
+        assert DeliveryPlan(**payload).upload.query["week"].key == "report_week"
+
+    def test_manifest_key_without_a_key_is_rejected(self):
+        """Reject a manifest-key value that names no manifest key."""
+        payload = _upload_only_plan(fields={"week": {"source": "manifest_key"}})
         with pytest.raises(ValidationError):
             DeliveryPlan(**payload)
 
@@ -736,6 +750,185 @@ class TestDeliveryPlanExecutor:
         assert result.reference is None
         assert result.detail == {"other": "x"}
         assert any("/result/sys_id" in record.getMessage() for record in caplog.records)
+
+    async def test_manifest_key_field_resolves_from_the_send_manifest(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Read one manifest key into a multipart field, not the whole mapping."""
+        payload = _upload_only_plan(
+            fields={"report_week": {"source": "manifest_key", "key": "report_week"}},
+            reference_pointer=None,
+        )
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        with aioresponses() as mock:
+            mock.post(_UPLOAD_URL, status=status.HTTP_201_CREATED, payload={})
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref=None,
+                    manifest={"report_week": "2026-W29", "size": 12},
+                )
+            fields = _multipart_fields(
+                _recorded(mock, "attachment/upload").kwargs["data"]
+            )
+
+        assert fields == {"report_week": "2026-W29"}
+
+    async def test_manifest_key_missing_raises_naming_the_key(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Fail the send when the manifest carries no such key."""
+        payload = _upload_only_plan(
+            fields={"report_week": {"source": "manifest_key", "key": "report_week"}},
+            reference_pointer=None,
+        )
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        async with api:
+            with pytest.raises(DeliveryPlanError, match="report_week"):
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref=None,
+                    manifest={"size": 12},
+                )
+
+    async def test_manifest_key_non_scalar_raises_naming_the_key(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Fail the send when the manifest value is a container, not a scalar."""
+        payload = _upload_only_plan(
+            fields={"report_week": {"source": "manifest_key", "key": "report_week"}},
+            reference_pointer=None,
+        )
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        async with api:
+            with pytest.raises(DeliveryPlanError, match="report_week"):
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref=None,
+                    manifest={"report_week": {"nested": "value"}},
+                )
+
+    async def test_manifest_key_spells_scalars_the_json_way(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Spell a boolean and a number as the receiver's JSON wrote them."""
+        payload = _upload_only_plan(
+            fields={
+                "flagged": {"source": "manifest_key", "key": "flagged"},
+                "count": {"source": "manifest_key", "key": "count"},
+            },
+            reference_pointer=None,
+        )
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        with aioresponses() as mock:
+            mock.post(_UPLOAD_URL, status=status.HTTP_201_CREATED, payload={})
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref=None,
+                    manifest={"flagged": True, "count": 3},
+                )
+            fields = _multipart_fields(
+                _recorded(mock, "attachment/upload").kwargs["data"]
+            )
+
+        assert fields == {"flagged": "true", "count": "3"}
+
+    async def test_upload_refuses_to_follow_redirects(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Forbid redirect following so a credential body is never replayed."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+        with aioresponses() as mock:
+            mock.post(_UPLOAD_URL, status=status.HTTP_201_CREATED, payload={})
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref=None,
+                    manifest=_MANIFEST,
+                )
+            request = _recorded(mock, "attachment/upload")
+
+        assert request.kwargs["allow_redirects"] is False
+
+    async def test_resolution_step_refuses_to_follow_redirects(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Forbid redirect following on the steps that carry secret headers."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"sys_id": "case-77"}},
+            )
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-2"}},
+            )
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref="CS0001",
+                    manifest=_MANIFEST,
+                )
+            lookup = _recorded(mock, "ticket_details")
+
+        assert lookup.kwargs["allow_redirects"] is False
+
+    async def test_upload_raises_on_a_redirect_instead_of_reporting_success(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Fail loudly when the receiver answers the upload with a redirect."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_307_TEMPORARY_REDIRECT,
+                body="",
+                content_type="text/html",
+                headers={"Location": "http://localhost:8000/attachment/upload/"},
+            )
+            async with api:
+                with pytest.raises(HTTPException) as exc_info:
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref=None,
+                        manifest=_MANIFEST,
+                    )
+
+        assert exc_info.value.status_code == status.HTTP_307_TEMPORARY_REDIRECT
+
+    async def test_upload_raises_on_a_redirect_carrying_a_json_body(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Fail loudly on a redirect even when it carries a parseable JSON body."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_308_PERMANENT_REDIRECT,
+                payload={"detail": "moved"},
+                headers={"Location": "http://localhost:8000/attachment/upload/"},
+            )
+            async with api:
+                with pytest.raises(HTTPException) as exc_info:
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref=None,
+                        manifest=_MANIFEST,
+                    )
+
+        assert exc_info.value.status_code == status.HTTP_308_PERMANENT_REDIRECT
 
 
 @pytest.mark.asyncio

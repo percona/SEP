@@ -14,6 +14,7 @@ and Docker Hub registries.
 | Input | Role |
 |---|---|
 | `Containerfile.sidecar` | Final stage; mirrors the standalone `Dockerfile` minus the frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
+| `entrypoint.sh` | PID 1. Mints the broker credential for the container run, then hands off to `supervisord`. |
 | `supervisord.conf` | Runs `valkey`, three `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 
@@ -41,9 +42,25 @@ A conforming profile must provide:
 | `<SVC>.SSL_CERTFILE` / `.SSL_KEYFILE` | `null` | The probe speaks plain HTTP on loopback. |
 | `SEP.INVENTORY_ENDPOINT` / `.TASKS_ENDPOINT` | `http://127.0.0.1:9001` / `:9002` | Inter-service calls stay inside the container. |
 | `AUTH.PROVIDER` | `grafana` | PMM's Grafana is the identity provider; there is no Casdoor. |
-| Celery broker | `redis://127.0.0.1:6379` | Served by the bundled Valkey. |
+| Celery broker | `redis://127.0.0.1:6379` | Served by the bundled Valkey. The credential is added at runtime — see below. |
 
-`env/spikes/SEP-1578/settings-spike.yaml` is a working reference profile.
+### The broker credential is generated, not configured
+
+`entrypoint.sh` mints a random password per container start, writes it into a
+mode-`0600` Valkey config at `/tmp/valkey.conf`, and exports
+`CELERY__BROKER_URL` / `CELERY__RESULT_BACKEND` carrying it. Environment
+outranks the mounted `settings.yaml`, so a profile carrying the password-less
+`redis://127.0.0.1:6379` from the table above keeps working unchanged; the
+exported value wins. It also supersedes a `CELERY__BROKER_URL` passed to
+`docker run`, since only the generated credential opens the bundled broker.
+Nothing external supplies the credential and nothing needs to know it.
+
+The password never reaches the command line, of either `valkey-server` or the
+`healthcheck.sh` probe (which reads it back from the config file and passes it
+through `REDISCLI_AUTH`), because argv is readable by every process in the
+container's PID namespace. A container restart mints a fresh one, which is safe:
+the broker runs with `save ""` and `appendonly no`, so no broker state crosses
+restarts.
 
 ## Volumes
 
@@ -76,5 +93,12 @@ roughly 75-80s.
 The bundled Valkey binds `127.0.0.1:6379` inside the container's own network
 namespace. If the side-car is ever deployed sharing a namespace with PMM (a
 Kubernetes pod, or `--network container:pmm-server`), that port collides with
-PMM's own Valkey and Celery may attach to the wrong broker. Give the side-car
-its own namespace, or re-point the broker.
+PMM's own Valkey, and Celery then fails to reach its own broker. Give the
+side-car its own network namespace — the generated broker URL is not
+deployer-overridable, so re-pointing Celery elsewhere is not an option.
+
+Authentication is what keeps that shared-namespace case from also being an
+exposure: the loopback bind is no boundary there, so the broker requires the
+generated `requirepass` credential described above rather than relying on the
+bind alone. The collision remains — a neighbouring process cannot use the
+broker, but it can still occupy the port first.
