@@ -74,7 +74,12 @@ from pydantic import (
     StringConstraints,
 )
 
-from app.core.utils.fields import EnumFieldMixin, NonEmptyStr, StrippedNonEmptyStr
+from app.core.utils.fields import (
+    ArbitraryMapping,
+    EnumFieldMixin,
+    NonEmptyStr,
+    StrippedNonEmptyStr,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.rules import (
     CardinalityRule,
@@ -1068,7 +1073,7 @@ class DerivedTask(SchemaBaseModel):
     name_suffix: NonEmptyStr
     arg_substitutions: dict[str, str] | None = None
     payload_substitutions: dict[str, str] | None = None
-    data_overrides: dict[str, Any] | None = None
+    data_overrides: ArbitraryMapping | None = None
     parent_link: bool = True
 
 

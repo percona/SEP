@@ -19,7 +19,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.core.utils.fields import UTCDatetime
+from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, UTCDatetime
 from app.tasks.models import TaskBackendEnum, TaskResponse
 
 
@@ -137,7 +137,8 @@ class TaskDetailResponse(BaseModel):
 
     task: TaskResponse
     execution_history: dict[str, Any] = Field(
-        default_factory=lambda: {"items": [], "total": 0, "offset": 0, "limit": 0}
+        default_factory=lambda: {"items": [], "total": 0, "offset": 0, "limit": 0},
+        json_schema_extra=ARBITRARY_ARGS_SCHEMA,
     )
     periodic_summary: list[PeriodicTaskSummary] = Field(default_factory=list)
     executor_hosts: list[ExecutorHostMetadata] = Field(default_factory=list)

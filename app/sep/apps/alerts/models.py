@@ -25,7 +25,11 @@ from sqlalchemy import Column, JSON
 from sqlmodel import Field as SQLField
 
 from app.core.db.models import BaseSQLModel
-from app.core.utils.fields import NonEmptyStr, StrippedNonEmptyStr
+from app.core.utils.fields import (
+    ARBITRARY_ARGS_SCHEMA,
+    NonEmptyStr,
+    StrippedNonEmptyStr,
+)
 from app.sep.models import AlertServiceType as ServiceType
 
 
@@ -178,7 +182,7 @@ class RestoreResponse(BaseModel):
     """
 
     status: Literal["success"]
-    details: dict[str, Any]
+    details: dict[str, Any] = Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)
 
 
 class BackupSummary(BaseModel):
@@ -191,7 +195,7 @@ class BackupSummary(BaseModel):
 
     id: int
     created_at: datetime
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)
 
 
 class BackupDetailTemplate(BaseModel):
