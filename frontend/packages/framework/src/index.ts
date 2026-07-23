@@ -22,7 +22,11 @@ export { SEP_TABLE_CLASS } from './constants';
 export { SchemaFormRenderer } from './components/SchemaFormRenderer';
 export type { RenderFieldArgs, RenderFieldOverride } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
-export type { RenderListColumnArgs, RenderListColumnOverride } from './components/SchemaListView';
+export type {
+  RenderListColumnArgs,
+  RenderListColumnOverride,
+  SchemaListServerPagination,
+} from './components/SchemaListView';
 export {
   SchemaDrivenApp,
   DeleteConfirmDialog,
