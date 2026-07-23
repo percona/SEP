@@ -148,6 +148,25 @@ def _running_group_get_mock(parent_name: str, parent: dict) -> AsyncMock:
     return AsyncMock(side_effect=_mock_get)
 
 
+def _running_leg_get_mock(
+    parent_name: str, parent: dict, running_leg: str
+) -> AsyncMock:
+    """Return a ``tasks_api.get`` mock reporting a child leg (not the parent) as running."""
+
+    async def _mock_get(path: str, params: dict | None = None, **kwargs: Any) -> Any:
+        if path == f"/{running_leg}/history/":
+            if params and params.get("status") == TaskHistoryStatusEnum.RUNNING:
+                return {"items": [{"id": 1}]}
+            return {"items": []}
+        if path.endswith("/history/"):
+            return {"items": []}
+        if path == f"/{parent_name}":
+            return parent
+        raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+    return AsyncMock(side_effect=_mock_get)
+
+
 def mock_task_api_parent_list(*parents: dict) -> AsyncMock:
     """Return a ``tasks_api.get`` mock serving ``parents`` as the null-parent page."""
 
@@ -862,6 +881,61 @@ class TestRestoreMongoApiUpdate:
 
         assert response.status_code == status.HTTP_409_CONFLICT
         mock_task_api_dep.put.assert_not_awaited()
+
+    def test_update_blocked_when_child_leg_running(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Block an edit while a child leg is running though the parent is idle.
+
+        Restores execute on the child legs, not the parent config task, so
+        checking only the parent's history would let a ``PUT`` mutate a running
+        group.
+        """
+        parent = build_restore_task("parent-restore")
+        mock_task_api_dep.get = _running_leg_get_mock(
+            "parent-restore", parent, "parent-restore-pbm-list"
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-restore",
+            json=build_restore_write_body(service_id=mongo_service.id),
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_awaited()
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_update_returns_500_when_a_leg_put_fails(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Return 500 naming the failed leg when a child PUT fails mid-cascade."""
+        parent = build_restore_task("parent-restore")
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-restore": parent})
+        leg_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        async def _put(path: str, **kwargs: Any) -> Any:
+            if path == "/parent-restore-pbm-list":
+                raise leg_exc
+            return parent
+
+        mock_task_api_dep.put = AsyncMock(side_effect=_put)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-restore",
+            json=build_restore_write_body(service_id=mongo_service.id),
+        )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "parent-restore-pbm-list" in response.json()["detail"]
 
     def test_update_returns_404_for_unknown_task(
         self, test_client, mock_task_api_dep

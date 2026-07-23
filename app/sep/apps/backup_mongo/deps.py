@@ -56,7 +56,7 @@ from app.sep.apps.framework.cascade import (
 )
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
-    check_for_conflicted_running_tasks,
+    check_group_for_conflicted_running_tasks,
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
@@ -357,43 +357,28 @@ resolve_backup_parent_task = make_parent_resolver(get_backups_task)
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
 
-async def get_backup_parent_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Resolve the parent backup config task from a path parameter.
-
-    Resolves a derived sibling name (``-logical`` / ``-physical`` / ``-status``)
-    to its parent so a ``PUT`` addressed at any group member updates the group.
-
-    :param task_name: The task name from the URL path; may be a derived sibling.
-    :param tasks_api: The TaskAPI instance used to resolve the parent.
-    :return: The parent ``pbm_config`` task.
-    """
-    return await resolve_backup_parent_task(task_name, tasks_api)
-
-
 async def get_editable_backup_parent_task(
     task_name: str,
     tasks_api: TaskAPI,
 ) -> Task:
     """Resolve the parent backup task or raise when it is not editable.
 
-    Resolves a derived sibling name to the parent, then gates the resolved
-    parent: rejects protected tasks and blocks updates while a run of the group
-    is in flight. Checking the conflict against the *resolved* parent name (not
-    the raw path) closes the gap where a ``PUT`` addressed at an idle derived
-    leg could mutate a running group.
+    Resolves a derived sibling name (``-logical`` / ``-physical`` / ``-status``)
+    to the parent, rejects protected tasks, then blocks the edit while a run of
+    *any* group member is in flight. Backups execute on the derived legs, not the
+    parent config task, so checking the parent's history alone would let a ``PUT``
+    mutate a running group.
 
     :param task_name: The task name from the URL path; may be a derived sibling.
     :param tasks_api: The TaskAPI instance used to resolve and gate the parent.
-    :raises HTTPConflictException: If the parent is protected or has a
-        running/pending run.
+    :raises HTTPConflictException: If the parent is protected or any group member
+        has a running/pending run.
     :return: The editable parent ``pbm_config`` task.
     """
-    parent_task = await get_backup_parent_task(task_name, tasks_api)
+    parent_task = await resolve_backup_parent_task(task_name, tasks_api)
     reject_if_protected(parent_task)
-    await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
+    group_names = [parent_task.name, *backup_derived_task_names(parent_task.name)]
+    await check_group_for_conflicted_running_tasks(group_names, tasks_api)
     return parent_task
 
 

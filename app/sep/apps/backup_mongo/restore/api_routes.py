@@ -29,6 +29,7 @@ import logging
 from fastapi import APIRouter
 from fastapi import status as http_status
 
+from app.core.exceptions import HTTPInternalServerErrorException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.sep.apps.backup_mongo.restore.deps import (
@@ -110,12 +111,20 @@ async def restore_mongo_api_update(
     and blocks protected or in-flight groups before any write.
     """
     logger.debug("Update backup_mongo restore task (JSON path): %s", parent_task.name)
-    updated_task = await update_restore_task_group(
+    result = await update_restore_task_group(
         tasks_api,
         parent_task,
         form,
         inventory_api,
     )
+    if not result.success:
+        failed = [
+            (failure.task_name, str(failure.exception)) for failure in result.failures
+        ]
+        raise HTTPInternalServerErrorException(
+            detail=f"Partial update failure; inconsistent task group: {failed}"
+        )
+    updated_task = await get_restores_task(parent_task.name, tasks_api)
     latest = await get_task_latest_history(tasks_api, updated_task.name)
     return build_restore_mongo_api_task_response(
         updated_task, status=latest.status, last_executed_at=latest.finished_at

@@ -52,6 +52,17 @@ describe('restoreMongoEditForm', () => {
 
     expect(props.defaultValues).toEqual({});
   });
+
+  it('forwards submit and field errors so a 422 renders inline, not just a snackbar', () => {
+    const fieldErrors = [{ path: 'hostname', message: 'Unknown host' }];
+
+    const props = rendererProps(
+      restoreMongoEditForm(slotProps({ submitError: 'Validation failed', fieldErrors })),
+    );
+
+    expect(props.submitError).toBe('Validation failed');
+    expect(props.fieldErrors).toEqual(fieldErrors);
+  });
 });
 
 describe('restoreMongoCreateForm', () => {

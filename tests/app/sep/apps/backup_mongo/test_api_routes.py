@@ -129,6 +129,25 @@ def _running_group_get_mock(
     return AsyncMock(side_effect=_mock_get)
 
 
+def _running_leg_get_mock(
+    parent_name: str, parent: dict, running_leg: str
+) -> AsyncMock:
+    """Return a ``tasks_api.get`` mock reporting a derived leg (not the parent) as running."""
+
+    async def _mock_get(path: str, params: dict | None = None, **kwargs: Any) -> Any:
+        if path == f"/{running_leg}/history/":
+            if params and params.get("status") == TaskHistoryStatusEnum.RUNNING:
+                return {"items": [{"id": 1}]}
+            return {"items": []}
+        if path.endswith("/history/"):
+            return {"items": []}
+        if path == f"/{parent_name}":
+            return parent
+        raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+    return AsyncMock(side_effect=_mock_get)
+
+
 class TestBackupMongoAppSchemaEndpoint:
     """Tests for GET /api/apps/backup_mongo/schema."""
 
@@ -858,6 +877,35 @@ class TestBackupMongoApiUpdate:
         mock_task_api_dep.put.assert_not_awaited()
         history_paths = [c.args[0] for c in mock_task_api_dep.get.await_args_list]
         assert "/parent-backup/history/" in history_paths
+
+    def test_update_blocked_when_derived_leg_running(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Block an edit while a derived leg is running though the parent is idle.
+
+        Backups execute on the ``-logical`` / ``-physical`` legs, not the parent
+        config task, so checking only the parent's history would let a ``PUT``
+        mutate a running group.
+        """
+        parent = build_backup_task("parent-backup")
+        mock_task_api_dep.get = _running_leg_get_mock(
+            "parent-backup", parent, "parent-backup-logical"
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup",
+            json=build_backup_write_body(
+                task_name="parent-backup",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_awaited()
 
     def test_update_returns_500_when_cascade_partially_fails(
         self,

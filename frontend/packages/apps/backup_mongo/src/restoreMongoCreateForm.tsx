@@ -113,7 +113,15 @@ export const restoreMongoCreateRenderField: RenderFieldOverride = ({
  * so other apps' collapsible sections keep their existing spacing.
  */
 function renderRestoreMongoForm(
-  { sections, onSubmit, loading, capabilities, renderField }: Parameters<RenderFormSlot>[0],
+  {
+    sections,
+    onSubmit,
+    loading,
+    capabilities,
+    renderField,
+    submitError,
+    fieldErrors,
+  }: Parameters<RenderFormSlot>[0],
   { defaultValues, submitLabel }: { defaultValues?: Record<string, unknown>; submitLabel: string },
 ): ReactNode {
   return (
@@ -126,6 +134,8 @@ function renderRestoreMongoForm(
         renderField={renderField}
         defaultValues={defaultValues}
         submitLabel={submitLabel}
+        submitError={submitError}
+        fieldErrors={fieldErrors}
       />
     </div>
   );
