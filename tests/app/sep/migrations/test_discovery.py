@@ -13,8 +13,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the ``app.sep.migrations._discovery`` helpers."""
+"""Define tests for SEP migration discovery and alembic.ini sync."""
 
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -26,7 +27,34 @@ from app.sep.config import sep_settings
 from app.sep.migrations._discovery import (
     _load_models_module,
     discover_plugin_migrations_and_models,
+    discover_plugin_version_dirs,
 )
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
+_SYNC_SCRIPT = _PROJECT_ROOT / "scripts" / "sync_alembic_version_locations.py"
+
+_spec = importlib.util.spec_from_file_location(
+    "sync_alembic_version_locations", _SYNC_SCRIPT
+)
+assert _spec is not None, f"cannot load {_SYNC_SCRIPT}"
+assert _spec.loader is not None, f"cannot load {_SYNC_SCRIPT}"
+sync_alembic_version_locations = importlib.util.module_from_spec(_spec)
+sys.modules["sync_alembic_version_locations"] = sync_alembic_version_locations
+_spec.loader.exec_module(sync_alembic_version_locations)
+
+_MINIMAL_INI = """\
+[alembic]
+databases = sep
+
+[sep]
+# path to migration scripts.
+script_location = app/sep/migrations
+# stale hand-written comment
+version_locations = %(here)s/app/sep/migrations/versions
+
+[post_write_hooks]
+# keep this section marker
+"""
 
 
 @pytest.fixture
@@ -196,3 +224,96 @@ def test_all_migration_owning_plugins_have_loadable_models():
         full_name = f"{plugins_pkg.__name__}.{plugin_dir.name}.models"
         _load_models_module(full_name, models_path)
         assert full_name in sys.modules
+
+
+def test_discover_plugin_version_dirs_sorted_without_loading_models(tmp_path):
+    """Filesystem helper returns sorted dirs and never loads ``models.py``."""
+    _build_plugin(tmp_path, "zebra", with_migrations=True, models_source=_MARKER_SRC)
+    _build_plugin(tmp_path, "alpha", with_migrations=True, models_source=_MARKER_SRC)
+    _build_plugin(tmp_path, "no_mig", with_migrations=False, models_source=_MARKER_SRC)
+    version_dirs = discover_plugin_version_dirs(tmp_path)
+    assert version_dirs == [
+        str(tmp_path / "alpha" / "migrations" / "versions"),
+        str(tmp_path / "zebra" / "migrations" / "versions"),
+    ]
+    assert "app.sep.apps.alpha.models" not in sys.modules
+    assert "app.sep.apps.zebra.models" not in sys.modules
+
+
+def test_sync_regenerates_from_synthetic_app_tree(tmp_path):
+    """Sync rewrites ``version_locations`` from a synthetic apps tree."""
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    _build_plugin(apps_root, "zebra", with_migrations=True, models_source=None)
+    _build_plugin(apps_root, "alpha", with_migrations=True, models_source=None)
+    ini_path = tmp_path / "alembic.ini"
+    ini_path.write_text(_MINIMAL_INI)
+
+    assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+    text = ini_path.read_text()
+    expected = (
+        "%(here)s/app/sep/migrations/versions:"
+        "%(here)s/app/sep/apps/alpha/migrations/versions:"
+        "%(here)s/app/sep/apps/zebra/migrations/versions"
+    )
+    assert f"version_locations = {expected}" in text
+    assert "GENERATED" in text
+    assert "stale hand-written comment" not in text
+
+
+def test_sync_is_idempotent_on_second_run(tmp_path):
+    """A second sync leaves the file byte-identical."""
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    _build_plugin(apps_root, "alpha", with_migrations=True, models_source=None)
+    ini_path = tmp_path / "alembic.ini"
+    ini_path.write_text(_MINIMAL_INI)
+
+    assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+    after_first = ini_path.read_text()
+    assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+    assert ini_path.read_text() == after_first
+    assert sync_alembic_version_locations.sync_alembic_ini(
+        ini_path, apps_root, check=True
+    )
+
+
+def test_sync_preserves_comment_block_and_other_sections(tmp_path):
+    """Sync keeps ``script_location`` and non-``[sep]`` sections intact."""
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    _build_plugin(apps_root, "alpha", with_migrations=True, models_source=None)
+    ini_path = tmp_path / "alembic.ini"
+    ini_path.write_text(_MINIMAL_INI)
+
+    sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+    text = ini_path.read_text()
+    assert "script_location = app/sep/migrations" in text
+    assert "[post_write_hooks]" in text
+    assert "# keep this section marker" in text
+    assert "databases = sep" in text
+    assert "GENERATED — do not hand-edit" in text
+
+
+def test_sync_check_detects_drift(tmp_path):
+    """``--check`` returns false when the committed value is stale."""
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    _build_plugin(apps_root, "alpha", with_migrations=True, models_source=None)
+    ini_path = tmp_path / "alembic.ini"
+    ini_path.write_text(_MINIMAL_INI)
+
+    assert not sync_alembic_version_locations.sync_alembic_ini(
+        ini_path, apps_root, check=True
+    )
+    assert (
+        sync_alembic_version_locations.main(
+            ["--check", "--ini", str(ini_path), "--apps-root", str(apps_root)]
+        )
+        == 1
+    )
+
+
+def test_committed_alembic_ini_matches_discovery():
+    """Guard: committed ``alembic.ini`` matches the filesystem walk."""
+    assert sync_alembic_version_locations.main(["--check"]) == 0
