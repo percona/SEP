@@ -47,7 +47,7 @@ _SRC_MARKER_RE = re.compile(
 )
 _CONSTRUCTED_RE = re.compile(r"^<!--\s*constructed\s*-->$")
 _SRC_PREFIX_RE = re.compile(r"^<!--\s*src:")
-_FENCE_RE = re.compile(r"^```(?P<lang>[A-Za-z0-9_+-]*)\s*$")
+_FENCE_RE = re.compile(r"^```(?P<lang>[A-Za-z0-9_+-]*)(?:\s.*)?$")
 
 
 class _SrcMarker:
@@ -79,27 +79,22 @@ class _ParsedGuide:
         self.uncited_python_blocks: list[int] = []
 
 
-def _parse_guide() -> _ParsedGuide:
-    """Parse the guide into markers, code fences, and comments.
+def _parse_guide_text(text: str) -> _ParsedGuide:
+    """Parse guide Markdown into markers, code fences, and comments.
 
-    Walks the guide line by line, tracking whether the cursor is inside a fenced
+    Walks the text line by line, tracking whether the cursor is inside a fenced
     code block so that fence content is never mistaken for prose. For each
     opening ``python`` fence it inspects the nearest preceding non-blank line
     (blank lines ignored) and records the block as uncited unless that line is a
     ``src:`` or ``constructed`` marker.
 
-    A missing guide file yields an empty result rather than raising, so a wrong
-    or moved guide path surfaces as a clean ``test_guide_exists`` assertion
-    failure instead of an import-time error during pytest collection.
-
+    :param text: The guide Markdown source.
     :return: The parsed guide.
     """
     result = _ParsedGuide()
-    if not _GUIDE_PATH.is_file():
-        return result
     in_block = False
     last_kind = "other"
-    for lineno, raw in enumerate(_GUIDE_PATH.read_text().split("\n"), start=1):
+    for lineno, raw in enumerate(text.split("\n"), start=1):
         stripped = raw.strip()
         fence = _FENCE_RE.match(stripped)
         if fence:
@@ -131,6 +126,38 @@ def _parse_guide() -> _ParsedGuide:
     return result
 
 
+def _parse_guide() -> _ParsedGuide:
+    """Read and parse the guide file, or return an empty result if it is absent.
+
+    A missing guide file yields an empty result rather than raising, so a wrong
+    or moved guide path surfaces as a clean ``test_guide_exists`` assertion
+    failure instead of an import-time error during pytest collection.
+
+    :return: The parsed guide.
+    """
+    if not _GUIDE_PATH.is_file():
+        return _ParsedGuide()
+    return _parse_guide_text(_GUIDE_PATH.read_text())
+
+
+def _target_names(target: ast.expr) -> list[str]:
+    """Return the names an assignment target binds, flattening unpacking.
+
+    Recurses into tuple/list unpacking and starred targets so ``a, b = ...``
+    binds both ``a`` and ``b``, matching the assignment-target contract.
+
+    :param target: An assignment-target node.
+    :return: Every ``Name`` the target binds.
+    """
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    if isinstance(target, ast.Tuple | ast.List):
+        return [name for element in target.elts for name in _target_names(element)]
+    return []
+
+
 def _module_level_names(tree: ast.Module) -> set[str]:
     """Collect names bound at module level, including methods one nesting level down.
 
@@ -138,7 +165,7 @@ def _module_level_names(tree: ast.Module) -> set[str]:
     :return: Every module-level class, function, and assignment-target name, plus
         the method names defined directly inside a module-level class.
     """
-    names = set()
+    names: set[str] = set()
     for node in tree.body:
         if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
             names.add(node.name)
@@ -148,7 +175,7 @@ def _module_level_names(tree: ast.Module) -> set[str]:
             targets = [node.target]
         else:
             targets = []
-        names.update(t.id for t in targets if isinstance(t, ast.Name))
+        names.update(name for t in targets for name in _target_names(t))
         if isinstance(node, ast.ClassDef):
             names.update(
                 member.name
@@ -221,3 +248,41 @@ def test_citation_resolves(marker: _SrcMarker) -> None:
         assert _module_defines(target.read_text(), marker.symbol), (
             f"cited symbol not defined in file: {marker}"
         )
+
+
+def test_parse_text_flags_uncited_python_block() -> None:
+    """Record a ``python`` block with no preceding marker as uncited."""
+    parsed = _parse_guide_text("Some prose.\n```python\nx = 1\n```\n")
+    assert parsed.uncited_python_blocks == [2]
+
+
+def test_parse_text_accepts_marker_then_blank_then_fence() -> None:
+    """Accept a citation separated from its fence by a blank line."""
+    parsed = _parse_guide_text(
+        "<!-- src: some/file.py :: Thing -->\n\n```python\nx = 1\n```\n"
+    )
+    assert parsed.uncited_python_blocks == []
+    assert [marker.path for marker in parsed.src_markers] == ["some/file.py"]
+
+
+def test_parse_text_flags_malformed_marker() -> None:
+    """Record a ``src:``-prefixed comment that omits its path as malformed."""
+    parsed = _parse_guide_text("<!-- src: -->\n")
+    assert [text for _, text in parsed.malformed] == ["<!-- src: -->"]
+
+
+def test_parse_text_ignores_non_python_fence() -> None:
+    """Leave a non-``python`` fenced block off the uncited list."""
+    parsed = _parse_guide_text("Some prose.\n```bash\necho hi\n```\n")
+    assert parsed.uncited_python_blocks == []
+
+
+def test_parse_text_recognizes_info_string_fence() -> None:
+    """Treat a fence carrying an info string as a normal opening fence."""
+    parsed = _parse_guide_text('Some prose.\n```python title="x"\nx = 1\n```\n')
+    assert parsed.uncited_python_blocks == [2]
+
+
+def test_module_defines_tuple_unpacked_name() -> None:
+    """Resolve a name bound by module-level tuple unpacking."""
+    assert _module_defines("a, b = object(), object()\n", "b")
