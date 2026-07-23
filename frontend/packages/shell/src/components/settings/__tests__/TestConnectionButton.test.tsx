@@ -37,7 +37,7 @@ function stubResults(results: ConnectivityResult[]) {
 }
 
 /**
- * A handler gate the test releases by hand. Holding the response until then
+ * A handler gate that the test releases by hand. Holding the response until then
  * keeps the request in flight for as long as the assertions need, instead of
  * racing a wall-clock delay against `waitFor` and `userEvent` scheduling.
  */
