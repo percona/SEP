@@ -217,6 +217,23 @@ describe('SchemaFormRenderer — field rendering', () => {
     const legend = screen.getByText('Basics');
     expect(legend.tagName.toLowerCase()).toBe('legend');
   });
+
+  it('shows a help icon only when a field has a description', () => {
+    const helpSections: FormSection[] = [
+      {
+        title: 'Basics',
+        fields: [
+          { type: 'string', name: 'title', label: 'Title', description: 'A title' },
+          { type: 'string', name: 'code', label: 'Code' },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={helpSections} onSubmit={() => {}} />);
+
+    // MUI clones the label into the notched outline, so the help node may appear twice.
+    expect(screen.getAllByLabelText('Help for Title').length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText('Help for Code')).not.toBeInTheDocument();
+  });
 });
 
 describe('SchemaFormRenderer — section layout controls', () => {

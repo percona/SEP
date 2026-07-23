@@ -69,11 +69,15 @@ describe('SchemaFormRenderer field errors', () => {
     await waitFor(() => {
       expect(screen.getByText('must not be blank')).toBeInTheDocument();
     });
-    // Inline error replaces the field description on the string field.
+    // Inline error replaces the field description helperText on the string field.
     expect(screen.queryByText('A title')).not.toBeInTheDocument();
     // Integer (helperText) field also surfaces its mapped error.
     expect(screen.getByText('must be positive')).toBeInTheDocument();
     expect(screen.queryByText('Max rows')).not.toBeInTheDocument();
+    // Help icons keep descriptions available even while helperText shows the error.
+    // MUI clones the label into the notched outline, so the help node may appear twice.
+    expect(screen.getAllByLabelText('Help for Title').length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText('Help for Row Limit').length).toBeGreaterThan(0);
     // The persistent banner is rendered.
     expect(screen.getByText(/Failed/)).toBeInTheDocument();
   });
@@ -132,7 +136,8 @@ describe('SchemaFormRenderer field errors', () => {
 
     // Empty the required title field, then resubmit: the client-side gate blocks
     // the submit, so the eager clear must not drop `limit`'s inline highlight.
-    await user.clear(screen.getByLabelText(/Title/));
+    // Prefer role+name so the "Help for Title" icon is not matched.
+    await user.clear(screen.getByRole('textbox', { name: /Title/ }));
     await user.click(screen.getByRole('button', { name: 'Run' }));
 
     await waitFor(() => expect(screen.getByText('Title is required')).toBeInTheDocument());
