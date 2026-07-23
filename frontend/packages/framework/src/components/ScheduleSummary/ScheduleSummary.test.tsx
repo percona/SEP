@@ -29,12 +29,14 @@ const { useScheduledTasksForAppMock } = vi.hoisted(() => ({
 // whole suite runs.
 vi.mock('../ScheduledTasksPanel', async () => {
   const periods = await import('../ScheduledTasksPanel/periods');
+  const { LastRunStatus } = await import('../ScheduledTasksPanel/LastRunStatus');
   return {
     useScheduledTasksForApp: (...args: unknown[]) => useScheduledTasksForAppMock(...args),
     describePeriod: periods.describePeriod,
     formatRelativeTime: periods.formatRelativeTime,
     formatAbsoluteTime: periods.formatAbsoluteTime,
     selectSchedule: periods.selectSchedule,
+    LastRunStatus,
   };
 });
 
@@ -130,6 +132,26 @@ describe('ScheduleSummary', () => {
     const scheduled = screen.getByTestId('schedule-summary-scheduled');
     expect(scheduled).toHaveTextContent('in 1 hour');
     expect(scheduled).toHaveTextContent('every 1 hours');
+  });
+
+  it('renders the last-run outcome with the shared status badge', () => {
+    setup([makePeriodic({ last_run_status: 'failed' })]);
+    renderSummary();
+
+    const lastRun = screen.getByTestId('schedule-summary-last-run');
+    expect(lastRun).toHaveTextContent('Last run');
+    const badge = lastRun.querySelector('[data-status="failed"]');
+    expect(badge).not.toBeNull();
+    expect(badge).toHaveTextContent('Failed');
+  });
+
+  it('shows an explicit "Not yet run" state when a scheduled task has never run', () => {
+    setup([makePeriodic({ last_run_status: null })]);
+    renderSummary();
+
+    const lastRun = screen.getByTestId('schedule-summary-last-run');
+    expect(lastRun).toHaveTextContent('Not yet run');
+    expect(lastRun.querySelector('[data-status]')).toBeNull();
   });
 
   it('renders a not-scheduled state with an add-a-schedule link', () => {

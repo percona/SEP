@@ -77,6 +77,22 @@ describe('ScheduleCell', () => {
     expect(screen.getByTestId('schedule-cell-periodicity')).toBeInTheDocument();
   });
 
+  it('renders the last-run outcome with the shared status badge', () => {
+    render(<ScheduleCell task={makePeriodic({ last_run_status: 'success' })} />);
+
+    const badge = document.querySelector('[data-status="success"]');
+    expect(badge).not.toBeNull();
+    expect(badge).toHaveTextContent('Done');
+    expect(screen.queryByTestId('last-run-never')).not.toBeInTheDocument();
+  });
+
+  it('shows an explicit "Not yet run" state when the schedule has never run', () => {
+    render(<ScheduleCell task={makePeriodic({ last_run_status: null })} />);
+
+    expect(screen.getByTestId('last-run-never')).toHaveTextContent('Not yet run');
+    expect(document.querySelector('[data-status]')).toBeNull();
+  });
+
   it('shows a loading placeholder instead of "Not scheduled" while the schedule list loads', () => {
     render(<ScheduleCell task={null} isLoading />);
 
