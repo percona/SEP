@@ -25,10 +25,12 @@ from typing import Any, NoReturn
 from celery import states
 from celery import Task as CeleryTask
 from celery.exceptions import Ignore
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.celery import celery
 from app.sep.app_drain import owned_by, should_cancel
+from app.sep.bundle_upload.plan import DeliveryPlanError
 from app.sep.config import sep_settings
 
 logger = logging.getLogger(__name__)
@@ -91,15 +93,20 @@ def render_report_pdf_job(
 @celery.task(bind=True)
 def upload_report_snapshot_job(
     self: CeleryTask, report_json: dict[str, Any]
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     """Render and upload a PDF from a report JSON snapshot.
 
+    An upload failure propagates, so the task lands in ``FAILURE`` carrying the
+    intake's mapped exception rather than a success result.
+
     :param self: Bound Celery task instance.
-    :type self: CeleryTask
     :param report_json: Serialized report snapshot.
-    :type report_json: dict[str, Any]
-    :return: ServiceNow upload response payload.
-    :rtype: dict[str, Any]
+    :return: The intake's response payload, or ``None`` when it answers a
+        success status with a body that is not a JSON object.
+    :raises Ignore: When the snapshot fails validation.
+    :raises HTTPException: Propagates the project exception mapped from an
+        intake error status.
+    :raises DeliveryPlanError: When the rendered PDF exceeds the size cap.
     """
     from app.sep.apps.report.models import ReportData
     from app.sep.apps.report.service import generate_pdf_report, upload_pdf_report
@@ -237,7 +244,7 @@ async def _generate_health_report(
         pdf_bytes = await generate_pdf_report(report)
         result = await upload_pdf_report(report, pdf_bytes)
         logger.info("Health report uploaded to ServiceNow: %s", result)
-    except (OSError, ValueError, RuntimeError):
+    except (OSError, ValueError, RuntimeError, HTTPException, DeliveryPlanError):
         logger.exception("Failed to upload health report to ServiceNow")
 
 

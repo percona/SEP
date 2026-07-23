@@ -35,7 +35,14 @@ from typing import Annotated, Any, Self
 
 from fastapi import APIRouter, Body, Depends, Form, params
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, Field, model_validator, PrivateAttr, SkipValidation
+from pydantic import (
+    BaseModel,
+    Field,
+    model_validator,
+    PrivateAttr,
+    SkipValidation,
+    TypeAdapter,
+)
 
 from app.core.pagination import make_pagination_dep, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
@@ -1036,6 +1043,9 @@ class TaskExecutionApp(BaseApp):
         router = APIRouter()
         plugin_schema = self._resolve_plugin_schema()
 
+        if self.create_model is not None and self.capabilities.create:
+            self._materialize_create_model_schema()
+
         if self.capabilities_provider is not None:
             capabilities_endpoint(router, self.capabilities_provider)
 
@@ -1088,6 +1098,24 @@ class TaskExecutionApp(BaseApp):
             router.include_router(extra)
 
         return router
+
+    def _materialize_create_model_schema(self) -> None:
+        """Build the create model's validation schema once, deterministically.
+
+        FastAPI builds a fresh request-body schema per derived route (``POST /``
+        and the derived ``PUT /{...}``) from ``create_model``. For a Pydantic v2
+        discriminated-union ("one-of") body, that per-route construction reads
+        global model/definition orderings that vary with ``PYTHONHASHSEED``, so the
+        two routes can derive divergent core schemas — the derived update route
+        intermittently rejecting a body the create route accepts. Force one clean
+        build here, with the full app-model namespace loaded, and cache it on the
+        model class so both routes reuse the single materialized schema instead of
+        each re-deriving the one-of core schema.
+        """
+        self.create_model.model_rebuild(force=True)
+        # Built purely to force the one-of core schema into pydantic's shared
+        # definition cache now; the adapter itself is intentionally discarded.
+        _ = TypeAdapter(self.create_model)
 
     def _resolve_plugin_schema(self) -> AppSchema:
         """Return the schema, either the ``schema=`` passthrough or a derived one.

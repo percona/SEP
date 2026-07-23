@@ -55,6 +55,7 @@ from app.core.settings_override.registry import (
     hot_field,
     materialize_template,
     nested_overridable_field,
+    not_overridable_field,
 )
 from app.core.utils import (
     deep_dict_update,
@@ -70,6 +71,7 @@ from app.core.utils.fields import (
     URIPath,
 )
 from app.sep.apps.nav_icons import NavIcon
+from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -517,9 +519,19 @@ class HealthReportSettings(BaseLowercaseModel):
     @field_validator("endpoint", mode="after")
     @classmethod
     def _normalize_endpoint(cls, v: str | None) -> str | None:
-        if v is not None:
-            return v.rstrip("/")
-        return v
+        """Trim a bare origin's trailing slash while preserving a path's.
+
+        An intake may route ``/v1/upload/`` and ``/v1/upload`` differently,
+        answering the slashless spelling with a redirect that replays the
+        request body -- credentials included -- to the redirect target. The
+        configured path is therefore sent exactly as written.
+
+        :param v: The configured endpoint, or ``None`` when unset.
+        :return: The endpoint with only a bare origin's trailing slash removed.
+        """
+        if v is None:
+            return None
+        return v if urlparse(v).path.strip("/") else v.rstrip("/")
 
     @field_validator("api_key", mode="before")
     @classmethod
@@ -626,6 +638,14 @@ class SEPSettings(BaseYamlAppSettings):
         synchronization. Defaults to 5 seconds.
     :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
         Upload is disabled by default.
+    :param DIAGNOSTICS_DELIVERY: The delivery plan used to send diagnostic
+        bundles to a receiver: named secrets, an ordered list of HTTP resolution
+        steps, and one terminal multipart upload step. ``None`` (the default)
+        means no receiver is configured. Set through env or YAML only, so every
+        write runs the plan's cross-reference validation as a whole; DB
+        overrides are rejected because a per-leaf override would merge without
+        re-validating the plan, and a secret sent through the override API is
+        stored as its mask literal.
     :param APP_DRAIN: Operator-tunable settings for the cooperative app-drain
         reconciler (reconcile cadence and stale running-task TTL).
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
@@ -670,6 +690,9 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
     SYNC_REFRESH_TIME: int = hot_field(5)
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
+    DIAGNOSTICS_DELIVERY: DeliveryPlan | None = not_overridable_field(
+        None, advanced=True
+    )
     APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)

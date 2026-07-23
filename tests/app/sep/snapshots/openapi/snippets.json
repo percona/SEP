@@ -2493,6 +2493,7 @@
         "description": "Define the JSON body for ``POST .../snippet/execute``.\n\nThe per-script frontmatter arguments go in ``args`` and are validated against\nthe script's dynamic execution model, while ``executor_host`` and ``sudo`` are\nexecution-level inputs the consumer's ``build_execution_meta`` reads.\n\n:param executor_host: The hostname of the executor that will run the script.\n:param sudo: Whether to invoke the script with sudo. The consumer's\n    ``build_execution_meta`` decides whether the script honours it.\n:param args: Per-parameter arguments keyed by parameter name, validated\n    against the script's dynamic execution model.",
         "properties": {
           "args": {
+            "additionalProperties": true,
             "default": {},
             "title": "Args",
             "type": "object"

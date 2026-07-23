@@ -75,6 +75,8 @@ class RunMode(StrEnum):
 _NAME_PATTERN = re.compile(r"^[a-z_][a-z0-9_]*$")
 _PLACEHOLDER = re.compile(r"<<\s*(\w+)\s*>>")
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
+_SCRIPT_SUFFIXES = frozenset({".sh", ".py"})
+_SAMPLE_SCRIPT_TEMPLATE = Path("snippets") / "sample.sh.tmpl"
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 PLUGINS_DIR = _REPO_ROOT / "app" / "sep" / "apps"
@@ -143,6 +145,8 @@ class ScaffoldConfig:
         placeholder.
     :param payload_path: The run-python payload file to copy beside ``spec.py``, or
         ``None``.
+    :param script_path: The script file to copy into the app's ``snippets/`` directory
+        in place of the runnable sample (script flavor only), or ``None``.
     """
 
     name: str
@@ -158,6 +162,7 @@ class ScaffoldConfig:
     run_mode: RunMode
     command: str | None
     payload_path: Path | None
+    script_path: Path | None
 
     @classmethod
     def defaults(cls, name: str, flavor: Flavor) -> ScaffoldConfig:
@@ -183,6 +188,7 @@ class ScaffoldConfig:
             run_mode=RunMode.RUN_COMMAND,
             command=None,
             payload_path=None,
+            script_path=None,
         )
 
 
@@ -200,6 +206,8 @@ class ScaffoldResult:
     :param enabled: Whether the registration entry was written enabled.
     :param payload_written: The copied run-python payload path, or ``None`` when no
         payload was supplied.
+    :param script_written: The copied seed-script path under ``snippets/``, or ``None``
+        when no script was supplied (the runnable sample was rendered instead).
     """
 
     name: str
@@ -210,6 +218,7 @@ class ScaffoldResult:
     settings_changed: bool
     enabled: bool
     payload_written: Path | None
+    script_written: Path | None
 
 
 def validate_name(name: str) -> None:
@@ -334,8 +343,13 @@ def _build_context(config: ScaffoldConfig) -> dict[str, str]:
     parts = [part for part in config.name.split("_") if part]
     command = "echo" if config.command is None else config.command
     schema_description = f"TODO: describe the {config.display_name} app."
+    sample_script = (
+        config.script_path.name if config.script_path is not None else "sample.sh"
+    )
     return {
         "name": config.name,
+        "name_upper": config.name.upper(),
+        "sample_script": sample_script,
         "class_prefix": "".join(part[:1].upper() + part[1:] for part in parts),
         "display_name": config.display_name,
         "display_name_doc": _docstring_safe(config.display_name),
@@ -425,6 +439,8 @@ def render_app(config: ScaffoldConfig) -> list[Path]:
         relative = template_path.relative_to(template_root)
         file_name = _spec_output_name(relative, config.run_mode)
         if file_name is None:
+            continue
+        if config.script_path is not None and relative == _SAMPLE_SCRIPT_TEMPLATE:
             continue
         rendered = _render(template_path.read_text(), context, template_path)
         target = _target_path(config.name, relative, file_name)
@@ -640,8 +656,8 @@ def scaffold_app(config: ScaffoldConfig) -> ScaffoldResult:
         default ``SEP.APPS`` block to register into.
     :raises FileExistsError: When the app or test package directory holds a real
         plugin.
-    :raises FileNotFoundError: When a run-python payload path does not point at a
-        file.
+    :raises FileNotFoundError: When a run-python payload path or a supplied script
+        path does not point at a file.
     """
     validate_name(config.name)
     app_dir = PLUGINS_DIR / config.name
@@ -655,12 +671,21 @@ def scaffold_app(config: ScaffoldConfig) -> ScaffoldResult:
         raise FileNotFoundError(
             f"payload file {config.payload_path} does not exist; nothing was written"
         )
+    if config.script_path is not None and not config.script_path.is_file():
+        raise FileNotFoundError(
+            f"script file {config.script_path} does not exist; nothing was written"
+        )
 
     written = render_app(config)
     payload_written = None
     if config.payload_path is not None:
         payload_written = app_dir / "payload"
         shutil.copyfile(config.payload_path, payload_written)
+    script_written = None
+    if config.script_path is not None:
+        script_written = app_dir / "snippets" / config.script_path.name
+        script_written.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(config.script_path, script_written)
     settings_changed = write_settings_entry(config.name, enabled=config.enabled)
     return ScaffoldResult(
         name=config.name,
@@ -671,6 +696,7 @@ def scaffold_app(config: ScaffoldConfig) -> ScaffoldResult:
         settings_changed=settings_changed,
         enabled=config.enabled,
         payload_written=payload_written,
+        script_written=script_written,
     )
 
 
@@ -740,6 +766,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--payload", help="the run-python payload file to copy (task flavor)"
     )
     parser.add_argument(
+        "--script",
+        help="a .sh or .py script to seed the app with instead of the sample "
+        "(script flavor)",
+    )
+    parser.add_argument(
         "--no-input",
         action="store_true",
         help="skip the interactive wizard and resolve every unset field to its default",
@@ -760,11 +791,12 @@ def _stdin_is_tty() -> bool:
 def _reject_flavor_incompatible_flags(
     parser: argparse.ArgumentParser, args: argparse.Namespace, flavor: Flavor
 ) -> None:
-    """Reject task-only flags on a script/base flavor, and ``--description`` on base.
+    """Reject task-only flags off task, ``--script`` off script, ``--description`` on base.
 
     Surfacing an inapplicable flag beats silently dropping it: the ``script`` and
     ``base`` flavors have no service type, run mode, command, payload, or CRUD
-    capabilities, and ``base``'s ``BaseApp`` has no description field.
+    capabilities; ``--script`` seeds only a script-flavor app; and ``base``'s
+    ``BaseApp`` has no description field.
 
     :param parser: The parser whose :meth:`~argparse.ArgumentParser.error` reports
         the rejection.
@@ -785,6 +817,10 @@ def _reject_flavor_incompatible_flags(
                 parser.error(
                     f"{flag} is only valid for the task flavor, not {flavor.value!r}"
                 )
+    if flavor is not Flavor.SCRIPT and args.script is not None:
+        parser.error(
+            f"--script is only valid for the script flavor, not {flavor.value!r}"
+        )
     if flavor is Flavor.BASE and args.description is not None:
         parser.error(
             "--description is not valid for the base flavor (BaseApp has no "
@@ -840,6 +876,22 @@ def _resolve_run_mode_non_interactive(
     return mode, None, payload_path
 
 
+def _validate_script_path(parser: argparse.ArgumentParser, value: str) -> Path:
+    """Return the resolved seed-script path, erroring on a missing or wrong-extension file.
+
+    :param parser: The parser whose :meth:`~argparse.ArgumentParser.error` reports an
+        invalid value.
+    :param value: The raw ``--script`` value.
+    :return: The validated script path.
+    """
+    path = Path(value)
+    if not path.is_file():
+        parser.error(f"--script {value!r} is not a file")
+    if path.suffix not in _SCRIPT_SUFFIXES:
+        parser.error(f"--script {value!r} must be a .sh or .py file")
+    return path
+
+
 def _resolve_non_interactive(
     parser: argparse.ArgumentParser, args: argparse.Namespace
 ) -> ScaffoldConfig:
@@ -868,6 +920,11 @@ def _resolve_non_interactive(
         )
     else:
         run_mode, command, payload_path = RunMode.RUN_COMMAND, None, None
+    script_path = (
+        _validate_script_path(parser, args.script)
+        if flavor is Flavor.SCRIPT and args.script is not None
+        else None
+    )
     return ScaffoldConfig(
         name=args.name,
         flavor=flavor,
@@ -882,6 +939,7 @@ def _resolve_non_interactive(
         run_mode=run_mode,
         command=command,
         payload_path=payload_path,
+        script_path=script_path,
     )
 
 
@@ -993,6 +1051,9 @@ def _resolve_interactive(
             run_mode, command, payload_path = _collect_run_mode(
                 parser, args, prompt_cls
             )
+        script_path = None
+        if flavor is Flavor.SCRIPT:
+            script_path = _collect_script_path(parser, args, prompt_cls)
 
         config = ScaffoldConfig(
             name=name,
@@ -1008,6 +1069,7 @@ def _resolve_interactive(
             run_mode=run_mode,
             command=command,
             payload_path=payload_path,
+            script_path=script_path,
         )
         _print_preview(console, config)
         if not confirm_cls.ask("Scaffold this app now?", default=True):
@@ -1095,6 +1157,35 @@ def _collect_run_mode(
         sys.stderr.write(f"payload file {candidate} does not exist\n")
 
 
+def _collect_script_path(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    prompt: type[Prompt],
+) -> Path | None:
+    """Resolve the optional seed script, prompting when unset (blank keeps the sample).
+
+    A ``--script`` supplied on the command line is validated (an invalid one is an
+    error); an unset script prompts and re-asks until the entry names an existing
+    ``.sh`` / ``.py`` file or is left blank to keep the runnable sample.
+
+    :param parser: The parser whose :meth:`~argparse.ArgumentParser.error` reports an
+        invalid ``--script`` flag.
+    :param args: The parsed arguments carrying an optional ``--script``.
+    :param prompt: The ``rich`` ``Prompt`` class.
+    :return: The validated script path, or ``None`` to keep the runnable sample.
+    """
+    if args.script is not None:
+        return _validate_script_path(parser, args.script)
+    while True:
+        answer = prompt.ask("Script file (blank for the runnable sample)", default="")
+        if not answer:
+            return None
+        candidate = Path(answer)
+        if candidate.is_file() and candidate.suffix in _SCRIPT_SUFFIXES:
+            return candidate
+        sys.stderr.write(f"{answer} is not an existing .sh or .py file\n")
+
+
 def _print_preview(console: Console, config: ScaffoldConfig) -> None:
     """Render the resolved config and a preview of the generated ``app.py`` to the console.
 
@@ -1110,6 +1201,8 @@ def _print_preview(console: Console, config: ScaffoldConfig) -> None:
     console.print(f"  enabled:      {config.enabled}")
     if config.payload_path is not None:
         console.print(f"  payload:      {config.payload_path}")
+    if config.script_path is not None:
+        console.print(f"  script:       {config.script_path}")
     console.print("\n--- app.py preview ---")
     console.print(preview, markup=False, highlight=False)
 
@@ -1150,11 +1243,15 @@ def _print_summary(result: ScaffoldResult) -> None:
     payload_note = ""
     if result.payload_written is not None:
         payload_note = f"  payload: {result.payload_written}\n"
+    script_note = ""
+    if result.script_written is not None:
+        script_note = f"  script: {result.script_written}\n"
     sys.stdout.write(
         f"Scaffolded {result.flavor.value!r} app {result.name!r}:\n"
         f"  app:   {result.app_dir}\n"
         f"  tests: {result.tests_dir}\n"
         f"{payload_note}"
+        f"{script_note}"
         f"\n{registration} Manage it from the Admin App Manager (Settings -> Apps) "
         "once you have filled in the skeleton.\n"
     )

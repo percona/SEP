@@ -39,6 +39,7 @@ from fastapi import APIRouter, FastAPI, status
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from polyfactory.factories.pydantic_factory import ModelFactory
+from pytest_mock import MockerFixture
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.inventory.models import ServiceTypeEnum
@@ -421,7 +422,7 @@ class DerivedRouterContractTests:
         assert mock_task_api.create_count == 0
 
     def test_create_connectivity_warning(
-        self, contract_client: TestClient, mocker: Any
+        self, contract_client: TestClient, mocker: MockerFixture
     ) -> None:
         """Assert ``connectivity_check`` attaches the probe warning to the response."""
         if not self.app_def.connectivity_check:

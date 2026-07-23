@@ -112,6 +112,7 @@
         "description": "Define the JSON body for ``POST /api/apps/dipper/``.\n\n:param service_id: Inventory ID of the database service to collect data from.\n:type service_id: int\n:param collector_type: Which collector script to run (environment or pmm).\n:type collector_type: CollectorTypeEnum\n:param executor_host: Nomad client hostname that will run the script.\n:type executor_host: NonEmptyStr\n:param sudo: Whether to invoke the script with ``sudo``. ``None`` defers\n    to the script's own sudo policy (the default).\n:type sudo: bool | None\n:param args: Per-parameter arguments keyed by script parameter name. Validated\n    server-side against the script's dynamic execution model.\n:type args: dict[str, Any]",
         "properties": {
           "args": {
+            "additionalProperties": true,
             "title": "Args",
             "type": "object"
           },

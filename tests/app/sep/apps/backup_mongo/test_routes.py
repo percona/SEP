@@ -70,3 +70,27 @@ def test_pbm_backups_create_rejects_malformed_priority_yaml(
 
     assert response.status_code == status.HTTP_303_SEE_OTHER
     mock_task_api_dep.post.assert_not_awaited()
+
+
+def test_pbm_backups_create_rejects_s3_storage_without_bucket(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    backup_create: BackupCreate,
+    mongo_service: CreatedService,
+):
+    """Reject an S3 storage config missing a bucket without creating tasks.
+
+    The legacy Jinja path surfaces validation errors as a flash message + 303
+    redirect, not a raw 422.
+    """
+    mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+    data = backup_create.model_dump(exclude_none=True)
+    data["storage_type"] = "s3"
+    data["storage_s3_region"] = "eu-west-1"
+    data.pop("storage_filesystem_path", None)
+
+    response = test_client.post("/backup_mongo/", data=data, follow_redirects=False)
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_task_api_dep.post.assert_not_awaited()
