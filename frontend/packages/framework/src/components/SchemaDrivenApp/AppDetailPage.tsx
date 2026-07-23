@@ -148,6 +148,16 @@ export function pathToEntityList(pathname: string, entityName: string): string {
   return `/${parts.slice(0, idx + 1).join('/')}`;
 }
 
+/** Compact label/value cell size: 1 → 2 → 3 columns. Three columns only at ``lg``
+ * so mid-width layouts (sidebar + ~900px viewport) stay readable for long values. */
+const DETAIL_FIELD_GRID_SIZE = { xs: 12, sm: 6, lg: 4 } as const;
+
+/** Keep long unbroken strings (emails, hosts) inside their grid cell. */
+const detailFieldValueSx = {
+  overflowWrap: 'anywhere',
+  wordBreak: 'break-word',
+} as const;
+
 /** Compact label/value cell; wide content (JSON / syntax blocks) spans the full row. */
 function EntityDetailField({
   label,
@@ -194,11 +204,17 @@ function EntityDetailField({
   }
 
   return (
-    <Grid size={isWide ? 12 : { xs: 12, sm: 6, md: 4 }} sx={{ minWidth: 0 }}>
+    <Grid size={isWide ? 12 : DETAIL_FIELD_GRID_SIZE} sx={{ minWidth: 0 }}>
       <Typography variant="caption" color="text.secondary">
         {label}
       </Typography>
-      {typeof value === 'object' ? display : <Typography variant="body1">{display}</Typography>}
+      {typeof value === 'object' ? (
+        display
+      ) : (
+        <Typography variant="body1" sx={detailFieldValueSx}>
+          {display}
+        </Typography>
+      )}
     </Grid>
   );
 }
@@ -263,11 +279,17 @@ function TaskOverviewDetailField({ label, value }: { label: string; value: unkno
   }
 
   return (
-    <Grid size={isWide ? 12 : { xs: 12, sm: 6, md: 4 }} sx={{ minWidth: 0 }}>
+    <Grid size={isWide ? 12 : DETAIL_FIELD_GRID_SIZE} sx={{ minWidth: 0 }}>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
         {label}
       </Typography>
-      {typeof value === 'object' ? display : <Typography variant="body1">{display}</Typography>}
+      {typeof value === 'object' ? (
+        display
+      ) : (
+        <Typography variant="body1" sx={detailFieldValueSx}>
+          {display}
+        </Typography>
+      )}
     </Grid>
   );
 }
