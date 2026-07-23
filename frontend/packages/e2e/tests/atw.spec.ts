@@ -33,7 +33,19 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
-/** Minimal listing row matching ``GET /api/apps/atw/``. */
+const INCIDENT_ID = 'inc-e2e-1';
+
+/** Single stored incident, listed at ``GET /api/apps/atw/incidents/``. */
+const MOCK_INCIDENT = {
+  id: INCIDENT_ID,
+  name: 'E2E incident',
+  case_ref: null,
+  created_by: 'smoke',
+  created_at: '2026-07-22T10:00:00Z',
+  updated_at: null,
+};
+
+/** Category listing matching ``GET /api/apps/atw/`` (feeds the category browser). */
 const MOCK_ATW_LIST = [
   {
     category_root: 'MySQL',
@@ -52,59 +64,65 @@ const MOCK_ATW_LIST = [
   },
 ];
 
-/** Served at ``GET /api/apps/atw/schema`` (discovery; page uses listing + per-snippet schema). */
-const MOCK_ATW_APP_SCHEMA = {
-  name: 'atw',
-  display_name: APP_DISPLAY_NAME,
-  forms: [],
-  list_view: { columns: [], default_sort: 'category_root' },
-};
-
 /**
- * Per-snippet schema for ``SchemaFormRenderer`` — string ``executor_host`` avoids host-registry API calls.
+ * Merged execution schema for the selected snippet — a single shared string
+ * ``executor_host`` avoids host-registry API calls, and no per-snippet override
+ * fields keeps the form to the shared section.
  */
-const MOCK_SNIPPET_EXECUTE_SCHEMA = {
-  name: 'snippets',
-  display_name: 'Snippet',
-  forms: [
+const MOCK_MERGED_SCHEMA = {
+  shared: [
     {
-      title: 'Run',
-      fields: [
-        {
-          type: 'string',
-          name: 'executor_host',
-          label: 'Executor host',
-          required: true,
-        },
-      ],
+      type: 'string',
+      name: 'executor_host',
+      label: 'Executor host',
+      required: true,
     },
   ],
+  per_snippet: [{ snippet_filename: 'diag/slow-query.sh', fields: [] }],
 };
 
-const EMPTY_TASK_HISTORY_PAGE = {
-  items: [],
-  total: 0,
-  offset: 0,
-  limit: 50,
+function paginated<T>(items: T[]) {
+  return { items, total: items.length, offset: 0, limit: 50 };
+}
+
+/** One recorded execution surfaced in the Results pane after a successful batch. */
+const MOCK_EXECUTION = {
+  id: 'exec-e2e-1',
+  snippet_filename: 'diag/slow-query.sh',
+  task_history_id: 1,
+  created_at: '2026-07-22T10:01:00Z',
+  task_status: 'success',
+  started_at: null,
+  finished_at: null,
+  has_logs: false,
 };
 
 interface AtwApiMockOptions {
-  executeStatus?: number;
-  executeJson?: string;
+  batchStatus?: number;
+  batchJson?: string;
 }
 
 /**
- * Authenticated session plus ATW + snippets routes needed for Collect Diagnostic Data flows.
+ * Authenticated session plus the incident, category, merged-schema, batch-execute,
+ * and grouped-history routes the incident-first ATW flow exercises. The executions
+ * listing is empty until a successful batch POST records one.
  */
 async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise<void> {
-  const executeStatus = options.executeStatus ?? 200;
-  const executeJson =
-    options.executeJson ??
+  const batchStatus = options.batchStatus ?? 201;
+  const batchJson =
+    options.batchJson ??
     JSON.stringify({
-      task_name: 'atw-e2e-task',
-      task_id: 1,
-      snippet_filename: 'diag/slow-query.sh',
+      items: [
+        {
+          snippet_filename: 'diag/slow-query.sh',
+          task_name: 'atw-e2e-task',
+          task_history_id: 1,
+          error: null,
+        },
+      ],
     });
+
+  let executionRecorded = false;
 
   await page.route('**/api/**', (route) => {
     const req = route.request();
@@ -134,47 +152,60 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (pathname.includes('/apps/snippets/') && pathname.endsWith('/history')) {
+    // Batch execute (POST) — record a success so the executions listing populates.
+    if (pathname.endsWith(`/incidents/${INCIDENT_ID}/executions/`) && req.method() === 'POST') {
+      if (batchStatus < 400) {
+        executionRecorded = true;
+      }
+      return route.fulfill({
+        status: batchStatus,
+        contentType: 'application/json',
+        body: batchJson,
+      });
+    }
+
+    // Grouped execution history (GET) for the incident.
+    if (pathname.endsWith(`/incidents/${INCIDENT_ID}/executions/`) && req.method() === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(EMPTY_TASK_HISTORY_PAGE),
+        body: JSON.stringify(paginated(executionRecorded ? [MOCK_EXECUTION] : [])),
       });
     }
 
-    if (pathname.includes('/apps/snippets/') && pathname.endsWith('/schema')) {
+    // Single incident (workspace header).
+    if (pathname.endsWith(`/incidents/${INCIDENT_ID}`) && req.method() === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_SNIPPET_EXECUTE_SCHEMA),
+        body: JSON.stringify(MOCK_INCIDENT),
       });
     }
 
-    if (
-      pathname.includes('/apps/snippets/') &&
-      pathname.endsWith('/execute') &&
-      req.method() === 'POST'
-    ) {
+    // Incident list.
+    if (pathname.endsWith('/incidents/') && req.method() === 'GET') {
       return route.fulfill({
-        status: executeStatus,
+        status: 200,
         contentType: 'application/json',
-        body: executeJson,
+        body: JSON.stringify(paginated([MOCK_INCIDENT])),
       });
     }
 
-    if (req.method() === 'GET' && (pathname === '/api/apps/atw/' || pathname === '/api/apps/atw')) {
+    // Merged execution schema for the current selection.
+    if (pathname.endsWith('/atw/execution-schema/')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(MOCK_MERGED_SCHEMA),
+      });
+    }
+
+    // Category listing.
+    if (pathname === '/api/apps/atw/' || pathname === '/api/apps/atw') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(MOCK_ATW_LIST),
-      });
-    }
-
-    if (pathname === '/api/apps/atw/schema') {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(MOCK_ATW_APP_SCHEMA),
       });
     }
 
@@ -196,32 +227,36 @@ function isBenignConsoleError(msg: string): boolean {
   return false;
 }
 
-async function selectAtwSnippetAndOpenForm(page: Page): Promise<void> {
+/** Open the stored incident and drive the Collect pane to a ready-to-submit form. */
+async function openIncidentAndBuildForm(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: APP_DISPLAY_NAME })).toBeVisible({
     timeout: 30_000,
   });
 
-  const categoryCombo = page.getByRole('combobox', { name: 'Category', exact: true });
-  if ((await categoryCombo.count()) > 0) {
-    await expect(categoryCombo).toContainText('MySQL', { timeout: 15_000 });
-    await categoryCombo.click();
-    await page.getByRole('option', { name: 'MySQL' }).click();
-  }
+  await page.getByRole('link', { name: MOCK_INCIDENT.name }).click();
 
+  await expect(page.getByRole('heading', { name: MOCK_INCIDENT.name })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // Single-root listing hides the top-level Category control; select down to the
+  // leaf category so the snippet multi-select is populated.
   await page.getByRole('combobox', { name: 'Subcategory 1' }).click();
   await page.getByRole('option', { name: 'Performance Issues' }).click();
 
   await page.getByRole('combobox', { name: 'Subcategory 2' }).click();
   await page.getByRole('option', { name: 'Overall Slowness' }).click();
 
-  await page.getByRole('combobox', { name: 'Snippet' }).click();
+  await page.getByRole('combobox', { name: 'Snippets' }).click();
   await page.getByRole('option', { name: 'Slow Query Diagnostics' }).click();
+  // Close the option list so it does not overlay the form controls.
+  await page.keyboard.press('Escape');
 
   await expect(page.getByLabel('Executor host')).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe('Collect Diagnostic Data (ATW)', () => {
-  test('execute success navigates to the snippet detail route', async ({ page }) => {
+  test('batch execute records an execution in the Results pane', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
@@ -232,29 +267,31 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
     await mockAtwApis(page);
     await page.goto(APP_ROUTE);
 
-    await selectAtwSnippetAndOpenForm(page);
+    await openIncidentAndBuildForm(page);
 
     await page.getByLabel('Executor host').fill('e2e-host.local');
-    await page.getByRole('button', { name: 'Execute' }).click();
+    await page.getByRole('button', { name: 'Execute batch' }).click();
 
-    await expect(page).toHaveURL(/\/snippets\/diag%2Fslow-query\.sh/);
+    // The execution appears in the Results pane once the batch is recorded.
+    await expect(page.getByText('diag/slow-query.sh')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Done')).toBeVisible();
 
     const criticalErrors = consoleErrors.filter((msg) => !isBenignConsoleError(msg));
     expect(criticalErrors).toEqual([]);
   });
 
-  test('execute failure shows submit error on the form', async ({ page }) => {
+  test('batch execute failure shows a submit error on the form', async ({ page }) => {
     await mockAtwApis(page, {
-      executeStatus: 400,
-      executeJson: JSON.stringify({ detail: 'Execute failed (e2e)' }),
+      batchStatus: 400,
+      batchJson: JSON.stringify({ detail: 'Batch execute failed (e2e)' }),
     });
     await page.goto(APP_ROUTE);
 
-    await selectAtwSnippetAndOpenForm(page);
+    await openIncidentAndBuildForm(page);
 
     await page.getByLabel('Executor host').fill('e2e-host.local');
-    await page.getByRole('button', { name: 'Execute' }).click();
+    await page.getByRole('button', { name: 'Execute batch' }).click();
 
-    await expect(page.getByRole('alert')).toContainText('Execute failed (e2e)');
+    await expect(page.getByText('Batch execute failed (e2e)')).toBeVisible({ timeout: 15_000 });
   });
 });
