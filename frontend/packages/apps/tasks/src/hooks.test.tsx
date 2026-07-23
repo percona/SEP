@@ -26,6 +26,7 @@ import { TASKS_APPS_API_BASE } from './types';
 interface CapturedRequestConfig {
   url?: string;
   method?: string;
+  params?: Record<string, unknown>;
 }
 
 function makeWrapper() {
@@ -76,7 +77,7 @@ describe('useTasksList', () => {
     (apiClient.defaults as unknown as { adapter: unknown }).adapter = originalAdapter;
   });
 
-  it('unwraps the paginated envelope into task rows', async () => {
+  it('returns items plus pagination metadata from the envelope', async () => {
     const { result } = renderHook(() => useTasksList(), { wrapper: makeWrapper() });
 
     await waitFor(() => {
@@ -84,15 +85,31 @@ describe('useTasksList', () => {
     });
 
     expect(lastConfig?.url).toBe(`${TASKS_APPS_API_BASE}/`);
-    expect(result.current.data).toEqual([
-      {
-        name: 'monitor-task',
-        backend: 'nomad',
-        created_at: '2026-05-19T12:00:00Z',
-        created_by: 'creator',
-        last_updated_by: null,
-      },
-    ]);
+    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50 });
+    expect(result.current.data).toEqual({
+      items: [
+        {
+          name: 'monitor-task',
+          backend: 'nomad',
+          created_at: '2026-05-19T12:00:00Z',
+          created_by: 'creator',
+          last_updated_by: null,
+        },
+      ],
+      pagination: { total: 60, offset: 0, limit: 50 },
+    });
+  });
+
+  it('forwards offset/limit query params', async () => {
+    const { result } = renderHook(() => useTasksList({ offset: 50, limit: 50 }), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.params).toEqual({ offset: 50, limit: 50 });
   });
 
   it('does not fetch when disabled', async () => {

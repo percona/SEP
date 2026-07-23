@@ -15,9 +15,19 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { SchemaListView } from './SchemaListView';
-export type {
-  RenderListColumnArgs,
-  RenderListColumnOverride,
-  SchemaListServerPagination,
-} from './SchemaListView';
+import { Route, Routes } from 'react-router-dom';
+import { IncidentListPage } from './IncidentListPage';
+import { IncidentWorkspacePage } from './IncidentWorkspacePage';
+
+/**
+ * ATW app router. The shell mounts this at ``atw/*``; the incident list is the
+ * index route and an incident opens its workspace at ``:incidentId``.
+ */
+export function AtwApp() {
+  return (
+    <Routes>
+      <Route index element={<IncidentListPage />} />
+      <Route path=":incidentId" element={<IncidentWorkspacePage />} />
+    </Routes>
+  );
+}

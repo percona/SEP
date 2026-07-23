@@ -15,43 +15,214 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildEntityItemPath,
+  DEFAULT_APP_LIST_LIMIT,
+  DEFAULT_APP_LIST_OFFSET,
+  fetchAppTasksList,
+  fetchAppEntityList,
   isBackendUnavailable,
   isRunningStatus,
+  MAX_FETCH_ALL_PAGES,
+  normalizeAppListResponse,
   RUNNING_STATUSES,
   taskListRefetchInterval,
-  unwrapTasks,
 } from '../src/hooks/useAppTasks';
 import { ApiError } from '../src/errors';
 
-describe('unwrapTasks', () => {
-  it('returns a legacy array response as-is', () => {
-    const tasks = [{ name: 'a' }, { name: 'b' }];
-    expect(unwrapTasks(tasks)).toEqual(tasks);
+vi.mock('../src/client', () => ({
+  apiClient: {
+    get: vi.fn(),
+  },
+}));
+
+import { apiClient } from '../src/client';
+
+const getMock = vi.mocked(apiClient.get);
+
+beforeEach(() => {
+  getMock.mockReset();
+});
+
+describe('normalizeAppListResponse', () => {
+  it('returns items with pagination null for a bare array', () => {
+    const items = [{ name: 'a' }, { name: 'b' }];
+    expect(normalizeAppListResponse(items)).toEqual({ items, pagination: null });
   });
 
-  it('unwraps a PaginatedResponse envelope to its items', () => {
-    const tasks = [{ name: 'a' }];
-    expect(unwrapTasks({ items: tasks, total: 1, offset: 0, limit: 50 })).toEqual(tasks);
+  it('preserves pagination metadata for a full envelope', () => {
+    const items = [{ name: 'a' }];
+    expect(normalizeAppListResponse({ items, total: 120, offset: 50, limit: 50 })).toEqual({
+      items,
+      pagination: { total: 120, offset: 50, limit: 50 },
+    });
   });
 
-  it('returns an empty array for an empty envelope', () => {
-    expect(unwrapTasks({ items: [], total: 0, offset: 0, limit: 50 })).toEqual([]);
+  it('unwraps a partial items-only envelope without pagination metadata', () => {
+    const items = [{ name: 'a' }];
+    expect(normalizeAppListResponse({ items })).toEqual({ items, pagination: null });
   });
 
-  it('returns [] when items is null', () => {
-    expect(unwrapTasks({ items: null } as never)).toEqual([]);
+  it('returns empty items for null, undefined, or empty object', () => {
+    expect(normalizeAppListResponse(null)).toEqual({ items: [], pagination: null });
+    expect(normalizeAppListResponse(undefined)).toEqual({ items: [], pagination: null });
+    expect(normalizeAppListResponse({} as never)).toEqual({ items: [], pagination: null });
   });
 
-  it('returns [] when payload is an empty object', () => {
-    expect(unwrapTasks({} as never)).toEqual([]);
+  it('returns empty items when items is null in a partial envelope', () => {
+    expect(normalizeAppListResponse({ items: null })).toEqual({ items: [], pagination: null });
+  });
+});
+
+describe('fetchAppTasksList', () => {
+  it('requests offset/limit query params for a single page', async () => {
+    getMock.mockResolvedValue({
+      data: { items: [{ name: 'a' }], total: 1, offset: 50, limit: 50 },
+    });
+
+    const result = await fetchAppTasksList('mysql_backups', { offset: 50, limit: 50 });
+
+    expect(getMock).toHaveBeenCalledWith('/apps/mysql_backups/', {
+      params: { offset: 50, limit: 50 },
+    });
+    expect(result).toEqual({
+      items: [{ name: 'a' }],
+      pagination: { total: 1, offset: 50, limit: 50 },
+    });
   });
 
-  it('returns [] when payload is null or undefined', () => {
-    expect(unwrapTasks(null as never)).toEqual([]);
-    expect(unwrapTasks(undefined as never)).toEqual([]);
+  it('defaults offset/limit to backend defaults', async () => {
+    getMock.mockResolvedValue({ data: [] });
+
+    await fetchAppTasksList('mysql_backups');
+
+    expect(getMock).toHaveBeenCalledWith('/apps/mysql_backups/', {
+      params: { offset: DEFAULT_APP_LIST_OFFSET, limit: DEFAULT_APP_LIST_LIMIT },
+    });
+  });
+
+  it('fetchAllPages loops until total is reached', async () => {
+    getMock
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ name: 'a' }],
+          total: 2,
+          offset: 0,
+          limit: DEFAULT_APP_LIST_LIMIT,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ name: 'b' }],
+          total: 2,
+          offset: 1,
+          limit: DEFAULT_APP_LIST_LIMIT,
+        },
+      });
+
+    const result = await fetchAppTasksList('mysql_backups', { fetchAllPages: true });
+
+    expect(getMock).toHaveBeenCalledWith('/apps/mysql_backups/', {
+      params: { offset: 0, limit: DEFAULT_APP_LIST_LIMIT },
+    });
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      items: [{ name: 'a' }, { name: 'b' }],
+      pagination: null,
+    });
+  });
+  it('fetchAllPages returns the bare array on NO_PAGINATION routes', async () => {
+    const items = [{ name: 'a' }, { name: 'b' }];
+    getMock.mockResolvedValue({ data: items });
+
+    const result = await fetchAppTasksList('legacy_app', { fetchAllPages: true });
+
+    expect(getMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ items, pagination: null });
+  });
+
+  it('fetchAllPages sets truncated and warns when the page cap is hit', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    getMock.mockImplementation(async (path, config) => {
+      const offset = Number((config as { params: { offset: number } }).params.offset);
+      return {
+        data: {
+          items: Array.from({ length: DEFAULT_APP_LIST_LIMIT }, (_, i) => ({
+            name: `t${offset + i}`,
+          })),
+          total: 3000,
+          offset,
+          limit: DEFAULT_APP_LIST_LIMIT,
+        },
+      };
+    });
+
+    const result = await fetchAppTasksList('mysql_backups', { fetchAllPages: true });
+
+    expect(getMock).toHaveBeenCalledTimes(MAX_FETCH_ALL_PAGES);
+    expect(result.items).toHaveLength(MAX_FETCH_ALL_PAGES * DEFAULT_APP_LIST_LIMIT);
+    expect(result.truncated).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('fetchAllPages truncated'));
+    warn.mockRestore();
+  });
+});
+
+describe('fetchAppEntityList', () => {
+  it('requests the entity list path with offset/limit', async () => {
+    getMock.mockResolvedValue({
+      data: { items: [{ id: 1 }], total: 1, offset: 0, limit: 50 },
+    });
+
+    const result = await fetchAppEntityList('inventory', 'nodes', { offset: 0, limit: 50 });
+
+    expect(getMock).toHaveBeenCalledWith('/apps/inventory/nodes/', {
+      params: { offset: 0, limit: 50 },
+    });
+    expect(result).toEqual({
+      items: [{ id: 1 }],
+      pagination: { total: 1, offset: 0, limit: 50 },
+    });
+  });
+
+  it('returns a bare array for NO_PAGINATION entity routes', async () => {
+    const items = [{ id: 1 }, { id: 2 }];
+    getMock.mockResolvedValue({ data: items });
+
+    const result = await fetchAppEntityList('legacy_app', 'items');
+
+    expect(result).toEqual({ items, pagination: null });
+  });
+
+  it('fetchAllPages loops entity pages until total is reached', async () => {
+    getMock
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ id: 1 }],
+          total: 2,
+          offset: 0,
+          limit: DEFAULT_APP_LIST_LIMIT,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ id: 2 }],
+          total: 2,
+          offset: 1,
+          limit: DEFAULT_APP_LIST_LIMIT,
+        },
+      });
+
+    const result = await fetchAppEntityList('inventory', 'nodes', { fetchAllPages: true });
+
+    expect(getMock).toHaveBeenCalledWith('/apps/inventory/nodes/', {
+      params: { offset: 0, limit: DEFAULT_APP_LIST_LIMIT },
+    });
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      items: [{ id: 1 }, { id: 2 }],
+      pagination: null,
+    });
   });
 });
 
