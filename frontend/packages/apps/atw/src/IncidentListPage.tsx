@@ -101,6 +101,7 @@ export function IncidentListPage() {
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => {
+            createMutation.reset();
             setCreateName('');
             setCreateOpen(true);
           }}
@@ -152,6 +153,7 @@ export function IncidentListPage() {
                 <IconButton
                   aria-label={`Rename ${incident.name}`}
                   onClick={() => {
+                    updateMutation.reset();
                     setRenameTarget(incident);
                     setRenameValue(incident.name);
                   }}
@@ -162,7 +164,10 @@ export function IncidentListPage() {
               <Tooltip title="Delete">
                 <IconButton
                   aria-label={`Delete ${incident.name}`}
-                  onClick={() => setDeleteTarget(incident)}
+                  onClick={() => {
+                    deleteMutation.reset();
+                    setDeleteTarget(incident);
+                  }}
                 >
                   <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
