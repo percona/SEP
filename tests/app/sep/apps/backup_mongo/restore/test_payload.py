@@ -23,9 +23,21 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from app.sep.apps.backup_mongo.pbm_creds_common import (
+    _append_pbm_restore_yes_if_supported,
+    _PBM_RESTORE_HELP_TIMEOUT_SECONDS,
+    RESTORE_YES_BEGIN,
+    RESTORE_YES_END,
+    restore_yes_source,
+)
+
 _PAYLOAD = (
     pathlib.Path(__file__).parents[6]
     / "app/sep/apps/backup_mongo/restore/pbm_logical_restore_payload"
+)
+_PHYSICAL_PAYLOAD = (
+    pathlib.Path(__file__).parents[6]
+    / "app/sep/apps/backup_mongo/restore/pbm_physical_restore_payload"
 )
 
 
@@ -69,6 +81,7 @@ def _run_payload_capture_command(
 
     def _fake_run(cmd: list[str], *args: object, **kwargs: object) -> SimpleNamespace:
         if cmd[:3] == ["pbm", "restore", "--help"]:
+            assert kwargs.get("timeout") == _PBM_RESTORE_HELP_TIMEOUT_SECONDS
             return SimpleNamespace(stdout=restore_help, stderr="", returncode=0)
         raise AssertionError(f"Unexpected subprocess.run command: {cmd!r}")
 
@@ -145,3 +158,100 @@ def test_old_pbm_without_yes_keeps_command_compatible(
         "2026-04-29T10:00:00",
         "--wait",
     ]
+
+
+class TestRestoreYesHelperNoDrift:
+    """Assert the restore ``--yes`` probe tracks one canonical generated source."""
+
+    @staticmethod
+    def _region(path: pathlib.Path) -> str:
+        """Return the restore-yes region carried between the markers in ``path``."""
+        lines = path.read_text(encoding="utf-8").split("\n")
+        begin = lines.index(RESTORE_YES_BEGIN)
+        end = lines.index(RESTORE_YES_END, begin + 1)
+        return "\n".join(lines[begin + 1 : end]).strip("\n")
+
+    @pytest.mark.parametrize(
+        "payload",
+        [_PAYLOAD, _PHYSICAL_PAYLOAD],
+        ids=["logical", "physical"],
+    )
+    def test_region_matches_canonical(self, payload: pathlib.Path) -> None:
+        """Require each restore payload's probe to equal the canonical source."""
+        assert self._region(payload) == restore_yes_source()
+
+
+class TestAppendPbmRestoreYesIfSupported:
+    """Exercise the importable ``_append_pbm_restore_yes_if_supported`` helper."""
+
+    def test_appends_yes_when_help_advertises_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Append ``--yes`` when help text includes the flag."""
+
+        def _fake_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> SimpleNamespace:
+            assert cmd == ["pbm", "restore", "--help"]
+            assert kwargs.get("timeout") == _PBM_RESTORE_HELP_TIMEOUT_SECONDS
+            return SimpleNamespace(
+                stdout="  -y, --yes  Don't ask for confirmation\n",
+                stderr="",
+                returncode=0,
+            )
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        cmd = ["pbm", "restore", "backup"]
+        _append_pbm_restore_yes_if_supported(cmd)
+        assert cmd == ["pbm", "restore", "backup", "--yes"]
+
+    def test_omits_yes_when_help_lacks_flag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Leave ``cmd`` unchanged when help does not advertise ``--yes``."""
+
+        def _fake_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> SimpleNamespace:
+            del cmd, args
+            assert kwargs.get("timeout") == _PBM_RESTORE_HELP_TIMEOUT_SECONDS
+            return SimpleNamespace(stdout="  -w, --wait\n", stderr="", returncode=0)
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        cmd = ["pbm", "restore", "backup"]
+        _append_pbm_restore_yes_if_supported(cmd)
+        assert cmd == ["pbm", "restore", "backup"]
+
+    def test_timeout_warns_without_appending(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Warn on help-probe timeout and leave ``cmd`` unchanged."""
+
+        def _fake_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> SimpleNamespace:
+            del args
+            raise subprocess.TimeoutExpired(cmd, timeout=kwargs["timeout"])
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        cmd = ["pbm", "restore", "backup"]
+        _append_pbm_restore_yes_if_supported(cmd)
+        assert cmd == ["pbm", "restore", "backup"]
+        assert "timed out while probing for --yes support" in capsys.readouterr().err
+
+    def test_os_error_warns_without_appending(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Warn when ``pbm`` cannot be executed and leave ``cmd`` unchanged."""
+
+        def _fake_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> SimpleNamespace:
+            del cmd, args, kwargs
+            raise FileNotFoundError("pbm")
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        cmd = ["pbm", "restore", "backup"]
+        _append_pbm_restore_yes_if_supported(cmd)
+        assert cmd == ["pbm", "restore", "backup"]
+        assert "Could not probe pbm restore --help" in capsys.readouterr().err

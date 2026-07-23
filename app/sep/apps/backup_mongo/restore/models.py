@@ -46,6 +46,27 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 
+_NAMESPACE_FILTER_PHYSICAL_ERROR = (
+    "Namespace Filter is only supported for logical MongoDB restores"
+)
+
+
+def _ensure_namespace_filter_allowed_for_backup_type(
+    backup_type: BackupType,
+    restore_namespace_filter: str | None,
+) -> None:
+    """Raise when a physical restore carries a namespace filter.
+
+    Shared by :class:`RestoreCreate` and :class:`RestoreTaskWrite` so the
+    predicate and message cannot drift between the form and JSON body paths.
+
+    :param backup_type: The restore's backup type.
+    :param restore_namespace_filter: The optional namespace filter value.
+    :raises ValueError: If a physical restore includes a namespace filter.
+    """
+    if backup_type == BackupType.PBM_PHYSICAL and restore_namespace_filter:
+        raise ValueError(_NAMESPACE_FILTER_PHYSICAL_ERROR)
+
 
 def parse_mongod_location_map(location_map_str: str) -> dict[str, Any] | None:
     """Parse mongod location map from YAML string.
@@ -291,13 +312,9 @@ class RestoreCreate(BaseCaseInsensitiveModel):
         :return: The validated restore request.
         :raises ValueError: If a physical restore includes a namespace filter.
         """
-        if (
-            self.backup_type == BackupType.PBM_PHYSICAL
-            and self.restore_namespace_filter
-        ):
-            raise ValueError(
-                "Namespace Filter is only supported for logical MongoDB restores"
-            )
+        _ensure_namespace_filter_allowed_for_backup_type(
+            self.backup_type, self.restore_namespace_filter
+        )
         return self
 
 
@@ -484,13 +501,9 @@ class RestoreTaskWrite(BaseModel):
         :return: The validated restore request.
         :raises ValueError: If a physical restore includes a namespace filter.
         """
-        if (
-            self.backup_type == BackupType.PBM_PHYSICAL
-            and self.restore_namespace_filter
-        ):
-            raise ValueError(
-                "Namespace Filter is only supported for logical MongoDB restores"
-            )
+        _ensure_namespace_filter_allowed_for_backup_type(
+            self.backup_type, self.restore_namespace_filter
+        )
         return self
 
 
