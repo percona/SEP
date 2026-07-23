@@ -1320,6 +1320,29 @@ describe('AppDetailPage — connectivity warning', () => {
     expect(screen.queryByTestId('connectivity-log-button')).toBeNull();
   });
 });
+describe('AppDetailPage — schedule summary placement', () => {
+  it('renders the ScheduleSummary before the Task information card', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+
+    // `schema` (module-level) has capabilities.scheduling enabled.
+    renderAt('/apps/checksums/task/FECHK');
+
+    const summary = screen.getByTestId('schedule-summary');
+    const taskInfo = screen.getByText('Task information');
+
+    // DOM order: the schedule summary node comes before the Task information
+    // heading, so it is reachable without scrolling past the info card.
+    // Bit test (not strict equality) stays correct if a future refactor wraps
+    // either node in a container and the browser ORs in containment bits.
+    expect(
+      summary.compareDocumentPosition(taskInfo) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
 describe('AppDetailPage delete flow', () => {
   it('confirms then calls delete mutation and navigates to list on success', async () => {
     mockDeleteMutate.mockReset();
