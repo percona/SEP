@@ -20,9 +20,10 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Any, cast, overload, Protocol, TypeVar
 
-from pydantic import BaseModel, computed_field, create_model, FutureDatetime
+from pydantic import BaseModel, computed_field, create_model, Field, FutureDatetime
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
+from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
@@ -89,7 +90,7 @@ class BaseTaskResponse(BaseModel):
     last_executed_at: datetime | None = None
     id: int | None = None
     backend: TaskBackendEnum
-    data: dict[str, Any]
+    data: dict[str, Any] = Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)
     protected: bool
     alert_on_fail: bool
     anonymize_mask: int | None = None
