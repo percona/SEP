@@ -53,6 +53,7 @@ RUN pip install --no-cache-dir supervisor==4.3.0
 COPY --chown=0:1001 --chmod=440 ./alembic.ini .
 COPY --chown=0:1001 --chmod=440 ./sidecar/supervisord.conf ./supervisord.conf
 COPY --chown=0:1001 --chmod=550 ./sidecar/healthcheck.sh ./healthcheck.sh
+COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
 
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 
@@ -71,4 +72,4 @@ USER sep
 HEALTHCHECK --interval=15s --timeout=15s --start-period=150s --retries=5 \
     CMD ["/home/sep/app/healthcheck.sh"]
 
-ENTRYPOINT ["supervisord", "-c", "/home/sep/app/supervisord.conf"]
+ENTRYPOINT ["/home/sep/app/entrypoint.sh"]
