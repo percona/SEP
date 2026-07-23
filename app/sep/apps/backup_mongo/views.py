@@ -18,9 +18,11 @@
 Section *membership* and *order* are declared on
 :class:`~app.sep.apps.backup_mongo.models.BackupForm` (via ``Ui(section=...)``
 and field-declaration order); what lives here is the part the model cannot
-express: the section titles, the list columns, and the UI capability flags. These
-feed the derived ``GET /schema`` and are carried over from the previous hand-written
-``AppSchema`` so the schema wire format is preserved.
+express: the section titles, the collapse metadata, the list columns, and the
+UI capability flags. The Task-section note about derived sibling types is
+applied in :mod:`app.sep.apps.backup_mongo.schema` from
+:data:`~app.sep.apps.backup_mongo.schema.BACKUP_MONGO_DERIVED`. These feed the
+derived ``GET /schema``.
 """
 
 from app.sep.apps.framework.apps import Views
@@ -41,9 +43,24 @@ backup_mongo_views = Views(
     layout=FormLayout(
         sections=(
             TASK_SECTION_LAYOUT,
-            SectionLayout(key="Storage", title="Storage"),
-            SectionLayout(key="PITR", title="Point-in-Time Recovery"),
-            SectionLayout(key="BackupOptions", title="Backup Options"),
+            SectionLayout(
+                key="Storage",
+                title="Storage",
+                collapsible=True,
+                collapsed_by_default=True,
+            ),
+            SectionLayout(
+                key="PITR",
+                title="Point-in-Time Recovery",
+                collapsible=True,
+                collapsed_by_default=True,
+            ),
+            SectionLayout(
+                key="BackupOptions",
+                title="Backup Options",
+                collapsible=True,
+                collapsed_by_default=True,
+            ),
         )
     ),
     list_view=ListView(
