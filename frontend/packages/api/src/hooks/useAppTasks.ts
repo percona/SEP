@@ -16,7 +16,7 @@
  */
 
 /// <reference path="../vite-env.d.ts" />
-import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { ApiError } from '../errors';
 
@@ -251,9 +251,10 @@ export function useAppTasks<T extends Record<string, unknown>>(
         throw error;
       }
     },
-    // Keep the previous page while the next offset/limit key fetches so lists
-    // do not blank into a full-page spinner / empty MRT loading state.
-    placeholderData: keepPreviousData,
+    // Keep the previous page while offset/limit changes, but not across a
+    // plugin switch that leaves the list mounted (would flash the wrong rows).
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[1] === pluginName ? previousData : undefined,
   });
 }
 
@@ -398,7 +399,12 @@ export function useAppEntityList<T extends Record<string, unknown>>(
         throw error;
       }
     },
-    placeholderData: keepPreviousData,
+    // Keep the previous page while offset/limit changes, but not across an
+    // entity-tab (or plugin) switch that leaves AppListPage mounted.
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[1] === pluginName && previousQuery?.queryKey[3] === entityName
+        ? previousData
+        : undefined,
   });
 }
 
