@@ -114,4 +114,33 @@ describe('useResolvedServiceField', () => {
       expect(result.current.service?.name).toBe('Alpha Cluster');
     });
   });
+
+  it('does not fetch when service_types is an empty array', () => {
+    const emptyTypes: AppField[] = [
+      {
+        type: 'service',
+        name: 'service_id',
+        label: 'Database Service',
+        required: true,
+        service_types: [],
+      },
+    ];
+    const { result } = renderHook(() => useResolvedServiceField('service_id'), {
+      wrapper: harness(7, emptyTypes),
+    });
+
+    expect(result.current.isResolving).toBe(false);
+    expect(result.current.service).toBeUndefined();
+    expect(mocked.get).not.toHaveBeenCalled();
+  });
+
+  it('does not fetch when an explicit empty serviceTypes override is passed', () => {
+    const { result } = renderHook(() => useResolvedServiceField('service_id', []), {
+      wrapper: harness(7),
+    });
+
+    expect(result.current.isResolving).toBe(false);
+    expect(result.current.service).toBeUndefined();
+    expect(mocked.get).not.toHaveBeenCalled();
+  });
 });

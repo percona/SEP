@@ -51,8 +51,9 @@ export interface ResolvedServiceField {
  *
  * When ``serviceTypes`` is omitted, types are read from the parent field via
  * {@link FormFieldsProvider} (``service_types`` on the named service field).
- * Fetch stays disabled until an explicit type filter is available — including
- * ``[]`` for all types — so we never page the untyped services list.
+ * Fetch stays disabled until a non-empty type filter is available
+ * (``undefined`` or ``[]`` both keep it off) so we never page the untyped
+ * services list that ``useServices`` would otherwise treat as "all types".
  */
 export function useResolvedServiceField(
   fieldName: string,
@@ -68,7 +69,8 @@ export function useResolvedServiceField(
     | undefined;
 
   const unresolvedServiceId = isHydratedService(parent) ? null : extractId(parent);
-  const enabled = unresolvedServiceId !== null && types !== undefined;
+  // Require length > 0: ``[]`` normalises in useServices to an unbound fetch.
+  const enabled = unresolvedServiceId !== null && Boolean(types?.length);
   const { data: services = EMPTY_SERVICES, isFetched } = useServices({
     serviceTypes: types,
     enabled,
