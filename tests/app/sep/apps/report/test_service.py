@@ -1642,23 +1642,34 @@ class TestUploadPdfReport:
         secret = "super-secret-api-key-value"
         settings = self._upload_settings(api_key=secret)
         api = RemoteAPI(endpoint="https://intake.example.com")
-        with (
-            patch("app.sep.apps.report.service.sep_settings") as mock_settings,
-            patch.object(Settings, "get_remote_api", new=AsyncMock(return_value=api)),
-            aioresponses() as mock_http,
-        ):
-            mock_settings.HEALTH_REPORT = settings
-            mock_http.post(
-                "https://intake.example.com/v1/upload/",
-                status=status.HTTP_200_OK,
-                payload={"ok": True},
-            )
-            async with api:
-                with caplog.at_level(logging.DEBUG):
+        # The ``app`` parent is pinned at INFO with ``propagate=False`` once
+        # LOGGING_CONFIG is applied on a worker, so caplog's root handler never
+        # sees the transport's DEBUG records; capture the transport logger
+        # directly, at DEBUG, so the assertion holds regardless of that config.
+        transport_logger = logging.getLogger(api.logger.name)
+        transport_logger.addHandler(caplog.handler)
+        try:
+            with (
+                patch("app.sep.apps.report.service.sep_settings") as mock_settings,
+                patch.object(
+                    Settings, "get_remote_api", new=AsyncMock(return_value=api)
+                ),
+                aioresponses() as mock_http,
+                caplog.at_level(logging.DEBUG, logger=api.logger.name),
+            ):
+                mock_settings.HEALTH_REPORT = settings
+                mock_http.post(
+                    "https://intake.example.com/v1/upload/",
+                    status=status.HTTP_200_OK,
+                    payload={"ok": True},
+                )
+                async with api:
                     result = await upload_pdf_report(self._make_report(), b"%PDF-1.4")
-            body = await _multipart_body(
-                next(iter(mock_http.requests.values()))[0].kwargs["data"]
-            )
+                body = await _multipart_body(
+                    next(iter(mock_http.requests.values()))[0].kwargs["data"]
+                )
+        finally:
+            transport_logger.removeHandler(caplog.handler)
 
         assert result == {"ok": True}
         assert secret.encode() in body
