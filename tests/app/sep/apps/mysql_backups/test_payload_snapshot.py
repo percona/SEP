@@ -70,6 +70,30 @@ _CASES = [
         "alert_on_fail": False,
     },
     {
+        "slug": "mydumper_s3_encrypt_tmpdir",
+        "form": {
+            "backup_type": "M",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
+            "encrypt": True,
+            "encrypt_using_tmpdir": True,
+            "encryption_recipient": "ops@example.com",
+        },
+        "alert_on_fail": False,
+    },
+    {
+        "slug": "mydumper_s3_encrypt_post_run",
+        "form": {
+            "backup_type": "M",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
+            "encrypt": True,
+            "post_run_encrypt": True,
+            "encryption_recipient": "ops@example.com",
+        },
+        "alert_on_fail": False,
+    },
+    {
         "slug": "binlog_gsutil_alt_host",
         "form": {
             "backup_type": "B",

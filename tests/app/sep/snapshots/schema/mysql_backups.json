@@ -937,9 +937,11 @@
     {
       "collapsed_by_default": false,
       "collapsible": true,
+      "description": "GPG-encrypt the backup. Enable 'Encrypt backup' first, then optionally pick 'Encrypt using tmpdir' or 'Encrypt after backup completes' (mutually exclusive). A recipient is required when encryption is enabled.",
       "fields": [
         {
           "default": false,
+          "description": "Master switch: GPG-encrypt the backup. Leave off to disable all encryption options below.",
           "label": "Encrypt backup",
           "name": "encrypt",
           "required": false,
@@ -947,6 +949,21 @@
         },
         {
           "default": false,
+          "description": "Encrypt in a temporary directory during the backup. Requires 'Encrypt backup'; mutually exclusive with 'Encrypt after backup completes'.",
+          "forbidden": [
+            {
+              "message": "'encrypt_using_tmpdir' requires 'encrypt' to be enabled.",
+              "when": {
+                "falsy": "encrypt"
+              }
+            },
+            {
+              "message": "'encrypt_using_tmpdir' cannot be combined with 'post_run_encrypt'.",
+              "when": {
+                "truthy": "post_run_encrypt"
+              }
+            }
+          ],
           "label": "Encrypt using tmpdir",
           "name": "encrypt_using_tmpdir",
           "required": false,
@@ -954,14 +971,31 @@
         },
         {
           "default": false,
+          "description": "Encrypt the finished backup after it completes. Requires 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'.",
+          "forbidden": [
+            {
+              "message": "'post_run_encrypt' requires 'encrypt' to be enabled.",
+              "when": {
+                "falsy": "encrypt"
+              }
+            },
+            {
+              "message": "'post_run_encrypt' cannot be combined with 'encrypt_using_tmpdir'.",
+              "when": {
+                "truthy": "encrypt_using_tmpdir"
+              }
+            }
+          ],
           "label": "Encrypt after backup completes",
           "name": "post_run_encrypt",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "GPG recipient/key the backup is encrypted for. Required when encryption is enabled.",
           "forbidden": [
             {
+              "message": "'encryption_recipient' must not be set when 'encrypt' is off.",
               "when": {
                 "falsy": "encrypt"
               }
@@ -973,6 +1007,7 @@
           "required": false,
           "requires": [
             {
+              "message": "'encryption_recipient' is required when 'encrypt' is enabled.",
               "when": {
                 "truthy": "encrypt"
               }

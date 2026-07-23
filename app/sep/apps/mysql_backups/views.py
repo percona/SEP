@@ -71,7 +71,17 @@ mysql_backups_views = Views(
                 collapsible=True,
                 forbidden=(FieldGate(when=F("backup_type") != "B"),),
             ),
-            SectionLayout(key="Encryption", title="Encryption", collapsible=True),
+            SectionLayout(
+                key="Encryption",
+                title="Encryption",
+                collapsible=True,
+                description=(
+                    "GPG-encrypt the backup. Enable 'Encrypt backup' first, then "
+                    "optionally pick 'Encrypt using tmpdir' or 'Encrypt after backup "
+                    "completes' (mutually exclusive). A recipient is required when "
+                    "encryption is enabled."
+                ),
+            ),
             SectionLayout(key="Upload", title="Upload", collapsible=True),
         )
     ),

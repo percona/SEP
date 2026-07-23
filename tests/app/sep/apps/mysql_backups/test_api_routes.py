@@ -376,6 +376,60 @@ class TestCreateEndpoint:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
+    def test_create_rejects_tmpdir_without_encrypt(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """encrypt_using_tmpdir without encrypt=True is rejected with 422."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            encrypt_using_tmpdir=True,
+        )
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_rejects_post_run_without_encrypt(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """post_run_encrypt without encrypt=True is rejected with 422."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            post_run_encrypt=True,
+        )
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_rejects_tmpdir_and_post_run_together(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    ):
+        """encrypt_using_tmpdir with post_run_encrypt is rejected with 422."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            encrypt=True,
+            encrypt_using_tmpdir=True,
+            post_run_encrypt=True,
+            encryption_recipient="ops@example.com",
+        )
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
     def test_create_rejects_missing_required_fields(
         self, test_client, mock_task_api_dep
     ):

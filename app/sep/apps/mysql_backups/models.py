@@ -466,18 +466,78 @@ class BackupCreate(TaskFormModel):
         Ui(label="Alternative binlog host", section="Binlog"),
     ] = None
 
-    encrypt: Annotated[bool, Ui(label="Encrypt backup", section="Encryption")] = False
+    encrypt: Annotated[
+        bool,
+        Ui(
+            label="Encrypt backup",
+            section="Encryption",
+            description=(
+                "Master switch: GPG-encrypt the backup. Leave off to disable all "
+                "encryption options below."
+            ),
+        ),
+    ] = False
     encrypt_using_tmpdir: Annotated[
-        bool, Ui(label="Encrypt using tmpdir", section="Encryption")
+        bool,
+        Forbidden(
+            when=falsy("encrypt"),
+            message="'encrypt_using_tmpdir' requires 'encrypt' to be enabled.",
+        ),
+        Forbidden(
+            when=truthy("post_run_encrypt"),
+            message=(
+                "'encrypt_using_tmpdir' cannot be combined with 'post_run_encrypt'."
+            ),
+        ),
+        Ui(
+            label="Encrypt using tmpdir",
+            section="Encryption",
+            description=(
+                "Encrypt in a temporary directory during the backup. Requires "
+                "'Encrypt backup'; mutually exclusive with 'Encrypt after backup "
+                "completes'."
+            ),
+        ),
     ] = False
     post_run_encrypt: Annotated[
-        bool, Ui(label="Encrypt after backup completes", section="Encryption")
+        bool,
+        Forbidden(
+            when=falsy("encrypt"),
+            message="'post_run_encrypt' requires 'encrypt' to be enabled.",
+        ),
+        Forbidden(
+            when=truthy("encrypt_using_tmpdir"),
+            message=(
+                "'post_run_encrypt' cannot be combined with 'encrypt_using_tmpdir'."
+            ),
+        ),
+        Ui(
+            label="Encrypt after backup completes",
+            section="Encryption",
+            description=(
+                "Encrypt the finished backup after it completes. Requires "
+                "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'."
+            ),
+        ),
     ] = False
     encryption_recipient: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Requires(when=truthy("encrypt")),
-        Forbidden(when=falsy("encrypt")),
-        Ui(label="Encryption recipient", section="Encryption"),
+        Requires(
+            when=truthy("encrypt"),
+            message="'encryption_recipient' is required when 'encrypt' is enabled.",
+        ),
+        Forbidden(
+            when=falsy("encrypt"),
+            message="'encryption_recipient' must not be set when 'encrypt' is off.",
+        ),
+        Ui(
+            label="Encryption recipient",
+            section="Encryption",
+            description=(
+                "GPG recipient/key the backup is encrypted for. Required when "
+                "encryption is enabled."
+            ),
+        ),
     ] = None
 
     upload: Annotated[
