@@ -17,6 +17,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ListView } from '@sep/api';
 
 const { useScheduledTasksForAppMock } = vi.hoisted(() => ({
@@ -261,5 +262,67 @@ describe('SchemaListView — schedule-column glue', () => {
   it('issues no schedule fetch when a schedule column exists but no plugin name is given', () => {
     render(<SchemaListView listView={scheduleListView} data={rows} />);
     expect(useScheduledTasksForAppMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('SchemaListView — server pagination', () => {
+  const pageRows = Array.from({ length: 50 }, (_, i) => ({
+    id: i + 51,
+    name: `row-${i + 51}`,
+    status: 'completed',
+  }));
+
+  it('calls onChange when the user moves to the next page', async () => {
+    const onChange = vi.fn();
+    render(
+      <SchemaListView
+        listView={listView}
+        data={pageRows}
+        pagination={{
+          total: 120,
+          offset: 50,
+          limit: 50,
+          onChange,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('row-51')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Go to next page/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/Go to next page/i));
+
+    expect(onChange).toHaveBeenCalledWith({ offset: 100, limit: 50 });
+  });
+
+  it('renders the full list when pagination metadata is omitted', () => {
+    const data = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      name: `client-${i + 1}`,
+      status: 'completed',
+    }));
+
+    render(<SchemaListView listView={listView} data={data} />);
+
+    for (const row of data) {
+      expect(screen.getByText(row.name)).toBeInTheDocument();
+    }
+    // Client-side MRT pagination still renders controls, but a 5-row list fits
+    // on one page so "next" stays disabled (no server fetch).
+    expect(screen.getByLabelText(/Go to next page/i)).toBeDisabled();
+  });
+
+  it('treats pagination null like a bare NO_PAGINATION list', () => {
+    const data = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      name: `bare-${i + 1}`,
+      status: 'completed',
+    }));
+
+    render(<SchemaListView listView={listView} data={data} pagination={null} />);
+
+    for (const row of data) {
+      expect(screen.getByText(row.name)).toBeInTheDocument();
+    }
+    expect(screen.getByLabelText(/Go to next page/i)).toBeDisabled();
   });
 });
