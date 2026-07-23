@@ -1064,7 +1064,7 @@ class DerivedTask(SchemaBaseModel):
         for plugin-specific identity fields (e.g. ``{"backup_type":
         "pbm_logical"}``) that the framework should not name itself.
         Defaults to ``None``.
-    :type data_overrides: dict[str, Any] | None
+    :type data_overrides: ArbitraryMapping | None
     :param parent_link: When true, set ``data["parent"]`` on the derived
         payload to the parent's ``name``. Defaults to ``True``.
     :type parent_link: bool

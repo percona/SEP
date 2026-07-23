@@ -69,8 +69,8 @@ TASK_ALIAS_LENGTH = 100
 SYSTEM_USER = "SYSTEM"
 ANY_OWNER = "ANY"
 
-# Distinct from ArbitraryMapping so computed-field description/readOnly metadata
-# is not cached onto the shared open-mapping alias during OpenAPI generation.
+# Private aliases so TaskStats computed-field metadata does not pollute the
+# shared ArbitraryMapping OpenAPI schema.
 _TaskStatsStatusMap = Annotated[
     dict[str, int], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
 ]
@@ -255,13 +255,13 @@ class TaskExecutionRequest(BaseModel):
     :param target: The target system or environment.
     :type target: str
     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-    :type meta: dict | None
+    :type meta: ArbitraryMapping | None
     :param payload: Optional payload or file path for parameterizing the task.
         Defaults to None.
     :type payload: str | None
     :param tracking: Tracking information for task execution. Defaults to a dictionary
         with keys for allocation and evaluation IDs.
-    :type tracking: dict | None
+    :type tracking: ArbitraryMapping | None
     """
 
     model_config = ConfigDict(extra="allow")

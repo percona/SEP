@@ -426,25 +426,23 @@ NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
 ARBITRARY_ARGS_SCHEMA = {"additionalProperties": True}
-"""Advertise a free-form argument map.
+"""Advertise a free-form argument map for OpenAPI / TypeScript clients.
 
-A bare ``dict[str, Any]`` / ``dict[str, object]`` field otherwise serialises as
-``type: object`` with no ``additionalProperties``, which the TypeScript
-generator reads as ``Record<string, never>`` — a map no typed caller can
-populate. Use this as ``Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)`` on a
-plain Pydantic field, or nest it under ``SQLField(..., schema_extra=...)`` for
-SQLModel.
+Without this, a bare ``dict`` field emits ``type: object`` with no
+``additionalProperties``, which openapi-typescript turns into
+``Record<string, never>``. Pass as ``Field(json_schema_extra=...)`` on a plain
+Pydantic field, or nest under ``SQLField(..., schema_extra=...)`` for SQLModel.
 """
 
 ArbitraryMapping = Annotated[
     dict[str, Any], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
 ]
-"""Carry a free-form mapping that survives TypeScript generation.
+"""Open ``dict[str, Any]`` that keeps ``additionalProperties`` inside the object
+schema branch.
 
-``ARBITRARY_ARGS_SCHEMA`` reaches a top-level field through
-``json_schema_extra``; this alias carries the same open contract on a nested or
-nullable mapping, where a sibling-level ``additionalProperties`` would land
-outside the ``anyOf`` and leave ``Record<string, never>`` as a union member.
+Use for nested or nullable mappings. Putting ``additionalProperties`` only as a
+sibling of ``anyOf`` still leaves ``Record<string, never>`` in the generated
+union.
 """
 
 

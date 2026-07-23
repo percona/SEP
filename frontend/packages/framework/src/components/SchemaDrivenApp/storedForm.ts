@@ -26,11 +26,11 @@ export const STORED_FORM_KEY = '_form';
  * Read a task's stored create-form body from ``data[_form]``, centralising the
  * cast and presence guard.
  *
- * The typed client exposes ``data`` as an open string map
- * (``{ [key: string]: unknown }``), so consumers still route through this guard
- * rather than assuming a fixed shape. Returns ``undefined`` for a
- * task with no stored form — a legacy task or one created through a still-live
- * legacy form — so the Edit affordance can treat the key as optional.
+ * The typed client exposes ``data`` as an open string-keyed map, so consumers
+ * still route through this guard rather than assuming a fixed shape. Returns
+ * ``undefined`` for a task with no stored form — a legacy task or one created
+ * through a still-live legacy form — so the Edit affordance can treat the key
+ * as optional.
  */
 export function getStoredForm(
   task: Record<string, unknown> | null | undefined,

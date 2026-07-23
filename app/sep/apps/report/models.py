@@ -410,10 +410,15 @@ class ReportJobResponse(BaseModel):
     """Expose async report job state.
 
     :param job_id: Celery task identifier.
+    :type job_id: str
     :param status: Lowercase Celery task state.
+    :type status: str
     :param pdf_ready: Whether the PDF result exists and is downloadable.
+    :type pdf_ready: bool
     :param result: Successful job result payload, if available.
+    :type result: ArbitraryMapping | None
     :param error: Failed job error text, if available.
+    :type error: str | None
     """
 
     job_id: str

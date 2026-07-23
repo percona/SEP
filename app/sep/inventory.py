@@ -202,7 +202,7 @@ class Service(BaseInventoryModel):
     :param replication_set: The replication set in which the service is running. Defaults to None.
     :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
-    :type custom_labels: dict[str, Any] | None
+    :type custom_labels: ArbitraryMapping | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
     :type external_id: NonEmptyStr | EmptyStrToNone
@@ -262,7 +262,7 @@ class CreatedService(CreatedEntityBase, Service):
     :param replication_set: The replication set in which the service is running. Defaults to None.
     :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
-    :type custom_labels: dict[str, Any] | None
+    :type custom_labels: ArbitraryMapping | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
     :type external_id: NonEmptyStr | EmptyStrToNone
