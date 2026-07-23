@@ -23,6 +23,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
+from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.iterators import unique_everseen
@@ -38,7 +39,7 @@ from app.sep.apps.atw.batch import (
     fetch_task_history,
     MAX_BATCH_SNIPPETS,
     parameter_fields,
-    resolve_snippet,
+    resolve_snippets,
     shared_field_names,
 )
 from app.sep.apps.atw.categories import (
@@ -270,10 +271,12 @@ async def atw_execution_schema(
     :raises HTTPBadRequestException: When a filename attempts directory traversal.
     :raises HTTPNotFoundException: When a filename matches no snippet.
     """
-    scripts = [
-        await resolve_snippet(filename)
-        for filename in unique_everseen(snippet_filename)
-    ]
+    unique = list(unique_everseen(snippet_filename))
+    resolved = await resolve_snippets(unique)
+    missing = [filename for filename in unique if filename not in resolved]
+    if missing:
+        raise HTTPNotFoundException(detail=f"Snippet {missing[0]!r} not found.")
+    scripts = [resolved[filename] for filename in unique]
     fields_per_script = [parameter_fields(script) for script in scripts]
 
     declarations = defaultdict(list)
@@ -339,10 +342,20 @@ async def atw_batch_execute(
     :return: One outcome entry per requested item, in request order.
     """
     incident_id = incident.id
+    resolved = await resolve_snippets([item.snippet_filename for item in body.items])
     items = []
     for item in body.items:
+        script = resolved.get(item.snippet_filename)
+        if script is None:
+            items.append(
+                ATWBatchExecuteItemResponse(
+                    snippet_filename=item.snippet_filename,
+                    error=f"Snippet {item.snippet_filename!r} not found.",
+                )
+            )
+            continue
         try:
-            dispatched = await dispatch_batch_item(body, item, tasks_api)
+            dispatched = await dispatch_batch_item(body, item, script, tasks_api)
         except (HTTPException, OSError) as exc:
             await session.rollback()
             items.append(

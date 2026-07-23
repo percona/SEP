@@ -28,6 +28,7 @@ session is exercised, never a mocked ``AsyncSession``.
 from collections.abc import Awaitable, Callable
 
 import pytest
+from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.datastructures import URL
 
@@ -124,6 +125,81 @@ class TestLoadAndListScripts:
         await create_snippet("b.sh")
         scripts = await snippet_source.list_scripts()
         assert sorted(script.filename for script in scripts) == ["a.sh", "b.sh"]
+
+
+class TestLoadScriptsBatch:
+    """Cover the batch ``load_scripts`` hook (one query, detached rows, filtering)."""
+
+    async def test_resolves_selection_in_one_query(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Resolve several filenames with a single ``SnippetManager.list`` call."""
+        await create_snippet("a.sh")
+        await create_snippet("b.sh")
+        spy = mocker.spy(SnippetManager, "list")
+
+        resolved = await snippet_source.load_scripts(["a.sh", "b.sh"])
+
+        assert set(resolved) == {"a.sh", "b.sh"}
+        assert spy.call_count == 1
+
+    async def test_returns_detached_usable_scripts(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Return scripts usable after the request-less session closes."""
+        await create_snippet("a.sh", approved=True)
+        resolved = await snippet_source.load_scripts(["a.sh"])
+        assert isinstance(resolved["a.sh"], SnippetScript)
+        assert resolved["a.sh"].filename == "a.sh"
+        assert resolved["a.sh"].execution_task_name
+
+    async def test_missing_db_row_is_omitted(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Leave a filename with no matching row out of the result."""
+        await create_snippet("a.sh")
+        resolved = await snippet_source.load_scripts(["a.sh", "missing.sh"])
+        assert set(resolved) == {"a.sh"}
+
+    async def test_missing_file_on_disk_is_omitted(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Leave a filename whose row exists but file is gone out of the result."""
+        await create_snippet("a.sh")
+        await create_snippet("gone.sh", create_file=False)
+        resolved = await snippet_source.load_scripts(["a.sh", "gone.sh"])
+        assert set(resolved) == {"a.sh"}
+
+    async def test_duplicate_filename_is_queried_once(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Resolve a repeated filename to one row with a single query."""
+        await create_snippet("a.sh")
+        spy = mocker.spy(SnippetManager, "list")
+
+        resolved = await snippet_source.load_scripts(["a.sh", "a.sh"])
+
+        assert set(resolved) == {"a.sh"}
+        assert spy.call_count == 1
+
+    async def test_unsafe_filename_is_rejected(
+        self, request_less_session: AsyncSession
+    ) -> None:
+        """Reject an unsafe filename before any lookup runs."""
+        with pytest.raises(HTTPBadRequestException):
+            await snippet_source.load_scripts(["../secret.sh"])
 
 
 class TestArgsOnlyModel:

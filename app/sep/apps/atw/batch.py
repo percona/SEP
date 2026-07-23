@@ -24,6 +24,7 @@ field types, the snippets schema vocabulary, and the tasks-service status enum.
 """
 
 import logging
+from collections.abc import Sequence
 from typing import Annotated, Any, cast
 
 from fastapi import HTTPException
@@ -44,6 +45,7 @@ from app.sep.apps.framework.script_helpers import execute_script
 from app.sep.apps.framework.script_source import (
     ARBITRARY_ARGS_SCHEMA,
     make_script_dep,
+    resolve_scripts,
     ScriptExecuteWrite,
     ScriptExecutionResponse,
 )
@@ -65,6 +67,7 @@ __all__ = [
     "fetch_task_history",
     "parameter_fields",
     "resolve_snippet",
+    "resolve_snippets",
     "shared_field_names",
 ]
 
@@ -99,6 +102,23 @@ _SYNTHETIC_FIELD_NAMES = frozenset(
 )
 
 resolve_snippet = make_script_dep(snippet_source)
+
+
+async def resolve_snippets(filenames: Sequence[str]) -> dict[str, SnippetScript]:
+    """Resolve several snippet filenames against the shared snippet source at once.
+
+    The batch counterpart of :data:`resolve_snippet`, binding the ATW batch call
+    sites to the framework's single resolution entry point so they inherit its
+    traversal guard, order-preserving dedup, and one-query batch load. The result
+    carries only the filenames that resolved, leaving each call site free to turn
+    a missing filename into its own failure (a whole-request 404 for the schema
+    form, a per-item error for the execute loop).
+
+    :param filenames: The requested snippet filenames, possibly with duplicates.
+    :return: A mapping of each resolved filename to its :class:`SnippetScript`.
+    :raises HTTPBadRequestException: When any filename attempts directory traversal.
+    """
+    return await resolve_scripts(snippet_source, filenames)
 
 
 class ATWSnippetSchema(BaseModel):
@@ -309,26 +329,28 @@ def shared_field_names(declarations: dict[str, list[AnyField]]) -> set[str]:
 async def dispatch_batch_item(
     body: ATWBatchExecuteWrite,
     item: ATWBatchExecuteItemWrite,
+    script: SnippetScript,
     tasks_api: RemoteAPI,
 ) -> ScriptExecutionResponse:
-    """Resolve one batch item, narrow the shared args to it, and dispatch it.
+    """Narrow the shared args to one already-resolved batch item and dispatch it.
 
     Shared arguments are filtered to the parameters the snippet actually declares,
     so a batch may offer a value no single snippet accepts, and the item's own
-    ``args`` then override what remains.
+    ``args`` then override what remains. The snippet is resolved once for the whole
+    batch by the caller and handed in, so a repeated filename costs one lookup.
 
     :param body: The batch payload supplying the executor host, sudo choice, and
         shared arguments.
-    :param item: The item naming the snippet and its own argument overrides.
+    :param item: The item naming its own argument overrides.
+    :param script: The snippet resolved for ``item.snippet_filename``.
     :param tasks_api: The authenticated Tasks API client.
     :return: The dispatched task name, the created task-history id (``None`` when
         the Tasks API returned none), and the resolved snippet filename.
-    :raises HTTPException: When the snippet cannot be resolved, its arguments fail
-        validation, it is not executable, or the Tasks API returns an error status.
+    :raises HTTPException: When the snippet's arguments fail validation, it is not
+        executable, or the Tasks API returns an error status.
     :raises OSError: Propagated from ``execute_script`` when the Tasks API
         transport itself fails.
     """
-    script = await resolve_snippet(item.snippet_filename)
     declared = {field.name for field in parameter_fields(script)}
     args = {name: value for name, value in body.shared_args.items() if name in declared}
     args.update(item.args)

@@ -40,10 +40,12 @@ Three real couplings the synthetic kit deferred are bridged here:
   executor-unreachable localhost URL.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
 from pydantic import create_model, Field
+from sqlmodel import col
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import (
@@ -184,6 +186,40 @@ async def _list_scripts() -> list[SnippetScript]:
     return [SnippetScript(snippet) for snippet in snippets]
 
 
+async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
+    """Resolve several snippet filenames in one query, keyed by filename.
+
+    The batch counterpart of :func:`_load_script`: one request-less session and a
+    single ``filename IN (...)`` query answer the whole selection instead of one
+    session and one query per filename. Each returned row is expunged before the
+    session closes so the scripts stay usable afterwards (only loaded columns and
+    file/meta ``cached_property`` values are read thereafter). A filename whose
+    row is absent, or whose file is missing on disk, is simply left out of the
+    result — the framework's caller decides what an unresolved filename means.
+
+    :param filenames: The snippet filenames to resolve; already deduplicated and
+        traversal-checked by :func:`~app.sep.apps.framework.script_source.resolve_scripts`.
+    :return: A mapping of each resolved filename to its detached
+        :class:`SnippetScript`; unresolved filenames are absent.
+    :raises HTTPBadRequestException: When any filename is unsafe or malformed (the
+        snippets-specific strictness the generic seam guard does not enforce).
+    """
+    for filename in filenames:
+        validate_snippet_filename(filename)
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        snippets = await SnippetManager.list(
+            session, col(Snippet.filename).in_(filenames)
+        )
+        resolved: dict[str, Snippet] = {}
+        for snippet in snippets:
+            if not snippet.path.is_file():
+                continue
+            session.expunge(snippet)
+            resolved[snippet.filename] = snippet
+    return {filename: SnippetScript(snippet) for filename, snippet in resolved.items()}
+
+
 def _build_form_schema(script: SnippetScript) -> AppSchema:
     """Build the per-snippet form schema from the snippet's parameters."""
     return build_snippet_schema(script.snippet)
@@ -243,6 +279,7 @@ snippet_source = ScriptSource(
     script_dir=snippets_settings.SNIPPETS_DIR,
     load_script=_load_script,
     list_scripts=_list_scripts,
+    load_scripts=_load_scripts,
     build_form_schema=_build_form_schema,
     build_execution_meta=_build_execution_meta,
     list_response=_list_response,
