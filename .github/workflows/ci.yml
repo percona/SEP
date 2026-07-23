@@ -348,6 +348,7 @@ jobs:
             command -v supervisord
             test -f /home/sep/app/supervisord.conf
             test -f /home/sep/app/healthcheck.sh
+            test -x /home/sep/app/entrypoint.sh
           '
 
       - name: Smoke test - verify HEALTHCHECK instruction
@@ -359,6 +360,18 @@ jobs:
           fi
           healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "sep:HEAD-sidecar")
           echo "HEALTHCHECK present: $healthcheck"
+
+      - name: Smoke test - verify ENTRYPOINT is the side-car wrapper
+        run: |
+          entrypoint=$(docker inspect --format='{{json .Config.Entrypoint}}' "sep:HEAD-sidecar")
+          case "$entrypoint" in
+            *entrypoint.sh*) ;;
+            *)
+              echo "::error::ENTRYPOINT is not the side-car wrapper, so the broker credential is never minted: $entrypoint"
+              exit 1
+              ;;
+          esac
+          echo "ENTRYPOINT present: $entrypoint"
 
   ci-success:
     if: always()
