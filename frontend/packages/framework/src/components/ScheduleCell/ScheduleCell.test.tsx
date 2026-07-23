@@ -87,10 +87,21 @@ describe('ScheduleCell', () => {
   });
 
   it('shows an explicit "Not yet run" state when the schedule has never run', () => {
-    render(<ScheduleCell task={makePeriodic({ last_run_status: null })} />);
+    render(<ScheduleCell task={makePeriodic({ last_run_status: null, last_run_at: null })} />);
 
     expect(screen.getByTestId('last-run-never')).toHaveTextContent('Not yet run');
     expect(document.querySelector('[data-status]')).toBeNull();
+  });
+
+  it('forwards lastRunAt so a run without a resolved result shows "Unknown", not "Not yet run"', () => {
+    render(
+      <ScheduleCell
+        task={makePeriodic({ last_run_status: null, last_run_at: '2026-06-18T10:00:00Z' })}
+      />,
+    );
+
+    expect(screen.getByTestId('last-run-unknown')).toHaveTextContent('Unknown');
+    expect(screen.queryByTestId('last-run-never')).not.toBeInTheDocument();
   });
 
   it('shows a loading placeholder instead of "Not scheduled" while the schedule list loads', () => {

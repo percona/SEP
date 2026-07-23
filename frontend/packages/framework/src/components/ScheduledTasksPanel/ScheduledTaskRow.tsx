@@ -105,9 +105,11 @@ export function ScheduledTaskRow({
         <TableCell>
           <Stack spacing={0.5} alignItems="flex-start">
             <LastRunStatus status={task.last_run_status} lastRunAt={task.last_run_at} />
-            <Typography variant="body2" color="text.secondary">
-              {formatAbsoluteTime(task.last_run_at)}
-            </Typography>
+            {task.last_run_at && (
+              <Typography variant="body2" color="text.secondary">
+                {formatAbsoluteTime(task.last_run_at)}
+              </Typography>
+            )}
           </Stack>
         </TableCell>
         <TableCell>{formatAbsoluteTime(task.next_run_at)}</TableCell>

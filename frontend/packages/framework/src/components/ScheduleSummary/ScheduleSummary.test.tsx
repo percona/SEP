@@ -146,12 +146,21 @@ describe('ScheduleSummary', () => {
   });
 
   it('shows an explicit "Not yet run" state when a scheduled task has never run', () => {
-    setup([makePeriodic({ last_run_status: null })]);
+    setup([makePeriodic({ last_run_status: null, last_run_at: null })]);
     renderSummary();
 
     const lastRun = screen.getByTestId('schedule-summary-last-run');
     expect(lastRun).toHaveTextContent('Not yet run');
     expect(lastRun.querySelector('[data-status]')).toBeNull();
+  });
+
+  it('forwards lastRunAt so a run without a resolved result shows "Unknown", not "Not yet run"', () => {
+    setup([makePeriodic({ last_run_status: null, last_run_at: '2026-06-18T10:00:00Z' })]);
+    renderSummary();
+
+    const lastRun = screen.getByTestId('schedule-summary-last-run');
+    expect(lastRun).toHaveTextContent('Unknown');
+    expect(lastRun).not.toHaveTextContent('Not yet run');
   });
 
   it('renders a not-scheduled state with an add-a-schedule link', () => {
