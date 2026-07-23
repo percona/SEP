@@ -15,9 +15,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { HostSelector } from './HostSelector';
-export type { HostSelectorProps } from './HostSelector';
-export { StandaloneHostSelector } from './StandaloneHostSelector';
-export type { StandaloneHostSelectorProps } from './StandaloneHostSelector';
-export { resolveExecutorHostForService } from './resolveExecutorHostForService';
-export type { ServiceHostResolveInput } from './resolveExecutorHostForService';
+import '@testing-library/jest-dom/vitest';
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
+
+afterEach(() => {
+  cleanup();
+});

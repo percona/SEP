@@ -7001,13 +7001,17 @@ export interface components {
      *
      *     The React renderer loads options from ``GET /api/sep/hosts/`` (an SEP
      *     proxy endpoint that internally calls Tasks ``/hosts/`` and merges
-     *     Inventory display names server-side). Host selection is not cascaded
-     *     from another field — every dispatch form lists every available executor
-     *     target.
+     *     Inventory display names server-side). When ``depends_on`` is set (typically
+     *     a ``ServiceField``), the renderer may auto-select an executor from the
+     *     upstream service; when omitted every available executor is listed and no
+     *     cascade runs.
      *
      *     :param field_type: The discriminator literal; always ``"host"`` for this
      *         class. Serialised as the JSON key ``"type"``.
      *     :type field_type: Literal["host"]
+     *     :param depends_on: Optional name of the field whose value drives the
+     *         default executor selection. ``None`` (the default) omits the key from
+     *         the wire so plugins that do not opt in stay byte-identical.
      *     :param allow_custom: When ``True``, the selector also accepts a free-typed
      *         value alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -7017,6 +7021,8 @@ export interface components {
       allow_custom?: boolean | null;
       /** Default */
       default?: unknown | null;
+      /** Depends On */
+      depends_on?: string | null;
       /** Description */
       description?: string | null;
       /** Forbidden */
@@ -7156,8 +7162,16 @@ export interface components {
      *     list of executor targets instead of a single one. Derived from a
      *     ``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
      *
+     *     Cascade auto-select is single-host only (:class:`HostField`). ``depends_on``
+     *     may still be emitted when ``Ui(depends_on=...)`` is set so derivation stays
+     *     uniform, but the multi-host renderer does not honour it today.
+     *
      *     :param field_type: The discriminator literal; always ``"multi_host"`` for
      *         this class. Serialised as the JSON key ``"type"``.
+     *     :param depends_on: Optional upstream field name mirrored from
+     *         ``Ui(depends_on=...)``. Emitted for wire uniformity with
+     *         :class:`HostField`; the current multi-host renderer ignores it (no
+     *         cascade). ``None`` (the default) omits the key from the wire.
      *     :param allow_custom: When ``True``, the selector also accepts free-typed
      *         values alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -7167,6 +7181,8 @@ export interface components {
       allow_custom?: boolean | null;
       /** Default */
       default?: unknown | null;
+      /** Depends On */
+      depends_on?: string | null;
       /** Description */
       description?: string | null;
       /** Forbidden */
