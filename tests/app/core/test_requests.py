@@ -864,3 +864,22 @@ async def test_stream_chunks_maps_410_to_gone_with_headers(remote_api):
     assert type(exc_info.value) is HTTPGoneException
     assert exc_info.value.status_code == status.HTTP_410_GONE
     assert exc_info.value.headers == {"X-Error-Code": "TASK_GONE"}
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_error_status_with_non_dict_json_body(remote_api):
+    """Map a streaming error status whose JSON body is a list, not an object."""
+    mock_response = AsyncMock()
+    mock_response.status = status.HTTP_502_BAD_GATEWAY
+    mock_response.json = AsyncMock(return_value=[{"loc": "body", "msg": "invalid"}])
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_context_manager):
+            with pytest.raises(HTTPBadGatewayException) as exc_info:
+                [_ async for _ in remote_api.stream_chunks("/list-error/")]
+
+    assert exc_info.value.detail == "An unexpected error occurred on the server."
