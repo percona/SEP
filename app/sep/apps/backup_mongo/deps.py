@@ -25,7 +25,7 @@ import yaml
 from aiohttp import ClientResponseError
 from fastapi import Depends, Form
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import (
     BackupCreate,
@@ -49,13 +49,20 @@ from app.sep.apps.framework import (
     make_task_dep,
 )
 from app.sep.apps.framework.api import CascadeCreatePlan
-from app.sep.apps.framework.cascade import cascade_create_tasks
+from app.sep.apps.framework.cascade import (
+    cascade_create_tasks,
+    cascade_update_tasks,
+    CascadeResult,
+)
+from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
+    check_for_conflicted_running_tasks,
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
     get_tasks_context,
     InventoryAPI,
+    reject_if_protected,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -348,6 +355,105 @@ get_backups_task = make_task_dep(OWNER)
 resolve_backup_parent_task = make_parent_resolver(get_backups_task)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
+
+
+async def get_backup_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Resolve the parent backup config task from a path parameter.
+
+    Resolves a derived sibling name (``-logical`` / ``-physical`` / ``-status``)
+    to its parent so a ``PUT`` addressed at any group member updates the group.
+
+    :param task_name: The task name from the URL path; may be a derived sibling.
+    :param tasks_api: The TaskAPI instance used to resolve the parent.
+    :return: The parent ``pbm_config`` task.
+    """
+    return await resolve_backup_parent_task(task_name, tasks_api)
+
+
+async def get_editable_backup_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Resolve the parent backup task or raise when it is not editable.
+
+    Resolves a derived sibling name to the parent, then gates the resolved
+    parent: rejects protected tasks and blocks updates while a run of the group
+    is in flight. Checking the conflict against the *resolved* parent name (not
+    the raw path) closes the gap where a ``PUT`` addressed at an idle derived
+    leg could mutate a running group.
+
+    :param task_name: The task name from the URL path; may be a derived sibling.
+    :param tasks_api: The TaskAPI instance used to resolve and gate the parent.
+    :raises HTTPConflictException: If the parent is protected or has a
+        running/pending run.
+    :return: The editable parent ``pbm_config`` task.
+    """
+    parent_task = await get_backup_parent_task(task_name, tasks_api)
+    reject_if_protected(parent_task)
+    await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
+    return parent_task
+
+
+EditableBackupParent = Annotated[
+    Task,
+    Depends(get_editable_backup_parent_task),
+]
+
+
+_BACKUP_GROUP_RENAME_MESSAGE = (
+    "Renaming a backup task group is not supported; the parent config task and "
+    "its derived siblings are wired by name at create time. Submit the update "
+    "with the existing task name."
+)
+
+
+def ensure_backup_group_update_preserves_names(
+    parent_existing_name: str,
+    updated_parent_name: str,
+) -> None:
+    """Reject a backup group update that renames the parent task.
+
+    :param parent_existing_name: The parent config task name from the URL path.
+    :param updated_parent_name: The ``task_name`` submitted in the request body.
+    :raises HTTPConflictException: When the submitted name differs from the
+        existing parent name.
+    """
+    if updated_parent_name != parent_existing_name:
+        raise HTTPConflictException(_BACKUP_GROUP_RENAME_MESSAGE)
+
+
+async def update_backup_task_group(
+    tasks_api: TaskAPI,
+    parent_task: Task,
+    form: BackupCreate,
+    inventory_api: InventoryAPI,
+) -> CascadeResult:
+    """Cascade-update the parent backup task and its derived siblings.
+
+    Rebuilds the parent ``pbm_config`` payload, re-stamps ``_form`` so the edit
+    page keeps prefilling across repeated edits, and PUTs the parent plus its
+    derived logical, physical, and status legs in place. Returns the per-leg
+    outcome; the caller raises on partial failure.
+
+    :param tasks_api: The TaskAPI instance used to update tasks.
+    :param parent_task: The parent backup config task.
+    :param form: The validated update form (``backup_type`` pinned to
+        ``pbm_config``).
+    :param inventory_api: The Inventory API to look up the backup service.
+    :return: The cascade outcome across the parent and derived legs.
+    """
+    updated_parent = await build_backup_task_payload(form, inventory_api)
+    stamp_form_input(updated_parent, form)
+    return await cascade_update_tasks(
+        tasks_api,
+        parent_task.name,
+        updated_parent.model_dump(),
+        backup_derived_task_names(parent_task.name),
+        BACKUP_MONGO_DERIVED,
+    )
 
 
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:

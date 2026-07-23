@@ -57,13 +57,16 @@ from app.sep.apps.framework.cascade import (
     cascade_create_independent_tasks,
     cascade_delete_tasks,
 )
+from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
+    check_for_conflicted_running_tasks,
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
     get_tasks_context,
     InventoryAPI,
     protected_task_guard,
+    reject_if_protected,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -284,6 +287,7 @@ async def update_restore_task_group(
     service_name = await _resolve_service_name(form, inventory_api)
     payloads = build_restore_payloads(form, service_name)
 
+    stamp_form_input(payloads.config_task, form)
     await tasks_api.put(
         f"/{parent_task.name}",
         json=payloads.config_task.model_dump(),
@@ -680,6 +684,36 @@ get_unprotected_restore_parent_task = protected_task_guard(get_restore_parent_ta
 UnprotectedRestoreParentTask = Annotated[
     Task,
     Depends(get_unprotected_restore_parent_task),
+]
+
+
+async def get_editable_restore_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Resolve the parent restore task or raise when it is not editable.
+
+    Resolves a satellite name to the parent config task, then gates the
+    resolved parent: rejects protected tasks and blocks updates while a run of
+    the group is in flight. Checking the conflict against the *resolved* parent
+    name (not the raw path) closes the gap where a ``PUT`` addressed at an idle
+    child leg could mutate a running group.
+
+    :param task_name: The task name from the URL path; may be a child leg.
+    :param tasks_api: The TaskAPI instance used to resolve and gate the parent.
+    :raises HTTPConflictException: If the parent is protected or has a
+        running/pending run.
+    :return: The editable parent restore config task.
+    """
+    parent_task = await get_restore_parent_task(task_name, tasks_api)
+    reject_if_protected(parent_task)
+    await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
+    return parent_task
+
+
+EditableRestoreParent = Annotated[
+    Task,
+    Depends(get_editable_restore_parent_task),
 ]
 
 

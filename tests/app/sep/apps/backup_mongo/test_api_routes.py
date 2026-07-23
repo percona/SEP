@@ -27,11 +27,12 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import BackupType, OWNER
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskBackendEnum
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/backup_mongo"
 EXPECTED_CASCADE_POSTS = 4
+EXPECTED_CASCADE_PUTS = 4
 DEFAULT_PAGE_LIMIT = 50
 THREE_PARENT_FIXTURE_TOTAL = 3
 TWO_PARENT_FIXTURE_TOTAL = 2
@@ -96,6 +97,29 @@ def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
     """Return a path-keyed ``tasks_api.get`` mock safe for parallel fetches."""
 
     async def _mock_get(path: str, **kwargs: Any) -> Any:
+        if path.endswith("/history/"):
+            return {"items": []}
+        if path in tasks_by_path:
+            return tasks_by_path[path]
+        raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
+
+    return AsyncMock(side_effect=_mock_get)
+
+
+def _running_group_get_mock(
+    parent_name: str,
+    parent: dict,
+    *,
+    extra_tasks: dict[str, Any] | None = None,
+) -> AsyncMock:
+    """Return a ``tasks_api.get`` mock reporting the parent group as running."""
+    tasks_by_path = {f"/{parent_name}": parent, **(extra_tasks or {})}
+
+    async def _mock_get(path: str, params: dict | None = None, **kwargs: Any) -> Any:
+        if path == f"/{parent_name}/history/":
+            if params and params.get("status") == TaskHistoryStatusEnum.RUNNING:
+                return {"items": [{"id": 1}]}
+            return {"items": []}
         if path.endswith("/history/"):
             return {"items": []}
         if path in tasks_by_path:
@@ -615,6 +639,253 @@ class TestBackupMongoApiDelete:
         mock_task_api_dep.delete = AsyncMock(side_effect=_delete)
 
         response = test_client.delete(f"{API_BASE}/parent-backup")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "parent-backup-physical" in response.json()["detail"]
+
+
+class TestBackupMongoApiUpdate:
+    """Tests for PUT /api/apps/backup_mongo/{task_name}."""
+
+    def test_update_puts_parent_and_derived_and_restamps_form(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Cascade-update the parent plus derived legs and re-stamp ``_form``."""
+        parent = build_backup_task("parent-backup")
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/parent-backup": parent,
+                "/parent-backup-logical": build_backup_task(
+                    "parent-backup-logical",
+                    data={
+                        "backup_type": BackupType.PBM_LOGICAL.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+                "/parent-backup-physical": build_backup_task(
+                    "parent-backup-physical",
+                    data={
+                        "backup_type": BackupType.PBM_PHYSICAL.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+                "/parent-backup-status": build_backup_task(
+                    "parent-backup-status",
+                    data={
+                        "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+            }
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup",
+            json=build_backup_write_body(
+                task_name="parent-backup",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert mock_task_api_dep.put.await_count == EXPECTED_CASCADE_PUTS
+        parent_put = mock_task_api_dep.put.await_args_list[0]
+        assert parent_put.args == ("/parent-backup",)
+        parent_payload = parent_put.kwargs["json"]
+        assert parent_payload["name"] == "parent-backup"
+        assert parent_payload["data"]["backup_type"] == BackupType.PBM_CONFIG.value
+        assert "service_id" in parent_payload["data"][RESERVED_FORM_KEY]
+        logical_put = mock_task_api_dep.put.await_args_list[1]
+        assert logical_put.args == ("/parent-backup-logical",)
+        assert logical_put.kwargs["json"]["data"]["parent"] == "parent-backup"
+        assert RESERVED_FORM_KEY not in logical_put.kwargs["json"]["data"]
+
+    def test_update_resolves_satellite_url_to_parent(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Resolve a derived-sibling URL to the parent and update the group."""
+        parent = build_backup_task("parent-backup")
+        satellite = build_backup_task(
+            "parent-backup-logical",
+            data={
+                "backup_type": BackupType.PBM_LOGICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/parent-backup": parent,
+                "/parent-backup-logical": satellite,
+                "/parent-backup-physical": build_backup_task(
+                    "parent-backup-physical",
+                    data={
+                        "backup_type": BackupType.PBM_PHYSICAL.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+                "/parent-backup-status": build_backup_task(
+                    "parent-backup-status",
+                    data={
+                        "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+            }
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup-logical",
+            json=build_backup_write_body(
+                task_name="parent-backup",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert mock_task_api_dep.put.await_args_list[0].args == ("/parent-backup",)
+
+    def test_update_rejects_parent_rename_with_409(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Reject a submitted task_name differing from the path parent."""
+        parent = build_backup_task("parent-backup")
+        mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-backup": parent})
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup",
+            json=build_backup_write_body(
+                task_name="renamed-backup",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_awaited()
+
+    def test_update_protected_task_returns_409(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Reject updates to protected backup parent tasks."""
+        parent = build_backup_task("parent-backup", protected=True)
+        mock_task_api_dep.get = AsyncMock(return_value=parent)
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup",
+            json=build_backup_write_body(
+                task_name="parent-backup",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_awaited()
+
+    def test_update_running_conflict_returns_409(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Reject an update while a conflicting task run is in flight."""
+        parent = build_backup_task("parent-backup")
+        mock_task_api_dep.get = _running_group_get_mock("parent-backup", parent)
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup",
+            json=build_backup_write_body(
+                task_name="parent-backup",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_awaited()
+
+    def test_update_via_satellite_blocked_when_parent_running(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Block a satellite-addressed update when the resolved parent is running.
+
+        A ``PUT`` to an idle derived leg must resolve to the parent and check the
+        parent's history, not the leg's, so a running group cannot be edited.
+        """
+        parent = build_backup_task("parent-backup")
+        satellite = build_backup_task(
+            "parent-backup-logical",
+            data={
+                "backup_type": BackupType.PBM_LOGICAL.value,
+                "parent": "parent-backup",
+            },
+        )
+        mock_task_api_dep.get = _running_group_get_mock(
+            "parent-backup", parent, extra_tasks={"/parent-backup-logical": satellite}
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup-logical",
+            json=build_backup_write_body(
+                task_name="parent-backup",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        mock_task_api_dep.put.assert_not_awaited()
+        history_paths = [c.args[0] for c in mock_task_api_dep.get.await_args_list]
+        assert "/parent-backup/history/" in history_paths
+
+    def test_update_returns_500_when_cascade_partially_fails(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Return 500 naming the failed leg when a derived PUT fails mid-cascade."""
+        parent = build_backup_task("parent-backup")
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-backup": parent})
+        derived_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        async def _put(path: str, **kwargs: Any) -> Any:
+            if path == "/parent-backup-physical":
+                raise derived_exc
+            return parent
+
+        mock_task_api_dep.put = AsyncMock(side_effect=_put)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup",
+            json=build_backup_write_body(
+                task_name="parent-backup",
+                service_id=mongo_service.id,
+            ),
+        )
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert "parent-backup-physical" in response.json()["detail"]
