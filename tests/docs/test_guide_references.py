@@ -19,7 +19,7 @@ The app developer guide sources every code
 example from a real file, tagging each with an HTML-comment marker naming the
 file and containing symbol -- ``<!-- src: <path> [:: <symbol>] -->`` -- or, for
 the two examples no app exercises, ``<!-- constructed -->``. Prose has no test to
-keep it honest, so this parser enforces two contracts against ``origin/main``:
+keep it honest, so this parser enforces two contracts against the working tree:
 
 * **Every example is cited.** Every fenced ``python`` block is immediately
   preceded (ignoring blank lines) by a ``src:`` or ``constructed`` marker.
@@ -88,9 +88,15 @@ def _parse_guide() -> _ParsedGuide:
     (blank lines ignored) and records the block as uncited unless that line is a
     ``src:`` or ``constructed`` marker.
 
+    A missing guide file yields an empty result rather than raising, so a wrong
+    or moved guide path surfaces as a clean ``test_guide_exists`` assertion
+    failure instead of an import-time error during pytest collection.
+
     :return: The parsed guide.
     """
     result = _ParsedGuide()
+    if not _GUIDE_PATH.is_file():
+        return result
     in_block = False
     last_kind = "other"
     for lineno, raw in enumerate(_GUIDE_PATH.read_text().split("\n"), start=1):
