@@ -466,12 +466,11 @@ def test_ruff_fix_noop_without_python_files(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_ruff_fix_skips_when_ruff_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Skip ruff when neither the venv binary nor ``$PATH`` provides it."""
+    """Skip ruff when the executable is not on ``$PATH``."""
 
     def _fail(*args, **kwargs):
         raise AssertionError(f"ruff should not run: {args}, {kwargs}")
 
-    monkeypatch.setattr(scaffold.sys, "prefix", "/nonexistent-venv-prefix")
     monkeypatch.setattr(scaffold.shutil, "which", lambda _: None)
     monkeypatch.setattr(scaffold.subprocess, "run", _fail)
     scaffold._ruff_fix([Path("a.py")])
@@ -484,8 +483,6 @@ def test_ruff_fix_runs_check_then_format(monkeypatch: pytest.MonkeyPatch) -> Non
     def _record(cmd, **kwargs):
         commands.append((cmd, kwargs))
 
-    # Force the ``$PATH`` fallback so this test does not depend on a real venv ruff.
-    monkeypatch.setattr(scaffold.sys, "prefix", "/nonexistent-venv-prefix")
     monkeypatch.setattr(scaffold.shutil, "which", lambda _: "/usr/bin/ruff")
     monkeypatch.setattr(scaffold.subprocess, "run", _record)
     scaffold._ruff_fix([Path("a.py"), Path("b.txt")])
@@ -1091,9 +1088,7 @@ def test_makefile_forwards_quoted_values() -> None:
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    # Prefer ``sys.prefix`` (the active venv). Resolving ``sys.executable`` follows
-    # the venv shim into the Homebrew framework tree, which is not a usable VENV.
-    venv_root = Path(sys.prefix)
+    venv_root = Path(sys.executable).resolve().parent.parent
     try:
         result = scaffold.subprocess.run(
             [
@@ -1114,7 +1109,7 @@ def test_makefile_forwards_quoted_values() -> None:
         rendered = (scaffold.PLUGINS_DIR / name / "app.py").read_text()
         # The value survives make → shell env → argv → json.dumps intact; ruff may
         # normalise the literal's quote style (double → single to avoid escapes), so
-        # accept either form rather than requiring a fixed quote style.
+        # assert on the value content rather than a fixed quote form.
         assert "description=" in rendered
         assert (
             f"description={json.dumps(description)}" in rendered
@@ -1138,9 +1133,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    # Prefer ``sys.prefix`` (the active venv). Resolving ``sys.executable`` follows
-    # the venv shim into the Homebrew framework tree, which is not a usable VENV.
-    venv_root = Path(sys.prefix)
+    venv_root = Path(sys.executable).resolve().parent.parent
     try:
         result = scaffold.subprocess.run(
             [
