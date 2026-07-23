@@ -30,6 +30,7 @@ the migration introduces — the ``connectivity_warning`` field and the new
 from typing import Any
 from unittest.mock import AsyncMock
 
+import yaml
 from fastapi import status
 from pytest_mock import MockerFixture
 
@@ -144,6 +145,38 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         assert body["service_type"] == ServiceTypeEnum.MYSQL.value
         assert "anonymize_mask" in body
         assert "anonymized_entities" in body
+
+    def test_create_serializes_encryption_block(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Serialize the encryption bools and dir_encrypt_config through the derived POST.
+
+        Asserts the derived HTTP surface carries an encrypted selection into the
+        exact wire keys the backup backend consumes — the ``ENCRYPT`` /
+        ``POST_RUN_ENCRYPT`` / ``ENCRYPT_USING_TMPDIR`` booleans and the
+        ``DIR_ENCRYPT_CONFIG`` recipient block — so the serialized payload stays
+        byte-compatible for equivalent selections.
+        """
+        body = _valid_body()
+        body.update(
+            encrypt=True,
+            post_run_encrypt=True,
+            encryption_recipient="ops@example.com",
+        )
+        base = app_base_url(self.app_def)
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        config = yaml.safe_load(
+            mock_task_api.last_create_payload["data"]["meta"]["config"]
+        )
+        assert config["ALL_SERVERS"]["ENCRYPT"] is True
+        assert config["ALL_SERVERS"]["POST_RUN_ENCRYPT"] is True
+        assert config["ALL_SERVERS"]["ENCRYPT_USING_TMPDIR"] is False
+        assert config["SERVER_LIST"][0]["DIR_ENCRYPT_CONFIG"] == {
+            "encryption recipient": "ops@example.com"
+        }
 
     def test_create_422(self, contract_client: Any, mock_task_api: Any) -> None:
         """Reject a body missing the required ``backup_type`` with 422, before any POST."""
