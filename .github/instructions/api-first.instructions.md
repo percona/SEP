@@ -8,13 +8,13 @@ Mid-migration from server-rendered Jinja2 to a schema-driven React SPA backed by
 
 ## Rule 1 — Gateway pattern (most-violated)
 
-**The frontend NEVER calls the Inventory or Tasks sub-apps directly.** All FE traffic goes through SEP routes — app (`/api/plugins/{name}/`) or SEP-level core (`/api/sep/...`) — which proxy to sub-apps via injected deps (`tasks_api: TaskAPI`, `inventory_api: InventoryAPI`).
+**The frontend NEVER calls the Inventory or Tasks sub-apps directly.** All FE traffic goes through SEP routes — app (`/api/apps/{name}/`) or SEP-level core (`/api/sep/...`) — which proxy to sub-apps via injected deps (`tasks_api: TaskAPI`, `inventory_api: InventoryAPI`).
 
 Flag any new FE→`/api/tasks/*` or FE→`/api/inventory/*` traffic, and any two parallel FE fetches merging data from both sub-apps client-side (should be one SEP route merging server-side).
 
-Use `/api/sep/<resource>/` when data is shared across apps (executor hosts, current-user, global flags). Otherwise `/api/plugins/{name}/<resource>/`.
+Use `/api/sep/<resource>/` when data is shared across apps (executor hosts, current-user, global flags). Otherwise `/api/apps/{name}/<resource>/`.
 
-**Passthrough vs transforming proxy.** A passthrough route (single upstream call, no merge/transform/projection) returns `dict[str, Any]` / `list[dict[str, Any]]` — NOT a SEP-owned model mirroring the upstream 1:1. Flag any new `{Resource}Response` alongside a bare `tasks_api.get(...)` / `inventory_api.get(...)` where no field is added, dropped, renamed, or projected. A transforming proxy (merges upstreams, projects fields, adds SEP-only data) keeps its SEP-owned model.
+**Passthrough vs transforming proxy.** A passthrough route (single upstream call, no merge/transform/projection) returns `dict[str, Any]` / `list[dict[str, Any]]` — NOT a SEP-owned model mirroring the upstream 1:1. Flag any new `{Resource}Response` alongside a bare `tasks_api.get(...)` / `inventory_api.get(...)` where no field is added, dropped, renamed, or projected. A transforming proxy (merges upstreams, projects fields, adds SEP-only data) keeps its SEP-owned model. **Carve-out:** when the FE consumer is already typed by the upstream sub-app's OpenAPI/TS codegen, a SEP mirror only duplicates that typing — still add the proxy (Rule 1 stands) but return `dict[str, Any]`; the consumer's existing typed contract keeps applying.
 
 ## Rule 2 — Schema-driven by default
 
@@ -32,7 +32,7 @@ Source of truth: `frontend/packages/framework/src/index.ts` — check it for the
 
 ## Rule 4 — URL & response conventions
 
-- `/api/plugins/{name}/` app routes (default); `/api/sep/<resource>/` SEP-level core; `/api/auth/*`, `/api/me/*`, `/api/schema/*` core.
+- `/api/apps/{name}/` app routes (default); `/api/sep/<resource>/` SEP-level core; `/api/auth/*`, `/api/me/*`, `/api/schema/*` core.
 - `/api/inventory/*`, `/api/tasks/*` are internal-only after Wave 3; FE never calls them.
 - **No versioning** — no `/api/v1/`.
 - **Bare Pydantic responses** — `response_model=ChecksumTaskResponse` (or `list[...]`), not `ApiResponse[...]` envelope wrappers.
