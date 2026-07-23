@@ -149,7 +149,7 @@ def _apply_pbm_config(config: dict) -> None:
     # Selective --ns flags live under backup for NOMAD_META_CONFIG readers but are
     # not valid PBM config keys, so strip them before ``pbm config --file``.
     sep_only_backup_keys = frozenset({"namespaces", "withUsersAndRoles"})
-    pbm_config: dict = {}
+    pbm_config = {}
     for key, value in config.items():
         if key in sep_only_keys or value is None:
             continue

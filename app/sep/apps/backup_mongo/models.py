@@ -90,7 +90,7 @@ def parse_backup_namespaces(namespaces: str) -> list[str]:
         raise ValueError(
             "Backup namespaces must list at least one db.collection or db.* entry"
         )
-    invalid: list[str] = []
+    invalid = []
     for token in tokens:
         if "." not in token:
             invalid.append(token)
