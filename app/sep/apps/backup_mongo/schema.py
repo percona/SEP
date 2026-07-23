@@ -25,7 +25,6 @@ logical, physical, and status siblings. The Task-section description is built
 from those specs so the user-facing copy cannot drift from ``name_suffix``.
 """
 
-from collections.abc import Sequence
 from dataclasses import replace
 
 from app.sep.apps.backup_mongo.models import BackupForm, BackupType
@@ -59,45 +58,19 @@ BACKUP_MONGO_DERIVED = [
     ),
 ]
 
+#: Task-section note lists derived ``name_suffix`` values so UI copy cannot
+#: drift from :data:`BACKUP_MONGO_DERIVED` (derived-task fan-out only).
+_TASK_SIBLING_DESCRIPTION = (
+    "Creating this backup produces sibling tasks: "
+    + ", ".join(spec.name_suffix.removeprefix("-") for spec in BACKUP_MONGO_DERIVED)
+    + "."
+)
 
-def _format_english_list(items: Sequence[str]) -> str:
-    """Join ``items`` with commas and a final ``and`` (Oxford comma when ≥3)."""
-    match list(items):
-        case []:
-            raise ValueError("expected at least one item")
-        case [only]:
-            return only
-        case [first, second]:
-            return f"{first} and {second}"
-        case [*leading, last]:
-            return f"{', '.join(leading)}, and {last}"
-
-
-def _derived_sibling_task_description(specs: Sequence[DerivedTask]) -> str:
-    """Build the Task-section note from ``DerivedTask.name_suffix`` values.
-
-    Derived-task fan-out only (not field-level host cascading).
-    """
-    labels = [spec.name_suffix.removeprefix("-") for spec in specs]
-    count = len(labels)
-    noun = "sibling task" if count == 1 else "sibling tasks"
-    # Prefer short English counts for the common cascade sizes.
-    count_word = {1: "one", 2: "two", 3: "three"}.get(count, str(count))
-    return (
-        f"Creating this backup produces {count_word} {noun}: "
-        f"{_format_english_list(labels)}."
-    )
-
-
-#: Task section description overlays the shared layout; sourced from
-#: :data:`BACKUP_MONGO_DERIVED` so suffix changes stay in the UI copy.
+#: Task section description overlays the shared layout.
 _BACKUP_MONGO_LAYOUT = replace(
     backup_mongo_views.layout,
     sections=tuple(
-        replace(
-            section,
-            description=_derived_sibling_task_description(BACKUP_MONGO_DERIVED),
-        )
+        replace(section, description=_TASK_SIBLING_DESCRIPTION)
         if section.key == TASK_SECTION_LAYOUT.key
         else section
         for section in backup_mongo_views.layout.sections

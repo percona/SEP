@@ -46,7 +46,7 @@
     {
       "collapsed_by_default": false,
       "collapsible": false,
-      "description": "Creating this backup produces three sibling tasks: logical, physical, and status.",
+      "description": "Creating this backup produces sibling tasks: logical, physical, status.",
       "fields": [
         {
           "default": "mongodb-backup",
