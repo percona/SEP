@@ -17,7 +17,7 @@
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { delay, http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectivityResult, ConnectivityStatus } from '@sep/api';
 
@@ -36,6 +36,19 @@ function stubResults(results: ConnectivityResult[]) {
   server.use(http.post(CONN_URL, () => HttpResponse.json(results)));
 }
 
+/**
+ * A handler gate the test releases by hand. Holding the response until then
+ * keeps the request in flight for as long as the assertions need, instead of
+ * racing a wall-clock delay against `waitFor` and `userEvent` scheduling.
+ */
+function makeGate() {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { gate, release };
+}
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -50,9 +63,10 @@ describe('TestConnectionButton', () => {
   });
 
   it('shows a pending state while the request is in flight', async () => {
+    const { gate, release } = makeGate();
     server.use(
       http.post(CONN_URL, async () => {
-        await delay(50);
+        await gate;
         return HttpResponse.json([
           { service: 'pmm', reachable: true, status: 'reachable', detail: 'OK' },
         ] satisfies ConnectivityResult[]);
@@ -64,6 +78,7 @@ describe('TestConnectionButton', () => {
 
     // Disabled + relabelled while pending.
     await waitFor(() => expect(screen.getByRole('button', { name: /testing/i })).toBeDisabled());
+    release();
     // Recovers once resolved.
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /test connection/i })).toBeEnabled(),
@@ -194,10 +209,11 @@ describe('TestConnectionButton', () => {
 
   it('ignores a second click while a check is in flight', async () => {
     const posts = vi.fn();
+    const { gate, release } = makeGate();
     server.use(
       http.post(CONN_URL, async () => {
         posts();
-        await delay(50);
+        await gate;
         return HttpResponse.json([
           { service: 'pmm', reachable: true, status: 'reachable', detail: 'OK' },
         ] satisfies ConnectivityResult[]);
@@ -214,6 +230,7 @@ describe('TestConnectionButton', () => {
       pointerEventsCheck: 0,
     });
 
+    release();
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /test connection/i })).toBeEnabled(),
     );
