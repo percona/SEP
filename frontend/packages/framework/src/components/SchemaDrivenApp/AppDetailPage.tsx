@@ -175,7 +175,7 @@ function EntityDetailField({
   const syntaxFallback = (
     <Skeleton variant="rectangular" height={120} sx={{ ...detailSyntaxBlockSx, mt: 0.5 }} />
   );
-  const isWide = Boolean(highlightLanguage) || typeof value === 'object';
+  const isWide = typeof value === 'object';
 
   if (highlightLanguage) {
     return (
