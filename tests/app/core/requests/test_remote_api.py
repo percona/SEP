@@ -261,3 +261,17 @@ class TestUpload:
 
         assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
         assert exc_info.value.headers.get(UPSTREAM_NON_JSON_HEADER) == "1"
+
+    async def test_error_status_with_non_dict_json_body(self, remote_api):
+        """Map an error status whose JSON body is a list, not an object."""
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_502_BAD_GATEWAY,
+                payload=[{"loc": "body", "msg": "invalid"}],
+            )
+            async with remote_api:
+                with pytest.raises(HTTPBadGatewayException) as exc_info:
+                    await remote_api.upload("upload", files=_one_file())
+
+        assert exc_info.value.detail == "An unexpected error occurred on the server."

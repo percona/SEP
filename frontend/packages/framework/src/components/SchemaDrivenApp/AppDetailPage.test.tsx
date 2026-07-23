@@ -88,7 +88,10 @@ vi.mock('../../hooks', () => ({
 
 // Execution History tab renders the real TaskHistoryTable; stub it to capture the wired
 // onStopTask handler (no other test exercises the Execution History tab / this component).
-vi.mock('../TaskHistoryTable', () => ({
+vi.mock('../TaskHistoryTable', async (importOriginal) => ({
+  // Keep the real TaskHistoryStatusBadge + isTaskHistoryStatus (now used by the
+  // detail header); only the table itself is stubbed.
+  ...(await importOriginal<typeof import('../TaskHistoryTable')>()),
   TaskHistoryTable: ({ onStopTask }: { onStopTask?: (entry: { id: number }) => void }) =>
     onStopTask ? (
       <button type="button" onClick={() => onStopTask({ id: 7 })}>
@@ -1079,6 +1082,88 @@ describe('AppDetailPage — header de-duplication', () => {
     const card = screen.getByText('Task information').closest('div') as HTMLElement;
     expect(within(card).getByText('Name')).toBeInTheDocument();
     expect(within(card).getByText('42')).toBeInTheDocument();
+  });
+});
+
+describe('AppDetailPage — header status badge', () => {
+  it('renders the shared status badge for the single-task header, with running in the animated state', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'running' },
+      isLoading: false,
+    });
+
+    const { container } = renderAt('/apps/checksums/task/FECHK');
+
+    // Mapped label + data-status attribute from TaskHistoryStatusBadge, not the
+    // raw 'running' string of the removed inline chip.
+    expect(screen.getByText('Running')).toBeInTheDocument();
+    expect(container.querySelector('[data-status="running"]')).toBeInTheDocument();
+  });
+
+  it('falls back to a plain chip (no badge) for an unrecognized status', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'weird' },
+      isLoading: false,
+    });
+
+    const { container } = renderAt('/apps/checksums/task/FECHK');
+
+    // Unrecognized string still shows the raw value in a plain header chip so
+    // status never silently disappears, but without the badge's data-status
+    // attribute. (The Overview field also echoes the raw value, hence getAll.)
+    expect(screen.getAllByText('weird').length).toBeGreaterThan(0);
+    expect(container.querySelector('.MuiChip-root')).toHaveTextContent('weird');
+    expect(container.querySelector('[data-status]')).toBeNull();
+  });
+
+  it('renders the shared status badge for the multi-entity detail header', () => {
+    const multiSchema = {
+      pluginName: 'inventory',
+      display_name: 'Inventory',
+      description: 'Test',
+      capabilities: {},
+      entities: [
+        {
+          name: 'services',
+          display_name: 'Services',
+          description: 'Service entities',
+          forms: [],
+          list_view: {
+            columns: [
+              { key: 'name', label: 'Name' },
+              { key: 'status', label: 'Status', format: 'status' },
+            ],
+            default_sort: '-name',
+          },
+        },
+      ],
+      list_view: { columns: [{ key: 'name', label: 'Name' }], default_sort: '-name' },
+      formSchema: { sections: [] },
+    } as unknown as AppSchema;
+
+    mockUseAppEntityDetail.mockReturnValue({
+      data: { id: 1, name: 'mysql-01', status: 'failed' },
+      isLoading: false,
+      error: null,
+    });
+
+    const { container } = render(
+      <QueryClientProvider client={makeClient()}>
+        <SnackbarProvider>
+          <MemoryRouter initialEntries={['/apps/inventory/services/1']}>
+            <Routes>
+              <Route
+                path="/apps/:plugin/:entityName/:id/*"
+                element={<AppDetailPage schema={multiSchema} pluginName="inventory" />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </SnackbarProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+    expect(container.querySelector('[data-status="failed"]')).toBeInTheDocument();
   });
 });
 

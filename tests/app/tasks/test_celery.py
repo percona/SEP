@@ -1397,8 +1397,8 @@ class TestExecuteTaskQueue:
                 )
             )
             mock_dispatch = mocker.patch(
-                "app.tasks.celery.dispatch_queue_item",
-                side_effect=_fake_dispatch_mark_running,
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
             )
             mock_alert = mocker.patch.object(
                 AlertService, "trigger", new_callable=AsyncMock
@@ -1407,7 +1407,7 @@ class TestExecuteTaskQueue:
             with patch.object(celery_module.celery, "loop", test_loop):
                 result = celery_module.execute_task_queue.__wrapped__(history.id)
 
-            mock_dispatch.assert_not_called()
+            mock_dispatch.assert_not_awaited()
             mock_alert.assert_awaited_once()
             rows = test_loop.run_until_complete(
                 _list_histories(async_session_maker, task.id)
@@ -1603,6 +1603,40 @@ class TestDispatchChainedTask:
         assert dispatched_history.execution_request.target == "host1"
         assert dispatched_history.execution_request.meta.get("_chain_depth") == 1
         assert mock_dispatch.await_args.kwargs.get("await_annotations") is True
+
+    def test_unresolvable_payload_fails_terminally(self, mocker) -> None:
+        """Assert a chained task with an unresolvable payload persists FAILED, never dispatching."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            chain_task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="chain-task",
+                    backend=TaskBackendEnum.PROXY,
+                    data={
+                        "task": "wrapped",
+                        "payload": "file:///nonexistent/x_payload",
+                    },
+                )
+            )
+            parent_history = _make_chain_history(
+                _make_chain_task("main-task"),
+                TaskHistoryStatusEnum.SUCCESS,
+                {"_chain_task_names": ["chain-task"]},
+            )
+            mock_internal = mocker.patch(
+                "app.tasks.celery._dispatch_queue_item", new_callable=AsyncMock
+            )
+
+            test_loop.run_until_complete(
+                _dispatch_chained_task("chain-task", parent_history)
+            )
+
+            mock_internal.assert_not_awaited()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, chain_task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
 
     @pytest.mark.asyncio
     async def test_unknown_task_logs_warning(self) -> None:
@@ -2270,10 +2304,13 @@ async def _list_log_chunks(async_session_maker, task_history_id: int):
 
 
 async def _fake_dispatch_mark_running(
-    queue_item: TaskHistory, *, await_annotations: bool = False
+    queue_item: TaskHistory,
+    *,
+    await_annotations: bool = False,
+    periodic_task_name: str | None = None,
 ) -> TaskHistory:
     """Minimal dispatch stand-in: mark the item RUNNING and return it."""
-    del await_annotations
+    del await_annotations, periodic_task_name
     queue_item.status = TaskHistoryStatusEnum.RUNNING
     return queue_item
 
@@ -2320,6 +2357,10 @@ class TestExecuteTaskByName:
             _run_skip_gate(test_loop, task_name="test-task")
 
             assert mock_dispatch.call_count == 1
+            assert (
+                mock_dispatch.call_args.kwargs["periodic_task_name"]
+                == "periodic-test-task"
+            )
             mock_alert.assert_not_awaited()
 
     def test_unhealthy_target_skips_and_alerts(self, mocker):
@@ -3208,7 +3249,7 @@ class TestCheckNomadCertExpiry:
 
 
 class TestPreDispatchPayloadCheck:
-    """Test the pre-dispatch payload-resolution gate in ``execute_task_by_name``."""
+    """Test the pre-dispatch payload-resolution gate (``_pre_dispatch_payload_check``)."""
 
     _BROKEN_DATA = {"task": "wrapped", "payload": "file:///nonexistent/x_payload"}
 
@@ -3225,8 +3266,8 @@ class TestPreDispatchPayloadCheck:
                 )
             )
             mock_dispatch = mocker.patch(
-                "app.tasks.celery.dispatch_queue_item",
-                side_effect=_fake_dispatch_mark_running,
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
             )
             mock_alert = mocker.patch.object(
                 AlertService, "trigger", new_callable=AsyncMock
@@ -3234,7 +3275,7 @@ class TestPreDispatchPayloadCheck:
 
             result = _run_skip_gate(test_loop, task_name="test-task")
 
-            mock_dispatch.assert_not_called()
+            mock_dispatch.assert_not_awaited()
             mock_alert.assert_awaited_once()
             alert_payload = mock_alert.await_args.args[0]
             assert alert_payload["class"] == "task_dispatch_failure"
@@ -3256,6 +3297,38 @@ class TestPreDispatchPayloadCheck:
             assert stderr_chunks
             assert "file:///nonexistent/x_payload" in stderr_chunks[0].content
 
+    def test_unresolvable_payload_gates_before_health_check(self, mocker):
+        """Assert the payload gate persists FAILED before the health check runs Nomad.
+
+        The health check calls ``executor.get_hosts()``, which contacts Nomad and
+        can raise when the target is unreachable; an unresolvable payload must fail
+        terminally ahead of that contact rather than depend on its outcome.
+        """
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data=self._BROKEN_DATA,
+                )
+            )
+            mock_health = mocker.patch(
+                "app.tasks.celery._pre_dispatch_health_check",
+                new_callable=AsyncMock,
+                side_effect=BaseNomadException("nomad down"),
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_health.assert_not_awaited()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+
     def test_unresolvable_payload_no_alert_when_alert_on_fail_false(self, mocker):
         """Assert the FAILED row and stderr chunk are written but no alert fires."""
         with _sync_db_harness(mocker) as (test_loop, async_session_maker):
@@ -3269,8 +3342,8 @@ class TestPreDispatchPayloadCheck:
                 )
             )
             mock_dispatch = mocker.patch(
-                "app.tasks.celery.dispatch_queue_item",
-                side_effect=_fake_dispatch_mark_running,
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
             )
             mock_alert = mocker.patch.object(
                 AlertService, "trigger", new_callable=AsyncMock
@@ -3278,7 +3351,7 @@ class TestPreDispatchPayloadCheck:
 
             _run_skip_gate(test_loop, task_name="test-task")
 
-            mock_dispatch.assert_not_called()
+            mock_dispatch.assert_not_awaited()
             mock_alert.assert_not_awaited()
             rows = test_loop.run_until_complete(
                 _list_histories(async_session_maker, task.id)
@@ -3318,7 +3391,14 @@ class TestPreDispatchPayloadCheck:
 
             assert result is None
 
-    def test_unreadable_payload_persists_failed(self, mocker):
+    @pytest.mark.parametrize(
+        "read_error",
+        [
+            PermissionError("denied"),
+            UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid start byte"),
+        ],
+    )
+    def test_unreadable_payload_persists_failed(self, mocker, read_error):
         """Assert a resolvable-but-unreadable payload (read error) also persists FAILED."""
         with _sync_db_harness(mocker) as (test_loop, async_session_maker):
             test_loop.run_until_complete(
@@ -3334,7 +3414,7 @@ class TestPreDispatchPayloadCheck:
                 )
             )
             unreadable = mocker.MagicMock()
-            unreadable.read_text.side_effect = PermissionError("denied")
+            unreadable.read_text.side_effect = read_error
             mocker.patch(
                 "app.tasks.models.resolve_payload_reference", return_value=unreadable
             )
