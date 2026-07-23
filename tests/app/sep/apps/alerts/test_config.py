@@ -37,8 +37,12 @@ class TestAlertsSettings:
     """Test the ``AlertsSettings`` plugin-owned settings section."""
 
     def test_defaults(self) -> None:
-        """Assert default values for the alerts settings section."""
-        config = AlertsSettings()
+        """Assert default values for the alerts settings section.
+
+        Load without the dotenv file so a local ``.env.local`` override does not
+        mask the built-in defaults.
+        """
+        config = AlertsSettings(_env_file=None)
         assert IntervalSchedule(every=24, period=Period.HOURS) == config.BACKUP_INTERVAL
         assert config.BACKUP_RETENTION == DEFAULT_BACKUP_RETENTION
         assert config.ALERT_FOLDER_NAME == "SEP Alerts"

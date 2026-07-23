@@ -37,6 +37,7 @@ from app.tasks.periodic.models import (
     PeriodicTaskResponse,
     PeriodicTaskUpdate,
 )
+from app.tasks.periodic.utils import attach_last_run_status
 
 router = APIRouter(prefix="/periodic", tags=["periodic", "schedule", "tasks"])
 
@@ -57,21 +58,33 @@ async def list_periodic_tasks(
 ) -> list[PeriodicTask]:
     """List all periodic tasks."""
     if owner is None:
-        return await PeriodicTaskManager.list(session=session, enabled=enabled)
-    tasks_names = [
-        task.name
-        for task in await TaskManager.list_active(session=tasks_session, owner=owner)
-    ]
-    return await PeriodicTaskManager.list_by_task_names(
-        session, *tasks_names, enabled=enabled
-    )
+        periodic_tasks = await PeriodicTaskManager.list(
+            session=session, enabled=enabled
+        )
+    else:
+        tasks_names = [
+            task.name
+            for task in await TaskManager.list_active(
+                session=tasks_session, owner=owner
+            )
+        ]
+        periodic_tasks = await PeriodicTaskManager.list_by_task_names(
+            session, *tasks_names, enabled=enabled
+        )
+    return await attach_last_run_status(tasks_session, periodic_tasks)
 
 
-@router.get("/{periodic_task_id}", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/{periodic_task_id}",
+    dependencies=[IsAuthenticatedDep],
+    response_model=PeriodicTaskResponse,
+)
 async def retrieve_periodic_task(
     periodic_task: PeriodicTaskDep,
-) -> PeriodicTaskResponse:
+    tasks_session: SessionDep,
+) -> PeriodicTask:
     """Retrieve a periodic task by ID."""
+    await attach_last_run_status(tasks_session, [periodic_task])
     return periodic_task
 
 
@@ -141,7 +154,9 @@ async def update_periodic_task(
         )
 
     logger.debug("Updating periodic task %s", existing_task.id)
-    return await PeriodicTaskManager.update(session, existing_task, updated_task)
+    updated = await PeriodicTaskManager.update(session, existing_task, updated_task)
+    await attach_last_run_status(tasks_session, [updated])
+    return updated
 
 
 @router.delete(

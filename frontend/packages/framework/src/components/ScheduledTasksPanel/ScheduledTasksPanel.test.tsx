@@ -79,7 +79,10 @@ beforeEach(() => {
 
 function setup(periodic: PeriodicTaskResponse[]) {
   useAppTasksMock.mockReturnValue({
-    data: [{ name: 'plugin-task' }, { name: 'other-plugin-task' }],
+    data: {
+      items: [{ name: 'plugin-task' }, { name: 'other-plugin-task' }],
+      pagination: null,
+    },
     isLoading: false,
     isError: false,
   });
@@ -87,6 +90,19 @@ function setup(periodic: PeriodicTaskResponse[]) {
 }
 
 describe('ScheduledTasksPanel', () => {
+  it('loads plugin tasks with fetchAllPages so schedule joins are not capped', async () => {
+    setup([]);
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+
+    await waitFor(() => {
+      expect(useAppTasksMock).toHaveBeenCalledWith(
+        'myplugin',
+        undefined,
+        expect.objectContaining({ fetchAllPages: true }),
+      );
+    });
+  });
+
   it('shows empty state when there are no scheduled tasks for the plugin', async () => {
     setup([]);
     renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
