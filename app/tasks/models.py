@@ -55,6 +55,8 @@ from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.db.sql_types import AutoJSON, MaybeCompressedText
 from app.core.utils.fields import (
+    ARBITRARY_ARGS_SCHEMA,
+    ArbitraryMapping,
     EmptyStrToNone,
     UTCDatetime,
 )
@@ -255,9 +257,9 @@ class TaskExecutionRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
     task: str
     target: str
-    meta: dict | None = {}
+    meta: ArbitraryMapping | None = {}
     payload: str | None = None
-    tracking: dict | None = {"allocation_id": None, "evaluation_id": None}
+    tracking: ArbitraryMapping | None = {"allocation_id": None, "evaluation_id": None}
     eta: datetime | None = None
 
     @cached_property
@@ -349,7 +351,10 @@ class TaskBase(SQLModel):
     """
 
     name: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
-    data: dict = SQLField(sa_column=Column(JSON, nullable=False))
+    data: dict = SQLField(
+        sa_column=Column(JSON, nullable=False),
+        schema_extra={"json_schema_extra": {"additionalProperties": True}},
+    )
     backend: TaskBackendEnum = SQLField(
         default=TaskBackendEnum.NOMAD,
         sa_column=Column(EnumField(TaskBackendEnum, native_enum=False), nullable=False),
@@ -521,7 +526,7 @@ class TaskExecuteRequest(BaseModel):
     :type chain_on_failure: bool
     """
 
-    meta: dict[str, Any] = {}
+    meta: dict[str, Any] = Field(default={}, json_schema_extra=ARBITRARY_ARGS_SCHEMA)
     payload: str | None = None
     eta: datetime | EmptyStrToNone = None
     anonymize_mask: int | None = None
@@ -1075,7 +1080,7 @@ class TaskStats(BaseModel):
 
     @computed_field
     @property
-    def status(self) -> dict:
+    def status(self) -> ArbitraryMapping:
         """Return the task status summary.
 
         :return: A dictionary summarizing the number of passed and failed tasks.
@@ -1094,7 +1099,7 @@ class TaskStats(BaseModel):
 
     @computed_field
     @property
-    def duration(self) -> dict:
+    def duration(self) -> ArbitraryMapping:
         """Return the task duration summary.
 
         :return: A dictionary summarizing average, last, and total task durations.
