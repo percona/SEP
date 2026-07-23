@@ -907,8 +907,6 @@
             "anyOf": [
               {
                 "additionalProperties": true,
-                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                "readOnly": true,
                 "type": "object"
               },
               {
@@ -941,8 +939,6 @@
             "anyOf": [
               {
                 "additionalProperties": true,
-                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                "readOnly": true,
                 "type": "object"
               },
               {

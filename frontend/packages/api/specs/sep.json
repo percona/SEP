@@ -506,8 +506,6 @@
           "items": {
             "items": {
               "additionalProperties": true,
-              "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-              "readOnly": true,
               "type": "object"
             },
             "title": "Items",
@@ -719,8 +717,6 @@
             "anyOf": [
               {
                 "additionalProperties": true,
-                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                "readOnly": true,
                 "type": "object"
               },
               {
@@ -1064,8 +1060,6 @@
             "anyOf": [
               {
                 "additionalProperties": true,
-                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                "readOnly": true,
                 "type": "object"
               },
               {
@@ -1098,8 +1092,6 @@
             "anyOf": [
               {
                 "additionalProperties": true,
-                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                "readOnly": true,
                 "type": "object"
               },
               {
@@ -2855,8 +2847,6 @@
               {
                 "items": {
                   "additionalProperties": true,
-                  "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                  "readOnly": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -6952,8 +6942,6 @@
             "anyOf": [
               {
                 "additionalProperties": true,
-                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                "readOnly": true,
                 "type": "object"
               },
               {
@@ -11852,8 +11840,6 @@
             "anyOf": [
               {
                 "additionalProperties": true,
-                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                "readOnly": true,
                 "type": "object"
               },
               {
@@ -18287,8 +18273,6 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                  "readOnly": true,
                   "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }
@@ -19013,8 +18997,6 @@
                 "schema": {
                   "items": {
                     "additionalProperties": true,
-                    "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                    "readOnly": true,
                     "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                     "type": "object"
                   },
@@ -19122,8 +19104,6 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                "readOnly": true,
                 "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                 "type": "object"
               }
@@ -19137,8 +19117,6 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                  "readOnly": true,
                   "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }
@@ -19201,8 +19179,6 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
-                "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                "readOnly": true,
                 "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                 "type": "object"
               }
@@ -19216,8 +19192,6 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                  "readOnly": true,
                   "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }
@@ -19600,8 +19574,6 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                  "readOnly": true,
                   "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }
@@ -19665,8 +19637,6 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
-                  "readOnly": true,
                   "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }

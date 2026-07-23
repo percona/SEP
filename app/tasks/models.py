@@ -33,6 +33,7 @@ from pydantic import (
     model_validator,
     ValidationError,
 )
+from pydantic.json_schema import WithJsonSchema
 from sqlalchemy import (
     BigInteger,
     Column,
@@ -67,6 +68,15 @@ from app.tasks.anonymizer.entities import PIIEntity
 TASK_ALIAS_LENGTH = 100
 SYSTEM_USER = "SYSTEM"
 ANY_OWNER = "ANY"
+
+# Distinct from ArbitraryMapping so computed-field description/readOnly metadata
+# is not cached onto the shared open-mapping alias during OpenAPI generation.
+_TaskStatsStatusMap = Annotated[
+    dict[str, int], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
+]
+_TaskStatsDurationMap = Annotated[
+    dict[str, Any], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
+]
 
 
 def _encode_anonymize_mask(v: Any) -> Any:
@@ -1080,7 +1090,7 @@ class TaskStats(BaseModel):
 
     @computed_field
     @property
-    def status(self) -> ArbitraryMapping:
+    def status(self) -> _TaskStatsStatusMap:
         """Return the task status summary.
 
         :return: A dictionary summarizing the number of passed and failed tasks.
@@ -1099,7 +1109,7 @@ class TaskStats(BaseModel):
 
     @computed_field
     @property
-    def duration(self) -> ArbitraryMapping:
+    def duration(self) -> _TaskStatsDurationMap:
         """Return the task duration summary.
 
         :return: A dictionary summarizing average, last, and total task durations.

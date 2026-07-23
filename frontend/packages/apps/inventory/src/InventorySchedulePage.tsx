@@ -144,7 +144,7 @@ function describePeriod(task: PeriodicTaskResponse): { display: string; tooltip?
 }
 
 function syncerLabel(task: PeriodicTaskResponse, syncers: Syncer[]): string {
-  const meta = task.execute_request?.meta as Record<string, unknown> | undefined;
+  const meta = task.execute_request?.meta;
   const name = meta?.syncer;
   if (!name || typeof name !== 'string') {
     return 'All syncers';
@@ -177,7 +177,7 @@ function SyncScheduleForm({
   submitting = false,
   errorMessage,
 }: SyncScheduleFormProps) {
-  const initialMeta = initialTask?.execute_request?.meta as Record<string, unknown> | undefined;
+  const initialMeta = initialTask?.execute_request?.meta;
   const initialSyncer = typeof initialMeta?.syncer === 'string' ? initialMeta.syncer : '';
 
   const [syncerName, setSyncerName] = useState(initialSyncer);
@@ -229,8 +229,7 @@ function SyncScheduleForm({
     }
 
     const execute_request: PeriodicTaskExecuteRequest = {
-      // codegen types meta as empty-only; runtime accepts arbitrary keys, cast to match
-      meta: (syncerName ? { syncer: syncerName } : {}) as Record<string, never>,
+      meta: syncerName ? { syncer: syncerName } : {},
       chain_task_names: initialTask?.execute_request?.chain_task_names ?? [],
       chain_on_failure: initialTask?.execute_request?.chain_on_failure ?? false,
     };

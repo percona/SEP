@@ -74,7 +74,7 @@ const SAMPLE_TASKS: PeriodicTaskResponse[] = [
       timezone: 'UTC',
     },
     execute_request: {
-      meta: {} as Record<string, never>,
+      meta: {},
       chain_task_names: ['demo-task'],
       chain_on_failure: false,
     },
