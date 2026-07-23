@@ -25,12 +25,13 @@ the documented fallback/exit behavior is reached instead of an ``AttributeError`
 traceback.
 """
 
-import os
 import pathlib
 import subprocess
 
 import pytest
 import yaml
+
+from tests.app.sep.apps.backup_mongo.pbm_payload_exec import FakePopen, run_payload
 
 _APP_DIR = (
     pathlib.Path(__file__).resolve().parents[6] / "app/sep/apps/backup_mongo/restore"
@@ -43,24 +44,6 @@ _MALFORMED_CONFIGS = {
     "bare_scalar": "just a string\n",
     "list": "- one\n- two\n",
 }
-
-
-class _FakePopen:
-    """Stub ``subprocess.Popen`` that records every command it is asked to run."""
-
-    def __init__(self, cmd, *args, **kwargs):
-        self._cmd = cmd
-        self._stdout = kwargs.get("stdout")
-        self.returncode = 0
-
-    def wait(self) -> None:
-        return None
-
-    def poll(self) -> int:
-        return 0
-
-    def communicate(self):
-        return b"", b""
 
 
 class TestLogicalAndPhysicalRestoreConfigNormalization:
@@ -86,15 +69,10 @@ class TestLogicalAndPhysicalRestoreConfigNormalization:
         monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
         (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
         (tmp_path / "script_config").write_text(_MALFORMED_CONFIGS[malformed])
-        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+        monkeypatch.setattr(subprocess, "Popen", FakePopen)
 
-        path = _RESTORE_PAYLOADS[payload]
-        namespace: dict[str, object] = {}
-        try:
-            with pytest.raises(SystemExit) as exc:
-                exec(compile(path.read_text(), str(path), "exec"), namespace)
-        finally:
-            os.environ.pop("PBM_MONGODB_URI", None)
+        with pytest.raises(SystemExit) as exc:
+            run_payload(_RESTORE_PAYLOADS[payload])
 
         assert exc.value.code == 1
         assert "BACKUP_SOURCE (backup name) is required" in capsys.readouterr().out
@@ -119,10 +97,8 @@ class TestRestoreConfigPayloadNormalization:
         (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
         # No script_config file is written, so the open() call raises.
 
-        path = _APP_DIR / "pbm_restore_config_payload"
-        namespace: dict[str, object] = {}
         with pytest.raises(SystemExit) as exc:
-            exec(compile(path.read_text(), str(path), "exec"), namespace)
+            run_payload(_APP_DIR / "pbm_restore_config_payload")
 
         assert exc.value.code == 1
         assert "Error reading script_config" in capsys.readouterr().err
@@ -150,20 +126,20 @@ class TestRestoreConfigPayloadNormalization:
             {"storage": {"type": "s3", "s3": {"bucket": "backups"}}}
         )
 
-        class _FakeRestoreConfigPopen(_FakePopen):
-            def communicate(self):
-                if self._cmd[:2] == ["pbm", "config"] and "--file" not in self._cmd:
-                    return current_pbm_config.encode(), b""
-                return b"", b""
+        def _communicate_result(cmd: list[str]) -> tuple[bytes, bytes]:
+            if cmd[:2] == ["pbm", "config"] and "--file" not in cmd:
+                return current_pbm_config.encode(), b""
+            return b"", b""
 
-        monkeypatch.setattr(subprocess, "Popen", _FakeRestoreConfigPopen)
+        monkeypatch.setattr(
+            subprocess,
+            "Popen",
+            lambda cmd, *a, **kw: FakePopen(
+                cmd, *a, communicate_result=_communicate_result, **kw
+            ),
+        )
 
-        path = _APP_DIR / "pbm_restore_config_payload"
-        namespace: dict[str, object] = {}
-        try:
-            exec(compile(path.read_text(), str(path), "exec"), namespace)
-        finally:
-            os.environ.pop("PBM_MONGODB_URI", None)
+        run_payload(_APP_DIR / "pbm_restore_config_payload")
 
         assert (
             "No restore configuration provided, skipping update"
@@ -187,21 +163,21 @@ class TestRestoreConfigPayloadNormalization:
         (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
         (tmp_path / "script_config").write_text(yaml.safe_dump({"restore": {}}))
 
-        class _FakeMalformedPbmConfigPopen(_FakePopen):
-            def communicate(self):
-                if self._cmd[:2] == ["pbm", "config"] and "--file" not in self._cmd:
-                    return b"- malformed\n- list\n", b""
-                return b"", b""
+        def _communicate_result(cmd: list[str]) -> tuple[bytes, bytes]:
+            if cmd[:2] == ["pbm", "config"] and "--file" not in cmd:
+                return b"- malformed\n- list\n", b""
+            return b"", b""
 
-        monkeypatch.setattr(subprocess, "Popen", _FakeMalformedPbmConfigPopen)
+        monkeypatch.setattr(
+            subprocess,
+            "Popen",
+            lambda cmd, *a, **kw: FakePopen(
+                cmd, *a, communicate_result=_communicate_result, **kw
+            ),
+        )
 
-        path = _APP_DIR / "pbm_restore_config_payload"
-        namespace: dict[str, object] = {}
-        try:
-            with pytest.raises(SystemExit) as exc:
-                exec(compile(path.read_text(), str(path), "exec"), namespace)
-        finally:
-            os.environ.pop("PBM_MONGODB_URI", None)
+        with pytest.raises(SystemExit) as exc:
+            run_payload(_APP_DIR / "pbm_restore_config_payload")
 
         assert exc.value.code == 1
         assert "Storage is not configured in PBM" in capsys.readouterr().out
