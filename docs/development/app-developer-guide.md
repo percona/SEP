@@ -13,8 +13,10 @@ not cover, and how the whole thing is tested.
 > flavor to use — is the decision [§2 Choosing an authoring surface](#2-choosing-an-authoring-surface)
 > teaches.
 
-Every code example below is either copied verbatim from a real, CI-exercised app
-under `app/sep/apps/` or executed against the live framework. Each example carries
+Every code example below is drawn from real, CI-exercised code in the SEP tree — a
+migrated app under `app/sep/apps/`, the framework, the SEP API and deps,
+`settings.yaml`, or the app test kit — copied verbatim (except where a trim is noted
+inline) or executed against the live framework. Each example carries
 an HTML comment naming its source file and symbol (e.g.
 `<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->`) so you can diff
 it against the tree as the framework evolves. A reference-integrity test
