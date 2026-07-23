@@ -455,6 +455,14 @@ function OverviewTab({
           />
         )}
 
+      {/* Schedule / next-run sits first so it is visible without scrolling
+          past the Task information card. Gate unchanged: apps without the
+          scheduling capability render nothing here, so their Overview is
+          untouched. */}
+      {schema.capabilities?.scheduling && pluginName && taskName && scheduleHref && (
+        <ScheduleSummary pluginName={pluginName} taskName={taskName} scheduleHref={scheduleHref} />
+      )}
+
       <SectionCard title="Task information">
         <Grid container spacing={2}>
           {visibleColumns.map((col) => (
@@ -465,10 +473,6 @@ function OverviewTab({
           ))}
         </Grid>
       </SectionCard>
-
-      {schema.capabilities?.scheduling && pluginName && taskName && scheduleHref && (
-        <ScheduleSummary pluginName={pluginName} taskName={taskName} scheduleHref={scheduleHref} />
-      )}
 
       {schema.capabilities?.stats && (
         <StatsCard
