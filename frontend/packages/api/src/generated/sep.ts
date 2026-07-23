@@ -915,7 +915,9 @@ export interface paths {
      * @description Update a restore task from a JSON payload request body.
      *
      *     PUTs the parent config payload to the config task name and refreshes each
-     *     child leg (restore, pbm-list, optional force-resync) in place.
+     *     child leg (restore, pbm-list, optional force-resync) in place. The
+     *     ``EditableRestoreParent`` dependency resolves a satellite URL to the parent
+     *     and blocks protected or in-flight groups before any write.
      */
     put: operations['backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put'];
     post?: never;
@@ -983,7 +985,18 @@ export interface paths {
      * @description Retrieve a single parent backup task with derived sibling status.
      */
     get: operations['backup_mongo_backup_mongo_api_detail_api_apps_backup_mongo__task_name__get'];
-    put?: never;
+    /**
+     * Backup Mongo Api Update
+     * @description Update a backup task group from a JSON payload request body.
+     *
+     *     Cascade-updates the parent ``pbm_config`` task and its derived logical,
+     *     physical, and status siblings, re-stamping ``_form`` so the edit page keeps
+     *     prefilling. The ``EditableBackupParent`` dependency resolves a satellite URL
+     *     to the parent and blocks protected or in-flight groups before any write.
+     *     Rejects a parent rename with a conflict and surfaces a partial cascade
+     *     failure as an HTTP 500 naming the failed legs.
+     */
+    put: operations['backup_mongo_backup_mongo_api_update_api_apps_backup_mongo__task_name__put'];
     post?: never;
     /**
      * Backup Mongo Api Delete
@@ -11194,6 +11207,41 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['backup_mongo__BackupTaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_backup_mongo_api_update_api_apps_backup_mongo__task_name__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['backup_mongo__BackupTaskWrite'];
+      };
+    };
     responses: {
       /** @description Successful Response */
       200: {
