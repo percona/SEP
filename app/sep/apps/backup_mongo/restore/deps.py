@@ -272,7 +272,7 @@ async def update_restore_task_group(
     form: RestoreCreate,
     inventory_api: InventoryAPI,
 ) -> CascadeResult:
-    """Best-effort PUT of the parent config task and each child leg.
+    """PUT the parent config task and each child leg, best-effort.
 
     PUTs the parent plus the restore, pbm-list, and optional force-resync legs,
     collecting per-leg failures instead of raising so a mid-cascade error does
