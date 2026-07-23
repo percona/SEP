@@ -15,7 +15,12 @@
 
 """Manage remote API interactions."""
 
-__all__ = ["UPSTREAM_NON_JSON_HEADER", "BaseRemoteAPI", "RemoteAPI"]
+__all__ = [
+    "UPSTREAM_NON_JSON_HEADER",
+    "BaseRemoteAPI",
+    "RemoteAPI",
+    "exception_for_status",
+]
 
 import asyncio
 import logging
@@ -126,15 +131,21 @@ def _is_redirect(status_code: int) -> bool:
     return status.HTTP_300_MULTIPLE_CHOICES <= status_code < status.HTTP_400_BAD_REQUEST
 
 
-def _exception_for_status(
+def exception_for_status(
     status_code: int, *, detail: Any, headers: dict[str, str] | None = None
 ) -> HTTPException:
     """Return the project exception mapped to ``status_code``, else a bare HTTPException.
 
     Fall back to a bare :class:`fastapi.HTTPException` when no project class is
-    mapped, or when ``headers`` are present but the mapped class cannot carry them
-    -- only :class:`HTTPGoneException` accepts headers today, so headers are never
-    dropped.
+    mapped. Every mapped class accepts a ``headers`` kwarg, so headers are always
+    preserved.
+
+    A non-JSON error body (marked with ``UPSTREAM_NON_JSON_HEADER``) signals a
+    proxy/gateway failure rather than an app-level status, so a non-JSON 404 stays
+    a bare HTTPException -- callers narrowing to ``except HTTPNotFoundException``
+    must not mistake an upstream infra failure for a real resource-absent
+    response. The other statuses keep their mapping on non-JSON bodies, matching
+    how they already behave for JSON bodies.
 
     :param status_code: The upstream HTTP error status to translate.
     :param detail: The error detail payload to attach to the exception.
@@ -142,11 +153,10 @@ def _exception_for_status(
     :return: The mapped project exception, or a bare HTTPException.
     """
     exc_class = _HTTP_EXCEPTION_BY_STATUS.get(status_code)
-    if exc_class is HTTPGoneException:
-        return exc_class(detail, headers=headers)
-    if exc_class is None or headers:
+    is_non_json = bool(headers) and UPSTREAM_NON_JSON_HEADER in headers
+    if exc_class is None or (is_non_json and exc_class is HTTPNotFoundException):
         return HTTPException(status_code=status_code, detail=detail, headers=headers)
-    return exc_class(detail)
+    return exc_class(detail, headers=headers)
 
 
 def _sanitize_request_kwargs(
@@ -616,7 +626,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :param detail: The error detail payload for the raised exception.
         :param headers: Optional response headers to preserve.
         """
-        raise _exception_for_status(
+        raise exception_for_status(
             status_code, detail=detail, headers=headers
         ) from None
 
@@ -659,7 +669,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                         text = await response.text()
                         fallback = text or "An unexpected error occurred on the server."
                         self._raise_stream_http_error(
-                            response.status, detail=fallback, headers=None
+                            response.status,
+                            detail=fallback,
+                            headers={UPSTREAM_NON_JSON_HEADER: "1"},
                         )
                     error_body = (
                         response_data if isinstance(response_data, Mapping) else {}
@@ -669,7 +681,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                     )
                     error_headers = None
                     if code_key and (error_code := error_body.get(code_key)):
-                        error_headers = {"X-Error-Code": error_code}
+                        error_headers = {"X-Error-Code": str(error_code)}
                     self._raise_stream_http_error(
                         response.status,
                         detail=error_detail,
@@ -869,7 +881,7 @@ class RemoteAPI(BaseRemoteAPI):
         :raises HTTPException: If the request returns an error response -- the
             project exception mapped to the status (a subclass of
             :class:`fastapi.HTTPException`), or a bare :class:`fastapi.HTTPException`
-            when the status is unmapped or carries headers the mapped class cannot.
+            when the status is unmapped or a non-JSON 404 must stay unmapped.
             A ``3xx`` response also raises when the caller passed
             ``allow_redirects=False``: the redirect was not followed, so the
             status is reported rather than treated as a result.
@@ -887,7 +899,7 @@ class RemoteAPI(BaseRemoteAPI):
                     path,
                     response.status,
                 )
-                raise _exception_for_status(
+                raise exception_for_status(
                     response.status,
                     detail="The server answered with an unfollowed redirect.",
                 )
@@ -912,7 +924,7 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     response_content,
                 )
-                raise _exception_for_status(
+                raise exception_for_status(
                     err.status,
                     detail="An unexpected error occurred on the server.",
                     headers={UPSTREAM_NON_JSON_HEADER: "1"},
@@ -926,8 +938,8 @@ class RemoteAPI(BaseRemoteAPI):
                 if self.error_code_key and (
                     error_code := error_body.get(self.error_code_key)
                 ):
-                    error_headers = {"X-Error-Code": error_code}
-                raise _exception_for_status(
+                    error_headers = {"X-Error-Code": str(error_code)}
+                raise exception_for_status(
                     err.status, detail=error_detail, headers=error_headers
                 ) from None
 
