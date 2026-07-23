@@ -519,9 +519,19 @@ class HealthReportSettings(BaseLowercaseModel):
     @field_validator("endpoint", mode="after")
     @classmethod
     def _normalize_endpoint(cls, v: str | None) -> str | None:
-        if v is not None:
-            return v.rstrip("/")
-        return v
+        """Trim a bare origin's trailing slash while preserving a path's.
+
+        An intake may route ``/v1/upload/`` and ``/v1/upload`` differently,
+        answering the slashless spelling with a redirect that replays the
+        request body -- credentials included -- to the redirect target. The
+        configured path is therefore sent exactly as written.
+
+        :param v: The configured endpoint, or ``None`` when unset.
+        :return: The endpoint with only a bare origin's trailing slash removed.
+        """
+        if v is None:
+            return None
+        return v if urlparse(v).path.strip("/") else v.rstrip("/")
 
     @field_validator("api_key", mode="before")
     @classmethod

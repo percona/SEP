@@ -29,6 +29,7 @@ from app.core.settings_override.registry import (
 from app.sep.config import (
     App,
     AppDrainSettings,
+    HealthReportSettings,
     sep_settings,
     SEPSettings,
     SessionOptions,
@@ -124,6 +125,33 @@ class TestDiagnosticsDelivery:
 
         with pytest.raises(ValidationError, match="undefined secret 'api_key'"):
             SEPSettings(DIAGNOSTICS_DELIVERY=payload)
+
+
+class TestHealthReportEndpoint:
+    """Cover endpoint normalization on the ``HEALTH_REPORT`` block."""
+
+    @pytest.mark.parametrize(
+        ("configured", "expected"),
+        [
+            (
+                "https://intake.example.com/v1/upload/",
+                "https://intake.example.com/v1/upload/",
+            ),
+            (
+                "https://intake.example.com/v1/upload",
+                "https://intake.example.com/v1/upload",
+            ),
+            ("https://intake.example.com/", "https://intake.example.com"),
+            ("https://intake.example.com", "https://intake.example.com"),
+        ],
+    )
+    def test_preserves_a_path_trailing_slash(self, configured, expected):
+        """Keep a path's trailing slash, trimming only a bare origin's."""
+        assert HealthReportSettings(endpoint=configured).endpoint == expected
+
+    def test_empty_endpoint_becomes_none(self):
+        """Leave a blank endpoint unset rather than normalizing it."""
+        assert HealthReportSettings(endpoint="   ").endpoint is None
 
 
 class TestFooterTemplate:
