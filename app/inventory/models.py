@@ -25,7 +25,7 @@ from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
-from app.core.utils.fields import NonEmptyStr, UTCDatetime
+from app.core.utils.fields import ArbitraryMapping, NonEmptyStr, UTCDatetime
 
 
 class SourceEnum(StrEnum):
@@ -222,7 +222,7 @@ class ServiceBase(SQLModel):
     )
     cluster: str | None = None
     replication_set: str | None = None
-    custom_labels: dict[str, Any] | None = SQLField(
+    custom_labels: ArbitraryMapping | None = SQLField(
         default=None,
         sa_column=Column(JSON),
     )
@@ -538,6 +538,7 @@ class TableBase(SQLModel):
     # SEP-203
     keys: dict[str, Any] = SQLField(
         sa_column=Column(JSON, nullable=False),
+        schema_extra={"json_schema_extra": {"additionalProperties": True}},
     )
 
 
@@ -655,11 +656,11 @@ class HostSystemObservationBase(SQLModel):
         ondelete="CASCADE",
     )
     os_version: str | None = None
-    installed_packages: list[dict[str, Any]] | None = SQLField(
+    installed_packages: list[ArbitraryMapping] | None = SQLField(
         default=None,
         sa_column=Column(JSON),
     )
-    config: dict[str, Any] | None = SQLField(
+    config: ArbitraryMapping | None = SQLField(
         default=None,
         sa_column=Column(JSON),
     )

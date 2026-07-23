@@ -22,7 +22,12 @@ from typing import Any, ClassVar, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.db import BaseSQLModel
-from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
+from app.core.utils.fields import (
+    ARBITRARY_ARGS_SCHEMA,
+    ArbitraryMapping,
+    EmptyStrToNone,
+    NonEmptyStr,
+)
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.models import SyncInventoryEntityTypeEnum
 
@@ -215,7 +220,7 @@ class Service(BaseInventoryModel):
     environment: str | None = None
     cluster: str | None = None
     replication_set: str | None = None
-    custom_labels: dict[str, Any] | None = None
+    custom_labels: ArbitraryMapping | None = None
     external_id: NonEmptyStr | EmptyStrToNone = Field(
         default=None,
         validation_alias="service_id",
@@ -379,7 +384,9 @@ class Table(BaseInventoryModel):
 
     name: NonEmptyStr
     create: NonEmptyStr
-    keys: dict[str, Any] = Field(default_factory=dict)
+    keys: dict[str, Any] = Field(
+        default_factory=dict, json_schema_extra=ARBITRARY_ARGS_SCHEMA
+    )
 
     def __repr__(self) -> str:
         return f"Table(name={self.name!r})"
