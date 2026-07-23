@@ -91,6 +91,7 @@ from app.tasks.models import (
 )
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.models import PeriodicTaskCreate, PeriodicTaskResponse
+from app.tasks.periodic.utils import attach_last_run_status
 
 logger = logging.getLogger(__name__)
 
@@ -195,10 +196,15 @@ async def update_task(
     response_model=list[PeriodicTaskResponse],
 )
 async def list_periodic_tasks_by_task_name(
-    celery_beat_session: CeleryBeatSessionDep, task: ExecutableTaskDep
+    celery_beat_session: CeleryBeatSessionDep,
+    session: SessionDep,
+    task: ExecutableTaskDep,
 ) -> list[PeriodicTask]:
     """List periodic tasks by task name."""
-    return await PeriodicTaskManager.list_by_task_names(celery_beat_session, task.name)
+    periodic_tasks = await PeriodicTaskManager.list_by_task_names(
+        celery_beat_session, task.name
+    )
+    return await attach_last_run_status(session, periodic_tasks)
 
 
 @router.post(

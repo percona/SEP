@@ -18,6 +18,7 @@
 import { useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import { ScheduledTasksPanel } from './ScheduledTasksPanel';
 import type { PeriodicTaskResponse } from './hooks';
 
@@ -87,7 +88,19 @@ function StoryHarness({ periodicTasks, appTasks }: StoryArgs) {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: Infinity } },
     });
-    qc.setQueryData(['plugins', APP_NAME, 'tasks'], appTasks);
+    qc.setQueryData(
+      [
+        'plugins',
+        APP_NAME,
+        'tasks',
+        {
+          offset: DEFAULT_APP_LIST_OFFSET,
+          limit: DEFAULT_APP_LIST_LIMIT,
+          fetchAllPages: true,
+        },
+      ],
+      { items: appTasks, pagination: null },
+    );
     qc.setQueryData(['periodic'], periodicTasks);
     return qc;
   }, [periodicTasks, appTasks]);

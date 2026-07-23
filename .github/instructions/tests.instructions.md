@@ -40,7 +40,7 @@ When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()
 
 ## Compile-only SQL ≠ engine coverage
 
-`.compile(dialect=postgresql.dialect(), ...)` + `assert "->>" in rendered` verifies the rendered shape, NOT that the engine accepts it. PostgreSQL's `->`/`->>` require `json`/`jsonb` — a compile-only test on a `Text` column passes while production rejects the SQL. Dialect-specific helpers MUST have a real-engine execution test per `(dialect × column type)`. SQLite is not a substitute for PostgreSQL.
+`.compile(dialect=postgresql.dialect(), ...)` + `assert "->>" in rendered` verifies the rendered shape, NOT that the engine accepts it. PostgreSQL's `->`/`->>` require `json`/`jsonb` — a compile-only test on a `Text` column passes while production rejects the SQL. Dialect-specific helpers MUST have a real-engine execution test per `(dialect × column type)`. SQLite is not a substitute for PostgreSQL. The same applies to any code path with Postgres-specific error or lifecycle semantics — aborted-transaction handling, `RETURNING`, relationship / lazy-load, deferred columns, NULL ordering — not just rendered SQL: cover it against a real Postgres engine.
 
 ## Don't ratify the implementation
 
@@ -50,12 +50,21 @@ When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()
 
 - **Loops:** a polling/retry SUT MUST have a test that drives ≥2 iterations.
 - **Recovery branches:** any `try`/`except` whose body promises non-trivial recovery (rollback-then-retry, default-fallback, replay) MUST have a test that forces the trigger condition. Pure log-and-reraise is exempt.
+- **External-API edge cases:** a SUT that calls an external API needs coverage for empty response (`return_value=[]`), `None` optional fields, error status, connection failure, and partial data — not just the happy path.
 - **Enums:** derive from `TaskHistoryStatusEnum.SUCCESS.value`, not `"success"`. When the test's point is that a value *validated into* the enum member (not merely matches the string), assert `field is Enum.MEMBER` (identity) alongside `field.value == "…"` — `StrEnum` equals its raw string, so `==` passes even for a string that bypassed validation.
 - **Settings:** capture from the live settings object; don't hardcode the YAML default. The override value MUST differ from the resolved default (`override = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT`) — otherwise the test passes whether the override fired or not.
 - **Private state:** `_LATEST_RESULTS`, `_CACHE`, any `_<priv>` module global — expose a public getter.
+- **Test imports don't widen visibility:** don't drop a leading underscore or add to `__all__` just so a test can import a helper. Tests may import module-private names directly (`from app.<mod> import _resolve_field`; `SLF001` is relaxed in `tests/`) — keep intra-module helpers private.
 
 ## Cleanup & duplicates
 
 `TestClient`/`AsyncClient` fixtures reset `dependency_overrides = {}` in teardown. Async: `@pytest.mark.asyncio`, `@pytest_asyncio.fixture`. Two tests differing only in one input → `@pytest.mark.parametrize`.
 
 Never wrap `TestClient(sep_app)` in `with …:` for a unit test — the context-manager form enters `sep_lifespan` → `init_sep_db()` and seeds the Celery beat DB, turning a unit test into a lifespan-dependent one with hidden cross-test coupling. If the lifespan path is genuinely needed, patch the startup chain to a no-op first.
+
+## Test-shape smells
+
+- **Eager** — multiple Acts (independent exercises of the SUT) in one test → `@pytest.mark.parametrize`, one Act per case.
+- **Conditional logic** — `if`/`elif` over the SUT's branching state inside a test body → split into one test per branch.
+- **Greedy catcher** — `try`/`except` to assert an expected exception → `pytest.raises`.
+- **Sequencer / free ride** — a test that depends on execution order, or repeats teardown the fixture should own → move cleanup into a `@pytest.fixture` with `yield`.

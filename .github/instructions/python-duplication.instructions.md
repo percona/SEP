@@ -14,6 +14,7 @@ Same string or numeric literal appearing in 2+ files in the diff (or 1 in the di
 - **Minor** if it appears in 2 files and is unlikely to change.
 - Flag even **single-file app-identity literals** — app slug, app-owned meta-key, app `settings.yaml` key, URL fragment routed to the app — they encode a cross-app contract. Extract to a module-level constant.
 - Don't flag test fixture values or Python builtins.
+- **Field-name sets that mirror a model** — a module-level tuple/list/set of, or dict keyed by, a model's field-name string literals (`RENDERED_FIELDS = ("os_version", "config")`, or a dict keyed by `Capabilities` fields) duplicates the model, the single source of truth. Derive from `Model.model_fields` or hang a `ClassVar` on the model. Caveat: prefer a named allow-set over a blanket `frozenset(Model.model_fields) - {excluded}`, which silently absorbs every future field the model gains.
 
 Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL_PORT` in `app/inventory/constants.py`. Any hardcoded service-type string (`"mysql"`, `"postgresql"`, `"valkey"`, …) → `ServiceTypeEnum.<member>` (it's a `StrEnum` — the member *is* the string).
 
@@ -68,6 +69,10 @@ Before flagging "reuse the existing symbol," check for a `_` prefix. A `_`-prefi
 ## DUP-7 — Conformance checks derive their expectation from the verified source
 
 When a diff adds a consistency/conformance check, the expected value must be *derived from* the production function or constant being verified (called, imported, computed) — never re-typed as an independent copy. A re-typed expectation drifts from the code silently and defeats the check.
+
+## DUP-8 — Unit label agrees with the factor and the documented contract
+
+When a value is shown to a human with a unit — an error message, log line, validation failure, or UI string — the label, the conversion factor that produces the number, and the unit in the field's docstring / schema description must all agree. Binary-vs-decimal (KB/KiB, MB/MiB) and seconds-vs-milliseconds mismatches are the common, user-visible drift. Flag when the three diverge.
 
 ## Pydantic — declarative over imperative
 

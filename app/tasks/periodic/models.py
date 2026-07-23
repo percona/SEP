@@ -32,7 +32,25 @@ from sqlalchemy_celery_beat.models import Period, PeriodicTask
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
-from app.tasks.models import TaskExecuteRequest
+from app.tasks.models import TaskExecuteRequest, TaskHistoryStatusEnum
+
+
+def resolve_task_name(
+    args: list[Any] | None, kwargs: dict[str, Any] | None
+) -> str | None:
+    """Return the SEP task name carried by a beat schedule's decoded fields.
+
+    Apply the single rule every caller shares: the name is ``args[0]``,
+    overridden by ``kwargs["task_name"]`` when that key is present.
+
+    :param args: The schedule's decoded positional ``args``, or ``None``.
+    :param kwargs: The schedule's decoded ``kwargs``, or ``None``.
+    :return: The resolved SEP task name, or ``None`` when it cannot be derived.
+    """
+    name = args[0] if args else None
+    if kwargs and "task_name" in kwargs:
+        name = kwargs["task_name"]
+    return name
 
 
 class PeriodicTaskExecuteRequest(TaskExecuteRequest):
@@ -119,7 +137,7 @@ class BasePeriodicTask(BaseModel):
 
 
 class PeriodicTaskResponse(BasePeriodicTask):
-    """Representing a response for a periodic task API call.
+    """Represent a response for a periodic task API call.
 
     This model extends `BasePeriodicTask` and includes additional fields such as ID,
     last run time, total run count, and date changed.
@@ -144,6 +162,11 @@ class PeriodicTaskResponse(BasePeriodicTask):
     :type total_run_count: int
     :param date_changed: The datetime when the task was last changed.
     :type date_changed: UTCDatetime | None
+    :param last_run_status: The result of this schedule's own most recent
+        run, or ``None`` when the schedule has never run. Resolved as the
+        earliest system-triggered history for this task name at or after the
+        schedule's ``last_run_at``, so a later unrelated system run of the same
+        task name is not misattributed.
     :param interval: The interval schedule for the task. Defaults to None. This field
         is populated with the alias "model_intervalschedule".
     :type interval: IntervalSchedule | None
@@ -154,6 +177,7 @@ class PeriodicTaskResponse(BasePeriodicTask):
 
     id: int
     last_run_at: UTCDatetime | None
+    last_run_status: TaskHistoryStatusEnum | None = None
     total_run_count: int = 0
     date_changed: UTCDatetime | None
     interval: IntervalSchedule | None = Field(
@@ -216,14 +240,14 @@ class PeriodicTaskResponse(BasePeriodicTask):
                 "task": None,
                 "execute_request": None,
             }
-            if (raw_args := data.get("args")) and (args := json.loads(raw_args)):
-                extra_kwargs["task"] = args[0]
-                if len(args) > 1:
-                    extra_kwargs["execute_request"] = args[1]
-            if (raw_kwargs := data.get("kwargs")) and (
-                kwargs := json.loads(raw_kwargs)
-            ):
-                extra_kwargs["task"] = kwargs.get("task_name", extra_kwargs["task"])
+            raw_args = data.get("args")
+            raw_kwargs = data.get("kwargs")
+            args = json.loads(raw_args) if raw_args else None
+            kwargs = json.loads(raw_kwargs) if raw_kwargs else None
+            extra_kwargs["task"] = resolve_task_name(args, kwargs)
+            if args and len(args) > 1:
+                extra_kwargs["execute_request"] = args[1]
+            if kwargs:
                 extra_kwargs["execute_request"] = kwargs.get(
                     "execution_data", extra_kwargs["execute_request"]
                 )

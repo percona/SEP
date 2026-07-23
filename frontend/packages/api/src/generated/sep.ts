@@ -5570,6 +5570,9 @@ export interface components {
      *     :type backup_type: BackupType
      *     :param backup_source: Backup name or timestamp to restore from.
      *     :type backup_source: NonEmptyStr
+     *     :param restore_namespace_filter: Optional database or collection namespace
+     *         filter for a logical restore.
+     *     :type restore_namespace_filter: str | None
      *     :param restore_batch_size: Number of documents to buffer.
      *     :type restore_batch_size: int | None
      *     :param restore_num_insertion_workers: Insertion workers per collection.
@@ -5607,6 +5610,8 @@ export interface components {
       restore_mongod_location?: string | null;
       /** Restore Mongod Location Map */
       restore_mongod_location_map?: string | null;
+      /** Restore Namespace Filter */
+      restore_namespace_filter?: string | null;
       /** Restore Num Download Workers */
       restore_num_download_workers?: number | null;
       /** Restore Num Insertion Workers */
@@ -9338,6 +9343,8 @@ export interface components {
      *     :param total_run_count: The total number of times the schedule has run,
      *         or ``None`` when unavailable.
      *     :type total_run_count: int | None
+     *     :param last_run_status: The result of this schedule's own most recent run,
+     *         or ``None`` when the schedule has never run.
      *     :param chain_task_names: Ordered task names in the periodic execution
      *         chain, if any.
      *     :type chain_task_names: list[str]
@@ -9351,6 +9358,7 @@ export interface components {
       id: number;
       /** Last Run At */
       last_run_at?: string | null;
+      last_run_status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Name */
       name: string;
       /** Next Run At */
