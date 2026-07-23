@@ -16,7 +16,7 @@
  */
 
 import type { ReactNode } from 'react';
-import type { AppCapabilities } from '@sep/api';
+import type { AppCapabilities, FieldValidationError } from '@sep/api';
 import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/types';
 
 /**
@@ -43,6 +43,10 @@ export interface AppFormSlotProps {
   capabilities?: AppCapabilities;
   /** Per-field override threaded through, so a composed renderer can honour it. */
   renderField?: RenderFieldOverride;
+  /** Form-level submit error banner (populated on a 422); pass to the composed renderer. */
+  submitError?: string | null;
+  /** Per-field validation errors (from a 422); pass to the composed renderer for inline display. */
+  fieldErrors?: FieldValidationError[];
 }
 
 /**
