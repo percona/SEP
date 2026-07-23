@@ -16,6 +16,7 @@
 """Define test cases for periodic task routes."""
 
 import json
+from datetime import datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -24,11 +25,94 @@ from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.tasks.crud import TaskManager
-from app.tasks.models import TaskWrite
+from app.core.utils.date_time import utc_now
+from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.models import (
+    SYSTEM_USER,
+    Task,
+    TaskHistory,
+    TaskHistoryStatusEnum,
+    TaskWrite,
+)
 from tests.app.factories import TaskFactory
 
 CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
+
+
+async def _add_periodic_task(
+    celery_beat_session: AsyncSession,
+    *,
+    name: str,
+    task_name: str,
+    enabled: bool = True,
+    last_run_at: datetime | None = None,
+) -> PeriodicTask:
+    """Create and persist a periodic task bound to ``task_name``."""
+    schedule = IntervalSchedule(every=10, period=Period.MINUTES)
+    celery_beat_session.add(schedule)
+    await celery_beat_session.flush()
+
+    task = PeriodicTask(
+        name=name,
+        task=CELERY_TASK_NAME,
+        kwargs=json.dumps({"task_name": task_name, "execution_data": None}),
+        enabled=enabled,
+        last_run_at=last_run_at,
+        schedule_model=schedule,
+    )
+    celery_beat_session.add(task)
+    await celery_beat_session.commit()
+    await celery_beat_session.refresh(task)
+    return task
+
+
+async def _add_history(
+    tasks_session: AsyncSession,
+    *,
+    task_name: str,
+    task_status: TaskHistoryStatusEnum,
+    executed_by: str | None = SYSTEM_USER,
+) -> None:
+    """Persist a task plus one history row for ``task_name`` in the tasks DB."""
+    task = await TaskManager.create(
+        tasks_session, TaskWrite.model_validate(TaskFactory.build(name=task_name))
+    )
+    history = TaskHistory(
+        task_id=task.id,
+        status=task_status,
+        executed_by=executed_by,
+        execution_request={
+            "task": task_name,
+            "target": "localhost",
+            "meta": {},
+            "tracking": {"allocation_id": None, "evaluation_id": None},
+        },
+    )
+    await TaskHistoryManager.save(tasks_session, history)
+
+
+async def _add_history_row(
+    tasks_session: AsyncSession,
+    task: Task,
+    *,
+    task_status: TaskHistoryStatusEnum,
+    created_at: datetime,
+    executed_by: str | None = SYSTEM_USER,
+) -> None:
+    """Persist one history row for an existing task at an explicit ``created_at``."""
+    history = TaskHistory(
+        task_id=task.id,
+        status=task_status,
+        created_at=created_at,
+        executed_by=executed_by,
+        execution_request={
+            "task": task.name,
+            "target": "localhost",
+            "meta": {},
+            "tracking": {"allocation_id": None, "evaluation_id": None},
+        },
+    )
+    await TaskHistoryManager.save(tasks_session, history)
 
 
 @pytest_asyncio.fixture
@@ -99,6 +183,414 @@ class TestRetrievePeriodicTask:
         """Assert retrieving a non-existent periodic task returns 404."""
         response = periodic_test_client.get("/periodic/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestPeriodicTaskLastRunStatus:
+    """Test last-run-status population on the periodic-task list/retrieve routes."""
+
+    @pytest_asyncio.fixture
+    async def seeded_matrix(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed one periodic task per acceptance-criteria scenario."""
+        ran_at = utc_now()
+
+        # Never run: a system history row exists, but last_run_at is None.
+        await _add_periodic_task(
+            celery_beat_session,
+            name="never-run",
+            task_name="never-run-task",
+            last_run_at=None,
+        )
+        await _add_history(
+            tasks_session,
+            task_name="never-run-task",
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+        )
+
+        await _add_periodic_task(
+            celery_beat_session,
+            name="succeeded",
+            task_name="succeeded-task",
+            last_run_at=ran_at,
+        )
+        await _add_history(
+            tasks_session,
+            task_name="succeeded-task",
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+        )
+
+        await _add_periodic_task(
+            celery_beat_session,
+            name="failed",
+            task_name="failed-task",
+            last_run_at=ran_at,
+        )
+        await _add_history(
+            tasks_session,
+            task_name="failed-task",
+            task_status=TaskHistoryStatusEnum.FAILED,
+        )
+
+        await _add_periodic_task(
+            celery_beat_session,
+            name="running",
+            task_name="running-task",
+            last_run_at=ran_at,
+        )
+        await _add_history(
+            tasks_session,
+            task_name="running-task",
+            task_status=TaskHistoryStatusEnum.RUNNING,
+        )
+
+        # Manual-only: history exists but was not system-executed.
+        await _add_periodic_task(
+            celery_beat_session,
+            name="manual-only",
+            task_name="manual-task",
+            last_run_at=ran_at,
+        )
+        await _add_history(
+            tasks_session,
+            task_name="manual-task",
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by="test-user",
+        )
+
+        # No history at all, despite a recorded last_run_at.
+        await _add_periodic_task(
+            celery_beat_session,
+            name="no-history",
+            task_name="no-history-task",
+            last_run_at=ran_at,
+        )
+
+    def test_list_reports_last_run_status(self, periodic_test_client, seeded_matrix):
+        """Assert each scenario resolves to the expected last_run_status."""
+        response = periodic_test_client.get("/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        statuses = {row["name"]: row["last_run_status"] for row in response.json()}
+
+        assert statuses["never-run"] is None
+        assert statuses["succeeded"] == "success"
+        assert statuses["failed"] == "failed"
+        assert statuses["running"] == "running"
+        assert statuses["manual-only"] is None
+        assert statuses["no-history"] is None
+
+    @pytest_asyncio.fixture
+    async def seeded_two_schedules(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed two schedules bound to the same task name with one system run."""
+        ran_at = utc_now()
+        await _add_periodic_task(
+            celery_beat_session,
+            name="schedule-one",
+            task_name="shared-task",
+            last_run_at=ran_at,
+        )
+        await _add_periodic_task(
+            celery_beat_session,
+            name="schedule-two",
+            task_name="shared-task",
+            last_run_at=ran_at,
+        )
+        await _add_history(
+            tasks_session,
+            task_name="shared-task",
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+        )
+
+    def test_two_schedules_same_task_agree(
+        self, periodic_test_client, seeded_two_schedules
+    ):
+        """Assert two schedules on one task name report the same last_run_status."""
+        response = periodic_test_client.get("/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        statuses = {row["name"]: row["last_run_status"] for row in response.json()}
+
+        assert statuses["schedule-one"] == "success"
+        assert statuses["schedule-two"] == "success"
+
+    @pytest_asyncio.fixture
+    async def seeded_staggered_schedules(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed two schedules on one task name dispatched minutes apart.
+
+        Each schedule must resolve to the system run that followed its own
+        dispatch, not the other schedule's run -- the shared name's query cutoff
+        is the earlier dispatch, so both runs are in play for both schedules.
+        """
+        early = utc_now() - timedelta(minutes=10)
+        late = utc_now()
+        await _add_periodic_task(
+            celery_beat_session,
+            name="early-schedule",
+            task_name="staggered-task",
+            last_run_at=early,
+        )
+        await _add_periodic_task(
+            celery_beat_session,
+            name="late-schedule",
+            task_name="staggered-task",
+            last_run_at=late,
+        )
+        task = await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="staggered-task")),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=early + timedelta(seconds=1),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.FAILED,
+            created_at=late + timedelta(seconds=1),
+        )
+
+    def test_staggered_schedules_resolve_own_runs(
+        self, periodic_test_client, seeded_staggered_schedules
+    ):
+        """Assert each schedule on a shared name resolves to its own dispatch."""
+        response = periodic_test_client.get("/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        statuses = {row["name"]: row["last_run_status"] for row in response.json()}
+
+        assert statuses["early-schedule"] == "success"
+        assert statuses["late-schedule"] == "failed"
+
+    @pytest_asyncio.fixture
+    async def seeded_retrieve(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> PeriodicTask:
+        """Seed a single run periodic task for the retrieve route."""
+        task = await _add_periodic_task(
+            celery_beat_session,
+            name="retrieve-me",
+            task_name="retrieve-task",
+            last_run_at=utc_now(),
+        )
+        await _add_history(
+            tasks_session,
+            task_name="retrieve-task",
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        return task
+
+    def test_retrieve_reports_last_run_status(
+        self, periodic_test_client, seeded_retrieve
+    ):
+        """Assert the retrieve route also carries last_run_status."""
+        response = periodic_test_client.get(f"/periodic/{seeded_retrieve.id}")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["last_run_status"] == "success"
+
+    def test_update_preserves_last_run_status(
+        self, periodic_test_client, seeded_retrieve
+    ):
+        """Assert editing a previously-run schedule still reports its last result.
+
+        Regression: the update route defaulted ``last_run_status`` to ``None``
+        because it returned the raw ORM row without enrichment, making an edited
+        schedule look never-run.
+        """
+        update_data = {
+            "name": "retrieve-me",
+            "task": "retrieve-task",
+            "start_time": None,
+            "enabled": False,
+            "description": "edited",
+            "interval": {"every": 30, "period": "minutes"},
+        }
+        response = periodic_test_client.put(
+            f"/periodic/{seeded_retrieve.id}",
+            json=update_data,
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["last_run_status"] == "success"
+
+    @pytest_asyncio.fixture
+    async def seeded_false_attribution(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed a schedule whose own run is older than an unrelated later run.
+
+        The schedule dispatched at ``ran_at`` and succeeded; a separate later
+        system run of the same task name (e.g. a chain child) then failed. The
+        schedule must report its own success, not the later failure.
+        """
+        ran_at = utc_now()
+        await _add_periodic_task(
+            celery_beat_session,
+            name="own-run",
+            task_name="shared-run",
+            last_run_at=ran_at,
+        )
+        task = await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="shared-run")),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=ran_at + timedelta(seconds=1),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.FAILED,
+            created_at=ran_at + timedelta(minutes=5),
+        )
+
+    def test_later_unrelated_run_not_attributed(
+        self, periodic_test_client, seeded_false_attribution
+    ):
+        """Assert a later same-name system run does not clobber the schedule's result."""
+        response = periodic_test_client.get("/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        row = next(row for row in response.json() if row["name"] == "own-run")
+        assert row["last_run_status"] == "success"
+
+    @pytest_asyncio.fixture
+    async def seeded_prior_run(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed a schedule preceded by an older, unrelated same-name system run.
+
+        A separate system run of the same task name failed before the schedule
+        dispatched at ``ran_at``. The schedule must report its own later success,
+        not the earlier failure that predates ``last_run_at``.
+        """
+        ran_at = utc_now()
+        await _add_periodic_task(
+            celery_beat_session,
+            name="later-run",
+            task_name="prior-run",
+            last_run_at=ran_at,
+        )
+        task = await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="prior-run")),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.FAILED,
+            created_at=ran_at - timedelta(minutes=5),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=ran_at + timedelta(seconds=1),
+        )
+
+    def test_earlier_unrelated_run_not_attributed(
+        self, periodic_test_client, seeded_prior_run
+    ):
+        """Assert a same-name system run before last_run_at is not attributed."""
+        response = periodic_test_client.get("/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        row = next(row for row in response.json() if row["name"] == "later-run")
+        assert row["last_run_status"] == "success"
+
+    @pytest_asyncio.fixture
+    async def seeded_subsecond_dispatch(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed a schedule whose ``last_run_at`` carries sub-second precision.
+
+        ``last_run_at`` keeps microseconds while ``TaskHistory.created_at`` is
+        floored to whole seconds, so comparing at the finer granularity would
+        place the schedule's own history row just before the dispatch and miss it.
+        """
+        base = utc_now()
+        await _add_periodic_task(
+            celery_beat_session,
+            name="subsecond",
+            task_name="subsecond-task",
+            last_run_at=base + timedelta(microseconds=412000),
+        )
+        task = await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="subsecond-task")),
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=base,
+        )
+
+    def test_subsecond_dispatch_reports_own_run(
+        self, periodic_test_client, seeded_subsecond_dispatch
+    ):
+        """Assert a sub-second last_run_at still matches its whole-second row."""
+        response = periodic_test_client.get("/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        row = next(row for row in response.json() if row["name"] == "subsecond")
+        assert row["last_run_status"] == "success"
+
+
+class TestListPeriodicTasksByTaskName:
+    """Test last-run-status population on GET /{task_name}/periodic/."""
+
+    @pytest_asyncio.fixture
+    async def seeded_by_task_name(
+        self,
+        celery_beat_session: AsyncSession,
+        tasks_session: AsyncSession,
+    ) -> None:
+        """Seed an executable task, a run schedule for it, and a system history row."""
+        ran_at = utc_now()
+        task = await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="by-name-task")),
+        )
+        await _add_periodic_task(
+            celery_beat_session,
+            name="by-name-schedule",
+            task_name="by-name-task",
+            last_run_at=ran_at,
+        )
+        await _add_history_row(
+            tasks_session,
+            task,
+            task_status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=ran_at,
+        )
+
+    def test_list_by_task_name_reports_last_run_status(
+        self, periodic_test_client, seeded_by_task_name
+    ):
+        """Assert the by-task-name list route also carries last_run_status."""
+        response = periodic_test_client.get("/by-name-task/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["last_run_status"] == "success"
 
 
 class TestUpdatePeriodicTask:
