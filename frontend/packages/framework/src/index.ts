@@ -111,7 +111,7 @@ export { detailSyntaxBlockSx } from './components/SchemaDrivenApp/detailSyntaxSt
 export type { DetailSyntaxLanguage } from './components/SchemaDrivenApp/detailSyntaxStyles';
 
 // Hooks
-export { useServices, useSchemas, useTables, useHosts } from './hooks';
+export { useServices, useSchemas, useTables, useHosts, useResolvedServiceField } from './hooks';
 export type {
   ServiceOption,
   ServiceType,
@@ -122,7 +122,10 @@ export type {
   UseSchemasOptions,
   UseTablesOptions,
   UseHostsOptions,
+  ResolvedServiceField,
 } from './hooks';
+
+export { cascadeParentResetKey } from './utils/cascadeParentResetKey';
 
 export {
   useTaskLogs,

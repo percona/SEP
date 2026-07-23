@@ -46,19 +46,15 @@
     {
       "collapsed_by_default": false,
       "collapsible": false,
+      "description": "Creating this backup produces sibling tasks: logical, physical, status.",
       "fields": [
         {
+          "default": "mongodb-backup",
           "label": "Task Name",
           "min_length": 1,
           "name": "task_name",
           "required": true,
           "type": "string"
-        },
-        {
-          "label": "Execution Host",
-          "name": "hostname",
-          "required": true,
-          "type": "host"
         },
         {
           "label": "Database Service",
@@ -68,6 +64,13 @@
             "mongodb"
           ],
           "type": "service"
+        },
+        {
+          "depends_on": "service_id",
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
         },
         {
           "description": "Optional path to MongoDB URI credentials on the Nomad node",
@@ -81,8 +84,8 @@
       "title": "Task"
     },
     {
-      "collapsed_by_default": false,
-      "collapsible": false,
+      "collapsed_by_default": true,
+      "collapsible": true,
       "fields": [
         {
           "choices": [
@@ -201,8 +204,8 @@
       "title": "Storage"
     },
     {
-      "collapsed_by_default": false,
-      "collapsible": false,
+      "collapsed_by_default": true,
+      "collapsible": true,
       "fields": [
         {
           "default": false,
@@ -255,8 +258,8 @@
       "title": "Point-in-Time Recovery"
     },
     {
-      "collapsed_by_default": false,
-      "collapsible": false,
+      "collapsed_by_default": true,
+      "collapsible": true,
       "fields": [
         {
           "description": "YAML mapping of mongod addresses to backup priority (highest wins). One entry per line, e.g.:\n\"host1:27018\": 2\n\"host2:27018\": 1",

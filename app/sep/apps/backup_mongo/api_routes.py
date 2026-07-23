@@ -18,8 +18,8 @@
 The declarative :class:`~app.sep.apps.framework.apps.TaskExecutionApp` in
 ``app.py`` derives the ``GET /schema`` and paginated ``roots_only`` +
 ``backup_type`` list routes; this router carries the per-app routes it keeps
-custom — the sibling-aggregating detail, the cascade create/delete, and the
-execute route — served as its ``extra_routes``. The framework's derived detail
+custom — the sibling-aggregating detail, the cascade create/update/delete, and
+the execute route — served as its ``extra_routes``. The framework's derived detail
 route is suppressed (``capabilities.detail=False``) so the custom ``GET
 /{task_name}`` here wins. The restore subpackage is now a structurally-bound
 child app (declared via ``child_apps`` on the parent), not a ``/restores``
@@ -31,19 +31,25 @@ from fastapi import status as http_status
 
 from app.core.exceptions import HTTPInternalServerErrorException
 from app.sep.apps.backup_mongo.deps import (
+    backup_create_from_write,
     backup_derived_task_names,
     BackupCascadePlan,
     BackupsTask,
     build_backup_mongo_api_detail_response,
+    EditableBackupParent,
+    ensure_backup_group_update_preserves_names,
     get_backups_task,
     resolve_backup_parent_task,
+    update_backup_task_group,
 )
 from app.sep.apps.backup_mongo.models import (
     BackupTaskDetailResponse,
+    BackupTaskWrite,
 )
 from app.sep.apps.framework.api import derive_cascade_create_route, derive_execute_route
 from app.sep.apps.framework.cascade import cascade_delete_tasks
 from app.sep.deps import (
+    InventoryAPI,
     TaskAPI,
 )
 
@@ -78,6 +84,36 @@ derive_execute_route(
     description="Execute a backup task.",
     task_dep=BackupsTask,
 )
+
+
+@router.put("/{task_name}")
+async def backup_mongo_api_update(
+    parent_task: EditableBackupParent,
+    body: BackupTaskWrite,
+    tasks_api: TaskAPI,
+    inventory_api: InventoryAPI,
+) -> BackupTaskDetailResponse:
+    """Update a backup task group from a JSON payload request body.
+
+    Cascade-updates the parent ``pbm_config`` task and its derived logical,
+    physical, and status siblings, re-stamping ``_form`` so the edit page keeps
+    prefilling. The ``EditableBackupParent`` dependency resolves a satellite URL
+    to the parent and blocks protected or in-flight groups before any write.
+    Rejects a parent rename with a conflict and surfaces a partial cascade
+    failure as an HTTP 500 naming the failed legs.
+    """
+    ensure_backup_group_update_preserves_names(parent_task.name, body.task_name)
+    form = backup_create_from_write(body)
+    result = await update_backup_task_group(tasks_api, parent_task, form, inventory_api)
+    if not result.success:
+        failed = [
+            (failure.task_name, str(failure.exception)) for failure in result.failures
+        ]
+        raise HTTPInternalServerErrorException(
+            detail=f"Partial update failure; inconsistent task group: {failed}"
+        )
+    updated_task = await get_backups_task(parent_task.name, tasks_api)
+    return await build_backup_mongo_api_detail_response(updated_task, tasks_api)
 
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)
