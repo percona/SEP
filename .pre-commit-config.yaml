@@ -53,6 +53,13 @@ repos:
         language: system
         files: ^changelog\.d/
         pass_filenames: false
+      - id: sync-alembic-version-locations
+        name: Sync alembic.ini [sep] version_locations
+        description: "Regenerate [sep] version_locations from app migration dirs"
+        entry: python3 scripts/sync_alembic_version_locations.py
+        language: system
+        files: ^app/sep/apps/.*/migrations/versions/
+        pass_filenames: false
       - id: check-nomad-payload-size
         name: Check Nomad payload size
         description: "Ensure dispatch payloads stay under Nomad 16 KiB limit after minify+gzip"
