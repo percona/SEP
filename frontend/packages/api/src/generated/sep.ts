@@ -6545,7 +6545,6 @@ export interface components {
      *     :param depends_on: Optional name of the field whose value drives the
      *         default executor selection. ``None`` (the default) omits the key from
      *         the wire so plugins that do not opt in stay byte-identical.
-     *     :type depends_on: NonEmptyStr | None
      *     :param allow_custom: When ``True``, the selector also accepts a free-typed
      *         value alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
