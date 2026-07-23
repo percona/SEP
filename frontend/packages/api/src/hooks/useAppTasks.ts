@@ -121,7 +121,7 @@ export const DEFAULT_APP_LIST_OFFSET = 0;
 export const DEFAULT_APP_LIST_LIMIT = 50;
 
 /** Soft cap on pages walked by ``fetchAllPages`` (~2500 rows at the default limit). */
-const MAX_FETCH_ALL_PAGES = 50;
+export const MAX_FETCH_ALL_PAGES = 50;
 
 export type AppListQueryOptions = {
   enabled?: boolean;

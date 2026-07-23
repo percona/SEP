@@ -23,6 +23,7 @@ import {
   fetchAppTasksList,
   fetchAppEntityList,
   isBackendUnavailable,
+  MAX_FETCH_ALL_PAGES,
   normalizeAppListResponse,
 } from '../src/hooks/useAppTasks';
 import { ApiError } from '../src/errors';
@@ -156,8 +157,8 @@ describe('fetchAppTasksList', () => {
 
     const result = await fetchAppTasksList('mysql_backups', { fetchAllPages: true });
 
-    expect(getMock).toHaveBeenCalledTimes(50);
-    expect(result.items).toHaveLength(50 * DEFAULT_APP_LIST_LIMIT);
+    expect(getMock).toHaveBeenCalledTimes(MAX_FETCH_ALL_PAGES);
+    expect(result.items).toHaveLength(MAX_FETCH_ALL_PAGES * DEFAULT_APP_LIST_LIMIT);
     expect(result.truncated).toBe(true);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('fetchAllPages truncated'));
     warn.mockRestore();
