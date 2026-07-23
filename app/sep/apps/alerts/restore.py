@@ -18,9 +18,7 @@
 import logging
 from typing import Any
 
-from fastapi import status
-from fastapi.exceptions import HTTPException
-
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.alerts.deps import find_or_create_alert_folder
 from app.sep.apps.alerts.loader import get_alert_templates
@@ -90,14 +88,10 @@ async def _restore_contact_point(
     """
     try:
         await pmm_api.update_contact_point(uid, name, type_, cp_settings)
-    except HTTPException as exc:
-        if exc.status_code != status.HTTP_404_NOT_FOUND:
-            raise
+    except HTTPNotFoundException:
         try:
             await pmm_api.delete_contact_point(uid)
-        except HTTPException as del_exc:
-            if del_exc.status_code != status.HTTP_404_NOT_FOUND:
-                raise
+        except HTTPNotFoundException:
             return
         await pmm_api.create_contact_point(name, type_, cp_settings)
 
@@ -164,9 +158,7 @@ async def _restore_rules(
                 group=r_data.get("group", alerts_settings.ALERT_FOLDER_NAME),
             )
             created += 1
-        except HTTPException as exc:
-            if exc.status_code != status.HTTP_404_NOT_FOUND:
-                raise
+        except HTTPNotFoundException:
             logger.warning(
                 "Skipping rule %r: template %r not found in PMM",
                 r_data["title"],
