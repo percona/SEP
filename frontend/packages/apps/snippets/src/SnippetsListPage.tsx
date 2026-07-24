@@ -55,6 +55,7 @@ import {
   useRemoveSnippetApproval,
   useBatchApproveSnippets,
   useSnippetsCapabilities,
+  useSnippetServiceTypes,
   useRefreshSnippets,
   type BatchApproveError,
 } from './hooks';
@@ -62,6 +63,7 @@ import type {
   BatchApprovalErrorResponse,
   BatchApprovalResponse,
   RefreshResponse,
+  SnippetApprovalFilter,
   SnippetResponse,
 } from './types';
 
@@ -69,7 +71,7 @@ interface SnippetsListPageProps {
   isAdmin?: boolean;
 }
 
-type ApprovalFilter = 'all' | 'approved' | 'not_approved';
+type ApprovalFilter = SnippetApprovalFilter;
 
 /** Sentinel service-type filter value meaning "no service-type restriction". */
 const ALL_SERVICES = 'all';
@@ -95,12 +97,6 @@ function encodeServiceType(type: string): string {
 function decodeServiceType(value: string): string {
   return value.slice(SERVICE_TYPE_PREFIX.length);
 }
-
-/**
- * Server sentinel selecting snippets with no service type. Mirrors
- * ``SERVICE_TYPE_UNCATEGORIZED`` in ``app/sep/snippets/list_query.py``.
- */
-const SERVICE_TYPE_UNCATEGORIZED = '__uncategorized__';
 
 /** Debounce window (ms) before a search keystroke drives a server refetch. */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -223,23 +219,24 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
     return () => clearTimeout(handle);
   }, [search]);
 
-  // Map the service-type UI selection onto the server param: no filter, the
-  // uncategorized sentinel, or the decoded free-form value.
+  // Map the service-type UI selection onto the server equality param: no filter,
+  // "uncategorized" (carried by a separate flag below), or the decoded free-form
+  // value. Only the UI sentinels map to undefined — a real service type is sent
+  // verbatim, so a value equal to a sentinel is never mistaken for "no filter".
   const serviceTypeParam = useMemo(() => {
-    if (serviceTypeFilter === ALL_SERVICES) {
+    if (serviceTypeFilter === ALL_SERVICES || serviceTypeFilter === UNCATEGORIZED) {
       return undefined;
-    }
-    if (serviceTypeFilter === UNCATEGORIZED) {
-      return SERVICE_TYPE_UNCATEGORIZED;
     }
     return decodeServiceType(serviceTypeFilter);
   }, [serviceTypeFilter]);
+
+  const uncategorizedParam = serviceTypeFilter === UNCATEGORIZED;
 
   // Any filter change resets to the first page so the server total and the
   // visible rows stay in agreement.
   useEffect(() => {
     setListPage((prev) => ({ ...prev, offset: DEFAULT_APP_LIST_OFFSET }));
-  }, [debouncedSearch, approvalFilter, serviceTypeParam]);
+  }, [debouncedSearch, approvalFilter, serviceTypeFilter]);
 
   const {
     data: listResult,
@@ -249,8 +246,9 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
     offset: listPage.offset,
     limit: listPage.limit,
     search: debouncedSearch || undefined,
-    approval: approvalFilter,
+    approval: approvalFilter === 'all' ? undefined : approvalFilter,
     serviceType: serviceTypeParam,
+    uncategorized: uncategorizedParam,
   });
   const snippets = listResult?.items ?? [];
   const listPagination = listResult?.pagination ?? null;
@@ -268,22 +266,13 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
 
   const showRefresh = isAdmin && capabilities?.manual_sync_enabled;
 
-  // Service-type options derived from the current page of snippets. Snippets with
-  // no service_type contribute the "Uncategorized" bucket instead of being dropped.
-  // Increment-1 limitation: options reflect the loaded page, not the whole dataset
-  // (a proper facet source is tracked in the follow-up work). The active selection
-  // is always kept selectable so a filter that empties the page can still be cleared.
+  // Service-type options come from the whole-dataset facet, not the loaded page, so
+  // a type unique to a later page is still selectable. The active selection is kept
+  // selectable even if the facet momentarily lacks it (e.g. between refreshes).
+  const { data: serviceTypeFacet } = useSnippetServiceTypes();
   const { serviceTypes, hasUncategorized } = useMemo(() => {
-    const types = new Set<string>();
-    let uncategorized = false;
-    for (const snippet of snippets) {
-      const type = normalizeServiceType(snippet);
-      if (type) {
-        types.add(type);
-      } else {
-        uncategorized = true;
-      }
-    }
+    const types = new Set(serviceTypeFacet?.service_types ?? []);
+    let uncategorized = serviceTypeFacet?.has_uncategorized ?? false;
     if (serviceTypeFilter === UNCATEGORIZED) {
       uncategorized = true;
     } else if (serviceTypeFilter !== ALL_SERVICES) {
@@ -293,7 +282,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
       serviceTypes: Array.from(types).sort((a, b) => a.localeCompare(b)),
       hasUncategorized: uncategorized,
     };
-  }, [snippets, serviceTypeFilter]);
+  }, [serviceTypeFacet, serviceTypeFilter]);
 
   // Whether any server-side filter is active — used so the filter controls stay
   // visible (and clearable) even when the filtered page comes back empty.

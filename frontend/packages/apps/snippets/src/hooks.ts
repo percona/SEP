@@ -48,10 +48,12 @@ import type {
   BatchApprovalErrorResponse,
   BatchApprovalResponse,
   RefreshResponse,
+  SnippetApprovalFilter,
   SnippetBatchApproveRequest,
   SnippetExecutionRequest,
   SnippetExecutionResponse,
   SnippetResponse,
+  SnippetServiceTypesResponse,
   SnippetsCapabilitiesResponse,
 } from './types';
 
@@ -125,14 +127,17 @@ function extractBatchApprovalError(data: unknown): BatchApprovalErrorResponse | 
 /**
  * Server-side sort/search/filter selections for the snippets list.
  *
- * These map to the backend's opt-in list-query params. ``approval`` and
- * ``serviceType`` carry the server-shaped values (the page maps its UI state onto
- * them), and a falsy/`'all'` value means "no filter" so the param is dropped.
+ * These map to the backend's opt-in list-query params. The caller (page) is
+ * responsible for mapping its UI sentinels onto server values — the hook forwards
+ * every *defined* value verbatim and only drops empty/undefined, so a real
+ * service type such as `"all"` is never mistaken for "no filter". ``uncategorized``
+ * is a distinct flag for "no service type" (absent or blank).
  */
 export type SnippetsListFilters = {
   search?: string;
-  approval?: string;
+  approval?: SnippetApprovalFilter;
   serviceType?: string;
+  uncategorized?: boolean;
 };
 
 /**
@@ -142,21 +147,46 @@ export function useSnippets(options?: AppListQueryOptions & SnippetsListFilters)
   const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
   const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
   const search = options?.search?.trim() || undefined;
-  const approval = options?.approval && options.approval !== 'all' ? options.approval : undefined;
-  const serviceType =
-    options?.serviceType && options.serviceType !== 'all' ? options.serviceType : undefined;
+  const approval = options?.approval || undefined;
+  const serviceType = options?.serviceType || undefined;
+  const uncategorized = options?.uncategorized || undefined;
 
   return useQuery<AppListResult<SnippetResponse>>({
-    queryKey: [...SNIPPETS_LIST_QUERY_KEY, { offset, limit, search, approval, serviceType }],
+    queryKey: [
+      ...SNIPPETS_LIST_QUERY_KEY,
+      { offset, limit, search, approval, serviceType, uncategorized },
+    ],
     enabled: options?.enabled !== false,
     queryFn: async () => {
       const { data } = await apiClient.get<SnippetResponse[] | PaginatedAppList<SnippetResponse>>(
         `${SNIPPETS_BASE}/`,
-        { params: { offset, limit, search, approval, service_type: serviceType } },
+        {
+          params: { offset, limit, search, approval, service_type: serviceType, uncategorized },
+        },
       );
       return normalizeAppListResponse(data);
     },
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Fetch the whole-dataset service-type facet for the list filter.
+ *
+ * Sourced across every snippet (not the loaded page) so the service-type
+ * dropdown can offer every value the dataset contains. Shares the ``['snippets']``
+ * key prefix, so {@link useRefreshSnippets} invalidates it after a refresh.
+ */
+export function useSnippetServiceTypes() {
+  return useQuery<SnippetServiceTypesResponse>({
+    queryKey: ['snippets', 'service_types'],
+    queryFn: async () => {
+      const { data } = await apiClient.get<SnippetServiceTypesResponse>(
+        `${SNIPPETS_BASE}/service_types`,
+      );
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
   });
 }
 

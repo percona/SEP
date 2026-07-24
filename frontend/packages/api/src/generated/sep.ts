@@ -2060,6 +2060,33 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/snippets/service_types': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api Service Types
+     * @description List the distinct service types across the whole snippets dataset.
+     *
+     *     Backs the list page's service-type filter so its options reflect every value
+     *     in the dataset rather than only the loaded page.
+     *
+     *     :param session: The SEP database session.
+     *     :return: The sorted distinct service types and whether any snippet is
+     *         uncategorized (absent or blank service type).
+     */
+    get: operations['snippets_snippets_api_service_types_api_apps_snippets_service_types_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/snippets/snippet/approval': {
     parameters: {
       query?: never;
@@ -9320,6 +9347,23 @@ export interface components {
       updated_by?: string | null;
     };
     /**
+     * SnippetServiceTypesResponse
+     * @description Carry the whole-dataset service-type facet for the list filter.
+     *
+     *     Sourced across every snippet (not the loaded page) so the list page's
+     *     service-type dropdown can offer every value the dataset contains.
+     *
+     *     :param service_types: The sorted distinct non-blank service types.
+     *     :param has_uncategorized: Whether any snippet has an absent or blank service
+     *         type (surfaced as the "Uncategorized" filter option).
+     */
+    snippets__SnippetServiceTypesResponse: {
+      /** Has Uncategorized */
+      has_uncategorized: boolean;
+      /** Service Types */
+      service_types: string[];
+    };
+    /**
      * SnippetsCapabilitiesResponse
      * @description Represent per-deployment capability flags for the Snippets plugin.
      *
@@ -12949,8 +12993,10 @@ export interface operations {
         order?: components['schemas']['SnippetSortDirection'];
         /** @description Approval-status filter. */
         approval?: components['schemas']['SnippetApprovalFilter'];
-        /** @description Service-type filter: a value for equality, '__uncategorized__' for snippets with no service type, or omitted for no filter. */
+        /** @description Service-type equality filter, or omitted for no filter. */
         service_type?: string | null;
+        /** @description When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'. */
+        uncategorized?: boolean;
       };
       header?: never;
       path?: never;
@@ -13067,6 +13113,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_service_types_api_apps_snippets_service_types_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['snippets__SnippetServiceTypesResponse'];
         };
       };
     };

@@ -25,6 +25,7 @@ import {
   useRemoveSnippetApproval,
   useSnippetDownload,
   useSnippets,
+  useSnippetServiceTypes,
 } from './hooks';
 import type { SnippetResponse } from './types';
 
@@ -282,20 +283,36 @@ describe('useSnippets', () => {
     });
   });
 
-  it('omits filter params that are blank or the "all" sentinel', async () => {
+  it('omits only blank/undefined filters, forwarding every defined value', async () => {
     responseBody = { items: [], total: 0, offset: 0, limit: 50 };
 
-    const { result } = renderHook(
-      () => useSnippets({ search: '   ', approval: 'all', serviceType: 'all' }),
-      { wrapper: makeWrapper() },
-    );
+    // The hook does not special-case "all" — that mapping is the page's job — so a
+    // real service type equal to "all" is forwarded verbatim, not dropped.
+    const { result } = renderHook(() => useSnippets({ search: '   ', serviceType: 'all' }), {
+      wrapper: makeWrapper(),
+    });
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    // toEqual ignores undefined-valued keys, so the dropped filters are absent.
-    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50 });
+    // toEqual ignores undefined-valued keys, so the blank search is absent while
+    // the defined service_type survives.
+    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50, service_type: 'all' });
+  });
+
+  it('forwards the uncategorized flag as a query param', async () => {
+    responseBody = { items: [], total: 0, offset: 0, limit: 50 };
+
+    const { result } = renderHook(() => useSnippets({ uncategorized: true }), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.params).toMatchObject({ uncategorized: true });
   });
 
   it('returns a legacy flat array with pagination null', async () => {
@@ -310,6 +327,49 @@ describe('useSnippets', () => {
     expect(result.current.data).toEqual({
       items: [{ filename: 'a.sh' }],
       pagination: null,
+    });
+  });
+});
+
+describe('useSnippetServiceTypes', () => {
+  let lastConfig: CapturedRequestConfig | null = null;
+
+  beforeEach(() => {
+    lastConfig = null;
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = (
+      config: CapturedRequestConfig,
+    ) => {
+      lastConfig = config;
+      return Promise.resolve({
+        data: { service_types: ['mongodb', 'mysql'], has_uncategorized: true },
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'application/json' },
+        config,
+        request: {},
+      });
+    };
+    setTokenProvider(() => 'test-access-token');
+  });
+
+  afterEach(() => {
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = originalAdapter;
+    setTokenProvider(() => null);
+  });
+
+  it('GETs the whole-dataset service-type facet', async () => {
+    const { result } = renderHook(() => useSnippetServiceTypes(), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.url).toContain('/apps/snippets/service_types');
+    expect(result.current.data).toEqual({
+      service_types: ['mongodb', 'mysql'],
+      has_uncategorized: true,
     });
   });
 });

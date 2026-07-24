@@ -25,6 +25,7 @@ import {
   useRemoveSnippetApproval,
   useBatchApproveSnippets,
   useSnippetsCapabilities,
+  useSnippetServiceTypes,
   useRefreshSnippets,
 } from './hooks';
 
@@ -38,6 +39,11 @@ vi.mock('./hooks', () => ({
   useRemoveSnippetApproval: vi.fn(),
   useBatchApproveSnippets: vi.fn(),
   useSnippetsCapabilities: vi.fn(),
+  // Default to an empty facet so describes that ignore it never crash on the
+  // destructure; clearAllMocks keeps this implementation (only resetAllMocks drops it).
+  useSnippetServiceTypes: vi.fn(() => ({
+    data: { service_types: [], has_uncategorized: false },
+  })),
   useRefreshSnippets: vi.fn(),
 }));
 
@@ -46,7 +52,14 @@ const mockUseApproveSnippet = vi.mocked(useApproveSnippet);
 const mockUseRemoveSnippetApproval = vi.mocked(useRemoveSnippetApproval);
 const mockUseBatchApproveSnippets = vi.mocked(useBatchApproveSnippets);
 const mockUseSnippetsCapabilities = vi.mocked(useSnippetsCapabilities);
+const mockUseSnippetServiceTypes = vi.mocked(useSnippetServiceTypes);
 const mockUseRefreshSnippets = vi.mocked(useRefreshSnippets);
+
+function serviceTypeFacet(service_types: string[], has_uncategorized: boolean) {
+  return {
+    data: { service_types, has_uncategorized },
+  } as unknown as ReturnType<typeof useSnippetServiceTypes>;
+}
 
 function snippetsListResult(
   items: Record<string, unknown>[],
@@ -481,6 +494,7 @@ describe('SnippetsListPage — RefreshButton', () => {
     mockUseSnippets.mockReturnValue(
       snippetsListResult([{ ...unapprovedSnippet, filename: 'mysql.sh', service_type: 'mysql' }]),
     );
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['mysql'], false));
     mockUseSnippetsCapabilities.mockReturnValue({
       data: { manual_sync_enabled: true },
       isLoading: false,
@@ -560,6 +574,8 @@ describe('SnippetsListPage — server-driven filters', () => {
     mockUseSnippets.mockReturnValue(
       snippetsListResult(allSnippets, { total: allSnippets.length, offset: 0, limit: 50 }),
     );
+    // The dropdown options come from the whole-dataset facet, not the page rows.
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['mongodb', 'mysql'], true));
     mockUseApproveSnippet.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
@@ -610,34 +626,26 @@ describe('SnippetsListPage — server-driven filters', () => {
     expect(lastQuery()).toMatchObject({ serviceType: 'mongodb' });
   });
 
-  it('maps the Uncategorized option to the server sentinel', () => {
+  it('maps the Uncategorized option to the uncategorized flag', () => {
     render(<SnippetsListPage />);
 
     selectOption('Filter by service type', 'Uncategorized');
 
-    expect(lastQuery()).toMatchObject({ serviceType: '__uncategorized__' });
+    // A distinct flag carries "no service type" — not an overloaded service_type
+    // value that a real free-form service type could collide with.
+    expect(lastQuery()).toMatchObject({ uncategorized: true, serviceType: undefined });
   });
 
   it('sends the raw value for a service type that collides with the "all" sentinel', () => {
-    const literalAll = {
-      ...unapprovedSnippet,
-      filename: 'literal-all.sh',
-      title: 'Literal all',
-      description: '',
-      service_type: 'all',
-      is_approved: false,
-    };
-    mockUseSnippets.mockReturnValue(
-      snippetsListResult([literalAll, mongoUnapproved], { total: 2, offset: 0, limit: 50 }),
-    );
+    // The facet offers a real service type literally equal to "all", distinct from
+    // the "All services" (no-filter) entry.
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['all', 'mongodb'], false));
 
     render(<SnippetsListPage />);
 
-    // The literal "all" service type gets its own option, distinct from the
-    // "All services" (no-filter) entry, and its raw value goes to the server.
     selectOption('Filter by service type', 'all');
 
-    expect(lastQuery()).toMatchObject({ serviceType: 'all' });
+    expect(lastQuery()).toMatchObject({ serviceType: 'all', uncategorized: false });
   });
 
   it('drives all three filters into the server query together', async () => {
@@ -700,6 +708,39 @@ describe('SnippetsListPage — server-driven filters', () => {
       expect(screen.getByText(/no snippets match the current filters/i)).toBeInTheDocument();
     });
     expect(screen.getByLabelText('Search snippets')).toBeInTheDocument();
+  });
+
+  it('excludes selections for rows hidden by a server filter from the batch payload', () => {
+    // Selection is scoped to the visible (current-page) rows, so a row that a
+    // server-side filter later drops from the page is never batch-approved.
+    const batchMutate = vi.fn();
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: batchMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([mysqlUnapproved, mongoUnapproved], {
+        total: 2,
+        offset: 0,
+        limit: 50,
+      }),
+    );
+
+    const { rerender } = render(<SnippetsListPage isAdmin />);
+
+    // Select every visible unapproved row.
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all snippets/i }));
+
+    // A server filter narrows the page so mongo-slow.sh is no longer present.
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([mysqlUnapproved], { total: 1, offset: 0, limit: 50 }),
+    );
+    rerender(<SnippetsListPage isAdmin />);
+
+    fireEvent.click(screen.getByRole('button', { name: /batch approve/i }));
+    fireEvent.click(screen.getByRole('button', { name: /approve selected/i }));
+
+    expect(batchMutate).toHaveBeenCalledWith({ filenames: ['mysql-log.sh'] }, expect.anything());
   });
 });
 
