@@ -1209,6 +1209,15 @@ def preserve_patch_credential_url_value(
     Handles credential-bearing URL passwords (``****``) and
     :class:`~pydantic.SecretStr` / :class:`~pydantic.SecretBytes` JSON masks
     (:data:`SECRET_STR_MASK`). Non-mask submissions are left unchanged.
+
+    :param field_info: The Pydantic field metadata for the target attribute.
+    :type field_info: FieldInfo
+    :param current: The effective stored value (model, mapping, or secret wrapper).
+    :type current: Any
+    :param incoming: The value submitted in the PATCH body.
+    :type incoming: Any
+    :return: ``incoming`` with any masked credentials restored from ``current``.
+    :rtype: Any
     """
     if is_credential_url_field(field_info):
         if isinstance(incoming, str) and current is not None:
@@ -1232,6 +1241,11 @@ def _annotation_is_secret_valued_dict(annotation: Any) -> bool:
     Unwraps optional/union wrappers at the top level only (does not descend into
     nested :class:`~pydantic.BaseModel` fields), matching
     ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` shapes.
+
+    :param annotation: The field annotation to inspect.
+    :type annotation: Any
+    :return: ``True`` when the annotation is a secret-valued mapping type.
+    :rtype: bool
     """
     candidates: list[Any] = [annotation]
     origin = typing.get_origin(annotation)
@@ -1260,7 +1274,16 @@ def _annotation_is_secret_valued_dict(annotation: Any) -> bool:
 
 
 def _preserve_masked_secret_scalar(current: Any, incoming: Any) -> Any:
-    """Restore a stored secret when ``incoming`` is the SecretStr JSON mask."""
+    """Restore a stored secret when ``incoming`` equals :data:`SECRET_STR_MASK`.
+
+    :param current: The live stored value, possibly a ``SecretStr``/``SecretBytes``.
+    :type current: Any
+    :param incoming: The PATCH value that may be the secret JSON mask.
+    :type incoming: Any
+    :return: The unwrapped stored secret when ``incoming`` is the mask and
+        ``current`` is a secret wrapper; otherwise ``incoming`` unchanged.
+    :rtype: Any
+    """
     if incoming != SECRET_STR_MASK:
         return incoming
     stored = _unwrap_secret_value(current)
@@ -1271,7 +1294,15 @@ def _preserve_secrets_in_dict_payload(
     current: Any,
     incoming: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Restore masked secret values inside a ``dict[str, SecretStr]`` payload."""
+    """Restore masked secret values inside a ``dict[str, SecretStr|SecretBytes]`` payload.
+
+    :param current: The stored mapping of secret wrappers (or ``None``).
+    :type current: Any
+    :param incoming: The PATCH mapping that may contain mask literals.
+    :type incoming: Mapping[str, Any]
+    :return: A copy of ``incoming`` with masked keys restored from ``current``.
+    :rtype: dict[str, Any]
+    """
     result = dict(incoming)
     for key, value in result.items():
         if value != SECRET_STR_MASK:
@@ -1288,7 +1319,17 @@ def preserve_secrets_in_model_payload(
     current: Any,
     incoming: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Restore masked SecretStr/SecretBytes values inside a nested-model PATCH payload."""
+    """Restore masked SecretStr/SecretBytes values inside a nested-model PATCH payload.
+
+    :param model_cls: The Pydantic model whose fields ``incoming`` addresses.
+    :type model_cls: type[BaseModel]
+    :param current: The live stored model or mapping fingerprint.
+    :type current: Any
+    :param incoming: The PATCH mapping for this model.
+    :type incoming: Mapping[str, Any]
+    :return: A copy of ``incoming`` with masked secrets restored from ``current``.
+    :rtype: dict[str, Any]
+    """
     result = dict(incoming)
     for name, field_info in model_cls.model_fields.items():
         if name not in result:
@@ -1321,6 +1362,15 @@ def preserve_patch_secret_value(
     (:data:`SECRET_STR_MASK`), replace it with the stored secret's plain value.
     Non-mask submissions are left unchanged. Recurses into nested Pydantic
     models and ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` payloads.
+
+    :param field_info: The Pydantic field metadata for the target attribute.
+    :type field_info: FieldInfo
+    :param current: The effective stored value (model, mapping, or secret wrapper).
+    :type current: Any
+    :param incoming: The value submitted in the PATCH body.
+    :type incoming: Any
+    :return: ``incoming`` with any masked secrets restored from ``current``.
+    :rtype: Any
     """
     parent_cls = annotation_pydantic_class(field_info.annotation)
     if parent_cls and isinstance(incoming, Mapping):
