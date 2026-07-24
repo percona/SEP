@@ -957,13 +957,17 @@ class TestAppStateGuards:
 
     @pytest.mark.parametrize(
         "route",
-        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting"],
+        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
     )
     @pytest.mark.asyncio
     async def test_alert_troubleshooting_routes_503_when_snippets_disabled(
         self, guarded_client: TestClient, session, route: str
     ) -> None:
-        """Alert Troubleshooting's JSON and Jinja routes 503 when snippets is disabled."""
+        """Alert Troubleshooting's JSON and Jinja routes 503 when snippets is disabled.
+
+        The gate names ``alert_troubleshooting`` itself so callers never see the
+        raw ``App 'snippets' is currently disabled`` leak from the snippets path.
+        """
         session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
@@ -972,11 +976,14 @@ class TestAppStateGuards:
         response = guarded_client.get(route)
 
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert "alert_troubleshooting" in response.json()["detail"]
+        assert (
+            response.json()["detail"]
+            == "App 'alert_troubleshooting' is currently disabled."
+        )
 
     @pytest.mark.parametrize(
         "route",
-        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting"],
+        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
     )
     @pytest.mark.asyncio
     async def test_alert_troubleshooting_routes_reachable_when_snippets_enabled(
