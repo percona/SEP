@@ -338,7 +338,7 @@
           "type": "integer"
         },
         {
-          "description": "Optional comma-separated db.collection or db.* list. Applied as pbm backup --ns on logical and physical siblings only.",
+          "description": "Optional comma-separated db.collection or db.* list. Applied as pbm backup --ns on the logical sibling only (PBM rejects --ns for physical and incremental backups).",
           "label": "Namespaces (selective)",
           "name": "backup_namespaces",
           "required": false,
