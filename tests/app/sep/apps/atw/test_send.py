@@ -57,6 +57,11 @@ _UPLOAD_DETAIL: dict[str, Any] = {"result": {"sys_id": "att-9", "size_bytes": 42
 _EXPECTED_FILE_COUNT = 4
 _EXPECTED_ENTRY_COUNT = 5
 _STALE_ROW_COUNT = 2
+_ONE_EXECUTION: dict[str, Any] = {
+    "id": str(uuid4()),
+    "task_history_id": 11,
+    "snippet_filename": "cpu.sh",
+}
 
 
 async def _chunks(content: bytes) -> AsyncIterator[bytes]:
@@ -349,6 +354,74 @@ class TestRunSendArcnameCollisions:
             names = sorted(name for name in zf.namelist() if name != "manifest.json")
 
         assert names == ["11-cpu.sh/stdout.log", "12-mem.sh/stdout.log"]
+
+
+@pytest.mark.asyncio
+class TestRunSendEntryNaming:
+    """Cover how upstream listing entries become archive member names."""
+
+    async def test_a_directory_entry_is_named_for_the_archive_it_holds(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Write a directory member under a .tar.gz name so the receiver can open it."""
+        api = AsyncMock(spec=RemoteAPI)
+        api.get.return_value = {
+            "logs": {"is_dir": True, "size": 9},
+            "stdout.log": {"is_dir": False, "size": 5},
+        }
+        api.stream_chunks.side_effect = lambda *_a, **_k: _chunks(b"data!")
+        _patch_tasks_api(mocker, api)
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            names = sorted(name for name in zf.namelist() if name != "manifest.json")
+
+        assert names == ["11-cpu.sh/logs.tar.gz", "11-cpu.sh/stdout.log"]
+
+    async def test_traversal_components_are_stripped_from_entry_names(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Keep every member inside its execution's namespace."""
+        api = AsyncMock(spec=RemoteAPI)
+        api.get.return_value = {"/../../etc/passwd": {"is_dir": False, "size": 5}}
+        api.stream_chunks.side_effect = lambda *_a, **_k: _chunks(b"data!")
+        _patch_tasks_api(mocker, api)
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            names = sorted(name for name in zf.namelist() if name != "manifest.json")
+
+        assert names == ["11-cpu.sh/etc/passwd"]
+
+
+@pytest.mark.asyncio
+class TestRunSendLateDelivery:
+    """Cover a task delivered after the stale sweep already failed its row."""
+
+    async def test_a_row_the_sweep_already_failed_is_not_delivered_again(
+        self,
+        send_session: AsyncSession,
+        uploader: _FakeUploader,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Leave a terminal row alone rather than resurrecting and uploading it."""
+        row = await _seed_send_log(send_session)
+        row.status = AtwSendStatusEnum.FAILED
+        row.finished_at = utc_now()
+        await AtwSendLogManager.save(send_session, row)
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is None
+        tasks_api.get.assert_not_awaited()
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status == AtwSendStatusEnum.FAILED
 
 
 @pytest.mark.asyncio

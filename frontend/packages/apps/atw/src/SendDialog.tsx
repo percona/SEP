@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Alert,
   Button,
@@ -42,7 +42,8 @@ export interface SendDialogProps {
   executions: AtwSendLogExecution[];
   /** Prefills the case-reference field; usually the incident's own reference. */
   defaultCaseRef?: string | null;
-  onClose: () => void;
+  /** Receives whether a send was started, so the caller can drop its selection. */
+  onClose: (started: boolean) => void;
 }
 
 /**
@@ -53,6 +54,9 @@ export interface SendDialogProps {
  * rather than a Celery result: an attempt stays readable long after a task
  * result would have expired, which is what makes "Send again" on a failed row
  * possible.
+ *
+ * Callers mount this under a per-open `key` so every open starts from a clean
+ * mutation and poll; nothing here resets state on reopen.
  */
 export function SendDialog({
   open,
@@ -61,29 +65,19 @@ export function SendDialog({
   defaultCaseRef,
   onClose,
 }: SendDialogProps) {
-  const [caseRef, setCaseRef] = useState('');
+  const [caseRef, setCaseRef] = useState(defaultCaseRef ?? '');
   const [jobId, setJobId] = useState<string | null>(null);
 
   const startMutation = useStartSendJob(incidentId);
-  const { data: job } = useAtwSendJob(incidentId, jobId);
-
-  useEffect(() => {
-    if (open) {
-      setCaseRef(defaultCaseRef ?? '');
-      setJobId(null);
-      startMutation.reset();
-    }
-    // `startMutation` is recreated every render; keying on `open` alone is what
-    // makes this a per-open reset rather than a per-render one.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, defaultCaseRef]);
+  const { data: job, error: pollError } = useAtwSendJob(incidentId, open ? jobId : null);
 
   const detail = sendJobDetail(job);
   const status = job?.status;
-  const isSending = startMutation.isPending || status === 'pending' || status === 'running';
   const succeeded = status === 'success';
   const failed = status === 'failed';
   const startError = startMutation.error;
+  const isSending =
+    startMutation.isPending || (jobId !== null && !succeeded && !failed && !pollError);
 
   const handleSend = () => {
     startMutation.mutate(
@@ -95,11 +89,19 @@ export function SendDialog({
     );
   };
 
+  const handleClose = () => onClose(jobId !== null);
+
   const canSend = caseRef.trim().length > 0 && executions.length > 0 && !isSending;
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Send to support case</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      fullWidth
+      maxWidth="sm"
+      aria-labelledby="atw-send-dialog-title"
+    >
+      <DialogTitle id="atw-send-dialog-title">Send to support case</DialogTitle>
       <DialogContent>
         {succeeded ? (
           <Alert severity="success" sx={{ mt: 1 }}>
@@ -165,14 +167,21 @@ export function SendDialog({
                 {startError.message}
               </Alert>
             )}
+
+            {pollError && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                Lost track of this send: {pollError.message}. Check the send history for its
+                outcome.
+              </Alert>
+            )}
           </>
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>{succeeded ? 'Close' : 'Cancel'}</Button>
+        <Button onClick={handleClose}>{succeeded || isSending ? 'Close' : 'Cancel'}</Button>
         {!succeeded && (
           <Button variant="contained" onClick={handleSend} disabled={!canSend}>
-            {failed || startError ? 'Send again' : 'Send'}
+            {failed || startError || pollError ? 'Send again' : 'Send'}
           </Button>
         )}
       </DialogActions>

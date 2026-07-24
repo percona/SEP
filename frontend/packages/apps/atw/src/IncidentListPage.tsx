@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -59,6 +59,15 @@ export function IncidentListPage() {
   const createMutation = useCreateAtwIncident();
   const updateMutation = useUpdateAtwIncident();
   const deleteMutation = useDeleteAtwIncident();
+
+  useEffect(() => {
+    if (data && data.total > 0 && data.offset >= data.total) {
+      setPage((previous) => ({
+        offset: Math.max(0, (Math.ceil(data.total / previous.limit) - 1) * previous.limit),
+        limit: previous.limit,
+      }));
+    }
+  }, [data]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');

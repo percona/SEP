@@ -195,4 +195,79 @@ describe('SendDialog', () => {
     });
     expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it('refuses a second send between the POST landing and the first poll', async () => {
+    mockedApi.post.mockResolvedValue({ data: sendLog() });
+    mockedApi.get.mockReturnValue(new Promise(() => {}));
+
+    renderDialog(
+      <SendDialog
+        open
+        incidentId="inc-1"
+        executions={EXECUTIONS}
+        defaultCaseRef="CS0042"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(mockedApi.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a poll it could not complete and re-enables sending', async () => {
+    mockedApi.post.mockResolvedValue({ data: sendLog() });
+    mockedApi.get.mockRejectedValue(new Error('job vanished'));
+
+    renderDialog(
+      <SendDialog
+        open
+        incidentId="inc-1"
+        executions={EXECUTIONS}
+        defaultCaseRef="CS0042"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Lost track of this send/i)).toBeTruthy();
+    });
+    expect((screen.getByRole('button', { name: 'Send again' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('reports on close whether a send was started', async () => {
+    mockedApi.post.mockResolvedValue({ data: sendLog() });
+    mockedApi.get.mockReturnValue(new Promise(() => {}));
+    const onClose = vi.fn();
+
+    renderDialog(
+      <SendDialog
+        open
+        incidentId="inc-1"
+        executions={EXECUTIONS}
+        defaultCaseRef="CS0042"
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenLastCalledWith(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenLastCalledWith(true);
+  });
 });

@@ -42,13 +42,14 @@ const ATW_STALE_TIME_MS = 5 * 60 * 1000;
 const EXECUTIONS_POLL_MS = 5000;
 
 /** Non-terminal task statuses — poll the execution list while any row is here. */
-const RUNNING_TASK_STATUSES = new Set(['running', 'pending']);
+const RUNNING_TASK_STATUSES: ReadonlySet<NonNullable<AtwIncidentExecution['task_status']>> =
+  new Set(['running', 'pending']);
 
 /** Poll interval while a diagnostics send is still in flight (ms). */
 const SEND_JOB_POLL_MS = 2000;
 
 /** Non-terminal send statuses — poll while an attempt is still here. */
-const ACTIVE_SEND_STATUSES = new Set(['pending', 'running']);
+const ACTIVE_SEND_STATUSES: ReadonlySet<AtwSendLog['status']> = new Set(['pending', 'running']);
 
 /** Rows per page for both incident and execution lists. */
 export const ATW_PAGE_SIZE = 20;
@@ -243,7 +244,12 @@ export function useAtwIncidentExecutions(
       if (!rows) {
         return false;
       }
-      const anyRunning = rows.some((row) => RUNNING_TASK_STATUSES.has(row.task_status ?? ''));
+      const anyRunning = rows.some(
+        (row) =>
+          row.task_status !== null &&
+          row.task_status !== undefined &&
+          RUNNING_TASK_STATUSES.has(row.task_status),
+      );
       return anyRunning ? EXECUTIONS_POLL_MS : false;
     },
   });

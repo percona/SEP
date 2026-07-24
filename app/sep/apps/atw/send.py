@@ -37,10 +37,11 @@ import logging
 import time
 import zipfile
 from datetime import timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 from uuid import UUID, uuid4
 
+from aiohttp import ClientError
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlmodel import col
@@ -183,6 +184,25 @@ def _execution_prefix(execution: dict[str, Any]) -> str:
     return f"{execution['task_history_id']}-{execution['snippet_filename']}"
 
 
+def _entry_arcname(prefix: str, path: str, *, is_dir: bool) -> str:
+    """Return the archive entry name one upstream file is written under.
+
+    A directory streams from the Tasks API as an on-the-fly tar.gz, so its entry
+    is named for what it actually holds rather than for the directory. Upstream
+    path components are filtered because :meth:`zipfile.ZipFile.open` writes
+    whatever name it is handed, traversal and all -- unlike
+    :meth:`zipfile.ZipFile.write`, which sanitizes.
+
+    :param prefix: The per-execution namespace.
+    :param path: The file's path within that execution's output.
+    :param is_dir: Whether the entry arrives as a tar.gz stream.
+    :return: The entry name to write the member under.
+    """
+    parts = [part for part in PurePosixPath(path).parts if part not in ("/", "..")]
+    arcname = f"{prefix}/{'/'.join(parts)}"
+    return f"{arcname}.tar.gz" if is_dir else arcname
+
+
 async def _add_execution_files(
     archive: zipfile.ZipFile, tasks_api: RemoteAPI, execution: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -204,7 +224,7 @@ async def _add_execution_files(
     task_history_id = execution["task_history_id"]
     try:
         listing = await tasks_api.get(f"/history/{task_history_id}/files/") or {}
-    except (HTTPException, OSError) as exc:
+    except (HTTPException, OSError, ClientError) as exc:
         raise AtwSendError(
             f"Could not list output files for execution {task_history_id} "
             f"({execution['snippet_filename']}): {_error_message(exc)}"
@@ -213,23 +233,19 @@ async def _add_execution_files(
     prefix = _execution_prefix(execution)
     written = []
     for path, metadata in listing.items():
-        arcname = f"{prefix}/{path.lstrip('/')}"
+        is_dir = bool(metadata.get("is_dir"))
+        arcname = _entry_arcname(prefix, path, is_dir=is_dir)
         try:
             size = await _write_entry(
                 archive, tasks_api, task_history_id, path, arcname
             )
-        except (HTTPException, OSError) as exc:
+        except (HTTPException, OSError, ClientError) as exc:
             raise AtwSendError(
                 f"Could not read {path!r} from execution {task_history_id} "
                 f"({execution['snippet_filename']}): {_error_message(exc)}"
             ) from exc
         written.append(
-            {
-                "path": path,
-                "arcname": arcname,
-                "size": size,
-                "is_dir": bool(metadata.get("is_dir")),
-            }
+            {"path": path, "arcname": arcname, "size": size, "is_dir": is_dir}
         )
     return written
 
@@ -253,6 +269,7 @@ async def _write_entry(
         this file pushes the bundle past the plan's cap.
     :raises HTTPException: Propagates the Tasks API's error status for the stream.
     :raises OSError: Propagates a connection or timeout failure mid-stream.
+    :raises ClientError: Propagates a truncated or malformed response mid-stream.
     """
     size = 0
     with archive.open(arcname, "w", force_zip64=True) as entry:
@@ -285,7 +302,11 @@ def _build_manifest(
 
 
 async def _stage_bundle(
-    path: Path, row: AtwSendLog, incident_name: str, tasks_api: RemoteAPI
+    path: Path,
+    row: AtwSendLog,
+    incident_name: str,
+    tasks_api: RemoteAPI,
+    cap_mb: int,
 ) -> tuple[int, dict[str, Any]]:
     """Stage the incident's diagnostics as one zip on local disk.
 
@@ -293,12 +314,12 @@ async def _stage_bundle(
     :param row: The send log naming the selected executions.
     :param incident_name: The incident's human-readable label.
     :param tasks_api: The authenticated Tasks API client.
+    :param cap_mb: The largest the bundle may grow, in mebibytes.
     :return: The number of collected files and the bundle manifest.
     :raises AtwBundleSizeError: When the archive outgrows the plan's cap.
     :raises AtwNothingToSendError: When no execution produced a file.
     :raises AtwSendError: When an execution's files cannot be collected.
     """
-    cap_mb = sep_settings.DIAGNOSTICS_DELIVERY.max_bundle_size_mb
     path.parent.mkdir(parents=True, exist_ok=True)
     manifest_executions = []
     file_count = 0
@@ -332,6 +353,8 @@ async def _persist(
     :param row: The send log to update.
     :param detail: The evidence mapping to store.
     :param fields: Column values to set alongside it.
+    :raises HTTPBadRequestException: Propagated from the manager when the row
+        cannot be written.
     """
     for name, value in fields.items():
         setattr(row, name, value)
@@ -347,6 +370,10 @@ async def run_send(send_log_id: UUID) -> None:
     write is guaranteed rather than best-effort.
 
     :param send_log_id: The send log driving this attempt.
+    :raises HTTPNotFoundException: Propagated when the incident was deleted
+        between the enqueue and this attempt.
+    :raises HTTPBadRequestException: Propagated when a terminal row cannot be
+        written.
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
@@ -363,11 +390,27 @@ async def run_send(send_log_id: UUID) -> None:
 async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     """Drive one send log from pending to a terminal status.
 
+    A row the stale sweep already failed is left alone: a task delivered late
+    enough for that to happen would otherwise resurrect a terminal row and
+    deliver a bundle the UI has already reported as failed -- and, if the
+    engineer re-sent in the meantime, attach it to the case twice.
+
     :param session: The database session.
     :param row: The send log to drive.
+    :raises HTTPNotFoundException: Propagated from the manager when the incident
+        was deleted between the enqueue and this attempt.
+    :raises HTTPBadRequestException: Propagated from the manager when a terminal
+        row cannot be written.
     """
+    if row.status not in AtwSendStatusEnum.active_statuses():
+        logger.info(
+            "Send log %s is already %s; not delivering it again.", row.id, row.status
+        )
+        return
+
     detail = dict(row.detail)
-    if sep_settings.DIAGNOSTICS_DELIVERY is None:
+    plan = sep_settings.DIAGNOSTICS_DELIVERY
+    if plan is None:
         await _fail(session, row, detail, [], _UNCONFIGURED_ERROR)
         return
 
@@ -383,11 +426,11 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
         client = await get_tasks_api()
         with client.auth(require_internal_token()) as tasks_api:
             file_count, manifest = await _stage_bundle(
-                path, row, incident_name, tasks_api
+                path, row, incident_name, tasks_api, plan.max_bundle_size_mb
             )
         size = path.stat().st_size
         executor = await get_delivery_executor(
-            sep_settings.DIAGNOSTICS_DELIVERY,
+            plan,
             step_observer=lambda record: steps.append(_step_detail(record)),
         )
         with path.open("rb") as handle:
@@ -397,6 +440,13 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
                 case_ref=row.case_ref,
                 manifest=manifest,
             )
+        logger.info(
+            "Diagnostics send %s delivered to case %s as %s: %s",
+            row.id,
+            row.case_ref,
+            result.reference,
+            result.detail,
+        )
     except Exception as exc:  # noqa: BLE001 -- every family must land terminally
         logger.warning("Diagnostics send %s failed.", row.id, exc_info=True)
         await _fail(session, row, detail, steps, _error_message(exc))
@@ -499,6 +549,8 @@ async def fail_stale_sends(stale_after: timedelta) -> int:
 
     :param stale_after: How long a send may stay non-terminal before it is failed.
     :return: The number of sends failed.
+    :raises HTTPBadRequestException: Propagated from the manager when a swept row
+        cannot be written.
     """
     cutoff = utc_now() - stale_after
     async_session_maker = get_async_session_maker()

@@ -141,6 +141,38 @@ const RUNNING_EXECUTION = {
   has_logs: true,
 };
 
+const STALE_EXECUTION = {
+  id: 'exec-3',
+  snippet_filename: 'diag/vmstat.sh',
+  task_history_id: 9,
+  created_at: '2026-07-22T10:02:00Z',
+  task_status: 'stale',
+  started_at: null,
+  finished_at: null,
+  has_logs: true,
+};
+
+/** An execution recorded on a past attempt but absent from the current page. */
+const OFF_PAGE_EXECUTION = {
+  id: 'exec-99',
+  task_history_id: 99,
+  snippet_filename: 'diag/off-page.sh',
+};
+
+function failedJob(detail: unknown) {
+  return {
+    id: 'job-1',
+    incident_id: 'inc-1',
+    case_ref: 'CS0042',
+    requested_by: 'alice',
+    status: 'failed',
+    started_at: null,
+    finished_at: '2026-07-24T10:01:00Z',
+    created_at: '2026-07-24T10:00:00Z',
+    detail,
+  };
+}
+
 /**
  * Route each GET by URL, so the executions list, config probe and send-job
  * history can answer with their own shapes rather than one shared envelope.
@@ -294,5 +326,103 @@ describe('ResultsPane diagnostics send', () => {
       expect(screen.getByText('diag/slow-query.sh')).toBeTruthy();
     });
     expect(screen.queryByRole('button', { name: /Go to next page/i })).toBeNull();
+  });
+
+  it('offers a checkbox for a stale execution, which the backend counts finished', async () => {
+    routeGet({
+      executions: { items: [STALE_EXECUTION], total: 1, offset: 0, limit: 20 },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select diag/vmstat.sh')).toBeTruthy();
+    });
+    expect((screen.getByLabelText('Select diag/vmstat.sh') as HTMLInputElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('shows why a past attempt failed', async () => {
+    routeGet({
+      executions: { items: [FINISHED_EXECUTION], total: 1, offset: 0, limit: 20 },
+      sendJobs: {
+        items: [failedJob({ error: 'upstream exploded', executions: [FINISHED_EXECUTION] })],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('upstream exploded')).toBeTruthy();
+    });
+  });
+
+  it('re-sends every execution the attempt recorded, not just the current page', async () => {
+    routeGet({
+      executions: { items: [FINISHED_EXECUTION], total: 40, offset: 0, limit: 20 },
+      sendJobs: {
+        items: [failedJob({ error: 'boom', executions: [OFF_PAGE_EXECUTION] })],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Re-send' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Re-send' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('diag/off-page.sh')).toBeTruthy();
+    });
+    expect(screen.queryByText(/None of the selected executions still exist/i)).toBeNull();
+  });
+
+  it('flags a send history it could not load', async () => {
+    mockedApi.get.mockImplementation((url: string) => {
+      if (url.includes('/send-jobs/')) {
+        return Promise.reject(new Error('history unavailable'));
+      }
+      if (url.includes('/executions/')) {
+        return Promise.resolve({
+          data: { items: [FINISHED_EXECUTION], total: 1, offset: 0, limit: 20 },
+        });
+      }
+      if (url.includes('/config/')) {
+        return Promise.resolve({ data: { send_disabled_reasons: [] } });
+      }
+      return Promise.resolve({ data: { id: 'inc-1', case_ref: 'CS0001' } });
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Could not load the send history/i)).toBeTruthy();
+    });
+  });
+
+  it('cues that the send history is truncated', async () => {
+    routeGet({
+      executions: { items: [FINISHED_EXECUTION], total: 1, offset: 0, limit: 20 },
+      sendJobs: {
+        items: [failedJob({ error: 'boom', executions: [FINISHED_EXECUTION] })],
+        total: 73,
+        offset: 0,
+        limit: 50,
+      },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Showing the 1 most recent of 73 attempts/i)).toBeTruthy();
+    });
   });
 });

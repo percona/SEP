@@ -867,6 +867,9 @@ export interface paths {
      *     :return: The created send log, pending.
      *     :raises HTTPUnprocessableEntityException: When an execution id does not belong
      *         to this incident.
+     *     :raises HTTPServiceUnavailableException: When the send could not be queued.
+     *     :raises HTTPBadRequestException: Propagated from the manager when the row
+     *         cannot be written.
      */
     post: operations['atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post'];
     delete?: never;

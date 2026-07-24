@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import status
 from httpx import AsyncClient
+from kombu.exceptions import OperationalError
 from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -181,7 +182,7 @@ class TestStartSendJob:
         enqueue: Any,
     ) -> None:
         """Record the attempt as failed when it could not even be queued."""
-        enqueue.delay.side_effect = OSError("broker unreachable")
+        enqueue.delay.side_effect = OperationalError("broker unreachable")
         incident, executions = await _seed_incident(session)
 
         response = await async_api_client.post(
@@ -189,7 +190,7 @@ class TestStartSendJob:
             json={"case_ref": "CS0042", "execution_ids": [str(executions[0].id)]},
         )
 
-        assert response.status_code >= status.HTTP_400_BAD_REQUEST
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         rows = await AtwSendLogManager.list(session, incident_id=incident.id)
         assert [row.status for row in rows] == [AtwSendStatusEnum.FAILED]
         assert "broker unreachable" in rows[0].detail["error"]

@@ -21,6 +21,7 @@ from collections import defaultdict
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, HTTPException, Query, status
+from kombu.exceptions import KombuError
 from pydantic import BaseModel, UUID4
 
 from app.core.exceptions import (
@@ -492,6 +493,8 @@ async def atw_start_send_job(
     :raises HTTPUnprocessableEntityException: When an execution id does not belong
         to this incident.
     :raises HTTPServiceUnavailableException: When the send could not be queued.
+    :raises HTTPBadRequestException: Propagated from the manager when the row
+        cannot be written.
     """
     selected = await _resolve_selected_executions(session, incident, body.execution_ids)
     row = await AtwSendLogManager.save(
@@ -514,7 +517,7 @@ async def atw_start_send_job(
     )
     try:
         send_incident_diagnostics.delay(str(row.id))
-    except (OSError, RuntimeError) as exc:
+    except (OSError, KombuError) as exc:
         logger.exception("Could not queue diagnostics send %s", row.id)
         row.status = AtwSendStatusEnum.FAILED
         row.finished_at = utc_now()

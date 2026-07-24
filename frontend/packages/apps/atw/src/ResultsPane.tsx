@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
@@ -57,8 +57,21 @@ export interface ResultsPaneProps {
   incidentId: string;
 }
 
-/** Task statuses whose execution has output files worth sending. */
-const FINISHED_TASK_STATUSES = new Set(['success', 'failed', 'error', 'stopped']);
+/** What a Re-send replays: the attempt's own executions and case reference. */
+interface ResendContext {
+  executions: AtwSendLogExecution[];
+  caseRef: string;
+}
+
+/**
+ * Task statuses whose execution has output files worth sending.
+ *
+ * Mirrors the backend's own `TaskHistoryStatusEnum.is_finished()`; typing it
+ * against the generated status union keeps a renamed or added status a compile
+ * error rather than a silently unselectable row.
+ */
+const FINISHED_TASK_STATUSES: ReadonlySet<NonNullable<AtwIncidentExecution['task_status']>> =
+  new Set(['success', 'failed', 'stopped', 'stale']);
 
 const SEND_STATUS_COLORS = {
   success: 'success',
@@ -68,7 +81,8 @@ const SEND_STATUS_COLORS = {
 } as const;
 
 function isSelectable(execution: AtwIncidentExecution): boolean {
-  return FINISHED_TASK_STATUSES.has(execution.task_status ?? '');
+  const status = execution.task_status;
+  return status !== null && status !== undefined && FINISHED_TASK_STATUSES.has(status);
 }
 
 /**
@@ -84,12 +98,22 @@ export function ResultsPane({ incidentId }: ResultsPaneProps) {
   const { data, isLoading, error } = useAtwIncidentExecutions(incidentId, page);
   const { data: incident } = useAtwIncident(incidentId);
   const { data: config } = useAtwConfig();
-  const { data: sendJobs } = useAtwSendJobs(incidentId);
+  const { data: sendJobs, error: sendJobsError } = useAtwSendJobs(incidentId);
 
   const [filesForTask, setFilesForTask] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sendOpen, setSendOpen] = useState(false);
-  const [resendSelection, setResendSelection] = useState<AtwSendLogExecution[] | null>(null);
+  const [sendSessionKey, setSendSessionKey] = useState(0);
+  const [resend, setResend] = useState<ResendContext | null>(null);
+
+  useEffect(() => {
+    if (data && data.total > 0 && data.offset >= data.total) {
+      setPage((previous) => ({
+        offset: Math.max(0, (Math.ceil(data.total / previous.limit) - 1) * previous.limit),
+        limit: previous.limit,
+      }));
+    }
+  }, [data]);
 
   const rows = data?.items;
   const knownExecutions = useMemo(() => {
@@ -141,9 +165,18 @@ export function ResultsPane({ incidentId }: ResultsPaneProps) {
       ? 'Select one or more finished executions to send.'
       : '';
 
-  const openSend = (executions: AtwSendLogExecution[] | null) => {
-    setResendSelection(executions);
+  const openSend = (context: ResendContext | null) => {
+    setResend(context);
+    setSendSessionKey((previous) => previous + 1);
     setSendOpen(true);
+  };
+
+  const closeSend = (started: boolean) => {
+    setSendOpen(false);
+    if (started && resend === null) {
+      setSelectedIds(new Set());
+      setSelectionLabels(new Map());
+    }
   };
 
   return (
@@ -217,7 +250,8 @@ export function ResultsPane({ incidentId }: ResultsPaneProps) {
 
       <SendHistory
         jobs={sendJobs?.items}
-        knownExecutionIds={new Set(knownExecutions.keys())}
+        total={sendJobs?.total}
+        error={sendJobsError}
         onResend={openSend}
       />
 
@@ -228,11 +262,12 @@ export function ResultsPane({ incidentId }: ResultsPaneProps) {
       />
 
       <SendDialog
+        key={sendSessionKey}
         open={sendOpen}
         incidentId={incidentId}
-        executions={resendSelection ?? selectedExecutions}
-        defaultCaseRef={incident?.case_ref}
-        onClose={() => setSendOpen(false)}
+        executions={resend?.executions ?? selectedExecutions}
+        defaultCaseRef={resend?.caseRef ?? incident?.case_ref}
+        onClose={closeSend}
       />
     </Box>
   );
@@ -241,18 +276,30 @@ export function ResultsPane({ incidentId }: ResultsPaneProps) {
 /**
  * Past send attempts for this incident, with Re-send on the failed ones.
  *
- * A re-send only offers the executions the incident still has — the rest were
- * deleted since the attempt, and the dialog refuses an empty selection.
+ * A re-send replays the attempt's own recorded executions and case reference.
+ * Executions deleted since the attempt are rejected by the POST, which names
+ * them — the pane cannot filter them itself, because it only ever holds one
+ * page of executions and would drop every id that happens to sit on another.
  */
 function SendHistory({
   jobs,
-  knownExecutionIds,
+  total,
+  error,
   onResend,
 }: {
   jobs: AtwSendLog[] | undefined;
-  knownExecutionIds: Set<string>;
-  onResend: (executions: AtwSendLogExecution[]) => void;
+  total: number | undefined;
+  error: Error | null;
+  onResend: (context: ResendContext) => void;
 }) {
+  if (error) {
+    return (
+      <Alert severity="error" sx={{ mt: 3 }}>
+        Could not load the send history: {error.message}
+      </Alert>
+    );
+  }
+
   if (!jobs || jobs.length === 0) {
     return null;
   }
@@ -265,9 +312,6 @@ function SendHistory({
       <Stack divider={<Divider flexItem />} spacing={1}>
         {jobs.map((job) => {
           const detail = sendJobDetail(job);
-          const reusable = (detail.executions ?? []).filter((execution) =>
-            knownExecutionIds.has(execution.id),
-          );
           return (
             <Stack
               key={job.id}
@@ -276,24 +320,38 @@ function SendHistory({
               alignItems="center"
               sx={{ flexWrap: 'wrap', rowGap: 1 }}
             >
-              <Chip
-                size="small"
-                label={job.status}
-                color={SEND_STATUS_COLORS[job.status as keyof typeof SEND_STATUS_COLORS]}
-              />
+              <Chip size="small" label={job.status} color={SEND_STATUS_COLORS[job.status]} />
               <Typography variant="body2" sx={{ flexGrow: 1 }}>
                 {job.case_ref} · {job.requested_by}
                 {job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ''}
               </Typography>
               {job.status === 'failed' && (
-                <Button size="small" onClick={() => onResend(reusable)}>
+                <Button
+                  size="small"
+                  onClick={() =>
+                    onResend({
+                      executions: detail.executions ?? [],
+                      caseRef: job.case_ref,
+                    })
+                  }
+                >
                   Re-send
                 </Button>
+              )}
+              {job.status === 'failed' && detail.error && (
+                <Typography variant="body2" color="error" sx={{ width: '100%' }}>
+                  {detail.error}
+                </Typography>
               )}
             </Stack>
           );
         })}
       </Stack>
+      {total !== undefined && total > jobs.length && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          Showing the {jobs.length} most recent of {total} attempts.
+        </Typography>
+      )}
     </Paper>
   );
 }
