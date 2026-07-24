@@ -31,7 +31,6 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPRedirectException,
-    HTTPUnprocessableEntityException,
 )
 from app.core.utils import remove_falsy_values_from_dict
 from app.sep.apps.framework.script_helpers import (
@@ -53,6 +52,7 @@ from app.sep.snippets.list_query import (
     SnippetApprovalFilter,
     SnippetListQuery,
     SnippetSortDirection,
+    SnippetSortKey,
 )
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
@@ -558,7 +558,7 @@ def get_snippet_list_query(
         Query(description="Case-insensitive search over filename, title, description."),
     ] = None,
     sort: Annotated[
-        str,
+        SnippetSortKey,
         Query(description="Sort key; one of the allowlisted public sort keys."),
     ] = DEFAULT_SNIPPET_SORT_KEY,
     order: Annotated[
@@ -583,11 +583,11 @@ def get_snippet_list_query(
         ),
     ] = False,
 ) -> SnippetListQuery:
-    """Parse and validate the opt-in snippets list-query parameters.
+    """Parse the opt-in snippets list-query parameters.
 
-    The ``sort`` key is checked against the allowlist at the request boundary so a
-    raw client-supplied column name can never reach the query; an out-of-allowlist
-    key is rejected with a 422 before any database access.
+    ``sort`` is typed as :class:`SnippetSortKey`, so an out-of-allowlist key
+    fails enum coercion at the request boundary (a 422 keyed to the ``sort``
+    query param) and no raw client-supplied column name can reach the query.
 
     :param search: Free-text search term, or ``None`` for no search.
     :param sort: The requested public sort key.
@@ -595,30 +595,16 @@ def get_snippet_list_query(
     :param approval: The requested approval-status filter.
     :param service_type: The requested service-type equality filter.
     :param uncategorized: When ``True``, filter to snippets with no service type.
-    :return: A validated, immutable list-query value object.
-    :raises HTTPUnprocessableEntityException: When ``sort`` is not in the allowlist.
+    :return: An immutable list-query value object.
     """
-    try:
-        return SnippetListQuery(
-            search=search,
-            sort_key=sort,
-            sort_direction=order,
-            approval=approval,
-            service_type=service_type,
-            uncategorized=uncategorized,
-        )
-    except ValidationError as exc:
-        # The allowlist lives on the model's field validator (single source of
-        # truth); surface its rejection as a boundary 422 keyed to the query param.
-        raise HTTPUnprocessableEntityException(
-            detail=[
-                {
-                    "loc": ["query", "sort"],
-                    "msg": str(exc.errors()[0]["msg"]),
-                    "type": "value_error",
-                }
-            ]
-        ) from exc
+    return SnippetListQuery(
+        search=search,
+        sort_key=sort,
+        sort_direction=order,
+        approval=approval,
+        service_type=service_type,
+        uncategorized=uncategorized,
+    )
 
 
 SnippetListQueryDep = Annotated[SnippetListQuery, Depends(get_snippet_list_query)]

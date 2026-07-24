@@ -34,6 +34,11 @@ from app.sep.snippets.list_query import (
     TIE_BREAKER_COLUMN,
 )
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.meta import (
+    META_KEY_DESCRIPTION,
+    META_KEY_SERVICE_TYPE,
+    META_KEY_TITLE,
+)
 
 _LIKE_ESCAPE_CHAR = "\\"
 
@@ -75,6 +80,21 @@ class SnippetManager(BaseSQLModelManager):
             return func_json_extract(engine, Snippet.meta, sort_column.name)
         return col(getattr(Snippet, sort_column.name))
 
+    @staticmethod
+    def _service_type_exprs(engine: str) -> tuple[ColumnElement, ColumnElement]:
+        """Return the raw and trimmed ``meta.service_type`` expressions.
+
+        The whole-dataset facet and the list filter normalise the free-form
+        service type through this one definition, so a padded value groups
+        identically on both paths instead of the facet and the predicate
+        disagreeing on what counts as blank.
+
+        :param engine: The database engine name (``session.get_bind().name``).
+        :return: The raw JSON-extract expression and its ``TRIM``-normalised form.
+        """
+        raw = func_json_extract(engine, Snippet.meta, META_KEY_SERVICE_TYPE)
+        return raw, func.trim(raw)
+
     @classmethod
     def _list_query_filters(
         cls, engine: str, list_query: SnippetListQuery
@@ -96,10 +116,10 @@ class SnippetManager(BaseSQLModelManager):
             filters.append(
                 or_(
                     col(Snippet.filename).ilike(pattern, escape=_LIKE_ESCAPE_CHAR),
-                    func_json_extract(engine, Snippet.meta, "title").ilike(
+                    func_json_extract(engine, Snippet.meta, META_KEY_TITLE).ilike(
                         pattern, escape=_LIKE_ESCAPE_CHAR
                     ),
-                    func_json_extract(engine, Snippet.meta, "description").ilike(
+                    func_json_extract(engine, Snippet.meta, META_KEY_DESCRIPTION).ilike(
                         pattern, escape=_LIKE_ESCAPE_CHAR
                     ),
                 )
@@ -110,18 +130,14 @@ class SnippetManager(BaseSQLModelManager):
         elif list_query.approval is SnippetApprovalFilter.NOT_APPROVED:
             filters.append(col(Snippet.approved_at).is_(None))
 
-        service_type_expr = func_json_extract(engine, Snippet.meta, "service_type")
+        service_type_raw, service_type_trimmed = cls._service_type_exprs(engine)
         if list_query.uncategorized:
-            # "No service type" means absent (JSON NULL) or blank/whitespace, matching
-            # the trim-based grouping the UI applies to the free-form frontmatter value.
-            filters.append(
-                or_(service_type_expr.is_(None), func.trim(service_type_expr) == "")
-            )
+            # "No service type" means absent (JSON NULL) or blank after trimming.
+            filters.append(or_(service_type_raw.is_(None), service_type_trimmed == ""))
         elif list_query.service_type is not None:
-            # Compare on the trimmed stored value so a padded " mysql " still matches.
-            filters.append(
-                func.trim(service_type_expr) == list_query.service_type.strip()
-            )
+            # Strip only spaces on the filter value to mirror SQL ``TRIM``'s default,
+            # so the comparison agrees with the facet for tab/newline-padded values.
+            filters.append(service_type_trimmed == list_query.service_type.strip(" "))
 
         return filters
 
@@ -168,6 +184,8 @@ class SnippetManager(BaseSQLModelManager):
         :param list_query: The validated sort/search/filter selections.
         :param pagination: The validated offset/limit window for this page.
         :return: A paginated response over the filtered, ordered snippets.
+        :raises sqlalchemy.exc.SQLAlchemyError: When a count or data query fails to
+            execute.
         """
         engine = session.get_bind().name
         filters = cls._list_query_filters(engine, list_query)
@@ -184,20 +202,25 @@ class SnippetManager(BaseSQLModelManager):
         """Return the distinct service types across the whole snippets table.
 
         Backs the list page's service-type filter so its options reflect the
-        complete dataset rather than the loaded page. Blank/whitespace and absent
-        values are folded into the ``has_uncategorized`` flag rather than emitted as
-        selectable values, matching the trim-based grouping the UI applies.
+        complete dataset rather than the loaded page. Blank and absent values are
+        folded into the ``has_uncategorized`` flag rather than emitted as selectable
+        values. The trimming shares :meth:`_service_type_exprs` with the list
+        filter, so a value the facet omits as blank is the same one the filter
+        treats as uncategorized.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :return: A tuple of the sorted distinct non-blank service types and whether
             any snippet has an absent or blank service type.
+        :raises sqlalchemy.exc.SQLAlchemyError: When the query fails to execute.
         """
         engine = session.get_bind().name
-        service_type_expr = func_json_extract(engine, Snippet.meta, "service_type")
-        raw_values = (await session.exec(select(service_type_expr).distinct())).all()
-        values = {value.strip() for value in raw_values if value and value.strip()}
-        has_uncategorized = any(not (value and value.strip()) for value in raw_values)
-        return sorted(values), has_uncategorized
+        _, service_type_trimmed = cls._service_type_exprs(engine)
+        values = (
+            await cls._exec(session, select(service_type_trimmed).distinct())
+        ).all()
+        return sorted({value for value in values if value}), any(
+            not value for value in values
+        )
 
     @classmethod
     async def get_or_create(

@@ -31,9 +31,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, field_validator
-
 from app.core.utils.fields import EnumFieldMixin
+from app.sep.snippets.models.meta import META_KEY_SERVICE_TYPE, META_KEY_TITLE
 
 
 class SnippetApprovalFilter(EnumFieldMixin, StrEnum):
@@ -60,6 +59,26 @@ class SnippetSortDirection(EnumFieldMixin, StrEnum):
     DESC = "desc"
 
 
+class SnippetSortKey(EnumFieldMixin, StrEnum):
+    """Enumerate the allowlisted public sort keys.
+
+    Membership is the type: an out-of-allowlist key fails to coerce at the
+    request boundary, so no raw client-supplied column name can reach a query.
+
+    :cvar CREATED_AT: Sort by the ``created_at`` column.
+    :cvar FILENAME: Sort by the ``filename`` column.
+    :cvar APPROVED_AT: Sort by the ``approved_at`` column.
+    :cvar TITLE: Sort by the ``meta.title`` JSON value.
+    :cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.
+    """
+
+    CREATED_AT = "created_at"
+    FILENAME = "filename"
+    APPROVED_AT = "approved_at"
+    TITLE = "title"
+    SERVICE_TYPE = "service_type"
+
+
 @dataclass(frozen=True, slots=True)
 class SnippetSortColumn:
     """Map a public sort key to a vetted backing expression.
@@ -73,28 +92,28 @@ class SnippetSortColumn:
     name: str
 
 
-SNIPPET_SORT_KEYS: dict[str, SnippetSortColumn] = {
-    "created_at": SnippetSortColumn("column", "created_at"),
-    "filename": SnippetSortColumn("column", "filename"),
-    "approved_at": SnippetSortColumn("column", "approved_at"),
-    "title": SnippetSortColumn("meta", "title"),
-    "service_type": SnippetSortColumn("meta", "service_type"),
+SNIPPET_SORT_KEYS: dict[SnippetSortKey, SnippetSortColumn] = {
+    SnippetSortKey.CREATED_AT: SnippetSortColumn("column", "created_at"),
+    SnippetSortKey.FILENAME: SnippetSortColumn("column", "filename"),
+    SnippetSortKey.APPROVED_AT: SnippetSortColumn("column", "approved_at"),
+    SnippetSortKey.TITLE: SnippetSortColumn("meta", META_KEY_TITLE),
+    SnippetSortKey.SERVICE_TYPE: SnippetSortColumn("meta", META_KEY_SERVICE_TYPE),
 }
 """Allowlist of public sort keys mapped to their vetted backing expressions."""
 
-DEFAULT_SNIPPET_SORT_KEY = "created_at"
+DEFAULT_SNIPPET_SORT_KEY = SnippetSortKey.CREATED_AT
 
 TIE_BREAKER_COLUMN = "filename"
 """Unique column appended to every sort so ordering is deterministic across pages."""
 
 
-class SnippetListQuery(BaseModel, frozen=True):
-    """Carry the validated, immutable snippets list-query selections.
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SnippetListQuery:
+    """Carry the immutable snippets list-query selections.
 
     :param search: Free-text search term matched case-insensitively against the
         filename, title, and description, or ``None`` for no search.
-    :param sort_key: The public sort key; must be a member of
-        :data:`SNIPPET_SORT_KEYS`.
+    :param sort_key: The allowlisted public sort key.
     :param sort_direction: The sort direction.
     :param approval: The approval-status filter.
     :param service_type: The service-type equality filter: a free-form value matched
@@ -106,22 +125,8 @@ class SnippetListQuery(BaseModel, frozen=True):
     """
 
     search: str | None = None
-    sort_key: str = DEFAULT_SNIPPET_SORT_KEY
+    sort_key: SnippetSortKey = DEFAULT_SNIPPET_SORT_KEY
     sort_direction: SnippetSortDirection = SnippetSortDirection.DESC
     approval: SnippetApprovalFilter = SnippetApprovalFilter.ALL
     service_type: str | None = None
     uncategorized: bool = False
-
-    @field_validator("sort_key")
-    @classmethod
-    def _validate_sort_key(cls, value: str) -> str:
-        """Reject a sort key that is not in the allowlist.
-
-        :param value: The candidate public sort key.
-        :return: The validated sort key.
-        :raises ValueError: When ``value`` is not a member of :data:`SNIPPET_SORT_KEYS`.
-        """
-        if value not in SNIPPET_SORT_KEYS:
-            allowed = ", ".join(sorted(SNIPPET_SORT_KEYS))
-            raise ValueError(f"Invalid sort key {value!r}; allowed: {allowed}.")
-        return value

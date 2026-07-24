@@ -15,19 +15,18 @@
 
 """Define the ``ScriptSource`` seam for script-backed task apps.
 
-A script-backed task app (the shape ``snippets``, ``dipper``, and
-``alert_troubleshooting`` each re-roll today) has no single create model: each
-script carries its own dynamically-synthesised form, and its surface is
-script-centric (listing, per-script form schema, execute, history) rather than
-the model-first ``POST /`` create envelope. :class:`ScriptSource` captures the
-hooks :func:`~app.sep.apps.framework.api.derive_script_routes` needs to derive
-that surface, so a :class:`~app.sep.apps.framework.apps.TaskExecutionApp` can
-declare ``script_source=`` instead of hand-wiring the routing and execution.
+A script-backed task app has no single create model: each script carries its own
+dynamically-synthesised form, and its surface is script-centric (listing,
+per-script form schema, execute, history) rather than the model-first ``POST /``
+create envelope. :class:`ScriptSource` captures the hooks
+:func:`~app.sep.apps.framework.api.derive_script_routes` needs to derive that
+surface, so a :class:`~app.sep.apps.framework.apps.TaskExecutionApp` can declare
+``script_source=`` instead of hand-wiring the routing and execution.
 
 The framework programs against the structural :class:`ScriptProtocol` and never
-imports a concrete script type (``BaseSnippet`` / ``DipperScript`` / ``Snippet``);
-the concrete type, the listing source (disk or DB), the artifact-URL salt, and
-the execution-meta shape are all supplied by the consumer.
+imports a concrete script type; the concrete type, the listing source (disk or
+DB), the artifact-URL salt, and the execution-meta shape are all supplied by the
+consumer.
 """
 
 from collections.abc import Awaitable, Callable, Sequence
@@ -78,6 +77,7 @@ class ScriptProtocol(Protocol):
 
 
 S = TypeVar("S", bound=ScriptProtocol)
+Q = TypeVar("Q", default=Any)
 
 
 class ScriptExecuteWrite(BaseModel):
@@ -131,7 +131,7 @@ class ScriptPreviewResponse(BaseModel):
 
 
 @dataclass(frozen=True, slots=True)
-class ScriptSource(Generic[S]):
+class ScriptSource(Generic[S, Q]):
     """Carry the hooks ``derive_script_routes`` derives a script app's surface from.
 
     The framework owns the contract and the route derivation; the consumer supplies
@@ -158,15 +158,15 @@ class ScriptSource(Generic[S]):
         stays untyped (back-compatible — a source that does not opt in keeps the
         original untyped list).
     :param list_query_dep: An optional FastAPI dependency parsing an opt-in
-        list-query (sort/search/filter) value object for the paginated list route.
-        When set, ``list_page`` must also be set. A source that opts out (the
-        default) exposes no list-query params and keeps the fetch-all-then-slice
-        list path. Deliberately opaque about the query type so the framework need
-        not know a consumer's sort/search shape.
+        list-query (sort/search/filter) value object of type ``Q`` for the
+        paginated list route. When set, ``list_page`` must also be set. A source
+        that opts out (the default) exposes no list-query params and keeps the
+        fetch-all-then-slice list path.
     :param list_page: An optional hook returning a filtered/sorted/paginated page of
         scripts directly (SQL-backed sources push the work down instead of fetching
         every row and slicing in-process). Receives the pagination window and the
-        ``list_query_dep`` value; its rows are projected through ``list_response``.
+        ``Q`` value produced by ``list_query_dep``; its rows are projected through
+        ``list_response``. The shared ``Q`` type-links the two hooks.
     """
 
     script_dir: Path
@@ -177,15 +177,14 @@ class ScriptSource(Generic[S]):
     list_response: Callable[[S], BaseModel]
     static_schema: AppSchema | None = None
     list_response_model: type[BaseModel] | None = None
-    list_query_dep: Callable[..., Any] | None = None
-    list_page: Callable[[Pagination, Any], Awaitable[PaginatedResponse]] | None = None
+    list_query_dep: Callable[..., Q] | None = None
+    list_page: Callable[[Pagination, Q], Awaitable[PaginatedResponse]] | None = None
 
     def __post_init__(self) -> None:
         """Reject a half-configured server list-page capability.
 
         ``list_query_dep`` and ``list_page`` are two halves of one opt-in
-        capability; supplying only one silently falls back to the fetch-all path,
-        so require both or neither at construction.
+        capability, so require both or neither at construction.
 
         :raises ValueError: When exactly one of ``list_query_dep`` / ``list_page``
             is set.
