@@ -119,4 +119,28 @@ describe('IncidentListPage', () => {
       expect(mockedApi.post).toHaveBeenCalledWith('/apps/atw/incidents/', {});
     });
   });
+
+  it('renders pagination controls once the list exceeds one page', async () => {
+    mockedApi.get.mockResolvedValue({
+      data: { items: [incident], total: 40, offset: 0, limit: 20 },
+    });
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Go to next page/i })).toBeTruthy();
+    });
+    expect(screen.getByText(/of 40/)).toBeTruthy();
+  });
+
+  it('omits pagination controls when a single page holds everything', async () => {
+    mockedApi.get.mockResolvedValue(paginated([incident]));
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('DB slowness')).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: /Go to next page/i })).toBeNull();
+  });
 });

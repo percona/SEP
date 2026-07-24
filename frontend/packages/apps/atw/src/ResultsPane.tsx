@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
@@ -23,39 +23,128 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Divider,
+  Paper,
   Stack,
+  TablePagination,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import SendIcon from '@mui/icons-material/Send';
 import {
   TaskFilesDialog,
   TaskHistoryStatusBadge,
   TaskLogViewer,
   isTaskHistoryStatus,
 } from '@sep/framework';
-import { useAtwIncidentExecutions } from './hooks';
-import type { AtwIncidentExecution } from './types';
+import {
+  ATW_PAGE_SIZE,
+  sendJobDetail,
+  useAtwConfig,
+  useAtwIncident,
+  useAtwIncidentExecutions,
+  useAtwSendJobs,
+} from './hooks';
+import { SendDialog } from './SendDialog';
+import type { AtwIncidentExecution, AtwSendLog, AtwSendLogExecution } from './types';
 
 export interface ResultsPaneProps {
   incidentId: string;
 }
 
+/** Task statuses whose execution has output files worth sending. */
+const FINISHED_TASK_STATUSES = new Set(['success', 'failed', 'error', 'stopped']);
+
+const SEND_STATUS_COLORS = {
+  success: 'success',
+  failed: 'error',
+  running: 'info',
+  pending: 'default',
+} as const;
+
+function isSelectable(execution: AtwIncidentExecution): boolean {
+  return FINISHED_TASK_STATUSES.has(execution.task_status ?? '');
+}
+
 /**
- * The Results pane: lists the incident's executions, each with its status, logs,
- * and downloadable file listing.
+ * The Results pane: lists the incident's executions with their status, logs and
+ * files, and lets a support engineer send a selection to the support case.
  *
- * This is the pane shell only. A future "send to ServiceNow" action
- * (execution selection, case-ref prefill, job progress) will add a cross-row
- * selection model and an action bar here — row state currently lives in
- * {@link ExecutionRow} and will need lifting when that lands.
+ * Selection is keyed by execution id and held above the row list, so it survives
+ * a page flip — deriving it from the rendered rows would silently drop anything
+ * chosen on an earlier page.
  */
 export function ResultsPane({ incidentId }: ResultsPaneProps) {
-  const { data, isLoading, error } = useAtwIncidentExecutions(incidentId);
+  const [page, setPage] = useState({ offset: 0, limit: ATW_PAGE_SIZE });
+  const { data, isLoading, error } = useAtwIncidentExecutions(incidentId, page);
+  const { data: incident } = useAtwIncident(incidentId);
+  const { data: config } = useAtwConfig();
+  const { data: sendJobs } = useAtwSendJobs(incidentId);
+
   const [filesForTask, setFilesForTask] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [sendOpen, setSendOpen] = useState(false);
+  const [resendSelection, setResendSelection] = useState<AtwSendLogExecution[] | null>(null);
+
+  const rows = data?.items;
+  const knownExecutions = useMemo(() => {
+    const map = new Map<string, AtwSendLogExecution>();
+    for (const execution of rows ?? []) {
+      map.set(execution.id, {
+        id: execution.id,
+        task_history_id: execution.task_history_id,
+        snippet_filename: execution.snippet_filename,
+      });
+    }
+    return map;
+  }, [rows]);
+
+  const [selectionLabels, setSelectionLabels] = useState<Map<string, AtwSendLogExecution>>(
+    new Map(),
+  );
+
+  const toggleSelected = (execution: AtwIncidentExecution) => {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(execution.id)) {
+        next.delete(execution.id);
+      } else {
+        next.add(execution.id);
+      }
+      return next;
+    });
+    setSelectionLabels((previous) => {
+      const next = new Map(previous);
+      next.set(execution.id, {
+        id: execution.id,
+        task_history_id: execution.task_history_id,
+        snippet_filename: execution.snippet_filename,
+      });
+      return next;
+    });
+  };
+
+  const selectedExecutions = [...selectedIds]
+    .map((id) => knownExecutions.get(id) ?? selectionLabels.get(id))
+    .filter((execution): execution is AtwSendLogExecution => execution !== undefined);
+
+  const disabledReasons = config?.send_disabled_reasons ?? [];
+  const sendDisabled = selectedExecutions.length === 0 || disabledReasons.length > 0;
+  const sendTooltip = disabledReasons.length
+    ? disabledReasons.join('; ')
+    : selectedExecutions.length === 0
+      ? 'Select one or more finished executions to send.'
+      : '';
+
+  const openSend = (executions: AtwSendLogExecution[] | null) => {
+    setResendSelection(executions);
+    setSendOpen(true);
+  };
 
   return (
     <Box>
@@ -71,37 +160,157 @@ export function ResultsPane({ incidentId }: ResultsPaneProps) {
 
       {error && <Alert severity="error">Failed to load executions: {error.message}</Alert>}
 
-      {!isLoading && !error && (!data || data.length === 0) && (
+      {!isLoading && !error && (!rows || rows.length === 0) && (
         <Alert severity="info">
           No executions yet. Run snippets from the Collect pane to see results here.
         </Alert>
       )}
 
-      {data?.map((execution) => (
+      {rows && rows.length > 0 && (
+        <Stack
+          direction="row"
+          spacing={2}
+          alignItems="center"
+          sx={{ mb: 2, flexWrap: 'wrap', rowGap: 1 }}
+        >
+          <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+            {selectedExecutions.length} selected
+          </Typography>
+          <Tooltip title={sendTooltip}>
+            <span>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<SendIcon />}
+                disabled={sendDisabled}
+                onClick={() => openSend(null)}
+              >
+                Send to support case
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
+      )}
+
+      {rows?.map((execution) => (
         <ExecutionRow
           key={execution.id}
           execution={execution}
+          selected={selectedIds.has(execution.id)}
+          onToggleSelected={() => toggleSelected(execution)}
           onOpenFiles={() => setFilesForTask(execution.task_history_id)}
         />
       ))}
+
+      {data && data.total > data.limit && (
+        <TablePagination
+          component="div"
+          count={data.total}
+          page={Math.floor(data.offset / Math.max(data.limit, 1))}
+          rowsPerPage={data.limit}
+          onPageChange={(_event, newPage) =>
+            setPage((previous) => ({ offset: newPage * previous.limit, limit: previous.limit }))
+          }
+          rowsPerPageOptions={[ATW_PAGE_SIZE]}
+        />
+      )}
+
+      <SendHistory
+        jobs={sendJobs?.items}
+        knownExecutionIds={new Set(knownExecutions.keys())}
+        onResend={openSend}
+      />
 
       <TaskFilesDialog
         open={filesForTask !== null}
         taskHistoryId={filesForTask}
         onClose={() => setFilesForTask(null)}
       />
+
+      <SendDialog
+        open={sendOpen}
+        incidentId={incidentId}
+        executions={resendSelection ?? selectedExecutions}
+        defaultCaseRef={incident?.case_ref}
+        onClose={() => setSendOpen(false)}
+      />
     </Box>
+  );
+}
+
+/**
+ * Past send attempts for this incident, with Re-send on the failed ones.
+ *
+ * A re-send only offers the executions the incident still has — the rest were
+ * deleted since the attempt, and the dialog refuses an empty selection.
+ */
+function SendHistory({
+  jobs,
+  knownExecutionIds,
+  onResend,
+}: {
+  jobs: AtwSendLog[] | undefined;
+  knownExecutionIds: Set<string>;
+  onResend: (executions: AtwSendLogExecution[]) => void;
+}) {
+  if (!jobs || jobs.length === 0) {
+    return null;
+  }
+
+  return (
+    <Paper variant="outlined" sx={{ mt: 3, p: 2 }}>
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>
+        Send history
+      </Typography>
+      <Stack divider={<Divider flexItem />} spacing={1}>
+        {jobs.map((job) => {
+          const detail = sendJobDetail(job);
+          const reusable = (detail.executions ?? []).filter((execution) =>
+            knownExecutionIds.has(execution.id),
+          );
+          return (
+            <Stack
+              key={job.id}
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ flexWrap: 'wrap', rowGap: 1 }}
+            >
+              <Chip
+                size="small"
+                label={job.status}
+                color={SEND_STATUS_COLORS[job.status as keyof typeof SEND_STATUS_COLORS]}
+              />
+              <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                {job.case_ref} · {job.requested_by}
+                {job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ''}
+              </Typography>
+              {job.status === 'failed' && (
+                <Button size="small" onClick={() => onResend(reusable)}>
+                  Re-send
+                </Button>
+              )}
+            </Stack>
+          );
+        })}
+      </Stack>
+    </Paper>
   );
 }
 
 function ExecutionRow({
   execution,
+  selected,
+  onToggleSelected,
   onOpenFiles,
 }: {
   execution: AtwIncidentExecution;
+  selected: boolean;
+  onToggleSelected: () => void;
   onOpenFiles: () => void;
 }) {
   const { snippet_filename, task_status, task_history_id, has_logs } = execution;
+  const selectable = isSelectable(execution);
 
   return (
     <Accordion disableGutters sx={{ mb: 1 }} slotProps={{ transition: { unmountOnExit: true } }}>
@@ -112,6 +321,18 @@ function ExecutionRow({
           alignItems="center"
           sx={{ width: '100%', pr: 1, flexWrap: 'wrap' }}
         >
+          <Tooltip title={selectable ? '' : 'Only finished executions can be sent.'}>
+            <span>
+              <Checkbox
+                size="small"
+                checked={selected}
+                disabled={!selectable}
+                onChange={onToggleSelected}
+                onClick={(event) => event.stopPropagation()}
+                inputProps={{ 'aria-label': `Select ${snippet_filename}` }}
+              />
+            </span>
+          </Tooltip>
           <Typography variant="subtitle2" sx={{ flexGrow: 1, wordBreak: 'break-all' }}>
             {snippet_filename}
           </Typography>

@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -114,5 +114,185 @@ describe('ResultsPane', () => {
     await waitFor(() => {
       expect(screen.getByText('Unknown')).toBeTruthy();
     });
+  });
+});
+
+// ── Diagnostics send ─────────────────────────────────────────────────────
+
+const FINISHED_EXECUTION = {
+  id: 'exec-1',
+  snippet_filename: 'diag/slow-query.sh',
+  task_history_id: 7,
+  created_at: '2026-07-22T10:00:00Z',
+  task_status: 'success',
+  started_at: null,
+  finished_at: null,
+  has_logs: true,
+};
+
+const RUNNING_EXECUTION = {
+  id: 'exec-2',
+  snippet_filename: 'diag/dmesg.sh',
+  task_history_id: 8,
+  created_at: '2026-07-22T10:01:00Z',
+  task_status: 'running',
+  started_at: null,
+  finished_at: null,
+  has_logs: true,
+};
+
+/**
+ * Route each GET by URL, so the executions list, config probe and send-job
+ * history can answer with their own shapes rather than one shared envelope.
+ */
+function routeGet(routes: {
+  executions?: unknown;
+  config?: unknown;
+  sendJobs?: unknown;
+  incident?: unknown;
+}) {
+  mockedApi.get.mockImplementation((url: string) => {
+    if (url.includes('/send-jobs/')) {
+      return Promise.resolve({
+        data: routes.sendJobs ?? { items: [], total: 0, offset: 0, limit: 50 },
+      });
+    }
+    if (url.includes('/executions/')) {
+      return Promise.resolve({
+        data: routes.executions ?? { items: [], total: 0, offset: 0, limit: 20 },
+      });
+    }
+    if (url.includes('/config/')) {
+      return Promise.resolve({ data: routes.config ?? { send_disabled_reasons: [] } });
+    }
+    return Promise.resolve({ data: routes.incident ?? { id: 'inc-1', case_ref: 'CS0001' } });
+  });
+}
+
+describe('ResultsPane diagnostics send', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('offers a checkbox only for finished executions', async () => {
+    routeGet({
+      executions: {
+        items: [FINISHED_EXECUTION, RUNNING_EXECUTION],
+        total: 2,
+        offset: 0,
+        limit: 20,
+      },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select diag/slow-query.sh')).toBeTruthy();
+    });
+    expect((screen.getByLabelText('Select diag/slow-query.sh') as HTMLInputElement).disabled).toBe(
+      false,
+    );
+    expect((screen.getByLabelText('Select diag/dmesg.sh') as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('enables the send action once an execution is selected', async () => {
+    routeGet({
+      executions: { items: [FINISHED_EXECUTION], total: 1, offset: 0, limit: 20 },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select diag/slow-query.sh')).toBeTruthy();
+    });
+    const sendButton = () =>
+      screen.getByRole('button', { name: /Send to support case/i }) as HTMLButtonElement;
+    expect(sendButton().disabled).toBe(true);
+
+    fireEvent.click(screen.getByLabelText('Select diag/slow-query.sh'));
+
+    await waitFor(() => {
+      expect(sendButton().disabled).toBe(false);
+    });
+    expect(screen.getByText('1 selected')).toBeTruthy();
+  });
+
+  it('keeps the send action disabled while delivery is unconfigured', async () => {
+    routeGet({
+      executions: { items: [FINISHED_EXECUTION], total: 1, offset: 0, limit: 20 },
+      config: { send_disabled_reasons: ['Diagnostics delivery is not configured'] },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select diag/slow-query.sh')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByLabelText('Select diag/slow-query.sh'));
+
+    await waitFor(() => {
+      expect(
+        (screen.getByRole('button', { name: /Send to support case/i }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+    });
+  });
+
+  it('lists past attempts and offers Re-send on a failed one', async () => {
+    routeGet({
+      executions: { items: [FINISHED_EXECUTION], total: 1, offset: 0, limit: 20 },
+      sendJobs: {
+        items: [
+          {
+            id: 'job-1',
+            incident_id: 'inc-1',
+            case_ref: 'CS0042',
+            requested_by: 'alice',
+            status: 'failed',
+            started_at: null,
+            finished_at: '2026-07-24T10:01:00Z',
+            created_at: '2026-07-24T10:00:00Z',
+            detail: { error: 'upstream exploded', executions: [FINISHED_EXECUTION] },
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Send history')).toBeTruthy();
+    });
+    expect(screen.getByText(/CS0042/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Re-send' })).toBeTruthy();
+  });
+
+  it('renders pagination controls once the list exceeds one page', async () => {
+    routeGet({
+      executions: { items: [FINISHED_EXECUTION], total: 40, offset: 0, limit: 20 },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Go to next page/i })).toBeTruthy();
+    });
+    expect(screen.getByText(/of 40/)).toBeTruthy();
+  });
+
+  it('omits pagination controls when a single page holds everything', async () => {
+    routeGet({
+      executions: { items: [FINISHED_EXECUTION], total: 1, offset: 0, limit: 20 },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('diag/slow-query.sh')).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: /Go to next page/i })).toBeNull();
   });
 });

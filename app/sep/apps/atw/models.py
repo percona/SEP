@@ -23,14 +23,18 @@ them into the ``sep`` autogenerate). The category taxonomy, which depends on
 ``app.inventory``, lives in :mod:`app.sep.apps.atw.categories`.
 """
 
+from enum import auto, StrEnum
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, UUID4
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Column, JSON, UniqueConstraint
+from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db.models import BaseUUIDSQLModel
 from app.core.utils.date_time import utc_now
-from app.core.utils.fields import NonEmptyStr, UTCDatetime
+from app.core.utils.fields import EnumFieldMixin, NonEmptyStr, UTCDatetime
 
 
 def _default_incident_name() -> str:
@@ -57,12 +61,17 @@ class AtwIncident(BaseUUIDSQLModel, AtwIncidentBase, table=True):
 
     :param created_by: Username of the support engineer who created the incident.
     :param executions: The snippet executions grouped under this incident.
+    :param send_logs: The delivery attempts recorded against this incident.
     """
 
     __tablename__ = "atw_incident"
 
     created_by: str = SQLField(nullable=False)
     executions: list["AtwIncidentExecution"] = Relationship(
+        back_populates="incident",
+        cascade_delete=True,
+    )
+    send_logs: list["AtwSendLog"] = Relationship(
         back_populates="incident",
         cascade_delete=True,
     )
@@ -138,3 +147,126 @@ class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
     task_history_id: int = SQLField(index=True)
     snippet_filename: str
     incident: AtwIncident = Relationship(back_populates="executions")
+
+
+class AtwSendStatusEnum(EnumFieldMixin, StrEnum):
+    """Enumerate the lifecycle of one diagnostics send attempt.
+
+    The column stores member *names* (``PENDING``); the API serializes the
+    ``StrEnum`` *values* (``pending``).
+    """
+
+    PENDING = auto()
+    RUNNING = auto()
+    SUCCESS = auto()
+    FAILED = auto()
+
+    @classmethod
+    def active_statuses(cls) -> frozenset["AtwSendStatusEnum"]:
+        """Return the statuses a send can still leave on its own.
+
+        :return: The non-terminal statuses.
+        """
+        return frozenset({cls.PENDING, cls.RUNNING})
+
+    def is_terminal(self) -> bool:
+        """Return whether this status is a finished outcome.
+
+        :return: ``True`` for a status no further transition leaves.
+        """
+        return self not in self.active_statuses()
+
+
+class AtwSendLog(BaseUUIDSQLModel, table=True):
+    """Record one attempt to deliver an incident's diagnostics to the receiver.
+
+    The row *is* the job: the create endpoint writes it as ``PENDING`` and
+    enqueues the Celery task with its id, and the status endpoint reads it back.
+    Because the receiver's credentials can create attachments but not read them,
+    ``detail`` carries the full final-upload response and is the only evidence a
+    send ever landed.
+
+    :param incident_id: Foreign key to the owning :class:`AtwIncident`.
+    :param case_ref: The support-case reference this send targets, snapshotted at
+        request time so a later edit of the incident does not rewrite history.
+    :param requested_by: Username of the support engineer who started the send.
+    :param status: The attempt's lifecycle status.
+    :param started_at: When the worker picked the attempt up, if it did.
+    :param finished_at: When the attempt reached a terminal status, if it did.
+    :param detail: The attempt's recorded evidence -- selected executions, per-step
+        outcomes, the full upload response, or the error that ended it.
+    :param incident: The incident this attempt belongs to.
+    """
+
+    __tablename__ = "atw_send_log"
+
+    incident_id: UUID4 = SQLField(
+        foreign_key="atw_incident.id",
+        ondelete="CASCADE",
+        index=True,
+    )
+    case_ref: NonEmptyStr = SQLField(nullable=False)
+    requested_by: str = SQLField(nullable=False)
+    status: AtwSendStatusEnum = SQLField(
+        default=AtwSendStatusEnum.PENDING,
+        sa_column=Column(
+            EnumField(AtwSendStatusEnum, native_enum=False, create_constraint=True),
+            nullable=False,
+        ),
+    )
+    started_at: UTCDatetime | None = SQLField(default=None)
+    finished_at: UTCDatetime | None = SQLField(default=None)
+    detail: dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON))
+    incident: AtwIncident = Relationship(back_populates="send_logs")
+
+
+class AtwSendJobWrite(BaseModel):
+    """Define the payload starting one diagnostics send.
+
+    :param case_ref: The support-case reference to attach the bundle to.
+    :param execution_ids: The incident executions whose output files to send.
+    """
+
+    case_ref: NonEmptyStr
+    execution_ids: list[UUID4] = Field(min_length=1)
+
+
+class AtwSendLogResponse(BaseModel):
+    """Represent one recorded diagnostics send attempt.
+
+    Every field is always present on a stored attempt, so -- unlike returning the
+    :class:`AtwSendLog` table model directly -- the generated client types them as
+    required rather than optional.
+
+    :param id: The attempt's UUID primary key.
+    :param incident_id: The incident the attempt belongs to.
+    :param case_ref: The support-case reference the attempt targeted.
+    :param requested_by: Username of the support engineer who started it.
+    :param status: The attempt's lifecycle status.
+    :param started_at: When the worker picked it up, if it did.
+    :param finished_at: When it reached a terminal status, if it did.
+    :param created_at: When the attempt was requested.
+    :param detail: The attempt's recorded evidence.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID4
+    incident_id: UUID4
+    case_ref: NonEmptyStr
+    requested_by: str
+    status: AtwSendStatusEnum
+    started_at: UTCDatetime | None
+    finished_at: UTCDatetime | None
+    created_at: UTCDatetime
+    detail: dict[str, Any]
+
+
+class AtwConfigResponse(BaseModel):
+    """Report whether the incident send action is available.
+
+    :param send_disabled_reasons: Why sending is unavailable; empty when the
+        receiver is configured and the action is offered.
+    """
+
+    send_disabled_reasons: list[str]
