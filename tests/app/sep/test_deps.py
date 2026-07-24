@@ -42,7 +42,11 @@ from app.core.exceptions import (
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.base import BaseApp
-from app.sep.apps.framework.registry import AppRegistry, build_app_registry
+from app.sep.apps.framework.registry import (
+    AppRegistry,
+    build_app_registry,
+    get_app_registry,
+)
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import App, sep_settings
 from app.sep.crud import AppStateManager
@@ -1904,6 +1908,31 @@ class TestGetDefaultContextPluginFiltering:
 
         keys = {p.key for p in context["plugins"]}
         assert {"inventory", "snippets", "dependent"} <= keys
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_alert_troubleshooting_hidden_when_snippets_disabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """Drop Alert Troubleshooting from the sidebar when snippets is disabled."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        with (
+            patch(
+                "app.sep.apps.framework.registry.get_app_registry",
+                return_value=get_app_registry(),
+            ),
+            patch("app.sep.deps.settings"),
+        ):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert "alert_troubleshooting" not in keys
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")

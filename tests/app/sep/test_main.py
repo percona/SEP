@@ -955,6 +955,38 @@ class TestAppStateGuards:
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
 
+    @pytest.mark.parametrize(
+        "route",
+        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting"],
+    )
+    @pytest.mark.asyncio
+    async def test_alert_troubleshooting_routes_503_when_snippets_disabled(
+        self, guarded_client: TestClient, session, route: str
+    ) -> None:
+        """Alert Troubleshooting's JSON and Jinja routes 503 when snippets is disabled."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get(route)
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "alert_troubleshooting" in response.json()["detail"]
+
+    @pytest.mark.parametrize(
+        "route",
+        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting"],
+    )
+    @pytest.mark.asyncio
+    async def test_alert_troubleshooting_routes_reachable_when_snippets_enabled(
+        self, guarded_client: TestClient, session, route: str
+    ) -> None:
+        """Alert Troubleshooting's routes remain reachable when snippets is enabled."""
+        response = guarded_client.get(route)
+
+        assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
+
     def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
         """Every non-protected UI plugin route carries the app-state guard."""
         guarded_prefixes = {
