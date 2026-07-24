@@ -1204,15 +1204,26 @@ def preserve_patch_credential_url_value(
     current: Any,
     incoming: Any,
 ) -> Any:
-    """Restore masked URL passwords in a PATCH value before validation/persist."""
+    """Restore masked credentials in a PATCH value before validation/persist.
+
+    Handles credential-bearing URL passwords (``****``) and
+    :class:`~pydantic.SecretStr` / :class:`~pydantic.SecretBytes` JSON masks
+    (:data:`SECRET_STR_MASK`). Non-mask submissions are left unchanged.
+    """
     if is_credential_url_field(field_info):
         if isinstance(incoming, str) and current is not None:
-            return preserve_credential_url_password(str(current), incoming)
-        return incoming
-    parent_cls = annotation_pydantic_class(field_info.annotation)
-    if parent_cls and isinstance(incoming, Mapping):
-        return preserve_credential_urls_in_model_payload(parent_cls, current, incoming)
-    return incoming
+            value = preserve_credential_url_password(str(current), incoming)
+        else:
+            value = incoming
+    else:
+        parent_cls = annotation_pydantic_class(field_info.annotation)
+        if parent_cls and isinstance(incoming, Mapping):
+            value = preserve_credential_urls_in_model_payload(
+                parent_cls, current, incoming
+            )
+        else:
+            value = incoming
+    return preserve_patch_secret_value(field_info, current, value)
 
 
 def _annotation_is_secret_valued_dict(annotation: Any) -> bool:
