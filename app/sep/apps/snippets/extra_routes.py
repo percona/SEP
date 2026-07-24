@@ -46,6 +46,7 @@ from app.sep.apps.snippets.models import (
     build_snippet_response,
     RefreshResponse,
     SnippetResponse,
+    SnippetServiceTypesResponse,
 )
 from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep
 from app.sep.snippets.crud import SnippetManager
@@ -79,6 +80,25 @@ async def snippets_api_refresh(
         await update_snippets()
     logger.info("Snippets refreshed via JSON API by %s", user.username)
     return RefreshResponse(refreshed_at=utc_now())
+
+
+@maintenance_router.get("/service_types", dependencies=[IsApiAuthenticated])
+async def snippets_api_service_types(
+    session: SessionDep,
+) -> SnippetServiceTypesResponse:
+    """List the distinct service types across the whole snippets dataset.
+
+    Backs the list page's service-type filter so its options reflect every value
+    in the dataset rather than only the loaded page.
+
+    :param session: The SEP database session.
+    :return: The sorted distinct service types and whether any snippet is
+        uncategorized (absent or blank service type).
+    """
+    service_types, has_uncategorized = await SnippetManager.list_service_types(session)
+    return SnippetServiceTypesResponse(
+        service_types=service_types, has_uncategorized=has_uncategorized
+    )
 
 
 artifact_router = APIRouter()

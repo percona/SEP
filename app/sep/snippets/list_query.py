@@ -15,12 +15,10 @@
 
 """Define the opt-in sort/search/filter list-query value object for snippets.
 
-This is the first increment of a phased rollout: a self-contained, validated value
-object injected only on the snippets list route, deliberately shaped so a future
-config-driven framework capability can later produce it in place of the hand-wired
-dependency. The shared offset/limit :class:`~app.core.pagination.Pagination` model
-is intentionally left untouched — sort and search are per-resource capabilities and
-live here, not on the uniform pagination transport.
+A self-contained, validated value object injected only on the snippets list route.
+The shared offset/limit :class:`~app.core.pagination.Pagination` model is left
+untouched — sort and search are per-resource capabilities and live here, not on the
+uniform pagination transport.
 
 The sort allowlist maps public sort keys to vetted column/JSON expressions; a raw
 client-supplied column name is never interpolated into a query, and an out-of-allowlist
@@ -36,14 +34,6 @@ from typing import Literal
 from pydantic import BaseModel, field_validator
 
 from app.core.utils.fields import EnumFieldMixin
-
-SERVICE_TYPE_UNCATEGORIZED = "__uncategorized__"
-"""Sentinel ``service_type`` value selecting snippets with no service type.
-
-Distinguishes "filter to snippets whose ``meta.service_type`` is absent" (SQL
-``IS NULL``) from a real free-form service-type value, which the ``meta.service_type``
-frontmatter could never legitimately carry.
-"""
 
 
 class SnippetApprovalFilter(EnumFieldMixin, StrEnum):
@@ -107,9 +97,12 @@ class SnippetListQuery(BaseModel, frozen=True):
         :data:`SNIPPET_SORT_KEYS`.
     :param sort_direction: The sort direction.
     :param approval: The approval-status filter.
-    :param service_type: The service-type filter: a free-form value for equality,
-        :data:`SERVICE_TYPE_UNCATEGORIZED` for "no service type", or ``None`` for no
-        filter.
+    :param service_type: The service-type equality filter: a free-form value matched
+        (trimmed) against ``meta.service_type``, or ``None`` for no equality filter.
+    :param uncategorized: When ``True``, keep only snippets whose ``meta.service_type``
+        is absent or blank. A structurally separate flag (rather than a reserved
+        ``service_type`` value) so a real free-form service type can never be
+        misread as "no service type". Takes precedence over ``service_type``.
     """
 
     search: str | None = None
@@ -117,6 +110,7 @@ class SnippetListQuery(BaseModel, frozen=True):
     sort_direction: SnippetSortDirection = SnippetSortDirection.DESC
     approval: SnippetApprovalFilter = SnippetApprovalFilter.ALL
     service_type: str | None = None
+    uncategorized: bool = False
 
     @field_validator("sort_key")
     @classmethod

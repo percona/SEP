@@ -22,7 +22,6 @@ import pytest
 from app.core.pagination import Pagination
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.list_query import (
-    SERVICE_TYPE_UNCATEGORIZED,
     SNIPPET_SORT_KEYS,
     SnippetApprovalFilter,
     SnippetListQuery,
@@ -109,7 +108,7 @@ class TestSnippetManagerListQueryPage:
     """Test server-side search/filter/sort in ``SnippetManager.list_query_page``."""
 
     async def test_search_matches_filename_title_and_description(self, session):
-        """Search matches filename, meta title, and meta description, case-insensitively."""
+        """Match filename, meta title, and meta description case-insensitively."""
         await _seed_snippet(session, "mysql-slow.sh", title="Unrelated")
         await _seed_snippet(session, "other.sh", title="MySQL Report")
         await _seed_snippet(session, "third.sh", description="dumps the MYSQL log")
@@ -129,7 +128,7 @@ class TestSnippetManagerListQueryPage:
         }
 
     async def test_search_treats_like_wildcards_as_literals(self, session):
-        """A ``%`` in the search term matches literally, not as a wildcard."""
+        """Treat a ``%`` in the search term as a literal, not a wildcard."""
         await _seed_snippet(session, "literal.sh", title="100% done")
         await _seed_snippet(session, "decoy.sh", title="nothing here")
 
@@ -142,7 +141,7 @@ class TestSnippetManagerListQueryPage:
         assert {s.filename for s in page.items} == {"literal.sh"}
 
     async def test_blank_search_applies_no_predicate(self, session):
-        """A whitespace-only search term is ignored."""
+        """Ignore a whitespace-only search term."""
         await _seed_snippet(session, "a.sh")
         await _seed_snippet(session, "b.sh")
 
@@ -155,7 +154,7 @@ class TestSnippetManagerListQueryPage:
         assert page.total == len(page.items)
 
     async def test_approval_filter_narrows_to_approved(self, session):
-        """The approved filter keeps only snippets with an approval timestamp."""
+        """Keep only snippets with an approval timestamp under the approved filter."""
         await _seed_snippet(session, "approved.sh", approved=True)
         await _seed_snippet(session, "pending.sh", approved=False)
 
@@ -168,7 +167,7 @@ class TestSnippetManagerListQueryPage:
         assert [s.filename for s in page.items] == ["approved.sh"]
 
     async def test_approval_filter_narrows_to_not_approved(self, session):
-        """The not-approved filter keeps only snippets without an approval timestamp."""
+        """Keep only snippets without an approval timestamp under the not-approved filter."""
         await _seed_snippet(session, "approved.sh", approved=True)
         await _seed_snippet(session, "pending.sh", approved=False)
 
@@ -181,7 +180,7 @@ class TestSnippetManagerListQueryPage:
         assert [s.filename for s in page.items] == ["pending.sh"]
 
     async def test_service_type_filter_matches_value(self, session):
-        """The service-type filter matches the ``meta.service_type`` value."""
+        """Match the ``meta.service_type`` value with the service-type filter."""
         await _seed_snippet(session, "mongo.sh", service_type="mongodb")
         await _seed_snippet(session, "mysql.sh", service_type="mysql")
 
@@ -193,23 +192,72 @@ class TestSnippetManagerListQueryPage:
 
         assert [s.filename for s in page.items] == ["mongo.sh"]
 
-    async def test_service_type_uncategorized_selects_snippets_without_a_type(
-        self, session
-    ):
-        """The uncategorized sentinel selects snippets whose service type is absent."""
-        await _seed_snippet(session, "typed.sh", service_type="mysql")
-        await _seed_snippet(session, "untyped.sh")
+    async def test_service_type_equality_matches_trimmed_value(self, session):
+        """Match the service-type filter against the trimmed stored value."""
+        await _seed_snippet(session, "padded.sh", service_type="  mysql  ")
+        await _seed_snippet(session, "mongo.sh", service_type="mongodb")
 
         page = await SnippetManager.list_query_page(
             session,
-            list_query=SnippetListQuery(service_type=SERVICE_TYPE_UNCATEGORIZED),
+            list_query=SnippetListQuery(service_type="mysql"),
             pagination=Pagination(offset=0, limit=50),
         )
 
-        assert [s.filename for s in page.items] == ["untyped.sh"]
+        assert [s.filename for s in page.items] == ["padded.sh"]
+
+    async def test_uncategorized_selects_absent_and_blank_service_types(self, session):
+        """Select snippets whose service type is absent or blank when uncategorized."""
+        await _seed_snippet(session, "typed.sh", service_type="mysql")
+        await _seed_snippet(session, "absent.sh")
+        await _seed_snippet(session, "empty.sh", service_type="")
+        await _seed_snippet(session, "blank.sh", service_type="   ")
+
+        page = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(uncategorized=True),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert {s.filename for s in page.items} == {
+            "absent.sh",
+            "empty.sh",
+            "blank.sh",
+        }
+
+    async def test_uncategorized_does_not_match_literal_reserved_value(self, session):
+        """Treat a literal ``__uncategorized__`` service type as a real value."""
+        await _seed_snippet(session, "literal.sh", service_type="__uncategorized__")
+        await _seed_snippet(session, "absent.sh")
+
+        uncategorized_page = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(uncategorized=True),
+            pagination=Pagination(offset=0, limit=50),
+        )
+        equality_page = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(service_type="__uncategorized__"),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert [s.filename for s in uncategorized_page.items] == ["absent.sh"]
+        assert [s.filename for s in equality_page.items] == ["literal.sh"]
+
+    async def test_uncategorized_takes_precedence_over_service_type(self, session):
+        """Prefer the uncategorized flag over a supplied service-type value."""
+        await _seed_snippet(session, "typed.sh", service_type="mysql")
+        await _seed_snippet(session, "absent.sh")
+
+        page = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(service_type="mysql", uncategorized=True),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert [s.filename for s in page.items] == ["absent.sh"]
 
     async def test_filtered_total_matches_the_filtered_result_set(self, session):
-        """The paginated total reflects the filtered query, not the whole table."""
+        """Reflect the filtered query in the paginated total, not the whole table."""
         mysql_count = 5
         page_limit = 2
         for index in range(mysql_count):
@@ -226,7 +274,7 @@ class TestSnippetManagerListQueryPage:
         assert len(page.items) == page_limit
 
     async def test_ordering_is_deterministic_across_page_boundaries(self, session):
-        """A tie on the sort key is broken by filename, so pages never overlap or drop."""
+        """Break a tie on the sort key by filename so pages never overlap or drop."""
         for name in ("d.sh", "b.sh", "a.sh", "c.sh"):
             await _seed_snippet(session, name, service_type="mysql")
 
@@ -244,7 +292,7 @@ class TestSnippetManagerListQueryPage:
         assert [s.filename for s in second.items] == ["c.sh", "d.sh"]
 
     async def test_sort_by_meta_title_ascending(self, session):
-        """The title sort key orders by the ``meta.title`` JSON value."""
+        """Order by the ``meta.title`` JSON value for the title sort key."""
         await _seed_snippet(session, "one.sh", title="Charlie")
         await _seed_snippet(session, "two.sh", title="Alpha")
         await _seed_snippet(session, "three.sh", title="Bravo")
@@ -260,7 +308,7 @@ class TestSnippetManagerListQueryPage:
         assert [s.title for s in page.items] == ["Alpha", "Bravo", "Charlie"]
 
     async def test_every_allowlisted_sort_key_resolves(self, session):
-        """Every public sort key produces a runnable ordered query."""
+        """Resolve every public sort key to a runnable ordered query."""
         await _seed_snippet(session, "b.sh", title="B", service_type="mysql")
         await _seed_snippet(session, "a.sh", title="A", service_type="mongodb")
 
@@ -273,7 +321,7 @@ class TestSnippetManagerListQueryPage:
             assert page.total == len(page.items)
 
     async def test_empty_table_returns_zero_total(self, session):
-        """An empty table yields an empty page with a zero total."""
+        """Yield an empty page with a zero total for an empty table."""
         page = await SnippetManager.list_query_page(
             session,
             list_query=SnippetListQuery(),
@@ -282,3 +330,44 @@ class TestSnippetManagerListQueryPage:
 
         assert page.total == 0
         assert page.items == []
+
+
+@pytest.mark.asyncio
+class TestSnippetManagerListServiceTypes:
+    """Test the whole-dataset service-type facet in ``list_service_types``."""
+
+    async def test_returns_sorted_distinct_trimmed_values(self, session):
+        """Return the sorted distinct trimmed service types across the table."""
+        await _seed_snippet(session, "a.sh", service_type="mysql")
+        await _seed_snippet(session, "b.sh", service_type="mongodb")
+        await _seed_snippet(session, "c.sh", service_type="  mysql  ")
+        await _seed_snippet(session, "d.sh", service_type="postgresql")
+
+        service_types, has_uncategorized = await SnippetManager.list_service_types(
+            session
+        )
+
+        assert service_types == ["mongodb", "mysql", "postgresql"]
+        assert has_uncategorized is False
+
+    async def test_flags_uncategorized_for_absent_or_blank_values(self, session):
+        """Flag uncategorized when any snippet has an absent or blank service type."""
+        await _seed_snippet(session, "typed.sh", service_type="mysql")
+        await _seed_snippet(session, "absent.sh")
+        await _seed_snippet(session, "blank.sh", service_type="   ")
+
+        service_types, has_uncategorized = await SnippetManager.list_service_types(
+            session
+        )
+
+        assert service_types == ["mysql"]
+        assert has_uncategorized is True
+
+    async def test_empty_table_returns_no_types(self, session):
+        """Return no service types and no uncategorized flag for an empty table."""
+        service_types, has_uncategorized = await SnippetManager.list_service_types(
+            session
+        )
+
+        assert service_types == []
+        assert has_uncategorized is False

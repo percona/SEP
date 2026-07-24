@@ -569,13 +569,19 @@ def get_snippet_list_query(
     ] = SnippetApprovalFilter.ALL,
     service_type: Annotated[
         str | None,
+        Query(description="Service-type equality filter, or omitted for no filter."),
+    ] = None,
+    *,
+    uncategorized: Annotated[
+        bool,
         Query(
             description=(
-                "Service-type filter: a value for equality, '__uncategorized__' for "
-                "snippets with no service type, or omitted for no filter."
+                "When true, keep only snippets with no (absent or blank) service "
+                "type. A separate flag so a real service type can never collide "
+                "with a reserved sentinel. Takes precedence over 'service_type'."
             )
         ),
-    ] = None,
+    ] = False,
 ) -> SnippetListQuery:
     """Parse and validate the opt-in snippets list-query parameters.
 
@@ -587,7 +593,8 @@ def get_snippet_list_query(
     :param sort: The requested public sort key.
     :param order: The requested sort direction.
     :param approval: The requested approval-status filter.
-    :param service_type: The requested service-type filter.
+    :param service_type: The requested service-type equality filter.
+    :param uncategorized: When ``True``, filter to snippets with no service type.
     :return: A validated, immutable list-query value object.
     :raises HTTPUnprocessableEntityException: When ``sort`` is not in the allowlist.
     """
@@ -598,6 +605,7 @@ def get_snippet_list_query(
             sort_direction=order,
             approval=approval,
             service_type=service_type,
+            uncategorized=uncategorized,
         )
     except ValidationError as exc:
         # The allowlist lives on the model's field validator (single source of
