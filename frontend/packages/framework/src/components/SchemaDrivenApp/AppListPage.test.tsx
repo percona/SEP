@@ -17,7 +17,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
 

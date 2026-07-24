@@ -36,7 +36,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import {
   useAtwIncidents,
   useCreateAtwIncident,

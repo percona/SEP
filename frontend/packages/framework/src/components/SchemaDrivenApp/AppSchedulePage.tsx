@@ -19,7 +19,7 @@ import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { ScheduledTasksPanel } from '../ScheduledTasksPanel';
 
 interface AppSchedulePageProps {

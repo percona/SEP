@@ -18,7 +18,7 @@
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import type { RelatedApp } from '@sep/api';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 
 export interface RelatedAppTabBarProps {
   /** Human-readable label for the parent app's default surface. */
