@@ -280,9 +280,16 @@ class TaskExecutionApp(BaseApp):
        mount such a route under a sub-prefix on the extra router.
     5. Fall through to a bare ``BaseApp`` plus the route-derivation helpers used directly.
 
-    The spine-knob rule: a definition knob earns first-class support only with at
-    least three consuming apps; otherwise it is a handler override or an extra
-    route.
+    The spine-knob rule: a definition knob earns first-class support when it is
+    the right *general* primitive for the seam. Genuine cross-cutting reuse —
+    normally three or more materially distinct consuming apps — is the usual
+    evidence (near-duplicates of one app count once; they share one need, not
+    three). Fewer consumers stay a handler override or an extra route unless the
+    knob is both (a) the clearly correct, durable primitive for a general need,
+    one that will not be superseded by a different mechanism, and (b) a clear
+    net gain to the framework, product, and app-developer experience on its own
+    merits. The count is a signal for (a), not a gate; when count and design
+    judgment disagree, design judgment wins and the reasoning is recorded.
 
     :param owner: The task owner the list route filters by and the envelopes
         carry.
