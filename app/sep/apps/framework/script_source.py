@@ -180,6 +180,21 @@ class ScriptSource(Generic[S]):
     list_query_dep: Callable[..., Any] | None = None
     list_page: Callable[[Pagination, Any], Awaitable[PaginatedResponse]] | None = None
 
+    def __post_init__(self) -> None:
+        """Reject a half-configured server list-page capability.
+
+        ``list_query_dep`` and ``list_page`` are two halves of one opt-in
+        capability; supplying only one silently falls back to the fetch-all path,
+        so require both or neither at construction.
+
+        :raises ValueError: When exactly one of ``list_query_dep`` / ``list_page``
+            is set.
+        """
+        if (self.list_query_dep is None) != (self.list_page is None):
+            raise ValueError(
+                "list_query_dep and list_page must be set together (both or neither)."
+            )
+
 
 def _validate_script_filename(filename: str) -> None:
     """Reject a ``snippet_filename`` that could resolve outside the script directory.

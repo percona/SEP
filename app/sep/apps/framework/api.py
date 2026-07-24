@@ -1699,9 +1699,11 @@ def derive_script_routes(
         ``operationId``), so two script apps never collide on a generic route name.
     :param pagination_dep: A ``make_pagination_dep(...)`` dependency callable.
         When given, the list route takes that dependency (wrapped in
-        ``Annotated[Pagination, Depends(...)]``) and returns a
-        ``PaginatedResponse`` whose ``items`` are a client-side slice of the full
-        discovered script set; when ``None`` the list returns a plain list.
+        ``Annotated[Pagination, Depends(...)]``) and returns a ``PaginatedResponse``.
+        A source that opts into the server list-page capability
+        (``list_query_dep`` + ``list_page``) has its search/filter/sort/paging pushed
+        down to that hook; otherwise the route fetches the full discovered set and
+        returns a client-side slice of it. When ``None`` the list returns a plain list.
     :return: A plugin ``APIRouter`` carrying the derived script surface.
     """
     router = APIRouter()

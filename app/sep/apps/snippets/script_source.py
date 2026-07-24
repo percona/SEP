@@ -16,11 +16,13 @@
 """Back the snippets plugin's JSON surface with the framework ``ScriptSource`` seam.
 
 This adapter is the first real adoption of
-:class:`~app.sep.apps.framework.script_source.ScriptSource`: it wires the six
-hooks ``derive_script_routes`` needs around the existing snippets engine
+:class:`~app.sep.apps.framework.script_source.ScriptSource`: it wires the hooks
+``derive_script_routes`` needs around the existing snippets engine
 (``app/sep/snippets/``), so :data:`~app.sep.apps.snippets.app.app` can declare
 ``script_source=`` instead of hand-wiring the listing / per-script schema /
-execute / history routes.
+execute / history routes. Being DB-backed, it also opts into the server list-page
+capability (``list_query_dep`` + ``list_page``), pushing search/filter/sort/paging
+down to SQL instead of fetching every row and slicing in-process.
 
 Three real couplings the synthetic kit deferred are bridged here:
 

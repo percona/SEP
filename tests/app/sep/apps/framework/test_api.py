@@ -1642,8 +1642,27 @@ class TestDeriveScriptRoutesListQuerySeam:
             list_page=_list_page,
         )
 
+    def test_only_list_query_dep_raises(self) -> None:
+        """Reject a source that sets ``list_query_dep`` without ``list_page``."""
+        with pytest.raises(ValueError, match="both or neither"):
+            _make_script_source(
+                list_response_model=_ScriptListRow,
+                list_query_dep=_search_list_query_dep,
+            )
+
+    def test_only_list_page_raises(self) -> None:
+        """Reject a source that sets ``list_page`` without ``list_query_dep``."""
+
+        async def _list_page(pagination, list_query) -> PaginatedResponse:
+            return PaginatedResponse.from_pagination([], 0, pagination)
+
+        with pytest.raises(ValueError, match="both or neither"):
+            _make_script_source(
+                list_response_model=_ScriptListRow, list_page=_list_page
+            )
+
     def test_opt_in_routes_through_list_page(self, regular_user: CasdoorUser) -> None:
-        """A source with the seam filters via ``list_page`` and its filtered total."""
+        """Filter via ``list_page`` and its filtered total when the seam is set."""
         router = derive_script_routes(
             self._routed_source(),
             name="test-scripts",
@@ -1659,7 +1678,7 @@ class TestDeriveScriptRoutesListQuerySeam:
         assert [item["filename"] for item in body["items"]] == ["alpha.sh"]
 
     def test_opt_in_exposes_the_list_query_param(self) -> None:
-        """The seam declares the list-query param on the route (OpenAPI surface)."""
+        """Declare the list-query param on the route when the seam is set."""
         router = derive_script_routes(
             self._routed_source(),
             name="test-scripts",
@@ -1671,7 +1690,7 @@ class TestDeriveScriptRoutesListQuerySeam:
         assert "q" in {param.name for param in flat.query_params}
 
     def test_without_seam_uses_fetch_all_slice(self, regular_user: CasdoorUser) -> None:
-        """A source without the seam keeps the fetch-all-then-slice list path."""
+        """Keep the fetch-all-then-slice path when the source omits the seam."""
         router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
         route = _route_for(router, "/", "GET")
         flat = get_flat_dependant(route.dependant)
