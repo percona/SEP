@@ -360,8 +360,13 @@ export interface DetailField {
   /** Dotted path into the task record (e.g. ``"data.meta.command"``). */
   path: string;
   label: string;
-  /** Optional syntax-highlighter hint. */
-  highlight?: 'sql' | 'json' | 'bash';
+  /**
+   * Optional syntax-highlighter hint. ``yaml`` is frontend-only: the backend
+   * ``DetailHighlightLanguage`` enum does not emit it yet, so no
+   * backend-declared field can carry ``highlight: 'yaml'`` until that
+   * follow-up lands. The frontend ``DetailSyntaxHighlighter`` already renders it.
+   */
+  highlight?: 'sql' | 'json' | 'bash' | 'yaml';
 }
 
 /** One titled section rendered on the task detail page. */
