@@ -19,7 +19,7 @@ from string import Template
 from typing import ClassVar
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
@@ -39,6 +39,7 @@ from app.core.settings_override.registry import (
     preserve_patch_credential_url_value,
     ReloadClassification,
     resolve_nested_field_metadata,
+    SECRET_STR_MASK,
 )
 from app.core.utils.pydantic import field_with_metadata
 from app.inventory.config import InventorySettings
@@ -131,6 +132,88 @@ def test_preserve_patch_credential_url_value_for_materializer_payload() -> None:
     incoming = {"endpoint": "http://nomad-user:****@nomad.internal:4646"}
     preserved = preserve_patch_credential_url_value(field, current, incoming)
     assert preserved["endpoint"] == current["endpoint"]
+
+
+class _SecretLeafModel(BaseModel):
+    """Nested model with a scalar SecretStr leaf (PMM-shaped)."""
+
+    api_key: SecretStr
+    label: str = "ok"
+
+
+class _TopLevelSecretSettings(BaseModel):
+    """Fixture settings class with a top-level SecretStr field."""
+
+    TOKEN: SecretStr = hot_field(SecretStr("stored-top-secret"))
+
+
+class _NestedSecretSettings(BaseModel):
+    """Fixture settings class with a nested model that holds a SecretStr."""
+
+    GROUP: _SecretLeafModel = hot_field(
+        _SecretLeafModel(api_key=SecretStr("stored-nested-secret"))
+    )
+
+
+class _DictSecretSettings(BaseModel):
+    """Fixture settings class with a ``dict[str, SecretStr]`` field."""
+
+    secrets: dict[str, SecretStr] = hot_field(
+        {"api_key": SecretStr("stored-dict-secret"), "token": SecretStr("keep-me")}
+    )
+
+
+def test_preserve_patch_secret_value_for_top_level_field() -> None:
+    """Assert a masked top-level SecretStr PATCH restores the stored secret."""
+    field = _TopLevelSecretSettings.model_fields["TOKEN"]
+    current = SecretStr("stored-top-secret")
+    assert (
+        preserve_patch_credential_url_value(field, current, SECRET_STR_MASK)
+        == "stored-top-secret"
+    )
+
+
+def test_preserve_patch_secret_value_for_nested_leaf() -> None:
+    """Assert a masked nested ``__``-leaf SecretStr PATCH restores the stored secret."""
+    field = _SecretLeafModel.model_fields["api_key"]
+    current = SecretStr("stored-nested-secret")
+    assert (
+        preserve_patch_credential_url_value(field, current, SECRET_STR_MASK)
+        == "stored-nested-secret"
+    )
+
+
+def test_preserve_patch_secret_value_overwrites_with_real_value() -> None:
+    """Assert a non-mask SecretStr PATCH keeps the newly submitted value."""
+    field = _TopLevelSecretSettings.model_fields["TOKEN"]
+    current = SecretStr("stored-top-secret")
+    assert (
+        preserve_patch_credential_url_value(field, current, "brand-new-secret")
+        == "brand-new-secret"
+    )
+
+
+def test_preserve_patch_secret_value_for_nested_model_payload() -> None:
+    """Assert a whole-object nested-model PATCH restores masked SecretStr leaves."""
+    field = _NestedSecretSettings.model_fields["GROUP"]
+    current = _SecretLeafModel(api_key=SecretStr("stored-nested-secret"), label="ok")
+    incoming = {"api_key": SECRET_STR_MASK, "label": "ok"}
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved["api_key"] == "stored-nested-secret"
+    assert preserved["label"] == "ok"
+
+
+def test_preserve_patch_secret_value_for_dict_of_secrets() -> None:
+    """Assert masked values inside ``dict[str, SecretStr]`` are restored per key."""
+    field = _DictSecretSettings.model_fields["secrets"]
+    current = {
+        "api_key": SecretStr("stored-dict-secret"),
+        "token": SecretStr("keep-me"),
+    }
+    incoming = {"api_key": SECRET_STR_MASK, "token": "replacement-token"}
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved["api_key"] == "stored-dict-secret"
+    assert preserved["token"] == "replacement-token"
 
 
 def test_is_hot_reloadable_true_for_marked_field() -> None:
