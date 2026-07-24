@@ -64,6 +64,18 @@ class TestUsersAndRolesGate:
         """Allow users/roles when every namespace is ``db.*``."""
         validate_selective_users_and_roles("mydb.*,other.*", with_users_and_roles=True)
 
+    def test_rejects_flag_without_namespaces(self) -> None:
+        """Reject users/roles when namespaces are missing or blank."""
+        with pytest.raises(ValueError, match="requires backup namespaces"):
+            validate_selective_users_and_roles(None, with_users_and_roles=True)
+        with pytest.raises(ValueError, match="requires backup namespaces"):
+            validate_selective_users_and_roles("   ", with_users_and_roles=True)
+
+    def test_noop_when_flag_disabled(self) -> None:
+        """Skip validation when users/roles is off."""
+        validate_selective_users_and_roles(None, with_users_and_roles=False)
+        validate_selective_users_and_roles("mydb.coll", with_users_and_roles=False)
+
 
 class TestBackupTaskWriteSelectiveValidation:
     """Assert create/edit request bodies reject invalid selective pairings."""
@@ -99,3 +111,8 @@ class TestBackupTaskWriteSelectiveValidation:
                     backup_with_users_and_roles=True,
                 )
             )
+
+    def test_rejects_users_and_roles_without_namespaces(self) -> None:
+        """Reject users/roles when namespaces are omitted on the write body."""
+        with pytest.raises(ValidationError):
+            BackupTaskWrite.model_validate(self._body(backup_with_users_and_roles=True))

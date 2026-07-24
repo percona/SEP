@@ -15,12 +15,16 @@
 
 """Define tests for the app.sep.apps.backup_mongo.routes module."""
 
+from typing import Any
 from unittest.mock import AsyncMock
 
+import yaml
 from fastapi import status
 
-from app.sep.apps.backup_mongo.models import BackupCreate
+from app.sep.apps.backup_mongo.models import BackupCreate, BackupType
 from app.sep.inventory import CreatedService
+from app.tasks.models import TaskBackendEnum
+from tests.app.factories import TaskFactory
 
 EXPECTED_PBM_TASK_POSTS = 5
 
@@ -94,3 +98,51 @@ def test_pbm_backups_create_rejects_s3_storage_without_bucket(
 
     assert response.status_code == status.HTTP_303_SEE_OTHER
     mock_task_api_dep.post.assert_not_awaited()
+
+
+def test_pbm_backups_detail_loads_incremental_history_and_action(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+):
+    """GET detail fetches incremental history/running state and exposes the run URL."""
+    task = TaskFactory.build(
+        name="mongo-backup-task",
+        owner="BACKUP_MONGO",
+        backend=TaskBackendEnum.PROXY,
+    ).model_dump(mode="json")
+    task["data"] = {
+        "task": "run-python",
+        "backup_type": BackupType.PBM_CONFIG.value,
+        "meta": {
+            "target": "mongo-host",
+            "config": yaml.dump(
+                {"storage": {"type": "filesystem", "filesystem": {"path": "/tmp/pbm"}}},
+                default_flow_style=False,
+            ),
+        },
+        "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+    }
+    fetched_paths: list[str] = []
+
+    async def _mock_get(path: str, **kwargs: Any) -> Any:
+        fetched_paths.append(path)
+        if path == "/mongo-backup-task":
+            return task
+        if path == "/":
+            return {"items": [], "total": 0}
+        if path.startswith("/stats/"):
+            return {}
+        if path.endswith("/history/"):
+            return {"items": []}
+        raise AssertionError(f"Unexpected path: {path!r}, kwargs={kwargs!r}")
+
+    mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+    mock_inventory_api_dep.get = AsyncMock(return_value={"items": []})
+
+    response = test_client.get("/backup_mongo/mongo-backup-task")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "/mongo-backup-task-incremental/history/" in fetched_paths
+    assert "Run Incremental Backup" in response.text
+    assert "mongo-backup-task-incremental" in response.text
