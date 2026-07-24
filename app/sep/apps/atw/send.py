@@ -231,7 +231,7 @@ async def _add_execution_files(
         ) from exc
 
     prefix = _execution_prefix(execution)
-    written = []
+    written: list[dict[str, Any]] = []
     for path, metadata in listing.items():
         is_dir = bool(metadata.get("is_dir"))
         arcname = _entry_arcname(prefix, path, is_dir=is_dir)
@@ -321,7 +321,7 @@ async def _stage_bundle(
     :raises AtwSendError: When an execution's files cannot be collected.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_executions = []
+    manifest_executions: list[dict[str, Any]] = []
     file_count = 0
     with (
         path.open("wb") as handle,
@@ -402,7 +402,7 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     :raises HTTPBadRequestException: Propagated from the manager when a terminal
         row cannot be written.
     """
-    if row.status not in AtwSendStatusEnum.active_statuses():
+    if row.status.is_terminal():
         logger.info(
             "Send log %s is already %s; not delivering it again.", row.id, row.status
         )

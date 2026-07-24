@@ -456,7 +456,11 @@ async def _resolve_selected_executions(
     :raises HTTPUnprocessableEntityException: When an id names an execution this
         incident does not own.
     """
-    rows = await AtwIncidentExecutionManager.list(session, incident_id=incident.id)
+    rows = await AtwIncidentExecutionManager.list(
+        session,
+        AtwIncidentExecution.id.in_(execution_ids),
+        incident_id=incident.id,
+    )
     by_id = {row.id: row for row in rows}
     if unknown := [str(key) for key in execution_ids if key not in by_id]:
         raise HTTPUnprocessableEntityException(

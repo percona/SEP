@@ -23,6 +23,7 @@ from app.sep.apps.atw.deps import (
     diagnostics_send_disabled_reasons,
     require_diagnostics_send_configured,
 )
+from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import sep_settings
 
 
@@ -40,7 +41,7 @@ class TestDiagnosticsSendDisabledReasons:
         ]
 
     def test_configured_delivery_yields_no_reasons(
-        self, mocker: MockerFixture, delivery_plan: object
+        self, mocker: MockerFixture, delivery_plan: DeliveryPlan
     ) -> None:
         """Report nothing to withhold once a receiver is configured."""
         mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", delivery_plan)
@@ -63,7 +64,7 @@ class TestRequireDiagnosticsSendConfigured:
 
     @pytest.mark.asyncio
     async def test_passes_when_configured(
-        self, mocker: MockerFixture, delivery_plan: object
+        self, mocker: MockerFixture, delivery_plan: DeliveryPlan
     ) -> None:
         """Let the send through once a receiver is configured."""
         mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", delivery_plan)
