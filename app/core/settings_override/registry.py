@@ -1107,6 +1107,12 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
             stack.extend(nested.annotation for nested in current.model_fields.values())
 
 
+#: Pydantic's default JSON dump mask for :class:`~pydantic.SecretStr` /
+#: :class:`~pydantic.SecretBytes`. Distinct from
+#: :data:`~app.core.utils.fields.CREDENTIAL_URL_MASK` (``"****"``).
+SECRET_STR_MASK = "**********"  # noqa: S105
+
+
 def _field_contains_secret(field_info: FieldInfo) -> bool:
     """Return whether ``field_info`` exposes a Pydantic secret anywhere in its annotation.
 
@@ -1124,6 +1130,20 @@ def _field_contains_secret(field_info: FieldInfo) -> bool:
         if isinstance(arg, type) and issubclass(arg, secret_types):
             return True
     return False
+
+
+def _unwrap_secret_value(current: Any) -> str | bytes | None:
+    """Return the plain secret from a ``SecretStr``/``SecretBytes``, else ``None``.
+
+    :param current: A live stored value that may be a Pydantic secret wrapper.
+    :type current: Any
+    :return: ``get_secret_value()`` when ``current`` is a secret instance;
+        ``None`` otherwise.
+    :rtype: str | bytes | None
+    """
+    if isinstance(current, SecretStr | SecretBytes):
+        return current.get_secret_value()
+    return None
 
 
 def _metadata_has_credential_url_serializer(metadata: tuple[Any, ...]) -> bool:
