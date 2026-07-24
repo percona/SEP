@@ -462,7 +462,8 @@ def _ruff_fix(paths: list[Path]) -> None:
     py_files = [str(p) for p in paths if p.suffix == ".py"]
     if not py_files:
         return
-    ruff = Path(sys.executable).parent / "ruff"
+    ruff_name = "ruff.exe" if sys.platform == "win32" else "ruff"
+    ruff = Path(sys.executable).parent / ruff_name
     if not ruff.exists():
         return
     subprocess.run(  # noqa: S603 # nosec B603
