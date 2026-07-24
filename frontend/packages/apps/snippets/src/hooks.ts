@@ -123,19 +123,36 @@ function extractBatchApprovalError(data: unknown): BatchApprovalErrorResponse | 
 }
 
 /**
+ * Server-side sort/search/filter selections for the snippets list.
+ *
+ * These map to the backend's opt-in list-query params. ``approval`` and
+ * ``serviceType`` carry the server-shaped values (the page maps its UI state onto
+ * them), and a falsy/`'all'` value means "no filter" so the param is dropped.
+ */
+export type SnippetsListFilters = {
+  search?: string;
+  approval?: string;
+  serviceType?: string;
+};
+
+/**
  * Fetch a page of snippet entities discovered by the backend.
  */
-export function useSnippets(options?: AppListQueryOptions) {
+export function useSnippets(options?: AppListQueryOptions & SnippetsListFilters) {
   const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
   const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
+  const search = options?.search?.trim() || undefined;
+  const approval = options?.approval && options.approval !== 'all' ? options.approval : undefined;
+  const serviceType =
+    options?.serviceType && options.serviceType !== 'all' ? options.serviceType : undefined;
 
   return useQuery<AppListResult<SnippetResponse>>({
-    queryKey: [...SNIPPETS_LIST_QUERY_KEY, { offset, limit }],
+    queryKey: [...SNIPPETS_LIST_QUERY_KEY, { offset, limit, search, approval, serviceType }],
     enabled: options?.enabled !== false,
     queryFn: async () => {
       const { data } = await apiClient.get<SnippetResponse[] | PaginatedAppList<SnippetResponse>>(
         `${SNIPPETS_BASE}/`,
-        { params: { offset, limit } },
+        { params: { offset, limit, search, approval, service_type: serviceType } },
       );
       return normalizeAppListResponse(data);
     },

@@ -1934,7 +1934,7 @@ export interface paths {
     };
     /**
      * List
-     * @description List discovered scripts as a paginated projection.
+     * @description List scripts as a server-filtered, sorted, paginated projection.
      */
     get: operations['snippets_snippets_api_list_api_apps_snippets__get'];
     put?: never;
@@ -3827,6 +3827,25 @@ export interface components {
     SettingsPatch: {
       [key: string]: components['schemas']['JsonValue'];
     };
+    /**
+     * SnippetApprovalFilter
+     * @description Enumerate the approval-status filter selections.
+     *
+     *     :cvar ALL: Do not filter on approval status.
+     *     :cvar APPROVED: Keep only approved snippets (``approved_at IS NOT NULL``).
+     *     :cvar NOT_APPROVED: Keep only unapproved snippets (``approved_at IS NULL``).
+     * @enum {string}
+     */
+    SnippetApprovalFilter: 'all' | 'approved' | 'not_approved';
+    /**
+     * SnippetSortDirection
+     * @description Enumerate the sort direction.
+     *
+     *     :cvar ASC: Ascending order.
+     *     :cvar DESC: Descending order.
+     * @enum {string}
+     */
+    SnippetSortDirection: 'asc' | 'desc';
     /**
      * SourceEnum
      * @description Enumeration of possible data sources for a node.
@@ -12922,6 +12941,16 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
+        /** @description Case-insensitive search over filename, title, description. */
+        search?: string | null;
+        /** @description Sort key; one of the allowlisted public sort keys. */
+        sort?: string;
+        /** @description Sort direction. */
+        order?: components['schemas']['SnippetSortDirection'];
+        /** @description Approval-status filter. */
+        approval?: components['schemas']['SnippetApprovalFilter'];
+        /** @description Service-type filter: a value for equality, '__uncategorized__' for snippets with no service type, or omitted for no filter. */
+        service_type?: string | null;
       };
       header?: never;
       path?: never;

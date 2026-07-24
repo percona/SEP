@@ -28,6 +28,25 @@
         "title": "ServiceTypeEnum",
         "type": "string"
       },
+      "SnippetApprovalFilter": {
+        "description": "Enumerate the approval-status filter selections.\n\n:cvar ALL: Do not filter on approval status.\n:cvar APPROVED: Keep only approved snippets (``approved_at IS NOT NULL``).\n:cvar NOT_APPROVED: Keep only unapproved snippets (``approved_at IS NULL``).",
+        "enum": [
+          "all",
+          "approved",
+          "not_approved"
+        ],
+        "title": "SnippetApprovalFilter",
+        "type": "string"
+      },
+      "SnippetSortDirection": {
+        "description": "Enumerate the sort direction.\n\n:cvar ASC: Ascending order.\n:cvar DESC: Descending order.",
+        "enum": [
+          "asc",
+          "desc"
+        ],
+        "title": "SnippetSortDirection",
+        "type": "string"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -3485,7 +3504,7 @@
   "paths": {
     "/api/apps/snippets/": {
       "get": {
-        "description": "List discovered scripts as a paginated projection.",
+        "description": "List scripts as a server-filtered, sorted, paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
         "parameters": [
           {
@@ -3509,6 +3528,76 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive search over filename, title, description.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive search over filename, title, description.",
+              "title": "Search"
+            }
+          },
+          {
+            "description": "Sort key; one of the allowlisted public sort keys.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "created_at",
+              "description": "Sort key; one of the allowlisted public sort keys.",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort direction.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SnippetSortDirection",
+              "default": "desc",
+              "description": "Sort direction."
+            }
+          },
+          {
+            "description": "Approval-status filter.",
+            "in": "query",
+            "name": "approval",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SnippetApprovalFilter",
+              "default": "all",
+              "description": "Approval-status filter."
+            }
+          },
+          {
+            "description": "Service-type filter: a value for equality, '__uncategorized__' for snippets with no service type, or omitted for no filter.",
+            "in": "query",
+            "name": "service_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Service-type filter: a value for equality, '__uncategorized__' for snippets with no service type, or omitted for no filter.",
+              "title": "Service Type"
             }
           }
         ],

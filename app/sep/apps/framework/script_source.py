@@ -33,12 +33,13 @@ the execution-meta shape are all supplied by the consumer.
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Generic, Protocol, runtime_checkable, TypeVar
+from typing import Annotated, Any, Generic, Protocol, runtime_checkable, TypeVar
 
 from fastapi import Query
 from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPBadRequestException
+from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.fields import NonEmptyStr
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
@@ -156,6 +157,16 @@ class ScriptSource(Generic[S]):
         ``GET /`` as ``list[list_response_model]``; when ``None`` the list route
         stays untyped (back-compatible — a source that does not opt in keeps the
         original untyped list).
+    :param list_query_dep: An optional FastAPI dependency parsing an opt-in
+        list-query (sort/search/filter) value object for the paginated list route.
+        When set, ``list_page`` must also be set. A source that opts out (the
+        default) exposes no list-query params and keeps the fetch-all-then-slice
+        list path. Deliberately opaque about the query type so the framework need
+        not know a consumer's sort/search shape.
+    :param list_page: An optional hook returning a filtered/sorted/paginated page of
+        scripts directly (SQL-backed sources push the work down instead of fetching
+        every row and slicing in-process). Receives the pagination window and the
+        ``list_query_dep`` value; its rows are projected through ``list_response``.
     """
 
     script_dir: Path
@@ -166,6 +177,8 @@ class ScriptSource(Generic[S]):
     list_response: Callable[[S], BaseModel]
     static_schema: AppSchema | None = None
     list_response_model: type[BaseModel] | None = None
+    list_query_dep: Callable[..., Any] | None = None
+    list_page: Callable[[Pagination, Any], Awaitable[PaginatedResponse]] | None = None
 
 
 def _validate_script_filename(filename: str) -> None:

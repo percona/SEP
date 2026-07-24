@@ -31,6 +31,7 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPRedirectException,
+    HTTPUnprocessableEntityException,
 )
 from app.core.utils import remove_falsy_values_from_dict
 from app.sep.apps.framework.script_helpers import (
@@ -47,6 +48,12 @@ from app.sep.deps import SessionDep
 from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.list_query import (
+    DEFAULT_SNIPPET_SORT_KEY,
+    SnippetApprovalFilter,
+    SnippetListQuery,
+    SnippetSortDirection,
+)
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
     Snippet,
@@ -543,3 +550,67 @@ async def get_batch_existence(
 SnippetBatchExistenceDep = Annotated[
     SnippetBatchExistenceResult, Depends(get_batch_existence)
 ]
+
+
+def get_snippet_list_query(
+    search: Annotated[
+        str | None,
+        Query(description="Case-insensitive search over filename, title, description."),
+    ] = None,
+    sort: Annotated[
+        str,
+        Query(description="Sort key; one of the allowlisted public sort keys."),
+    ] = DEFAULT_SNIPPET_SORT_KEY,
+    order: Annotated[
+        SnippetSortDirection, Query(description="Sort direction.")
+    ] = SnippetSortDirection.DESC,
+    approval: Annotated[
+        SnippetApprovalFilter, Query(description="Approval-status filter.")
+    ] = SnippetApprovalFilter.ALL,
+    service_type: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Service-type filter: a value for equality, '__uncategorized__' for "
+                "snippets with no service type, or omitted for no filter."
+            )
+        ),
+    ] = None,
+) -> SnippetListQuery:
+    """Parse and validate the opt-in snippets list-query parameters.
+
+    The ``sort`` key is checked against the allowlist at the request boundary so a
+    raw client-supplied column name can never reach the query; an out-of-allowlist
+    key is rejected with a 422 before any database access.
+
+    :param search: Free-text search term, or ``None`` for no search.
+    :param sort: The requested public sort key.
+    :param order: The requested sort direction.
+    :param approval: The requested approval-status filter.
+    :param service_type: The requested service-type filter.
+    :return: A validated, immutable list-query value object.
+    :raises HTTPUnprocessableEntityException: When ``sort`` is not in the allowlist.
+    """
+    try:
+        return SnippetListQuery(
+            search=search,
+            sort_key=sort,
+            sort_direction=order,
+            approval=approval,
+            service_type=service_type,
+        )
+    except ValidationError as exc:
+        # The allowlist lives on the model's field validator (single source of
+        # truth); surface its rejection as a boundary 422 keyed to the query param.
+        raise HTTPUnprocessableEntityException(
+            detail=[
+                {
+                    "loc": ["query", "sort"],
+                    "msg": str(exc.errors()[0]["msg"]),
+                    "type": "value_error",
+                }
+            ]
+        ) from exc
+
+
+SnippetListQueryDep = Annotated[SnippetListQuery, Depends(get_snippet_list_query)]

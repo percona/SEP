@@ -230,11 +230,12 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         query_options: Sequence = (),
+        order_by: Iterable[ColumnExpressionOrStrLabelArgument] | None = None,
         offset: int | None = None,
         limit: int | None = None,
         **equal_filters: Any,
     ) -> TupleResult | ScalarResult:
-        ordering = cls._get_ordering()
+        ordering = order_by if order_by is not None else cls._get_ordering()
         pagination_requested = offset is not None or limit is not None
 
         if select_related and pagination_requested:
@@ -501,6 +502,7 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         query_options: Sequence = (),
+        order_by: Iterable[ColumnExpressionOrStrLabelArgument] | None = None,
         offset: int | None = None,
         limit: int | None = None,
         **equal_filters: Any,
@@ -516,6 +518,8 @@ class BaseManager:
         :type select_related: Sequence
         :param query_options: Additional SQLAlchemy query options to apply.
         :type query_options: Sequence
+        :param order_by: Column expressions overriding the manager's default
+            ordering for this call, or ``None`` (default) to use it.
         :param offset: The zero-based starting offset for the query results, or
             ``None`` (default) to return all matching records from the beginning.
         :type offset: int | None
@@ -533,6 +537,7 @@ class BaseManager:
             *whereclause,
             select_related=select_related,
             query_options=query_options,
+            order_by=order_by,
             offset=offset,
             limit=limit,
             **equal_filters,
@@ -546,10 +551,15 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         query_options: Sequence = (),
+        order_by: Iterable[ColumnExpressionOrStrLabelArgument] | None = None,
         pagination: Pagination,
         **equal_filters: Any,
     ) -> PaginatedResponse[T]:
         """Return a paginated response for matching records.
+
+        The filtered ``total`` and the page ``items`` are computed from identical
+        predicates (``whereclause`` / ``equal_filters``), so the count always
+        matches the visible result set.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :type session: AsyncSession
@@ -560,6 +570,8 @@ class BaseManager:
         :type select_related: Sequence
         :param query_options: Additional SQLAlchemy query options to apply.
         :type query_options: Sequence
+        :param order_by: Column expressions overriding the manager's default
+            ordering for this page, or ``None`` (default) to use it.
         :param pagination: Validated offset/limit window for this page.
         :type pagination: Pagination
         :param equal_filters: Keyword arguments representing column names and their
@@ -574,6 +586,7 @@ class BaseManager:
             *whereclause,
             select_related=select_related,
             query_options=query_options,
+            order_by=order_by,
             offset=pagination.offset,
             limit=pagination.limit,
             **equal_filters,

@@ -148,6 +148,85 @@ class TestSnippetsApiList:
         assert row["sudo_optional"] is False
         assert row["service_type"] == snippet.service_type
 
+    async def _seed_meta_snippet(
+        self,
+        create_snippet,
+        session,
+        filename,
+        *,
+        title=None,
+        service_type=None,
+        approved=False,
+    ):
+        """Seed a snippet with persisted meta title/service_type and approval state."""
+        snippet = await create_snippet(filename, approved=approved)
+        meta = dict(snippet.meta)
+        if title is not None:
+            meta["title"] = title
+        if service_type is not None:
+            meta["service_type"] = service_type
+        snippet.meta = meta
+        await SnippetManager.save(session, snippet, flag_modified_fields=["meta"])
+        return snippet
+
+    async def test_search_filters_rows_and_total_over_whole_dataset(
+        self, test_client, create_snippet, session
+    ):
+        """Server-side search narrows both the rows and the paginated total."""
+        await self._seed_meta_snippet(
+            create_snippet, session, "mysql-dump.sh", title="MySQL dump"
+        )
+        await self._seed_meta_snippet(
+            create_snippet, session, "other.sh", title="Postgres vacuum"
+        )
+
+        response = test_client.get(f"{API_BASE}/", params={"search": "mysql"})
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert [row["filename"] for row in body["items"]] == ["mysql-dump.sh"]
+
+    async def test_service_type_and_approval_filters_combine_server_side(
+        self, test_client, create_snippet, session
+    ):
+        """The service-type and approval filters apply together over the full set."""
+        await self._seed_meta_snippet(
+            create_snippet, session, "a.sh", service_type="mysql", approved=True
+        )
+        await self._seed_meta_snippet(
+            create_snippet, session, "b.sh", service_type="mysql", approved=False
+        )
+        await self._seed_meta_snippet(
+            create_snippet, session, "c.sh", service_type="mongodb", approved=True
+        )
+
+        response = test_client.get(
+            f"{API_BASE}/",
+            params={"service_type": "mysql", "approval": "approved"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert [row["filename"] for row in body["items"]] == ["a.sh"]
+
+    async def test_invalid_sort_key_is_rejected_at_the_boundary(
+        self, test_client, create_snippet
+    ):
+        """An out-of-allowlist sort key returns 422 before any query runs."""
+        await create_snippet("hello.sh", approved=True)
+
+        response = test_client.get(f"{API_BASE}/", params={"sort": "meta"})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            err.get("loc") == ["query", "sort"]
+            for err in detail
+            if isinstance(err, dict)
+        )
+
 
 @pytest.mark.asyncio
 class TestSnippetsAppSchema:

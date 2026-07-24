@@ -261,6 +261,43 @@ describe('useSnippets', () => {
     expect(lastConfig?.params).toEqual({ offset: 50, limit: 50 });
   });
 
+  it('forwards search/approval/service_type filters as query params', async () => {
+    responseBody = { items: [], total: 0, offset: 0, limit: 50 };
+
+    const { result } = renderHook(
+      () => useSnippets({ search: '  slow  ', approval: 'approved', serviceType: 'mysql' }),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.params).toMatchObject({
+      offset: 0,
+      limit: 50,
+      search: 'slow',
+      approval: 'approved',
+      service_type: 'mysql',
+    });
+  });
+
+  it('omits filter params that are blank or the "all" sentinel', async () => {
+    responseBody = { items: [], total: 0, offset: 0, limit: 50 };
+
+    const { result } = renderHook(
+      () => useSnippets({ search: '   ', approval: 'all', serviceType: 'all' }),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    // toEqual ignores undefined-valued keys, so the dropped filters are absent.
+    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50 });
+  });
+
   it('returns a legacy flat array with pagination null', async () => {
     responseBody = [{ filename: 'a.sh' }];
 
