@@ -5353,7 +5353,7 @@ export interface components {
      *     :type backup_oplog_span_min: float | None
      *     :param backup_num_parallel_collections: Parallel collections for logical backup.
      *     :type backup_num_parallel_collections: int | None
-     *     :param backup_namespaces: Selective ``--ns`` namespaces for logical/physical.
+     *     :param backup_namespaces: Selective ``--ns`` namespaces for logical backups.
      *     :type backup_namespaces: str | None
      *     :param backup_with_users_and_roles: Opt-in ``--with-users-and-roles`` for ``db.*``.
      *     :type backup_with_users_and_roles: bool
