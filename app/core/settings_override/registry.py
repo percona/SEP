@@ -51,6 +51,7 @@ __all__ = [
     "not_overridable_field",
     "override_keys_for_rows",
     "preserve_patch_credential_url_value",
+    "preserve_patch_secret_value",
     "resolve_nested_field",
     "resolve_nested_field_metadata",
     "resolve_nested_value",
@@ -1211,6 +1212,114 @@ def preserve_patch_credential_url_value(
     parent_cls = annotation_pydantic_class(field_info.annotation)
     if parent_cls and isinstance(incoming, Mapping):
         return preserve_credential_urls_in_model_payload(parent_cls, current, incoming)
+    return incoming
+
+
+def _annotation_is_secret_valued_dict(annotation: Any) -> bool:
+    """Return whether ``annotation`` is a ``dict`` whose values are secrets.
+
+    Unwraps optional/union wrappers at the top level only (does not descend into
+    nested :class:`~pydantic.BaseModel` fields), matching
+    ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` shapes.
+    """
+    candidates: list[Any] = [annotation]
+    origin = typing.get_origin(annotation)
+    if origin in {Union, UnionType}:
+        candidates = list(typing.get_args(annotation))
+    for candidate in candidates:
+        if candidate is None or candidate is type(None):
+            continue
+        dict_origin = typing.get_origin(candidate)
+        if dict_origin not in {dict, Mapping}:
+            continue
+        try:
+            _, value_ann = typing.get_args(candidate)
+        except ValueError:
+            continue
+        value_candidates: list[Any] = [value_ann]
+        value_origin = typing.get_origin(value_ann)
+        if value_origin in {Union, UnionType}:
+            value_candidates = list(typing.get_args(value_ann))
+        for value_type in value_candidates:
+            if isinstance(value_type, type) and issubclass(
+                value_type, SecretStr | SecretBytes
+            ):
+                return True
+    return False
+
+
+def _preserve_masked_secret_scalar(current: Any, incoming: Any) -> Any:
+    """Restore a stored secret when ``incoming`` is the SecretStr JSON mask."""
+    if incoming != SECRET_STR_MASK:
+        return incoming
+    stored = _unwrap_secret_value(current)
+    return incoming if stored is None else stored
+
+
+def _preserve_secrets_in_dict_payload(
+    current: Any,
+    incoming: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Restore masked secret values inside a ``dict[str, SecretStr]`` payload."""
+    result = dict(incoming)
+    for key, value in result.items():
+        if value != SECRET_STR_MASK:
+            continue
+        leaf_current = current.get(key) if isinstance(current, Mapping) else None
+        stored = _unwrap_secret_value(leaf_current)
+        if stored is not None:
+            result[key] = stored
+    return result
+
+
+def preserve_secrets_in_model_payload(
+    model_cls: type[BaseModel],
+    current: Any,
+    incoming: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Restore masked SecretStr/SecretBytes values inside a nested-model PATCH payload."""
+    result = dict(incoming)
+    for name, field_info in model_cls.model_fields.items():
+        if name not in result:
+            continue
+        leaf_current = _read_mapping_or_model_attr(current, name)
+        nested_cls = annotation_pydantic_class(field_info.annotation)
+        if nested_cls and isinstance(result[name], Mapping):
+            result[name] = preserve_secrets_in_model_payload(
+                nested_cls, leaf_current, result[name]
+            )
+            continue
+        if _annotation_is_secret_valued_dict(field_info.annotation) and isinstance(
+            result[name], Mapping
+        ):
+            result[name] = _preserve_secrets_in_dict_payload(leaf_current, result[name])
+            continue
+        if _field_contains_secret(field_info):
+            result[name] = _preserve_masked_secret_scalar(leaf_current, result[name])
+    return result
+
+
+def preserve_patch_secret_value(
+    field_info: FieldInfo,
+    current: Any,
+    incoming: Any,
+) -> Any:
+    """Restore masked SecretStr/SecretBytes values in a PATCH value before persist.
+
+    When a client resubmits Pydantic's secret JSON mask
+    (:data:`SECRET_STR_MASK`), replace it with the stored secret's plain value.
+    Non-mask submissions are left unchanged. Recurses into nested Pydantic
+    models and ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` payloads.
+    """
+    parent_cls = annotation_pydantic_class(field_info.annotation)
+    if parent_cls and isinstance(incoming, Mapping):
+        return preserve_secrets_in_model_payload(parent_cls, current, incoming)
+    if _annotation_is_secret_valued_dict(field_info.annotation) and isinstance(
+        incoming, Mapping
+    ):
+        return _preserve_secrets_in_dict_payload(current, incoming)
+    if _field_contains_secret(field_info):
+        return _preserve_masked_secret_scalar(current, incoming)
     return incoming
 
 
