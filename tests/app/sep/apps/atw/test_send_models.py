@@ -67,6 +67,14 @@ class TestAtwSendStatusEnum:
 class TestAtwSendLogModel:
     """Check the AtwSendLog table model."""
 
+    def test_started_and_finished_timestamps_are_timezone_aware(self) -> None:
+        """Ensure worker timestamps map to timezone-aware DB columns."""
+        started_type = AtwSendLog.__table__.c.started_at.type
+        finished_type = AtwSendLog.__table__.c.finished_at.type
+
+        assert started_type.timezone is True
+        assert finished_type.timezone is True
+
     @pytest.mark.asyncio
     async def test_persists_with_pending_default_and_empty_detail(
         self, session: AsyncSession

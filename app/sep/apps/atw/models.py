@@ -23,7 +23,7 @@ them into the ``sep`` autogenerate). The category taxonomy, which depends on
 ``app.inventory``, lives in :mod:`app.sep.apps.atw.categories`.
 """
 
-from enum import auto, StrEnum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, UUID4
@@ -32,7 +32,7 @@ from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
-from app.core.db.models import BaseUUIDSQLModel
+from app.core.db.models import BaseUUIDSQLModel, DateTimeWithTimezone
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import EnumFieldMixin, NonEmptyStr, UTCDatetime
 
@@ -156,10 +156,10 @@ class AtwSendStatusEnum(EnumFieldMixin, StrEnum):
     ``StrEnum`` *values* (``pending``).
     """
 
-    PENDING = auto()
-    RUNNING = auto()
-    SUCCESS = auto()
-    FAILED = auto()
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
 
     @classmethod
     def active_statuses(cls) -> frozenset["AtwSendStatusEnum"]:
@@ -214,8 +214,12 @@ class AtwSendLog(BaseUUIDSQLModel, table=True):
             nullable=False,
         ),
     )
-    started_at: UTCDatetime | None = SQLField(default=None)
-    finished_at: UTCDatetime | None = SQLField(default=None)
+    started_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    finished_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
     detail: dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON))
     incident: AtwIncident = Relationship(back_populates="send_logs")
 
