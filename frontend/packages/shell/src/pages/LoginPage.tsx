@@ -16,7 +16,7 @@
  */
 
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router';
 import { useForm, FormProvider } from 'react-hook-form';
 import { TextInput } from '@percona/percona-ui';
 import Alert from '@mui/material/Alert';

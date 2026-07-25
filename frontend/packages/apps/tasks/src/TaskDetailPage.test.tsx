@@ -16,7 +16,7 @@
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskHistoryEntry } from '@sep/framework';
 import { TaskDetailPage } from './TaskDetailPage';
@@ -26,8 +26,8 @@ import type { TaskDetailBundle, TaskDetailTask } from './types';
 const navigate = vi.fn();
 const { stopMutate } = vi.hoisted(() => ({ stopMutate: vi.fn() }));
 
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+vi.mock('react-router', async () => {
+  const actual = await vi.importActual<typeof import('react-router')>('react-router');
   return {
     ...actual,
     useNavigate: () => navigate,

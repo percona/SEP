@@ -9,6 +9,7 @@ minimumReleaseAgeExclude:
   - esbuild
   - '@esbuild/*'
   - brace-expansion
+  - react-router
 allowBuilds:
   esbuild: true
   msw: true
@@ -22,4 +23,6 @@ overrides:
   ws@8.20.1: 8.21.0
   '@babel/core': 7.29.6
   immutable@<5.1.8: ^5.1.8
+  react: 19.2.7
+  react-dom: 19.2.7
   postcss@<8.5.18: 8.5.18
