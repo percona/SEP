@@ -18,8 +18,8 @@
 import { memo, useCallback, useContext, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { FormProvider, useForm, useFormContext, type SubmitHandler } from 'react-hook-form';
 import { FormFieldsProvider } from './formFieldsContext';
-// UNSAFE_DataRouterContext is an unstable react-router API — pinned to react-router-dom ^7.6.0; review on version bumps.
-import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
+// UNSAFE_DataRouterContext is an unstable react-router API — pinned to react-router ^8.3.0; review on version bumps.
+import { UNSAFE_DataRouterContext, useBlocker } from 'react-router';
 import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';

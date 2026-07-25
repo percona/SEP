@@ -16,7 +16,7 @@
  */
 
 import { Alert, Box, CircularProgress, Link as MuiLink, Paper, Typography } from '@mui/material';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { CollectPane } from './CollectPane';
 import { ResultsPane } from './ResultsPane';
 import { useAtwIncident } from './hooks';

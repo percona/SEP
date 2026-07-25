@@ -19,7 +19,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeContextProvider, sepThemeOptions } from '@percona/percona-ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Preview } from '@storybook/react-vite';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { apiClient } from '@sep/api';
 import {
   installStorybookSseMocks,

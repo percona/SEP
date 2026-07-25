@@ -17,7 +17,7 @@
 
 import type { CSSProperties } from 'react';
 import { SchemaDrivenApp } from '@sep/framework';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router';
 import {
   BackupMongoTaskDetailExtras,
   getBackupMongoExecuteActions,
