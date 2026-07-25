@@ -55,6 +55,7 @@ __all__ = [
     "Hidden",
     "HostRef",
     "Option",
+    "RemoteChoices",
     "Requires",
     "SchemaRef",
     "SectionLayout",
@@ -107,11 +108,14 @@ class Ui:
         :attr:`SectionLayout.key` in the form layout.
     :param description: Optional helper text rendered beneath the field.
     :param depends_on: For a cascade reference (``SchemaRef`` / ``TableRef`` /
-        ``HostRef``), the field name whose value drives this field's options or
-        default selection. Required for ``SchemaRef`` / ``TableRef``; optional
-        for ``HostRef`` (when set on a single-value host field, the renderer
-        auto-selects an executor from the upstream service; multi-host ignores
-        it). Ignored for other field kinds. Defaults to ``None``.
+        ``HostRef``) or a :class:`RemoteChoices` field, the field name whose
+        value drives this field's options or default selection. Required for
+        ``SchemaRef`` / ``TableRef``; optional for ``HostRef`` (when set on a
+        single-value host field, the renderer auto-selects an executor from the
+        upstream service; multi-host ignores it) and for ``RemoteChoices`` (when
+        set, the fetch is parameterised by the dependency's value and the field
+        stays disabled until it is set). Ignored for other field kinds. Defaults
+        to ``None``.
     :param order: Sort position within the section; ties break on declaration
         order. Defaults to ``0``.
     :param required: Override for the wire ``required`` flag. ``None`` (the
@@ -388,6 +392,39 @@ class Choices:
             "options",
             tuple(normalized),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteChoices:
+    """Mark a field whose options are fetched at render from an app endpoint.
+
+    Unlike :class:`Choices` (static options embedded in the wire), the options
+    are fetched at render time from ``endpoint``, which must return a
+    ``Choice``-compatible list (``value``, ``label``, optional ``disabled`` /
+    ``disabled_reason``). An optional cascade is declared via
+    ``Ui(depends_on=...)`` — when set, the fetch is parameterised by the
+    dependency's value (passed as a query parameter named after the
+    ``depends_on`` field) and the field stays disabled/empty until the
+    dependency is set, mirroring :class:`SchemaRef` / :class:`TableRef`. When
+    ``depends_on`` is omitted the field fetches once with no cascade (mirroring
+    the optional cascade of :class:`HostRef`).
+
+    :param endpoint: The fully-resolved path the renderer fetches options from,
+        relative to the frontend ``apiClient`` base (``/api``). Bake any
+        app-specific path segments here at schema-build time (e.g.
+        ``/apps/<app_key>/<resource>``) rather than templating client-side.
+    :param allow_custom: When ``True``, the field also accepts a free-typed
+        value alongside the fetched options and emits ``allow_custom`` on the
+        wire. Defaults to ``False``.
+    """
+
+    endpoint: str
+    allow_custom: bool = False
+
+    def __post_init__(self) -> None:
+        """Reject an empty endpoint so the wire never advertises an unfetchable source."""
+        if not self.endpoint.strip():
+            raise ValueError("RemoteChoices endpoint must be a non-empty path")
 
 
 @dataclass(frozen=True, slots=True)

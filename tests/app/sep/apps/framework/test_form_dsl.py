@@ -37,6 +37,7 @@ from app.sep.apps.framework.form_dsl import (
     Hidden,
     HostRef,
     Option,
+    RemoteChoices,
     Requires,
     SchemaRef,
     SectionLayout,
@@ -69,6 +70,7 @@ from app.sep.apps.framework.schema import (
     MultiTableField,
     OneOfGroup,
     RelatedApp,
+    RemoteChoiceField,
     SchemaField,
     ServiceField,
     StringField,
@@ -1006,3 +1008,65 @@ class TestRuntimeValidationParity:
             _RuntimeParityModel(method="none", dsn_table="present")
         assert _RuntimeParityModel(method="none").dsn_table == ""
         assert _RuntimeParityModel(method="dsn", dsn_table="t").dsn_table == "t"
+
+
+class _RemoteChoicesModel(AppFormModel):
+    cluster: Annotated[str, Ui(label="Cluster", section="s")] = ""
+    backup: Annotated[
+        str,
+        RemoteChoices(endpoint="/apps/mysql_restore/backups"),
+        Ui(label="Backup", section="s"),
+    ] = ""
+    cascaded: Annotated[
+        str,
+        RemoteChoices(endpoint="/apps/mysql_restore/backups"),
+        Ui(label="Cascaded", section="s", depends_on="cluster"),
+    ] = ""
+    custom: Annotated[
+        str,
+        RemoteChoices(endpoint="/apps/mysql_restore/backups", allow_custom=True),
+        Ui(label="Custom", section="s"),
+    ] = ""
+
+
+class _RemoteChoicesNonStrModel(AppFormModel):
+    backup: Annotated[
+        int,
+        RemoteChoices(endpoint="/apps/x/backups"),
+        Ui(label="Backup", section="s"),
+    ] = 0
+
+
+class TestRemoteChoices:
+    """Cover the standalone RemoteChoices marker deriving a RemoteChoiceField."""
+
+    def test_plain_remote_choices_derives_remote_choice_field(self) -> None:
+        """Derive a RemoteChoiceField with endpoint_url and no optional wire keys."""
+        field = _fields_by_name(_RemoteChoicesModel)["backup"]
+        assert isinstance(field, RemoteChoiceField)
+        assert field.endpoint_url == "/apps/mysql_restore/backups"
+        dumped = field.model_dump(exclude_none=True)
+        assert "depends_on" not in dumped
+        assert "allow_custom" not in dumped
+
+    def test_depends_on_emitted_when_ui_declares_cascade(self) -> None:
+        """Emit depends_on when ``Ui(depends_on=...)`` names the parent field."""
+        field = _fields_by_name(_RemoteChoicesModel)["cascaded"]
+        assert isinstance(field, RemoteChoiceField)
+        assert field.depends_on == "cluster"
+
+    def test_allow_custom_emitted_only_when_true(self) -> None:
+        """Emit allow_custom only when the marker opts in; else drop it."""
+        fields = _fields_by_name(_RemoteChoicesModel)
+        assert fields["custom"].allow_custom is True
+        assert fields["backup"].allow_custom is None
+
+    def test_non_str_annotation_errors(self) -> None:
+        """Reject RemoteChoices on an annotation that cannot accept str."""
+        with pytest.raises(ValueError, match="RemoteChoices"):
+            derive_form_sections(_RemoteChoicesNonStrModel, _SINGLE_SECTION)
+
+    def test_empty_endpoint_rejected(self) -> None:
+        """Reject an empty (whitespace-only) endpoint at marker construction."""
+        with pytest.raises(ValueError, match="endpoint"):
+            RemoteChoices(endpoint="   ")

@@ -43,6 +43,7 @@ from app.sep.apps.framework.form_dsl.markers import (
     FormRules,
     Hidden,
     HostRef,
+    RemoteChoices,
     Requires,
     SchemaRef,
     SectionRules,
@@ -71,6 +72,7 @@ from app.sep.apps.framework.schema import (
     MultiTableField,
     OneOfBranch,
     OneOfGroup,
+    RemoteChoiceField,
     SchemaField,
     ServiceField,
     StringField,
@@ -675,8 +677,9 @@ def _build_base_field(
     :param ui: The field's ``Ui`` marker.
     :param metadata: The field's ``FieldInfo.metadata`` list.
     :return: The derived field.
-    :raises ValueError: When the base type maps to no known field kind, or a
-        choice field supplies no derivable options.
+    :raises ValueError: When the base type maps to no known field kind, a
+        choice field supplies no derivable options, or a ``RemoteChoices`` field
+        annotation does not accept ``str``.
     """
     common = {
         "name": name,
@@ -715,6 +718,21 @@ def _build_base_field(
                 "accepts the free-typed value the schema advertises"
             )
         return _build_ref_field(ref, ui, common, multiple=ref.multiple)
+
+    remote = _find_marker(metadata, (RemoteChoices,))
+    if remote is not None:
+        if not _annotation_accepts_str(field_info.annotation):
+            raise ValueError(
+                f"field {name!r} uses RemoteChoices but its annotation does not "
+                "accept str; the submitted value (a fetched option value or a "
+                "free-typed custom value) is always a string"
+            )
+        return RemoteChoiceField(
+            **common,
+            endpoint_url=remote.endpoint,
+            depends_on=ui.depends_on,
+            allow_custom=remote.allow_custom or None,
+        )
 
     base, is_list = resolve_base(field_info.annotation)
     choices = _find_marker(metadata, (Choices,))

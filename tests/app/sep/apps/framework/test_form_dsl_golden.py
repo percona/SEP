@@ -39,6 +39,7 @@ from app.sep.apps.framework.form_dsl import (
     FormRules,
     HostRef,
     Option,
+    RemoteChoices,
     SchemaRef,
     SectionLayout,
     SectionRules,
@@ -340,3 +341,50 @@ def test_multi_ref_fixture_matches_golden():
     """Assert the multi-value reference fixture wire format under ``snapshots/form_dsl``."""
     golden = su.SNAPSHOTS_DIR / "form_dsl" / "multi_ref.json"
     su.assert_or_update(golden, _dump(_build_multi_ref_schema()))
+
+
+class _RemoteChoicesForm(AppFormModel):
+    """Exercise plain, cascading, and allow_custom remote_choice derivation."""
+
+    cluster: Annotated[
+        str,
+        Choices((("cluster-a", "Cluster A"), ("cluster-b", "Cluster B"))),
+        Ui(label="Cluster", section="main"),
+    ] = "cluster-a"
+    backup: Annotated[
+        str,
+        RemoteChoices(endpoint="/apps/restore/backups"),
+        Ui(label="Backup", section="main"),
+    ] = ""
+    cascaded_backup: Annotated[
+        str,
+        RemoteChoices(endpoint="/apps/restore/backups"),
+        Ui(label="Cascaded Backup", section="main", depends_on="cluster"),
+    ] = ""
+    custom_backup: Annotated[
+        str,
+        RemoteChoices(endpoint="/apps/restore/backups", allow_custom=True),
+        Ui(label="Custom Backup", section="main"),
+    ] = ""
+
+
+_REMOTE_CHOICES_LAYOUT = FormLayout(
+    sections=[SectionLayout(key="main", title="Main")],
+)
+
+
+def _build_remote_choices_schema():
+    """Assemble the remote-choices fixture ``AppSchema``."""
+    return derive_app_schema(
+        _RemoteChoicesForm,
+        _REMOTE_CHOICES_LAYOUT,
+        name="remote_choices",
+        display_name="Remote Choices",
+        list_view=ListView(columns=[Column(key="name", label="Name")]),
+    )
+
+
+def test_remote_choices_fixture_matches_golden():
+    """Assert the remote-choices fixture wire format under ``snapshots/form_dsl``."""
+    golden = su.SNAPSHOTS_DIR / "form_dsl" / "remote_choices.json"
+    su.assert_or_update(golden, _dump(_build_remote_choices_schema()))

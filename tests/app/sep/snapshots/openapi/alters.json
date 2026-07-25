@@ -2119,6 +2119,9 @@
                   "$ref": "#/components/schemas/framework__MultiTableField"
                 },
                 {
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
+                },
+                {
                   "$ref": "#/components/schemas/framework__SchemaField"
                 },
                 {
@@ -2980,6 +2983,7 @@
                   "multi_schema": "#/components/schemas/framework__MultiSchemaField",
                   "multi_service": "#/components/schemas/framework__MultiServiceField",
                   "multi_table": "#/components/schemas/framework__MultiTableField",
+                  "remote_choice": "#/components/schemas/framework__RemoteChoiceField",
                   "schema": "#/components/schemas/framework__SchemaField",
                   "script_preview": "#/components/schemas/framework__ScriptPreviewField",
                   "service": "#/components/schemas/framework__ServiceField",
@@ -3026,6 +3030,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/framework__MultiTableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
                 },
                 {
                   "$ref": "#/components/schemas/framework__SchemaField"
@@ -3172,6 +3179,121 @@
           "route_segment"
         ],
         "title": "RelatedApp",
+        "type": "object"
+      },
+      "framework__RemoteChoiceField": {
+        "additionalProperties": false,
+        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field stays disabled/empty until the\ndependency has a value. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "endpoint_url": {
+            "minLength": 1,
+            "title": "Endpoint Url",
+            "type": "string"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "remote_choice",
+            "default": "remote_choice",
+            "enum": [
+              "remote_choice"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "endpoint_url"
+        ],
+        "title": "RemoteChoiceField",
         "type": "object"
       },
       "framework__SchemaField": {

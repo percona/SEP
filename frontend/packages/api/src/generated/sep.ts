@@ -5040,6 +5040,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -5073,6 +5074,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -6976,6 +6978,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -7398,6 +7401,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -7490,6 +7494,61 @@ export interface components {
       label: string;
       /** Route Segment */
       route_segment: string;
+    };
+    /**
+     * RemoteChoiceField
+     * @description Represent a field whose options are fetched at render from an app endpoint.
+     *
+     *     The renderer fetches ``endpoint_url`` and renders the returned
+     *     ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
+     *     / ``disabled_reason``). When ``depends_on`` is set, the fetch is
+     *     parameterised by the dependency's value (appended as a query parameter named
+     *     after ``depends_on``) and the field stays disabled/empty until the
+     *     dependency has a value. When ``allow_custom`` is set, the renderer also
+     *     accepts a free-typed value. The endpoint response contract is a JSON array
+     *     of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
+     *     "disabled"?: bool, "disabled_reason"?: str}``.
+     *
+     *     :param field_type: The discriminator literal; always ``"remote_choice"``.
+     *         Serialised as the JSON key ``"type"``.
+     *     :param endpoint_url: The fully-resolved URL the renderer fetches options
+     *         from, relative to the frontend ``apiClient`` base (``/api``).
+     *     :param depends_on: Optional name of the sibling field whose value drives
+     *         (and parameterises) the option fetch. ``None`` (the default) omits the
+     *         key from the wire so plugins that do not cascade stay byte-identical.
+     *     :param allow_custom: When ``True``, the selector also accepts a free-typed
+     *         value. ``None`` (the default) omits the key from the wire so plugins
+     *         that do not opt in stay byte-identical.
+     */
+    framework__RemoteChoiceField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on?: string | null;
+      /** Description */
+      description?: string | null;
+      /** Endpoint Url */
+      endpoint_url: string;
+      /** Forbidden */
+      forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['framework__FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'remote_choice';
     };
     /**
      * SchemaField
