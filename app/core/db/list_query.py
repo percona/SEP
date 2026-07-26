@@ -86,7 +86,7 @@ class ListQuerySpec:
 
         :raises ValueError: When the spec is invalid — an empty public sort key, a
             non-column sortable value or searchable entry, a default sort outside the
-            allowlist, or a missing tie-breaker.
+            allowlist, or a missing or non-column tie-breaker.
         """
         if any(not key or not key.strip() for key in self.sortable):
             raise ValueError("sortable keys must be non-empty")
@@ -98,6 +98,8 @@ class ListQuerySpec:
             )
         if self.tie_breaker is None:
             raise ValueError("tie_breaker is required")
+        if not hasattr(self.tie_breaker, "asc"):
+            raise ValueError("tie_breaker must be a column expression")
         if any(not hasattr(entry, "ilike") for entry in self.searchable):
             raise ValueError("searchable entries must be column expressions")
         object.__setattr__(self, "sortable", MappingProxyType(dict(self.sortable)))

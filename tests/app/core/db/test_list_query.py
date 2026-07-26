@@ -109,6 +109,11 @@ class TestListQuerySpecValidation:
         with pytest.raises(ValueError, match="tie_breaker"):
             _spec(tie_breaker=None)
 
+    def test_non_column_tie_breaker_raises(self) -> None:
+        """Reject a tie-breaker that is not a column expression."""
+        with pytest.raises(ValueError, match="tie_breaker must be a column"):
+            _spec(tie_breaker="id")
+
     def test_non_column_searchable_entry_raises(self) -> None:
         """Reject a searchable entry that is not a column expression."""
         with pytest.raises(ValueError, match="searchable"):
