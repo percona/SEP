@@ -104,6 +104,11 @@ class TestListQuerySpecValidation:
         with pytest.raises(ValueError, match="non-empty"):
             _spec(sortable={"": col(LQItem.name)}, default_sort="")
 
+    def test_dash_prefixed_sortable_key_raises(self) -> None:
+        """Reject a sortable key beginning with ``-`` (reserved for descending)."""
+        with pytest.raises(ValueError, match="must not start with '-'"):
+            _spec(sortable={"name": col(LQItem.name), "-bad": col(LQItem.category)})
+
     def test_missing_tie_breaker_raises(self) -> None:
         """Reject a spec without a tie-breaker column."""
         with pytest.raises(ValueError, match="tie_breaker"):
@@ -154,6 +159,12 @@ class TestResolveSort:
     def test_descending_prefix_resolves_descending(self) -> None:
         """Resolve a ``-`` prefixed key into a descending ordering."""
         order_by = _spec().resolve_sort("-name")
+        assert "DESC" in str(order_by[0])
+        assert "NULLS LAST" in str(order_by[0])
+
+    def test_descending_default_sort_resolves_descending(self) -> None:
+        """Accept a ``-``-prefixed default sort and resolve it descending."""
+        order_by = _spec(default_sort="-name").resolve_sort(None)
         assert "DESC" in str(order_by[0])
         assert "NULLS LAST" in str(order_by[0])
 

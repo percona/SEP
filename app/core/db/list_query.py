@@ -66,10 +66,12 @@ class ListQuerySpec:
     instance cannot be mutated in place.
 
     :param sortable: Public sort key mapped to a direction-free column expression.
-        Client input is resolved against this allowlist, so no raw column name
-        reaches query construction.
-    :param default_sort: Public sort key applied when the request omits ``sort``;
-        must be present in ``sortable``.
+        Keys must not begin with ``-`` (reserved as the descending-direction
+        marker). Client input is resolved against this allowlist, so no raw column
+        name reaches query construction.
+    :param default_sort: Public sort key applied when the request omits ``sort``; a
+        leading ``-`` selects descending order, and the key (minus any ``-``) must be
+        present in ``sortable``.
     :param tie_breaker: A unique column expression appended to every ordering so
         pagination stays deterministic across pages.
     :param searchable: Column expressions the search term matches against. An empty
@@ -84,15 +86,20 @@ class ListQuerySpec:
     def __post_init__(self) -> None:
         """Validate the invariants and freeze the mutable members.
 
-        :raises ValueError: When the spec is invalid — an empty public sort key, a
-            non-column sortable value or searchable entry, a default sort outside the
-            allowlist, or a missing or non-column tie-breaker.
+        :raises ValueError: When the spec is invalid — an empty or ``-``-prefixed
+            public sort key, a non-column sortable value or searchable entry, a
+            default sort whose key is outside the allowlist, or a missing or
+            non-column tie-breaker.
         """
         if any(not key or not key.strip() for key in self.sortable):
             raise ValueError("sortable keys must be non-empty")
+        if any(key.startswith("-") for key in self.sortable):
+            raise ValueError(
+                "sortable keys must not start with '-' (reserved for descending order)"
+            )
         if any(not hasattr(column, "asc") for column in self.sortable.values()):
             raise ValueError("sortable values must be column expressions")
-        if self.default_sort not in self.sortable:
+        if self.default_sort.removeprefix("-") not in self.sortable:
             raise ValueError(
                 f"default_sort {self.default_sort!r} is not in the sortable allowlist"
             )
