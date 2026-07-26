@@ -87,6 +87,7 @@ from app.tasks.models import (
     TaskLogType,
 )
 from app.tasks.periodic.models import PeriodicTaskExecuteRequest
+from app.tasks.run_result import maybe_record_run
 
 logger = logging.getLogger(__name__)
 
@@ -844,6 +845,7 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         )
         await session.refresh(saved, attribute_names=["execution_request"])
     await maybe_dispatch_chain(saved, was_running=was_running, await_annotations=True)
+    await maybe_record_run(saved.id)
     return saved
 
 

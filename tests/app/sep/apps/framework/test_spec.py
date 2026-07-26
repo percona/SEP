@@ -780,6 +780,49 @@ class TestAssembleEnvelopeAlertDetailBuilder:
         assert write.alert_detail_builder is None
 
 
+class TestAssembleEnvelopeRunResultRecorder:
+    """Cover the optional ``run_result_recorder`` stamping on the envelope."""
+
+    def test_run_result_recorder_stamped_when_set(self) -> None:
+        """Assert the supplied ``run_result_recorder`` is stamped onto the ``TaskWrite``."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        spec = RunPythonSpec(config="", requirements="", payload="file:///p")
+
+        write = assemble_envelope(
+            spec,
+            ResolvedEntities(service=service, entities={}),
+            name="task-1",
+            owner="BACKUPS",
+            run_result_recorder="pkg.mod:recorder",
+        )
+
+        assert write.run_result_recorder == "pkg.mod:recorder"
+
+    def test_run_result_recorder_none_by_default(self) -> None:
+        """Assert ``run_result_recorder`` defaults to ``None`` when not supplied."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        spec = RunPythonSpec(config="", requirements="", payload="file:///p")
+
+        write = assemble_envelope(
+            spec,
+            ResolvedEntities(service=service, entities={}),
+            name="task-1",
+            owner="BACKUPS",
+        )
+
+        assert write.run_result_recorder is None
+
+
 class _ArgForm(AppFormModel):
     """Carry value-arg, flag-arg, and unmapped fields for build_command_args tests."""
 

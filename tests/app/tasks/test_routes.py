@@ -148,7 +148,7 @@ async def test_delete_running_task_returns_409(test_client, session, created_tas
     table: if the running guard failed to short-circuit, the delete would fall
     through to that call and surface the reported 500. A clean 409 therefore
     proves the guard fires at the HTTP boundary before any downstream that could
-    raise -- the exact regression SEP-1547 tracks.
+    raise.
     """
     tasks_app.dependency_overrides[get_celery_beat_session] = lambda: session
     await TaskHistoryManager.save(
@@ -190,6 +190,18 @@ async def test_create_task_success(test_client):
     response = test_client.post("/", json=payload)
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()["name"] == "new-task"
+
+
+@pytest.mark.asyncio
+async def test_create_task_persists_run_result_recorder(test_client):
+    """Assert a created task's run_result_recorder round-trips through the POST body."""
+    task_data = TaskFactory.build(
+        name="recorder-task", run_result_recorder="pkg.mod:recorder"
+    )
+    payload = TaskWrite.model_validate(task_data).model_dump(mode="json")
+    response = test_client.post("/", json=payload)
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()["run_result_recorder"] == "pkg.mod:recorder"
 
 
 @pytest.mark.asyncio

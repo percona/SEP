@@ -383,6 +383,7 @@ def assemble_envelope(
     owner: str,
     alert_on_fail: bool = False,
     alert_detail_builder: str | None = None,
+    run_result_recorder: str | None = None,
 ) -> TaskWrite:
     """Assemble a ``TaskWrite`` from a spec and the resolved entities.
 
@@ -406,6 +407,10 @@ def assemble_envelope(
     :param alert_detail_builder: The ``"module:function"`` path of a plugin
         callable that enriches this task's failure alert, stamped onto the
         ``TaskWrite``. Defaults to ``None`` (no per-owner enrichment).
+    :param run_result_recorder: The ``"module:function"`` path of a plugin
+        callable that records this task's structured run result at terminal
+        status, stamped onto the ``TaskWrite``. Defaults to ``None`` (no
+        result recording).
     :return: The assembled ``TaskWrite``, ready to POST to the Tasks API.
     :raises ValueError: When no service was resolved (the connectivity meta has no
         source), or when the resolved service declares no port and no default port
@@ -444,6 +449,7 @@ def assemble_envelope(
         data=data,
         alert_on_fail=alert_on_fail,
         alert_detail_builder=alert_detail_builder,
+        run_result_recorder=run_result_recorder,
     )
 
 

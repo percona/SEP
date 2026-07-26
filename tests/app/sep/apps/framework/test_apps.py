@@ -705,6 +705,29 @@ class TestCreateRoute:
         )
         assert create_call.kwargs["json"]["alert_detail_builder"] == "pkg.mod:builder"
 
+    def test_create_threads_run_result_recorder(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the app's ``run_result_recorder`` is stamped onto the posted task."""
+        tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
+        client = _client(
+            _synth_app(run_result_recorder="pkg.mod:recorder"),
+            tasks_api,
+            regular_user,
+            inventory_api=_make_inventory_api(),
+        )
+
+        response = client.post(
+            f"{_BASE}/",
+            json={"task_name": "new-task", "service_id": 1, "host": _EXECUTOR_HOST},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        create_call = next(
+            call for call in tasks_api.post.await_args_list if call.args[0] == "/"
+        )
+        assert create_call.kwargs["json"]["run_result_recorder"] == "pkg.mod:recorder"
+
     def test_create_response_model_with_context_provider_succeeds(
         self, regular_user: CasdoorUser
     ) -> None:

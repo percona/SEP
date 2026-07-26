@@ -21,7 +21,8 @@
     "is_template": false,
     "name": "arch-6",
     "owner": "ARCHIVER",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "dest_service_host": {
     "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
@@ -45,7 +46,8 @@
     "is_template": false,
     "name": "arch-4",
     "owner": "ARCHIVER",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "manual_host_free_solo_names": {
     "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
@@ -69,7 +71,8 @@
     "is_template": false,
     "name": "arch-5",
     "owner": "ARCHIVER",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "query_to_table": {
     "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
@@ -93,7 +96,8 @@
     "is_template": false,
     "name": "arch-3",
     "owner": "ARCHIVER",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "table_to_file": {
     "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
@@ -117,7 +121,8 @@
     "is_template": false,
     "name": "arch-2",
     "owner": "ARCHIVER",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "table_to_table_same_host": {
     "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
@@ -141,6 +146,7 @@
     "is_template": false,
     "name": "arch-1",
     "owner": "ARCHIVER",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   }
 }

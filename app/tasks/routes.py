@@ -92,6 +92,7 @@ from app.tasks.models import (
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.models import PeriodicTaskCreate, PeriodicTaskResponse
 from app.tasks.periodic.utils import attach_last_run_status
+from app.tasks.run_result import maybe_record_run
 
 logger = logging.getLogger(__name__)
 
@@ -679,6 +680,7 @@ async def sync_task_history(
         id=saved.id,
     )
     await maybe_dispatch_chain(synced, was_running=True)
+    await maybe_record_run(synced.id)
     _set_has_logs(
         synced,
         value=await TaskHistoryLogManager.exists_for_task(session, synced.id)

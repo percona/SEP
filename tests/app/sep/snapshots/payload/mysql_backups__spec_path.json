@@ -20,7 +20,8 @@
     "is_template": false,
     "name": "backups-golden",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "binlog_rsync_no_alt": {
     "alert_detail_builder": null,
@@ -43,7 +44,8 @@
     "is_template": false,
     "name": "backups-golden",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "mydumper_rsync": {
     "alert_detail_builder": null,
@@ -66,7 +68,8 @@
     "is_template": false,
     "name": "backups-golden",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "xtrabackup_s3_encrypt": {
     "alert_detail_builder": null,
@@ -89,6 +92,7 @@
     "is_template": false,
     "name": "backups-golden",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   }
 }
