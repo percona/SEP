@@ -77,8 +77,10 @@ export function toDisplayValue(
  *
  *   - clearing yields `null`;
  *   - an option object yields its `value`;
- *   - a typed string that exactly matches an option's label resolves to that
- *     option's `value` (not the label);
+ *   - a typed string that exactly matches a non-disabled option's label
+ *     resolves to that option's `value` (not the label); a match against a
+ *     disabled option is kept verbatim, since the UI presents disabled options
+ *     as non-selectable;
  *   - any other non-empty string is kept verbatim;
  *   - a whitespace-only / empty string yields `null`.
  */
@@ -96,6 +98,6 @@ export function normalizeChange(
   if (trimmed === '') {
     return null;
   }
-  const labelMatch = options.find((o) => o.label === trimmed);
+  const labelMatch = options.find((o) => o.label === trimmed && !o.disabled);
   return labelMatch ? labelMatch.value : trimmed;
 }

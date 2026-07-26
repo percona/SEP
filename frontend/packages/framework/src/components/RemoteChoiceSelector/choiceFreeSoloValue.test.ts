@@ -62,6 +62,11 @@ describe('normalizeChange', () => {
     expect(normalizeChange('Backup 1', OPTIONS)).toBe('backup-1');
   });
 
+  it('keeps a typed value matching a disabled option label as a custom string', () => {
+    // Backup 2 is disabled; typing its label must not commit the disabled value.
+    expect(normalizeChange('Backup 2', OPTIONS)).toBe('Backup 2');
+  });
+
   it('commits null when cleared or blank', () => {
     expect(normalizeChange(null, OPTIONS)).toBeNull();
     expect(normalizeChange('   ', OPTIONS)).toBeNull();

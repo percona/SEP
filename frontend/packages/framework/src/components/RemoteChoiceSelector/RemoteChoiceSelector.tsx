@@ -105,7 +105,11 @@ function RemoteChoiceAutocomplete({
 }) {
   const filter = useMemo(() => createFilterOptions<ChoiceOption | string>(), []);
   const { value: fieldValue, onChange } = field;
-  const value = toDisplayValue(fieldValue, options);
+  const resolved = toDisplayValue(fieldValue, options);
+  // In non-freeSolo mode MUI expects an option object or null; a bare string
+  // (an unloaded/unmatched persisted value) trips its "none of the options
+  // match" warning, so collapse it to null unless free-text entry is enabled.
+  const value = allowCustom || typeof resolved !== 'string' ? resolved : null;
   const isCustomValue = typeof value === 'string';
   const commit = (next: ChoiceFreeSoloDisplayValue) => onChange(normalizeChange(next, options));
 

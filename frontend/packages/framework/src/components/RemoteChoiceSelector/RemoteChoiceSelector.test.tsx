@@ -157,6 +157,18 @@ describe('RemoteChoiceSelector', () => {
     expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
 
+  it('collapses a stored value with no matching option to empty in select mode', async () => {
+    render(
+      <Wrapper client={makeClient()}>
+        <Harness initialBackup="ghost-value" />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+    // Non-freeSolo MUI would warn on a bare string value; the input resolves to
+    // empty rather than echoing the unmatched string.
+    expect(screen.getByRole('combobox')).toHaveValue('');
+  });
+
   it('surfaces an error-state helper text when the fetch fails', async () => {
     mocked.get.mockRejectedValue(new Error('boom'));
     render(
@@ -233,6 +245,17 @@ describe('RemoteChoiceSelector', () => {
       await waitFor(() =>
         expect(screen.getByTestId('value')).toHaveTextContent('"my-custom-backup"'),
       );
+    });
+
+    it('displays a persisted custom value with no matching option', async () => {
+      render(
+        <Wrapper client={makeClient()}>
+          <Harness allowCustom initialBackup="ghost-value" />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      // free-solo keeps the unmatched string (contrast with the select-mode case).
+      expect(screen.getByRole('combobox')).toHaveValue('ghost-value');
     });
   });
 });
