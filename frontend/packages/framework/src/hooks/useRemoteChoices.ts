@@ -30,17 +30,11 @@ export interface UseRemoteChoicesOptions {
 }
 
 /**
- * Build the effective request URL.
- *
- * Preserve any query string already on ``endpointUrl`` and, when a cascade
- * dependency is provided, append it as a query parameter named after
- * ``dependsOnName`` via ``URLSearchParams`` (so the value is encoded and a
- * pre-existing ``?`` is not duplicated).
- *
- * :param endpointUrl: The wire-declared fetch path.
- * :param dependsOnName: The cascade parameter name, or nullish for no cascade.
- * :param dependsOnValue: The cascade parameter value, or nullish for no cascade.
- * :return: The URL to fetch, with the cascade parameter appended when present.
+ * Build the effective request URL: preserve any query string already on
+ * `endpointUrl` and, when a cascade dependency is provided, append it as a
+ * query parameter named after `dependsOnName` via `URLSearchParams` (so the
+ * value is encoded and a pre-existing `?` is not duplicated). Returns
+ * `endpointUrl` unchanged when no cascade value is present.
  */
 function buildEffectiveUrl(
   endpointUrl: string,
