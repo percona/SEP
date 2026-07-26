@@ -237,7 +237,7 @@ class BaseManager:
         query_options: Sequence = (),
         offset: int | None = None,
         limit: int | None = None,
-        order_by: Iterable[ColumnExpressionOrStrLabelArgument] | None = None,
+        order_by: Sequence[ColumnExpressionOrStrLabelArgument] | None = None,
         **equal_filters: Any,
     ) -> TupleResult | ScalarResult:
         ordering = order_by if order_by is not None else cls._get_ordering()
@@ -509,7 +509,7 @@ class BaseManager:
         query_options: Sequence = (),
         offset: int | None = None,
         limit: int | None = None,
-        order_by: Iterable[ColumnExpressionOrStrLabelArgument] | None = None,
+        order_by: Sequence[ColumnExpressionOrStrLabelArgument] | None = None,
         **equal_filters: Any,
     ) -> list[T]:
         """Return a list of matching records, optionally paginated.
