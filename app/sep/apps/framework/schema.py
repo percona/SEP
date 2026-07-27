@@ -202,6 +202,7 @@ class DetailHighlightLanguage(EnumFieldMixin, StrEnum):
     SQL = auto()
     JSON = auto()
     BASH = auto()
+    YAML = auto()
 
 
 class BaseField(SchemaBaseModel):

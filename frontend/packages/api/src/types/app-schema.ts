@@ -360,8 +360,8 @@ export interface DetailField {
   /** Dotted path into the task record (e.g. ``"data.meta.command"``). */
   path: string;
   label: string;
-  /** Optional syntax-highlighter hint. */
-  highlight?: 'sql' | 'json' | 'bash';
+  /** Optional syntax-highlighter hint; mirrors the backend ``DetailHighlightLanguage`` enum. */
+  highlight?: 'sql' | 'json' | 'bash' | 'yaml';
 }
 
 /** One titled section rendered on the task detail page. */
@@ -384,8 +384,9 @@ export interface AppEntitySchema {
   description?: string;
   forms: FormSection[];
   list_view: ListView;
-  /** Optional detail-view syntax hints keyed by field name. */
-  detail_highlights?: Partial<Record<string, 'sql' | 'json' | 'bash'>>;
+  /** Optional detail-view syntax hints keyed by field name; mirrors the backend
+   * ``DetailHighlightLanguage`` enum. */
+  detail_highlights?: Partial<Record<string, 'sql' | 'json' | 'bash' | 'yaml'>>;
 }
 
 // ── Related apps (sibling tabs) ─────────────────────────────────────────
