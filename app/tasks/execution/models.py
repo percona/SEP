@@ -286,7 +286,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
             task. Required from Celery contexts that drive the event loop via
             discrete ``celery.loop.run_until_complete(...)`` calls; the FastAPI
             default (``False``) keeps user-facing request paths (manual sync
-            route, connectivity polling, stop-task) non-blocking. See SEP-1204.
+            route, connectivity polling, stop-task) non-blocking.
         :type await_annotations: bool
         :return: The updated task history with execution details.
         :rtype: TaskHistory
