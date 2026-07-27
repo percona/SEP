@@ -2060,24 +2060,14 @@ class MyDumper(Backup):
         self.notify(BackupNotifyStatus.OK, msg)
 
         if self.last_backup_dir and Path(self.last_backup_dir).is_dir():
-            self.write_run_result(upload_destination)
-
-    def write_run_result(self, upload_destination: str | None) -> None:
-        """Write one best-effort run-result file for the produced backup.
-
-        Wrap the whole write so a serialization or filesystem error can never turn
-        a successful backup into a failure.
-
-        :param upload_destination: The remote upload path, or ``None`` when the
-            backup was not uploaded.
-        """
-        try:
-            size_bytes = get_dir_size(self.last_backup_dir)
-            _write_run_result(
-                str(self.last_backup_dir), size_bytes, upload_destination
-            )
-        except Exception:
-            self.logger.exception("Failed to write the run-result file.")
+            try:
+                _write_run_result(
+                    str(self.last_backup_dir),
+                    get_dir_size(self.last_backup_dir),
+                    upload_destination,
+                )
+            except Exception:
+                self.logger.exception("Failed to write the run-result file.")
 
     def _save_disk_space(self) -> None:
         """Hardlink backups to save disk space if conditions allow."""
