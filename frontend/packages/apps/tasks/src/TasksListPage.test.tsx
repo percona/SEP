@@ -16,7 +16,7 @@
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSchema } from '@sep/api';
 import { TasksListPage } from './TasksListPage';
@@ -24,8 +24,8 @@ import { useTasksList, useTasksAppSchema } from './hooks';
 
 const navigate = vi.fn();
 
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+vi.mock('react-router', async () => {
+  const actual = await vi.importActual<typeof import('react-router')>('react-router');
   return {
     ...actual,
     useNavigate: () => navigate,

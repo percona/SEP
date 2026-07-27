@@ -29,7 +29,7 @@ import {
   useRefreshSnippets,
 } from './hooks';
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => vi.fn(),
 }));
 
