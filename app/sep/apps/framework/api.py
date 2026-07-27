@@ -1742,6 +1742,10 @@ def derive_script_routes(
             else PaginatedResponse
         )
 
+        # FastAPI derives each route's dependencies from its handler signature, so
+        # the server-backed path (which needs the list-query dependency injected)
+        # and the fetch-all-then-slice fallback require distinct handler signatures
+        # — hence two closures, exactly one of which is registered below.
         if source.list_query_dep is not None and source.list_page is not None:
             list_query_param = Annotated[Any, Depends(source.list_query_dep)]
             list_page = source.list_page

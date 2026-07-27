@@ -39,6 +39,7 @@ from sqlmodel import col, select, SQLModel, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import BaseSQLModel
+from app.core.db.list_query import ListQuery, ListQuerySpec
 from app.core.db.utils import idempotent_insert
 from app.core.exceptions import (
     HTTPBadRequestException,
@@ -107,14 +108,16 @@ class BaseManager:
     """Manage database operations for a SQLAlchemy model.
 
     :cvar Model: The SQLAlchemy class for which this manager handles operations.
-    :vartype Model: type[T]
     :cvar ordering: An iterable of column expressions or string labels to order the
         results by. If None, no ordering is applied.
-    :vartype ordering: Iterable[ColumnExpressionOrStrLabelArgument] | None
+    :cvar list_query_spec: The list-query spec declaring this entity's sortable
+        allowlist, searchable columns, and default sort; ``None`` leaves the manager
+        on the legacy ordering path.
     """
 
     Model: type[T]
     ordering: Iterable[ColumnExpressionOrStrLabelArgument] | None = None
+    list_query_spec: ListQuerySpec | None = None
 
     @classmethod
     def _construct_instance(cls, instance_create: B, **extra_fields: Any) -> T:
@@ -202,11 +205,13 @@ class BaseManager:
     ) -> Iterable[ColumnExpressionOrStrLabelArgument] | None:
         """Return the ordering for SELECT queries.
 
-        :return: The explicit manager ordering or the default ``created_at``
-            descending fallback (tie-broken by primary key) for
-            ``BaseSQLModel`` models.
-        :rtype: Iterable[ColumnExpressionOrStrLabelArgument] | None
+        :return: The spec-derived default ordering (NULLS-LAST, tie-broken) when
+            ``list_query_spec`` is set; otherwise the explicit ``ordering``, or the
+            default ``created_at``-descending fallback (tie-broken by primary key)
+            for ``BaseSQLModel`` models, or ``None``.
         """
+        if cls.list_query_spec is not None:
+            return cls.list_query_spec.resolve_sort(None)
         if cls.ordering is not None:
             return cls.ordering
         if issubclass(cls.Model, BaseSQLModel):
@@ -510,27 +515,19 @@ class BaseManager:
         """Return a list of matching records, optionally paginated.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: ColumnExpressionArgument[bool]
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
-        :type select_related: Sequence
         :param query_options: Additional SQLAlchemy query options to apply.
-        :type query_options: Sequence
         :param order_by: Column expressions overriding the manager's default
             ordering for this call, or ``None`` (default) to use it.
         :param offset: The zero-based starting offset for the query results, or
             ``None`` (default) to return all matching records from the beginning.
-        :type offset: int | None
         :param limit: The maximum number of records to return, or ``None``
             (default) to return all matching records.
-        :type limit: int | None
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
-        :type equal_filters: Any
         :return: A list of matching records.
-        :rtype: list[T]
         """
         result = await cls._select(
             session,
@@ -587,6 +584,50 @@ class BaseManager:
             select_related=select_related,
             query_options=query_options,
             order_by=order_by,
+            offset=pagination.offset,
+            limit=pagination.limit,
+            **equal_filters,
+        )
+        return PaginatedResponse.from_pagination(items, total, pagination)
+
+    @classmethod
+    async def list_query_paginated(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        list_query: ListQuery,
+        select_related: Sequence = (),
+        query_options: Sequence = (),
+        pagination: Pagination,
+        **equal_filters: Any,
+    ) -> PaginatedResponse[T]:
+        """Return a paginated response applying a resolved list query.
+
+        The search predicate is folded into the single whereclause set feeding both
+        the count and the data query, so the reported total is the filtered total by
+        construction; the list query's ordering overrides the manager default.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :param whereclause: Base SQL expressions for the ``where`` clause of the query.
+        :param list_query: The resolved sort/search produced at the request boundary.
+        :param select_related: Fields to be loaded using ``joinedload`` for related
+            objects.
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :param pagination: Validated offset/limit window for this page.
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :return: A paginated response containing matching records and metadata.
+        """
+        clauses = whereclause
+        if list_query.search_predicate is not None:
+            clauses = (*whereclause, list_query.search_predicate)
+        total = await cls.count(session, *clauses, **equal_filters)
+        items = await cls.list(
+            session,
+            *clauses,
+            select_related=select_related,
+            query_options=query_options,
+            order_by=list_query.order_by,
             offset=pagination.offset,
             limit=pagination.limit,
             **equal_filters,

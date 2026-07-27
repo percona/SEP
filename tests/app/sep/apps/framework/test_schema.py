@@ -51,6 +51,7 @@ from app.sep.apps.framework.schema import (
     OneOfBranch,
     OneOfGroup,
     RelatedApp,
+    RemoteChoiceField,
     SchemaField,
     ScriptPreviewField,
     ServiceField,
@@ -337,6 +338,11 @@ def test_capabilities_omitted_pii_anonymization_in_payload_defaults_false():
             MultiChoiceField,
             "multi_choice",
             {"choices": [Choice(label="A", value="a")]},
+        ),
+        (
+            RemoteChoiceField,
+            "remote_choice",
+            {"endpoint_url": "/api/apps/x/backups"},
         ),
         (SchemaField, "schema", {"depends_on": "serviceId"}),
         (
@@ -970,6 +976,79 @@ class TestScriptPreviewField:
 
         assert isinstance(section.fields[0], ScriptPreviewField)
         assert section.fields[0].endpoint_url == "/api/apps/x/y"
+
+
+class TestRemoteChoiceField:
+    """Cover the :class:`RemoteChoiceField` field type."""
+
+    def test_minimal_construction_omits_optional_wire_keys(self):
+        """Construct with only endpoint_url; depends_on/allow_custom default None."""
+        field = RemoteChoiceField(
+            name="backup",
+            label="Backup",
+            endpoint_url="/api/apps/mysql_restore/backups",
+        )
+
+        assert field.field_type == "remote_choice"
+        assert field.endpoint_url == "/api/apps/mysql_restore/backups"
+        assert field.depends_on is None
+        assert field.allow_custom is None
+
+    def test_endpoint_url_is_required(self):
+        """Reject construction without an endpoint_url."""
+        with pytest.raises(ValidationError):
+            RemoteChoiceField(name="backup", label="Backup")
+
+    def test_endpoint_url_must_be_non_empty(self):
+        """Reject construction with an empty endpoint_url."""
+        with pytest.raises(ValidationError):
+            RemoteChoiceField(name="backup", label="Backup", endpoint_url="")
+
+    def test_optional_keys_absent_from_wire_by_default(self):
+        """Drop depends_on/allow_custom from the wire until a plugin opts in."""
+        field = RemoteChoiceField(
+            name="backup",
+            label="Backup",
+            endpoint_url="/api/apps/x/backups",
+        )
+
+        dumped = field.model_dump(by_alias=True, exclude_none=True)
+        assert dumped["type"] == "remote_choice"
+        assert "depends_on" not in dumped
+        assert "allow_custom" not in dumped
+
+    def test_optional_keys_emitted_when_set(self):
+        """Emit depends_on / allow_custom on the wire when opted in."""
+        field = RemoteChoiceField(
+            name="backup",
+            label="Backup",
+            endpoint_url="/api/apps/x/backups",
+            depends_on="cluster",
+            allow_custom=True,
+        )
+
+        dumped = field.model_dump(by_alias=True, exclude_none=True)
+        assert dumped["depends_on"] == "cluster"
+        assert dumped["allow_custom"] is True
+
+    def test_dispatch_via_any_field_discriminator(self):
+        """Validate a RemoteChoiceField round-trips through the union discriminator."""
+        section = FormSection.model_validate(
+            {
+                "title": "Restore",
+                "fields": [
+                    {
+                        "type": "remote_choice",
+                        "name": "backup",
+                        "label": "Backup",
+                        "endpoint_url": "/api/apps/x/backups",
+                    },
+                ],
+            },
+        )
+
+        assert isinstance(section.fields[0], RemoteChoiceField)
+        assert section.fields[0].endpoint_url == "/api/apps/x/backups"
 
 
 class TestChoiceDisabled:
@@ -2162,16 +2241,21 @@ class TestDetailViewReviewFixes:
     ) -> None:
         """Guard ``DetailHighlightLanguage`` membership against silent backend drift.
 
-        The TypeScript ``DetailField.highlight`` type in
-        ``frontend/packages/api/src/types/plugin-schema.ts`` is hand-maintained
-        as ``'sql' | 'json' | 'bash'``. If a new enum value is added here without
-        updating the frontend literal, this test fails and forces the author
-        to sync both sides.
+        Two hand-maintained TypeScript literals mirror this enum, both in
+        ``frontend/packages/api/src/types/app-schema.ts``:
+        ``DetailField.highlight`` and ``AppEntitySchema.detail_highlights``.
+        A third, ``DetailSyntaxLanguage`` in
+        ``frontend/packages/framework/src/components/SchemaDrivenApp/detailSyntaxStyles.ts``,
+        drives the highlighter itself. All three currently read
+        ``'sql' | 'json' | 'bash' | 'yaml'``. If a new enum value is added here
+        without updating them, this test fails and forces the author to sync
+        every side.
         """
         assert {member.value for member in DetailHighlightLanguage} == {
             "sql",
             "json",
             "bash",
+            "yaml",
         }
 
 

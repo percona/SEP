@@ -29,7 +29,7 @@ DB), the artifact-URL salt, and the execution-meta shape are all supplied by the
 consumer.
 """
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Generic, Protocol, runtime_checkable
@@ -38,9 +38,10 @@ from fastapi import Query
 from pydantic import BaseModel, Field
 from typing_extensions import TypeVar
 
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.fields import NonEmptyStr
+from app.core.utils.iterators import unique_everseen
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
@@ -147,6 +148,11 @@ class ScriptSource(Generic[S, Q]):
     :param load_script: Resolve a single script by filename; raise
         :class:`~app.core.exceptions.HTTPNotFoundException` when it is absent.
     :param list_scripts: Return every currently-discovered script (disk or DB).
+    :param load_scripts: The optional batch loader resolving several filenames in
+        one round trip, returning a filename-keyed mapping of only the scripts it
+        resolved (an absent key means unresolved). When ``None`` the framework's
+        :func:`resolve_scripts` falls back to looping ``load_script`` (see there),
+        so a source that does not opt in keeps working unchanged.
     :param build_form_schema: Synthesise a per-script :class:`AppSchema` from the
         script's frontmatter parameters.
     :param build_execution_meta: Assemble the execution-meta model the framework
@@ -178,6 +184,7 @@ class ScriptSource(Generic[S, Q]):
     list_response: Callable[[S], BaseModel]
     static_schema: AppSchema | None = None
     list_response_model: type[BaseModel] | None = None
+    load_scripts: Callable[[Sequence[str]], Awaitable[Mapping[str, S]]] | None = None
     list_query_dep: Callable[..., Q] | None = None
     list_page: Callable[[Pagination, Q], Awaitable[PaginatedResponse]] | None = None
 
@@ -238,6 +245,48 @@ def make_script_dep(source: ScriptSource[S]) -> Callable[[str], Awaitable[S]]:
     return _get_script
 
 
+async def resolve_scripts(
+    source: ScriptSource[S], filenames: Sequence[str]
+) -> dict[str, S]:
+    """Resolve several script filenames in one pass, keyed by filename.
+
+    The single entry point every batch caller routes through, so the seam's
+    path-safety guard runs on every filename before any lookup regardless of
+    whether the source opted into a batch loader. Filenames are deduplicated
+    order-preservingly, so a repeated filename is looked up once. A source that
+    sets ``load_scripts`` resolves the whole selection in one round trip;
+    otherwise the framework loops ``load_script``, treating that loader's 404 as
+    an unresolved filename rather than propagating it.
+
+    The result carries only the filenames that resolved, so the caller decides
+    the failure policy: a schema route can raise its whole-request 404 for the
+    first missing key, while an execute route can turn a missing key into a
+    per-item error. Traversal is still fatal — an unsafe filename raises before
+    any lookup, matching the single-script dependency. An empty selection
+    resolves to an empty mapping without touching either loader.
+
+    :param source: The script source whose loader(s) resolve the filenames.
+    :param filenames: The requested filenames, possibly with duplicates.
+    :return: A mapping of each resolved filename to its script; unresolved
+        filenames are absent.
+    :raises HTTPBadRequestException: When any filename fails the traversal guard.
+    """
+    unique = list(unique_everseen(filenames))
+    if not unique:
+        return {}
+    for filename in unique:
+        _validate_script_filename(filename)
+    if source.load_scripts is not None:
+        return dict(await source.load_scripts(unique))
+    resolved: dict[str, S] = {}
+    for filename in unique:
+        try:
+            resolved[filename] = await source.load_script(filename)
+        except HTTPNotFoundException:
+            continue
+    return resolved
+
+
 __all__ = [
     "ScriptExecuteWrite",
     "ScriptExecutionResponse",
@@ -245,4 +294,5 @@ __all__ = [
     "ScriptProtocol",
     "ScriptSource",
     "make_script_dep",
+    "resolve_scripts",
 ]
