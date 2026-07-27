@@ -20,6 +20,8 @@ Several per-task hooks let the owning plugin *declare* a callable by
 first time it is needed — keeping the tasks service free of static ``app.sep``
 imports. Those hooks share this resolver so the ``importlib``
 resolve-and-cache boilerplate lives in one place.
+This process-local cache is correct because the import path deterministically
+resolves to the same callable in every worker and needs no invalidation.
 """
 
 import importlib
