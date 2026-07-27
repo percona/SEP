@@ -1,0 +1,64 @@
+{
+  "display_name": "Remote Choices",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "choices": [
+            {
+              "label": "Cluster A",
+              "value": "cluster-a"
+            },
+            {
+              "label": "Cluster B",
+              "value": "cluster-b"
+            }
+          ],
+          "default": "cluster-a",
+          "label": "Cluster",
+          "name": "cluster",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "endpoint_url": "/apps/restore/backups",
+          "label": "Backup",
+          "name": "backup",
+          "required": false,
+          "type": "remote_choice"
+        },
+        {
+          "depends_on": "cluster",
+          "endpoint_url": "/apps/restore/backups",
+          "label": "Cascaded Backup",
+          "name": "cascaded_backup",
+          "required": false,
+          "type": "remote_choice"
+        },
+        {
+          "allow_custom": true,
+          "endpoint_url": "/apps/restore/backups",
+          "label": "Custom Backup",
+          "name": "custom_backup",
+          "required": false,
+          "type": "remote_choice"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Main"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "remote_choices"
+}
