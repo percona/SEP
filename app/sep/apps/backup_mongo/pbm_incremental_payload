@@ -242,12 +242,10 @@ def pbm():
     config = _load_config()
     if isinstance(config.get('storage'), dict):
         _apply_pbm_config(config)
-    cmd = ['pbm', 'backup', '--type', 'incremental', '--wait']
+    cmd = ['pbm', 'backup', '--type', 'incremental']
     if _needs_incremental_base():
-        # Insert --base before --wait so the flags stay grouped with the type.
-        wait_idx = cmd.index('--wait')
-        cmd.insert(wait_idx, '--base')
-    cmd += _compression_flags(config)
+        cmd.append('--base')
+    cmd += ['--wait'] + _compression_flags(config)
 
     try:
         proc = subprocess.Popen(cmd)
