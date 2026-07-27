@@ -49,11 +49,12 @@ def _sha256_file(path: Path) -> str:
 def generate_manifest() -> int:
     """Write the built-in snippets checksum manifest under ``snippets/``.
 
-    Skip the manifest file itself so regenerating does not hash the previous
-    output. Raise ``SystemExit`` when ``snippets/`` is missing.
+    Skip the manifest file itself. Raise ``SystemExit`` when ``snippets/`` is
+    missing.
 
     :return: The number of snippet files hashed into the manifest.
     :raises SystemExit: If the snippets directory does not exist.
+    :raises OSError: If a snippet file or the manifest cannot be read or written.
     """
     if not SNIPPETS_DIR.is_dir():
         raise SystemExit(f"Snippets directory not found: {SNIPPETS_DIR}")
@@ -73,7 +74,11 @@ def generate_manifest() -> int:
 
 
 def main() -> None:
-    """Regenerate the checksum manifest and print how many files were hashed."""
+    """Regenerate the checksum manifest and print how many files were hashed.
+
+    :raises SystemExit: If the snippets directory is missing.
+    :raises OSError: If a snippet file or the manifest cannot be read or written.
+    """
     count = generate_manifest()
     print(f"Wrote {count} checksums to {MANIFEST_PATH.relative_to(REPO_ROOT)}")
 
