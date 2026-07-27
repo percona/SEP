@@ -24,9 +24,13 @@ storage-apply helper between :data:`CONFIG_APPLY_BEGIN` / :data:`CONFIG_APPLY_EN
 (carried only by the config/logical/physical payloads that apply the config), and
 the :func:`_append_pbm_restore_yes_if_supported` probe between
 :data:`RESTORE_YES_BEGIN` / :data:`RESTORE_YES_END` (logical/physical restore
-payloads only). All are materialized verbatim into each payload's marked region by
+payloads only), and the textfile-collector metric writer between
+:data:`TEXTFILE_BEGIN` / :data:`TEXTFILE_END` (the logical/physical/snapshot backup
+payloads that emit PMM stale-backup metrics). All are materialized verbatim into each payload's marked region by
 ``scripts/gen_pbm_payloads.py`` and guarded in-sync (and behaviorally) by
-``tests/app/sep/apps/backup_mongo/test_pbm_payload_preamble.py``.
+``tests/app/sep/apps/backup_mongo/test_pbm_payload_preamble.py`` (creds/config/restore
+regions) and ``tests/app/sep/apps/backup_mongo/test_pbm_textfile_collector.py`` (the
+textfile-collector region).
 
 A hardening fix to credential handling therefore lands here once and propagates
 to all nine payloads via the regen step, instead of drifting across nine copies.
@@ -46,6 +50,7 @@ already imports, so the extracted region drops into a payload unchanged.
 import os
 import subprocess  # nosec B404
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -56,6 +61,8 @@ CONFIG_APPLY_BEGIN = "# --- BEGIN GENERATED PBM CONFIG APPLY ---"
 CONFIG_APPLY_END = "# --- END GENERATED PBM CONFIG APPLY ---"
 RESTORE_YES_BEGIN = "# --- BEGIN GENERATED PBM RESTORE YES ---"
 RESTORE_YES_END = "# --- END GENERATED PBM RESTORE YES ---"
+TEXTFILE_BEGIN = "# --- BEGIN GENERATED PBM TEXTFILE COLLECTOR ---"
+TEXTFILE_END = "# --- END GENERATED PBM TEXTFILE COLLECTOR ---"
 
 
 # --- BEGIN GENERATED PBM CREDS PREAMBLE ---
@@ -159,7 +166,7 @@ def _apply_pbm_config(config: dict) -> None:
     :param config: The parsed task config; SEP-only and ``None``-valued keys are
         dropped before it is written to the PBM config file.
     """
-    sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
+    sep_only_keys = frozenset({"credentials_path", "credentialsPath", "alias", "ALIAS"})
     pbm_config = {
         k: v for k, v in config.items() if k not in sep_only_keys and v is not None
     }
@@ -236,6 +243,157 @@ def _append_pbm_restore_yes_if_supported(cmd: list[str]) -> None:
 # --- END GENERATED PBM RESTORE YES ---
 
 
+# --- BEGIN GENERATED PBM TEXTFILE COLLECTOR ---
+_TEXTFILE_COLLECTOR_DEFAULT_SUBPATH = "pmm/collectors/textfile-collector/low-resolution"
+
+
+def _textfile_collector_dir() -> str:
+    """Return the PMM textfile-collector directory for backup ``.prom`` files.
+
+    Mirror the MySQL/PostgreSQL payloads: honour
+    ``PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR`` and otherwise fall back to the PMM
+    low-resolution collector under ``$HOME``. The path is trailing-slash
+    normalised so it can be joined with a filename.
+
+    :return: The collector directory path, ending in a trailing slash.
+    """
+    base = os.environ.get("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR")
+    if not base:
+        base = os.path.join(
+            os.environ.get("HOME", ""), _TEXTFILE_COLLECTOR_DEFAULT_SUBPATH
+        )
+    if not base.endswith("/"):
+        base += "/"
+    return base
+
+
+def _metric_alias() -> str:
+    """Return the host alias for metric labels.
+
+    Prefer the ``alias`` the SEP spec builder stamps into ``NOMAD_META_CONFIG``;
+    the metrics reuse it so the PMM ``StaleBackup`` rules can join the enable and
+    last-report series ``on(type, alias)``. Tasks created before the alias was
+    stamped carry no ``alias`` key in their stored config, so fall back to
+    ``NOMAD_META_TARGET`` -- the same host identity Nomad always sets as the task
+    target -- rather than emit an unidentifiable empty label. Returns ``""`` only
+    when neither is resolvable, so a missing label never aborts the backup.
+
+    :return: The alias string, or ``""`` when it cannot be resolved.
+    """
+    raw = os.environ.get("NOMAD_META_CONFIG")
+    if raw:
+        try:
+            config = yaml.safe_load(raw)
+        except yaml.YAMLError:
+            config = None
+        if isinstance(config, dict) and config.get("alias"):
+            return str(config["alias"])
+    return os.environ.get("NOMAD_META_TARGET", "")
+
+
+def _escape_label_value(value: str) -> str:
+    """Return ``value`` escaped for use as a Prometheus label value.
+
+    The text-exposition format requires backslash, double-quote and newline in a
+    label value to be escaped; an un-escaped host alias carrying any of them would
+    otherwise produce a ``.prom`` file the collector rejects wholesale.
+
+    :param value: The raw label value (the host alias).
+    :return: The escaped label value.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _safe_filename_alias(value: str) -> str:
+    """Return ``value`` with characters unsafe in a ``.prom`` filename replaced.
+
+    The alias reaches the filename from host-controlled task config: a path
+    separator would redirect the write outside the collector directory and a NUL
+    byte would make ``open`` raise, so both (and stray newlines) collapse to
+    ``_``.
+
+    :param value: The raw alias.
+    :return: The alias safe to embed in a filename.
+    """
+    for unsafe in ("\x00", "/", "\n", "\r"):
+        value = value.replace(unsafe, "_")
+    return value
+
+
+def _write_textfile_metric(filename: str, body: str) -> None:
+    """Write a ``.prom`` file into the collector directory, best-effort.
+
+    Skip silently when the collector directory is absent (mirroring the
+    MySQL/PG ``check_textcollector_dir`` guard) and swallow any write error --
+    including a ``ValueError`` from a NUL byte that slipped into the path -- so
+    metric emission never changes the backup's exit status or aborts the run.
+
+    :param filename: The ``.prom`` file name to write under the collector dir.
+    :param body: The Prometheus text-exposition content to write.
+    """
+    collector_dir = _textfile_collector_dir()
+    if not os.path.isdir(collector_dir):
+        return
+    try:
+        with open(os.path.join(collector_dir, filename), "w", encoding="utf-8") as out:
+            out.write(body)
+    except (OSError, ValueError) as err:
+        print(
+            f"Failed to write textfile-collector metric {filename}: {err}",
+            file=sys.stderr,
+        )
+
+
+def write_backup_enabled(backup_type: str) -> None:
+    """Mark this backup type enabled via ``msp_backup_enabled`` (best-effort).
+
+    The PMM ``StaleBackup`` rules join ``on(type, alias) msp_backup_enabled == 1``,
+    so this series must exist for the stale-backup alert to fire for this backup.
+
+    :param backup_type: The stable ``type`` label for this PBM backup type.
+    """
+    alias = _metric_alias()
+    label_alias = _escape_label_value(alias)
+    body = (
+        "# HELP msp_backup_enabled The status of the cron\n"
+        "# TYPE msp_backup_enabled Untyped\n"
+        f'msp_backup_enabled{{type="{backup_type}", alias="{label_alias}"}} 1\n'
+    )
+    _write_textfile_metric(
+        f"driver.backup.{backup_type}.{_safe_filename_alias(alias)}.prom", body
+    )
+
+
+def write_backup_status(backup_type: str, status: int) -> None:
+    """Write ``msp_backup_status`` and ``msp_backup_last_report_ts`` (best-effort).
+
+    Mirror the MySQL/PG status metrics so the PMM stale-backup rules see a fresh
+    report timestamp and an outcome code for this backup type. The outcome code is
+    ``0`` on success and ``1`` on failure -- matching the PostgreSQL payload and
+    the ``msp_backup_status`` report's ``{"0": pass, "1": fail}`` mapping.
+
+    :param backup_type: The stable ``type`` label for this PBM backup type.
+    :param status: The outcome code (``0`` on success, ``1`` on failure).
+    """
+    alias = _metric_alias()
+    label_alias = _escape_label_value(alias)
+    body = (
+        "# HELP msp_backup_status The status of the job\n"
+        "# TYPE msp_backup_status Untyped\n"
+        "# HELP msp_backup_last_report_ts The Last Report Time\n"
+        "# TYPE msp_backup_last_report_ts Untyped\n"
+        f'msp_backup_status{{type="{backup_type}", alias="{label_alias}"}} {status}\n'
+        f'msp_backup_last_report_ts{{type="{backup_type}", alias="{label_alias}"}} '
+        f"{int(time.time())}\n"
+    )
+    _write_textfile_metric(
+        f"backup.{backup_type}.{_safe_filename_alias(alias)}.prom", body
+    )
+
+
+# --- END GENERATED PBM TEXTFILE COLLECTOR ---
+
+
 def _region_between(begin_marker: str, end_marker: str) -> str:
     """Return this module's source strictly between ``begin_marker`` and ``end_marker``.
 
@@ -285,3 +443,12 @@ def restore_yes_source() -> str:
     :raises ValueError: When either marker is missing from the module source.
     """
     return _region_between(RESTORE_YES_BEGIN, RESTORE_YES_END)
+
+
+def textfile_source() -> str:
+    """Return the canonical generated textfile-collector metric-writer region text.
+
+    :return: The metric-writer body text, stripped of leading/trailing blanks.
+    :raises ValueError: When either marker is missing from the module source.
+    """
+    return _region_between(TEXTFILE_BEGIN, TEXTFILE_END)

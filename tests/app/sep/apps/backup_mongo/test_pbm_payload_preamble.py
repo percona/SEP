@@ -16,8 +16,6 @@
 """Define tests for the shared PBM creds preamble across the nine backup_mongo payloads."""
 
 import builtins
-import importlib.util
-import sys
 from pathlib import Path
 
 import pytest
@@ -30,16 +28,12 @@ from app.sep.apps.backup_mongo.pbm_creds_common import (
     PREAMBLE_END,
     preamble_source,
 )
-
-_PROJECT_ROOT = Path(__file__).resolve().parents[5]
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "gen_pbm_payloads.py"
-
-_spec = importlib.util.spec_from_file_location("gen_pbm_payloads", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-gen_pbm_payloads = importlib.util.module_from_spec(_spec)
-sys.modules["gen_pbm_payloads"] = gen_pbm_payloads
-_spec.loader.exec_module(gen_pbm_payloads)
+from tests.app.sep.apps.backup_mongo._payload_codegen import (
+    assignment_line,
+    GEN,
+    payloads_with,
+    region_between,
+)
 
 _EXPECTED_PAYLOADS = {
     "pbm_config_payload",
@@ -70,39 +64,8 @@ def _shipped_payloads() -> list[Path]:
     """Return the opted-in payloads discovered under the real backup_mongo app.
 
     :return: The payload paths carrying the BEGIN marker line.
-    :rtype: list[Path]
     """
-    return gen_pbm_payloads.find_payloads(
-        gen_pbm_payloads.DEFAULT_SEARCH_ROOT, PREAMBLE_BEGIN
-    )
-
-
-def _region_of(text: str) -> str:
-    """Extract the text strictly between the preamble markers in ``text``.
-
-    :param text: The payload source to slice.
-    :type text: str
-    :return: The region body, matching :func:`preamble_source`'s framing.
-    :rtype: str
-    """
-    lines = text.split("\n")
-    begin = lines.index(PREAMBLE_BEGIN)
-    end = lines.index(PREAMBLE_END, begin + 1)
-    return "\n".join(lines[begin + 1 : end]).strip("\n")
-
-
-def _pbm_mongodb_uri_assignment(text: str) -> str:
-    """Return the ``PBM_MONGODB_URI`` assignment line from a payload script.
-
-    :param text: The payload source to scan.
-    :type text: str
-    :return: The stripped assignment line.
-    :rtype: str
-    """
-    for line in text.splitlines():
-        if "PBM_MONGODB_URI" in line and "=" in line:
-            return line.strip()
-    raise AssertionError("no PBM_MONGODB_URI assignment found")
+    return payloads_with(PREAMBLE_BEGIN)
 
 
 class TestInSyncGuard:
@@ -110,7 +73,7 @@ class TestInSyncGuard:
 
     def test_check_mode_reports_no_drift(self) -> None:
         """``gen_pbm_payloads.py --check`` exits 0 for the checked-in tree."""
-        assert gen_pbm_payloads.main(["--check"]) == 0
+        assert GEN.main(["--check"]) == 0
 
     def test_discovers_exactly_the_nine_payloads(self) -> None:
         """Discover the nine credential-bearing payloads and nothing else."""
@@ -120,14 +83,14 @@ class TestInSyncGuard:
 
     def test_snapshot_payload_is_markerless(self) -> None:
         """``pbm_snapshot_payload`` stays out of scope (no preamble markers)."""
-        snapshot = gen_pbm_payloads.DEFAULT_SEARCH_ROOT / "pbm_snapshot_payload"
+        snapshot = GEN.DEFAULT_SEARCH_ROOT / "pbm_snapshot_payload"
         assert snapshot.is_file()
         assert PREAMBLE_BEGIN not in snapshot.read_text(encoding="utf-8").splitlines()
 
     def test_canonical_source_is_not_treated_as_a_payload(self) -> None:
         """The canonical module defines the region but is never a rewrite target."""
         found = {path.resolve() for path in _shipped_payloads()}
-        assert gen_pbm_payloads.CANONICAL_SOURCE.resolve() not in found
+        assert GEN.CANONICAL_SOURCE.resolve() not in found
 
 
 class TestPerPayloadAssembly:
@@ -136,15 +99,16 @@ class TestPerPayloadAssembly:
     @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
     def test_region_matches_canonical(self, payload: Path) -> None:
         """The block between a payload's markers equals ``preamble_source()``."""
-        assert _region_of(payload.read_text(encoding="utf-8")) == preamble_source()
+        region = region_between(
+            payload.read_text(encoding="utf-8"), PREAMBLE_BEGIN, PREAMBLE_END
+        )
+        assert region == preamble_source()
 
     @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
     def test_render_is_idempotent(self, payload: Path) -> None:
         """Re-rendering an in-sync payload is a no-op (round-trip stable)."""
         current = payload.read_text(encoding="utf-8")
-        rendered = gen_pbm_payloads.render(
-            current, preamble_source(), PREAMBLE_BEGIN, PREAMBLE_END
-        )
+        rendered = GEN.render(current, preamble_source(), PREAMBLE_BEGIN, PREAMBLE_END)
         assert rendered == current
 
     @pytest.mark.parametrize(
@@ -156,7 +120,9 @@ class TestPerPayloadAssembly:
     ) -> None:
         """Assert each payload wires credentials via the expected resolver call."""
         payload = next(p for p in _shipped_payloads() if p.name == payload_name)
-        assignment = _pbm_mongodb_uri_assignment(payload.read_text(encoding="utf-8"))
+        assignment = assignment_line(
+            payload.read_text(encoding="utf-8"), "PBM_MONGODB_URI"
+        )
         assert expected_call in assignment
 
 

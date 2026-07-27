@@ -298,8 +298,10 @@ class TestRealSpecThreadsStorageIntoConfigFile:
         applied = yaml.safe_load((tmp_path / "script_config").read_text())
         assert applied["storage"]["s3"]["bucket"] == "backups"
         assert applied["storage"]["s3"]["region"] == "eu-west-1"
-        # SEP-only keys must not leak into the PBM config file.
+        # SEP-only keys must not leak into the PBM config file. ``alias`` is a
+        # metric-label key the payload reads directly; ``pbm config`` rejects it.
         assert "credentials_path" not in applied
+        assert "alias" not in applied
 
 
 class TestApplyHelperNoDrift:
@@ -358,6 +360,7 @@ class TestApplyPbmConfigCanonical:
             {
                 "storage": {"type": "s3", "s3": {"bucket": "backups"}},
                 "credentials_path": "/creds/uri",
+                "alias": "mongo-host",
                 "pitr": None,
             }
         )
@@ -366,6 +369,7 @@ class TestApplyPbmConfigCanonical:
         written = yaml.safe_load((tmp_path / "script_config").read_text())
         assert written == {"storage": {"type": "s3", "s3": {"bucket": "backups"}}}
         assert "credentials_path" not in written
+        assert "alias" not in written
         assert "pitr" not in written
 
     def test_exits_when_task_dir_unset(

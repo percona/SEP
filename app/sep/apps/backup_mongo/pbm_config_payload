@@ -105,7 +105,7 @@ def _apply_pbm_config(config: dict) -> None:
     :param config: The parsed task config; SEP-only and ``None``-valued keys are
         dropped before it is written to the PBM config file.
     """
-    sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
+    sep_only_keys = frozenset({"credentials_path", "credentialsPath", "alias", "ALIAS"})
     pbm_config = {
         k: v for k, v in config.items() if k not in sep_only_keys and v is not None
     }
