@@ -1715,7 +1715,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             streamed content. Defaults to ``True``, as every read served to a user
             must be redacted; internal reads of content SEP itself produced may opt
             out to get the bytes back verbatim.
-        :yield: Chunks of the file as bytes.
+        :return: An async generator yielding chunks of the file as bytes.
         """
         alloc = self.get_allocation_for_task_history(queue_item)
         alloc_id = alloc["ID"]

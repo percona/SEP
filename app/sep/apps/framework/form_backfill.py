@@ -254,6 +254,7 @@ def _task_write_from_task(task: Task, data: dict[str, Any]) -> TaskWrite:
         alert_on_fail=task.alert_on_fail,
         alert_detail_builder=task.alert_detail_builder,
         run_result_recorder=task.run_result_recorder,
+        output_files_path=task.output_files_path,
         anonymize_mask=task.anonymize_mask,
     )
 

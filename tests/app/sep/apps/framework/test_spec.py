@@ -57,7 +57,11 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_PORT_KEY,
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
-from app.tasks.models import TaskBackendEnum, TaskWrite
+from app.tasks.models import (
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
+    TaskBackendEnum,
+    TaskWrite,
+)
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
@@ -821,6 +825,67 @@ class TestAssembleEnvelopeRunResultRecorder:
         )
 
         assert write.run_result_recorder is None
+
+
+class TestEnvelopeOutputFilesPath:
+    """Cover the ``output_files_path`` the envelope derives from its task name.
+
+    The framework stamps the path so a task is created knowing where its output
+    files land. Without it ``POST /tasks`` persists ``None`` and the tasks
+    service can neither list, download, nor read a run result back.
+    """
+
+    @staticmethod
+    def _service_entities() -> ResolvedEntities:
+        """Return resolved entities carrying one MySQL service."""
+        return ResolvedEntities(
+            service=_service(
+                address="db-host",
+                service_type=ServiceTypeEnum.MYSQL,
+                name="svc-1",
+                port=3306,
+            ),
+            entities={},
+        )
+
+    def test_run_python_envelope_carries_the_path(self) -> None:
+        """Assert a run-python envelope is stamped with the run-script path."""
+        write = assemble_envelope(
+            RunPythonSpec(config="", requirements="", payload="file:///p"),
+            self._service_entities(),
+            name="task-1",
+            owner="BACKUPS",
+        )
+
+        assert write.output_files_path == RUN_SCRIPT_OUTPUT_FILES_PATH
+
+    def test_run_command_envelope_carries_no_path(self) -> None:
+        """Assert a run-command envelope is left unstamped.
+
+        Its job spec pins no ``work_dir``, so there is no output-files directory
+        to point at.
+        """
+        write = assemble_envelope(
+            RunCommandSpec(command="cmd", args=""),
+            self._service_entities(),
+            name="task-1",
+            owner="BACKUPS",
+        )
+
+        assert write.output_files_path is None
+
+    def test_connectivity_optional_builder_carries_the_path(self) -> None:
+        """Assert the service-free run-python builder stamps the path too."""
+        write = build_run_python_task(
+            name="task-1",
+            owner="BACKUPS",
+            target="db-host",
+            config="",
+            requirements="",
+            payload="file:///p",
+        )
+
+        assert write.output_files_path == RUN_SCRIPT_OUTPUT_FILES_PATH
 
 
 class _ArgForm(AppFormModel):

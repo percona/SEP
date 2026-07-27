@@ -19,6 +19,7 @@
     },
     "is_template": false,
     "name": "backup-pg-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUP_PG",
     "protected": false,
     "run_result_recorder": null
@@ -43,6 +44,7 @@
     },
     "is_template": false,
     "name": "backup-pg-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUP_PG",
     "protected": false,
     "run_result_recorder": null
@@ -67,6 +69,7 @@
     },
     "is_template": false,
     "name": "backup-pg-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUP_PG",
     "protected": false,
     "run_result_recorder": null

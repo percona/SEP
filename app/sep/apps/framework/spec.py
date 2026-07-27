@@ -69,7 +69,11 @@ from app.sep.connectivity import (
 from app.sep.deps import get_created_entity, InventoryAPI
 from app.sep.inventory import CreatedEntity, CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.models import TaskBackendEnum, TaskWrite
+from app.tasks.models import (
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
+    TaskBackendEnum,
+    TaskWrite,
+)
 
 __all__ = [
     "RESERVED_FORM_KEY",
@@ -89,6 +93,11 @@ __all__ = [
 RESERVED_FORM_KEY = "_form"
 _RUN_COMMAND_TASK = "run-command"
 RUN_PYTHON_TASK = "run-python"
+
+#: Envelope task names whose job spec pins a working directory, and so run under
+#: an output-files path SEP can read back. Only ``run-python`` qualifies of the
+#: two the framework emits; ``run-command`` pins no ``work_dir``.
+_OUTPUT_FILES_PATH_BY_TASK = {RUN_PYTHON_TASK: RUN_SCRIPT_OUTPUT_FILES_PATH}
 
 _REF_ENTITY_TYPES = {
     ServiceRef: SyncInventoryEntityTypeEnum.SERVICE,
@@ -396,6 +405,11 @@ def assemble_envelope(
     ``args`` and any ``extra_meta`` for run-command; ``config`` / ``requirements``
     / ``payload`` for run-python).
 
+    Stamp ``output_files_path`` from the envelope's task name, so a task whose job
+    spec pins a working directory is created knowing where its output files land —
+    which is what makes them listable, downloadable, and readable as a run result.
+    A run-command envelope pins none and is left unstamped.
+
     :param spec: The verb-specific envelope contract produced by the app's spec
         builder.
     :param resolved: The resolved inventory entities; the service drives the
@@ -450,6 +464,7 @@ def assemble_envelope(
         alert_on_fail=alert_on_fail,
         alert_detail_builder=alert_detail_builder,
         run_result_recorder=run_result_recorder,
+        output_files_path=_OUTPUT_FILES_PATH_BY_TASK.get(data["task"]),
     )
 
 
@@ -474,6 +489,8 @@ def build_run_python_task(
     the task apps whose
     tasks resolve no ``ServiceRef`` and so cannot go through
     :func:`assemble_envelope`, which requires a service for its connectivity meta.
+    ``output_files_path`` is stamped as it is there — always, since every envelope
+    this builds is run-python.
 
     :param name: The task name.
     :param owner: The task owner.
@@ -518,6 +535,7 @@ def build_run_python_task(
         backend=TaskBackendEnum.PROXY,
         data=data,
         alert_on_fail=alert_on_fail,
+        output_files_path=_OUTPUT_FILES_PATH_BY_TASK[RUN_PYTHON_TASK],
     )
 
 

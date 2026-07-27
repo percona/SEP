@@ -155,11 +155,19 @@ class TestReadRunResult:
 
 
 @asynccontextmanager
-async def _recorder_db(*, recorder: str | None, status: TaskHistoryStatusEnum):
+async def _recorder_db(
+    *,
+    recorder: str | None,
+    status: TaskHistoryStatusEnum,
+    output_files_path: str | None = _OUTPUT_FILES_PATH,
+):
     """Yield ``(maker, history_id)`` for a task stamped with ``recorder``.
 
-    Build an in-memory tasks DB with one output-file-producing task carrying
-    ``run_result_recorder`` and a history at ``status``.
+    Build an in-memory tasks DB with one task carrying ``run_result_recorder``
+    and a history at ``status``. The task is created the way production creates
+    one — through ``TaskWrite``, with no post-create attribute patching — so a
+    field the write model cannot carry would surface here as it does in
+    production.
     """
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -174,11 +182,13 @@ async def _recorder_db(*, recorder: str | None, status: TaskHistoryStatusEnum):
         task = await TaskManager.create(
             session,
             TaskWrite.model_validate(
-                TaskFactory.build(name="recorder-task", run_result_recorder=recorder)
+                TaskFactory.build(
+                    name="recorder-task",
+                    run_result_recorder=recorder,
+                    output_files_path=output_files_path,
+                )
             ),
         )
-        task.output_files_path = _OUTPUT_FILES_PATH
-        task = await TaskManager.save(session, task)
         saved = await TaskHistoryManager.save(
             session, build_task_history(task, status=status)
         )
@@ -313,6 +323,62 @@ class TestMaybeRecordRun:
             await maybe_record_run(  # must not raise
                 history_id, _fake_executor(_yielding(_result_bytes()))
             )
+
+    @pytest.mark.asyncio
+    async def test_output_files_path_survives_task_creation(self, mocker):
+        """Read the result of a task whose path came only through ``TaskWrite``.
+
+        Guards the regression where ``output_files_path`` was declared on ``Task``
+        but not ``TaskBase``: ``POST /tasks`` then dropped it, every app-created
+        task carried ``None``, and the recorder was handed ``None`` after every
+        successful run. Nothing here patches the attribute after create, so the
+        field can only arrive via the write model.
+        """
+        seen = []
+
+        async def _recorder(session, history, result):
+            seen.append((history.task.output_files_path, result))
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder})
+        async with _recorder_db(
+            recorder="pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
+        ) as (maker, history_id):
+            mocker.patch(
+                "app.tasks.run_result.get_async_session_maker", return_value=maker
+            )
+            await maybe_record_run(
+                history_id, _fake_executor(_yielding(_result_bytes()))
+            )
+
+        assert seen == [(_OUTPUT_FILES_PATH, _RESULT)]
+
+    @pytest.mark.asyncio
+    async def test_recorder_gets_none_when_task_declares_no_output_path(self, mocker):
+        """Invoke the recorder with ``None`` for a task that has no output path.
+
+        A row created before ``output_files_path`` reached the write model, or a
+        spec whose job pins no working directory, has nothing to read back — the
+        sync still completes and the recorder still fires.
+        """
+        seen = []
+
+        async def _recorder(session, history, result):
+            seen.append(result)
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder})
+        executor = _fake_executor(_yielding(_result_bytes()))
+        async with _recorder_db(
+            recorder="pkg:rec",
+            status=TaskHistoryStatusEnum.SUCCESS,
+            output_files_path=None,
+        ) as (maker, history_id):
+            mocker.patch(
+                "app.tasks.run_result.get_async_session_maker", return_value=maker
+            )
+            await maybe_record_run(history_id, executor)
+
+        assert seen == [None]
+        executor.stream_file.assert_not_called()
 
 
 def _flip_status(target: TaskHistoryStatusEnum, *, result: dict | None = None):

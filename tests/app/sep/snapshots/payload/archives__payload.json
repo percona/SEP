@@ -20,6 +20,7 @@
     },
     "is_template": false,
     "name": "arch-6",
+    "output_files_path": "run-script/local/output_files",
     "owner": "ARCHIVER",
     "protected": false,
     "run_result_recorder": null
@@ -45,6 +46,7 @@
     },
     "is_template": false,
     "name": "arch-4",
+    "output_files_path": "run-script/local/output_files",
     "owner": "ARCHIVER",
     "protected": false,
     "run_result_recorder": null
@@ -70,6 +72,7 @@
     },
     "is_template": false,
     "name": "arch-5",
+    "output_files_path": "run-script/local/output_files",
     "owner": "ARCHIVER",
     "protected": false,
     "run_result_recorder": null
@@ -95,6 +98,7 @@
     },
     "is_template": false,
     "name": "arch-3",
+    "output_files_path": "run-script/local/output_files",
     "owner": "ARCHIVER",
     "protected": false,
     "run_result_recorder": null
@@ -120,6 +124,7 @@
     },
     "is_template": false,
     "name": "arch-2",
+    "output_files_path": "run-script/local/output_files",
     "owner": "ARCHIVER",
     "protected": false,
     "run_result_recorder": null
@@ -145,6 +150,7 @@
     },
     "is_template": false,
     "name": "arch-1",
+    "output_files_path": "run-script/local/output_files",
     "owner": "ARCHIVER",
     "protected": false,
     "run_result_recorder": null

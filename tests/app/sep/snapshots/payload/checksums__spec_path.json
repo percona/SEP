@@ -20,6 +20,7 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
     "protected": false,
     "run_result_recorder": null
@@ -45,6 +46,7 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
     "protected": false,
     "run_result_recorder": null
@@ -70,6 +72,7 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
     "protected": false,
     "run_result_recorder": null
@@ -95,6 +98,7 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
     "protected": false,
     "run_result_recorder": null
@@ -120,6 +124,7 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
     "protected": false,
     "run_result_recorder": null
@@ -145,6 +150,7 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
     "protected": false,
     "run_result_recorder": null
@@ -170,6 +176,7 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
     "protected": false,
     "run_result_recorder": null
