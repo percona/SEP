@@ -28,10 +28,13 @@ carried as ``extra_routes``. ``GET /capabilities`` is wired through the framewor
 
 ``owner=ANY_OWNER``: a script app's derived routes never consume the owner
 (it only seeds the unused per-owner task dependency), and snippets declares no
-owner of its own — ``ANY`` is the honest "no owner restriction" value.
+owner of its own — ``ANY`` is the honest "no owner restriction" value. The
+snippets sync beat schedule is contributed via ``periodic_task_schedules``.
 """
 
+from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
 from app.sep.apps.framework.apps import TaskExecutionApp
+from app.sep.apps.framework.registry import app_celery_module_for
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.apps.snippets.extra_routes import (
@@ -59,6 +62,29 @@ def _snippets_capabilities_provider() -> SnippetsCapabilitiesResponse:
     )
 
 
+def _snippets_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
+    """Build the snippets sync beat schedule, reading the live sync interval.
+
+    :return: The ``sep__sync_snippets`` schedule, or an empty list when snippets
+        owns no Celery module.
+    """
+    snippets_celery = app_celery_module_for("snippets")
+    if not snippets_celery:
+        return []
+    return [
+        SystemPeriodicTaskSchedule(
+            schedule=snippets_settings.SYNC_INTERVAL,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="sep__sync_snippets",
+                    task_name=f"{snippets_celery}.sync_snippets",
+                    owner_app_key="snippets",
+                ),
+            ],
+        ),
+    ]
+
+
 app = TaskExecutionApp(
     name="snippets",
     display_name="Snippet Manager",
@@ -74,4 +100,5 @@ app = TaskExecutionApp(
     extra_routes=(approval_router, maintenance_router, artifact_router),
     jinja_router=jinja_router,
     artifact_base_dirs={ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR},
+    periodic_task_schedules=_snippets_periodic_tasks,
 )

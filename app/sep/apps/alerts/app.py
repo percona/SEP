@@ -17,13 +17,43 @@
 
 Register the bespoke alerts plugin through the registry's definition path
 (``getattr(module, "app")``) instead of the synthesized-legacy fallback,
-exposing the same JSON and Jinja routers the registry imports today.
+exposing the same JSON and Jinja routers the registry imports today, and
+contribute the alert-config backup beat schedule via
+``periodic_task_schedules``.
 """
 
+from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
 from app.sep.apps.alerts.api_routes import router as api_router
 from app.sep.apps.alerts.routes import router as jinja_router
 from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.registry import app_celery_module_for
 from app.sep.apps.nav_icons import NavIcon
+
+
+def _alerts_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
+    """Build the alert-config backup beat schedule, reading the live interval.
+
+    :return: The ``sep__backup_alert_config`` schedule, or an empty list when
+        alerts owns no Celery module.
+    """
+    from app.sep.apps.alerts.config import alerts_settings
+
+    alerts_celery = app_celery_module_for("alerts")
+    if not alerts_celery:
+        return []
+    return [
+        SystemPeriodicTaskSchedule(
+            schedule=alerts_settings.BACKUP_INTERVAL,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="sep__backup_alert_config",
+                    task_name=f"{alerts_celery}.backup_alert_config",
+                    owner_app_key="alerts",
+                ),
+            ],
+        ),
+    ]
+
 
 app = BaseApp(
     name="alerts",
@@ -36,4 +66,5 @@ app = BaseApp(
     nav_icon=NavIcon.DESCRIPTION,
     api_router=api_router,
     jinja_router=jinja_router,
+    periodic_task_schedules=_alerts_periodic_tasks,
 )
