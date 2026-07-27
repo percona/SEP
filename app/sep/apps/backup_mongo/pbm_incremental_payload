@@ -1,5 +1,6 @@
 """ PBM Incremental Payload """
 
+import json
 import subprocess
 import os
 import sys
@@ -216,8 +217,8 @@ def _needs_incremental_base() -> bool:
         )
         sys.exit(1)
     try:
-        payload = yaml.safe_load(result.stdout or '') or {}
-    except yaml.YAMLError as err:
+        payload = json.loads(result.stdout or '') or {}
+    except json.JSONDecodeError as err:
         print(f'Failed to parse pbm list JSON: {err}', file=sys.stderr)
         sys.exit(1)
     snapshots = []
