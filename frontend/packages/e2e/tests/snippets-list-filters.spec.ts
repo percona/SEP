@@ -50,6 +50,7 @@ const LIST_BASE = '/api/apps/snippets';
 const LIST_PATH = `${LIST_BASE}/`;
 const SERVICE_TYPES_PATH = `${LIST_BASE}/service_types`;
 const CAPABILITIES_PATH = `${LIST_BASE}/capabilities`;
+const APPROVAL_PATH = `${LIST_BASE}/snippet/approval`;
 
 interface Snippet {
   filename: string;
@@ -263,6 +264,22 @@ async function installSnippetsMocks(
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ manual_sync_enabled: false }),
+      });
+    }
+    if (pathname === APPROVAL_PATH) {
+      // Mutate the fixture in place so the follow-up list refetch reflects the
+      // new approval state (mirrors the real idempotent PUT/DELETE).
+      const filename = url.searchParams.get('snippet_filename');
+      const target = dataset.find((s) => s.filename === filename);
+      if (target) {
+        const approving = route.request().method() === 'PUT';
+        target.is_approved = approving;
+        target.approved_at = approving ? '2026-01-02T00:00:00Z' : null;
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(target ?? {}),
       });
     }
     if (pathname === LIST_PATH) {
@@ -558,5 +575,47 @@ test.describe('Snippets list — server-side search / filter / pagination', () =
     await expect(page.getByText('No snippets available.')).toBeVisible();
     // With nothing to filter, the search box is not rendered at all.
     await expect(searchBox(page)).toHaveCount(0);
+  });
+
+  test('removing approval on the last filtered page snaps back instead of stranding an empty page', async ({
+    page,
+  }) => {
+    // 51 approved rows: under the Approved filter, page two holds exactly one row.
+    // Un-approving it shrinks the filtered total to a single page (50), so the
+    // page must clamp back rather than leave the user on the now-out-of-range
+    // second page.
+    const approvedOnly: Snippet[] = Array.from({ length: 51 }, (_v, i) =>
+      snip({
+        filename: `appr-${String(i).padStart(2, '0')}.sh`,
+        title: `Approved ${i}`,
+        is_approved: true,
+      }),
+    );
+    const { listRequests } = await installSnippetsMocks(page, {
+      dataset: approvedOnly,
+      isAdmin: true,
+    });
+    await gotoList(page);
+
+    await chooseOption(page, approvalSelect(page), 'Approved');
+    await expect.poll(() => lastRequest(listRequests)?.get('approval')).toBe('approved');
+    await expect(page.getByText(/1[–-]50 of 51/)).toBeVisible();
+
+    // Advance to the trailing page carrying the single 51st row.
+    await page.getByRole('button', { name: /go to next page/i }).click();
+    await expect.poll(() => lastRequest(listRequests)?.get('offset')).toBe('50');
+    await expect(page.getByText(/51[–-]51 of 51/)).toBeVisible();
+    await expect(page.getByText('appr-50.sh')).toBeVisible();
+
+    // Un-approve the only row on this page; it leaves the Approved view and the
+    // total drops to 50, orphaning offset 50.
+    await page.getByRole('button', { name: /remove/i }).click();
+
+    // The list snaps back to page one with rows visible — never a stranded empty
+    // page — and the last request the page issued sits at offset 0.
+    await expect(page.getByText(/1[–-]50 of 50/)).toBeVisible();
+    await expect(page.getByText('appr-00.sh')).toBeVisible();
+    await expect(page.getByText(/no snippets match the current filters/i)).toHaveCount(0);
+    await expect.poll(() => lastRequest(listRequests)?.get('offset')).toBe('0');
   });
 });

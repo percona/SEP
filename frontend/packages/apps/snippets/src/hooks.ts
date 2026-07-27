@@ -64,13 +64,39 @@ const SNIPPETS_LIST_QUERY_KEY = ['snippets', 'list'] as const;
 type SnippetsListCache = AppListResult<SnippetResponse>;
 type SnippetsListSnapshots = [QueryKey, SnippetsListCache | undefined][];
 
-function mapSnippetApprovalInList(
+/**
+ * Optimistically apply a single snippet's new approval state to one cached list
+ * page, respecting that page's own approval filter (read from its query key).
+ *
+ * Under an active approval filter the mutated row may no longer belong on the
+ * page: approving under "not approved" (or un-approving under "approved") drops
+ * the row and decrements the filtered `total` so the count stays honest; every
+ * other case (notably the "all" filter) flips `is_approved` in place, preserving
+ * instant feedback. Keeping the total in step also avoids stranding the user on
+ * an out-of-range page once the trailing page empties.
+ */
+function applyApprovalToList(
   current: SnippetsListCache | undefined,
+  queryKey: QueryKey,
   filename: string,
   isApproved: boolean,
 ): SnippetsListCache | undefined {
   if (!current) {
     return current;
+  }
+  const approval = (queryKey[2] as { approval?: SnippetApprovalFilter } | undefined)?.approval;
+  const excluded =
+    (approval === 'approved' && !isApproved) || (approval === 'not_approved' && isApproved);
+  if (excluded) {
+    const present = current.items.some((snippet) => snippet.filename === filename);
+    return {
+      ...current,
+      items: current.items.filter((snippet) => snippet.filename !== filename),
+      pagination:
+        present && current.pagination
+          ? { ...current.pagination, total: Math.max(0, current.pagination.total - 1) }
+          : current.pagination,
+    };
   }
   return {
     ...current,
@@ -78,6 +104,26 @@ function mapSnippetApprovalInList(
       snippet.filename === filename ? { ...snippet, is_approved: isApproved } : snippet,
     ),
   };
+}
+
+/**
+ * Optimistically apply an approval change across every cached snippets-list
+ * page. Each page is updated through its own query key so {@link applyApprovalToList}
+ * can honour that page's approval filter. Returns the pre-mutation snapshot for
+ * rollback.
+ */
+function optimisticallyApplyApproval(
+  queryClient: QueryClient,
+  filename: string,
+  isApproved: boolean,
+): SnippetsListSnapshots {
+  const previous = snapshotSnippetsLists(queryClient);
+  for (const [queryKey] of previous) {
+    queryClient.setQueryData<SnippetsListCache>(queryKey, (current) =>
+      applyApprovalToList(current, queryKey, filename, isApproved),
+    );
+  }
+  return previous;
 }
 
 function snapshotSnippetsLists(queryClient: QueryClient): SnippetsListSnapshots {
@@ -302,11 +348,7 @@ export function useApproveSnippet(filename: string) {
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
-      const previous = snapshotSnippetsLists(queryClient);
-      queryClient.setQueriesData<SnippetsListCache>(
-        { queryKey: SNIPPETS_LIST_QUERY_KEY },
-        (current) => mapSnippetApprovalInList(current, filename, true),
-      );
+      const previous = optimisticallyApplyApproval(queryClient, filename, true);
       return { previous };
     },
     onError: (_err, _vars, context) => {
@@ -331,11 +373,7 @@ export function useRemoveSnippetApproval(filename: string) {
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
-      const previous = snapshotSnippetsLists(queryClient);
-      queryClient.setQueriesData<SnippetsListCache>(
-        { queryKey: SNIPPETS_LIST_QUERY_KEY },
-        (current) => mapSnippetApprovalInList(current, filename, false),
-      );
+      const previous = optimisticallyApplyApproval(queryClient, filename, false);
       return { previous };
     },
     onError: (_err, _vars, context) => {

@@ -515,6 +515,105 @@ describe('snippet approval optimistic cache', () => {
     });
   });
 
+  it('drops the row and decrements total when approval no longer matches the filter', async () => {
+    const client = makeQueryClient();
+    // A "not approved" page: approving a row means it no longer belongs here.
+    const notApprovedKey = ['snippets', 'list', { offset: 0, limit: 50, approval: 'not_approved' }];
+    const notApprovedList = {
+      items: [
+        { filename: 'check.sh', is_approved: false },
+        { filename: 'other.sh', is_approved: false },
+      ],
+      pagination: { total: 2, offset: 0, limit: 50 },
+    } as AppListResult<SnippetResponse>;
+    client.setQueryData(notApprovedKey, notApprovedList);
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = () =>
+      new Promise(() => {
+        /* hang so optimistic data stays visible */
+      });
+    setTokenProvider(() => 'test-access-token');
+
+    const { result } = renderHook(() => useApproveSnippet('check.sh'), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData(notApprovedKey)).toEqual({
+        ...notApprovedList,
+        items: [notApprovedList.items[1]],
+        pagination: { total: 1, offset: 0, limit: 50 },
+      });
+    });
+  });
+
+  it('drops the row and decrements total when removing approval under the approved filter', async () => {
+    const client = makeQueryClient();
+    const approvedKey = ['snippets', 'list', { offset: 0, limit: 50, approval: 'approved' }];
+    const approvedList = {
+      items: [
+        { filename: 'check.sh', is_approved: true },
+        { filename: 'other.sh', is_approved: true },
+      ],
+      pagination: { total: 2, offset: 0, limit: 50 },
+    } as AppListResult<SnippetResponse>;
+    client.setQueryData(approvedKey, approvedList);
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = () =>
+      new Promise(() => {
+        /* hang so optimistic data stays visible */
+      });
+    setTokenProvider(() => 'test-access-token');
+
+    const { result } = renderHook(() => useRemoveSnippetApproval('check.sh'), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData(approvedKey)).toEqual({
+        ...approvedList,
+        items: [approvedList.items[1]],
+        pagination: { total: 1, offset: 0, limit: 50 },
+      });
+    });
+  });
+
+  it('flips in place under the "all" filter without touching total', async () => {
+    const client = makeQueryClient();
+    // No approval param on the key → the "all" view keeps the row, just flipped.
+    client.setQueryData(listKey, unapprovedList);
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = () =>
+      new Promise(() => {
+        /* hang so optimistic data stays visible */
+      });
+    setTokenProvider(() => 'test-access-token');
+
+    const { result } = renderHook(() => useApproveSnippet('check.sh'), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData(listKey)).toEqual({
+        ...unapprovedList,
+        items: [{ ...unapprovedList.items[0], is_approved: true }, unapprovedList.items[1]],
+        pagination: { total: 2, offset: 0, limit: 50 },
+      });
+    });
+  });
+
   it('rolls back the paginated list cache when approve fails', async () => {
     const client = makeQueryClient();
     client.setQueryData(listKey, unapprovedList);

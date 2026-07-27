@@ -914,6 +914,96 @@ describe('SnippetsListPage — server pagination', () => {
     expect(pager).toBeInTheDocument();
     expect(pager.textContent ?? '').not.toContain('NaN');
   });
+
+  it('snaps back to the last valid page when the filtered total shrinks below the offset', async () => {
+    // The server echoes the requested offset; `total` shrinks after a mutation.
+    let total = 120;
+    mockUseSnippets.mockImplementation(
+      (opts?: { offset?: number }) =>
+        snippetsListResult([unapprovedSnippet], {
+          total,
+          offset: opts?.offset ?? 0,
+          limit: 50,
+        }) as ReturnType<typeof useSnippets>,
+    );
+
+    const { rerender } = render(<SnippetsListPage />);
+
+    // Page to the second page (offset 50), still in range while total is 120.
+    fireEvent.click(screen.getByRole('button', { name: /go to next page/i }));
+    expect(mockUseSnippets).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 }));
+
+    // A mutation shrinks the filtered total to a single page; the next render
+    // surfaces it and the out-of-range offset must be clamped to page one.
+    total = 20;
+    mockUseSnippets.mockClear();
+    rerender(<SnippetsListPage />);
+
+    await waitFor(() => {
+      expect(mockUseSnippets).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0 }));
+    });
+    // The row is visible again rather than a stranded empty page.
+    expect(screen.getByText('check.sh')).toBeInTheDocument();
+    expect(screen.queryByText(/no snippets match the current filters/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('SnippetsListPage — service-type label normalization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseApproveSnippet.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useApproveSnippet>);
+    mockUseRemoveSnippetApproval.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRemoveSnippetApproval>);
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+  });
+
+  function renderWithServiceType(serviceType: string | null) {
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([{ ...unapprovedSnippet, service_type: serviceType }], {
+        total: 1,
+        offset: 0,
+        limit: 50,
+      }),
+    );
+    render(<SnippetsListPage />);
+  }
+
+  it('labels a spaces-only service type as Uncategorized', () => {
+    renderWithServiceType('   ');
+
+    expect(screen.getByText('Uncategorized')).toBeInTheDocument();
+  });
+
+  it('space-trims a padded service type for display', () => {
+    renderWithServiceType('  mysql  ');
+
+    expect(screen.getByText('mysql')).toBeInTheDocument();
+    expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument();
+  });
+
+  it('keeps a tab-only service type as a real value, not Uncategorized', () => {
+    // SQL TRIM (and the aligned frontend) strip spaces only, so a tab survives —
+    // the row is not folded into Uncategorized, matching the server facet.
+    renderWithServiceType('\t');
+
+    expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument();
+  });
 });
 
 describe('SnippetsListPage — loading and error states', () => {

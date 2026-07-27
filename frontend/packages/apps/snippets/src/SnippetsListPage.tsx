@@ -105,11 +105,17 @@ const SEARCH_DEBOUNCE_MS = 300;
 const UNCATEGORIZED_LABEL = 'Uncategorized';
 
 /**
- * Normalize a snippet's free-form `service_type` to a trimmed value, or
+ * Normalize a snippet's free-form `service_type` to a space-trimmed value, or
  * `null` when unset/blank (those snippets are grouped as "Uncategorized").
+ *
+ * Strips only U+0020 to mirror the backend facet/filter (SQL `TRIM`, which folds
+ * spaces only): a spaces-padded value reads as its trimmed self, an all-spaces
+ * value reads as "Uncategorized", and a tab/newline value survives verbatim —
+ * exactly as the server groups it — so the row label never disagrees with the
+ * Service filter.
  */
 function normalizeServiceType(snippet: SnippetResponse): string | null {
-  const value = snippet.service_type?.trim();
+  const value = snippet.service_type?.replace(/^\x20+|\x20+$/g, '');
   return value ? value : null;
 }
 
@@ -252,6 +258,22 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   });
   const snippets = listResult?.items ?? [];
   const listPagination = listResult?.pagination ?? null;
+
+  // Snap back to the last populated page when a mutation (approve / remove /
+  // batch) shrinks the filtered total below the current offset, so the user is
+  // never stranded on an out-of-range empty page. Filter-change resets are
+  // handled separately above; this covers total shrink at a fixed filter.
+  useEffect(() => {
+    if (!listPagination) {
+      return;
+    }
+    const { total, limit, offset } = listPagination;
+    const step = Math.max(limit, 1);
+    const lastOffset = total === 0 ? 0 : (Math.ceil(total / step) - 1) * step;
+    if (offset > lastOffset) {
+      setListPage((prev) => ({ ...prev, offset: lastOffset }));
+    }
+  }, [listPagination]);
   const batchApprove = useBatchApproveSnippets();
   const { data: capabilities } = useSnippetsCapabilities();
   const refresh = useRefreshSnippets();
@@ -694,7 +716,13 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
             <TablePagination
               component="div"
               count={listPagination.total}
-              page={Math.floor(listPagination.offset / Math.max(listPagination.limit, 1))}
+              page={Math.min(
+                Math.floor(listPagination.offset / Math.max(listPagination.limit, 1)),
+                Math.max(
+                  0,
+                  Math.ceil(listPagination.total / Math.max(listPagination.limit, 1)) - 1,
+                ),
+              )}
               rowsPerPage={listPagination.limit}
               onPageChange={(_event, newPage) => {
                 setListPage((prev) => ({
