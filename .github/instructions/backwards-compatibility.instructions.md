@@ -75,8 +75,8 @@ A feature that behaves differently by process (API vs Celery worker), deployment
 
 ## Severity guide
 
-**Critical:** Removed/renamed `*Response` field; NOT NULL without `server_default`; enum member removed/renamed; task payload gained a required field without default; config key renamed without fallback; system task renamed; constrained-vocabulary value retired via read-path coercion instead of a data migration.
+**Critical:** Removed/renamed `*Response` field; NOT NULL without `server_default`; enum member removed/renamed; task payload gained a required field without default; config key renamed without fallback; system or periodic task renamed in seed data; constrained-vocabulary value retired via read-path coercion instead of a data migration.
 
-**Important:** New required field on `*Write`; column dropped still referenced by current code; error status/detail changed; endpoint removed or URL path changed (including a router-level `prefix=` change on `APIRouter` / `include_router`, which silently re-paths every endpoint on that router); seed entry removed; Nomad parameter structure changed; behavioral asymmetry across processes/deployments/install-states not named in the changelog fragment.
+**Important:** New required field on `*Write`; column dropped still referenced by current code; error status/detail changed; endpoint removed or URL path changed (including a router-level `prefix=` change on `APIRouter` / `include_router`, which silently re-paths every endpoint on that router — confirm the re-path is required by the ticket, since path normalization bundled into unrelated work is also a scope question); seed entry removed; Nomad parameter structure changed; behavioral asymmetry across processes/deployments/install-states not named in the changelog fragment.
 
 **Should note:** New enum member (verify consumers handle unknown values); new optional `*Response` field (confirm the default serializes cleanly); config key added as required (confirm every deployment env will set it).

@@ -15,6 +15,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import type { SectionField, SepComponents } from '@sep/api';
+
+type Schemas = SepComponents['schemas'];
+
+// ── Category browser ─────────────────────────────────────────────────────
+
 export interface AtwSnippetSummary {
   /** Snippet filename; use with snippets app API path helpers. */
   name: string;
@@ -31,3 +37,39 @@ export interface AtwCategoryListing {
   snippet_count: number;
   snippets: AtwSnippetSummary[];
 }
+
+// ── Incidents ────────────────────────────────────────────────────────────
+
+export type AtwIncident = Schemas['atw__AtwIncidentResponse'];
+export type AtwIncidentWrite = Schemas['atw__AtwIncidentWrite'];
+export type AtwIncidentUpdate = Schemas['atw__AtwIncidentUpdate'];
+
+// ── Merged execution schema ──────────────────────────────────────────────
+
+/**
+ * The merged execution form for a batch selection. `shared` holds the
+ * batch-level execution fields plus every parameter the selection declares
+ * identically; `per_snippet` holds each snippet's remaining fields. The wire
+ * field union matches the framework `SectionField` shape the SchemaFormRenderer
+ * consumes, so both arrays are typed as `SectionField[]`.
+ */
+export interface AtwMergedSchema {
+  shared: SectionField[];
+  per_snippet: AtwSnippetSchema[];
+}
+
+export interface AtwSnippetSchema {
+  snippet_filename: string;
+  fields: SectionField[];
+}
+
+// ── Batch execution ──────────────────────────────────────────────────────
+
+export type AtwBatchExecuteWrite = Schemas['atw__ATWBatchExecuteWrite'];
+export type AtwBatchExecuteItemWrite = Schemas['atw__ATWBatchExecuteItemWrite'];
+export type AtwBatchExecuteResponse = Schemas['atw__ATWBatchExecuteResponse'];
+export type AtwBatchExecuteItemResponse = Schemas['atw__ATWBatchExecuteItemResponse'];
+
+// ── Incident execution history ───────────────────────────────────────────
+
+export type AtwIncidentExecution = Schemas['atw__ATWIncidentExecutionResponse'];

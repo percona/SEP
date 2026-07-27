@@ -31,6 +31,15 @@ def test_http_not_found_exception():
     assert type(exception).__name__ == "HTTPNotFoundException"
     assert exception.status_code == status.HTTP_404_NOT_FOUND
     assert exception.detail == "Resource not found"
+    assert exception.headers is None
+
+
+def test_http_not_found_exception_with_headers():
+    """Test HTTPNotFoundException preserves headers (e.g. a PMM ``X-Error-Code``)."""
+    exc = HTTPNotFoundException("Not Found", headers={"X-Error-Code": "5"})
+    assert exc.status_code == status.HTTP_404_NOT_FOUND
+    assert exc.detail == "Not Found"
+    assert exc.headers == {"X-Error-Code": "5"}
 
 
 def test_http_conflict_exception():

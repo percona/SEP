@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router';
 import { SnippetDetailPage } from './SnippetDetailPage';
 import { SnippetsListPage } from './SnippetsListPage';
 

@@ -24,7 +24,6 @@ this round-trips the actual command-assembly logic.
 """
 
 import ast
-import os
 import pathlib
 import subprocess
 from collections.abc import Callable
@@ -37,6 +36,7 @@ from app.sep.apps.backup_mongo.spec import (
     BackupMongoResolved,
     build_backup_mongo_spec,
 )
+from tests.app.sep.apps.backup_mongo.pbm_payload_exec import FakePopen, run_payload
 
 _APP_DIR = pathlib.Path(__file__).parents[5] / "app/sep/apps/backup_mongo"
 _PAYLOADS = {
@@ -188,27 +188,15 @@ def _exec_payload_capture_cmd(
     else:
         monkeypatch.setenv("NOMAD_META_CONFIG", nomad_meta_config)
 
-    captured: dict[str, list[str]] = {}
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda cmd, *a, **kw: FakePopen(cmd, *a, captured=captured, **kw),
+    )
 
-    class _FakePopen:
-        def __init__(self, cmd: list[str], *args: object, **kwargs: object):
-            captured["cmd"] = cmd
-
-        def wait(self) -> None:
-            return None
-
-        def poll(self) -> int:
-            return 0
-
-    monkeypatch.setattr(subprocess, "Popen", _FakePopen)
-
-    namespace: dict[str, object] = {}
-    path = _PAYLOADS[payload]
-    exec(compile(path.read_text(), str(path), "exec"), namespace)
-    os.environ.pop(
-        "PBM_MONGODB_URI", None
-    )  # payload sets this directly, outside monkeypatch
-    return captured["cmd"]
+    run_payload(_PAYLOADS[payload])
+    return captured[-1]
 
 
 def _run_pbm_capture_cmd(

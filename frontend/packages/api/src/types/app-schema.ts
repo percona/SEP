@@ -209,10 +209,26 @@ export interface MultiTableField extends BaseField {
 
 export interface HostField extends BaseField {
   type: 'host';
+  /**
+   * Optional upstream field whose value drives the default executor
+   * selection (typically a service field). Omitted when the host list is
+   * not cascaded.
+   */
+  depends_on?: string;
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allow_custom?: boolean;
 }
 
 export interface MultiHostField extends BaseField {
   type: 'multi_host';
+  /**
+   * Optional upstream field name mirrored from the schema. Cascade
+   * auto-select is single-host only; the multi-host renderer ignores this
+   * today. Omitted when unset.
+   */
+  depends_on?: string;
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allow_custom?: boolean;
 }
 
 // ── Read-only preview ───────────────────────────────────────────────────
@@ -344,8 +360,8 @@ export interface DetailField {
   /** Dotted path into the task record (e.g. ``"data.meta.command"``). */
   path: string;
   label: string;
-  /** Optional syntax-highlighter hint. */
-  highlight?: 'sql' | 'json' | 'bash';
+  /** Optional syntax-highlighter hint; mirrors the backend ``DetailHighlightLanguage`` enum. */
+  highlight?: 'sql' | 'json' | 'bash' | 'yaml';
 }
 
 /** One titled section rendered on the task detail page. */
@@ -368,8 +384,9 @@ export interface AppEntitySchema {
   description?: string;
   forms: FormSection[];
   list_view: ListView;
-  /** Optional detail-view syntax hints keyed by field name. */
-  detail_highlights?: Partial<Record<string, 'sql' | 'json' | 'bash'>>;
+  /** Optional detail-view syntax hints keyed by field name; mirrors the backend
+   * ``DetailHighlightLanguage`` enum. */
+  detail_highlights?: Partial<Record<string, 'sql' | 'json' | 'bash' | 'yaml'>>;
 }
 
 // ── Related apps (sibling tabs) ─────────────────────────────────────────
