@@ -1013,20 +1013,20 @@ class TestRuntimeValidationParity:
 class _RemoteChoicesModel(AppFormModel):
     cluster: Annotated[str, Ui(label="Cluster", section="s")] = ""
     backup: Annotated[
-        str,
+        str | None,
         RemoteChoices(endpoint="/apps/mysql_restore/backups"),
         Ui(label="Backup", section="s"),
-    ] = ""
+    ] = None
     cascaded: Annotated[
-        str,
+        str | None,
         RemoteChoices(endpoint="/apps/mysql_restore/backups"),
         Ui(label="Cascaded", section="s", depends_on="cluster"),
-    ] = ""
+    ] = None
     custom: Annotated[
-        str,
+        str | None,
         RemoteChoices(endpoint="/apps/mysql_restore/backups", allow_custom=True),
         Ui(label="Custom", section="s"),
-    ] = ""
+    ] = None
 
 
 class _RemoteChoicesNonStrModel(AppFormModel):
@@ -1035,6 +1035,22 @@ class _RemoteChoicesNonStrModel(AppFormModel):
         RemoteChoices(endpoint="/apps/x/backups"),
         Ui(label="Backup", section="s"),
     ] = 0
+
+
+class _RemoteChoicesNonNullableModel(AppFormModel):
+    backup: Annotated[
+        str,
+        RemoteChoices(endpoint="/apps/x/backups"),
+        Ui(label="Backup", section="s"),
+    ] = ""
+
+
+class _RemoteChoicesRequiredModel(AppFormModel):
+    backup: Annotated[
+        str,
+        RemoteChoices(endpoint="/apps/x/backups"),
+        Ui(label="Backup", section="s"),
+    ]
 
 
 class TestRemoteChoices:
@@ -1065,6 +1081,22 @@ class TestRemoteChoices:
         """Reject RemoteChoices on an annotation that cannot accept str."""
         with pytest.raises(ValueError, match="RemoteChoices"):
             derive_form_sections(_RemoteChoicesNonStrModel, _SINGLE_SECTION)
+
+    def test_optional_non_nullable_annotation_errors(self) -> None:
+        """Reject an optional RemoteChoices field whose annotation excludes None."""
+        with pytest.raises(ValueError, match="does not accept None"):
+            derive_form_sections(_RemoteChoicesNonNullableModel, _SINGLE_SECTION)
+
+    def test_required_field_may_keep_a_non_nullable_annotation(self) -> None:
+        """Leave a required RemoteChoices field free of the nullability demand."""
+        field = _fields_by_name(_RemoteChoicesRequiredModel)["backup"]
+        assert isinstance(field, RemoteChoiceField)
+        assert field.required is True
+
+    def test_optional_field_accepts_the_null_a_cleared_selector_commits(self) -> None:
+        """Validate the None the selector commits on a clear or a cascade reset."""
+        model = _RemoteChoicesModel(backup=None, cascaded=None, custom=None)
+        assert (model.backup, model.cascaded, model.custom) == (None, None, None)
 
     def test_empty_endpoint_rejected(self) -> None:
         """Reject an empty (whitespace-only) endpoint at marker construction."""

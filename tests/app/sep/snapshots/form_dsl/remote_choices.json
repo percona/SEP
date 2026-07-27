@@ -23,7 +23,6 @@
           "type": "choice"
         },
         {
-          "default": "",
           "endpoint_url": "/apps/restore/backups",
           "label": "Backup",
           "name": "backup",
@@ -31,7 +30,6 @@
           "type": "remote_choice"
         },
         {
-          "default": "",
           "depends_on": "cluster",
           "endpoint_url": "/apps/restore/backups",
           "label": "Cascaded Backup",
@@ -41,7 +39,6 @@
         },
         {
           "allow_custom": true,
-          "default": "",
           "endpoint_url": "/apps/restore/backups",
           "label": "Custom Backup",
           "name": "custom_backup",

@@ -352,20 +352,20 @@ class _RemoteChoicesForm(AppFormModel):
         Ui(label="Cluster", section="main"),
     ] = "cluster-a"
     backup: Annotated[
-        str,
+        str | None,
         RemoteChoices(endpoint="/apps/restore/backups"),
         Ui(label="Backup", section="main"),
-    ] = ""
+    ] = None
     cascaded_backup: Annotated[
-        str,
+        str | None,
         RemoteChoices(endpoint="/apps/restore/backups"),
         Ui(label="Cascaded Backup", section="main", depends_on="cluster"),
-    ] = ""
+    ] = None
     custom_backup: Annotated[
-        str,
+        str | None,
         RemoteChoices(endpoint="/apps/restore/backups", allow_custom=True),
         Ui(label="Custom Backup", section="main"),
-    ] = ""
+    ] = None
 
 
 _REMOTE_CHOICES_LAYOUT = FormLayout(

@@ -409,6 +409,15 @@ class RemoteChoices:
     ``depends_on`` is omitted the field fetches once with no cascade (mirroring
     the optional cascade of :class:`HostRef`).
 
+    The annotation must accept ``str``, since a set value (a fetched option's
+    ``value`` or a free-typed custom value) reaches the model as a string. An
+    **optional** field must additionally accept ``None``, because the selector
+    commits ``null`` both when the user clears it and — unprompted — when its
+    cascade parent changes; declare those as ``str | None = None``. A required
+    field may stay a bare ``str``: the renderer blocks the submit rather than
+    sending the ``null``. Derivation rejects either mismatch, so a schema that
+    builds cannot 422 on the value its own selector commits.
+
     :param endpoint: The fully-resolved path the renderer fetches options from,
         relative to the frontend ``apiClient`` base (``/api``). Bake any
         app-specific path segments here at schema-build time (e.g.

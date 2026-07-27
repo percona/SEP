@@ -162,6 +162,14 @@ def _annotation_accepts_str(annotation: Any) -> bool:
     return current is str
 
 
+def _annotation_accepts_none(annotation: Any) -> bool:
+    """Return whether ``annotation`` admits ``None`` (directly or in a union)."""
+    current = _strip_annotated(annotation)
+    if get_origin(current) in (Union, UnionType):
+        return any(_strip_annotated(arg) is _NONE_TYPE for arg in get_args(current))
+    return current is _NONE_TYPE
+
+
 def _strip_annotated(annotation: Any) -> Any:
     """Return the underlying type of an ``Annotated[...]``, or ``annotation`` itself."""
     metadata = getattr(annotation, "__metadata__", None)
@@ -667,6 +675,32 @@ def _derive_section_field(
     return _build_base_field(name, field_info, ui, metadata)
 
 
+def _validate_remote_choice_annotation(
+    name: str, annotation: Any, *, required: bool
+) -> None:
+    """Reject a ``RemoteChoices`` annotation that cannot hold what the selector commits.
+
+    :param name: The field name, used in the error message.
+    :param annotation: The field's resolved annotation.
+    :param required: Whether the derived field is required.
+    :raises ValueError: When the annotation does not accept ``str``, or the
+        field is optional and the annotation does not accept ``None``.
+    """
+    if not _annotation_accepts_str(annotation):
+        raise ValueError(
+            f"field {name!r} uses RemoteChoices but its annotation does not "
+            "accept str; a set value (a fetched option value or a free-typed "
+            "custom value) reaches the model as a string"
+        )
+    if not required and not _annotation_accepts_none(annotation):
+        raise ValueError(
+            f"field {name!r} uses RemoteChoices and is optional, but its "
+            "annotation does not accept None; the selector commits null when "
+            "the field is cleared or its cascade parent changes, so widen it "
+            "(e.g. str | None = None) or declare the field required"
+        )
+
+
 def _build_base_field(
     name: str, field_info: FieldInfo, ui: Ui, metadata: list[Any]
 ) -> BaseField:
@@ -679,14 +713,14 @@ def _build_base_field(
     :return: The derived field.
     :raises ValueError: When the base type maps to no known field kind, a
         choice field supplies no derivable options, or a ``RemoteChoices`` field
-        annotation does not accept ``str``.
+        annotation does not accept ``str`` (or, when the field is optional,
+        ``None``).
     """
+    required = ui.required if ui.required is not None else field_info.is_required()
     common = {
         "name": name,
         "label": _field_label(name, ui),
-        "required": ui.required
-        if ui.required is not None
-        else field_info.is_required(),
+        "required": required,
         "description": ui.description,
         "default": _field_default(field_info, ui),
         "requires": _gates(metadata, Requires) or None,
@@ -721,12 +755,9 @@ def _build_base_field(
 
     remote = _find_marker(metadata, (RemoteChoices,))
     if remote is not None:
-        if not _annotation_accepts_str(field_info.annotation):
-            raise ValueError(
-                f"field {name!r} uses RemoteChoices but its annotation does not "
-                "accept str; the submitted value (a fetched option value or a "
-                "free-typed custom value) is always a string"
-            )
+        _validate_remote_choice_annotation(
+            name, field_info.annotation, required=required
+        )
         return RemoteChoiceField(
             **common,
             endpoint_url=remote.endpoint,
