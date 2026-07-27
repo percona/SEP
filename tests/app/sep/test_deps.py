@@ -1924,6 +1924,7 @@ class TestGetDefaultContextPluginFiltering:
         keys = {p.key for p in context["plugins"]}
         assert "alert_troubleshooting" not in keys
         assert "snippets" not in keys
+        assert "inventory" in keys
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")

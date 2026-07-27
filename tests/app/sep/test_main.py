@@ -963,7 +963,7 @@ class TestAppStateGuards:
     async def test_alert_troubleshooting_routes_503_when_snippets_disabled(
         self, guarded_client: TestClient, session, route: str
     ) -> None:
-        """Alert Troubleshooting's JSON and Jinja routes 503 when snippets is disabled.
+        """Return 503 from Alert Troubleshooting routes when snippets is disabled.
 
         The gate names ``alert_troubleshooting`` itself so callers never see the
         raw ``App 'snippets' is currently disabled`` leak from the snippets path.
@@ -989,10 +989,10 @@ class TestAppStateGuards:
     async def test_alert_troubleshooting_routes_reachable_when_snippets_enabled(
         self, guarded_client: TestClient, session, route: str
     ) -> None:
-        """Alert Troubleshooting's routes remain reachable when snippets is enabled."""
+        """Keep Alert Troubleshooting routes reachable when snippets is enabled."""
         response = guarded_client.get(route)
 
-        assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
+        assert response.status_code == status.HTTP_200_OK
 
     def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
         """Every non-protected UI plugin route carries the app-state guard."""
