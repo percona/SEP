@@ -225,6 +225,29 @@ class TestLoadScriptsBatch:
         assert set(resolved) == {"Check.sh"}
         assert resolved["Check.sh"].filename == "check.sh"
 
+    async def test_two_case_variants_of_one_file_both_resolve(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Key one collation-matched row by every requested spelling of it.
+
+        A selection carrying both ``Check.sh`` and ``check.sh`` folds to one
+        row on a case-insensitive collation; the many-to-one map keeps both
+        spellings as keys so neither caller lookup drops to ``None``.
+        """
+        snippet = await create_snippet("check.sh")
+        mocker.patch.object(
+            SnippetManager, "list", mocker.AsyncMock(return_value=[snippet])
+        )
+
+        resolved = await snippet_source.load_scripts(["Check.sh", "check.sh"])
+
+        assert set(resolved) == {"Check.sh", "check.sh"}
+        assert resolved["Check.sh"].snippet is resolved["check.sh"].snippet
+        assert resolved["Check.sh"].filename == "check.sh"
+
 
 class TestArgsOnlyModel:
     """Cover the args-only execution model the framework validates against."""

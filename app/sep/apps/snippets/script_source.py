@@ -42,6 +42,7 @@ Three real couplings the synthetic kit deferred are bridged here:
   executor-unreachable localhost URL.
 """
 
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -223,13 +224,15 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
     is simply left out of the result — the framework's caller decides what an
     unresolved filename means.
 
-    Each row is keyed by the requested spelling that matched it, not the stored
+    Each row is keyed by every requested spelling that matched it, not the stored
     ``filename``: the ``IN (...)`` match honours the column's collation, so on a
     case-insensitive collation a request for ``Check.sh`` matches row ``check.sh``.
-    Folding the returned row back to the requested string keeps this hook's keys
+    Folding the returned row back to each requested string keeps this hook's keys
     aligned with :func:`_load_script`, whose ``get_or_404`` compared inside the
-    database. Accent-insensitive collations remain a known boundary — casefolding
-    covers case, not accents.
+    database, and means a selection carrying two case variants of one file
+    (``Check.sh`` and ``check.sh``) resolves both rather than dropping one.
+    Accent-insensitive collations remain a known boundary — casefolding covers
+    case, not accents.
 
     :param filenames: The snippet filenames to resolve. Callers routing through
         :func:`~app.sep.apps.framework.script_source.resolve_scripts` pass a
@@ -242,7 +245,9 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
     """
     for filename in filenames:
         validate_snippet_filename(filename)
-    requested_by_casefold = {filename.casefold(): filename for filename in filenames}
+    requested_by_casefold: dict[str, list[str]] = defaultdict(list)
+    for filename in filenames:
+        requested_by_casefold[filename.casefold()].append(filename)
     async_session = get_async_session_maker()
     async with async_session() as session:
         snippets = await SnippetManager.list(
@@ -252,10 +257,12 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
         for snippet in snippets:
             if not snippet.path.is_file():
                 continue
+            detached = _detach(session, snippet)
             requested = requested_by_casefold.get(
-                snippet.filename.casefold(), snippet.filename
+                snippet.filename.casefold(), [snippet.filename]
             )
-            resolved[requested] = _detach(session, snippet)
+            for spelling in requested:
+                resolved[spelling] = detached
     return {filename: SnippetScript(snippet) for filename, snippet in resolved.items()}
 
 
