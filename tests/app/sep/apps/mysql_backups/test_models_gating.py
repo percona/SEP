@@ -169,8 +169,8 @@ class TestEncryptionGate:
         with pytest.raises(ValidationError, match="encryption_recipient"):
             BackupCreate(**_base_payload(BackupType.MYDUMPER, encrypt=True))
 
-    def test_recipient_without_encrypt_fails(self):
-        """Recipient set with encrypt=False → 422."""
+    def test_recipient_without_any_encryption_fails(self):
+        """Recipient set with no encryption mode enabled → 422."""
         with pytest.raises(ValidationError, match="encryption_recipient"):
             BackupCreate(
                 **_base_payload(
@@ -209,9 +209,24 @@ class TestEncryptionGate:
                 **_base_payload(BackupType.MYDUMPER, encrypt_using_tmpdir=True)
             )
 
-    def test_post_run_without_encrypt_fails(self):
-        """Reject post_run_encrypt when encrypt is off."""
-        with pytest.raises(ValidationError, match="post_run_encrypt"):
+    def test_post_run_without_encrypt_ok(self):
+        """Accept post_run_encrypt with a recipient but no in-place encrypt.
+
+        Post-run encryption produces an encrypted backup on its own, so it must
+        not depend on the in-place ``encrypt`` toggle.
+        """
+        BackupCreate(
+            **_base_payload(
+                BackupType.MYDUMPER,
+                encrypt=False,
+                post_run_encrypt=True,
+                encryption_recipient="ops@example.com",
+            )
+        )
+
+    def test_post_run_without_recipient_fails(self):
+        """Reject post_run_encrypt without a recipient (post-run GPG needs one)."""
+        with pytest.raises(ValidationError, match="encryption_recipient"):
             BackupCreate(**_base_payload(BackupType.MYDUMPER, post_run_encrypt=True))
 
     def test_tmpdir_and_post_run_together_fails(self):

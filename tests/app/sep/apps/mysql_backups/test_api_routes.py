@@ -367,7 +367,7 @@ class TestCreateEndpoint:
                 id="recipient-without-encrypt",
             ),
             pytest.param({"encrypt_using_tmpdir": True}, id="tmpdir-without-encrypt"),
-            pytest.param({"post_run_encrypt": True}, id="post-run-without-encrypt"),
+            pytest.param({"post_run_encrypt": True}, id="post-run-without-recipient"),
             pytest.param(
                 {
                     "encrypt": True,

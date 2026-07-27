@@ -8005,11 +8005,12 @@ export interface components {
      *     declaration order, so the derived section and field order matches the
      *     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
      *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     master-switch encryption gates — ``encrypt_using_tmpdir`` and
-     *     ``post_run_encrypt`` each require ``encrypt``, with ``encrypt_using_tmpdir``
-     *     forbidden alongside ``post_run_encrypt`` so post-run takes precedence (matching
-     *     the backend at ``mydumper_payload``), and ``encryption_recipient`` is required
-     *     iff ``encrypt`` — and the per-mode bool
+     *     encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
+     *     independent encryption modes that both produce an encrypted backup;
+     *     ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
+     *     ``post_run_encrypt`` so post-run takes precedence (matching the backend at
+     *     ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
+     *     is on — and the per-mode bool
      *     ``FailRule``s in
      *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
      *     into the conditional-rule plan at class definition, so no

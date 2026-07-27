@@ -278,7 +278,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </label>
                         <br>
                         <br>
-                        {% set encryption_recipient_title = "GPG recipient/key the backup is encrypted for. Required when encryption is enabled." %}
+                        {% set encryption_recipient_title = "GPG recipient/key the backup is encrypted for. Required when either encryption mode is enabled." %}
                         <label for="encryption_recipient">
                             Encryption recipient:
                             <input type="text"
@@ -335,7 +335,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             </div>
                             <span class="label">Check Disk Space</span>{{ info_icon(check_disk_space_title) }}
                         </label>
-                        {% set encrypt_title = "Master switch: GPG-encrypt the backup. Leave off to disable all encryption options below." %}
+                        {% set encrypt_title = "GPG-encrypt the backup in place. Combine with 'Encrypt using tmpdir', or use 'Encrypt after backup completes' for post-run encryption instead. Either encryption option needs a recipient." %}
                         <label class="checkbox" for="encrypt">
                             <input type="checkbox"
                                    id="encrypt"
@@ -348,7 +348,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             </div>
                             <span class="label">Encrypt backup</span>{{ info_icon(encrypt_title) }}
                         </label>
-                        {% set post_run_encrypt_title = "Encrypt the finished backup after it completes. Requires 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'." %}
+                        {% set post_run_encrypt_title = "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs an encryption recipient." %}
                         <label class="checkbox" for="post_run_encrypt">
                             <input type="checkbox"
                                    id="post_run_encrypt"

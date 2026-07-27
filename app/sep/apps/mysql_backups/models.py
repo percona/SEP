@@ -43,6 +43,8 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 from app.sep.apps.framework.rules import (
+    AllFalsy,
+    AnyTruthy,
     Contains,
     F,
     FailRule,
@@ -228,11 +230,12 @@ class BackupCreate(TaskFormModel):
     declaration order, so the derived section and field order matches the
     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-    master-switch encryption gates — ``encrypt_using_tmpdir`` and
-    ``post_run_encrypt`` each require ``encrypt``, with ``encrypt_using_tmpdir``
-    forbidden alongside ``post_run_encrypt`` so post-run takes precedence (matching
-    the backend at ``mydumper_payload``), and ``encryption_recipient`` is required
-    iff ``encrypt`` — and the per-mode bool
+    encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
+    independent encryption modes that both produce an encrypted backup;
+    ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
+    ``post_run_encrypt`` so post-run takes precedence (matching the backend at
+    ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
+    is on — and the per-mode bool
     ``FailRule``s in
     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
     into the conditional-rule plan at class definition, so no
@@ -477,8 +480,9 @@ class BackupCreate(TaskFormModel):
             label="Encrypt backup",
             section="Encryption",
             description=(
-                "Master switch: GPG-encrypt the backup. Leave off to disable all "
-                "encryption options below."
+                "GPG-encrypt the backup in place. Combine with 'Encrypt using "
+                "tmpdir', or use 'Encrypt after backup completes' for post-run "
+                "encryption instead. Either encryption option needs a recipient."
             ),
         ),
     ] = False
@@ -506,35 +510,38 @@ class BackupCreate(TaskFormModel):
     ] = False
     post_run_encrypt: Annotated[
         bool,
-        Forbidden(
-            when=falsy("encrypt"),
-            message="'post_run_encrypt' requires 'encrypt' to be enabled.",
-        ),
         Ui(
             label="Encrypt after backup completes",
             section="Encryption",
             description=(
-                "Encrypt the finished backup after it completes. Requires "
-                "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'."
+                "GPG-encrypt the finished backup once it completes. Independent of "
+                "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. "
+                "Needs an encryption recipient."
             ),
         ),
     ] = False
     encryption_recipient: Annotated[
         NonEmptyStr | EmptyStrToNone,
         Requires(
-            when=truthy("encrypt"),
-            message="'encryption_recipient' is required when 'encrypt' is enabled.",
+            when=AnyTruthy(["encrypt", "post_run_encrypt"]),
+            message=(
+                "'encryption_recipient' is required when 'encrypt' or "
+                "'post_run_encrypt' is enabled."
+            ),
         ),
         Forbidden(
-            when=falsy("encrypt"),
-            message="'encryption_recipient' must not be set when 'encrypt' is off.",
+            when=AllFalsy(["encrypt", "post_run_encrypt"]),
+            message=(
+                "'encryption_recipient' must not be set when no encryption mode is "
+                "enabled."
+            ),
         ),
         Ui(
             label="Encryption recipient",
             section="Encryption",
             description=(
                 "GPG recipient/key the backup is encrypted for. Required when "
-                "encryption is enabled."
+                "either encryption mode is enabled."
             ),
         ),
     ] = None
