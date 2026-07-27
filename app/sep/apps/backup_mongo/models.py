@@ -470,7 +470,6 @@ class BackupConfigBackup(BaseCaseInsensitiveModel):
     :param numParallelCollections: Number of parallel collections to process during logical backup.
     :type numParallelCollections: int | EmptyStrToNone
     :param namespaces: Comma-separated selective namespaces for logical backups.
-    :type namespaces: str | EmptyStrToNone
     :param withUsersAndRoles: Whether to include users and roles with database-level selective.
     :type withUsersAndRoles: bool | EmptyStrToNone
     """
