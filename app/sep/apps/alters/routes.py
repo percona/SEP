@@ -23,7 +23,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
-from app.core.exceptions import HTTPInternalServerErrorException
 from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import (
@@ -303,13 +302,7 @@ async def alters_update(
         pre_checks_template,
         create,
     )
-    if not result.success:
-        failed = [
-            (failure.task_name, str(failure.exception)) for failure in result.failures
-        ]
-        raise HTTPInternalServerErrorException(
-            f"Partial update failure; inconsistent task group: {failed}"
-        )
+    result.raise_if_failed(op="update")
 
     return RedirectResponse(
         request.url_for("alters_detail", task_name=updated_parent.name),
@@ -328,11 +321,5 @@ async def alters_delete(
 ) -> RedirectResponse:
     """Delete the alters task group."""
     result = await cascade_delete_alters_group(tasks_api, parent_task.name)
-    if not result.success:
-        failed = [
-            (failure.task_name, str(failure.exception)) for failure in result.failures
-        ]
-        raise HTTPInternalServerErrorException(
-            f"Partial delete failure; orphaned tasks: {failed}"
-        )
+    result.raise_if_failed(op="delete")
     return RedirectResponse("/alters", status_code=status.HTTP_303_SEE_OTHER)
