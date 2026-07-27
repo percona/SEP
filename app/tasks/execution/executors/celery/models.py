@@ -291,13 +291,9 @@ class CeleryExecutor(BaseExecutor):
         Celery tasks do not produce downloadable files.
 
         :param queue_item: The task history record.
-        :type queue_item: TaskHistory
         :param path: The path to the file.
-        :type path: str
         :param chunk_size: The chunk size in bytes.
-        :type chunk_size: int
         :param anonymize: Whether to redact the task's configured entities.
-        :type anonymize: bool
         :raises NotImplementedError: Always.
         """
         raise NotImplementedError("File streaming is not supported for Celery tasks")

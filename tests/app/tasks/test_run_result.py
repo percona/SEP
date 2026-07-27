@@ -42,8 +42,8 @@ from app.tasks.models import (
 )
 from app.tasks.routes import stop_task_history, sync_task_history
 from app.tasks.run_result import (
-    _read_run_result,
     maybe_record_run,
+    read_run_result,
     RUN_RESULT_FILENAME,
     RUN_RESULT_MAX_BYTES,
 )
@@ -114,7 +114,7 @@ class TestReadRunResult:
         executor = _fake_executor(_yielding(encoded[:10], encoded[10:]))
         history = _history()
 
-        assert await _read_run_result(executor, history) == _RESULT
+        assert await read_run_result(executor, history) == _RESULT
         executor.stream_file.assert_called_once_with(
             history, _RESULT_PATH, anonymize=False
         )
@@ -143,14 +143,14 @@ class TestReadRunResult:
     @pytest.mark.asyncio
     async def test_returns_none_when_unreadable(self, stream: _Stream) -> None:
         """Map every shape of "no result to read" to ``None`` without raising."""
-        assert await _read_run_result(_fake_executor(stream), _history()) is None
+        assert await read_run_result(_fake_executor(stream), _history()) is None
 
     @pytest.mark.asyncio
     async def test_skips_read_without_output_files_path(self) -> None:
         """Skip the executor entirely for a task that declares no output path."""
         executor = _fake_executor(_yielding(_result_bytes()))
 
-        assert await _read_run_result(executor, _history(None)) is None
+        assert await read_run_result(executor, _history(None)) is None
         executor.stream_file.assert_not_called()
 
 

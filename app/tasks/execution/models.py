@@ -240,19 +240,14 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         """Stream a file from a task history record.
 
         :param queue_item: The task history record for tracking the file.
-        :type queue_item: TaskHistory
         :param path: The path to the file to be streamed.
-        :type path: str
         :param chunk_size: The size of each chunk to be read from the file, in bytes.
             Defaults to 1 MiB.
-        :type chunk_size: int
         :param anonymize: Whether to redact the task's configured entities from the
             streamed content. Defaults to ``True``, as every read served to a user
             must be redacted; internal reads of content SEP itself produced may opt
             out to get the bytes back verbatim.
-        :type anonymize: bool
         :return: An async generator yielding chunks of the file as bytes.
-        :rtype: AsyncGenerator[bytes, None]
         """
 
     @abstractmethod

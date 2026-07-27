@@ -1708,19 +1708,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         Directories are archived on the fly and streamed as a tar.gz archive.
 
         :param queue_item: The task history record for tracking the logs.
-        :type queue_item: TaskHistory
         :param path: The path to the file to be streamed.
-        :type path: str
         :param chunk_size: The size of each chunk to read from the file. Defaults to
             1 MiB.
-        :type chunk_size: int
         :param anonymize: Whether to redact the task's configured entities from the
             streamed content. Defaults to ``True``, as every read served to a user
             must be redacted; internal reads of content SEP itself produced may opt
             out to get the bytes back verbatim.
-        :type anonymize: bool
-        :return: An async generator yielding chunks of the file as bytes.
-        :rtype: AsyncGenerator[bytes, None]
+        :yield: Chunks of the file as bytes.
         """
         alloc = self.get_allocation_for_task_history(queue_item)
         alloc_id = alloc["ID"]

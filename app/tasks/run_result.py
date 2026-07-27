@@ -60,7 +60,7 @@ RunResultRecorder = Callable[
 ]
 
 
-async def _read_run_result(
+async def read_run_result(
     executor: BaseExecutor, history: TaskHistory
 ) -> dict[str, Any] | None:
     """Read a terminal run's result file through the executor.
@@ -136,7 +136,7 @@ async def maybe_record_run(task_history_id: int, executor: BaseExecutor) -> None
                 return
             recorder: RunResultRecorder = resolve_hook(recorder_path)
             await session.refresh(history, ["execution_request"])
-            result = await _read_run_result(executor, history)
+            result = await read_run_result(executor, history)
             await recorder(session, history, result)
     except Exception:
         logger.exception(
