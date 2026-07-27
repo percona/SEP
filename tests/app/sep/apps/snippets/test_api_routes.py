@@ -227,6 +227,32 @@ class TestSnippetsApiList:
             if isinstance(err, dict)
         )
 
+    @pytest.mark.parametrize(
+        ("param", "value"),
+        [("order", "sideways"), ("approval", "maybe")],
+    )
+    async def test_invalid_enum_query_param_is_rejected_at_the_boundary(
+        self, test_client, param, value
+    ):
+        """Reject an out-of-enum order/approval selection with 422 before querying."""
+        response = test_client.get(f"{API_BASE}/", params={param: value})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            err.get("loc") == ["query", param]
+            for err in detail
+            if isinstance(err, dict)
+        )
+
+    async def test_unauthenticated_caller_is_rejected(self, api_unauthenticated_client):
+        """Anonymous callers get a structured 401, not a redirect or a page."""
+        response = api_unauthenticated_client.get(
+            f"{API_BASE}/", follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
     async def test_uncategorized_flag_filters_to_snippets_without_a_type(
         self, test_client, create_snippet, session
     ):
@@ -300,6 +326,14 @@ class TestSnippetsApiServiceTypes:
         body = response.json()
         assert body["service_types"] == ["mysql"]
         assert body["has_uncategorized"] is True
+
+    async def test_unauthenticated_caller_is_rejected(self, api_unauthenticated_client):
+        """The facet endpoint rejects anonymous callers with a 401."""
+        response = api_unauthenticated_client.get(
+            f"{API_BASE}/service_types", follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.asyncio

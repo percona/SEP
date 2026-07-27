@@ -208,6 +208,8 @@ interface MockOptions {
   dataset?: Snippet[];
   isAdmin?: boolean;
   listStatus?: number;
+  /** Delay (ms) applied to list responses beyond the first page (offset != 0). */
+  listDelayMs?: number;
 }
 
 /**
@@ -223,7 +225,7 @@ async function installSnippetsMocks(
   const listStatus = options.listStatus ?? 200;
   const listRequests: URLSearchParams[] = [];
 
-  await page.route('**/api/**', (route) => {
+  await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const { pathname } = url;
 
@@ -271,6 +273,10 @@ async function installSnippetsMocks(
           contentType: 'application/json',
           body: JSON.stringify({ detail: 'boom' }),
         });
+      }
+      // Hold later pages in flight so the keepPreviousData window is observable.
+      if (options.listDelayMs && url.searchParams.get('offset') !== '0') {
+        await new Promise((resolve) => setTimeout(resolve, options.listDelayMs));
       }
       return route.fulfill({
         status: 200,
@@ -501,6 +507,48 @@ test.describe('Snippets list — server-side search / filter / pagination', () =
     await expect(page.getByRole('alert')).toContainText('Failed to load snippets:', {
       timeout: 30_000,
     });
+  });
+
+  test('clearing the search box drops the search param and restores the full dataset', async ({
+    page,
+  }) => {
+    const { listRequests } = await installSnippetsMocks(page);
+    await gotoList(page);
+
+    await searchBox(page).fill('mongo');
+    await expect.poll(() => lastRequest(listRequests)?.get('search')).toBe('mongo');
+    await expect(page.getByText(/1[–-]3 of 3/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'mysql-00.sh', exact: true })).toHaveCount(0);
+
+    // Emptying the box drops the search entirely (the no-search query is served
+    // from cache), so the list snaps back to the whole dataset.
+    await searchBox(page).fill('');
+    await expect(page.getByText(/1[–-]50 of 69/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'mysql-00.sh', exact: true })).toBeVisible();
+    // Every request the page issued carried a non-empty search or none at all —
+    // an emptied box is never sent as search="".
+    for (const req of listRequests) {
+      expect(req.get('search')).not.toBe('');
+    }
+  });
+
+  test('keeps the previous page rows visible while the next page is loading', async ({ page }) => {
+    const { listRequests } = await installSnippetsMocks(page, { listDelayMs: 1500 });
+    await gotoList(page);
+
+    const firstRow = page.getByRole('button', { name: 'mysql-00.sh', exact: true });
+    await expect(firstRow).toBeVisible();
+
+    await page.getByRole('button', { name: /go to next page/i }).click();
+    await expect.poll(() => lastRequest(listRequests)?.get('offset')).toBe('50');
+
+    // The second page is still in flight; keepPreviousData keeps the first page's
+    // rows on screen instead of flashing an empty table.
+    await expect(firstRow).toBeVisible();
+
+    // Once the delayed page resolves, the second page's rows replace them.
+    await expect(page.getByText(/51[–-]69 of 69/)).toBeVisible();
+    await expect(firstRow).toHaveCount(0);
   });
 
   test('an empty dataset shows the no-snippets state without filter controls', async ({ page }) => {

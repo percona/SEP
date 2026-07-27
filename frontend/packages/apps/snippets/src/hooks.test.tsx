@@ -329,6 +329,75 @@ describe('useSnippets', () => {
       pagination: null,
     });
   });
+
+  it('drops uncategorized=false rather than sending it as a query param', async () => {
+    responseBody = { items: [], total: 0, offset: 0, limit: 50 };
+
+    // The page always passes the boolean, so a `false` (not-uncategorized)
+    // selection must resolve to `undefined` and be omitted — never leak as
+    // `uncategorized=false`, which the server would treat as a present flag.
+    const { result } = renderHook(() => useSnippets({ uncategorized: false }), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50 });
+  });
+
+  it('keeps the previous page visible while the next page loads (keepPreviousData)', async () => {
+    const page1 = { items: [{ filename: 'p1.sh' }], total: 100, offset: 0, limit: 50 };
+    const page2 = { items: [{ filename: 'p2.sh' }], total: 100, offset: 50, limit: 50 };
+    let resolveSecond: (() => void) | null = null;
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = (
+      config: CapturedRequestConfig,
+    ) => {
+      const okResponse = (data: unknown) => ({
+        data,
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'application/json' },
+        config,
+        request: {},
+      });
+      if (config.params?.offset === 0) {
+        return Promise.resolve(okResponse(page1));
+      }
+      // Hold the next page in flight so the placeholder window is observable.
+      return new Promise((resolve) => {
+        resolveSecond = () => resolve(okResponse(page2));
+      });
+    };
+    setTokenProvider(() => 'test-access-token');
+
+    const { result, rerender } = renderHook(({ offset }) => useSnippets({ offset }), {
+      wrapper: makeWrapper(),
+      initialProps: { offset: 0 },
+    });
+
+    await waitFor(() => {
+      expect(result.current.data?.items).toEqual([{ filename: 'p1.sh' }]);
+    });
+
+    rerender({ offset: 50 });
+
+    // While the second page is in flight, the first page's rows stay visible.
+    await waitFor(() => {
+      expect(result.current.isPlaceholderData).toBe(true);
+    });
+    expect(result.current.data?.items).toEqual([{ filename: 'p1.sh' }]);
+
+    await act(async () => {
+      resolveSecond?.();
+    });
+
+    await waitFor(() => {
+      expect(result.current.data?.items).toEqual([{ filename: 'p2.sh' }]);
+    });
+  });
 });
 
 describe('useSnippetServiceTypes', () => {

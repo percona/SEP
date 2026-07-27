@@ -152,6 +152,10 @@ class SnippetManager(BaseSQLModelManager):
         across page boundaries. Sorting by filename itself is already unique, so no
         redundant second clause is added in that case.
 
+        NULLs are pinned last regardless of direction so a sort by a meta key some
+        rows lack (or the nullable ``approved_at`` column) places the same rows
+        identically on SQLite and PostgreSQL, whose default NULL ordering differs.
+
         :param engine: The database engine name (``session.get_bind().name``).
         :param list_query: The validated list-query selections.
         :return: The ordered list of column expressions.
@@ -162,6 +166,7 @@ class SnippetManager(BaseSQLModelManager):
             primary = primary.desc()
         else:
             primary = primary.asc()
+        primary = primary.nulls_last()
         tie_breaker = SnippetSortColumn("column", TIE_BREAKER_COLUMN)
         if sort_column == tie_breaker:
             return [primary]

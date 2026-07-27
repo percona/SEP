@@ -316,6 +316,154 @@ class TestSnippetManagerListQueryPage:
 
         assert page.total == len(page.items)
 
+    async def test_sort_by_meta_title_places_missing_titles_last(
+        self, session, seed_snippet
+    ):
+        """Pin rows lacking the sorted meta key last in both sort directions.
+
+        The primary sort expression is NULL for a snippet with no ``meta.title``;
+        without an explicit NULL placement SQLite and PostgreSQL disagree on where
+        those rows land. They must sort last ascending and descending alike, then
+        break ties by filename.
+        """
+        await seed_snippet(session, "alpha.sh", title="Alpha")
+        await seed_snippet(session, "bravo.sh", title="Bravo")
+        await seed_snippet(session, "no-title-1.sh")
+        await seed_snippet(session, "no-title-2.sh")
+
+        ascending = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.ASC
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+        descending = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.DESC
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert [s.filename for s in ascending.items] == [
+            "alpha.sh",
+            "bravo.sh",
+            "no-title-1.sh",
+            "no-title-2.sh",
+        ]
+        assert [s.filename for s in descending.items] == [
+            "bravo.sh",
+            "alpha.sh",
+            "no-title-1.sh",
+            "no-title-2.sh",
+        ]
+
+    async def test_sort_by_filename_orders_without_redundant_tie_breaker(
+        self, session, seed_snippet
+    ):
+        """Order by the filename column directly for the filename sort key.
+
+        Filename is itself the unique tie-breaker, so it drives the sole ORDER BY
+        clause; ascending and descending both run and stay deterministic.
+        """
+        for name in ("b.sh", "a.sh", "c.sh"):
+            await seed_snippet(session, name)
+
+        ascending = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.FILENAME,
+                sort_direction=SnippetSortDirection.ASC,
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+        descending = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.FILENAME,
+                sort_direction=SnippetSortDirection.DESC,
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert [s.filename for s in ascending.items] == ["a.sh", "b.sh", "c.sh"]
+        assert [s.filename for s in descending.items] == ["c.sh", "b.sh", "a.sh"]
+
+    async def test_empty_service_type_matches_blank_but_not_absent(
+        self, session, seed_snippet
+    ):
+        """Match stored empty/blank types with ``service_type=""`` but not absent ones.
+
+        An explicit empty-string filter takes the equality branch (``TRIM == ''``),
+        so it selects stored empty/blank values yet excludes absent (JSON NULL)
+        rows -- a strictly narrower set than the uncategorized flag, which also
+        keeps the absent row.
+        """
+        await seed_snippet(session, "absent.sh")
+        await seed_snippet(session, "empty.sh", service_type="")
+        await seed_snippet(session, "blank.sh", service_type="   ")
+        await seed_snippet(session, "typed.sh", service_type="mysql")
+
+        equality_page = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(service_type=""),
+            pagination=Pagination(offset=0, limit=50),
+        )
+        uncategorized_page = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(uncategorized=True),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert {s.filename for s in equality_page.items} == {"empty.sh", "blank.sh"}
+        assert {s.filename for s in uncategorized_page.items} == {
+            "absent.sh",
+            "empty.sh",
+            "blank.sh",
+        }
+
+    async def test_search_treats_underscore_wildcard_as_literal(
+        self, session, seed_snippet
+    ):
+        """Treat ``_`` in the search term as a literal, not a single-char wildcard."""
+        await seed_snippet(session, "a_b.sh", title="a_b match")
+        await seed_snippet(session, "axb.sh", title="axb decoy")
+
+        page = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(search="a_b"),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert {s.filename for s in page.items} == {"a_b.sh"}
+
+    async def test_search_treats_backslash_as_literal(self, session, seed_snippet):
+        r"""Treat a backslash in the search term as a literal, not an escape char."""
+        await seed_snippet(session, "match.sh", title=r"path\to\file")
+        await seed_snippet(session, "decoy.sh", title="pathtofile")
+
+        page = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(search=r"path\to"),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert {s.filename for s in page.items} == {"match.sh"}
+
+    async def test_search_matches_unicode_terms(self, session, seed_snippet):
+        """Match a multibyte unicode search term case-insensitively."""
+        await seed_snippet(session, "cafe.sh", title="Café Menu")
+        await seed_snippet(session, "plain.sh", title="Diner")
+
+        page = await SnippetManager.list_query_page(
+            session,
+            list_query=SnippetListQuery(search="café"),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert {s.filename for s in page.items} == {"cafe.sh"}
+
     async def test_empty_table_returns_zero_total(self, session):
         """Yield an empty page with a zero total for an empty table."""
         page = await SnippetManager.list_query_page(
@@ -360,6 +508,20 @@ class TestSnippetManagerListServiceTypes:
 
         assert service_types == ["mysql"]
         assert has_uncategorized is True
+
+    async def test_orders_mixed_case_types_by_codepoint(self, session, seed_snippet):
+        """Sort service types by Unicode codepoint, so uppercase precedes lowercase.
+
+        The facet sorts with Python ``sorted``, which is case-sensitive; a
+        deployment mixing ``MySQL`` and ``mongodb`` gets uppercase-first ordering.
+        """
+        await seed_snippet(session, "a.sh", service_type="MySQL")
+        await seed_snippet(session, "b.sh", service_type="mongodb")
+        await seed_snippet(session, "c.sh", service_type="Redis")
+
+        service_types, _ = await SnippetManager.list_service_types(session)
+
+        assert service_types == ["MySQL", "Redis", "mongodb"]
 
     async def test_empty_table_returns_no_types(self, session):
         """Return no service types and no uncategorized flag for an empty table."""
@@ -497,6 +659,48 @@ class TestSnippetManagerListQueryOnPostgres:
         )
 
         assert [s.title for s in page.items] == ["Alpha", "Bravo", "Charlie"]
+
+    async def test_sort_by_meta_title_places_missing_titles_last(
+        self, postgres_session, seed_snippet
+    ):
+        """Pin rows lacking ``meta.title`` last in both directions on PostgreSQL.
+
+        PostgreSQL defaults NULLs last on ASC and first on DESC, so only the
+        explicit ``NULLS LAST`` keeps the untitled rows last in both directions --
+        matching the SQLite path.
+        """
+        await seed_snippet(postgres_session, "alpha.sh", title="Alpha")
+        await seed_snippet(postgres_session, "bravo.sh", title="Bravo")
+        await seed_snippet(postgres_session, "no-title-1.sh")
+        await seed_snippet(postgres_session, "no-title-2.sh")
+
+        ascending = await SnippetManager.list_query_page(
+            postgres_session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.ASC
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+        descending = await SnippetManager.list_query_page(
+            postgres_session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.DESC
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert [s.filename for s in ascending.items] == [
+            "alpha.sh",
+            "bravo.sh",
+            "no-title-1.sh",
+            "no-title-2.sh",
+        ]
+        assert [s.filename for s in descending.items] == [
+            "bravo.sh",
+            "alpha.sh",
+            "no-title-1.sh",
+            "no-title-2.sh",
+        ]
 
     async def test_ordering_is_deterministic_across_page_boundaries(
         self, postgres_session, seed_snippet

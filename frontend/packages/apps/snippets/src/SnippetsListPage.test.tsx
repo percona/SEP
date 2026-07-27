@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import { SnippetsListPage } from './SnippetsListPage';
@@ -710,6 +710,87 @@ describe('SnippetsListPage — server-driven filters', () => {
     expect(screen.getByLabelText('Search snippets')).toBeInTheDocument();
   });
 
+  it('coalesces rapid keystrokes into a single settled search term', () => {
+    vi.useFakeTimers();
+    try {
+      render(<SnippetsListPage />);
+      const box = screen.getByLabelText('Search snippets');
+
+      fireEvent.change(box, { target: { value: 'a' } });
+      fireEvent.change(box, { target: { value: 'ab' } });
+      fireEvent.change(box, { target: { value: 'abc' } });
+
+      // Before the debounce window elapses, no intermediate term reaches the query.
+      act(() => {
+        vi.advanceTimersByTime(299);
+      });
+      expect(lastQuery().search).toBeUndefined();
+
+      // One tick later the window closes and only the final term is sent.
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(lastQuery()).toMatchObject({ search: 'abc' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clearing the search box drops the term and resets to the first page', () => {
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult(allSnippets, { total: 120, offset: 0, limit: 50 }),
+    );
+    vi.useFakeTimers();
+    try {
+      render(<SnippetsListPage />);
+      const box = screen.getByLabelText('Search snippets');
+
+      fireEvent.change(box, { target: { value: 'slow' } });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(lastQuery()).toMatchObject({ search: 'slow', offset: 0 });
+
+      // Advance to a later page, then clear the search box.
+      fireEvent.click(screen.getByRole('button', { name: /go to next page/i }));
+      expect(lastQuery()).toMatchObject({ offset: 50, search: 'slow' });
+
+      fireEvent.change(box, { target: { value: '' } });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      expect(lastQuery().search).toBeUndefined();
+      expect(lastQuery()).toMatchObject({ offset: 0 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sends a service type literally named "uncategorized" as an equality value, not the flag', () => {
+    // A real service type named "uncategorized" is prefixed, so it stays distinct
+    // from the bare UNCATEGORIZED sentinel and must not flip the flag.
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['mysql', 'uncategorized'], false));
+
+    render(<SnippetsListPage />);
+
+    selectOption('Filter by service type', 'uncategorized');
+
+    expect(lastQuery()).toMatchObject({ serviceType: 'uncategorized', uncategorized: false });
+  });
+
+  it('round-trips a service type that itself starts with the "type:" prefix', () => {
+    // The MenuItem value double-prefixes ("type:type:foo"); decoding strips only
+    // the first prefix so the real value reaches the server intact.
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['type:foo'], false));
+
+    render(<SnippetsListPage />);
+
+    selectOption('Filter by service type', 'type:foo');
+
+    expect(lastQuery()).toMatchObject({ serviceType: 'type:foo', uncategorized: false });
+  });
+
   it('excludes selections for rows hidden by a server filter from the batch payload', () => {
     // Selection is scoped to the visible (current-page) rows, so a row that a
     // server-side filter later drops from the page is never batch-approved.
@@ -817,6 +898,64 @@ describe('SnippetsListPage — server pagination', () => {
         offset: 50,
         limit: 50,
       }),
+    );
+  });
+
+  it('guards the page index against a zero limit so the pager never shows NaN', () => {
+    // `Math.max(limit, 1)` keeps the page-index division finite even if the
+    // backend ever returns a zero limit.
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([unapprovedSnippet], { total: 1, offset: 0, limit: 0 }),
+    );
+
+    render(<SnippetsListPage />);
+
+    const pager = screen.getByText(/of 1/i);
+    expect(pager).toBeInTheDocument();
+    expect(pager.textContent ?? '').not.toContain('NaN');
+  });
+});
+
+describe('SnippetsListPage — loading and error states', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+  });
+
+  it('renders a loading spinner while the list query is pending', () => {
+    mockUseSnippets.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    } as unknown as ReturnType<typeof useSnippets>);
+
+    render(<SnippetsListPage />);
+
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('renders an error alert with the failure message when the list query fails', () => {
+    mockUseSnippets.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error('backend exploded'),
+    } as unknown as ReturnType<typeof useSnippets>);
+
+    render(<SnippetsListPage />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Failed to load snippets: backend exploded',
     );
   });
 });
