@@ -27,6 +27,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.db import ListQuerySpec
 from app.core.db.crud import BaseManager, BaseSQLModelManager
 from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
@@ -63,10 +64,26 @@ class TaskManager(BaseSQLModelManager):
 
     :ivar Model: The SQLModel class this manager is responsible for (``Task``).
     :vartype Model: type[Task]
+    :cvar ordering: Legacy default ordering (``created_at`` desc, ``id`` desc);
+        superseded by :attr:`list_query_spec` when set.
+    :cvar list_query_spec: Sort allowlist, searchable columns, default sort, and
+        unique ``id`` tie-breaker for Task list endpoints.
     """
 
     Model = Task
     ordering = [col(Task.created_at).desc(), col(Task.id).desc()]
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "name": col(Task.name),
+            "backend": col(Task.backend),
+            "owner": col(Task.owner),
+            "created_at": col(Task.created_at),
+            "updated_at": col(Task.updated_at),
+        },
+        default_sort="-created_at",
+        tie_breaker=col(Task.id),
+        searchable=[col(Task.name), col(Task.owner)],
+    )
 
     @classmethod
     def _append_list_active_data_filters(
@@ -300,9 +317,23 @@ class TaskHistoryManager(BaseSQLModelManager):
 
     :ivar Model: The SQLModel class this manager is responsible for (``TaskHistory``).
     :vartype Model: type[TaskHistory]
+    :cvar list_query_spec: Shared sort allowlist, searchable columns, default sort,
+        and unique ``id`` tie-breaker for both TaskHistory list endpoints.
     """
 
     Model = TaskHistory
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "created_at": col(TaskHistory.created_at),
+            "started_at": col(TaskHistory.started_at),
+            "finished_at": col(TaskHistory.finished_at),
+            "status": col(TaskHistory.status),
+            "executed_by": col(TaskHistory.executed_by),
+        },
+        default_sort="-created_at",
+        tie_breaker=col(TaskHistory.id),
+        searchable=[col(TaskHistory.executed_by)],
+    )
 
     @classmethod
     async def get_log_allocation_epoch(
