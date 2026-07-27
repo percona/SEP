@@ -48,7 +48,7 @@ class TestParseBackupNamespaces:
 
     def test_rejects_empty_comma_token(self) -> None:
         """Reject empty entries in a comma-separated list."""
-        with pytest.raises(ValueError, match="at least one"):
+        with pytest.raises(ValueError, match="empty entries"):
             parse_backup_namespaces("db1.*,,db2.coll")
 
 

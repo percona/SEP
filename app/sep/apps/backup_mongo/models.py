@@ -86,10 +86,8 @@ def parse_backup_namespaces(namespaces: str) -> list[str]:
         ``db.collection`` / ``db.*`` shape.
     """
     tokens = [part.strip() for part in namespaces.split(",")]
-    if not tokens or any(not token for token in tokens):
-        raise ValueError(
-            "Backup namespaces must list at least one db.collection or db.* entry"
-        )
+    if any(not token for token in tokens):
+        raise ValueError("Backup namespaces must not contain empty entries")
     invalid = []
     for token in tokens:
         if "." not in token:
