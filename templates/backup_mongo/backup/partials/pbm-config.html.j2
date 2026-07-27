@@ -215,6 +215,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                name="backup_num_parallel_collections"
                placeholder="Default: CPU cores / 2" />
     </label>
+    <br>
+    <br>
     {% set backup_namespaces_title = "Optional comma-separated db.collection or db.* list for selective logical backups (pbm backup --ns). Physical and incremental backups ignore this field because PBM rejects --ns for those types." %}
     <label for="backup_namespaces" title="{{ backup_namespaces_title }}">
         Namespaces (selective):
@@ -223,6 +225,8 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                name="backup_namespaces"
                placeholder="db1.*,db2.coll" />
     </label>
+    <br>
+    <br>
     <label class="checkbox"
            for="backup_with_users_and_roles"
            title="Pass --with-users-and-roles; valid only with database-level db.* namespaces">
