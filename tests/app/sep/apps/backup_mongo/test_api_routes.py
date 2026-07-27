@@ -94,15 +94,26 @@ def build_backup_write_body(
     }
 
 
-def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
-    """Return a path-keyed ``tasks_api.get`` mock safe for parallel fetches."""
+def mock_task_api_get_by_path(
+    tasks_by_path: dict[str, Any],
+    *,
+    not_found: tuple[str, ...] = (),
+) -> AsyncMock:
+    """Return a path-keyed ``tasks_api.get`` mock safe for parallel fetches.
+
+    Unknown paths raise ``AssertionError`` by default so typos fail loudly.
+    Pass ``not_found`` for paths that should surface as ``HTTPNotFoundException``
+    (for example a missing ``-incremental`` sibling during backfill).
+    """
 
     async def _mock_get(path: str, **kwargs: Any) -> Any:
         if path.endswith("/history/"):
             return {"items": []}
         if path in tasks_by_path:
             return tasks_by_path[path]
-        raise HTTPNotFoundException(f"Task not found: {path}")
+        if path in not_found:
+            raise HTTPNotFoundException(f"Task not found: {path}")
+        raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
 
     return AsyncMock(side_effect=_mock_get)
 
@@ -966,7 +977,15 @@ class TestBackupMongoApiUpdate:
         """Return 500 naming the failed leg when a derived PUT fails mid-cascade."""
         parent = build_backup_task("parent-backup")
         mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
-        mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-backup": parent})
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {"/parent-backup": parent},
+            not_found=(
+                "/parent-backup-logical",
+                "/parent-backup-physical",
+                "/parent-backup-status",
+                "/parent-backup-incremental",
+            ),
+        )
         mock_task_api_dep.post = AsyncMock(return_value={})
         derived_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1026,7 +1045,8 @@ class TestBackupMongoApiUpdate:
                         "parent": "parent-backup",
                     },
                 ),
-            }
+            },
+            not_found=("/parent-backup-incremental",),
         )
         mock_task_api_dep.post = AsyncMock(return_value={})
         mock_task_api_dep.put = AsyncMock(return_value=parent)
