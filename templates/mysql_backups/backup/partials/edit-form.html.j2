@@ -278,9 +278,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                         </label>
                         <br>
                         <br>
-                        {% set encryption_recipient_title = "Type the recipient of the encryption key for secure data protection." %}
+                        {% set encryption_recipient_title = "GPG recipient/key the backup is encrypted for. Required when encryption is enabled." %}
                         <label for="encryption_recipient">
-                            Encryption Recipient (optional):
+                            Encryption recipient:
                             <input type="text"
                                    id="encryption_recipient"
                                    name="encryption_recipient"
@@ -335,7 +335,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                             </div>
                             <span class="label">Check Disk Space</span>{{ info_icon(check_disk_space_title) }}
                         </label>
-                        {% set encrypt_title = "Enable encryption to secure backup data from unauthorized access." %}
+                        {% set encrypt_title = "Master switch: GPG-encrypt the backup. Leave off to disable all encryption options below." %}
                         <label class="checkbox" for="encrypt">
                             <input type="checkbox"
                                    id="encrypt"
@@ -346,9 +346,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                 <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                                 <span class="material-symbols-outlined checked">check_box</span>
                             </div>
-                            <span class="label">Encrypt</span>{{ info_icon(encrypt_title) }}
+                            <span class="label">Encrypt backup</span>{{ info_icon(encrypt_title) }}
                         </label>
-                        {% set post_run_encrypt_title = "Encrypt backup right after completion." %}
+                        {% set post_run_encrypt_title = "Encrypt the finished backup after it completes. Requires 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'." %}
                         <label class="checkbox" for="post_run_encrypt">
                             <input type="checkbox"
                                    id="post_run_encrypt"
@@ -359,9 +359,9 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                                 <span class="material-symbols-outlined unchecked">check_box_outline_blank</span>
                                 <span class="material-symbols-outlined checked">check_box</span>
                             </div>
-                            <span class="label">Post Run Encrypt</span>{{ info_icon(post_run_encrypt_title) }}
+                            <span class="label">Encrypt after backup completes</span>{{ info_icon(post_run_encrypt_title) }}
                         </label>
-                        {% set encrypt_using_tmpdir_title = "Use a temporary directory for encryption to optimize performance and avoid direct disk writes." %}
+                        {% set encrypt_using_tmpdir_title = "Encrypt in a temporary directory during the backup. Requires 'Encrypt backup'; mutually exclusive with 'Encrypt after backup completes'." %}
                         <label class="checkbox" for="encrypt_using_tmpdir">
                             <input type="checkbox"
                                    id="encrypt_using_tmpdir"

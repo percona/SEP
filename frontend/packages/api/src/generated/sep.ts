@@ -8002,10 +8002,15 @@ export interface components {
      *     XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
      *     derived schema. Field declaration order is load-bearing: the derived section
      *     order follows each section's first field, and the within-section order follows
-     *     declaration order, so the order here reproduces the hand-written schema
-     *     byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
+     *     declaration order, so the derived section and field order matches the
+     *     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
      *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+     *     master-switch encryption gates — ``encrypt_using_tmpdir`` and
+     *     ``post_run_encrypt`` each require ``encrypt``, with ``encrypt_using_tmpdir``
+     *     forbidden alongside ``post_run_encrypt`` so post-run takes precedence (matching
+     *     the backend at ``mydumper_payload``), and ``encryption_recipient`` is required
+     *     iff ``encrypt`` — and the per-mode bool
+     *     ``FailRule``s in
      *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
      *     into the conditional-rule plan at class definition, so no
      *     ``@apply_conditional_rules`` decorator is needed. The config sub-models

@@ -978,12 +978,6 @@
               "when": {
                 "falsy": "encrypt"
               }
-            },
-            {
-              "message": "'post_run_encrypt' cannot be combined with 'encrypt_using_tmpdir'.",
-              "when": {
-                "truthy": "encrypt_using_tmpdir"
-              }
             }
           ],
           "label": "Encrypt after backup completes",

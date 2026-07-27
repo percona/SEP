@@ -17,11 +17,15 @@
 
 Capture the full ``TaskWrite`` envelope produced by the model-first spec path
 (``build_backup_spec`` + ``assemble_envelope``) across the three backup types and
-their per-type host logic, and compare each against a committed golden captured
-from the pre-migration ``build_backup_task_payload_from_model``. The ``file://``
-payload path is normalized to the package-relative anchor so the golden is
-machine-independent (both the old builder and the new spec compute the same
-``Path(__file__).parent`` within the package).
+their per-type host logic, and compare each against a committed golden. The
+migration-era goldens were captured from the now-removed
+``build_backup_task_payload_from_model`` and are cross-implementation evidence
+the spec path reproduces the old builder byte-for-byte; later additions (the
+encryption-mode cases) are self-captures of the code under test via
+``assert_or_update`` — regression guards going forward, not cross-implementation
+checks. The ``file://`` payload path is normalized to the package-relative anchor
+so the golden is machine-independent (both the old builder and the new spec
+compute the same ``Path(__file__).parent`` within the package).
 """
 
 from app.inventory.models import ServiceTypeEnum
@@ -40,8 +44,8 @@ _PAYLOAD_ANCHOR = "app/sep/apps/mysql_backups/"
 
 # Each case names a slug and the backups field values; the cases cover the three
 # backup types, their per-type server host (M → service address, X → localhost,
-# B → alternative host or service address), and the requirements / payload-file
-# selection.
+# B → alternative host or service address), the requirements / payload-file
+# selection, and the encryption modes (tmpdir vs post-run).
 _CASES = [
     {
         "slug": "mydumper_rsync",

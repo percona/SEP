@@ -154,8 +154,8 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         Asserts the derived HTTP surface carries an encrypted selection into the
         exact wire keys the backup backend consumes — the ``ENCRYPT`` /
         ``POST_RUN_ENCRYPT`` / ``ENCRYPT_USING_TMPDIR`` booleans and the
-        ``DIR_ENCRYPT_CONFIG`` recipient block — so the serialized payload stays
-        byte-compatible for equivalent selections.
+        ``DIR_ENCRYPT_CONFIG`` recipient block; full byte-identity of the spec path
+        is frozen by the payload snapshot matrix.
         """
         body = _valid_body()
         body.update(
