@@ -223,20 +223,13 @@ def _needs_incremental_base() -> bool:
         sys.exit(1)
     snapshots = []
     if isinstance(payload, dict):
-        for key in ('snapshots', 'backups', 'storage'):
-            value = payload.get(key)
-            if isinstance(value, list):
-                snapshots = value
-                break
-            if isinstance(value, dict) and isinstance(value.get('snapshot'), list):
-                snapshots = value['snapshot']
-                break
-    elif isinstance(payload, list):
-        snapshots = payload
+        value = payload.get('snapshots')
+        if isinstance(value, list):
+            snapshots = value
     for entry in snapshots:
         if not isinstance(entry, dict):
             continue
-        backup_type = str(entry.get('type') or entry.get('backupType') or '').lower()
+        backup_type = str(entry.get('type') or '').lower()
         if 'incremental' in backup_type:
             return False
     return True

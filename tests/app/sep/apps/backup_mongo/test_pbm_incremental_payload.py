@@ -129,29 +129,17 @@ class TestIncrementalBaseDetection:
         assert cmd == ["pbm", "backup", "--type", "incremental", "--wait"]
         assert "--base" not in cmd
 
-    def test_list_as_array_detects_incremental(
+    def test_ignores_undocumented_list_shapes(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """Treat a top-level list payload as the snapshot list."""
-        captured = _run_incremental(
-            monkeypatch,
-            tmp_path,
-            list_stdout=json.dumps([{"name": "base", "backupType": "incremental"}]),
-        )
-        assert "--base" not in _backup_cmd(captured)
-
-    def test_storage_snapshot_nested_list(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-    ) -> None:
-        """Read nested ``storage.snapshot`` lists from ``pbm list`` JSON."""
-        captured = _run_incremental(
-            monkeypatch,
-            tmp_path,
-            list_stdout=json.dumps(
-                {"storage": {"snapshot": [{"type": "incremental/base"}]}}
-            ),
-        )
-        assert "--base" not in _backup_cmd(captured)
+        """Only documented ``snapshots`` + ``type`` count; other shapes need ``--base``."""
+        for list_stdout in (
+            json.dumps([{"name": "base", "backupType": "incremental"}]),
+            json.dumps({"storage": {"snapshot": [{"type": "incremental/base"}]}}),
+            json.dumps({"snapshots": [{"name": "base", "backupType": "incremental"}]}),
+        ):
+            captured = _run_incremental(monkeypatch, tmp_path, list_stdout=list_stdout)
+            assert "--base" in _backup_cmd(captured)
 
     def test_skips_non_mapping_snapshot_entries(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -187,7 +175,7 @@ class TestIncrementalBaseDetection:
     def test_list_parse_failure_aborts(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """Abort when ``pbm list`` stdout is not valid YAML/JSON."""
+        """Abort when ``pbm list`` stdout is not valid JSON."""
         with pytest.raises(SystemExit) as exc_info:
             _run_incremental(
                 monkeypatch, tmp_path, list_stdout="{unterminated", list_returncode=0
