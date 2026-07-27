@@ -23,7 +23,7 @@ from datetime import timedelta
 from typing import Annotated
 
 import requests.exceptions
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import undefer
@@ -34,6 +34,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
+from app.core.db import ListQuery, make_list_query_dep
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPBadRequestException,
@@ -98,6 +99,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["tasks"])
 
+TaskListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(TaskManager))]
+TaskHistoryListQueryDep = Annotated[
+    ListQuery, Depends(make_list_query_dep(TaskHistoryManager))
+]
+
 
 @router.get(
     "/",
@@ -107,6 +113,7 @@ router = APIRouter(tags=["tasks"])
 async def list_tasks(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: TaskListQueryDep,
     owner: str | None = None,
     target: str | None = None,
     parent_is_null: bool | None = None,
@@ -123,6 +130,7 @@ async def list_tasks(
         backup_type=backup_type,
         self_parent=self_parent,
         pagination=pagination,
+        list_query=list_query,
     )
 
 
@@ -387,6 +395,7 @@ async def _populate_has_logs(
 async def list_task_history(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: TaskHistoryListQueryDep,
     *,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
     exclude_internal: Annotated[bool, Query()] = False,
@@ -397,6 +406,7 @@ async def list_task_history(
         session,
         query_options=[undefer(TaskHistory.execution_request)],
         pagination=pagination,
+        list_query=list_query,
         status=task_status,
         exclude_internal=exclude_internal,
     )
@@ -426,6 +436,7 @@ async def get_task_history(
     session: SessionDep,
     task: str,
     pagination: PaginationDep,
+    list_query: TaskHistoryListQueryDep,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
     snippet_filename: NonEmptyStr | None = None,
 ) -> PaginatedResponse[TaskHistory]:
@@ -438,6 +449,7 @@ async def get_task_history(
         select_related_task=True,
         snippet_filename=snippet_filename,
         pagination=pagination,
+        list_query=list_query,
         query_options=[undefer(TaskHistory.execution_request)],
     )
     await _populate_has_logs(session, response.items)

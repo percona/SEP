@@ -25,6 +25,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.db import ListQuery
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.pagination import (
@@ -59,6 +60,16 @@ PAGINATED_CUSTOM_TASK_COUNT = 3
 PBM_CONFIG_BACKUP_TYPE = "pbm_config"
 PARENT_FILTER_TASK_COUNT = 3
 CHUNKS_AT_OR_BELOW_OFFSET = 2
+
+
+def _default_list_query(
+    manager: type[TaskManager] | type[TaskHistoryManager],
+) -> ListQuery:
+    """Build a default ListQuery from a manager's list_query_spec."""
+    return ListQuery(
+        order_by=tuple(manager.list_query_spec.resolve_sort(None)),
+        search_predicate=None,
+    )
 
 
 async def _create_task(
@@ -543,7 +554,9 @@ class TestTaskManagerListActivePaginated:
         await _create_task(session, name="pag-task-2")
 
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination()
+            session,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == PAGINATED_TASK_COUNT
@@ -558,7 +571,9 @@ class TestTaskManagerListActivePaginated:
             await _create_task(session, name=f"pag-custom-{i}")
 
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination(offset=0, limit=1)
+            session,
+            pagination=Pagination(offset=0, limit=1),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == PAGINATED_CUSTOM_TASK_COUNT
@@ -572,7 +587,10 @@ class TestTaskManagerListActivePaginated:
         await _create_task(session, name="pag-alter", owner="ALTERS")
 
         result = await TaskManager.list_active_paginated(
-            session, owner="BACKUPS", pagination=Pagination()
+            session,
+            owner="BACKUPS",
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -586,7 +604,9 @@ class TestTaskManagerListActivePaginated:
         await TaskManager.delete_by_name(session, "pag-deleted")
 
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination()
+            session,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -596,7 +616,9 @@ class TestTaskManagerListActivePaginated:
     async def test_empty_db_returns_zero_total(self, session: AsyncSession) -> None:
         """Assert empty database returns total of zero."""
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination()
+            session,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 0
@@ -608,7 +630,9 @@ class TestTaskManagerListActivePaginated:
         await _create_task(session, name="pag-beyond")
 
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination(offset=999)
+            session,
+            pagination=Pagination(offset=999),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -632,10 +656,16 @@ class TestTaskManagerListActivePaginated:
         )
 
         null_parents = await TaskManager.list_active_paginated(
-            session, parent_is_null=True, pagination=Pagination()
+            session,
+            parent_is_null=True,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
         non_null_parents = await TaskManager.list_active_paginated(
-            session, parent_is_null=False, pagination=Pagination()
+            session,
+            parent_is_null=False,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert null_parents.total == 1
@@ -658,7 +688,10 @@ class TestTaskManagerListActivePaginated:
         )
 
         result = await TaskManager.list_active_paginated(
-            session, backup_type=PBM_CONFIG_BACKUP_TYPE, pagination=Pagination()
+            session,
+            backup_type=PBM_CONFIG_BACKUP_TYPE,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -684,7 +717,10 @@ class TestTaskManagerListActivePaginated:
         )
 
         result = await TaskManager.list_active_paginated(
-            session, self_parent=True, pagination=Pagination()
+            session,
+            self_parent=True,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -715,6 +751,7 @@ class TestTaskManagerListActivePaginated:
             parent_is_null=True,
             backup_type=PBM_CONFIG_BACKUP_TYPE,
             pagination=Pagination(offset=1, limit=1),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == PARENT_FILTER_TASK_COUNT
@@ -1115,6 +1152,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-history-task",
             pagination=Pagination(),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == HISTORY_FIXTURE_COUNT
@@ -1131,6 +1169,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-history-task",
             pagination=Pagination(limit=1),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == HISTORY_FIXTURE_COUNT
@@ -1146,6 +1185,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             task_name="pag-history-task",
             status=TaskHistoryStatusEnum.RUNNING,
             pagination=Pagination(),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == 1
@@ -1161,6 +1201,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-empty-task",
             pagination=Pagination(),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == 0
@@ -1175,6 +1216,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-history-task",
             pagination=Pagination(offset=999),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == HISTORY_FIXTURE_COUNT
@@ -1192,6 +1234,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             task_name="pag-snippet-task",
             snippet_filename="config.yaml",
             pagination=Pagination(),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == 1
