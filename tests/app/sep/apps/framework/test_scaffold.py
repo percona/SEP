@@ -478,6 +478,37 @@ def test_ruff_fix_skips_when_ruff_absent(
     scaffold._ruff_fix([Path("a.py")])
 
 
+def test_ruff_fix_skips_when_ruff_not_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skip ruff when the path exists but is not executable."""
+
+    def _fail(*args, **kwargs):
+        raise AssertionError(f"ruff should not run: {args}, {kwargs}")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "ruff").touch()
+    monkeypatch.setattr(scaffold.sys, "executable", str(bin_dir / "python"))
+    monkeypatch.setattr(scaffold.subprocess, "run", _fail)
+    scaffold._ruff_fix([Path("a.py")])
+
+
+def test_ruff_fix_skips_when_ruff_is_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skip ruff when the path beside the interpreter is a directory."""
+
+    def _fail(*args, **kwargs):
+        raise AssertionError(f"ruff should not run: {args}, {kwargs}")
+
+    bin_dir = tmp_path / "bin"
+    (bin_dir / "ruff").mkdir(parents=True)
+    monkeypatch.setattr(scaffold.sys, "executable", str(bin_dir / "python"))
+    monkeypatch.setattr(scaffold.subprocess, "run", _fail)
+    scaffold._ruff_fix([Path("a.py")])
+
+
 def test_ruff_fix_runs_check_then_format(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -488,11 +519,11 @@ def test_ruff_fix_runs_check_then_format(
     python = bin_dir / "python"
     ruff = bin_dir / "ruff"
     ruff.touch()
+    ruff.chmod(0o755)
 
     def _record(cmd, **kwargs):
         commands.append((cmd, kwargs))
 
-    monkeypatch.setattr(scaffold.sys, "platform", "linux")
     monkeypatch.setattr(scaffold.sys, "executable", str(python))
     monkeypatch.setattr(scaffold.subprocess, "run", _record)
     scaffold._ruff_fix([Path("a.py"), Path("b.txt")])
@@ -500,30 +531,6 @@ def test_ruff_fix_runs_check_then_format(
     assert [cmd[1] for cmd in invoked] == ["check", "format"]
     assert all(cmd[0] == ruff for cmd in invoked)
     assert all("a.py" in cmd and "b.txt" not in cmd for cmd in invoked)
-    assert all(_kwargs["cwd"] == scaffold._REPO_ROOT for _cmd, _kwargs in commands)
-
-
-def test_ruff_fix_resolves_windows_ruff_exe(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Resolve ``ruff.exe`` beside the interpreter on Windows."""
-    commands = []
-    bin_dir = tmp_path / "Scripts"
-    bin_dir.mkdir()
-    python = bin_dir / "python.exe"
-    ruff = bin_dir / "ruff.exe"
-    ruff.touch()
-
-    def _record(cmd, **kwargs):
-        commands.append((cmd, kwargs))
-
-    monkeypatch.setattr(scaffold.sys, "platform", "win32")
-    monkeypatch.setattr(scaffold.sys, "executable", str(python))
-    monkeypatch.setattr(scaffold.subprocess, "run", _record)
-    scaffold._ruff_fix([Path("a.py")])
-    invoked = [cmd for cmd, _kwargs in commands]
-    assert [cmd[1] for cmd in invoked] == ["check", "format"]
-    assert all(cmd[0] == ruff for cmd in invoked)
     assert all(_kwargs["cwd"] == scaffold._REPO_ROOT for _cmd, _kwargs in commands)
 
 
