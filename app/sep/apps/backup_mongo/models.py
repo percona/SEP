@@ -678,6 +678,9 @@ _NOT_S3_STORAGE = Forbidden(when=F("storage_type") != StorageType.S3.value)
 _NOT_FILESYSTEM_STORAGE = Forbidden(
     when=F("storage_type") != StorageType.FILESYSTEM.value
 )
+_NAMESPACES_WHEN_USERS_AND_ROLES = Requires(
+    when=F("backup_with_users_and_roles") == True  # noqa: E712
+)
 _COMPRESSION_CHOICES = Choices(
     tuple((algorithm.value, algorithm.value) for algorithm in CompressionAlgorithm)
 )
@@ -805,6 +808,7 @@ class BackupForm(TaskFormModel):
     ] = None
     backup_namespaces: Annotated[
         str | None,
+        _NAMESPACES_WHEN_USERS_AND_ROLES,
         Ui(
             label="Namespaces (selective)",
             section="BackupOptions",

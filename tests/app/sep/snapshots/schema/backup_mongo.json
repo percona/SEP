@@ -342,6 +342,15 @@
           "label": "Namespaces (selective)",
           "name": "backup_namespaces",
           "required": false,
+          "requires": [
+            {
+              "when": {
+                "equals": {
+                  "backup_with_users_and_roles": true
+                }
+              }
+            }
+          ],
           "type": "string"
         },
         {
