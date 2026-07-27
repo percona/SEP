@@ -44,7 +44,6 @@ from app.sep.apps.framework.schema import (
 from app.sep.apps.framework.script_helpers import execute_script
 from app.sep.apps.framework.script_source import (
     ARBITRARY_ARGS_SCHEMA,
-    make_script_dep,
     resolve_scripts,
     ScriptExecuteWrite,
     ScriptExecutionResponse,
@@ -66,7 +65,6 @@ __all__ = [
     "dispatch_batch_item",
     "fetch_task_history",
     "parameter_fields",
-    "resolve_snippet",
     "resolve_snippets",
     "shared_field_names",
 ]
@@ -100,22 +98,21 @@ _SYNTHETIC_FIELD_NAMES = frozenset(
     {EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME, SCRIPT_PREVIEW_FIELD_NAME}
 )
 
-resolve_snippet = make_script_dep(snippet_source)
-
 
 async def resolve_snippets(filenames: Sequence[str]) -> dict[str, SnippetScript]:
     """Resolve several snippet filenames against the shared snippet source at once.
 
-    The batch counterpart of :data:`resolve_snippet`, binding the ATW batch call
-    sites to the framework's single resolution entry point so they inherit its
-    traversal guard, order-preserving dedup, and one-query batch load. The result
-    carries only the filenames that resolved, leaving each call site free to turn
-    a missing filename into its own failure (a whole-request 404 for the schema
-    form, a per-item error for the execute loop).
+    The batch entry point the ATW call sites resolve their selections through,
+    binding them to the framework's single resolution entry point so they inherit
+    its traversal guard, order-preserving dedup, and one-query batch load. The
+    result carries only the filenames that resolved, leaving each call site free to
+    turn a missing filename into its own failure (a whole-request 404 for the
+    schema form, a per-item error for the execute loop).
 
     :param filenames: The requested snippet filenames, possibly with duplicates.
     :return: A mapping of each resolved filename to its :class:`SnippetScript`.
-    :raises HTTPBadRequestException: When any filename attempts directory traversal.
+    :raises HTTPBadRequestException: When any filename is unsafe or malformed,
+        failing the whole request before any item is dispatched.
     """
     return await resolve_scripts(snippet_source, filenames)
 

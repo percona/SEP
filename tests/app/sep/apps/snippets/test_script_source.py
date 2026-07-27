@@ -16,14 +16,14 @@
 """Cover the snippets ``ScriptSource`` hooks directly against a real session.
 
 The hooks are exercised through the public :data:`snippet_source` surface
-(``load_script`` / ``list_scripts`` / ``load_scripts`` / ``build_form_schema``
-/ ``build_execution_meta`` / ``list_response``) rather than the private module
-functions, mirroring the
-framework's own ``test_script_source.py``. ``load_script`` / ``list_scripts`` open
-their own request-less session, so the suite points
-``script_source.get_async_session_maker`` at the in-memory test session (the same
-pattern ``tests/app/sep/apps/snippets/test_celery.py`` uses for the Celery sync task) — the real
-session is exercised, never a mocked ``AsyncSession``.
+(``load_script`` / ``list_scripts`` / ``load_scripts`` / ``build_form_schema`` /
+``build_execution_meta`` / ``list_response``) rather than the private module
+functions, mirroring the framework's own ``test_script_source.py``. ``load_script``
+/ ``list_scripts`` / ``load_scripts`` open their own request-less session, so the
+suite points ``script_source.get_async_session_maker`` at the in-memory test
+session (the same pattern ``tests/app/sep/apps/snippets/test_celery.py`` uses for
+the Celery sync task) — the real session is exercised, never a mocked
+``AsyncSession``.
 """
 
 from collections.abc import Awaitable, Callable
@@ -201,6 +201,29 @@ class TestLoadScriptsBatch:
         """Reject an unsafe filename before any lookup runs."""
         with pytest.raises(HTTPBadRequestException):
             await snippet_source.load_scripts(["../secret.sh"])
+
+    async def test_case_insensitive_match_keyed_by_requested_spelling(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Key a case-folded row match by the requested spelling, not the row's.
+
+        A case-insensitive collation matches ``Check.sh`` to row ``check.sh``;
+        callers look the result up by the string they sent, so the hook must key
+        that row by ``Check.sh``. SQLite's ``IN`` is case-sensitive, so the
+        collation match is simulated by returning the seeded lowercase row.
+        """
+        snippet = await create_snippet("check.sh")
+        mocker.patch.object(
+            SnippetManager, "list", mocker.AsyncMock(return_value=[snippet])
+        )
+
+        resolved = await snippet_source.load_scripts(["Check.sh"])
+
+        assert set(resolved) == {"Check.sh"}
+        assert resolved["Check.sh"].filename == "check.sh"
 
 
 class TestArgsOnlyModel:

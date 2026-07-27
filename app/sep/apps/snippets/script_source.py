@@ -156,6 +156,18 @@ def build_snippet_source(snippet: Snippet) -> str:
     )
 
 
+def snippet_not_found_detail(filename: str) -> str:
+    """Return the client-facing 404 detail for an unresolved snippet filename.
+
+    Single-sources the message shared by :func:`_load_script` and the ATW batch
+    routes, which reconstruct it for filenames the batch loader left unresolved.
+
+    :param filename: The requested snippet filename.
+    :return: The 404 detail string.
+    """
+    return f"Snippet {filename!r} not found."
+
+
 def _detach(session: AsyncSession, snippet: Snippet) -> Snippet:
     """Expunge a snippet from its session so it stays usable after the session closes.
 
@@ -188,7 +200,7 @@ async def _load_script(filename: str) -> SnippetScript:
     async with async_session() as session:
         snippet = await SnippetManager.get_or_404(session, filename=filename)
         if not snippet.path.is_file():
-            raise HTTPNotFoundException(detail=f"Snippet {filename!r} not found.")
+            raise HTTPNotFoundException(detail=snippet_not_found_detail(filename))
         return SnippetScript(_detach(session, snippet))
 
 
@@ -197,8 +209,7 @@ async def _list_scripts() -> list[SnippetScript]:
     async_session = get_async_session_maker()
     async with async_session() as session:
         snippets = await SnippetManager.list(session)
-        detached = [_detach(session, snippet) for snippet in snippets]
-    return [SnippetScript(snippet) for snippet in detached]
+        return [SnippetScript(_detach(session, snippet)) for snippet in snippets]
 
 
 async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
@@ -212,6 +223,14 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
     is simply left out of the result — the framework's caller decides what an
     unresolved filename means.
 
+    Each row is keyed by the requested spelling that matched it, not the stored
+    ``filename``: the ``IN (...)`` match honours the column's collation, so on a
+    case-insensitive collation a request for ``Check.sh`` matches row ``check.sh``.
+    Folding the returned row back to the requested string keeps this hook's keys
+    aligned with :func:`_load_script`, whose ``get_or_404`` compared inside the
+    database. Accent-insensitive collations remain a known boundary — casefolding
+    covers case, not accents.
+
     :param filenames: The snippet filenames to resolve. Callers routing through
         :func:`~app.sep.apps.framework.script_source.resolve_scripts` pass a
         deduplicated, traversal-checked selection, but the hook is independently
@@ -223,6 +242,7 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
     """
     for filename in filenames:
         validate_snippet_filename(filename)
+    requested_by_casefold = {filename.casefold(): filename for filename in filenames}
     async_session = get_async_session_maker()
     async with async_session() as session:
         snippets = await SnippetManager.list(
@@ -232,7 +252,10 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
         for snippet in snippets:
             if not snippet.path.is_file():
                 continue
-            resolved[snippet.filename] = _detach(session, snippet)
+            requested = requested_by_casefold.get(
+                snippet.filename.casefold(), snippet.filename
+            )
+            resolved[requested] = _detach(session, snippet)
     return {filename: SnippetScript(snippet) for filename, snippet in resolved.items()}
 
 

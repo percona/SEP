@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
+from app.core.utils.iterators import unique_everseen
 from app.sep.apps.atw.batch import (
     ATWBatchExecuteItemResponse,
     ATWBatchExecuteResponse,
@@ -57,6 +58,7 @@ from app.sep.apps.atw.models import (
 )
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
+from app.sep.apps.snippets.script_source import snippet_not_found_detail
 from app.sep.deps import ApiCurrentUser, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
@@ -267,14 +269,15 @@ async def atw_execution_schema(
     :param snippet_filename: The selected snippet filenames, repeated per snippet
         and deduplicated order-preserving.
     :return: The shared section followed by each snippet's remaining fields.
-    :raises HTTPBadRequestException: When a filename attempts directory traversal.
+    :raises HTTPBadRequestException: When a filename is unsafe or malformed, failing
+        the whole request before any item is dispatched.
     :raises HTTPNotFoundException: When a filename matches no snippet.
     """
-    unique = list(dict.fromkeys(snippet_filename))
+    unique = list(unique_everseen(snippet_filename))
     resolved = await resolve_snippets(unique)
-    missing = [filename for filename in unique if filename not in resolved]
-    if missing:
-        raise HTTPNotFoundException(detail=f"Snippet {missing[0]!r} not found.")
+    missing = next((filename for filename in unique if filename not in resolved), None)
+    if missing is not None:
+        raise HTTPNotFoundException(detail=snippet_not_found_detail(missing))
     scripts = [resolved[filename] for filename in unique]
     fields_per_script = [parameter_fields(script) for script in scripts]
 
@@ -342,7 +345,7 @@ async def atw_batch_execute(
     :param body: The batch payload.
     :param tasks_api: The authenticated Tasks API client.
     :return: One outcome entry per requested item, in request order.
-    :raises HTTPBadRequestException: When any filename attempts directory traversal,
+    :raises HTTPBadRequestException: When any filename is unsafe or malformed,
         failing the whole request before any item is dispatched.
     """
     incident_id = incident.id
@@ -354,7 +357,7 @@ async def atw_batch_execute(
             items.append(
                 ATWBatchExecuteItemResponse(
                     snippet_filename=item.snippet_filename,
-                    error=f"Snippet {item.snippet_filename!r} not found.",
+                    error=snippet_not_found_detail(item.snippet_filename),
                 )
             )
             continue

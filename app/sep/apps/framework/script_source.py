@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.utils.fields import NonEmptyStr
+from app.core.utils.iterators import unique_everseen
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
@@ -242,7 +243,7 @@ async def resolve_scripts(
         filenames are absent.
     :raises HTTPBadRequestException: When any filename fails the traversal guard.
     """
-    unique = list(dict.fromkeys(filenames))
+    unique = list(unique_everseen(filenames))
     if not unique:
         return {}
     for filename in unique:

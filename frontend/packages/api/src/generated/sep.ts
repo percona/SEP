@@ -678,7 +678,8 @@ export interface paths {
      *     :param snippet_filename: The selected snippet filenames, repeated per snippet
      *         and deduplicated order-preserving.
      *     :return: The shared section followed by each snippet's remaining fields.
-     *     :raises HTTPBadRequestException: When a filename attempts directory traversal.
+     *     :raises HTTPBadRequestException: When a filename is unsafe or malformed, failing
+     *         the whole request before any item is dispatched.
      *     :raises HTTPNotFoundException: When a filename matches no snippet.
      */
     get: operations['atw_atw_execution_schema_api_apps_atw_execution_schema__get'];
@@ -804,7 +805,7 @@ export interface paths {
      *     :param body: The batch payload.
      *     :param tasks_api: The authenticated Tasks API client.
      *     :return: One outcome entry per requested item, in request order.
-     *     :raises HTTPBadRequestException: When any filename attempts directory traversal,
+     *     :raises HTTPBadRequestException: When any filename is unsafe or malformed,
      *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];

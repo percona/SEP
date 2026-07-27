@@ -30,7 +30,7 @@ the Wave-3 snippets migration. The framework programs against ``ScriptProtocol``
 so the fixture exercises the same code path a real consumer hits.
 """
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Annotated
 from unittest.mock import AsyncMock
@@ -187,8 +187,17 @@ def _make_source(
     *,
     static_schema: AppSchema | None = None,
     list_response_model: type[BaseModel] | None = None,
+    load_script: Callable[[str], Awaitable[_FixtureScript]] | None = None,
+    load_scripts: (
+        Callable[[Sequence[str]], Awaitable[Mapping[str, _FixtureScript]]] | None
+    ) = None,
 ) -> ScriptSource:
-    """Build a ``ScriptSource`` whose hooks read the fixture script directory."""
+    """Build a ``ScriptSource`` whose hooks read the fixture script directory.
+
+    ``load_script`` / ``load_scripts`` override the fixture loaders so a test can
+    swap in a counting or failing variant without reaching around the source's
+    ``frozen=True`` guard.
+    """
     registry = {
         name: _FixtureScript(name, params) for name, params in _SCRIPT_PARAMS.items()
     }
@@ -207,13 +216,14 @@ def _make_source(
 
     return ScriptSource(
         script_dir=scripts_dir,
-        load_script=_load_script,
+        load_script=load_script or _load_script,
         list_scripts=_list_scripts,
         build_form_schema=_build_form_schema,
         build_execution_meta=_build_execution_meta,
         list_response=_list_row,
         static_schema=static_schema,
         list_response_model=list_response_model,
+        load_scripts=load_scripts,
     )
 
 
@@ -345,15 +355,14 @@ class TestBatchResolve:
         self, scripts_dir: Path
     ) -> None:
         """Look a repeated filename up once and still key it in the result."""
-        source = _make_source(scripts_dir)
+        base = _make_source(scripts_dir)
         calls: list[str] = []
-        original = source.load_script
 
         async def _counting_load(filename: str) -> _FixtureScript:
             calls.append(filename)
-            return await original(filename)
+            return await base.load_script(filename)
 
-        object.__setattr__(source, "load_script", _counting_load)
+        source = _make_source(scripts_dir, load_script=_counting_load)
         resolved = await resolve_scripts(source, ["report.sh", "report.sh"])
         assert calls == ["report.sh"]
         assert set(resolved) == {"report.sh"}
@@ -365,12 +374,11 @@ class TestBatchResolve:
         self, scripts_dir: Path, unsafe: str
     ) -> None:
         """Reject an unsafe filename with 400 before touching any loader."""
-        source = _make_source(scripts_dir)
 
         async def _fail_load(filename: str) -> _FixtureScript:
             raise AssertionError("load_script must not run for an unsafe filename")
 
-        object.__setattr__(source, "load_script", _fail_load)
+        source = _make_source(scripts_dir, load_script=_fail_load)
         with pytest.raises(HTTPBadRequestException):
             await resolve_scripts(source, ["report.sh", unsafe])
 
@@ -378,19 +386,16 @@ class TestBatchResolve:
         self, scripts_dir: Path
     ) -> None:
         """Delegate to ``load_scripts`` with deduped filenames when the hook is set."""
-        source = _make_source(scripts_dir)
         seen: list[Sequence[str]] = []
 
         async def _batch(filenames: Sequence[str]) -> dict[str, _FixtureScript]:
             seen.append(list(filenames))
             return {name: _FixtureScript(name, {}) for name in filenames}
 
-        object.__setattr__(source, "load_scripts", _batch)
-
         async def _fail_load(filename: str) -> _FixtureScript:
             raise AssertionError("load_script must not run when a batch hook is set")
 
-        object.__setattr__(source, "load_script", _fail_load)
+        source = _make_source(scripts_dir, load_script=_fail_load, load_scripts=_batch)
         resolved = await resolve_scripts(source, ["report.sh", "report.sh", "x.sh"])
         assert seen == [["report.sh", "x.sh"]]
         assert set(resolved) == {"report.sh", "x.sh"}
@@ -400,12 +405,11 @@ class TestBatchResolve:
         self, scripts_dir: Path, unsafe: str
     ) -> None:
         """Reject an unsafe filename with 400 before a batch hook can run."""
-        source = _make_source(scripts_dir)
 
         async def _fail_batch(filenames: Sequence[str]) -> dict[str, _FixtureScript]:
             raise AssertionError("load_scripts must not run for an unsafe filename")
 
-        object.__setattr__(source, "load_scripts", _fail_batch)
+        source = _make_source(scripts_dir, load_scripts=_fail_batch)
         with pytest.raises(HTTPBadRequestException):
             await resolve_scripts(source, ["report.sh", unsafe])
 
@@ -413,7 +417,6 @@ class TestBatchResolve:
         self, scripts_dir: Path
     ) -> None:
         """Resolve an empty selection to an empty mapping, calling no loader."""
-        source = _make_source(scripts_dir)
 
         async def _fail_load(filename: str) -> _FixtureScript:
             raise AssertionError("no loader must run for an empty selection")
@@ -421,8 +424,9 @@ class TestBatchResolve:
         async def _fail_batch(filenames: Sequence[str]) -> dict[str, _FixtureScript]:
             raise AssertionError("no loader must run for an empty selection")
 
-        object.__setattr__(source, "load_script", _fail_load)
-        object.__setattr__(source, "load_scripts", _fail_batch)
+        source = _make_source(
+            scripts_dir, load_script=_fail_load, load_scripts=_fail_batch
+        )
         assert await resolve_scripts(source, []) == {}
 
 
