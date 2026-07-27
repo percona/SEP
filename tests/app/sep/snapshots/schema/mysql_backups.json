@@ -16,6 +16,7 @@
             "path": "data.meta.target"
           },
           {
+            "highlight": "yaml",
             "label": "Config (YAML)",
             "path": "data.meta.config"
           }
