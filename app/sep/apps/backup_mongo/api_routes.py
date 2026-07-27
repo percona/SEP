@@ -128,10 +128,4 @@ async def backup_mongo_api_delete(
         parent_task.name,
         backup_derived_task_names(parent_task.name),
     )
-    if not result.success:
-        failed = [
-            (failure.task_name, str(failure.exception)) for failure in result.failures
-        ]
-        raise HTTPInternalServerErrorException(
-            detail=f"Partial delete failure; orphaned tasks: {failed}"
-        )
+    result.raise_if_failed(op="delete")
