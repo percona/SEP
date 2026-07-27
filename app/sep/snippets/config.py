@@ -388,6 +388,10 @@ class SnippetsSettings(BaseYamlSettings):
     :param ENABLE_MANUAL_SYNC: Whether to enable manual synchronization of snippets.
         Defaults to `False`.
     :type ENABLE_MANUAL_SYNC: bool
+    :param AUTO_APPROVE_BUILTIN_SNIPPETS: Whether sync may auto-approve snippets
+        whose filename and SHA-256 digest match the built-in checksum manifest.
+        Defaults to ``True``. When ``False``, sync never auto-approves any snippet.
+    :type AUTO_APPROVE_BUILTIN_SNIPPETS: bool
     :param SYNC_ON_STARTUP: Whether to synchronize snippets on application startup.
         Defaults to `True`.
     :type SYNC_ON_STARTUP: bool
@@ -418,6 +422,7 @@ class SnippetsSettings(BaseYamlSettings):
         IntervalSchedule(every=1, period=Period.HOURS)
     )
     ENABLE_MANUAL_SYNC: bool = hot_field(default=False)
+    AUTO_APPROVE_BUILTIN_SNIPPETS: bool = hot_field(default=True)
     SYNC_ON_STARTUP: bool = True
     PREVIEW_MAX_CHARS: PositiveInt = hot_field(10000)
     PREVIEW_MAX_LINES: PositiveInt = hot_field(500)
