@@ -67,6 +67,15 @@ Hard-coded periodic schedules in seed files are a red flag when the task's confi
 
 A new or modified state machine must name, for each non-terminal state, the server-side actor that advances it (a reconciler, a `task_postrun` receiver, a `save()` hook) or a contract-permitted client action. "The edge is declared valid" is not "something drives it." Mirror-image pairs (ENABLING/DISABLING) are the canonical bug — one side gets a driver, its mirror doesn't.
 
+## Cross-service resource contracts
+
+When a design names a physical resource that crosses a service boundary — a filesystem path, a local port, a host socket, a shared temp dir — name the process that places it there and confirm every supported deployment topology permits it (split: separate containers, files moved over HTTP; consolidated: shared filesystem). Red flags: a `Path` / file parameter produced by one service and consumed by another; `localhost` / `127.0.0.1` in config read by a different container; satisfying a `Path` parameter by spooling a stream to a temp file (the type is wrong, not the caller).
+
+## Upstream errors & trust boundaries
+
+- A JSON endpoint wrapping an upstream API call (Tasks / Inventory) must re-raise the upstream **status code**, not collapse it to 500 — and apply that mapping on every branch of a multi-branch route.
+- At trust boundaries (upstream JSON, `RemoteAPI` responses, third-party payloads) surface contract violations as exceptions via `.model_validate()` or explicit type checks — never silently degrade to null / empty / default (parse, don't guard).
+
 ## App layout
 
 `app/sep/apps/<name>/` with `routes.py`, `deps.py`, optional `models.py`. Registration in `settings.yaml` under `SEP.APPS`. Flag apps that put dep aliases in `routes.py`/`models.py` or scatter helpers into ad-hoc module names.

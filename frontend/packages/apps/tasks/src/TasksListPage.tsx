@@ -15,21 +15,32 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { useState } from 'react';
 import { Alert, Box, CircularProgress, Typography } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
+import { DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import { SchemaListView } from '@sep/framework';
 import { useTasksList, useTasksAppSchema } from './hooks';
 
 export function TasksListPage() {
   const navigate = useNavigate();
+  const [listPage, setListPage] = useState({
+    offset: DEFAULT_APP_LIST_OFFSET,
+    limit: DEFAULT_APP_LIST_LIMIT,
+  });
   const { data: schema, isLoading: schemaLoading, error: schemaError } = useTasksAppSchema();
   const {
-    data: rows = [],
+    data: listResult,
     isLoading: listLoading,
     error: listError,
   } = useTasksList({
     enabled: Boolean(schema?.list_view),
+    offset: listPage.offset,
+    limit: listPage.limit,
   });
+
+  const rows = listResult?.items ?? [];
+  const listPagination = listResult?.pagination ?? null;
 
   if (schemaLoading) {
     return (
@@ -74,6 +85,16 @@ export function TasksListPage() {
         listView={listView}
         data={rows as unknown as Record<string, unknown>[]}
         isLoading={listLoading}
+        pagination={
+          listPagination
+            ? {
+                total: listPagination.total,
+                offset: listPagination.offset,
+                limit: listPagination.limit,
+                onChange: setListPage,
+              }
+            : null
+        }
         onRowClick={(row) => {
           const name = row.name;
           if (name !== undefined && name !== null) {

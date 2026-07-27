@@ -56,14 +56,18 @@ from app.sep.apps.framework.api import CascadeCreatePlan
 from app.sep.apps.framework.cascade import (
     cascade_create_independent_tasks,
     cascade_delete_tasks,
+    CascadeFailure,
+    CascadeResult,
 )
+from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
+    check_group_for_conflicted_running_tasks,
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
     get_tasks_context,
     InventoryAPI,
-    protected_task_guard,
+    reject_if_protected,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -236,11 +240,13 @@ def restore_update_form_from_write(
     :return: A :class:`RestoreCreate` instance for payload construction.
     :rtype: RestoreCreate
     """
-    return restore_create_from_write(body).model_copy(
-        update={
+    return RestoreCreate.model_validate(
+        {
+            **body.model_dump(mode="json"),
             "task_name": parent_task.name,
             "backup_type": _backup_type_from_parent(parent_task),
-        }
+        },
+        from_attributes=False,
     )
 
 
@@ -267,41 +273,40 @@ async def update_restore_task_group(
     parent_task: Task,
     form: RestoreCreate,
     inventory_api: InventoryAPI,
-) -> Task:
-    """PUT updated payloads for the parent config task and each child leg.
+) -> CascadeResult:
+    """PUT the parent config task and each child leg, best-effort.
+
+    PUTs the parent plus the restore, pbm-list, and optional force-resync legs,
+    collecting per-leg failures instead of raising so a mid-cascade error does
+    not leave the group half-updated with the failure unreported. The caller
+    inspects the result and raises on partial failure.
 
     :param tasks_api: The TaskAPI instance used to update tasks.
-    :type tasks_api: TaskAPI
     :param parent_task: The parent restore config task.
-    :type parent_task: Task
     :param form: The restore update input with identity pinned to ``parent_task``.
-    :type form: RestoreCreate
     :param inventory_api: The Inventory API to look up services.
-    :type inventory_api: InventoryAPI
-    :return: The refreshed parent restore config task.
-    :rtype: Task
+    :return: The per-leg update outcome across the parent and child legs.
     """
     service_name = await _resolve_service_name(form, inventory_api)
     payloads = build_restore_payloads(form, service_name)
+    stamp_form_input(payloads.config_task, form)
 
-    await tasks_api.put(
-        f"/{parent_task.name}",
-        json=payloads.config_task.model_dump(),
-    )
-    await tasks_api.put(
-        f"/{payloads.restore_task.name}",
-        json=payloads.restore_task.model_dump(),
-    )
-    await tasks_api.put(
-        f"/{payloads.pbm_list_task.name}",
-        json=payloads.pbm_list_task.model_dump(),
-    )
+    legs = [
+        (parent_task.name, payloads.config_task),
+        (payloads.restore_task.name, payloads.restore_task),
+        (payloads.pbm_list_task.name, payloads.pbm_list_task),
+    ]
     if payloads.force_resync_task is not None:
-        await tasks_api.put(
-            f"/{payloads.force_resync_task.name}",
-            json=payloads.force_resync_task.model_dump(),
-        )
-    return await get_restores_task(parent_task.name, tasks_api)
+        legs.append((payloads.force_resync_task.name, payloads.force_resync_task))
+
+    result = CascadeResult()
+    for name, payload in legs:
+        try:
+            await tasks_api.put(f"/{name}", json=payload.model_dump())
+            result.successes.append(name)
+        except Exception as exc:  # noqa: BLE001 — surfaced as HTTP 500 by the route
+            result.failures.append(CascadeFailure(name, exc))
+    return result
 
 
 async def build_restore_task_group(
@@ -675,30 +680,56 @@ async def get_restore_parent_task(
 RestoreParentTask = Annotated[Task, Depends(get_restore_parent_task)]
 
 
-get_unprotected_restore_parent_task = protected_task_guard(get_restore_parent_task)
+async def get_editable_restore_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Resolve the parent restore task or raise when it is not editable.
 
-UnprotectedRestoreParentTask = Annotated[
+    Resolves a satellite name to the parent config task, then gates the
+    resolved parent: rejects protected tasks and blocks updates while a run of
+    the group is in flight. Checking the conflict against the *resolved* parent
+    name (not the raw path) closes the gap where a ``PUT`` addressed at an idle
+    child leg could mutate a running group.
+
+    :param task_name: The task name from the URL path; may be a child leg.
+    :param tasks_api: The TaskAPI instance used to resolve and gate the parent.
+    :raises HTTPConflictException: If the parent is protected or any group member
+        has a running/pending run.
+    :return: The editable parent restore config task.
+    """
+    parent_task = await get_restore_parent_task(task_name, tasks_api)
+    reject_if_protected(parent_task)
+    child_names = restore_child_task_names(
+        parent_task.name, _backup_type_from_parent(parent_task)
+    )
+    await check_group_for_conflicted_running_tasks(
+        [parent_task.name, *child_names], tasks_api
+    )
+    return parent_task
+
+
+EditableRestoreParent = Annotated[
     Task,
-    Depends(get_unprotected_restore_parent_task),
+    Depends(get_editable_restore_parent_task),
 ]
 
 
 def build_restore_update_form_from_body(
     body: RestoreTaskWrite,
-    parent_task: UnprotectedRestoreParentTask,
+    parent_task: EditableRestoreParent,
 ) -> RestoreCreate:
     """Build a restore update form from a JSON API request body.
 
     Converts the body to :class:`RestoreCreate` with ``task_name`` and
-    ``backup_type`` pinned from the path parent. Does not mutate tasks; callers
-    pass the result to :func:`update_restore_task_group`.
+    ``backup_type`` pinned from the path parent (rename is not supported on
+    edit). Does not mutate tasks; callers pass the result to
+    :func:`update_restore_task_group`. Depends on the same editable-parent gate
+    as the route so FastAPI resolves and gates the parent once per request.
 
     :param body: The JSON request body for restore task update.
-    :type body: RestoreTaskWrite
-    :param parent_task: The unprotected parent restore config task from the URL path.
-    :type parent_task: Task
+    :param parent_task: The editable parent restore config task from the URL path.
     :return: A :class:`RestoreCreate` instance for payload construction.
-    :rtype: RestoreCreate
     """
     return restore_update_form_from_write(body, parent_task)
 

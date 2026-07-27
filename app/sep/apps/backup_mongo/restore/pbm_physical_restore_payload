@@ -37,15 +37,17 @@ def _creds_path(config_source: str) -> str:
     return f"{envhome}/.mongodb_uri"
 
 
-def _creds_path_from_config(config: dict | None, config_source: str = "restore") -> str:
+def _creds_path_from_config(config: object, config_source: str = "restore") -> str:
     """Resolve the MongoDB URI credentials path from an already-parsed config dict.
 
-    :param config: The parsed restore/backup config dict, or ``None`` when absent.
+    :param config: The parsed restore/backup config value. Anything other than a
+        ``dict`` (``None``, a bare scalar, a list, ...) is treated as missing config,
+        since ``yaml.safe_load`` can legally return a truthy non-dict.
     :param config_source: The config surface named in the error message, either
         ``"backup"`` or ``"restore"``.
     :return: The credentials-file path (from the config or the ``$HOME`` fallback).
     """
-    if config:
+    if isinstance(config, dict):
         path = config.get("credentials_path")
         if path:
             return path
@@ -86,6 +88,46 @@ def pbm_creds(creds_path: str) -> str:
 # --- END GENERATED PBM CREDS PREAMBLE ---
 
 
+# --- BEGIN GENERATED PBM RESTORE YES ---
+_PBM_RESTORE_HELP_TIMEOUT_SECONDS = 10
+
+
+def _append_pbm_restore_yes_if_supported(cmd: list[str]) -> None:
+    """Append ``--yes`` to ``cmd`` when ``pbm restore --help`` advertises it.
+
+    PBM >=2.14 prompts for confirmation unless ``--yes`` is passed; under Nomad
+    there is no TTY, so that prompt cancels and the restore can report SUCCESS
+    while Mongo stays empty. Older builds do not know ``--yes``, so only add it
+    when help text advertises the flag. Bound the help probe with a short
+    timeout so a hung ``pbm`` cannot stall the restore forever.
+
+    :param cmd: The restore command list being built (mutated in place).
+    """
+    try:
+        help_cmd = ["pbm", "restore", "--help"]
+        help_proc = subprocess.run(  # noqa: S603 # nosec B603
+            help_cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_PBM_RESTORE_HELP_TIMEOUT_SECONDS,
+        )
+        help_text = f"{help_proc.stdout or ''}{help_proc.stderr or ''}"
+        if "--yes" in help_text:
+            cmd.append("--yes")
+    except OSError as err:
+        print(
+            f"Could not probe pbm restore --help for --yes support: {err}",
+            file=sys.stderr,
+        )
+    except subprocess.TimeoutExpired as err:
+        print(
+            f"pbm restore --help timed out while probing for --yes support: {err}",
+            file=sys.stderr,
+        )
+# --- END GENERATED PBM RESTORE YES ---
+
+
 def pbm():
     """ PBM Physical Restore Payload """
 
@@ -95,6 +137,8 @@ def pbm():
     # Load configuration
     with open(config_file, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
+    if not isinstance(config, dict):
+        config = {}
 
     os.environ['PBM_MONGODB_URI'] = pbm_creds(_creds_path_from_config(config))
 
@@ -105,8 +149,9 @@ def pbm():
         print("Error: BACKUP_SOURCE (backup name) is required")
         sys.exit(1)
 
-    # Build restore command
-    cmd = ['pbm', 'restore', backup_name, '--wait']
+    cmd = ['pbm', 'restore', backup_name]
+    _append_pbm_restore_yes_if_supported(cmd)
+    cmd.append('--wait')
 
     proc = subprocess.Popen(cmd)
     proc.wait()

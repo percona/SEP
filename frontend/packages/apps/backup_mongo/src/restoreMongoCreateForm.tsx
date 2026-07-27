@@ -107,28 +107,58 @@ export const restoreMongoCreateRenderField: RenderFieldOverride = ({
 };
 
 /**
+ * Render the shared MongoDB restore form layout for a create or edit slot.
+ *
+ * Accordion padding is scoped via the wrapper class (not in SchemaFormRenderer)
+ * so other apps' collapsible sections keep their existing spacing.
+ */
+function renderRestoreMongoForm(
+  {
+    sections,
+    onSubmit,
+    loading,
+    capabilities,
+    renderField,
+    submitError,
+    fieldErrors,
+  }: Parameters<RenderFormSlot>[0],
+  { defaultValues, submitLabel }: { defaultValues?: Record<string, unknown>; submitLabel: string },
+): ReactNode {
+  return (
+    <div className="restore-mongo-create-form">
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        loading={loading}
+        capabilities={capabilities}
+        renderField={renderField}
+        defaultValues={defaultValues}
+        submitLabel={submitLabel}
+        submitError={submitError}
+        fieldErrors={fieldErrors}
+      />
+    </div>
+  );
+}
+
+/**
  * Create-form slot: seed ``task_name`` with a stamped suggestion so the field
  * does not flash (or stick on) the static schema default ``mongodb-restore``.
- *
- * Accordion padding is scoped here (not in SchemaFormRenderer) so other apps'
- * collapsible sections keep their existing spacing.
  */
-export const restoreMongoCreateForm: RenderFormSlot = ({
-  sections,
-  onSubmit,
-  loading,
-  capabilities,
-  renderField,
-}) => (
-  <div className="restore-mongo-create-form">
-    <SchemaFormRenderer
-      sections={sections}
-      onSubmit={onSubmit}
-      loading={loading}
-      capabilities={capabilities}
-      renderField={renderField}
-      defaultValues={{ task_name: suggestMongoRestoreTaskName() }}
-      submitLabel="Create MongoDB Restores"
-    />
-  </div>
-);
+export const restoreMongoCreateForm: RenderFormSlot = (props) =>
+  renderRestoreMongoForm(props, {
+    defaultValues: { task_name: suggestMongoRestoreTaskName() },
+    submitLabel: 'Create MongoDB Restores',
+  });
+
+/**
+ * Edit-form slot: reuse the custom restore layout while deferring to the edit
+ * page's stored-form ``defaultValues`` and a neutral ``Save`` label. The edit
+ * page strips ``task_name`` from the sections, so the create-only task-name
+ * suggestion never mounts here.
+ */
+export const restoreMongoEditForm: RenderFormSlot = (props) =>
+  renderRestoreMongoForm(props, {
+    defaultValues: props.defaultValues,
+    submitLabel: 'Save',
+  });

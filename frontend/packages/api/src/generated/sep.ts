@@ -915,7 +915,9 @@ export interface paths {
      * @description Update a restore task from a JSON payload request body.
      *
      *     PUTs the parent config payload to the config task name and refreshes each
-     *     child leg (restore, pbm-list, optional force-resync) in place.
+     *     child leg (restore, pbm-list, optional force-resync) in place. The
+     *     ``EditableRestoreParent`` dependency resolves a satellite URL to the parent
+     *     and blocks protected or in-flight groups before any write.
      */
     put: operations['backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put'];
     post?: never;
@@ -983,7 +985,18 @@ export interface paths {
      * @description Retrieve a single parent backup task with derived sibling status.
      */
     get: operations['backup_mongo_backup_mongo_api_detail_api_apps_backup_mongo__task_name__get'];
-    put?: never;
+    /**
+     * Backup Mongo Api Update
+     * @description Update a backup task group from a JSON payload request body.
+     *
+     *     Cascade-updates the parent ``pbm_config`` task and its derived logical,
+     *     physical, and status siblings, re-stamping ``_form`` so the edit page keeps
+     *     prefilling. The ``EditableBackupParent`` dependency resolves a satellite URL
+     *     to the parent and blocks protected or in-flight groups before any write.
+     *     Rejects a parent rename with a conflict and surfaces a partial cascade
+     *     failure as an HTTP 500 naming the failed legs.
+     */
+    put: operations['backup_mongo_backup_mongo_api_update_api_apps_backup_mongo__task_name__put'];
     post?: never;
     /**
      * Backup Mongo Api Delete
@@ -5570,6 +5583,9 @@ export interface components {
      *     :type backup_type: BackupType
      *     :param backup_source: Backup name or timestamp to restore from.
      *     :type backup_source: NonEmptyStr
+     *     :param restore_namespace_filter: Optional database or collection namespace
+     *         filter for a logical restore.
+     *     :type restore_namespace_filter: str | None
      *     :param restore_batch_size: Number of documents to buffer.
      *     :type restore_batch_size: int | None
      *     :param restore_num_insertion_workers: Insertion workers per collection.
@@ -5607,6 +5623,8 @@ export interface components {
       restore_mongod_location?: string | null;
       /** Restore Mongod Location Map */
       restore_mongod_location_map?: string | null;
+      /** Restore Namespace Filter */
+      restore_namespace_filter?: string | null;
       /** Restore Num Download Workers */
       restore_num_download_workers?: number | null;
       /** Restore Num Insertion Workers */
@@ -6983,13 +7001,17 @@ export interface components {
      *
      *     The React renderer loads options from ``GET /api/sep/hosts/`` (an SEP
      *     proxy endpoint that internally calls Tasks ``/hosts/`` and merges
-     *     Inventory display names server-side). Host selection is not cascaded
-     *     from another field — every dispatch form lists every available executor
-     *     target.
+     *     Inventory display names server-side). When ``depends_on`` is set (typically
+     *     a ``ServiceField``), the renderer may auto-select an executor from the
+     *     upstream service; when omitted every available executor is listed and no
+     *     cascade runs.
      *
      *     :param field_type: The discriminator literal; always ``"host"`` for this
      *         class. Serialised as the JSON key ``"type"``.
      *     :type field_type: Literal["host"]
+     *     :param depends_on: Optional name of the field whose value drives the
+     *         default executor selection. ``None`` (the default) omits the key from
+     *         the wire so plugins that do not opt in stay byte-identical.
      *     :param allow_custom: When ``True``, the selector also accepts a free-typed
      *         value alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -6999,6 +7021,8 @@ export interface components {
       allow_custom?: boolean | null;
       /** Default */
       default?: unknown | null;
+      /** Depends On */
+      depends_on?: string | null;
       /** Description */
       description?: string | null;
       /** Forbidden */
@@ -7138,8 +7162,16 @@ export interface components {
      *     list of executor targets instead of a single one. Derived from a
      *     ``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
      *
+     *     Cascade auto-select is single-host only (:class:`HostField`). ``depends_on``
+     *     may still be emitted when ``Ui(depends_on=...)`` is set so derivation stays
+     *     uniform, but the multi-host renderer does not honour it today.
+     *
      *     :param field_type: The discriminator literal; always ``"multi_host"`` for
      *         this class. Serialised as the JSON key ``"type"``.
+     *     :param depends_on: Optional upstream field name mirrored from
+     *         ``Ui(depends_on=...)``. Emitted for wire uniformity with
+     *         :class:`HostField`; the current multi-host renderer ignores it (no
+     *         cascade). ``None`` (the default) omits the key from the wire.
      *     :param allow_custom: When ``True``, the selector also accepts free-typed
      *         values alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -7149,6 +7181,8 @@ export interface components {
       allow_custom?: boolean | null;
       /** Default */
       default?: unknown | null;
+      /** Depends On */
+      depends_on?: string | null;
       /** Description */
       description?: string | null;
       /** Forbidden */
@@ -9338,6 +9372,8 @@ export interface components {
      *     :param total_run_count: The total number of times the schedule has run,
      *         or ``None`` when unavailable.
      *     :type total_run_count: int | None
+     *     :param last_run_status: The result of this schedule's own most recent run,
+     *         or ``None`` when the schedule has never run.
      *     :param chain_task_names: Ordered task names in the periodic execution
      *         chain, if any.
      *     :type chain_task_names: list[str]
@@ -9351,6 +9387,7 @@ export interface components {
       id: number;
       /** Last Run At */
       last_run_at?: string | null;
+      last_run_status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Name */
       name: string;
       /** Next Run At */
@@ -11186,6 +11223,41 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['backup_mongo__BackupTaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_backup_mongo_api_update_api_apps_backup_mongo__task_name__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['backup_mongo__BackupTaskWrite'];
+      };
+    };
     responses: {
       /** @description Successful Response */
       200: {

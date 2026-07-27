@@ -17,7 +17,7 @@
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError } from '@sep/api';
+import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import { SnippetsListPage } from './SnippetsListPage';
 import {
   useSnippets,
@@ -28,7 +28,7 @@ import {
   useRefreshSnippets,
 } from './hooks';
 
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router', () => ({
   useNavigate: () => vi.fn(),
 }));
 
@@ -47,6 +47,17 @@ const mockUseRemoveSnippetApproval = vi.mocked(useRemoveSnippetApproval);
 const mockUseBatchApproveSnippets = vi.mocked(useBatchApproveSnippets);
 const mockUseSnippetsCapabilities = vi.mocked(useSnippetsCapabilities);
 const mockUseRefreshSnippets = vi.mocked(useRefreshSnippets);
+
+function snippetsListResult(
+  items: Record<string, unknown>[],
+  pagination: { total: number; offset: number; limit: number } | null = null,
+) {
+  return {
+    data: { items, pagination },
+    isLoading: false,
+    error: null,
+  } as unknown as ReturnType<typeof useSnippets>;
+}
 
 const unapprovedSnippet = {
   filename: 'check.sh',
@@ -106,11 +117,7 @@ describe('SnippetsListPage — ApproveButton', () => {
 
   describe('per-row approval requires confirmation', () => {
     beforeEach(() => {
-      mockUseSnippets.mockReturnValue({
-        data: [unapprovedSnippet],
-        isLoading: false,
-        error: null,
-      } as unknown as ReturnType<typeof useSnippets>);
+      mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
     });
 
     it('disables approval until the snippet has been downloaded', () => {
@@ -176,11 +183,7 @@ describe('SnippetsListPage — ApproveButton', () => {
 
   describe('Remove approval button needs no confirmation', () => {
     beforeEach(() => {
-      mockUseSnippets.mockReturnValue({
-        data: [approvedSnippet],
-        isLoading: false,
-        error: null,
-      } as unknown as ReturnType<typeof useSnippets>);
+      mockUseSnippets.mockReturnValue(snippetsListResult([approvedSnippet]));
     });
 
     it('fires remove mutation immediately without a dialog', () => {
@@ -195,11 +198,7 @@ describe('SnippetsListPage — ApproveButton', () => {
 
   describe('batch approval requires confirmation', () => {
     beforeEach(() => {
-      mockUseSnippets.mockReturnValue({
-        data: [unapprovedSnippet, approvedSnippet],
-        isLoading: false,
-        error: null,
-      } as unknown as ReturnType<typeof useSnippets>);
+      mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet, approvedSnippet]));
     });
 
     it('opens a confirmation dialog instead of batch approving immediately', () => {
@@ -240,11 +239,7 @@ describe('SnippetsListPage — RefreshButton', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseSnippets.mockReturnValue({
-      data: [],
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseSnippets.mockReturnValue(snippetsListResult([]));
     mockUseApproveSnippet.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
@@ -425,11 +420,7 @@ describe('SnippetsListPage — RefreshButton', () => {
   });
 
   it('clears downloaded set after successful refresh', async () => {
-    mockUseSnippets.mockReturnValue({
-      data: [unapprovedSnippet],
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
     mockUseSnippetsCapabilities.mockReturnValue({
       data: { manual_sync_enabled: true },
       isLoading: false,
@@ -458,11 +449,7 @@ describe('SnippetsListPage — RefreshButton', () => {
   });
 
   it('clears selected set after successful refresh', async () => {
-    mockUseSnippets.mockReturnValue({
-      data: [unapprovedSnippet],
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
     mockUseSnippetsCapabilities.mockReturnValue({
       data: { manual_sync_enabled: true },
       isLoading: false,
@@ -491,11 +478,9 @@ describe('SnippetsListPage — RefreshButton', () => {
   });
 
   it('resets the service-type filter after a successful refresh', async () => {
-    mockUseSnippets.mockReturnValue({
-      data: [{ ...unapprovedSnippet, filename: 'mysql.sh', service_type: 'mysql' }],
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([{ ...unapprovedSnippet, filename: 'mysql.sh', service_type: 'mysql' }]),
+    );
     mockUseSnippetsCapabilities.mockReturnValue({
       data: { manual_sync_enabled: true },
       isLoading: false,
@@ -573,11 +558,7 @@ describe('SnippetsListPage — filters', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseSnippets.mockReturnValue({
-      data: allSnippets,
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseSnippets.mockReturnValue(snippetsListResult(allSnippets));
     mockUseApproveSnippet.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
@@ -666,11 +647,7 @@ describe('SnippetsListPage — filters', () => {
       service_type: 'all',
       is_approved: false,
     };
-    mockUseSnippets.mockReturnValue({
-      data: [literalAll, mongoUnapproved],
-      isLoading: false,
-      error: null,
-    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseSnippets.mockReturnValue(snippetsListResult([literalAll, mongoUnapproved]));
 
     render(<SnippetsListPage />);
 
@@ -700,5 +677,78 @@ describe('SnippetsListPage — filters', () => {
 
     expect(screen.queryByRole('button', { name: /batch approve/i })).not.toBeInTheDocument();
     expect(batchMutate).not.toHaveBeenCalled();
+  });
+});
+
+describe('SnippetsListPage — server pagination', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseApproveSnippet.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useApproveSnippet>);
+    mockUseRemoveSnippetApproval.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRemoveSnippetApproval>);
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+  });
+
+  it('requests the default page from useSnippets', () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
+
+    render(<SnippetsListPage />);
+
+    expect(mockUseSnippets).toHaveBeenCalledWith({
+      offset: DEFAULT_APP_LIST_OFFSET,
+      limit: DEFAULT_APP_LIST_LIMIT,
+    });
+  });
+
+  it('renders TablePagination when the hook returns pagination metadata', () => {
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([unapprovedSnippet], { total: 120, offset: 0, limit: 50 }),
+    );
+
+    render(<SnippetsListPage />);
+
+    expect(screen.getByText(/1–50 of 120/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /go to next page/i })).toBeInTheDocument();
+  });
+
+  it('omits TablePagination when the hook returns a bare list', () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
+
+    render(<SnippetsListPage />);
+
+    expect(screen.queryByText(/of \d+/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /go to next page/i })).not.toBeInTheDocument();
+  });
+
+  it('refetches with the new offset when the next page is clicked', () => {
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([unapprovedSnippet], { total: 120, offset: 0, limit: 50 }),
+    );
+
+    render(<SnippetsListPage />);
+    mockUseSnippets.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: /go to next page/i }));
+
+    expect(mockUseSnippets).toHaveBeenCalledWith({
+      offset: 50,
+      limit: 50,
+    });
   });
 });
