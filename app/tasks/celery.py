@@ -845,7 +845,8 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
         )
         await session.refresh(saved, attribute_names=["execution_request"])
     await maybe_dispatch_chain(saved, was_running=was_running, await_annotations=True)
-    await maybe_record_run(saved.id, executor)
+    if saved.status.is_terminal():
+        await maybe_record_run(saved.id, executor)
     return saved
 
 
