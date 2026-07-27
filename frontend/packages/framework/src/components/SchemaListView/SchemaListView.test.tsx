@@ -30,12 +30,14 @@ const { useScheduledTasksForAppMock } = vi.hoisted(() => ({
 // order-independent when the whole suite runs.
 vi.mock('../ScheduledTasksPanel', async () => {
   const periods = await import('../ScheduledTasksPanel/periods');
+  const { LastRunStatus } = await import('../ScheduledTasksPanel/LastRunStatus');
   return {
     useScheduledTasksForApp: (...args: unknown[]) => useScheduledTasksForAppMock(...args),
     describePeriod: periods.describePeriod,
     formatRelativeTime: periods.formatRelativeTime,
     formatAbsoluteTime: periods.formatAbsoluteTime,
     selectSchedule: periods.selectSchedule,
+    LastRunStatus,
   };
 });
 

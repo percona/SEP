@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { RouteObject } from 'react-router-dom';
+import type { RouteObject } from 'react-router';
 import { AltersApp } from './AltersApp';
 
 export const APP_NAME = 'alters';

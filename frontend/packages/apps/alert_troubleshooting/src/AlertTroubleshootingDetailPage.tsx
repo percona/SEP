@@ -16,7 +16,7 @@
  */
 
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { Alert, Box, CircularProgress, Link as MuiLink, Typography } from '@mui/material';
 import { SnippetExecutionAccordion, StandaloneHostSelector } from '@sep/framework';
 import { useAlertDetail } from './hooks';

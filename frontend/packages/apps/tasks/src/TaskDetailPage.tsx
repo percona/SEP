@@ -37,7 +37,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import {
   ChainDisplay,
   RUNNING_STATUSES,
