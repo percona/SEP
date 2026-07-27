@@ -360,12 +360,7 @@ export interface DetailField {
   /** Dotted path into the task record (e.g. ``"data.meta.command"``). */
   path: string;
   label: string;
-  /**
-   * Optional syntax-highlighter hint. ``yaml`` is frontend-only: the backend
-   * ``DetailHighlightLanguage`` enum does not emit it yet, so no
-   * backend-declared field can carry ``highlight: 'yaml'`` until that
-   * follow-up lands. The frontend ``DetailSyntaxHighlighter`` already renders it.
-   */
+  /** Optional syntax-highlighter hint; mirrors the backend ``DetailHighlightLanguage`` enum. */
   highlight?: 'sql' | 'json' | 'bash' | 'yaml';
 }
 
@@ -389,8 +384,9 @@ export interface AppEntitySchema {
   description?: string;
   forms: FormSection[];
   list_view: ListView;
-  /** Optional detail-view syntax hints keyed by field name. */
-  detail_highlights?: Partial<Record<string, 'sql' | 'json' | 'bash'>>;
+  /** Optional detail-view syntax hints keyed by field name; mirrors the backend
+   * ``DetailHighlightLanguage`` enum. */
+  detail_highlights?: Partial<Record<string, 'sql' | 'json' | 'bash' | 'yaml'>>;
 }
 
 // ── Related apps (sibling tabs) ─────────────────────────────────────────

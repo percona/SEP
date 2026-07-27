@@ -389,23 +389,6 @@ describe('AppDetailPage — detail_view sections', () => {
 });
 
 describe('AppDetailPage — TaskOverviewDetailField object values', () => {
-  function overviewSchema(): AppSchema {
-    return {
-      pluginName: 'checksums',
-      display_name: 'Checksum',
-      description: 'Test',
-      capabilities: {},
-      list_view: {
-        columns: [
-          { key: 'name', label: 'Name' },
-          { key: 'status', label: 'Status', format: 'status' },
-        ],
-        default_sort: '-id',
-      },
-      formSchema: { sections: [] },
-    } as unknown as AppSchema;
-  }
-
   it('renders a nested object extra field via the JSON syntax highlighter, not a raw <pre> dump', async () => {
     mockUseAppTask.mockReturnValue({
       data: {
@@ -417,7 +400,7 @@ describe('AppDetailPage — TaskOverviewDetailField object values', () => {
       isLoading: false,
     });
 
-    renderWithSchema(overviewSchema());
+    renderWithSchema(makeSchema({}));
 
     const hl = await screen.findByTestId('detail-syntax-highlighter');
     expect(hl.getAttribute('data-language')).toBe('json');
@@ -436,7 +419,7 @@ describe('AppDetailPage — TaskOverviewDetailField object values', () => {
       isLoading: false,
     });
 
-    renderWithSchema(overviewSchema());
+    renderWithSchema(makeSchema({}));
 
     const hl = await screen.findByTestId('detail-syntax-highlighter');
     expect(hl.getAttribute('data-language')).toBe('json');
@@ -454,7 +437,7 @@ describe('AppDetailPage — TaskOverviewDetailField object values', () => {
       isLoading: false,
     });
 
-    renderWithSchema(overviewSchema());
+    renderWithSchema(makeSchema({}));
 
     const hl = await screen.findByTestId('detail-syntax-highlighter');
     expect(hl.getAttribute('data-language')).toBe('json');

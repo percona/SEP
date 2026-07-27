@@ -275,11 +275,8 @@ function TaskOverviewDetailField({ label, value }: { label: string; value: unkno
   if (typeof value === 'boolean') {
     display = value ? 'Yes' : 'No';
   } else if (typeof value === 'object') {
-    // Mirror EntityDetailField's un-hinted object branch: highlight the object
-    // as JSON instead of dumping a raw JSON.stringify blob into a bare <pre>.
-    // TaskOverviewDetailField has no schema-provided highlight hint (it is fed
-    // from list_view.columns / extra task keys, not from DetailField), so json
-    // is the fixed language here.
+    // No schema highlight hint here — this component is fed from
+    // list_view.columns / extra task keys, not DetailField.
     display = <JsonObjectPreview value={value} />;
   } else {
     display = String(value);
