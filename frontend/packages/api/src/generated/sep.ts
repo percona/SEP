@@ -678,7 +678,8 @@ export interface paths {
      *     :param snippet_filename: The selected snippet filenames, repeated per snippet
      *         and deduplicated order-preserving.
      *     :return: The shared section followed by each snippet's remaining fields.
-     *     :raises HTTPBadRequestException: When a filename attempts directory traversal.
+     *     :raises HTTPBadRequestException: When a filename is unsafe or malformed, failing
+     *         the whole request before any item is dispatched.
      *     :raises HTTPNotFoundException: When a filename matches no snippet.
      */
     get: operations['atw_atw_execution_schema_api_apps_atw_execution_schema__get'];
@@ -785,10 +786,13 @@ export interface paths {
      * Atw Batch Execute
      * @description Execute several snippets against one incident, reporting each item separately.
      *
-     *     One failing item never blocks the rest: each is dispatched and recorded inside
-     *     its own guard, and the response always carries an entry per requested item. A
-     *     failed attempt produces no task-history row to reference, so it is reported
-     *     here rather than persisted.
+     *     A malformed selection fails the whole request up front: ``resolve_snippets``
+     *     runs the traversal guard over every filename before dispatch, so an unsafe
+     *     filename raises before any item runs. Past that guard, one failing item never
+     *     blocks the rest: each is dispatched and recorded inside its own guard, and the
+     *     response always carries an entry per requested item — an unresolved filename
+     *     becomes that item's error. A failed attempt produces no task-history row to
+     *     reference, so it is reported here rather than persisted.
      *
      *     The row-write guard rolls the shared session back before the loop continues,
      *     or one failed write would leave the transaction aborted and doom every later
@@ -801,6 +805,8 @@ export interface paths {
      *     :param body: The batch payload.
      *     :param tasks_api: The authenticated Tasks API client.
      *     :return: One outcome entry per requested item, in request order.
+     *     :raises HTTPBadRequestException: When any filename is unsafe or malformed,
+     *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
     delete?: never;
