@@ -18,10 +18,8 @@
 Several per-task hooks let the owning plugin *declare* a callable by
 ``"module:function"`` string on the task and have core resolve it lazily the
 first time it is needed — keeping the tasks service free of static ``app.sep``
-imports. Both the failure-alert path
-(:func:`app.tasks.alert_hooks.build_owner_alert_details`) and the run-result
-recorder path (:func:`app.tasks.run_result.maybe_record_run`) share this resolver
-so the ``importlib`` resolve-and-cache boilerplate lives in one place.
+imports. Those hooks share this resolver so the ``importlib``
+resolve-and-cache boilerplate lives in one place.
 """
 
 import importlib

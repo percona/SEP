@@ -20,8 +20,9 @@ static ``app.sep`` import: plugin domain knowledge (e.g. the archiver
 ``PURGE_LIST`` schema) lives in the plugin package, not here. Rather than the
 core enumerating plugins by owner, each task *carries* its enrichment builder:
 the owning plugin stamps a ``"module:function"`` string onto
-``Task.alert_detail_builder`` at creation, and this resolver imports it lazily
-with :func:`importlib.import_module` the first time the task's alert fires. The
+``Task.alert_detail_builder`` at creation, and this task resolves it lazily via
+the shared :func:`app.tasks.hook_resolver.resolve_hook` the first time the
+task's alert fires. The
 dependency points the right way — core discovers, the plugin declares — so a new
 plugin needs no edit here. This mirrors how the Celery executor resolves a task
 ``callable`` by path.
