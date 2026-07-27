@@ -421,7 +421,15 @@ class RemoteChoices:
     :param endpoint: The fully-resolved path the renderer fetches options from,
         relative to the frontend ``apiClient`` base (``/api``). Bake any
         app-specific path segments here at schema-build time (e.g.
-        ``/apps/<app_key>/<resource>``) rather than templating client-side.
+        ``/apps/<app_key>/<sub>/<resource>``) rather than templating client-side.
+
+        .. note::
+            On a ``TaskExecutionApp`` with the default ``capabilities.detail``,
+            ``build_router`` mounts the greedy ``GET /{detail_path_param}``
+            before ``extra_routes``, so a **single-segment** sibling path (e.g.
+            ``/apps/<key>/choices``) will be swallowed by the detail route and
+            return 404. Use at least two path segments after the app prefix
+            (e.g. ``/apps/<key>/backups/choices``) to avoid the collision.
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value alongside the fetched options and emits ``allow_custom`` on the
         wire. Defaults to ``False``.
