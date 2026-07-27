@@ -2054,7 +2054,8 @@ class MyDumper(Backup):
                 upload_destination = remote_path
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
-        size_text = humanize_bytes(get_dir_size(self.backup_dir))
+        size_bytes = get_dir_size(self.backup_dir)
+        size_text = humanize_bytes(size_bytes)
         msg = f"OK Backup complete. Duration: {time_spent}. Size: {size_text}."
         self.logger.info(msg)
         self.notify(BackupNotifyStatus.OK, msg)
@@ -2062,9 +2063,7 @@ class MyDumper(Backup):
         if self.last_backup_dir and Path(self.last_backup_dir).is_dir():
             try:
                 _write_run_result(
-                    str(self.last_backup_dir),
-                    get_dir_size(self.last_backup_dir),
-                    upload_destination,
+                    str(self.last_backup_dir), size_bytes, upload_destination
                 )
             except Exception:
                 self.logger.exception("Failed to write the run-result file.")
