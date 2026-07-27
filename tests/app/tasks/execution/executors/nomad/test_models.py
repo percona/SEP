@@ -2575,6 +2575,59 @@ class TestStreamFile:
         mock_anonymize.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stream_file_without_anonymization(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert anonymize=False returns content verbatim despite set entities."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
+        mock_anonymize.return_value = "REDACTED"
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+        queue_item.anonymize_mask = 1
+
+        file_content = b'{"size_bytes": 20260725}'
+        stat_response = AsyncMock()
+        stat_response.raise_for_status = MagicMock()
+        stat_response.json = AsyncMock(
+            return_value={"Size": len(file_content), "IsDir": False}
+        )
+
+        read_response = AsyncMock()
+        read_response.raise_for_status = MagicMock()
+        read_response.read = AsyncMock(return_value=file_content)
+
+        def mock_request(method, path, **kwargs):
+            ctx = AsyncMock()
+            if "stat" in path:
+                ctx.__aenter__ = AsyncMock(return_value=stat_response)
+            else:
+                ctx.__aenter__ = AsyncMock(return_value=read_response)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            return ctx
+
+        with patch.object(executor, "_request", side_effect=mock_request):
+            chunks = [
+                chunk
+                async for chunk in executor.stream_file(
+                    queue_item, "/output/sep-run-result.json", anonymize=False
+                )
+            ]
+
+        assert b"".join(chunks) == file_content
+        mock_anonymize.assert_not_called()
+
+    @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_stream_file_directory_delegates(self, mock_nomad_cls):
         """Assert stream_file delegates to _stream_directory_as_tar_gz for directories."""
@@ -2618,6 +2671,50 @@ class TestStreamFile:
             ]
 
         assert chunks == [b"fake-tar-data"]
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stream_file_directory_forwards_anonymize_flag(self, mock_nomad_cls):
+        """Assert the anonymize flag reaches the directory archiving path."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        stat_response = AsyncMock()
+        stat_response.raise_for_status = MagicMock()
+        stat_response.json = AsyncMock(return_value={"IsDir": True, "Size": 0})
+
+        def mock_request(method, path, **kwargs):
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=stat_response)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            return ctx
+
+        async def fake_tar_gz(*args, **kwargs):
+            yield b"fake-tar-data"
+
+        tar_gz = MagicMock(side_effect=fake_tar_gz)
+        with (
+            patch.object(executor, "_request", side_effect=mock_request),
+            patch.object(executor, "_stream_directory_as_tar_gz", tar_gz),
+        ):
+            [
+                chunk
+                async for chunk in executor.stream_file(
+                    queue_item, "/output/subdir", anonymize=False
+                )
+            ]
+
+        assert tar_gz.call_args.kwargs["anonymize"] is False
 
 
 class TestReadFileBytes:
@@ -2692,6 +2789,39 @@ class TestReadFileBytes:
 
         assert result == b"REDACTED content"
         mock_anonymize.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_read_file_bytes_without_anonymization(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert anonymize=False returns content verbatim despite set entities."""
+        mock_nomad_cls.return_value = MagicMock()
+        mock_anonymize.return_value = "REDACTED content"
+
+        executor = _build_executor()
+        queue_item = _build_queue_item()
+        queue_item.anonymize_mask = 1
+
+        content = b"sensitive content"
+        read_response = AsyncMock()
+        read_response.raise_for_status = MagicMock()
+        read_response.read = AsyncMock(return_value=content)
+
+        def mock_request(method, path, **kwargs):
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=read_response)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            return ctx
+
+        with patch.object(executor, "_request", side_effect=mock_request):
+            result = await executor._read_file_bytes(
+                queue_item, "alloc-1", "/f.txt", len(content), anonymize=False
+            )
+
+        assert result == content
+        mock_anonymize.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")

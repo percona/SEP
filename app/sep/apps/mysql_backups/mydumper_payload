@@ -37,9 +37,9 @@ from filelock import FileLock, Timeout
 BYTES_PER_MB = 1024**2
 ST_BLOCKS_SIZE = 512
 BACKUP_DIR_REGEX = r"^2[0-9]{7}$"
-# Restated inline from app.tasks.run_result.RUN_RESULT_MARKER — this payload is
+# Restated inline from app.tasks.run_result.RUN_RESULT_FILENAME — this payload is
 # shipped standalone and cannot import project code; a CI test binds the two.
-RUN_RESULT_MARKER = "@@SEP-RUN-RESULT@@ "
+RUN_RESULT_FILENAME = "sep-run-result.json"
 CURRENT_USER = os.getenv("PERCONA_BACKUP_USER") or os.getenv("SUDO_USER") or getuser()
 CURRENT_USER_HOME_DIR = Path(pwd.getpwnam(CURRENT_USER).pw_dir)
 BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
@@ -406,23 +406,30 @@ def get_dir_size(start_path: Path) -> int:
     return total_size
 
 
-def _build_run_result_marker(
+def _write_run_result(
     backup_dir: str, size_bytes: int, upload_destination: str | None
-) -> str:
-    """Return the single-line run-result marker for a produced backup.
+) -> None:
+    """Write the run-result JSON file for a produced backup.
+
+    The path is relative to the run's working directory, which the ``run-python``
+    job spec pins to the task's output-files directory — the location SEP reads
+    results back from.  Written to a sibling temp file and renamed so a reader
+    never observes a partial write.
 
     :param backup_dir: The resolved backup directory on the remote host.
     :param size_bytes: The backup size in bytes.
     :param upload_destination: The remote upload path, or ``None`` when the
         backup was not uploaded.
-    :return: The sentinel-prefixed compact-JSON marker line (no trailing newline).
     """
     payload = {
         "backup_dir": backup_dir,
         "size_bytes": size_bytes,
         "upload_destination": upload_destination,
     }
-    return f"{RUN_RESULT_MARKER}{json.dumps(payload, separators=(',', ':'))}"
+    tmp_path = RUN_RESULT_FILENAME + ".tmp"
+    with open(tmp_path, "w") as result_file:
+        json.dump(payload, result_file, separators=(",", ":"))
+    os.replace(tmp_path, RUN_RESULT_FILENAME)
 
 
 def humanize_bytes(size: int) -> str:
@@ -2053,25 +2060,24 @@ class MyDumper(Backup):
         self.notify(BackupNotifyStatus.OK, msg)
 
         if self.last_backup_dir and Path(self.last_backup_dir).is_dir():
-            self.emit_run_result_marker(upload_destination)
+            self.write_run_result(upload_destination)
 
-    def emit_run_result_marker(self, upload_destination: str | None) -> None:
-        """Emit one best-effort run-result marker line for the produced backup.
+    def write_run_result(self, upload_destination: str | None) -> None:
+        """Write one best-effort run-result file for the produced backup.
 
-        Wrap the whole emit so a formatting or serialization bug can never turn a
-        successful backup into a failure.
+        Wrap the whole write so a serialization or filesystem error can never turn
+        a successful backup into a failure.
 
         :param upload_destination: The remote upload path, or ``None`` when the
             backup was not uploaded.
         """
         try:
             size_bytes = get_dir_size(self.last_backup_dir)
-            line = _build_run_result_marker(
+            _write_run_result(
                 str(self.last_backup_dir), size_bytes, upload_destination
             )
-            print(line, flush=True)
         except Exception:
-            self.logger.exception("Failed to emit run-result marker.")
+            self.logger.exception("Failed to write the run-result file.")
 
     def _save_disk_space(self) -> None:
         """Hardlink backups to save disk space if conditions allow."""

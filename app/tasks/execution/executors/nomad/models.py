@@ -1696,7 +1696,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             yield None
 
     async def stream_file(
-        self, queue_item: TaskHistory, path: str, chunk_size: int = _ONE_MEBIBYTE
+        self,
+        queue_item: TaskHistory,
+        path: str,
+        chunk_size: int = _ONE_MEBIBYTE,
+        *,
+        anonymize: bool = True,
     ) -> AsyncGenerator[bytes, None]:
         """Stream a file from the allocation's filesystem in chunks.
 
@@ -1709,6 +1714,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param chunk_size: The size of each chunk to read from the file. Defaults to
             1 MiB.
         :type chunk_size: int
+        :param anonymize: Whether to redact the task's configured entities from the
+            streamed content. Defaults to ``True``, as every read served to a user
+            must be redacted; internal reads of content SEP itself produced may opt
+            out to get the bytes back verbatim.
+        :type anonymize: bool
         :return: An async generator yielding chunks of the file as bytes.
         :rtype: AsyncGenerator[bytes, None]
         """
@@ -1725,7 +1735,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if self._is_directory(stat):
             logger.info("Requested path %s is a directory, streaming as tar.gz", path)
             async for chunk in self._stream_directory_as_tar_gz(
-                queue_item, alloc_id, path
+                queue_item, alloc_id, path, anonymize=anonymize
             ):
                 yield chunk
             return
@@ -1743,7 +1753,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             async with self._request("GET", endpoint, params=params) as response:
                 response.raise_for_status()
                 content = await response.read()
-                if queue_item.anonymized_entities:
+                if anonymize and queue_item.anonymized_entities:
                     try:
                         text = content.decode()
                         yield anonymize_text(
@@ -1805,6 +1815,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         path: str,
         file_size: int,
         chunk_size: int = _ONE_MEBIBYTE,
+        *,
+        anonymize: bool = True,
     ) -> bytes:
         """Read a remote file fully, applying anonymization when needed."""
         if file_size == 0:
@@ -1817,7 +1829,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             async with self._request("GET", endpoint, params=params) as response:
                 response.raise_for_status()
                 chunk = await response.read()
-                if queue_item.anonymized_entities:
+                if anonymize and queue_item.anonymized_entities:
                     try:
                         text = chunk.decode()
                         chunk = anonymize_text(
@@ -1839,7 +1851,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         return bytes(content)
 
     async def _stream_directory_as_tar_gz(
-        self, queue_item: TaskHistory, alloc_id: str, path: str
+        self,
+        queue_item: TaskHistory,
+        alloc_id: str,
+        path: str,
+        *,
+        anonymize: bool = True,
     ) -> AsyncGenerator[bytes, None]:
         """Archive a directory on the fly and stream it as a tar.gz archive."""
         queue = asyncio.Queue()
@@ -1874,7 +1891,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                 tar.addfile(tarinfo)
                                 continue
                             file_bytes = await self._read_file_bytes(
-                                queue_item, alloc_id, abs_path, size
+                                queue_item,
+                                alloc_id,
+                                abs_path,
+                                size,
+                                anonymize=anonymize,
                             )
                             tarinfo.size = len(file_bytes)
                             tar.addfile(tarinfo, fileobj=io.BytesIO(file_bytes))

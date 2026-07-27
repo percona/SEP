@@ -283,6 +283,8 @@ class CeleryExecutor(BaseExecutor):
         queue_item: TaskHistory,  # noqa: ARG002
         path: str,  # noqa: ARG002
         chunk_size: int = 1024 * 1024,  # noqa: ARG002
+        *,
+        anonymize: bool = True,  # noqa: ARG002
     ) -> AsyncGenerator[bytes, None]:
         """Raise NotImplementedError.
 
@@ -294,6 +296,8 @@ class CeleryExecutor(BaseExecutor):
         :type path: str
         :param chunk_size: The chunk size in bytes.
         :type chunk_size: int
+        :param anonymize: Whether to redact the task's configured entities.
+        :type anonymize: bool
         :raises NotImplementedError: Always.
         """
         raise NotImplementedError("File streaming is not supported for Celery tasks")

@@ -71,7 +71,12 @@ class ConcreteExecutor(BaseExecutor):
         yield
 
     async def stream_file(
-        self, queue_item: TaskHistory, path: str, chunk_size: int = 1024 * 1024
+        self,
+        queue_item: TaskHistory,
+        path: str,
+        chunk_size: int = 1024 * 1024,
+        *,
+        anonymize: bool = True,
     ) -> AsyncGenerator[bytes, None]:
         """Yield nothing."""
         return

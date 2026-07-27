@@ -680,7 +680,7 @@ async def sync_task_history(
         id=saved.id,
     )
     await maybe_dispatch_chain(synced, was_running=True)
-    await maybe_record_run(synced.id)
+    await maybe_record_run(synced.id, executor)
     _set_has_logs(
         synced,
         value=await TaskHistoryLogManager.exists_for_task(session, synced.id)

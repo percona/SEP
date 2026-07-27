@@ -38,9 +38,9 @@ from pymysql import InternalError, OperationalError, ProgrammingError
 
 BYTES_PER_MB = 1024**2
 
-# Restated inline from app.tasks.run_result.RUN_RESULT_MARKER — this payload is
+# Restated inline from app.tasks.run_result.RUN_RESULT_FILENAME — this payload is
 # shipped standalone and cannot import project code; a CI test binds the two.
-RUN_RESULT_MARKER = "@@SEP-RUN-RESULT@@ "
+RUN_RESULT_FILENAME = "sep-run-result.json"
 
 # Matches xtrabackup per-file copy progress lines emitted during the backup
 # data phase.  Anchored at ^ so it cannot fire on mid-line content.  The
@@ -333,23 +333,30 @@ def get_dir_size(start_path: str, unit: str = "text") -> int | str:
     return f"{int(mbyte / 1024)} GB"
 
 
-def _build_run_result_marker(
+def _write_run_result(
     backup_dir: str, size_bytes: int, upload_destination: str | None
-) -> str:
-    """Return the single-line run-result marker for a produced backup.
+) -> None:
+    """Write the run-result JSON file for a produced backup.
+
+    The path is relative to the run's working directory, which the ``run-python``
+    job spec pins to the task's output-files directory — the location SEP reads
+    results back from.  Written to a sibling temp file and renamed so a reader
+    never observes a partial write.
 
     :param backup_dir: The resolved backup directory on the remote host.
     :param size_bytes: The backup size in bytes.
     :param upload_destination: The remote upload path, or ``None`` when the
         backup was not uploaded.
-    :return: The sentinel-prefixed compact-JSON marker line (no trailing newline).
     """
     payload = {
         "backup_dir": backup_dir,
         "size_bytes": size_bytes,
         "upload_destination": upload_destination,
     }
-    return f"{RUN_RESULT_MARKER}{json.dumps(payload, separators=(',', ':'))}"
+    tmp_path = RUN_RESULT_FILENAME + ".tmp"
+    with open(tmp_path, "w") as result_file:
+        json.dump(payload, result_file, separators=(",", ":"))
+    os.replace(tmp_path, RUN_RESULT_FILENAME)
 
 
 def logging_setup(
@@ -2233,16 +2240,13 @@ class Xtrabackup(Backup):
 
         if self.last_backup_dir and os.path.isdir(self.last_backup_dir):
             try:
-                print(
-                    _build_run_result_marker(
-                        self.last_backup_dir,
-                        get_dir_size(self.last_backup_dir, "bytes"),
-                        upload_destination,
-                    ),
-                    flush=True,
+                _write_run_result(
+                    self.last_backup_dir,
+                    get_dir_size(self.last_backup_dir, "bytes"),
+                    upload_destination,
                 )
             except Exception:
-                self.logger.exception("Failed to emit run-result marker.")
+                self.logger.exception("Failed to write the run-result file.")
 
     def encrypt_files_aes256(self, dir_path, file_filter='*'):
         """"aes256 encryption for specific file"""
