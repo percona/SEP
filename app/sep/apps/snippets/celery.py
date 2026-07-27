@@ -27,6 +27,16 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.celery import celery
 from app.sep.app_drain import owned_by, should_cancel
+from app.sep.apps.snippets.builtin_manifest import (
+    load_builtin_checksum_manifest,
+    matches_builtin_manifest,
+    sha256_file,
+)
+from app.sep.apps.snippets.constants import (
+    BUILTIN_APPROVAL_REASON,
+    BUILTIN_APPROVAL_USER_ID,
+    BUILTIN_CHECKSUM_MANIFEST,
+)
 from app.sep.db import get_async_session_maker
 from app.sep.snippets.config import SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
@@ -34,6 +44,8 @@ from app.sep.snippets.models.snippet import Snippet
 from app.sep.snippets.utils import guess_mime_type
 
 logger = logging.getLogger(__name__)
+
+_CONTENT_CHANGED_REASON = "File contents have changed"
 
 
 @owned_by("snippets")
@@ -44,44 +56,43 @@ def sync_snippets() -> None:
 
 
 async def update_snippets() -> None:
-    """Search for new/updated/deleted snippets and creates/updates/deletes them."""
+    """Sync snippet files into the database and apply built-in auto-approval.
+
+    Skip the checksum manifest file. Create, update, or delete snippet rows to
+    match disk, and auto-approve manifest-matching files when that setting is
+    enabled, without restoring administrator revocations.
+    """
     async_session = get_async_session_maker()
     async with async_session() as session:
-        updated_snippets = []
-        processed_filenames = []
-        skipped_filenames = []
+        updated_snippets: list[Snippet] = []
+        processed_filenames: list[str] = []
+        skipped_filenames: list[str] = []
         created_count = 0
+        manifest = load_builtin_checksum_manifest(snippets_settings.SNIPPETS_DIR)
+        auto_approve_enabled = snippets_settings.AUTO_APPROVE_BUILTIN_SNIPPETS
         for snippet_path in snippets_settings.SNIPPETS_DIR.rglob("*"):
             if await should_cancel("snippets", session=session):
                 logger.info("Snippets app disabling; stopping snippet sync early.")
                 return
-            if snippet_path.is_file():
-                snippet_name = str(
-                    snippet_path.relative_to(snippets_settings.SNIPPETS_DIR)
-                )
-                processed_filenames.append(snippet_name)
-                if should_skip_snippet(snippet_path):
-                    skipped_filenames.append(snippet_name)
-                    continue
-                snippet = await Snippet.from_path(snippet_path)
-                logger.debug(
-                    "Processing file %s: %s", snippet_path, snippet.model_dump()
-                )
-                created_snippet, created = await SnippetManager.get_or_create(
-                    session, snippet, {"filename"}
-                )
-                if created:
-                    logger.debug("New snippet created: %s", created_snippet.filename)
-                    created_count += 1
-                elif created_snippet.md5_digest != snippet.md5_digest:
-                    logger.debug(
-                        "Snippet %s has changed: %s [before] != %s [now]",
-                        created_snippet.filename,
-                        created_snippet.md5_digest,
-                        snippet.md5_digest,
-                    )
-                    await created_snippet.update_from_snippet(snippet)
-                    updated_snippets.append(created_snippet)
+            if not snippet_path.is_file():
+                continue
+            snippet_name = str(snippet_path.relative_to(snippets_settings.SNIPPETS_DIR))
+            if snippet_name == BUILTIN_CHECKSUM_MANIFEST:
+                continue
+            processed_filenames.append(snippet_name)
+            if should_skip_snippet(snippet_path):
+                skipped_filenames.append(snippet_name)
+                continue
+            created = await _sync_snippet_file(
+                session,
+                snippet_path,
+                snippet_name,
+                manifest,
+                updated_snippets,
+                auto_approve_enabled=auto_approve_enabled,
+            )
+            if created:
+                created_count += 1
         if await should_cancel("snippets", session=session):
             logger.info("Snippets app disabling; skipping post-sync snippet writes.")
             return
@@ -93,6 +104,100 @@ async def update_snippets() -> None:
                 session, *updated_snippets, flag_modified_fields=["meta"]
             )
         await _delete_unsynced_snippets(session, processed_filenames, skipped_filenames)
+
+
+async def _sync_snippet_file(
+    session: AsyncSession,
+    snippet_path: Path,
+    snippet_name: str,
+    manifest: dict[str, str],
+    updated_snippets: list[Snippet],
+    *,
+    auto_approve_enabled: bool,
+) -> bool:
+    """Sync one snippet file into the database and apply approval policy.
+
+    :param session: The active database session.
+    :param snippet_path: Absolute path to the snippet file on disk.
+    :param snippet_name: Filename relative to the snippets directory.
+    :param manifest: Built-in checksum mapping of filename to SHA-256 digest.
+    :param updated_snippets: Mutable list collecting rows that need a batch save.
+    :param auto_approve_enabled: Whether manifest-matched auto-approval is enabled.
+    :return: ``True`` when a new snippet row was created.
+    """
+    snippet = await Snippet.from_path(snippet_path)
+    logger.debug("Processing file %s: %s", snippet_path, snippet.model_dump())
+    manifest_match = auto_approve_enabled and matches_builtin_manifest(
+        snippet_name,
+        sha256_file(snippet_path),
+        manifest,
+    )
+    created_snippet, created = await SnippetManager.get_or_create(
+        session, snippet, {"filename"}
+    )
+    if created:
+        logger.debug("New snippet created: %s", created_snippet.filename)
+        if manifest_match:
+            _auto_approve(created_snippet)
+            await SnippetManager.save(session, created_snippet)
+        return True
+
+    if created_snippet.md5_digest != snippet.md5_digest:
+        logger.debug(
+            "Snippet %s has changed: %s [before] != %s [now]",
+            created_snippet.filename,
+            created_snippet.md5_digest,
+            snippet.md5_digest,
+        )
+        human_revoked = created_snippet.is_human_revoked
+        await created_snippet.update_from_snippet(snippet)
+        _apply_content_change_approval(
+            created_snippet,
+            manifest_match=manifest_match,
+            human_revoked=human_revoked,
+        )
+        updated_snippets.append(created_snippet)
+    elif (
+        manifest_match
+        and not created_snippet.is_approved
+        and not created_snippet.is_human_revoked
+    ):
+        _auto_approve(created_snippet)
+        updated_snippets.append(created_snippet)
+    return False
+
+
+def _auto_approve(snippet: Snippet) -> None:
+    """Mark ``snippet`` as automatically approved from the built-in manifest.
+
+    :param snippet: The snippet row to approve.
+    """
+    snippet.approve(BUILTIN_APPROVAL_REASON, BUILTIN_APPROVAL_USER_ID)
+
+
+def _apply_content_change_approval(
+    snippet: Snippet,
+    *,
+    manifest_match: bool,
+    human_revoked: bool,
+) -> None:
+    """Apply approval policy after a content change.
+
+    Leave approval state unchanged when an administrator revoked it. Otherwise
+    auto-approve on a manifest match, or clear approval when the digest no
+    longer matches.
+
+    :param snippet: The snippet row whose file contents just changed.
+    :param manifest_match: Whether the new contents match the built-in manifest.
+    :param human_revoked: Whether an administrator had revoked approval before the
+        content update.
+    """
+    if human_revoked:
+        return
+    if manifest_match:
+        _auto_approve(snippet)
+    else:
+        snippet.remove_approval(_CONTENT_CHANGED_REASON, None)
 
 
 async def _delete_unsynced_snippets(

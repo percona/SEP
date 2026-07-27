@@ -635,15 +635,18 @@ class TestSnippetModel:
 
     @pytest.mark.asyncio
     async def test_update_from_snippet(self):
-        """Verify update_from_snippet updates meta and removes approval."""
+        """Verify content updates preserve approval fields."""
         from app.core.utils import utc_now
 
+        approved_at = utc_now()
         original = Snippet(
             id=1,
             filename="test.sh",
             size=100,
             md5_digest="a" * 32,
-            approved_at=utc_now(),
+            approved_at=approved_at,
+            updated_by="user-123",
+            reason="Approved by admin",
         )
         new_snippet = Snippet(
             filename="test.sh",
@@ -660,7 +663,21 @@ class TestSnippetModel:
         assert original.md5_digest == "b" * 32
         assert original.size == UPDATED_SIZE
         assert original.meta == {"title": "Updated"}
-        assert original.approved_at is None
+        assert original.approved_at == approved_at
+        assert original.updated_by == "user-123"
+        assert original.reason == "Approved by admin"
+
+    def test_is_human_revoked_when_unapproved_with_user(self):
+        """Verify an administrator revocation is detected."""
+        snippet = Snippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        snippet.remove_approval("Approval removed by admin", "user-456")
+        assert snippet.is_human_revoked is True
+
+    def test_is_human_revoked_false_for_automatic_removal(self):
+        """Verify automatic approval removals are not treated as human revocations."""
+        snippet = Snippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        snippet.remove_approval("File contents have changed", None)
+        assert snippet.is_human_revoked is False
 
 
 class TestFromPath:
