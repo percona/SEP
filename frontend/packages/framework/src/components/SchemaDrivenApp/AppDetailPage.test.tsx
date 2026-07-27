@@ -341,6 +341,35 @@ describe('AppDetailPage — detail_view sections', () => {
     expect(hl.textContent).toBe('SELECT 1');
   });
 
+  it('passes DetailField.highlight="yaml" through to the syntax highlighter', async () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: { meta: { config: 'foo: bar' } },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(
+      executionSchema({
+        detail_view: {
+          sections: [
+            {
+              title: 'Execution',
+              fields: [{ path: 'data.meta.config', label: 'Config', highlight: 'yaml' }],
+            },
+          ],
+        },
+      } as unknown as AppSchema),
+    );
+
+    const hl = await screen.findByTestId('detail-syntax-highlighter');
+    expect(hl.getAttribute('data-language')).toBe('yaml');
+    expect(hl.textContent).toBe('foo: bar');
+  });
+
   it('renders boolean false and numeric zero leaves', () => {
     mockUseAppTask.mockReturnValue({
       data: {
@@ -356,6 +385,62 @@ describe('AppDetailPage — detail_view sections', () => {
 
     expect(screen.getByText('No')).toBeInTheDocument();
     expect(screen.getByText('0')).toBeInTheDocument();
+  });
+});
+
+describe('AppDetailPage — TaskOverviewDetailField object values', () => {
+  it('renders a nested object extra field via the JSON syntax highlighter, not a raw <pre> dump', async () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        config: { host: 'db1', port: 3306 },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    const hl = await screen.findByTestId('detail-syntax-highlighter');
+    expect(hl.getAttribute('data-language')).toBe('json');
+    // The Config label comes from formatLabel() on the extra key.
+    expect(screen.getByText('Config')).toBeInTheDocument();
+  });
+
+  it('renders an array extra field via the JSON syntax highlighter', async () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        tags: ['alpha', 'beta'],
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    const hl = await screen.findByTestId('detail-syntax-highlighter');
+    expect(hl.getAttribute('data-language')).toBe('json');
+    expect(screen.getByText('Tags')).toBeInTheDocument();
+  });
+
+  it('renders an empty object extra field via the highlighter rather than hiding it', async () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        config: {},
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    const hl = await screen.findByTestId('detail-syntax-highlighter');
+    expect(hl.getAttribute('data-language')).toBe('json');
   });
 });
 

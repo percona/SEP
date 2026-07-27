@@ -36,6 +36,7 @@ from app.sep.apps.framework.schema import (
     Capabilities,
     default_columns,
     DetailField,
+    DetailHighlightLanguage,
     DetailSection,
     DetailView,
     EXECUTION_HOST_LABEL,
@@ -98,7 +99,11 @@ mysql_backups_views = Views(
                 title="Backup Configuration",
                 fields=[
                     DetailField(path="data.meta.target", label=EXECUTION_HOST_LABEL),
-                    DetailField(path="data.meta.config", label="Config (YAML)"),
+                    DetailField(
+                        path="data.meta.config",
+                        label="Config (YAML)",
+                        highlight=DetailHighlightLanguage.YAML,
+                    ),
                 ],
             ),
         ],
