@@ -625,9 +625,6 @@ class _SelectiveBackupValidatorMixin:
         """Reject ``with_users_and_roles`` unless namespaces are all ``db.*``."""
         namespaces = getattr(self, "backup_namespaces", None)
         with_users_and_roles = bool(getattr(self, "backup_with_users_and_roles", False))
-        if namespaces is not None and str(namespaces).strip():
-            # Normalize / surface shape errors even when users/roles is off.
-            parse_backup_namespaces(str(namespaces))
         validate_selective_users_and_roles(
             namespaces, with_users_and_roles=with_users_and_roles
         )
