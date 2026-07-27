@@ -1088,7 +1088,9 @@ def test_makefile_forwards_quoted_values() -> None:
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    venv_root = Path(sys.executable).resolve().parent.parent
+    # Use sys.prefix (venv root). Resolving sys.executable follows the
+    # interpreter symlink into the base install and breaks VIRTUAL_ENV/bin/python.
+    venv_root = Path(sys.prefix)
     try:
         result = scaffold.subprocess.run(
             [
@@ -1133,7 +1135,9 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    venv_root = Path(sys.executable).resolve().parent.parent
+    # Use sys.prefix (venv root). Resolving sys.executable follows the
+    # interpreter symlink into the base install and breaks VIRTUAL_ENV/bin/python.
+    venv_root = Path(sys.prefix)
     try:
         result = scaffold.subprocess.run(
             [
