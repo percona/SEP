@@ -18,7 +18,10 @@
 from pathlib import Path
 
 from fastapi import APIRouter
+from sqlalchemy_celery_beat.models import Period
 
+from app.core.celery.models import IntervalSchedule
+from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
 from app.sep.apps.framework.base import BaseApp
 
 
@@ -106,3 +109,36 @@ class TestBaseAppArtifactBaseDirs:
             artifact_base_dirs={"dipper": lambda: Path("/tmp/payloads")},
         )
         assert app.artifact_base_dirs["dipper"]() == Path("/tmp/payloads")
+
+
+class TestBaseAppPeriodicTaskSchedules:
+    """Cover the ``periodic_task_schedules`` beat-contribution seam."""
+
+    def test_periodic_task_schedules_defaults_to_none(self) -> None:
+        """Return ``None`` when the field is unset."""
+        app = BaseApp(name="Inventory", uri_path="/inventory")
+        assert app.periodic_task_schedules is None
+
+    def test_periodic_task_schedules_carries_callable_declaration(self) -> None:
+        """Carry a declared factory that returns schedules when called."""
+        schedule = SystemPeriodicTaskSchedule(
+            schedule=IntervalSchedule(every=10, period=Period.MINUTES),
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="sep__example",
+                    task_name="app.sep.apps.example.celery.example_task",
+                    owner_app_key="example",
+                ),
+            ],
+        )
+
+        def _factory() -> list[SystemPeriodicTaskSchedule]:
+            return [schedule]
+
+        app = BaseApp(
+            name="Example",
+            uri_path="/example",
+            periodic_task_schedules=_factory,
+        )
+        assert app.periodic_task_schedules is _factory
+        assert app.periodic_task_schedules() == [schedule]

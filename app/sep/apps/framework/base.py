@@ -22,6 +22,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, model_validator, SkipValidation
 
+from app.core.celery.utils import SystemPeriodicTaskSchedule
 from app.core.utils.fields import URIPath
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.nav_icons import NavIcon
@@ -80,6 +81,10 @@ class BaseApp(BaseModel):
         this app owns to a thunk returning that type's download base directory.
         The generic artifact-download route flattens these across the registry
         to resolve a signed token to a file on disk; defaults to empty.
+    :param periodic_task_schedules: A zero-arg callable returning this app's
+        beat schedules, or ``None`` when the app owns none. Invoked on every
+        :func:`~app.sep.db.seed.get_system_periodic_tasks` call so the factory
+        can re-read live intervals; defaults to ``None``.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
@@ -105,6 +110,9 @@ class BaseApp(BaseModel):
     artifact_base_dirs: SkipValidation[Mapping[str, Callable[[], Path]]] = Field(
         default_factory=dict
     )
+    periodic_task_schedules: SkipValidation[
+        Callable[[], list[SystemPeriodicTaskSchedule]] | None
+    ] = None
 
     @model_validator(mode="before")
     @classmethod
