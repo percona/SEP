@@ -18,7 +18,7 @@
 import Box from '@mui/material/Box';
 import Toolbar from '@mui/material/Toolbar';
 import Container from '@mui/material/Container';
-import { Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router';
 import { NavigationProvider } from '../contexts/navigation';
 import TheHeader from './TheHeader';
 import TheSidebar from './TheSidebar';

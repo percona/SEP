@@ -20,7 +20,7 @@ import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import ConstructionIcon from '@mui/icons-material/Construction';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import { useNotification } from '../contexts/notification';
 
 export default function PlaceholderPage() {

@@ -16,7 +16,7 @@
  */
 
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
-import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
