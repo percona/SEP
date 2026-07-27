@@ -27,6 +27,7 @@ from sqlmodel.pool import StaticPool
 
 from app.core.db import BaseSQLModel
 from app.core.db.crud import BaseSQLModelManager
+from app.core.db.list_query import build_search_predicate, ListQuery, ListQuerySpec
 from app.core.db.models import BaseUUIDSQLModel
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, PaginatedResponse, Pagination
@@ -34,6 +35,8 @@ from app.core.utils import json_serializer
 
 MATCHING_ITEM_TOTAL = 3
 SELECT_RELATED_PAGE_LIMIT = 2
+RESOLVED_ORDER_BY_LENGTH = 2
+SEARCH_MATCH_TOTAL = 2
 INVALID_PAGINATION_VALUE = -1
 UNPAGINATED_ITEM_TOTAL = 55
 # first() is invoked twice on the conflict path: existence check, then refetch.
@@ -80,6 +83,34 @@ class PaginationItemByNameManager(BaseSQLModelManager):
 
     Model = PaginationItem
     ordering = [col(PaginationItem.name)]
+
+
+class PaginationItemSpecManager(BaseSQLModelManager):
+    """Manage test pagination items through a declared list-query spec."""
+
+    Model = PaginationItem
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "name": col(PaginationItem.name),
+            "category": col(PaginationItem.category),
+            "parent_id": col(PaginationItem.parent_id),
+        },
+        default_sort="name",
+        tie_breaker=col(PaginationItem.id),
+        searchable=[col(PaginationItem.name)],
+    )
+
+
+class PaginationItemSpecAndOrderingManager(BaseSQLModelManager):
+    """Manage items declaring both a spec and an explicit ordering (spec wins)."""
+
+    Model = PaginationItem
+    ordering = [col(PaginationItem.category)]
+    list_query_spec = ListQuerySpec(
+        sortable={"name": col(PaginationItem.name)},
+        default_sort="name",
+        tie_breaker=col(PaginationItem.id),
+    )
 
 
 class UniqueKeyModel(BaseSQLModel, table=True):
@@ -608,3 +639,288 @@ class TestGetOrCreate:
             )
 
         assert await UniqueKeyManager.count(session) == 1
+
+
+class TestGetOrderingSpecShim:
+    """Cover the ``_get_ordering`` derive-from-spec compatibility branch."""
+
+    def test_spec_manager_derives_default_sort_ordering(self) -> None:
+        """Derive ``[default NULLS LAST, tie-breaker]`` when a spec is declared."""
+        ordering = list(PaginationItemSpecManager._get_ordering())
+
+        assert len(ordering) == RESOLVED_ORDER_BY_LENGTH
+        assert "name" in str(ordering[0])
+        assert "ASC" in str(ordering[0])
+        assert "NULLS LAST" in str(ordering[0])
+        assert ".id" in str(ordering[1])
+
+    def test_spec_less_manager_keeps_created_at_fallback(self) -> None:
+        """Keep the ``created_at``-desc fallback byte-identical for spec-less managers."""
+        ordering = list(PaginationItemManager._get_ordering())
+
+        assert len(ordering) == RESOLVED_ORDER_BY_LENGTH
+        assert "created_at" in str(ordering[0])
+        assert "DESC" in str(ordering[0])
+        assert ".id" in str(ordering[1])
+        assert "DESC" in str(ordering[1])
+
+    def test_spec_wins_over_explicit_ordering(self) -> None:
+        """Prefer the spec over an explicit ``ordering`` when both are declared."""
+        ordering = list(PaginationItemSpecAndOrderingManager._get_ordering())
+
+        assert "name" in str(ordering[0])
+        assert "category" not in str(ordering[0])
+
+
+class TestOrderByOverride:
+    """Cover the per-call ``order_by`` override threaded through ``_select``."""
+
+    @pytest.mark.asyncio
+    async def test_order_by_overrides_default_ordering(
+        self, session: AsyncSession
+    ) -> None:
+        """Apply the explicit ``order_by`` override in place of the fallback ordering."""
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        for offset, name in enumerate(("zeta", "alpha", "beta")):
+            await _create_item(
+                session,
+                name=name,
+                created_at=base_time + timedelta(minutes=offset),
+            )
+
+        result = await PaginationItemManager.list(
+            session, order_by=[col(PaginationItem.name).asc()]
+        )
+
+        assert [item.name for item in result] == ["alpha", "beta", "zeta"]
+
+    @pytest.mark.asyncio
+    async def test_order_by_override_applies_in_select_related_pagination(
+        self, session: AsyncSession
+    ) -> None:
+        """Apply the override to both the pk-query and the final select_related query.
+
+        The created-at order is the reverse of the name order, so a page taken by
+        the fallback ordering would select a different id set than the override
+        does. Asserting the exact page proves the override reaches the pk-query.
+        """
+        parent = await _create_parent(session, "parent-1")
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        await _create_item(
+            session,
+            name="charlie",
+            created_at=base_time + timedelta(minutes=3),
+            parent_id=parent.id,
+        )
+        await _create_item(
+            session,
+            name="alpha",
+            created_at=base_time + timedelta(minutes=2),
+            parent_id=parent.id,
+        )
+        await _create_item(
+            session,
+            name="bravo",
+            created_at=base_time + timedelta(minutes=1),
+            parent_id=parent.id,
+        )
+
+        result = await PaginationItemManager.list(
+            session,
+            select_related=[PaginationItem.parent],
+            order_by=[col(PaginationItem.name).asc()],
+            offset=0,
+            limit=SELECT_RELATED_PAGE_LIMIT,
+        )
+
+        assert [item.name for item in result] == ["alpha", "bravo"]
+        assert all(item.parent is not None for item in result)
+
+
+class TestListQueryPaginated:
+    """Cover ``list_query_paginated`` filtered-total behavior on SQLite."""
+
+    @pytest.mark.asyncio
+    async def test_search_predicate_drives_filtered_total(
+        self, session: AsyncSession
+    ) -> None:
+        """Report the search-filtered total, not the page size or the grand total."""
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        for index in range(SEARCH_MATCH_TOTAL):
+            await _create_item(
+                session,
+                name=f"match-{index}",
+                created_at=base_time + timedelta(minutes=index),
+            )
+        for index in range(MATCHING_ITEM_TOTAL):
+            await _create_item(
+                session,
+                name=f"other-{index}",
+                created_at=base_time + timedelta(minutes=index + 2),
+            )
+
+        spec = PaginationItemSpecManager.list_query_spec
+        list_query = ListQuery(
+            order_by=tuple(spec.resolve_sort(None)),
+            search_predicate=build_search_predicate("match", spec.searchable),
+        )
+        result = await PaginationItemSpecManager.list_query_paginated(
+            session,
+            list_query=list_query,
+            pagination=Pagination(offset=0, limit=1),
+        )
+
+        assert result.total == SEARCH_MATCH_TOTAL
+        assert len(result.items) == 1
+
+    @pytest.mark.asyncio
+    async def test_base_and_search_clauses_are_shared_by_count_and_list(
+        self, session: AsyncSession
+    ) -> None:
+        """Fold the base whereclause and search into the clauses feeding both queries."""
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        await _create_item(
+            session, name="keep-a", category="target", created_at=base_time
+        )
+        await _create_item(
+            session,
+            name="keep-b",
+            category="other",
+            created_at=base_time + timedelta(minutes=1),
+        )
+        await _create_item(
+            session,
+            name="drop-a",
+            category="target",
+            created_at=base_time + timedelta(minutes=2),
+        )
+
+        spec = PaginationItemSpecManager.list_query_spec
+        list_query = ListQuery(
+            order_by=tuple(spec.resolve_sort(None)),
+            search_predicate=build_search_predicate("keep", spec.searchable),
+        )
+        result = await PaginationItemSpecManager.list_query_paginated(
+            session,
+            col(PaginationItem.category) == "target",
+            list_query=list_query,
+            pagination=Pagination(offset=0, limit=10),
+        )
+
+        assert result.total == 1
+        assert [item.name for item in result.items] == ["keep-a"]
+
+
+@pytest.mark.postgres
+class TestListQueryPaginatedPostgres:
+    """Cover engine-sensitive NULLS LAST ordering and native escaped ILIKE."""
+
+    @pytest.mark.asyncio
+    async def test_ascending_nullable_sort_places_nulls_last(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Keep NULLs last in ascending order and tie-break the NULL rows by id."""
+        await _seed_nullable_parent_items(postgres_session)
+        spec = PaginationItemSpecManager.list_query_spec
+        list_query = ListQuery(
+            order_by=tuple(spec.resolve_sort("parent_id")),
+            search_predicate=None,
+        )
+        result = await PaginationItemSpecManager.list_query_paginated(
+            postgres_session,
+            list_query=list_query,
+            pagination=Pagination(offset=0, limit=10),
+        )
+
+        assert [item.name for item in result.items] == ["a", "c", "b1", "b2"]
+
+    @pytest.mark.asyncio
+    async def test_descending_nullable_sort_keeps_nulls_last(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Keep NULLs last in descending order and tie-break the NULL rows by id."""
+        await _seed_nullable_parent_items(postgres_session)
+        spec = PaginationItemSpecManager.list_query_spec
+        list_query = ListQuery(
+            order_by=tuple(spec.resolve_sort("-parent_id")),
+            search_predicate=None,
+        )
+        result = await PaginationItemSpecManager.list_query_paginated(
+            postgres_session,
+            list_query=list_query,
+            pagination=Pagination(offset=0, limit=10),
+        )
+
+        assert [item.name for item in result.items] == ["c", "a", "b1", "b2"]
+
+    @pytest.mark.asyncio
+    async def test_search_escapes_like_wildcards(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Match a literal ``%``/``_`` in the term, not as LIKE wildcards."""
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        await _create_item(
+            session=postgres_session, name="xa_b%y", created_at=base_time
+        )
+        await _create_item(
+            session=postgres_session,
+            name="xaXbYy",
+            created_at=base_time + timedelta(minutes=1),
+        )
+
+        spec = PaginationItemSpecManager.list_query_spec
+        list_query = ListQuery(
+            order_by=tuple(spec.resolve_sort(None)),
+            search_predicate=build_search_predicate("a_b%", spec.searchable),
+        )
+        result = await PaginationItemSpecManager.list_query_paginated(
+            postgres_session,
+            list_query=list_query,
+            pagination=Pagination(offset=0, limit=10),
+        )
+
+        assert [item.name for item in result.items] == ["xa_b%y"]
+
+    @pytest.mark.asyncio
+    async def test_search_is_case_insensitive_native_ilike(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Match case-insensitively through native PostgreSQL ILIKE."""
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+        await _create_item(
+            session=postgres_session, name="FOOBAR", created_at=base_time
+        )
+        await _create_item(
+            session=postgres_session,
+            name="other",
+            created_at=base_time + timedelta(minutes=1),
+        )
+
+        spec = PaginationItemSpecManager.list_query_spec
+        list_query = ListQuery(
+            order_by=tuple(spec.resolve_sort(None)),
+            search_predicate=build_search_predicate("foo", spec.searchable),
+        )
+        result = await PaginationItemSpecManager.list_query_paginated(
+            postgres_session,
+            list_query=list_query,
+            pagination=Pagination(offset=0, limit=10),
+        )
+
+        assert [item.name for item in result.items] == ["FOOBAR"]
+
+
+async def _seed_nullable_parent_items(session: AsyncSession) -> None:
+    """Seed items whose nullable ``parent_id`` mixes two parents and two NULLs."""
+    parent_one = await _create_parent(session, "parent-1")
+    parent_two = await _create_parent(session, "parent-2")
+    base_time = datetime(2026, 1, 1, tzinfo=UTC)
+    await _create_item(session, name="a", created_at=base_time, parent_id=parent_one.id)
+    await _create_item(
+        session,
+        name="c",
+        created_at=base_time + timedelta(minutes=1),
+        parent_id=parent_two.id,
+    )
+    await _create_item(session, name="b1", created_at=base_time + timedelta(minutes=2))
+    await _create_item(session, name="b2", created_at=base_time + timedelta(minutes=3))
