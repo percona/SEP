@@ -91,14 +91,15 @@ class ListQuerySpec:
             default sort whose key is outside the allowlist, or a missing or
             non-column tie-breaker.
         """
-        if any(not key or not key.strip() for key in self.sortable):
-            raise ValueError("sortable keys must be non-empty")
-        if any(key.startswith("-") for key in self.sortable):
-            raise ValueError(
-                "sortable keys must not start with '-' (reserved for descending order)"
-            )
-        if any(not hasattr(column, "asc") for column in self.sortable.values()):
-            raise ValueError("sortable values must be column expressions")
+        for key, column in self.sortable.items():
+            if not key.strip():
+                raise ValueError("sortable keys must be non-empty")
+            if key.startswith("-"):
+                raise ValueError(
+                    "sortable keys must not start with '-' (reserved for descending order)"
+                )
+            if not hasattr(column, "asc"):
+                raise ValueError("sortable values must be column expressions")
         if self.default_sort.removeprefix("-") not in self.sortable:
             raise ValueError(
                 f"default_sort {self.default_sort!r} is not in the sortable allowlist"
