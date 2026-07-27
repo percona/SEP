@@ -16,7 +16,7 @@
  */
 
 import { lazy } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router';
 import { buildAppRoutes } from './appRegistry';
 import { SchemaDrivenAppResolver } from './components/SchemaDrivenAppResolver';
 import RootLayout from './layouts/RootLayout';
