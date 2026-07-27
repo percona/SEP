@@ -198,10 +198,7 @@ def pbm():
     if isinstance(config.get('storage'), dict):
         _apply_pbm_config(config)
     # Selective --ns is logical-only in PBM; ignore namespaces on physical runs.
-    cmd = (
-        ['pbm', 'backup', '--type', 'physical', '--wait']
-        + _compression_flags(config)
-    )
+    cmd = ['pbm', 'backup', '--type', 'physical', '--wait'] + _compression_flags(config)
 
     try:
         proc = subprocess.Popen(cmd)
