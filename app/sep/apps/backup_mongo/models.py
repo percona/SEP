@@ -623,10 +623,9 @@ class _SelectiveBackupValidatorMixin:
     @model_validator(mode="after")
     def _validate_selective_backup(self) -> "_SelectiveBackupValidatorMixin":
         """Reject ``with_users_and_roles`` unless namespaces are all ``db.*``."""
-        namespaces = getattr(self, "backup_namespaces", None)
-        with_users_and_roles = bool(getattr(self, "backup_with_users_and_roles", False))
         validate_selective_users_and_roles(
-            namespaces, with_users_and_roles=with_users_and_roles
+            self.backup_namespaces,
+            with_users_and_roles=bool(self.backup_with_users_and_roles),
         )
         return self
 
