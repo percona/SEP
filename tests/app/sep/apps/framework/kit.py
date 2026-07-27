@@ -494,14 +494,15 @@ class SynthOneOfForm(SynthForm):
 class SynthResponse(BaseModel):
     """Represent the list/detail response built from the task dump plus status.
 
-    Carries the injected ``service_type`` extra and a ``created_by`` the response
-    builder remaps from the bound context's username map, mirroring the audited
-    plugins' response shape.
+    Mirrors the audited plugins' response shape: ``service_type`` is stamped by
+    the builder for internal use but excluded from the serialized payload (same
+    contract as :class:`~app.sep.apps.framework.responses.BaseTaskResponse`),
+    and ``created_by`` is remapped from the bound context's username map.
     """
 
     name: str
     status: TaskHistoryStatusEnum | None = None
-    service_type: ServiceTypeEnum | None = None
+    service_type: ServiceTypeEnum | None = Field(default=None, exclude=True)
     created_by: str | None = None
 
 
@@ -519,10 +520,9 @@ class SynthCreateResponse(SynthResponse):
     """Represent a stable create response carrying the connectivity warning.
 
     A hand-authored create model (not the framework's auto-derived
-    ``<App>CreateResponse``): it carries the same injected ``service_type`` /
-    ``created_by`` extras as the list/detail response *plus* a
-    ``connectivity_warning``, so the create-response surface that combines a
-    stable component, injected extras, and a non-null probe warning is covered.
+    ``<App>CreateResponse``): it carries the same ``created_by`` remap as the
+    list/detail response *plus* a ``connectivity_warning``, while omitting
+    internal ``service_type`` from the serialized payload.
     """
 
     connectivity_warning: ConnectivityWarning | None = None

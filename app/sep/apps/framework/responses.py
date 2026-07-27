@@ -20,7 +20,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Any, cast, overload, Protocol, TypeVar
 
-from pydantic import BaseModel, computed_field, create_model, FutureDatetime
+from pydantic import BaseModel, computed_field, create_model, Field, FutureDatetime
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
@@ -41,16 +41,20 @@ class BaseTaskResponse(BaseModel):
     """Represent the universal task-response surface for standard task apps.
 
     Carry the fields shared by every standard ``TaskExecutionApp`` response:
-    the task identity and ownership, the resolved execution status, the stored
-    configuration, and the audit/anonymization metadata. A standard app whose
-    response has no app-specific fields uses this model directly; an app with
-    extras subclasses it. The model is parametrized by the task ``owner``, which
-    drives the ``anonymized_entities`` default-entity lookup.
+    the task identity, the resolved execution status, the stored configuration,
+    and the audit/anonymization metadata. A standard app whose response has no
+    app-specific fields uses this model directly; an app with extras subclasses
+    it. The model is parametrized by the task ``owner``, which drives the
+    ``anonymized_entities`` default-entity lookup but is excluded from the
+    serialized detail/list payload (as is ``service_type``).
 
     :param name: The task name.
-    :param owner: The entity or user that owns the task.
+    :param owner: The task-category owner enum (for example ``BACKUPS``). Kept
+        as a model attribute for ``anonymized_entities`` and server-side
+        filtering; excluded from the serialized detail/list payload.
     :param service_type: The database service type, stamped by the builder;
-        ``None`` for an app without a fixed service type.
+        ``None`` for an app without a fixed service type. Excluded from the
+        serialized detail/list payload.
     :param status: The latest known execution status; ``None`` until the task
         runs.
     :param last_executed_at: The most recent time the task finished executing
@@ -83,8 +87,8 @@ class BaseTaskResponse(BaseModel):
     """
 
     name: str
-    owner: str
-    service_type: ServiceTypeEnum | None = None
+    owner: str = Field(exclude=True)
+    service_type: ServiceTypeEnum | None = Field(default=None, exclude=True)
     status: TaskHistoryStatusEnum | None = None
     last_executed_at: datetime | None = None
     id: int | None = None
@@ -109,6 +113,22 @@ class BaseTaskResponse(BaseModel):
             else anonymizer_settings.DEFAULT_ENTITIES[self.owner]
         )
         return sorted(entity.name for entity in entities)
+
+    def model_dump_for_rebuild(self, **kwargs: Any) -> dict[str, Any]:
+        """Dump fields for reconstructing this response or a subclass.
+
+        ``model_dump`` omits serialization-excluded fields (``owner``,
+        ``service_type``). Detail/create builders that rebuild via
+        ``Subclass(**base.model_dump(), ...)`` need those attributes restored.
+
+        :param kwargs: Forwarded to :meth:`model_dump` (for example
+            ``exclude`` for computed fields).
+        :return: A dump including serialization-excluded fields.
+        """
+        data = self.model_dump(**kwargs)
+        data["owner"] = self.owner
+        data["service_type"] = self.service_type
+        return data
 
 
 class TaskExecuteWrite(BaseModel):

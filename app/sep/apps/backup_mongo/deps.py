@@ -344,7 +344,7 @@ async def build_backup_mongo_api_detail_response(
         last_executed_at=parent_latest.finished_at if parent_latest else None,
     )
     return BackupTaskDetailResponse(
-        **base.model_dump(),
+        **base.model_dump_for_rebuild(),
         derived_tasks=derived_tasks,
         latest_pbm_status=latest_pbm_status,
     )

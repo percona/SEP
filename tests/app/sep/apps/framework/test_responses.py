@@ -564,6 +564,47 @@ class TestBaseTaskResponse:
 
         assert result == ["EMAIL_ADDRESS"]
 
+    def test_serialized_payload_omits_owner_and_service_type(self) -> None:
+        """Drop ``owner`` and ``service_type`` from the serialized detail/list payload."""
+        response = BaseTaskResponse.model_validate(
+            {**self.BASE_FIELDS, "service_type": "mysql"}
+        )
+
+        dumped = response.model_dump(mode="json")
+
+        assert response.owner == "CHECKSUMS"
+        assert response.service_type is not None
+        assert "owner" not in dumped
+        assert "service_type" not in dumped
+
+    def test_model_dump_for_rebuild_restores_excluded_fields(self) -> None:
+        """Include ``owner`` and ``service_type`` in rebuild dumps used by detail builders."""
+        response = BaseTaskResponse.model_validate(
+            {**self.BASE_FIELDS, "service_type": "mysql"}
+        )
+
+        dumped = response.model_dump_for_rebuild(mode="json")
+
+        assert dumped["owner"] == "CHECKSUMS"
+        assert dumped["service_type"] == "mysql"
+        assert BaseTaskResponse.model_validate(dumped).owner == "CHECKSUMS"
+
+    def test_anonymized_entities_still_resolves_when_owner_excluded(self) -> None:
+        """Keep ``owner`` available to ``anonymized_entities`` despite serialization exclude."""
+        default_entities = {PIIEntity.EMAIL_ADDRESS}
+        mock_defaults = defaultdict(lambda: default_entities)
+        fields = {**self.BASE_FIELDS, "anonymize_mask": None}
+
+        with patch(
+            "app.sep.apps.framework.responses.anonymizer_settings"
+        ) as mock_settings:
+            mock_settings.DEFAULT_ENTITIES = mock_defaults
+            response = BaseTaskResponse.model_validate(fields)
+            dumped = response.model_dump(mode="json")
+
+        assert "owner" not in dumped
+        assert dumped["anonymized_entities"] == ["EMAIL_ADDRESS"]
+
     def test_round_trips_task_dump_with_connectivity_warning_default_none(self) -> None:
         """Build from a task dump, defaulting ``connectivity_warning`` to ``None``."""
         task = TaskFactory.build(name="task-a", owner="CHECKSUMS")
@@ -575,3 +616,5 @@ class TestBaseTaskResponse:
         assert result.name == "task-a"
         assert result.status == TaskHistoryStatusEnum.SUCCESS
         assert result.connectivity_warning is None
+        assert "owner" not in result.model_dump(mode="json")
+        assert "service_type" not in result.model_dump(mode="json")

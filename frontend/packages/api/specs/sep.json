@@ -2334,23 +2334,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -2377,7 +2363,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -3665,23 +3650,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -3708,7 +3679,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -3839,23 +3809,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -3882,7 +3838,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -4334,23 +4289,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -4377,7 +4318,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -4513,23 +4453,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -4556,7 +4482,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -4988,10 +4913,6 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "port": {
             "anyOf": [
               {
@@ -5006,16 +4927,6 @@
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -5042,7 +4953,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -5173,23 +5083,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -5216,7 +5112,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -5581,23 +5476,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -5624,7 +5505,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -5739,23 +5619,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -5782,7 +5648,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -6172,10 +6037,6 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "port": {
             "anyOf": [
               {
@@ -6190,16 +6051,6 @@
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -6226,7 +6077,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -6238,7 +6088,7 @@
         "type": "object"
       },
       "framework__BaseTaskResponse": {
-        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity and ownership, the resolved execution status, the stored\nconfiguration, and the audit/anonymization metadata. A standard app whose\nresponse has no app-specific fields uses this model directly; an app with\nextras subclasses it. The model is parametrized by the task ``owner``, which\ndrives the ``anonymized_entities`` default-entity lookup.\n\n:param name: The task name.\n:param owner: The entity or user that owns the task.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param last_executed_at: The most recent time the task finished executing\n    (``max`` ``finished_at`` across its history). Reported even while a\n    re-run is in progress (showing the prior completion); ``None`` until the\n    task has finished at least once.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution. Tasks\n    created through the JSON schema-driven path also carry a reserved additive\n    ``_form`` key holding the verbatim, validated create-form body for\n    prefilling an edit form; it is absent for tasks created through a legacy\n    form, so consumers must treat it as optional.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
+        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity, the resolved execution status, the stored configuration,\nand the audit/anonymization metadata. A standard app whose response has no\napp-specific fields uses this model directly; an app with extras subclasses\nit. The model is parametrized by the task ``owner``, which drives the\n``anonymized_entities`` default-entity lookup but is excluded from the\nserialized detail/list payload (as is ``service_type``).\n\n:param name: The task name.\n:param owner: The task-category owner enum (for example ``BACKUPS``). Kept\n    as a model attribute for ``anonymized_entities`` and server-side\n    filtering; excluded from the serialized detail/list payload.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type. Excluded from the\n    serialized detail/list payload.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param last_executed_at: The most recent time the task finished executing\n    (``max`` ``finished_at`` across its history). Reported even while a\n    re-run is in progress (showing the prior completion); ``None`` until the\n    task has finished at least once.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution. Tasks\n    created through the JSON schema-driven path also carry a reserved additive\n    ``_form`` key holding the verbatim, validated create-form body for\n    prefilling an edit form; it is absent for tasks created through a legacy\n    form, so consumers must treat it as optional.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -6342,23 +6192,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -6385,7 +6221,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -8413,23 +8248,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -8456,7 +8277,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -10514,23 +10334,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -10557,7 +10363,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -11262,10 +11067,6 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "port": {
             "anyOf": [
               {
@@ -11280,16 +11081,6 @@
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -11316,7 +11107,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",

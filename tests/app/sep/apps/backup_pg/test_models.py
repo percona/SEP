@@ -199,8 +199,8 @@ def test_backup_pg_form_rejects_negative_retention() -> None:
         )
 
 
-def test_backup_task_response_roundtrips_owner_and_backup_type() -> None:
-    """BackupTaskResponse serializes owner and backup_type cleanly."""
+def test_backup_task_response_roundtrips_backup_type() -> None:
+    """BackupTaskResponse serializes backup_type and omits internal owner fields."""
     response = BackupTaskResponse(
         name="pg-task",
         owner="BACKUP_PG",
@@ -215,9 +215,10 @@ def test_backup_task_response_roundtrips_owner_and_backup_type() -> None:
     dumped = response.model_dump(mode="json")
 
     assert isinstance(response, BaseTaskResponse)
-    assert dumped["owner"] == "BACKUP_PG"
+    assert response.owner == "BACKUP_PG"
     assert dumped["backup_type"] == "P"
-    assert dumped["service_type"] is None
+    assert "owner" not in dumped
+    assert "service_type" not in dumped
     assert "anonymize_mask" in dumped
     assert "anonymized_entities" in dumped
     assert "connectivity_warning" in dumped
