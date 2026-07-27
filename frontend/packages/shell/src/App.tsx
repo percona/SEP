@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { RouterProvider } from 'react-router-dom';
+import { RouterProvider } from 'react-router';
 import { router } from './router';
 
 export default function App() {

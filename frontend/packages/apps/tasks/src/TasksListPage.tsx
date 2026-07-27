@@ -17,7 +17,7 @@
 
 import { useState } from 'react';
 import { Alert, Box, CircularProgress, Typography } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import { SchemaListView } from '@sep/framework';
 import { useTasksList, useTasksAppSchema } from './hooks';

@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -27,6 +27,7 @@ import {
   describePeriod,
   formatAbsoluteTime,
   formatRelativeTime,
+  LastRunStatus,
   selectSchedule,
   useScheduledTasksForApp,
 } from '../ScheduledTasksPanel';
@@ -95,6 +96,12 @@ export function ScheduleSummary({
               Recurrence
             </Typography>
             <Typography variant="body1">{describePeriod(task).display}</Typography>
+          </Box>
+          <Box data-testid="schedule-summary-last-run">
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              Last run
+            </Typography>
+            <LastRunStatus status={task.last_run_status} lastRunAt={task.last_run_at} />
           </Box>
         </Stack>
       ) : (

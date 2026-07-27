@@ -18,7 +18,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
 import { AppCreatePage } from './AppCreatePage';
@@ -32,8 +32,8 @@ vi.mock('@sep/api', () => ({
   useCreateAppEntity: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>();
+vi.mock('react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router')>();
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
