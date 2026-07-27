@@ -47,8 +47,8 @@ def _escape_like(term: str) -> str:
     r"""Escape LIKE wildcards so a search term matches literally.
 
     :param term: The raw search term.
-    :return: The term with ``\``, ``%``, and ``_`` escaped for use with
-        ``ilike(..., escape="\")``.
+    :return: The term with ``\``, ``%``, and ``_`` each prefixed by a backslash
+        for use with ``ilike(pattern, escape="\\")``.
     """
     for char in (_LIKE_ESCAPE_CHAR, "%", "_"):
         term = term.replace(char, _LIKE_ESCAPE_CHAR + char)
