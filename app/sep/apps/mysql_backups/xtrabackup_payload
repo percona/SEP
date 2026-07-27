@@ -354,7 +354,7 @@ def _write_run_result(
         "upload_destination": upload_destination,
     }
     tmp_path = RUN_RESULT_FILENAME + ".tmp"
-    with open(tmp_path, "w") as result_file:
+    with open(tmp_path, "w", encoding="utf-8") as result_file:
         json.dump(payload, result_file, separators=(",", ":"))
     os.replace(tmp_path, RUN_RESULT_FILENAME)
 

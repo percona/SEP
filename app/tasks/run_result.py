@@ -120,6 +120,7 @@ async def maybe_record_run(task_history_id: int, executor: BaseExecutor) -> None
     :param task_history_id: The id of the just-synced ``TaskHistory``.
     :param executor: The executor that ran the task, used to read its result.
     """
+    recorder_path: str | None = None
     try:
         session_maker = get_async_session_maker()
         async with session_maker() as session:
@@ -139,5 +140,7 @@ async def maybe_record_run(task_history_id: int, executor: BaseExecutor) -> None
             await recorder(session, history, result)
     except Exception:
         logger.exception(
-            "Run-result recorder failed for task history %s.", task_history_id
+            "Run-result recorder %r failed for task history %s.",
+            recorder_path,
+            task_history_id,
         )
