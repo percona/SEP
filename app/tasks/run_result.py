@@ -67,9 +67,11 @@ async def read_run_result(
 
     The read opts out of anonymization: this content is SEP's own protocol, not
     output served to a user, and redaction would corrupt the very fields the
-    recorder consumes. Every shape of "this run produced no result" — no file,
-    an empty one, an executor without file support, an allocation already gone —
-    maps to ``None``; anything else propagates to the caller's failure logging.
+    recorder consumes. The read is best-effort: every shape of "there is no
+    usable result" maps to ``None`` — no file, an empty one, an executor without
+    file support, an allocation already gone, and content that is oversized,
+    undecodable, or not a JSON object. Only an unanticipated failure propagates
+    to the caller's failure logging.
 
     :param executor: The executor that ran the task, used to read its files.
     :param history: The terminal history to read the result of; must have both
