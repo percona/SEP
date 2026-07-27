@@ -6736,7 +6736,7 @@ export interface components {
      * @description Enumerate supported syntax highlighters for detail fields.
      * @enum {string}
      */
-    framework__DetailHighlightLanguage: 'sql' | 'json' | 'bash';
+    framework__DetailHighlightLanguage: 'sql' | 'json' | 'bash' | 'yaml';
     /**
      * DetailSection
      * @description Declare one titled section inside a :class:`DetailView`.

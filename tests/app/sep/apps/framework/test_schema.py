@@ -2162,16 +2162,21 @@ class TestDetailViewReviewFixes:
     ) -> None:
         """Guard ``DetailHighlightLanguage`` membership against silent backend drift.
 
-        The TypeScript ``DetailField.highlight`` type in
-        ``frontend/packages/api/src/types/plugin-schema.ts`` is hand-maintained
-        as ``'sql' | 'json' | 'bash'``. If a new enum value is added here without
-        updating the frontend literal, this test fails and forces the author
-        to sync both sides.
+        Two hand-maintained TypeScript literals mirror this enum, both in
+        ``frontend/packages/api/src/types/app-schema.ts``:
+        ``DetailField.highlight`` and ``AppEntitySchema.detail_highlights``.
+        A third, ``DetailSyntaxLanguage`` in
+        ``frontend/packages/framework/src/components/SchemaDrivenApp/detailSyntaxStyles.ts``,
+        drives the highlighter itself. All three currently read
+        ``'sql' | 'json' | 'bash' | 'yaml'``. If a new enum value is added here
+        without updating them, this test fails and forces the author to sync
+        every side.
         """
         assert {member.value for member in DetailHighlightLanguage} == {
             "sql",
             "json",
             "bash",
+            "yaml",
         }
 
 
