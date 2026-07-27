@@ -29,7 +29,6 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
-from app.core.exceptions import HTTPInternalServerErrorException
 from app.sep.apps.alters.deps import (
     AltersCascadePlan,
     AltersTask,
@@ -133,13 +132,7 @@ async def alters_api_update(
         pre_checks_template,
         body,
     )
-    if not result.success:
-        failed = [
-            (failure.task_name, str(failure.exception)) for failure in result.failures
-        ]
-        raise HTTPInternalServerErrorException(
-            f"Partial update failure; inconsistent task group: {failed}"
-        )
+    result.raise_if_failed(op="update")
 
     updated_task = await get_alters_task(updated_parent.name, tasks_api)
     latest = await get_task_latest_history(tasks_api, updated_task.name)
@@ -174,10 +167,4 @@ async def alters_api_delete(
 ) -> None:
     """Delete an alters task group."""
     result = await cascade_delete_alters_group(tasks_api, parent_task.name)
-    if not result.success:
-        failed = [
-            (failure.task_name, str(failure.exception)) for failure in result.failures
-        ]
-        raise HTTPInternalServerErrorException(
-            f"Partial delete failure; orphaned tasks: {failed}"
-        )
+    result.raise_if_failed(op="delete")

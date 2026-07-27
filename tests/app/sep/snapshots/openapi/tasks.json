@@ -1074,7 +1074,8 @@
         "enum": [
           "sql",
           "json",
-          "bash"
+          "bash",
+          "yaml"
         ],
         "title": "DetailHighlightLanguage",
         "type": "string"
