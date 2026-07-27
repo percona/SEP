@@ -180,14 +180,27 @@ class TestFlagsWiredIntoCommand:
         """Require ``_selective_flags`` only on the logical backup command.
 
         PBM rejects ``--ns`` for physical backups, so the physical runner must
-        never splice selective flags into the command.
+        never splice selective flags into the command. Anchor on the ``cmd =``
+        window preceding ``['pbm', 'backup'`` — not the mere presence of the
+        helper ``def`` line.
         """
-        logical = _PAYLOADS["logical"].read_text()
-        physical = _PAYLOADS["physical"].read_text()
-        assert "def _selective_flags(" in logical
-        assert "_selective_flags(" in logical
-        assert "def _selective_flags(" not in physical
-        assert "_selective_flags(" not in physical
+        for payload, expect_selective in (("logical", True), ("physical", False)):
+            source = _PAYLOADS[payload].read_text()
+            marker = "['pbm', 'backup'"
+            assert marker in source, f"no pbm backup command list in {payload}"
+            idx = source.index(marker)
+            window_start = source.rfind("cmd =", 0, idx)
+            assert window_start != -1, f"no `cmd =` preceding backup list in {payload}"
+            window = source[window_start : idx + 400]
+            if expect_selective:
+                assert "_selective_flags(" in window, (
+                    "logical pbm backup command does not splice _selective_flags(...)"
+                )
+            else:
+                assert "_selective_flags(" not in window, (
+                    "physical pbm backup command must not splice _selective_flags(...)"
+                )
+            assert ("def _selective_flags(" in source) is expect_selective
 
 
 class TestSelectiveFlags:
