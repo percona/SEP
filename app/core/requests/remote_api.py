@@ -15,17 +15,29 @@
 
 """Manage remote API interactions."""
 
-__all__ = ["UPSTREAM_NON_JSON_HEADER", "BaseRemoteAPI", "RemoteAPI"]
+__all__ = [
+    "UPSTREAM_NON_JSON_HEADER",
+    "BaseRemoteAPI",
+    "RemoteAPI",
+    "exception_for_status",
+]
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Generator
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterable,
+    AsyncIterator,
+    Generator,
+    Iterable,
+    Mapping,
+)
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from functools import cached_property, lru_cache
 from ssl import create_default_context, SSLContext
 from types import TracebackType
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, BinaryIO, ClassVar, NoReturn, Self
 from urllib.parse import urljoin
 
 from aiohttp import (
@@ -34,6 +46,7 @@ from aiohttp import (
     ClientSession,
     ClientTimeout,
     ContentTypeError,
+    FormData,
     TCPConnector,
 )
 from fastapi import HTTPException, status
@@ -87,6 +100,14 @@ _REDACTED_VALUE = "****"
 # apart from an app-level JSON error at the same status code.
 UPSTREAM_NON_JSON_HEADER = "X-Upstream-Non-JSON"
 
+#: The body of a single multipart file part: raw bytes held in memory, an open
+#: binary handle, or an async iterator of chunks. aiohttp streams the latter two,
+#: so a caller forwarding a file it never has on disk passes the iterator through.
+FileContent = bytes | BinaryIO | AsyncIterable[bytes]
+
+#: A single multipart file part: ``(filename, content, content_type)``.
+FileSpec = tuple[str, FileContent, str]
+
 # Maps an upstream error status to the project exception that represents it, so
 # RemoteAPI raises app/core/exceptions classes instead of a bare HTTPException.
 _HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
@@ -101,15 +122,30 @@ _HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
 }
 
 
-def _exception_for_status(
+def _is_redirect(status_code: int) -> bool:
+    """Return whether ``status_code`` is a 3xx redirect.
+
+    :param status_code: The upstream HTTP status to classify.
+    :return: ``True`` for any 3xx status.
+    """
+    return status.HTTP_300_MULTIPLE_CHOICES <= status_code < status.HTTP_400_BAD_REQUEST
+
+
+def exception_for_status(
     status_code: int, *, detail: Any, headers: dict[str, str] | None = None
 ) -> HTTPException:
     """Return the project exception mapped to ``status_code``, else a bare HTTPException.
 
     Fall back to a bare :class:`fastapi.HTTPException` when no project class is
-    mapped, or when ``headers`` are present but the mapped class cannot carry them
-    -- only :class:`HTTPGoneException` accepts headers today, so headers are never
-    dropped.
+    mapped. Every mapped class accepts a ``headers`` kwarg, so headers are always
+    preserved.
+
+    A non-JSON error body (marked with ``UPSTREAM_NON_JSON_HEADER``) signals a
+    proxy/gateway failure rather than an app-level status, so a non-JSON 404 stays
+    a bare HTTPException -- callers narrowing to ``except HTTPNotFoundException``
+    must not mistake an upstream infra failure for a real resource-absent
+    response. The other statuses keep their mapping on non-JSON bodies, matching
+    how they already behave for JSON bodies.
 
     :param status_code: The upstream HTTP error status to translate.
     :param detail: The error detail payload to attach to the exception.
@@ -117,14 +153,18 @@ def _exception_for_status(
     :return: The mapped project exception, or a bare HTTPException.
     """
     exc_class = _HTTP_EXCEPTION_BY_STATUS.get(status_code)
-    if exc_class is HTTPGoneException:
-        return exc_class(detail, headers=headers)
-    if exc_class is None or headers:
+    is_non_json = bool(headers) and UPSTREAM_NON_JSON_HEADER in headers
+    if exc_class is None or (is_non_json and exc_class is HTTPNotFoundException):
         return HTTPException(status_code=status_code, detail=detail, headers=headers)
-    return exc_class(detail)
+    return exc_class(detail, headers=headers)
 
 
-def _sanitize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+def _sanitize_request_kwargs(
+    kwargs: dict[str, Any],
+    *,
+    extra_sensitive_headers: frozenset[str] = frozenset(),
+    extra_sensitive_body_fields: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
     """Return a shallow copy of request kwargs with credentials redacted.
 
     The auth context injects an ``Authorization`` header into ``kwargs`` before
@@ -135,15 +175,19 @@ def _sanitize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     request keeps the real values.
 
     :param kwargs: The request keyword arguments about to be logged.
-    :type kwargs: dict[str, Any]
+    :param extra_sensitive_headers: Additional lowercase header names to mask,
+        beyond the always-masked credential headers.
+    :param extra_sensitive_body_fields: Additional lowercase body field names to
+        mask, beyond the always-masked credential fields.
     :return: A copy safe to log, with sensitive header and body values masked.
-    :rtype: dict[str, Any]
     """
+    sensitive_headers = _SENSITIVE_HEADERS | extra_sensitive_headers
+    sensitive_body_fields = _SENSITIVE_BODY_FIELDS | extra_sensitive_body_fields
     safe = {**kwargs}
     headers = kwargs.get("headers")
     if headers:
         safe["headers"] = {
-            key: (_REDACTED_VALUE if key.lower() in _SENSITIVE_HEADERS else value)
+            key: (_REDACTED_VALUE if key.lower() in sensitive_headers else value)
             for key, value in headers.items()
         }
     for body_key in ("json", "data"):
@@ -151,7 +195,7 @@ def _sanitize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
         if isinstance(body, dict):
             safe[body_key] = {
                 key: (
-                    _REDACTED_VALUE if key.lower() in _SENSITIVE_BODY_FIELDS else value
+                    _REDACTED_VALUE if key.lower() in sensitive_body_fields else value
                 )
                 for key, value in body.items()
             }
@@ -241,23 +285,32 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :type logger_name: str
+    :cvar CONNECTIVITY_CHECK_PATH: Lightweight route hit by
+        :meth:`RemoteAPI.check_connectivity` for a reachability probe. Never
+        enters the client-registry key or model serialization. Override per
+        client, or pass an explicit ``path`` to ``check_connectivity``.
     """
 
+    CONNECTIVITY_CHECK_PATH: ClassVar[str] = "/"
     endpoint: CredentialHttpUrl = Field(..., frozen=True)
     verify_ssl: bool = Field(default=True, frozen=True)
     ssl_cafile: RelativeFilePathField | None = Field(None, frozen=True)
     ssl_keyfile: RelativeFilePathField | None = Field(None, frozen=True)
     ssl_certfile: RelativeFilePathField | None = Field(None, frozen=True)
     logger_name: str = __name__
-    #: Lightweight route hit by :meth:`RemoteAPI.check_connectivity` for a
-    #: reachability probe. A ``ClassVar`` (not a model field) so it is purely
-    #: additive: existing subclasses and callers are unaffected, and it never
-    #: enters the client-registry key or model serialization. Override per
-    #: client, or pass an explicit ``path`` to ``check_connectivity``.
-    connectivity_check_path: ClassVar[str] = "/"
     _session: ClientSession | None = None
     _extra_headers: ContextVar[dict[str, str] | None] = PrivateAttr(
         default_factory=lambda: ContextVar("api_extra_headers", default=None)
+    )
+    _extra_sensitive_headers: ContextVar[frozenset[str]] = PrivateAttr(
+        default_factory=lambda: ContextVar(
+            "api_extra_sensitive_headers", default=frozenset()
+        )
+    )
+    _extra_sensitive_body_fields: ContextVar[frozenset[str]] = PrivateAttr(
+        default_factory=lambda: ContextVar(
+            "api_extra_sensitive_body_fields", default=frozenset()
+        )
     )
 
     def __hash__(self) -> int:
@@ -377,6 +430,47 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             yield self
         finally:
             self.reset_extra_headers(token)
+
+    @contextmanager
+    def redact_headers(self, names: Iterable[str]) -> Generator[Self]:
+        """Mask additional request headers in the debug request log for the call.
+
+        Register case-insensitive header names whose values must be redacted in
+        the request-log line for the duration of the call, on top of the
+        always-masked credential headers. Use this to hide a custom-named
+        credential header a caller injects via :meth:`extra_headers`.
+
+        :param names: Header names to mask, compared case-insensitively.
+        :yield: The instance with the extra redaction set applied.
+        """
+        token = self._extra_sensitive_headers.set(
+            self._extra_sensitive_headers.get() | frozenset(n.lower() for n in names)
+        )
+        try:
+            yield self
+        finally:
+            self._extra_sensitive_headers.reset(token)
+
+    @contextmanager
+    def redact_body_fields(self, names: Iterable[str]) -> Generator[Self]:
+        """Mask additional request-body fields in the debug request log for the call.
+
+        Register case-insensitive body keys whose values must be redacted in the
+        request-log line for the duration of the call, on top of the
+        always-masked credential fields. Use this to hide a custom-named
+        credential a caller posts in a JSON or form body.
+
+        :param names: Body field names to mask, compared case-insensitively.
+        :yield: The instance with the extra redaction set applied.
+        """
+        token = self._extra_sensitive_body_fields.set(
+            self._extra_sensitive_body_fields.get()
+            | frozenset(name.lower() for name in names)
+        )
+        try:
+            yield self
+        finally:
+            self._extra_sensitive_body_fields.reset(token)
 
     @cached_property
     def logger(self) -> logging.Logger:
@@ -510,7 +604,11 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             redact_credential_url(str(self.endpoint)),
             method,
             path,
-            _sanitize_request_kwargs(kwargs),
+            _sanitize_request_kwargs(
+                kwargs,
+                extra_sensitive_headers=self._extra_sensitive_headers.get(),
+                extra_sensitive_body_fields=self._extra_sensitive_body_fields.get(),
+            ),
         )
         async with self._session.request(method, prepared_path, **kwargs) as response:
             yield response
@@ -528,7 +626,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :param detail: The error detail payload for the raised exception.
         :param headers: Optional response headers to preserve.
         """
-        raise _exception_for_status(
+        raise exception_for_status(
             status_code, detail=detail, headers=headers
         ) from None
 
@@ -571,14 +669,19 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                         text = await response.text()
                         fallback = text or "An unexpected error occurred on the server."
                         self._raise_stream_http_error(
-                            response.status, detail=fallback, headers=None
+                            response.status,
+                            detail=fallback,
+                            headers={UPSTREAM_NON_JSON_HEADER: "1"},
                         )
-                    error_detail = response_data.get(
+                    error_body = (
+                        response_data if isinstance(response_data, Mapping) else {}
+                    )
+                    error_detail = error_body.get(
                         detail_key, "An unexpected error occurred on the server."
                     )
                     error_headers = None
-                    if code_key and (error_code := response_data.get(code_key)):
-                        error_headers = {"X-Error-Code": error_code}
+                    if code_key and (error_code := error_body.get(code_key)):
+                        error_headers = {"X-Error-Code": str(error_code)}
                     self._raise_stream_http_error(
                         response.status,
                         detail=error_detail,
@@ -735,7 +838,7 @@ class RemoteAPI(BaseRemoteAPI):
         """Probe the endpoint and return a normalized connectivity result.
 
         Issue a lightweight ``GET`` against ``path`` (or
-        :attr:`connectivity_check_path`) under a short bounded timeout and map
+        :attr:`CONNECTIVITY_CHECK_PATH`) under a short bounded timeout and map
         the outcome to one of the :class:`ConnectivityStatusEnum` states:
         reachable, authentication failure, unreachable, SSL verification
         failure, or timeout. Any failure is captured and classified -- this
@@ -749,12 +852,12 @@ class RemoteAPI(BaseRemoteAPI):
         :param service: Stable identifier of the probed service (e.g. ``"pmm"``).
         :type service: str
         :param path: Optional override for the probe route. Defaults to
-            :attr:`connectivity_check_path`.
+            :attr:`CONNECTIVITY_CHECK_PATH`.
         :type path: str | None
         :return: The normalized connectivity result.
         :rtype: ConnectivityResult
         """
-        probe_path = path if path is not None else self.connectivity_check_path
+        probe_path = path if path is not None else self.CONNECTIVITY_CHECK_PATH
         try:
             async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
                 await self.get(probe_path)
@@ -778,11 +881,28 @@ class RemoteAPI(BaseRemoteAPI):
         :raises HTTPException: If the request returns an error response -- the
             project exception mapped to the status (a subclass of
             :class:`fastapi.HTTPException`), or a bare :class:`fastapi.HTTPException`
-            when the status is unmapped or carries headers the mapped class cannot.
+            when the status is unmapped or a non-JSON 404 must stay unmapped.
+            A ``3xx`` response also raises when the caller passed
+            ``allow_redirects=False``: the redirect was not followed, so the
+            status is reported rather than treated as a result.
         """
+        follows_redirects = kwargs.get("allow_redirects", True)
         async with self._request(method, path, **kwargs) as response:
             if response.status == status.HTTP_204_NO_CONTENT:
                 return None
+            if not follows_redirects and _is_redirect(response.status):
+                self.logger.warning(
+                    "RemoteAPI (%s): %s request to %s answered %s, which this "
+                    "caller does not follow.",
+                    redact_credential_url(str(self.endpoint)),
+                    method,
+                    path,
+                    response.status,
+                )
+                raise exception_for_status(
+                    response.status,
+                    detail="The server answered with an unfollowed redirect.",
+                )
             try:
                 response_data = await response.json()
                 self.logger.debug(
@@ -804,21 +924,22 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     response_content,
                 )
-                raise _exception_for_status(
+                raise exception_for_status(
                     err.status,
                     detail="An unexpected error occurred on the server.",
                     headers={UPSTREAM_NON_JSON_HEADER: "1"},
                 ) from None
             except ClientResponseError as err:
-                error_detail = response_data.get(
+                error_body = response_data if isinstance(response_data, Mapping) else {}
+                error_detail = error_body.get(
                     self.error_detail_key, "An unexpected error occurred on the server."
                 )
                 error_headers = None
                 if self.error_code_key and (
-                    error_code := response_data.get(self.error_code_key)
+                    error_code := error_body.get(self.error_code_key)
                 ):
-                    error_headers = {"X-Error-Code": error_code}
-                raise _exception_for_status(
+                    error_headers = {"X-Error-Code": str(error_code)}
+                raise exception_for_status(
                     err.status, detail=error_detail, headers=error_headers
                 ) from None
 
@@ -893,3 +1014,52 @@ class RemoteAPI(BaseRemoteAPI):
         :rtype: dict[str, Any] | list[dict[str, Any]] | None
         """
         return await self.request("DELETE", path, **kwargs)
+
+    async def upload(
+        self,
+        path: str,
+        *,
+        files: Mapping[str, FileSpec],
+        fields: Mapping[str, str] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
+        """Send a ``multipart/form-data`` body (file bundle plus scalar fields).
+
+        Reuse the JSON request transport for error translation, credential
+        redaction, correlation IDs, and SSL. Two deltas versus :meth:`request`:
+        the multipart body carries its own boundary Content-Type, which must
+        override the session's default ``application/json`` header; and a
+        successful non-JSON response body is tolerated -- a vendor-neutral intake
+        may answer ``201`` with a ``text/plain`` acknowledgement or an empty
+        (non-204) body, which :meth:`request` alone surfaces as a bare ``2xx``
+        ``HTTPException`` because it parses the body before ``raise_for_status``.
+
+        :param path: The API endpoint path to POST to.
+        :param files: Multipart file parts keyed by field name; each value is a
+            ``(filename, content, content_type)`` tuple. Pass an open binary file
+            handle or an async byte iterator as ``content`` to stream a large
+            bundle with bounded memory.
+        :param fields: Scalar form fields sent alongside the files.
+        :param kwargs: Additional keyword arguments passed through to the request.
+        :return: The parsed JSON response, or ``None`` on a ``2xx`` response with
+            an empty or non-JSON body.
+        :raises HTTPException: The project exception mapped to an error status,
+            as translated by :meth:`request`.
+        """
+        form = FormData()
+        for name, value in (fields or {}).items():
+            form.add_field(name, value)
+        for name, (filename, content, content_type) in files.items():
+            form.add_field(name, content, filename=filename, content_type=content_type)
+        payload = form()
+        headers = {**kwargs.pop("headers", {}), "Content-Type": payload.content_type}
+        try:
+            return await self.request(
+                "POST", path, data=payload, headers=headers, **kwargs
+            )
+        except HTTPException as exc:
+            if exc.status_code < status.HTTP_400_BAD_REQUEST and (
+                exc.headers or {}
+            ).get(UPSTREAM_NON_JSON_HEADER):
+                return None
+            raise

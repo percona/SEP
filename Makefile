@@ -34,9 +34,6 @@ PYTEST_WORKERS?=auto
 COV?=1
 PYTEST_PATHS?=tests/
 PYTEST_MARKERS?=
-# Pin the hash seed so model-schema/dict ordering is deterministic across xdist
-# workers — an unpinned seed intermittently flakes a 422 in derived one-of routes.
-PYTHONHASHSEED?=0
 
 # WeasyPrint loads native libs (libgobject-2.0, libpango, libcairo) at import
 # time. Homebrew installs them under /opt/homebrew/lib (Apple Silicon) or
@@ -76,6 +73,11 @@ builder:
 image: pack
 	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
 	@buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
+
+# docker format, not oci: OCI silently discards the HEALTHCHECK instruction
+image-sidecar: pack
+	@podman image exists "sep:${RELEASE_VER}-sidecar" && podman image rm "sep:${RELEASE_VER}-sidecar" || true
+	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}-sidecar"
 
 format: venv
 	@"${VENV_BIN}"/ruff format .
@@ -180,16 +182,22 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@$(DARWIN_DYLD) PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
 
 # Regenerate every derived API/form contract from the live app in one pass:
 # the route GET /schema + OpenAPI snapshot goldens, the synthetic form-DSL
 # goldens, the frontend OpenAPI spec, and the generated TS client. Run after
 # changing an app form model, review the diff, then commit.
 regen-specs: venv
-	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/apps/framework/test_form_dsl_golden.py
+	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/apps/framework/test_form_dsl_golden.py
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/dump_openapi.py
 	@cd frontend && pnpm --filter @sep/api codegen && pnpm --filter @sep/api exec oxfmt --write src/generated
+
+regen-pbm-payloads: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_pbm_payloads.py
+
+regen-pbm-payloads-check: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_pbm_payloads.py --check
 
 changelog-add:
 ifndef TICKET
@@ -215,7 +223,7 @@ changelog-list:
 # the value and embedded spaces/quotes stay intact; a literal `$` must be written
 # `$$` on the command line. $(if ...) gates presence. Recognised variables: NAME
 # TYPE DISPLAY_NAME DESCRIPTION GROUP SERVICE_TYPE NAV_ICON RUN_MODE COMMAND PAYLOAD
-# NO_INPUT ENABLE DERIVE_UPDATE DERIVE_DELETE.
+# SCRIPT NO_INPUT ENABLE DERIVE_UPDATE DERIVE_DELETE.
 startapp:
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py \
 		$(if $(NAME),--name "$$NAME") \
@@ -228,6 +236,7 @@ startapp:
 		$(if $(RUN_MODE),--run-mode "$$RUN_MODE") \
 		$(if $(COMMAND),--command "$$COMMAND") \
 		$(if $(PAYLOAD),--payload "$$PAYLOAD") \
+		$(if $(SCRIPT),--script "$$SCRIPT") \
 		$(if $(NO_INPUT),--no-input) \
 		$(if $(ENABLE),--enable) \
 		$(if $(filter false 0 no,$(DERIVE_UPDATE)),--no-derive-update) \
@@ -292,4 +301,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image image-sidecar format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check

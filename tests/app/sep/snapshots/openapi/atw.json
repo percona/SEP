@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
       "ServiceTypeEnum": {
         "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
         "enum": [
@@ -14,6 +27,190 @@
         ],
         "title": "ServiceTypeEnum",
         "type": "string"
+      },
+      "TaskHistoryStatusEnum": {
+        "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:vartype FAILED: str\n:cvar PENDING: Enum value for pending tasks.\n:vartype PENDING: str\n:cvar RUNNING: Enum value for running tasks.\n:vartype RUNNING: str\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:vartype SUCCESS: str\n:cvar STOPPED: Enum value for stopped tasks.\n:vartype STOPPED: str\n:cvar LOST: Enum value for tasks that are lost.\n:vartype LOST: str\n:cvar STALE: Enum value for tasks skipped because Nomad placement\n    exceeded the configured staleness threshold.\n:vartype STALE: str",
+        "enum": [
+          "failed",
+          "pending",
+          "running",
+          "success",
+          "stopped",
+          "lost",
+          "stale"
+        ],
+        "title": "TaskHistoryStatusEnum",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "atw__ATWBatchExecuteItemResponse": {
+        "description": "Describe the outcome of one item in a batch execution.\n\n:param snippet_filename: The snippet this item requested.\n:param task_name: The Tasks-API task name the snippet dispatched under, when\n    the dispatch itself succeeded.\n:param task_history_id: The created task-history id, when the Tasks API\n    returned one.\n:param error: The failure detail when the item did not complete — a message\n    or a validation-error list, depending on what rejected it.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "snippet_filename": {
+            "minLength": 1,
+            "title": "Snippet Filename",
+            "type": "string"
+          },
+          "task_history_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task History Id"
+          },
+          "task_name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Name"
+          }
+        },
+        "required": [
+          "snippet_filename"
+        ],
+        "title": "ATWBatchExecuteItemResponse",
+        "type": "object"
+      },
+      "atw__ATWBatchExecuteItemWrite": {
+        "description": "Define one snippet execution within a batch.\n\n:param snippet_filename: The snippet to execute.\n:param args: Per-snippet arguments keyed by frontmatter parameter name;\n    they override same-named entries in the batch's ``shared_args``.",
+        "properties": {
+          "args": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Args",
+            "type": "object"
+          },
+          "snippet_filename": {
+            "minLength": 1,
+            "title": "Snippet Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "snippet_filename"
+        ],
+        "title": "ATWBatchExecuteItemWrite",
+        "type": "object"
+      },
+      "atw__ATWBatchExecuteResponse": {
+        "description": "Collect every item's outcome for one batch execution.\n\nPartial success lives in the body: the request is created (``201``) whenever\nthe incident resolves, and each item carries its own dispatch result or error.\n\n:param items: One entry per requested item, in request order.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/atw__ATWBatchExecuteItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ATWBatchExecuteResponse",
+        "type": "object"
+      },
+      "atw__ATWBatchExecuteWrite": {
+        "description": "Define the batch-execute payload for one incident.\n\n:param executor_host: The executor every item in the batch runs on.\n:param sudo: The sudo choice applied to every item; snippets whose sudo\n    option is not optional ignore it.\n:param shared_args: Arguments offered to every item, filtered per snippet to\n    the parameters that snippet declares.\n:param items: The snippets to execute, at least one and at most\n    ``MAX_BATCH_SNIPPETS``.",
+        "properties": {
+          "executor_host": {
+            "minLength": 1,
+            "title": "Execution Host",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/atw__ATWBatchExecuteItemWrite"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "shared_args": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Shared Args",
+            "type": "object"
+          },
+          "sudo": {
+            "default": false,
+            "title": "Sudo",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "executor_host",
+          "items"
+        ],
+        "title": "ATWBatchExecuteWrite",
+        "type": "object"
       },
       "atw__ATWCategoryListing": {
         "description": "Represent one ATW category row and its snippet members.\n\n:param category_root: The top-level product/category root.\n:type category_root: str\n:param parent_category: The parent category enum name.\n:type parent_category: str\n:param parent_category_label: The parent category display label.\n:type parent_category_label: str\n:param category: The ATW leaf category enum name.\n:type category: str\n:param category_label: The ATW leaf category display label.\n:type category_label: str\n:param snippet_count: Number of snippets in this category.\n:type snippet_count: int\n:param snippets: Snippet summaries belonging to this category.\n:type snippets: list[ATWSnippetSummary]",
@@ -62,6 +259,302 @@
         "title": "ATWCategoryListing",
         "type": "object"
       },
+      "atw__ATWIncidentExecutionResponse": {
+        "description": "Represent one recorded incident execution, hydrated with live task status.\n\nThe hydrated fields are ``None`` when the Tasks API could not be reached for\nthat row; the locally-recorded fields are always present.\n\n:param id: The execution row's UUID primary key.\n:param snippet_filename: The executed snippet's filename.\n:param task_history_id: The tasks-service execution this row references.\n:param created_at: When the execution was recorded.\n:param task_status: The upstream execution status.\n:param started_at: When the upstream execution started.\n:param finished_at: When the upstream execution finished.\n:param has_logs: Whether the upstream execution has readable logs.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "has_logs": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Logs"
+          },
+          "id": {
+            "format": "uuid4",
+            "title": "Id",
+            "type": "string"
+          },
+          "snippet_filename": {
+            "title": "Snippet Filename",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "task_history_id": {
+            "title": "Task History Id",
+            "type": "integer"
+          },
+          "task_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "snippet_filename",
+          "task_history_id",
+          "created_at"
+        ],
+        "title": "ATWIncidentExecutionResponse",
+        "type": "object"
+      },
+      "atw__ATWMergedSchemaResponse": {
+        "description": "Represent the execution form for a batch of selected snippets.\n\nA purpose-built DTO rather than a plain\n:class:`~app.sep.apps.framework.schema.AppSchema`: the renderer needs to map\nevery non-shared field back to the snippet that declared it, and an\n``AppSchema`` section carries only a display title.\n\n:param shared: The batch-level execution fields followed by every parameter\n    the selection declares identically.\n:param per_snippet: The remaining per-snippet fields, in request order.",
+        "properties": {
+          "per_snippet": {
+            "items": {
+              "$ref": "#/components/schemas/atw__ATWSnippetSchema"
+            },
+            "title": "Per Snippet",
+            "type": "array"
+          },
+          "shared": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "bool": "#/components/schemas/framework__BoolField",
+                  "choice": "#/components/schemas/framework__ChoiceField",
+                  "datetime": "#/components/schemas/framework__DateTimeField",
+                  "file": "#/components/schemas/framework__FileField",
+                  "float": "#/components/schemas/framework__FloatField",
+                  "host": "#/components/schemas/framework__HostField",
+                  "integer": "#/components/schemas/framework__IntegerField",
+                  "multi_choice": "#/components/schemas/framework__MultiChoiceField",
+                  "multi_host": "#/components/schemas/framework__MultiHostField",
+                  "multi_schema": "#/components/schemas/framework__MultiSchemaField",
+                  "multi_service": "#/components/schemas/framework__MultiServiceField",
+                  "multi_table": "#/components/schemas/framework__MultiTableField",
+                  "one_of": "#/components/schemas/framework__OneOfGroup",
+                  "schema": "#/components/schemas/framework__SchemaField",
+                  "script_preview": "#/components/schemas/framework__ScriptPreviewField",
+                  "service": "#/components/schemas/framework__ServiceField",
+                  "string": "#/components/schemas/framework__StringField",
+                  "table": "#/components/schemas/framework__TableField",
+                  "textarea": "#/components/schemas/framework__TextAreaField",
+                  "yaml": "#/components/schemas/framework__YamlField"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/framework__BoolField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__DateTimeField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__FileField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__FloatField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__HostField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__IntegerField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiHostField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiSchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiTableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__SchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ScriptPreviewField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__StringField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TextAreaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__YamlField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__OneOfGroup"
+                }
+              ]
+            },
+            "title": "Shared",
+            "type": "array"
+          }
+        },
+        "required": [
+          "shared",
+          "per_snippet"
+        ],
+        "title": "ATWMergedSchemaResponse",
+        "type": "object"
+      },
+      "atw__ATWSnippetSchema": {
+        "description": "Represent the fields one selected snippet still owns after merging.\n\n:param snippet_filename: The snippet the remaining fields belong to.\n:param fields: The snippet's parameter fields that did not merge into the\n    shared section.",
+        "properties": {
+          "fields": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "bool": "#/components/schemas/framework__BoolField",
+                  "choice": "#/components/schemas/framework__ChoiceField",
+                  "datetime": "#/components/schemas/framework__DateTimeField",
+                  "file": "#/components/schemas/framework__FileField",
+                  "float": "#/components/schemas/framework__FloatField",
+                  "host": "#/components/schemas/framework__HostField",
+                  "integer": "#/components/schemas/framework__IntegerField",
+                  "multi_choice": "#/components/schemas/framework__MultiChoiceField",
+                  "multi_host": "#/components/schemas/framework__MultiHostField",
+                  "multi_schema": "#/components/schemas/framework__MultiSchemaField",
+                  "multi_service": "#/components/schemas/framework__MultiServiceField",
+                  "multi_table": "#/components/schemas/framework__MultiTableField",
+                  "one_of": "#/components/schemas/framework__OneOfGroup",
+                  "schema": "#/components/schemas/framework__SchemaField",
+                  "script_preview": "#/components/schemas/framework__ScriptPreviewField",
+                  "service": "#/components/schemas/framework__ServiceField",
+                  "string": "#/components/schemas/framework__StringField",
+                  "table": "#/components/schemas/framework__TableField",
+                  "textarea": "#/components/schemas/framework__TextAreaField",
+                  "yaml": "#/components/schemas/framework__YamlField"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/framework__BoolField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__DateTimeField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__FileField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__FloatField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__HostField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__IntegerField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiHostField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiSchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiTableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__SchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ScriptPreviewField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__StringField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TextAreaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__YamlField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__OneOfGroup"
+                }
+              ]
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "snippet_filename": {
+            "minLength": 1,
+            "title": "Snippet Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "snippet_filename",
+          "fields"
+        ],
+        "title": "ATWSnippetSchema",
+        "type": "object"
+      },
       "atw__ATWSnippetSummary": {
         "description": "Represent one snippet entry under an ATW category.\n\n:param name: The snippet filename, used as its API identifier.\n:type name: str\n:param title: The snippet display title.\n:type title: str\n:param description: The snippet free-text description.\n:type description: str",
         "properties": {
@@ -84,6 +577,171 @@
           "description"
         ],
         "title": "ATWSnippetSummary",
+        "type": "object"
+      },
+      "atw__AtwIncidentResponse": {
+        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.",
+        "properties": {
+          "case_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Ref"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid4",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "case_ref",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AtwIncidentResponse",
+        "type": "object"
+      },
+      "atw__AtwIncidentUpdate": {
+        "description": "Define the PATCH payload — all fields optional; unset fields are untouched.\n\n:param name: New incident label. Non-nullable when provided: an omitted\n    ``name`` is left unchanged, while an explicit null or empty string is\n    rejected with 422 (the column is NOT NULL). Typing it as a non-optional\n    ``NonEmptyStr`` with a ``None`` default keeps the omitted-field sentinel\n    out of the JSON schema, so the generated client advertises ``name?: string``\n    (not ``string | null``) — matching what the route actually accepts.\n:param case_ref: New support-case reference; an explicit null clears it.",
+        "properties": {
+          "case_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Ref"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "title": "AtwIncidentUpdate",
+        "type": "object"
+      },
+      "atw__AtwIncidentWrite": {
+        "description": "Define the create payload; ``name`` defaults and ``created_by`` is server-stamped.",
+        "properties": {
+          "case_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Ref"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "title": "AtwIncidentWrite",
+        "type": "object"
+      },
+      "atw__PaginatedResponse_ATWIncidentExecutionResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/atw__ATWIncidentExecutionResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[ATWIncidentExecutionResponse]",
+        "type": "object"
+      },
+      "atw__PaginatedResponse_AtwIncidentResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/atw__AtwIncidentResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[AtwIncidentResponse]",
         "type": "object"
       },
       "framework__AppEntitySchema": {
@@ -1411,7 +2069,7 @@
       },
       "framework__HostField": {
         "additionalProperties": false,
-        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). Host selection is not cascaded\nfrom another field — every dispatch form lists every available executor\ntarget.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -1432,6 +2090,18 @@
               }
             ],
             "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
           },
           "description": {
             "anyOf": [
@@ -1760,7 +2430,7 @@
       },
       "framework__MultiHostField": {
         "additionalProperties": false,
-        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\nCascade auto-select is single-host only (:class:`HostField`). ``depends_on``\nmay still be emitted when ``Ui(depends_on=...)`` is set so derivation stays\nuniform, but the multi-host renderer does not honour it today.\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional upstream field name mirrored from\n    ``Ui(depends_on=...)``. Emitted for wire uniformity with\n    :class:`HostField`; the current multi-host renderer ignores it (no\n    cascade). ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -1781,6 +2451,18 @@
               }
             ],
             "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
           },
           "description": {
             "anyOf": [
@@ -3162,7 +3844,7 @@
   "paths": {
     "/api/apps/atw/": {
       "get": {
-        "description": "List ATW-tagged snippets grouped by category.\n\nCategories with no matching snippets are omitted to keep the payload small;\nthe ATW enum still defines the full taxonomy for validation (plugin schema).",
+        "description": "List ATW-tagged snippets grouped by category.\n\nCategories with no matching snippets are omitted to keep the payload small;\nthe ATW enum still defines the full taxonomy for validation (plugin schema).\n\n:param session: The database session.\n:return: One listing row per category that has at least one snippet.",
         "operationId": "atw_atw_api_list_api_apps_atw__get",
         "responses": {
           "200": {
@@ -3181,6 +3863,403 @@
           }
         },
         "summary": "Atw Api List",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/execution-schema/": {
+      "get": {
+        "description": "Build one execution form covering several snippets, merging common parameters.\n\nUnknown or unsafe filenames fail the whole request — a form the caller cannot\nfill for every selected snippet is not a partial success.\n\n:param snippet_filename: The selected snippet filenames, repeated per snippet\n    and deduplicated order-preserving.\n:return: The shared section followed by each snippet's remaining fields.\n:raises HTTPBadRequestException: When a filename attempts directory traversal.\n:raises HTTPNotFoundException: When a filename matches no snippet.",
+        "operationId": "atw_atw_execution_schema_api_apps_atw_execution_schema__get",
+        "parameters": [
+          {
+            "description": "Snippet filenames to build a batch form for.",
+            "in": "query",
+            "name": "snippet_filename",
+            "required": true,
+            "schema": {
+              "description": "Snippet filenames to build a batch form for.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 50,
+              "minItems": 1,
+              "title": "Snippet Filename",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__ATWMergedSchemaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Execution Schema",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/": {
+      "get": {
+        "description": "List diagnostic incidents, newest first.\n\n:param session: The database session.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of incidents, newest first.",
+        "operationId": "atw_atw_list_incidents_api_apps_atw_incidents__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__PaginatedResponse_AtwIncidentResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw List Incidents",
+        "tags": [
+          "atw"
+        ]
+      },
+      "post": {
+        "description": "Create a diagnostic incident owned by the current user.\n\n:param session: The database session.\n:param current_user: The authenticated user, stamped as ``created_by``.\n:param body: The incident create payload.\n:return: The created incident.",
+        "operationId": "atw_atw_create_incident_api_apps_atw_incidents__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/atw__AtwIncidentWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Create Incident",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/{incident_id}": {
+      "delete": {
+        "description": "Delete a diagnostic incident and cascade its execution rows.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.",
+        "operationId": "atw_atw_delete_incident_api_apps_atw_incidents__incident_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Delete Incident",
+        "tags": [
+          "atw"
+        ]
+      },
+      "get": {
+        "description": "Retrieve a single diagnostic incident by id.\n\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:return: The matching incident.",
+        "operationId": "atw_atw_get_incident_api_apps_atw_incidents__incident_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Get Incident",
+        "tags": [
+          "atw"
+        ]
+      },
+      "patch": {
+        "description": "Update a diagnostic incident's name or support-case reference.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param body: The partial update payload; unset fields are untouched.\n:return: The updated incident.",
+        "operationId": "atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/atw__AtwIncidentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Update Incident",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/{incident_id}/executions/": {
+      "get": {
+        "description": "List one incident's snippet executions, newest first, with live task status.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param pagination: The offset/limit window for the page.\n:param tasks_api: The authenticated Tasks API client.\n:return: A paginated page of executions hydrated from the Tasks API.",
+        "operationId": "atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__PaginatedResponse_ATWIncidentExecutionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw List Incident Executions",
+        "tags": [
+          "atw"
+        ]
+      },
+      "post": {
+        "description": "Execute several snippets against one incident, reporting each item separately.\n\nOne failing item never blocks the rest: each is dispatched and recorded inside\nits own guard, and the response always carries an entry per requested item. A\nfailed attempt produces no task-history row to reference, so it is reported\nhere rather than persisted.\n\nThe row-write guard rolls the shared session back before the loop continues,\nor one failed write would leave the transaction aborted and doom every later\nitem on PostgreSQL; the dispatch guard rolls back defensively, having written\nnothing itself. ``incident.id`` is read once up front because both a commit and\na rollback expire the instance, and re-reading it would trigger a lazy load.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param body: The batch payload.\n:param tasks_api: The authenticated Tasks API client.\n:return: One outcome entry per requested item, in request order.",
+        "operationId": "atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/atw__ATWBatchExecuteWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__ATWBatchExecuteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Batch Execute",
         "tags": [
           "atw"
         ]

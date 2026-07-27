@@ -55,6 +55,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       docker: ${{ steps.filter.outputs.docker }}
       shell: ${{ steps.filter.outputs.shell }}
+      sidecar: ${{ steps.filter.outputs.sidecar }}
     steps:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -92,6 +93,11 @@ jobs:
               - 'entrypoint_celery.sh'
               - 'Makefile'
               - 'alembic.ini'
+            sidecar:
+              - 'sidecar/**'
+              - 'Containerfile.base'
+              - 'alembic.ini'
+              - 'Makefile'
 
   precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
@@ -205,7 +211,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: "22.13.0"
+          node-version: "22.22.0"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -294,6 +300,79 @@ jobs:
       - name: Smoke test
         run: docker run --rm --entrypoint /bin/sh "sep:HEAD" -c 'sleep 1'
 
+  build-sidecar:
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        needs.label-gate.result == 'success' &&
+        needs.changes.result == 'success' &&
+        needs.changes.outputs.sidecar == 'true' &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
+      }}
+    runs-on: ubuntu-latest
+    needs:
+      - label-gate
+      - changes
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@a0c73a10bb6782f082cd6714666c87911e4fc7d3 # v4.0.0
+
+      - name: Build base image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: Containerfile.base
+          tags: sep:builder
+          load: true
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=base
+
+      - name: Prepare app bundle
+        run: make pack
+
+      - name: Build side-car image
+        run: >-
+          docker build
+          --build-context "localhost/sep:builder=docker-image://sep:builder"
+          -f sidecar/Containerfile.sidecar -t "sep:HEAD-sidecar" .
+
+      - name: Smoke test - verify binaries and config files
+        run: |
+          docker run --rm --entrypoint /bin/sh "sep:HEAD-sidecar" -c '
+            set -e
+            command -v valkey-server
+            command -v valkey-cli
+            command -v supervisord
+            test -f /home/sep/app/supervisord.conf
+            test -f /home/sep/app/healthcheck.sh
+            test -x /home/sep/app/entrypoint.sh
+          '
+
+      - name: Smoke test - verify HEALTHCHECK instruction
+        run: |
+          healthcheck_test=$(docker inspect --format='{{json .Config.Healthcheck.Test}}' "sep:HEAD-sidecar")
+          if [ -z "$healthcheck_test" ] || [ "$healthcheck_test" = "null" ] || [ "$healthcheck_test" = "[\"NONE\"]" ]; then
+            echo "::error::HEALTHCHECK instruction is missing or disabled (HEALTHCHECK NONE) in the side-car image"
+            exit 1
+          fi
+          healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "sep:HEAD-sidecar")
+          echo "HEALTHCHECK present: $healthcheck"
+
+      - name: Smoke test - verify ENTRYPOINT is the side-car wrapper
+        run: |
+          entrypoint=$(docker inspect --format='{{json .Config.Entrypoint}}' "sep:HEAD-sidecar")
+          case "$entrypoint" in
+            *entrypoint.sh*) ;;
+            *)
+              echo "::error::ENTRYPOINT is not the side-car wrapper, so the broker credential is never minted: $entrypoint"
+              exit 1
+              ;;
+          esac
+          echo "ENTRYPOINT present: $entrypoint"
+
   ci-success:
     if: always()
     needs:
@@ -305,6 +384,7 @@ jobs:
       - python
       - frontend
       - build
+      - build-sidecar
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any dependency failed or was cancelled

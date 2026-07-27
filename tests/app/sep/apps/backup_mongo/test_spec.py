@@ -108,6 +108,7 @@ def test_build_spec_s3_storage():
     assert config["storage"]["type"] == "s3"
     assert config["storage"]["s3"]["region"] == "eu-west-1"
     assert config["storage"]["s3"]["bucket"] == "backups"
+    assert config["storage"]["s3"]["prefix"] == "mongo"
     assert config["storage"]["s3"]["endpointUrl"] == "https://s3.example.com"
     assert "filesystem" not in config["storage"]
 

@@ -26,12 +26,18 @@ trusts.
 """
 
 import functools
-from typing import Annotated, Any
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Annotated
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import APIRouter, Body, status
 from fastapi.routing import APIRoute
+from pydantic import BaseModel
+from pytest_mock import MockerFixture
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination.deps import make_pagination_dep
@@ -41,11 +47,14 @@ from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp, UNGUA
 from app.sep.apps.framework.task_status import batch_get_latest_statuses
 from app.sep.deps import IsApiAuthenticated, TaskAPI
 from app.tasks.models import LATEST_HISTORY_STATUS_NAMES_MAX, TaskHistoryStatusEnum
+from tests.app.sep.apps.archives.build_pins import ARCHIVES_ARCHIVE_PINS
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
     build_contract_client,
     build_valid_create_body,
     DerivedRouterContractTests,
+    ref_overrides,
+    select_branch,
 )
 from tests.app.sep.apps.framework.kit import (
     MockInventoryAPI,
@@ -320,7 +329,7 @@ def test_default_guard_rides_only_the_derived_verb(regular_user: CasdoorUser) ->
 
 
 def test_default_guards_share_one_task_fetch(
-    regular_user: CasdoorUser, mocker: Any
+    regular_user: CasdoorUser, mocker: MockerFixture
 ) -> None:
     """Assert the two default guards and the handler share one cached task fetch.
 
@@ -444,8 +453,245 @@ def test_build_valid_create_body_wraps_multi_value_refs() -> None:
     ChecksumsForm.model_validate(body)
 
 
+class _FirstArm(BaseModel):
+    """Represent the first-declared model arm a union branch pick must return."""
+
+    value: int
+
+
+class _SecondArm(BaseModel):
+    """Represent a second model arm so the union is not a degenerate single type."""
+
+    other: str
+
+
+class _SelectBranchModel(BaseModel):
+    """Carry each shape ``select_branch`` must classify.
+
+    ``one_of`` is a genuine model union (recurse into its first arm); ``optional_one_of``
+    adds a ``None`` arm (recurse, dropping ``None``); ``items`` is a container that also
+    yields a model from ``get_args`` but must keep its list shape; ``mixed`` unions a
+    model with a scalar (a collapsed reference, not a model union); ``scalar`` and
+    ``scalar_union`` are non-model shapes the generic factory handles unaided.
+    """
+
+    one_of: _FirstArm | _SecondArm
+    optional_one_of: _FirstArm | None
+    items: list[_FirstArm]
+    mixed: _FirstArm | int
+    scalar: int
+    scalar_union: int | str
+
+
+class TestSelectBranch:
+    """Pin which annotations ``select_branch`` treats as a model union to recurse into."""
+
+    def test_selects_first_model_union_arm(self) -> None:
+        """Return the first model arm for a genuine union, dropping any ``None`` arm."""
+        fields = _SelectBranchModel.model_fields
+        assert select_branch(fields["one_of"]) is _FirstArm
+        assert select_branch(fields["optional_one_of"]) is _FirstArm
+
+    def test_ignores_container_and_non_model_shapes(self) -> None:
+        """Return ``None`` for a container, scalar, or model/scalar mix — never collapsing shape.
+
+        A ``list[Model]`` yields a ``BaseModel`` from ``get_args`` too, so a pick keyed
+        only on the args — not the union origin — would replace the list with a single
+        instance and break factory construction. A ``Model | int`` mix is a collapsed
+        reference, not a one-of group, so it is left to the generic factory.
+        """
+        fields = _SelectBranchModel.model_fields
+        assert select_branch(fields["items"]) is None
+        assert select_branch(fields["mixed"]) is None
+        assert select_branch(fields["scalar"]) is None
+        assert select_branch(fields["scalar_union"]) is None
+
+
+class TestBuildValidCreateBodyRecursion:
+    """Pin how the body generator recurses into one-of branches and applies overrides."""
+
+    def test_recurses_into_oneof_branches(self) -> None:
+        """Resolve references nested inside discriminated-union branches to seeded ids.
+
+        Archives is the first one-of create model: its ``source`` / ``destination`` /
+        ``host`` groups carry the inventory references, so the generator must recurse
+        into the selected branch and pin each nested ref to its seeded ``MOCK_*_ID``.
+        """
+        from app.sep.apps.archives.app import app as archives_app
+        from tests.app.factories import (
+            MOCK_CREATED_SCHEMA_ID,
+            MOCK_CREATED_SERVICE_ID,
+            MOCK_CREATED_TABLE_ID,
+        )
+
+        body = build_valid_create_body(
+            archives_app, create_body_overrides=ARCHIVES_ARCHIVE_PINS
+        )
+
+        assert body is not None
+        assert body["service_id"] == MOCK_CREATED_SERVICE_ID
+        assert body["source"] == {
+            "mode": "table",
+            "source_db": MOCK_CREATED_SCHEMA_ID,
+            "source_table": MOCK_CREATED_TABLE_ID,
+        }
+        assert body["destination"]["dest_table"] == MOCK_CREATED_TABLE_ID
+        assert body["destination"]["dest_db"] == MOCK_CREATED_SCHEMA_ID
+        assert body["host"] == {
+            "mode": "service",
+            "dest_service": MOCK_CREATED_SERVICE_ID,
+        }
+
+    def test_skips_recursion_for_overridden_fields(self) -> None:
+        """Skip building a union branch a ``create_body_overrides`` key will replace.
+
+        ``ref_overrides`` recurses into ``destination`` by default, but building that
+        branch is wasted when the caller pins the field, so a name in ``skip`` is left
+        out of the map entirely while every other reference still resolves.
+        """
+        from app.sep.apps.archives.models import ArchivesCreate
+
+        full = ref_overrides(ArchivesCreate)
+        assert "destination" in full
+
+        skipped = ref_overrides(ArchivesCreate, skip=frozenset({"destination"}))
+        assert "destination" not in skipped
+        assert skipped["service_id"] == full["service_id"]
+
+    def test_overrides_win_over_generated_values(self) -> None:
+        """Apply ``create_body_overrides`` last, so a pin beats a generated or ref value.
+
+        The override must win even over an inventory-reference field the generator would
+        otherwise pin to its seeded ``MOCK_*_ID`` (``service_id`` here).
+        """
+        from app.sep.apps.archives.app import app as archives_app
+
+        pinned_service_id = 4242
+        body = build_valid_create_body(
+            archives_app,
+            create_body_overrides={
+                **ARCHIVES_ARCHIVE_PINS,
+                "service_id": pinned_service_id,
+            },
+        )
+
+        assert body is not None
+        assert body["service_id"] == pinned_service_id
+
+
+_EXPECTED_ARCHIVES_MODES = {
+    "source": "table",
+    "destination": "table",
+    "host": "service",
+}
+
+_BRANCH_PROBE_MATCH = 0
+_BRANCH_PROBE_MISORDERED = 1
+_BRANCH_PROBE_BUILD_FAILED = 2
+
+
+def run_archives_branch_probe() -> int:
+    """Classify the archives one-of branch pick under the current hash seed.
+
+    Builds a valid archives create body and compares the ``mode`` chosen for each of the
+    ``source`` / ``destination`` / ``host`` one-of groups against the first-declared arms.
+    Called from a subprocess under a fixed ``PYTHONHASHSEED`` so the branch pick can be
+    swept across hash seeds; it reports via exit code (not stdout) because the framework
+    logs to stdout at import. A body that fails to build is reported distinctly from a
+    branch-ordering regression, so a broken generator is never misread as a reordering.
+
+    :return: :data:`_BRANCH_PROBE_MATCH` when every group resolves to its first-declared
+        arm, :data:`_BRANCH_PROBE_MISORDERED` when a group picked a different arm, and
+        :data:`_BRANCH_PROBE_BUILD_FAILED` when the body could not be built at all.
+    """
+    from app.sep.apps.archives.app import app as archives_app
+
+    try:
+        body = build_valid_create_body(
+            archives_app, create_body_overrides=ARCHIVES_ARCHIVE_PINS
+        )
+        if body is None:
+            return _BRANCH_PROBE_BUILD_FAILED
+        modes = {key: body[key]["mode"] for key in _EXPECTED_ARCHIVES_MODES}
+    except Exception:  # noqa: BLE001 - any build failure is classified, never re-raised
+        return _BRANCH_PROBE_BUILD_FAILED
+    return (
+        _BRANCH_PROBE_MATCH
+        if modes == _EXPECTED_ARCHIVES_MODES
+        else _BRANCH_PROBE_MISORDERED
+    )
+
+
+def _branch_probe_message(returncode: int, stderr: str) -> str:
+    """Return the seed-sweep failure message matching a probe exit code.
+
+    :param returncode: The subprocess exit code from :func:`run_archives_branch_probe`.
+    :param stderr: The subprocess stderr, appended for context.
+    :return: A message naming the actual failure — a branch-ordering regression, a body
+        that failed to build, or an unexpected exit — never conflating the three.
+    """
+    reasons = {
+        _BRANCH_PROBE_MISORDERED: "selected a non-first-declared union branch",
+        _BRANCH_PROBE_BUILD_FAILED: (
+            "failed to build the archives body (not a branch-ordering regression)"
+        ),
+    }
+    reason = reasons.get(returncode, f"exited unexpectedly with code {returncode}")
+    return f"{reason}\n{stderr}"
+
+
+class TestBranchProbeMessage:
+    """Pin that the seed-sweep message names the real failure, not always ordering."""
+
+    def test_names_each_failure_mode_distinctly(self) -> None:
+        """Map each probe exit code to a message describing that failure alone."""
+        misordered = _branch_probe_message(_BRANCH_PROBE_MISORDERED, "")
+        build_failed = _branch_probe_message(_BRANCH_PROBE_BUILD_FAILED, "")
+
+        assert "non-first-declared" in misordered
+        assert "failed to build" in build_failed
+        assert "code 7" in _branch_probe_message(7, "")
+
+
+class TestBranchSelectionDeterminism:
+    """Sweep the union-branch pick across hash seeds in isolated interpreters.
+
+    The branch choice must follow declaration order — never set/hash ordering, the
+    flake class the derived one-of body schema was hardened against. A same-interpreter
+    double-call cannot see that regression: a set-backed pick returns the same arm both
+    times within one process. Each seed therefore runs in its own interpreter with
+    ``PYTHONHASHSEED`` fixed at start, and every seed must select the first-declared
+    arm — never the ``None`` arm of the optional ``destination`` / ``host`` unions. The
+    probe reports via exit code (not stdout) because the framework logs to stdout at
+    import.
+    """
+
+    _REPO_ROOT = Path(__file__).resolve().parents[5]
+    _SUBPROCESS = (
+        "import sys;"
+        "from tests.app.sep.apps.framework.test_contract_suite import"
+        " run_archives_branch_probe;"
+        "sys.exit(run_archives_branch_probe())"
+    )
+
+    @pytest.mark.parametrize("seed", range(3))
+    def test_first_declared_branch_selected_under_seed(self, seed: int) -> None:
+        """Assert every one-of group resolves to its first-declared arm under ``seed``."""
+        result = subprocess.run(
+            [sys.executable, "-c", self._SUBPROCESS],
+            env={**os.environ, "PYTHONHASHSEED": str(seed)},
+            cwd=self._REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == _BRANCH_PROBE_MATCH, (
+            f"seed={seed} {_branch_probe_message(result.returncode, result.stderr)}"
+        )
+
+
 def test_create_response_builder_pins_stable_component(
-    regular_user: CasdoorUser, mocker: Any
+    regular_user: CasdoorUser, mocker: MockerFixture
 ) -> None:
     """Assert an explicit ``create_response_builder`` pins the stable create model.
 

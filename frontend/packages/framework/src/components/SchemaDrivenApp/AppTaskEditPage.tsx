@@ -16,7 +16,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Skeleton from '@mui/material/Skeleton';
@@ -197,6 +197,8 @@ export function AppTaskEditPage({
         defaultValues: normalizedDefaults,
         capabilities: schema.capabilities,
         renderField,
+        submitError,
+        fieldErrors,
       }) ?? (
         <SchemaFormRenderer
           sections={editableSections}

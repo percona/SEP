@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { RouteObject } from 'react-router-dom';
+import type { RouteObject } from 'react-router';
 import { BackupMongoApp } from './BackupMongoApp';
 
 export const BACKUP_APP_NAME = 'backup_mongo';

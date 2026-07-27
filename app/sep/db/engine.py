@@ -17,17 +17,15 @@
 
 __all__ = ["engine", "get_async_session_maker"]
 
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.utils import json_serializer
+from app.core.db.utils import (
+    create_app_async_engine,
+    get_async_session_maker_from_engine,
+)
 from app.sep.config import sep_settings
 
-engine = create_async_engine(
-    sep_settings.DATABASE.URL,
-    echo=False,
-    json_serializer=json_serializer,
-)
+engine = create_app_async_engine(sep_settings.DATABASE)
 
 
 def get_async_session_maker() -> async_sessionmaker:

@@ -14,6 +14,7 @@
       "collapsible": false,
       "fields": [
         {
+          "default": "mongodb-restore",
           "label": "Task Name",
           "min_length": 1,
           "name": "task_name",
@@ -70,9 +71,16 @@
       "title": "Task"
     },
     {
-      "collapsed_by_default": false,
-      "collapsible": false,
+      "collapsed_by_default": true,
+      "collapsible": true,
       "fields": [
+        {
+          "description": "Optional database or collection patterns to restore, separated by commas (for example, db1.*,db2.collection)",
+          "label": "Namespace Filter",
+          "name": "restore_namespace_filter",
+          "required": false,
+          "type": "string"
+        },
         {
           "label": "Batch Size",
           "name": "restore_batch_size",

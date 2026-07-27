@@ -105,11 +105,15 @@ export {
   useAppSchema,
   useAppTasks,
   useAppTask,
+  RUNNING_STATUSES,
+  isRunningStatus,
   useCreateAppTask,
   useUpdateAppTask,
   useAppEntityList,
   useAppEntityDetail,
-  unwrapAppListResponse,
+  normalizeAppListResponse,
+  DEFAULT_APP_LIST_OFFSET,
+  DEFAULT_APP_LIST_LIMIT,
   useCreateAppEntity,
   useUpdateAppEntity,
   useDeleteAppEntity,
@@ -138,7 +142,17 @@ export {
   useAppInfo,
   APP_INFO_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats, EnabledApp, AppInfo, PaginatedAppList } from './hooks';
+export type {
+  AlertConfig,
+  DashboardStats,
+  EnabledApp,
+  AppInfo,
+  AppListPagination,
+  AppListQueryOptions,
+  AppListResult,
+  PaginatedAppList,
+  TaskHistoryStatus,
+} from './hooks';
 export type { ConnectivityCheckRequest, ConnectivityResult, ConnectivityStatus } from './hooks';
 export type {
   AdminApp,

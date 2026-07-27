@@ -6,43 +6,86 @@ import sys
 import yaml
 
 
-def _creds_path():
-    """ Path to MongoDB URI credentials file """
-    config_yaml = os.environ.get('NOMAD_META_CONFIG')
+# --- BEGIN GENERATED PBM CREDS PREAMBLE ---
+def _creds_path(config_source: str) -> str:
+    """Resolve the MongoDB URI credentials path from ``NOMAD_META_CONFIG``.
+
+    :param config_source: The config surface named in the error message, either
+        ``"backup"`` or ``"restore"``.
+    :return: The credentials-file path (from the config or the ``$HOME`` fallback).
+    """
+    config_yaml = os.environ.get("NOMAD_META_CONFIG")
     if config_yaml:
         try:
             config = yaml.safe_load(config_yaml)
             if isinstance(config, dict):
-                path = config.get('credentials_path')
+                path = config.get("credentials_path")
                 if path:
                     return path
         except yaml.YAMLError as err:
-            print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}. Falling back to HOME-based credentials path.', file=sys.stderr)
-    envhome = os.environ.get('HOME')
+            print(
+                f"Failed to parse NOMAD_META_CONFIG as YAML: {err}. Falling back to HOME-based credentials path.",
+                file=sys.stderr,
+            )
+    envhome = os.environ.get("HOME")
     if not envhome:
-        print('PBM credentials path not set (credentials_path in backup config) and HOME is unset', file=sys.stderr)
+        print(
+            f"PBM credentials path not set (credentials_path in {config_source} config) and HOME is unset",
+            file=sys.stderr,
+        )
         sys.exit(1)
-    return f'{envhome}/.mongodb_uri'
+    return f"{envhome}/.mongodb_uri"
 
 
-def pbm_creds():
-    """ PBM Credentials """
-    creds_path = _creds_path()
+def _creds_path_from_config(config: object, config_source: str = "restore") -> str:
+    """Resolve the MongoDB URI credentials path from an already-parsed config dict.
+
+    :param config: The parsed restore/backup config value. Anything other than a
+        ``dict`` (``None``, a bare scalar, a list, ...) is treated as missing config,
+        since ``yaml.safe_load`` can legally return a truthy non-dict.
+    :param config_source: The config surface named in the error message, either
+        ``"backup"`` or ``"restore"``.
+    :return: The credentials-file path (from the config or the ``$HOME`` fallback).
+    """
+    if isinstance(config, dict):
+        path = config.get("credentials_path")
+        if path:
+            return path
+    envhome = os.environ.get("HOME")
+    if not envhome:
+        print(
+            f"PBM credentials path not set (credentials_path in {config_source} config) and HOME is unset",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return f"{envhome}/.mongodb_uri"
+
+
+def pbm_creds(creds_path: str) -> str:
+    """Read the MongoDB URI from ``creds_path``, exiting 1 on any read failure.
+
+    :param creds_path: The resolved credentials-file path to read.
+    :return: The stripped MongoDB URI read from the file.
+    """
     try:
-        with open(creds_path, 'r', encoding='utf-8') as fpt:
+        with open(creds_path, encoding="utf-8") as fpt:
             return fpt.read().strip()
     except FileNotFoundError as err:
-        print(f'Credentials file not found: {creds_path}: {err}', file=sys.stderr)
+        print(f"Credentials file not found: {creds_path}: {err}", file=sys.stderr)
         sys.exit(1)
     except PermissionError as err:
-        print(f'Permission denied reading credentials file {creds_path}: {err}', file=sys.stderr)
+        print(
+            f"Permission denied reading credentials file {creds_path}: {err}",
+            file=sys.stderr,
+        )
         sys.exit(1)
     except OSError as err:
-        print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
+        print(f"Error reading credentials file {creds_path}: {err}", file=sys.stderr)
         sys.exit(1)
     except Exception as err:
-        print(f'Error reading credentials file {creds_path}: {err}', file=sys.stderr)
+        print(f"Error reading credentials file {creds_path}: {err}", file=sys.stderr)
         sys.exit(1)
+# --- END GENERATED PBM CREDS PREAMBLE ---
 
 
 def _load_config():
@@ -84,11 +127,63 @@ def _compression_flags(config):
     return flags
 
 
+# --- BEGIN GENERATED PBM CONFIG APPLY ---
+def _apply_pbm_config(config: dict) -> None:
+    """Apply the SEP-managed PBM config to the cluster via ``pbm config --file``.
+
+    PBM storage is cluster-wide with no per-backup flag, so the per-task config
+    (storage, priority, pitr) is applied here, before the backup runs, rather than
+    relying on the separate Sync-config task having run. Writes the full config
+    (minus SEP-only keys) to the task dir and runs ``pbm config --file``.
+
+    Terminates the process (``sys.exit`` non-zero) rather than raising when the task
+    dir is unset, ``pbm`` cannot be run, or PBM rejects the config -- for example an
+    unreachable or non-existent S3 bucket -- so the backup never silently falls back
+    to PBM's pre-existing cluster-wide storage.
+
+    :param config: The parsed task config; SEP-only and ``None``-valued keys are
+        dropped before it is written to the PBM config file.
+    """
+    sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
+    pbm_config = {
+        k: v for k, v in config.items() if k not in sep_only_keys and v is not None
+    }
+    task_dir = os.environ.get("NOMAD_TASK_DIR")
+    if not task_dir:
+        print(
+            "NOMAD_TASK_DIR is not set; cannot write the PBM config file.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    config_file = f"{task_dir}/script_config"
+    with open(config_file, "w", encoding="utf-8") as f:
+        yaml.dump(pbm_config, f, default_flow_style=False, allow_unicode=True)
+    cmd = ["pbm", "config", "--file", config_file]
+    try:
+        proc = subprocess.Popen(cmd)  # noqa: S603 # nosec B603
+        proc.wait()
+        ret_code = proc.poll()
+        if ret_code != 0:
+            print(
+                "Failed to apply the task storage configuration to PBM "
+                f"(pbm config --file exited {ret_code}). Verify the configured S3 "
+                "bucket/region/endpoint exist and are reachable.",
+                file=sys.stderr,
+            )
+            sys.exit(ret_code)
+    except OSError as err:
+        print(f"Failed to run pbm config: {err}", file=sys.stderr)
+        sys.exit(1)
+# --- END GENERATED PBM CONFIG APPLY ---
+
+
 def pbm():
     """ PBM Physical Payload """
 
-    os.environ['PBM_MONGODB_URI'] = pbm_creds()
+    os.environ['PBM_MONGODB_URI'] = pbm_creds(_creds_path('backup'))
     config = _load_config()
+    if isinstance(config.get('storage'), dict):
+        _apply_pbm_config(config)
     cmd = ['pbm', 'backup', '--type', 'physical', '--wait'] + _compression_flags(config)
 
     try:

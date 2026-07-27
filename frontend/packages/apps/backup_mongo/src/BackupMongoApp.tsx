@@ -17,17 +17,23 @@
 
 import type { CSSProperties } from 'react';
 import { SchemaDrivenApp } from '@sep/framework';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router';
 import {
   BackupMongoTaskDetailExtras,
   getBackupMongoExecuteActions,
   getBackupMongoHistoryTaskNames,
 } from './backupMongoTaskDetail';
+import { backupMongoCreateRenderField } from './backupMongoCreateForm';
 import {
   getRestoreMongoExecuteActions,
   getRestoreMongoHistoryTaskNames,
   RestoreMongoTaskDetailExtras,
 } from './restoreMongoTaskDetail';
+import {
+  restoreMongoCreateForm,
+  restoreMongoCreateRenderField,
+  restoreMongoEditForm,
+} from './restoreMongoCreateForm';
 import { BACKUP_APP_NAME, MONGODB_BASE_PATH, RESTORE_APP_NAME } from './routes';
 
 const BACKUP_DETAIL_SUPPRESS_KEYS = ['derived_tasks', 'latest_pbm_status'];
@@ -92,6 +98,7 @@ export function BackupMongoApp() {
               getTaskExecuteActions={getBackupMongoExecuteActions}
               getTaskHistoryNames={getBackupMongoHistoryTaskNames}
               suppressDetailKeys={BACKUP_DETAIL_SUPPRESS_KEYS}
+              renderField={backupMongoCreateRenderField}
               renderTaskDetailChildren={({ task }) => <BackupMongoTaskDetailExtras task={task} />}
             />
           }
@@ -105,6 +112,9 @@ export function BackupMongoApp() {
               getTaskExecuteActions={getRestoreMongoExecuteActions}
               getTaskHistoryNames={getRestoreMongoHistoryTaskNames}
               suppressDetailKeys={RESTORE_DETAIL_SUPPRESS_KEYS}
+              renderField={restoreMongoCreateRenderField}
+              renderCreateForm={restoreMongoCreateForm}
+              renderEditForm={restoreMongoEditForm}
               renderTaskDetailChildren={({ task }) => <RestoreMongoTaskDetailExtras task={task} />}
             />
           }

@@ -16,7 +16,7 @@
  */
 
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
-import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -26,6 +26,7 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
+import Grid from '@mui/material/Grid';
 import IconButton from '@mui/material/IconButton';
 import Paper from '@mui/material/Paper';
 import Skeleton from '@mui/material/Skeleton';
@@ -51,7 +52,12 @@ import {
   type AppSchema,
 } from '@sep/api';
 import { resolvePath } from '../../utils/resolvePath';
-import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
+import {
+  TaskHistoryTable,
+  TaskHistoryStatusBadge,
+  isTaskHistoryStatus,
+  type TaskHistoryEntry,
+} from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { ScheduleSummary } from '../ScheduleSummary';
 import {
@@ -142,6 +148,17 @@ export function pathToEntityList(pathname: string, entityName: string): string {
   return `/${parts.slice(0, idx + 1).join('/')}`;
 }
 
+/** Compact label/value cell size: 1 → 2 → 3 columns. Three columns only at ``lg``
+ * so mid-width layouts (sidebar + ~900px viewport) stay readable for long values. */
+const DETAIL_FIELD_GRID_SIZE = { xs: 12, sm: 6, lg: 4 } as const;
+
+/** Keep long unbroken strings (emails, hosts) inside their grid cell. */
+const detailFieldValueSx = {
+  overflowWrap: 'anywhere',
+  wordBreak: 'break-word',
+} as const;
+
+/** Compact label/value cell; wide content (JSON / syntax blocks) spans the full row. */
 function EntityDetailField({
   label,
   value,
@@ -158,17 +175,18 @@ function EntityDetailField({
   const syntaxFallback = (
     <Skeleton variant="rectangular" height={120} sx={{ ...detailSyntaxBlockSx, mt: 0.5 }} />
   );
+  const isWide = typeof value === 'object';
 
   if (highlightLanguage) {
     return (
-      <Box sx={{ mb: 2 }}>
+      <Grid size={12} sx={{ minWidth: 0 }}>
         <Typography variant="caption" color="text.secondary">
           {label}
         </Typography>
         <Suspense fallback={syntaxFallback}>
           <DetailSyntaxHighlighter value={value} language={highlightLanguage} />
         </Suspense>
-      </Box>
+      </Grid>
     );
   }
 
@@ -186,12 +204,18 @@ function EntityDetailField({
   }
 
   return (
-    <Box sx={{ mb: 2 }}>
+    <Grid size={isWide ? 12 : DETAIL_FIELD_GRID_SIZE} sx={{ minWidth: 0 }}>
       <Typography variant="caption" color="text.secondary">
         {label}
       </Typography>
-      {typeof value === 'object' ? display : <Typography variant="body1">{display}</Typography>}
-    </Box>
+      {typeof value === 'object' ? (
+        display
+      ) : (
+        <Typography variant="body1" sx={detailFieldValueSx}>
+          {display}
+        </Typography>
+      )}
+    </Grid>
   );
 }
 
@@ -218,8 +242,8 @@ function formatLabel(key: string): string {
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>
+    <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+      <Typography variant="h6" sx={{ mb: 1.5 }}>
         {title}
       </Typography>
       {children}
@@ -236,6 +260,7 @@ function TaskOverviewDetailField({ label, value }: { label: string; value: unkno
     return null;
   }
 
+  const isWide = typeof value === 'object';
   let display: React.ReactNode;
   if (typeof value === 'boolean') {
     display = value ? 'Yes' : 'No';
@@ -254,12 +279,18 @@ function TaskOverviewDetailField({ label, value }: { label: string; value: unkno
   }
 
   return (
-    <Box sx={{ mb: 2, '&:last-child': { mb: 0 } }}>
+    <Grid size={isWide ? 12 : DETAIL_FIELD_GRID_SIZE} sx={{ minWidth: 0 }}>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
         {label}
       </Typography>
-      {typeof value === 'object' ? display : <Typography variant="body1">{display}</Typography>}
-    </Box>
+      {typeof value === 'object' ? (
+        display
+      ) : (
+        <Typography variant="body1" sx={detailFieldValueSx}>
+          {display}
+        </Typography>
+      )}
+    </Grid>
   );
 }
 
@@ -292,14 +323,16 @@ function DetailViewSectionCard({
   }
   return (
     <SectionCard title={section.title}>
-      {resolved.map(({ field, value }, idx) => (
-        <EntityDetailField
-          key={`${field.path}:${field.label}:${idx}`}
-          label={field.label}
-          value={value}
-          highlightLanguage={field.highlight}
-        />
-      ))}
+      <Grid container spacing={2}>
+        {resolved.map(({ field, value }, idx) => (
+          <EntityDetailField
+            key={`${field.path}:${field.label}:${idx}`}
+            label={field.label}
+            value={value}
+            highlightLanguage={field.highlight}
+          />
+        ))}
+      </Grid>
     </SectionCard>
   );
 }
@@ -369,15 +402,43 @@ function OverviewTab({
   const columns = schema.list_view!.columns;
   const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
 
-  const suppressedFields = useMemo(
-    () =>
-      new Set([...BASELINE_OVERVIEW_HIDDEN_FIELDS, ...(schemaHiddenFields ?? []), ...hiddenFields]),
-    [schemaHiddenFields, hiddenFields],
+  const suppressedFields = useMemo(() => {
+    // Fields the single-task detail header already surfaces authoritatively:
+    // `name` (the h4 task title) and `status` (the header chip). Each is only
+    // suppressed under the exact condition the header renders it: the h4 shows
+    // `task.name` only when it's a string (otherwise it falls back to the route
+    // id), and the chip renders only for a string status. Matching those guards
+    // keeps a non-string value from being dropped from both the header and the
+    // card. They are the single source of truth for those values, so we
+    // de-duplicate them out of the Task information card rather than repeating
+    // them below the header.
+    const headerShownFields: string[] = [];
+    if (typeof task.name === 'string') {
+      headerShownFields.push('name');
+    }
+    if (typeof task.status === 'string') {
+      headerShownFields.push('status');
+    }
+    return new Set([
+      ...BASELINE_OVERVIEW_HIDDEN_FIELDS,
+      ...headerShownFields,
+      ...(schemaHiddenFields ?? []),
+      ...hiddenFields,
+    ]);
+  }, [task.name, task.status, schemaHiddenFields, hiddenFields]);
+
+  // `list_view.columns` targets the table view; in the detail Overview we drop
+  // any suppressed column (header/status-chip fields, baseline noise, or
+  // backend-curated `overview_hidden_fields`) so no field renders twice.
+  const visibleColumns = useMemo(
+    () => columns.filter((col) => !suppressedFields.has(col.key)),
+    [columns, suppressedFields],
   );
 
   // Extra fields beyond the schema's list_view columns, excluding internal
   // noise. Lets future app schemas surface fields without listing them
-  // in `list_view.columns` (which is meant for the table view).
+  // in `list_view.columns` (which is meant for the table view). Matched against
+  // the full column set so a suppressed column can't reappear here as an extra.
   const extraEntries = Object.entries(task).filter(
     ([key]) => !columns.some((c) => c.key === key) && !suppressedFields.has(key),
   );
@@ -394,18 +455,24 @@ function OverviewTab({
           />
         )}
 
-      <SectionCard title="Task information">
-        {columns.map((col) => (
-          <TaskOverviewDetailField key={col.key} label={col.label} value={task[col.key]} />
-        ))}
-        {extraEntries.map(([key, value]) => (
-          <TaskOverviewDetailField key={key} label={formatLabel(key)} value={value} />
-        ))}
-      </SectionCard>
-
+      {/* Schedule / next-run sits first so it is visible without scrolling
+          past the Task information card. Gate unchanged: apps without the
+          scheduling capability render nothing here, so their Overview is
+          untouched. */}
       {schema.capabilities?.scheduling && pluginName && taskName && scheduleHref && (
         <ScheduleSummary pluginName={pluginName} taskName={taskName} scheduleHref={scheduleHref} />
       )}
+
+      <SectionCard title="Task information">
+        <Grid container spacing={2}>
+          {visibleColumns.map((col) => (
+            <TaskOverviewDetailField key={col.key} label={col.label} value={task[col.key]} />
+          ))}
+          {extraEntries.map(([key, value]) => (
+            <TaskOverviewDetailField key={key} label={formatLabel(key)} value={value} />
+          ))}
+        </Grid>
+      </SectionCard>
 
       {schema.capabilities?.stats && (
         <StatsCard
@@ -834,19 +901,14 @@ export function AppDetailPage({
             <Typography variant="h4">
               {title} #{id}
             </Typography>
-            {typeof task.status === 'string' && (
-              <Chip
-                label={task.status}
-                size="small"
-                color={
-                  task.status === 'completed' || task.status === 'success'
-                    ? 'success'
-                    : task.status === 'failed'
-                      ? 'error'
-                      : 'default'
-                }
-              />
-            )}
+            {isTaskHistoryStatus(task.status) ? (
+              <TaskHistoryStatusBadge status={task.status} />
+            ) : typeof task.status === 'string' ? (
+              // Unrecognized string status (unexpected/older value): fall back to
+              // a plain chip so status never silently disappears, matching
+              // SchemaListView's status-cell fallback.
+              <Chip label={task.status} size="small" />
+            ) : null}
             {multi && !browseOnly && (
               <>
                 <Button
@@ -872,35 +934,42 @@ export function AppDetailPage({
           </Box>
         )}
 
-        <Paper sx={{ p: 3 }}>
-          {listView.columns
-            .filter((col) => col.format !== 'actions' && col.key !== '_actions')
-            .map((col) => (
-              <EntityDetailField
-                key={col.key}
-                highlightLanguage={entitySchema?.detail_highlights?.[col.key]}
-                label={col.label}
-                value={task[col.key]}
-              />
-            ))}
+        <Paper sx={{ p: 2 }}>
+          <Grid container spacing={2}>
+            {listView.columns
+              .filter(
+                (col) =>
+                  col.format !== 'actions' &&
+                  col.key !== '_actions' &&
+                  !(listView.overview_hidden_fields ?? []).includes(col.key),
+              )
+              .map((col) => (
+                <EntityDetailField
+                  key={col.key}
+                  highlightLanguage={entitySchema?.detail_highlights?.[col.key]}
+                  label={col.label}
+                  value={task[col.key]}
+                />
+              ))}
 
-          {Object.entries(task)
-            .filter(
-              ([key]) =>
-                !listView.columns.some((c) => c.key === key) &&
-                key !== 'id' &&
-                key !== '_actions' &&
-                !suppressDetailKeys.includes(key) &&
-                !(listView.overview_hidden_fields ?? []).includes(key),
-            )
-            .map(([key, value]) => (
-              <EntityDetailField
-                key={key}
-                highlightLanguage={entitySchema?.detail_highlights?.[key]}
-                label={key}
-                value={value}
-              />
-            ))}
+            {Object.entries(task)
+              .filter(
+                ([key]) =>
+                  !listView.columns.some((c) => c.key === key) &&
+                  key !== 'id' &&
+                  key !== '_actions' &&
+                  !suppressDetailKeys.includes(key) &&
+                  !(listView.overview_hidden_fields ?? []).includes(key),
+              )
+              .map(([key, value]) => (
+                <EntityDetailField
+                  key={key}
+                  highlightLanguage={entitySchema?.detail_highlights?.[key]}
+                  label={key}
+                  value={value}
+                />
+              ))}
+          </Grid>
         </Paper>
 
         {multi &&
@@ -957,19 +1026,14 @@ export function AppDetailPage({
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, ml: 5 }}>
         <Typography variant="h4">{taskName}</Typography>
-        {typeof task.status === 'string' && (
-          <Chip
-            label={task.status}
-            size="small"
-            color={
-              task.status === 'completed' || task.status === 'success'
-                ? 'success'
-                : task.status === 'failed'
-                  ? 'error'
-                  : 'default'
-            }
-          />
-        )}
+        {isTaskHistoryStatus(task.status) ? (
+          <TaskHistoryStatusBadge status={task.status} />
+        ) : typeof task.status === 'string' ? (
+          // Unrecognized string status (unexpected/older value): fall back to a
+          // plain chip so status never silently disappears, matching
+          // SchemaListView's status-cell fallback.
+          <Chip label={task.status} size="small" />
+        ) : null}
       </Box>
 
       <ActionBar

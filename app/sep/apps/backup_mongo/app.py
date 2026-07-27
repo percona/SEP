@@ -23,7 +23,8 @@ paginated ``total``; its rows are built by
 :func:`~app.sep.apps.backup_mongo.deps.build_backup_mongo_api_task_response`. Every
 mutation is kept per-app: all :class:`~app.sep.apps.framework.apps.AppCapabilities`
 are off and the sibling-aggregating detail (with its PBM-status tail), the cascade
-create, delete, and execute routes ride the ``extra_routes`` router.
+create, cascade update (a custom ``PUT`` leg — the group cannot ride the derived
+single-task update), delete, and execute routes ride the ``extra_routes`` router.
 ``capabilities.detail=False`` suppresses the greedy derived detail so the custom
 ``GET /{task_name}`` wins. The schema is the model-first
 :data:`~app.sep.apps.backup_mongo.schema.backup_mongo_schema` passed through

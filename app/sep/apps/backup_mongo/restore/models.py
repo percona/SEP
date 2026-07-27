@@ -16,7 +16,6 @@
 """Define models for the Restore plugin."""
 
 import logging
-from datetime import datetime
 from typing import Annotated, Any, NamedTuple, Self
 
 import yaml
@@ -32,6 +31,7 @@ from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import BackupType
+from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
     Choices,
     FieldWidget,
@@ -40,12 +40,32 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 from app.tasks.models import (
-    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskWrite,
 )
 
 logger = logging.getLogger(__name__)
+
+_NAMESPACE_FILTER_PHYSICAL_ERROR = (
+    "Namespace Filter is only supported for logical MongoDB restores"
+)
+
+
+def _ensure_namespace_filter_allowed_for_backup_type(
+    backup_type: BackupType,
+    restore_namespace_filter: str | None,
+) -> None:
+    """Raise when a physical restore carries a namespace filter.
+
+    Shared by :class:`RestoreCreate` and :class:`RestoreTaskWrite` so the
+    predicate and message cannot drift between the form and JSON body paths.
+
+    :param backup_type: The restore's backup type.
+    :param restore_namespace_filter: The optional namespace filter value.
+    :raises ValueError: If a physical restore includes a namespace filter.
+    """
+    if backup_type == BackupType.PBM_PHYSICAL and restore_namespace_filter:
+        raise ValueError(_NAMESPACE_FILTER_PHYSICAL_ERROR)
 
 
 def parse_mongod_location_map(location_map_str: str) -> dict[str, Any] | None:
@@ -172,6 +192,8 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     :param backupType: Type of backup to restore from.
         This is not part of PBM config but needed for restore operations.
     :type backupType: BackupType
+    :param namespace: Optional namespace filter for selective logical restores.
+    :type namespace: NonEmptyStr | EmptyStrToNone
     :param credentials_path: Path to MongoDB URI credentials file on the Nomad node
         (SEP-only, not part of PBM config; used by payloads).
     :type credentials_path: NonEmptyStr | EmptyStrToNone
@@ -189,6 +211,11 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     backup_type: BackupType = Field(
         validation_alias=AliasChoices("backupType", "BACKUP_TYPE", "backup_type"),
         serialization_alias="backupType",
+    )
+    namespace: NonEmptyStr | EmptyStrToNone = Field(
+        None,
+        validation_alias=AliasChoices("namespace", "NAMESPACE"),
+        serialization_alias="namespace",
     )
     credentials_path: NonEmptyStr | EmptyStrToNone = Field(
         None,
@@ -215,6 +242,9 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     :type backup_type: BackupType
     :param backup_source: Source location of the backup (backup name or timestamp).
     :type backup_source: NonEmptyStr
+    :param restore_namespace_filter: Optional database or collection namespace
+        filter for a logical restore.
+    :type restore_namespace_filter: NonEmptyStr | EmptyStrToNone
     :param restore_batch_size: Number of documents to buffer.
     :type restore_batch_size: int | None
     :param restore_num_insertion_workers: Number of insertion workers to run concurrently per collection.
@@ -240,6 +270,7 @@ class RestoreCreate(BaseCaseInsensitiveModel):
     service_id: NonEmptyStr | EmptyStrToNone = None
     backup_type: BackupType
     backup_source: NonEmptyStr
+    restore_namespace_filter: NonEmptyStr | EmptyStrToNone = None
     restore_batch_size: int | EmptyStrToNone = None
     restore_num_insertion_workers: int | EmptyStrToNone = None
     restore_num_parallel_collections: int | EmptyStrToNone = None
@@ -273,6 +304,18 @@ class RestoreCreate(BaseCaseInsensitiveModel):
             if isinstance(sid, int):
                 return {**data, "service_id": str(sid)}
         return data
+
+    @model_validator(mode="after")
+    def _reject_namespace_filter_for_physical_restore(self) -> Self:
+        """Reject selective namespace restores for physical backups.
+
+        :return: The validated restore request.
+        :raises ValueError: If a physical restore includes a namespace filter.
+        """
+        _ensure_namespace_filter_allowed_for_backup_type(
+            self.backup_type, self.restore_namespace_filter
+        )
+        return self
 
 
 def restore_config_restore_from_form(
@@ -308,13 +351,17 @@ class RestoreForm(TaskFormModel):
     :class:`Ui` / reference / :class:`Choices` markers. It is *not* the JSON request
     body — :class:`RestoreTaskWrite` is — and is never validated as one;
     field-declaration order reproduces the schema's section and field order (Task,
-    Restore Options). The ``task_name`` / ``hostname`` Task-section fields and the
-    ``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`
-    (``alert_on_fail`` is ``Hidden``, off-schema). The inherited ``NonEmptyStr`` type
-    is used for those two fields, the deriver emits no min-length constraint, and
-    this form is never validated as a request body.
+    Restore Options). ``task_name`` is redeclared so the form can carry a
+    presentation default via ``Ui(default=...)``; ``hostname`` and the
+    ``alert_on_fail`` capability control stay inherited from
+    :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema). This form
+    is never validated as a request body.
     """
 
+    task_name: Annotated[
+        NonEmptyStr,
+        Ui(section="Task", default="mongodb-restore"),
+    ]
     service_id: Annotated[
         int | None,
         ServiceRef(service_types=(ServiceTypeEnum.MONGODB,)),
@@ -342,6 +389,17 @@ class RestoreForm(TaskFormModel):
         Ui(
             section="Task",
             description="Optional path to MongoDB URI credentials on the Nomad node",
+        ),
+    ] = None
+    restore_namespace_filter: Annotated[
+        str | None,
+        Ui(
+            label="Namespace Filter",
+            section="RestoreOptions",
+            description=(
+                "Optional database or collection patterns to restore, separated by "
+                "commas (for example, db1.*,db2.collection)"
+            ),
         ),
     ] = None
     restore_batch_size: Annotated[
@@ -397,6 +455,9 @@ class RestoreTaskWrite(BaseModel):
     :type backup_type: BackupType
     :param backup_source: Backup name or timestamp to restore from.
     :type backup_source: NonEmptyStr
+    :param restore_namespace_filter: Optional database or collection namespace
+        filter for a logical restore.
+    :type restore_namespace_filter: str | None
     :param restore_batch_size: Number of documents to buffer.
     :type restore_batch_size: int | None
     :param restore_num_insertion_workers: Insertion workers per collection.
@@ -422,6 +483,7 @@ class RestoreTaskWrite(BaseModel):
     service_id: int | None = None
     backup_type: BackupType
     backup_source: NonEmptyStr
+    restore_namespace_filter: str | None = None
     restore_batch_size: int | None = None
     restore_num_insertion_workers: int | None = None
     restore_num_parallel_collections: int | None = None
@@ -431,6 +493,18 @@ class RestoreTaskWrite(BaseModel):
     restore_mongod_location: str | None = None
     restore_mongod_location_map: str | None = None
     credentials_path: str | None = None
+
+    @model_validator(mode="after")
+    def _reject_namespace_filter_for_physical_restore(self) -> Self:
+        """Reject selective namespace restores for physical JSON requests.
+
+        :return: The validated restore request.
+        :raises ValueError: If a physical restore includes a namespace filter.
+        """
+        _ensure_namespace_filter_allowed_for_backup_type(
+            self.backup_type, self.restore_namespace_filter
+        )
+        return self
 
 
 class RestoreTaskLegModel(BaseModel):
@@ -517,6 +591,8 @@ class RestoreLegPayloadModel(BaseModel):
     :type backup_source: NonEmptyStr
     :param backup_type: Backup type for restore execution.
     :type backup_type: BackupType
+    :param namespace: Optional namespace filter for selective logical restores.
+    :type namespace: NonEmptyStr | EmptyStrToNone
     :param credentials_path: Optional path to MongoDB URI credentials.
     :type credentials_path: NonEmptyStr | EmptyStrToNone
     :param service_name: Optional PMM service name annotation.
@@ -527,6 +603,7 @@ class RestoreLegPayloadModel(BaseModel):
     hostname: NonEmptyStr
     backup_source: NonEmptyStr
     backup_type: BackupType
+    namespace: NonEmptyStr | EmptyStrToNone = None
     credentials_path: NonEmptyStr | EmptyStrToNone = None
     service_name: NonEmptyStr | None = None
 
@@ -542,6 +619,7 @@ class RestoreLegPayloadModel(BaseModel):
             hostname=form.hostname,
             backup_source=form.backup_source,
             backup_type=form.backup_type,
+            namespace=form.restore_namespace_filter or None,
             credentials_path=form.credentials_path or None,
             service_name=service_name,
         )
@@ -686,60 +764,22 @@ class RestoreDerivedTaskSummary(BaseModel):
     status: TaskHistoryStatusEnum | None = None
 
 
-class RestoreTaskBase(BaseModel):
-    """Define the common fields shared across restore task API responses.
-
-    :param name: The name of the restore task.
-    :param owner: The entity or user that owns the task.
-    :param hostname: The target hostname for the task execution.
-    :param status: The current execution status of the task.
-    :param backup_type: The PBM backup type for this restore.
-    :param backup_source: The backup name or timestamp to restore from.
-    :param last_executed_at: The task's most recent finish time (``max``
-        ``finished_at``), or ``None`` until it has finished once.
-    """
-
-    name: str
-    owner: str
-    hostname: str | None = None
-    status: TaskHistoryStatusEnum | None = None
-    backup_type: str
-    backup_source: str
-    last_executed_at: datetime | None = None
-
-
-class RestoreTaskResponse(RestoreTaskBase):
+class RestoreTaskResponse(BaseTaskResponse):
     """Represent a restore task API response.
 
-    :param id: The unique identifier for the restore task.
-    :type id: int | None
-    :param backend: The backend worker/engine executing the task.
-    :type backend: TaskBackendEnum
-    :param data: The raw configuration and parameters for the restore execution.
-    :type data: dict[str, Any]
-    :param protected: Whether the task is protected from deletion or modification.
-    :type protected: bool
-    :param alert_on_fail: If True, notifications are sent upon task failure.
-    :type alert_on_fail: bool
-    :param created_at: The timestamp when the task was first created.
-    :type created_at: datetime | None
-    :param updated_at: The timestamp of the last modification to the task.
-    :type updated_at: datetime | None
-    :param created_by: The user who initiated the task.
-    :type created_by: str | None
-    :param last_updated_by: The user who last modified the task record.
-    :type last_updated_by: str | None
+    Extend the standard task-response surface with the restore destination facts
+    the API surfaces; the shared task identity, status, audit, anonymization, and
+    connectivity fields come from
+    :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
+
+    :param hostname: The target hostname for the task execution.
+    :param backup_type: The PBM backup type for this restore.
+    :param backup_source: The backup name or timestamp to restore from.
     """
 
-    id: int | None = None
-    backend: TaskBackendEnum
-    data: dict[str, Any]
-    protected: bool
-    alert_on_fail: bool
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
+    hostname: str | None = None
+    backup_type: str
+    backup_source: str
 
 
 class RestoreTaskDetailResponse(RestoreTaskResponse):

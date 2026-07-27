@@ -22,7 +22,7 @@ along with utility functions to process queue items.
 import asyncio
 import json
 import logging
-from contextlib import suppress
+from contextlib import AsyncExitStack, suppress
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -195,11 +195,6 @@ def execute_task_queue(self: CeleryTask, queue_id: int) -> dict[str, Any]:
     """
     logger.info("Executing task with queue_id: %s", queue_id)
     queue_item = celery.loop.run_until_complete(get_task_history(queue_id))
-    failed = celery.loop.run_until_complete(
-        _pre_dispatch_payload_check(queue_item, queue_item.execution_request.task, None)
-    )
-    if failed is not None:
-        return jsonable_encoder(failed)
     return jsonable_encoder(
         celery.loop.run_until_complete(
             dispatch_queue_item(queue_item, await_annotations=True)
@@ -247,7 +242,11 @@ def execute_task_by_name(
         if skipped is not None:
             return jsonable_encoder(skipped)
         task_history = celery.loop.run_until_complete(
-            dispatch_queue_item(task_history, await_annotations=True)
+            dispatch_queue_item(
+                task_history,
+                await_annotations=True,
+                periodic_task_name=periodic_task_name,
+            )
         )
     except BaseNomadException:
         alert_msg = (
@@ -315,6 +314,7 @@ async def _persist_failed_dispatch(
     task_name: str,
     periodic_task_name: str | None,
     reason: str,
+    session: AsyncSession | None = None,
 ) -> TaskHistory:
     """Persist a terminal FAILED TaskHistory with a stderr chunk and optional alert.
 
@@ -331,6 +331,11 @@ async def _persist_failed_dispatch(
         source).
     :param reason: The operator-facing failure reason, written to stderr and used
         as the alert summary.
+    :param session: The caller's session to persist through, if any. Callers that
+        already hold ``task_history`` (and its ``task`` relationship) attached to
+        an open session must pass it so the save does not attach the instance to a
+        second session; ``None`` opens a private internal session for callers whose
+        ``task_history`` is detached (the Celery queue, periodic, and chain paths).
     :return: The saved, FAILED TaskHistory.
     """
     target = task_history.execution_request.target
@@ -339,11 +344,15 @@ async def _persist_failed_dispatch(
     task_history.finished_at = utc_now()
 
     async_session = get_async_session_maker()
-    async with async_session() as session:
-        saved = await TaskHistoryManager.save(session, task_history)
-        await session.refresh(saved, attribute_names=["execution_request"])
+    async with AsyncExitStack() as stack:
+        active = session or await stack.enter_async_context(async_session())
+        saved = await TaskHistoryManager.save(active, task_history)
+        await active.refresh(saved, attribute_names=["execution_request"])
 
-    async with async_session() as log_session:
+    async with AsyncExitStack() as stack:
+        # Write through the caller's session when passed: its engine may differ
+        # from the periodic maker's, and the chunk must land where callers read.
+        log_session = session or await stack.enter_async_context(async_session())
         try:
             await TaskHistoryLogWriter.append(
                 log_session,
@@ -412,6 +421,7 @@ async def _pre_dispatch_payload_check(
     task_history: TaskHistory,
     task_name: str,
     periodic_task_name: str | None,
+    session: AsyncSession | None = None,
 ) -> TaskHistory | None:
     """Gate dispatch on payload resolvability, failing terminally when it cannot resolve.
 
@@ -423,11 +433,14 @@ async def _pre_dispatch_payload_check(
     leaves the history non-terminal. Return ``None`` to proceed with normal
     dispatch.
 
-    :param task_history: The unsaved TaskHistory from
-        :func:`prepare_periodic_task_history`.
+    :param task_history: The TaskHistory to dispatch, from any gated path
+        (sync, connectivity, chain, queue, or periodic).
     :param task_name: The SEP task name (used for dedup key and alert source).
     :param periodic_task_name: The periodic-task name, if any (used to enrich
         the alert source).
+    :param session: The caller's session, forwarded to
+        :func:`_persist_failed_dispatch` so a caller-attached ``task_history`` is
+        persisted through its own session rather than a second one.
     :return: The saved FAILED TaskHistory when the payload cannot resolve;
         ``None`` to proceed with normal dispatch.
     """
@@ -440,7 +453,7 @@ async def _pre_dispatch_payload_check(
         )
         logger.exception(reason)
         return await _persist_failed_dispatch(
-            task_history, task_name, periodic_task_name, reason
+            task_history, task_name, periodic_task_name, reason, session
         )
     return None
 
@@ -584,8 +597,15 @@ async def dispatch_queue_item(
     session: AsyncSession | None = None,
     *,
     await_annotations: bool = False,
+    periodic_task_name: str | None = None,
 ) -> TaskHistory:
     """Process an item from the history table.
+
+    Gate every caller on payload resolvability via
+    :func:`_pre_dispatch_payload_check` before touching the dispatch lock, so an
+    unresolvable ``file://`` payload short-circuits to a terminal FAILED
+    TaskHistory instead of surfacing as an unhandled error on the callers that
+    do not run the gate themselves (the sync, connectivity, and chain paths).
 
     :param queue_item: The TaskHistory object to dispatch.
     :param session: Optional SQLAlchemy asynchronous session to use for the operation.
@@ -594,12 +614,21 @@ async def dispatch_queue_item(
         from Celery contexts that drive the event loop via discrete
         ``celery.loop.run_until_complete(...)`` calls; the FastAPI default
         (``False``) keeps the request path non-blocking.
-    :return: The TaskHistory object post execution.
-    :raises HTTPException: If the queue item status is not PENDING,
+    :param periodic_task_name: The periodic-task name, if any, forwarded to the
+        payload gate so a periodic dispatch failure enriches the failure reason
+        and alert source consistently with :func:`_pre_dispatch_health_check`.
+    :return: The TaskHistory object post execution, or the FAILED TaskHistory
+        persisted by the payload gate when the payload cannot resolve.
+    :raises HTTPConflictException: If the queue item status is not PENDING,
         raises a 409 Conflict error.
     :raises HTTPBadRequestException: If the task backend is unsupported,
         raises a 400 Bad Request error.
     """
+    failed = await _pre_dispatch_payload_check(
+        queue_item, queue_item.execution_request.task, periodic_task_name, session
+    )
+    if failed is not None:
+        return failed
     if session is None:
         async_session = get_async_session_maker()
         async with async_session() as async_session:

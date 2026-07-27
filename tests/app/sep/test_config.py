@@ -22,10 +22,14 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from app.core.settings_override.registry import is_hot_reloadable
+from app.core.settings_override.registry import (
+    is_hot_reloadable,
+    is_nested_overridable_parent,
+)
 from app.sep.config import (
     App,
     AppDrainSettings,
+    HealthReportSettings,
     sep_settings,
     SEPSettings,
     SessionOptions,
@@ -73,6 +77,81 @@ class TestAmbientSessionSSO:
     def test_is_hot_reloadable(self):
         """Verify the toggle is a hot field, so a DB override can enable it live."""
         assert is_hot_reloadable(SEPSettings, "AMBIENT_SESSION_SSO_ENABLED")
+
+
+class TestDiagnosticsDelivery:
+    """Cover the ``DIAGNOSTICS_DELIVERY`` delivery-plan settings block."""
+
+    @staticmethod
+    def _plan_payload() -> dict:
+        """Return a minimal valid delivery-plan mapping."""
+        return {
+            "endpoint": "https://snow.example.com/",
+            "secrets": {"api_key": "s3cret"},
+            "upload": {
+                "path": "attachment/upload",
+                "headers": {"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+            },
+        }
+
+    def test_defaults_to_not_configured(self):
+        """Keep the block unset so a consumer can gate on ``None``."""
+        assert SEPSettings(_env_file=None).DIAGNOSTICS_DELIVERY is None
+
+    def test_is_not_overridable_from_the_database(self):
+        """Keep the block out of the override layer, whole-object and per-leaf alike.
+
+        A DB override would reach the plan either as a whole-object write whose
+        secrets are stored masked, or as a per-leaf merge that never re-runs the
+        cross-reference validator. Env and YAML are the only write paths.
+        """
+        assert not is_hot_reloadable(SEPSettings, "DIAGNOSTICS_DELIVERY")
+        assert not is_nested_overridable_parent(SEPSettings, "DIAGNOSTICS_DELIVERY")
+
+    def test_valid_plan_parses_from_a_nested_mapping(self):
+        """Build a ``DeliveryPlan`` from the nested env/YAML mapping shape."""
+        settings = SEPSettings(DIAGNOSTICS_DELIVERY=self._plan_payload())
+
+        assert settings.DIAGNOSTICS_DELIVERY.upload.path == "attachment/upload"
+        assert (
+            settings.DIAGNOSTICS_DELIVERY.secrets["api_key"].get_secret_value()
+            == "s3cret"
+        )
+
+    def test_cross_reference_invalid_plan_fails_settings_construction(self):
+        """Fail fast at settings load when a plan references an undefined secret."""
+        payload = self._plan_payload()
+        payload["secrets"] = {}
+
+        with pytest.raises(ValidationError, match="undefined secret 'api_key'"):
+            SEPSettings(DIAGNOSTICS_DELIVERY=payload)
+
+
+class TestHealthReportEndpoint:
+    """Cover endpoint normalization on the ``HEALTH_REPORT`` block."""
+
+    @pytest.mark.parametrize(
+        ("configured", "expected"),
+        [
+            (
+                "https://intake.example.com/v1/upload/",
+                "https://intake.example.com/v1/upload/",
+            ),
+            (
+                "https://intake.example.com/v1/upload",
+                "https://intake.example.com/v1/upload",
+            ),
+            ("https://intake.example.com/", "https://intake.example.com"),
+            ("https://intake.example.com", "https://intake.example.com"),
+        ],
+    )
+    def test_preserves_a_path_trailing_slash(self, configured, expected):
+        """Keep a path's trailing slash, trimming only a bare origin's."""
+        assert HealthReportSettings(endpoint=configured).endpoint == expected
+
+    def test_empty_endpoint_becomes_none(self):
+        """Leave a blank endpoint unset rather than normalizing it."""
+        assert HealthReportSettings(endpoint="   ").endpoint is None
 
 
 class TestFooterTemplate:

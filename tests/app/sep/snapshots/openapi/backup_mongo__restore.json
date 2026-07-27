@@ -166,6 +166,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -176,6 +196,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -268,6 +298,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -294,22 +334,43 @@
         "required": [
           "name",
           "owner",
-          "backup_type",
-          "backup_source",
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "backup_source",
+          "anonymized_entities"
         ],
         "title": "RestoreTaskDetailResponse",
         "type": "object"
       },
       "backup_mongo__RestoreTaskResponse": {
-        "description": "Represent a restore task API response.\n\n:param id: The unique identifier for the restore task.\n:type id: int | None\n:param backend: The backend worker/engine executing the task.\n:type backend: TaskBackendEnum\n:param data: The raw configuration and parameters for the restore execution.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:type alert_on_fail: bool\n:param created_at: The timestamp when the task was first created.\n:type created_at: datetime | None\n:param updated_at: The timestamp of the last modification to the task.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a restore task API response.\n\nExtend the standard task-response surface with the restore destination facts\nthe API surfaces; the shared task identity, status, audit, anonymization, and\nconnectivity fields come from\n:class:`~app.sep.apps.framework.responses.BaseTaskResponse`.\n\n:param hostname: The target hostname for the task execution.\n:param backup_type: The PBM backup type for this restore.\n:param backup_source: The backup name or timestamp to restore from.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -321,6 +382,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -406,6 +477,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -432,18 +513,19 @@
         "required": [
           "name",
           "owner",
-          "backup_type",
-          "backup_source",
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "backup_source",
+          "anonymized_entities"
         ],
         "title": "RestoreTaskResponse",
         "type": "object"
       },
       "backup_mongo__RestoreTaskWrite": {
-        "description": "Represent a JSON request body for creating a restore task group.\n\nMirrors :class:`RestoreCreate` field-for-field with JSON-native types (notably\n``service_id: int | None``). Routes convert via\n:func:`~app.sep.apps.backup_mongo.restore.deps.restore_create_from_write`\nbefore building task payloads. See :class:`RestoreCreate` for why both models\nremain.\n\nPOST always creates a parent config task plus restore, pbm-list, and optional\nforce-resync children.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: Optional Inventory ID of the MongoDB service.\n:type service_id: int | None\n:param backup_type: Type of backup to restore from (logical or physical).\n:type backup_type: BackupType\n:param backup_source: Backup name or timestamp to restore from.\n:type backup_source: NonEmptyStr\n:param restore_batch_size: Number of documents to buffer.\n:type restore_batch_size: int | None\n:param restore_num_insertion_workers: Insertion workers per collection.\n:type restore_num_insertion_workers: int | None\n:param restore_num_parallel_collections: Parallel collections for logical restore.\n:type restore_num_parallel_collections: int | None\n:param restore_num_download_workers: Download workers for physical restore.\n:type restore_num_download_workers: int | None\n:param restore_max_download_buffer_mb: Max S3 download buffer in MB.\n:type restore_max_download_buffer_mb: int | None\n:param restore_download_chunk_mb: S3 download chunk size in MB.\n:type restore_download_chunk_mb: int | None\n:param restore_mongod_location: Custom path to mongod binaries.\n:type restore_mongod_location: str | None\n:param restore_mongod_location_map: Per-node mongod paths as YAML.\n:type restore_mongod_location_map: str | None\n:param credentials_path: Path to MongoDB URI credentials on the Nomad node.\n:type credentials_path: str | None",
+        "description": "Represent a JSON request body for creating a restore task group.\n\nMirrors :class:`RestoreCreate` field-for-field with JSON-native types (notably\n``service_id: int | None``). Routes convert via\n:func:`~app.sep.apps.backup_mongo.restore.deps.restore_create_from_write`\nbefore building task payloads. See :class:`RestoreCreate` for why both models\nremain.\n\nPOST always creates a parent config task plus restore, pbm-list, and optional\nforce-resync children.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: Optional Inventory ID of the MongoDB service.\n:type service_id: int | None\n:param backup_type: Type of backup to restore from (logical or physical).\n:type backup_type: BackupType\n:param backup_source: Backup name or timestamp to restore from.\n:type backup_source: NonEmptyStr\n:param restore_namespace_filter: Optional database or collection namespace\n    filter for a logical restore.\n:type restore_namespace_filter: str | None\n:param restore_batch_size: Number of documents to buffer.\n:type restore_batch_size: int | None\n:param restore_num_insertion_workers: Insertion workers per collection.\n:type restore_num_insertion_workers: int | None\n:param restore_num_parallel_collections: Parallel collections for logical restore.\n:type restore_num_parallel_collections: int | None\n:param restore_num_download_workers: Download workers for physical restore.\n:type restore_num_download_workers: int | None\n:param restore_max_download_buffer_mb: Max S3 download buffer in MB.\n:type restore_max_download_buffer_mb: int | None\n:param restore_download_chunk_mb: S3 download chunk size in MB.\n:type restore_download_chunk_mb: int | None\n:param restore_mongod_location: Custom path to mongod binaries.\n:type restore_mongod_location: str | None\n:param restore_mongod_location_map: Per-node mongod paths as YAML.\n:type restore_mongod_location_map: str | None\n:param credentials_path: Path to MongoDB URI credentials on the Nomad node.\n:type credentials_path: str | None",
         "properties": {
           "backup_source": {
             "minLength": 1,
@@ -523,6 +605,17 @@
               }
             ],
             "title": "Restore Mongod Location Map"
+          },
+          "restore_namespace_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Namespace Filter"
           },
           "restore_num_download_workers": {
             "anyOf": [
@@ -1238,6 +1331,41 @@
         "title": "ColumnFormat",
         "type": "string"
       },
+      "framework__ConnectivityWarning": {
+        "description": "Represent a connectivity-check failure on a JSON API task-creation response.\n\n:param target: The Nomad node the task targets.\n:param service_type: The lowercase database service type (e.g. ``mysql``).\n:param message: A human-readable description of the failure.\n:param task_history_id: The run-script task-history id whose log explains\n    the failure, or ``None`` when no task was created (e.g. the Tasks API\n    was unreachable). Optional for backward compatibility with existing\n    plugin consumers.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "service_type": {
+            "title": "Service Type",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "task_history_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task History Id"
+          }
+        },
+        "required": [
+          "target",
+          "service_type",
+          "message"
+        ],
+        "title": "ConnectivityWarning",
+        "type": "object"
+      },
       "framework__DateTimeField": {
         "additionalProperties": false,
         "description": "Represent a datetime picker field.\n\n:param field_type: The discriminator literal; always ``\"datetime\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"datetime\"]",
@@ -1908,7 +2036,7 @@
       },
       "framework__HostField": {
         "additionalProperties": false,
-        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). Host selection is not cascaded\nfrom another field — every dispatch form lists every available executor\ntarget.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -1929,6 +2057,18 @@
               }
             ],
             "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
           },
           "description": {
             "anyOf": [
@@ -2257,7 +2397,7 @@
       },
       "framework__MultiHostField": {
         "additionalProperties": false,
-        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\nCascade auto-select is single-host only (:class:`HostField`). ``depends_on``\nmay still be emitted when ``Ui(depends_on=...)`` is set so derivation stays\nuniform, but the multi-host renderer does not honour it today.\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional upstream field name mirrored from\n    ``Ui(depends_on=...)``. Emitted for wire uniformity with\n    :class:`HostField`; the current multi-host renderer ignores it (no\n    cascade). ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -2278,6 +2418,18 @@
               }
             ],
             "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
           },
           "description": {
             "anyOf": [
@@ -3938,7 +4090,7 @@
         ]
       },
       "put": {
-        "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place.",
+        "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place. The\n``EditableRestoreParent`` dependency resolves a satellite URL to the parent\nand blocks protected or in-flight groups before any write.",
         "operationId": "backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put",
         "parameters": [
           {

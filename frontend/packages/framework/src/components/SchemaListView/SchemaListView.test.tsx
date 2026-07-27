@@ -17,6 +17,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ListView } from '@sep/api';
 
 const { useScheduledTasksForAppMock } = vi.hoisted(() => ({
@@ -49,8 +50,8 @@ const listView: ListView = {
 };
 
 const rows = [
-  { id: 1, name: 'alpha', status: 'completed' },
-  { id: 2, name: 'beta', status: 'failed' },
+  { id: 1, name: 'alpha', status: 'success' },
+  { id: 2, name: 'beta', status: 'running' },
 ];
 
 describe('SchemaListView — renderListColumn override', () => {
@@ -63,19 +64,31 @@ describe('SchemaListView — renderListColumn override', () => {
     render(<SchemaListView listView={listView} data={rows} renderListColumn={renderListColumn} />);
 
     // status column → override
-    expect(screen.getByTestId('custom-status-1')).toHaveTextContent('custom:completed');
-    expect(screen.getByTestId('custom-status-2')).toHaveTextContent('custom:failed');
+    expect(screen.getByTestId('custom-status-1')).toHaveTextContent('custom:success');
+    expect(screen.getByTestId('custom-status-2')).toHaveTextContent('custom:running');
     // name column → no override returned (undefined) → default formatCellValue (plain text)
     expect(screen.getByText('alpha')).toBeInTheDocument();
     expect(screen.getByText('beta')).toBeInTheDocument();
   });
 
   it('renders default formatCellValue for every column when no override is supplied', () => {
-    render(<SchemaListView listView={listView} data={rows} />);
+    const { container } = render(<SchemaListView listView={listView} data={rows} />);
     expect(screen.getByText('alpha')).toBeInTheDocument();
-    // status format renders a chip with the raw label text
-    expect(screen.getByText('completed')).toBeInTheDocument();
+    // status format renders the shared TaskHistoryStatusBadge: mapped label text
+    // and a data-status attribute, with `running` in the distinct animated state.
+    expect(screen.getByText('Done')).toBeInTheDocument();
+    expect(screen.getByText('Running')).toBeInTheDocument();
+    expect(container.querySelector('[data-status="success"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-status="running"]')).toBeInTheDocument();
     expect(screen.queryByTestId('custom-status-1')).toBeNull();
+  });
+
+  it('falls back to a plain chip for an unrecognized status value', () => {
+    const { container } = render(
+      <SchemaListView listView={listView} data={[{ id: 1, name: 'alpha', status: 'weird' }]} />,
+    );
+    expect(screen.getByText('weird')).toBeInTheDocument();
+    expect(container.querySelector('[data-status]')).toBeNull();
   });
 
   it('never routes the actions column through the override', () => {
@@ -249,5 +262,67 @@ describe('SchemaListView — schedule-column glue', () => {
   it('issues no schedule fetch when a schedule column exists but no plugin name is given', () => {
     render(<SchemaListView listView={scheduleListView} data={rows} />);
     expect(useScheduledTasksForAppMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('SchemaListView — server pagination', () => {
+  const pageRows = Array.from({ length: 50 }, (_, i) => ({
+    id: i + 51,
+    name: `row-${i + 51}`,
+    status: 'completed',
+  }));
+
+  it('calls onChange when the user moves to the next page', async () => {
+    const onChange = vi.fn();
+    render(
+      <SchemaListView
+        listView={listView}
+        data={pageRows}
+        pagination={{
+          total: 120,
+          offset: 50,
+          limit: 50,
+          onChange,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('row-51')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Go to next page/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/Go to next page/i));
+
+    expect(onChange).toHaveBeenCalledWith({ offset: 100, limit: 50 });
+  });
+
+  it('renders the full list when pagination metadata is omitted', () => {
+    const data = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      name: `client-${i + 1}`,
+      status: 'completed',
+    }));
+
+    render(<SchemaListView listView={listView} data={data} />);
+
+    for (const row of data) {
+      expect(screen.getByText(row.name)).toBeInTheDocument();
+    }
+    // Client-side MRT pagination still renders controls, but a 5-row list fits
+    // on one page so "next" stays disabled (no server fetch).
+    expect(screen.getByLabelText(/Go to next page/i)).toBeDisabled();
+  });
+
+  it('treats pagination null like a bare NO_PAGINATION list', () => {
+    const data = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      name: `bare-${i + 1}`,
+      status: 'completed',
+    }));
+
+    render(<SchemaListView listView={listView} data={data} pagination={null} />);
+
+    for (const row of data) {
+      expect(screen.getByText(row.name)).toBeInTheDocument();
+    }
+    expect(screen.getByLabelText(/Go to next page/i)).toBeDisabled();
   });
 });

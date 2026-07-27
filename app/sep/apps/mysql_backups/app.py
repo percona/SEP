@@ -32,6 +32,7 @@ toggled with this parent rather than as an independent ``settings.yaml`` entry o
 a sub-router here.
 """
 
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pagination.deps import make_pagination_dep
 from app.sep.apps.framework.apps import (
     AppCapabilities,
@@ -42,7 +43,7 @@ from app.sep.apps.framework.schema import RelatedApp
 from app.sep.apps.mysql_backups.deps import build_mysql_backups_api_task_response
 from app.sep.apps.mysql_backups.models import (
     BackupCreate,
-    BackupResponse,
+    BackupTaskResponse,
     OWNER,
 )
 from app.sep.apps.mysql_backups.restore.app import app as restore_app
@@ -51,8 +52,6 @@ from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.apps.mysql_backups.views import mysql_backups_views
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.deps import get_username_mapping
-
-MYSQL_BACKUPS_MAX_PAGINATION_LIMIT = 50
 
 app = TaskExecutionApp(
     name="mysql_backups",
@@ -65,12 +64,12 @@ app = TaskExecutionApp(
     description="Run XtraBackup, Mydumper, and Binlog backups against MySQL hosts.",
     owner=OWNER,
     create_model=BackupCreate,
-    response_model=BackupResponse,
+    response_model=BackupTaskResponse,
     views=mysql_backups_views,
     task_spec_builder=build_backup_spec,
     response_builder=build_mysql_backups_api_task_response,
     response_context_provider=get_username_mapping,
-    pagination=make_pagination_dep(max_limit=MYSQL_BACKUPS_MAX_PAGINATION_LIMIT),
+    pagination=make_pagination_dep(max_limit=DEFAULT_PAGINATION_LIMIT),
     capabilities=AppCapabilities(update=True, delete=True),
     list_filter=ListFilterConfig(status=True),
     related_apps=(

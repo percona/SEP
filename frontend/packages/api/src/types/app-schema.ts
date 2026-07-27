@@ -209,10 +209,26 @@ export interface MultiTableField extends BaseField {
 
 export interface HostField extends BaseField {
   type: 'host';
+  /**
+   * Optional upstream field whose value drives the default executor
+   * selection (typically a service field). Omitted when the host list is
+   * not cascaded.
+   */
+  depends_on?: string;
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allow_custom?: boolean;
 }
 
 export interface MultiHostField extends BaseField {
   type: 'multi_host';
+  /**
+   * Optional upstream field name mirrored from the schema. Cascade
+   * auto-select is single-host only; the multi-host renderer ignores this
+   * today. Omitted when unset.
+   */
+  depends_on?: string;
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allow_custom?: boolean;
 }
 
 // ── Read-only preview ───────────────────────────────────────────────────
@@ -323,7 +339,7 @@ export interface ListView {
   columns: ListColumn[];
   /** Column key to sort by. Prefix with '-' for descending (e.g. '-last_run'). */
   default_sort?: string;
-  /** Extra task-level keys to hide from the Overview tab extras loop (merged with the framework baseline). */
+  /** Extra record-level keys to hide from the detail Overview — both the list_view.columns rows and the extras loop, across single-task and multi-entity detail views — merged with the framework baseline. */
   overview_hidden_fields?: string[];
 }
 

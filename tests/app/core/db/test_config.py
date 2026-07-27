@@ -15,6 +15,9 @@
 
 """Define tests for the app.core.db.config module."""
 
+import pytest
+from pydantic import ValidationError
+
 from app.core.db.config import DatabaseOptions
 from app.core.utils.fields import AsyncDatabaseEngine
 
@@ -79,3 +82,51 @@ def test_database_options_password_masked_in_repr():
         NAME="testdb",
     )
     assert "supersecret" not in repr(db_options)
+
+
+def test_pool_engine_kwargs_empty_when_unset():
+    """Yield no kwargs when pool fields are unset, so the engine keeps defaults."""
+    db_options = DatabaseOptions(NAME="test.db")
+
+    assert db_options.pool_engine_kwargs == {}
+
+
+def test_pool_engine_kwargs_includes_all_set_fields():
+    """Map all three set pool fields to lowercase create_engine kwargs."""
+    db_options = DatabaseOptions(
+        NAME="test.db", POOL_SIZE=7, MAX_OVERFLOW=3, POOL_TIMEOUT=25.0
+    )
+
+    assert db_options.pool_engine_kwargs == {
+        "pool_size": 7,
+        "max_overflow": 3,
+        "pool_timeout": 25.0,
+    }
+
+
+def test_pool_engine_kwargs_omits_unset_fields():
+    """Omit unset pool fields from the kwargs."""
+    db_options = DatabaseOptions(NAME="test.db", POOL_SIZE=7)
+
+    assert db_options.pool_engine_kwargs == {"pool_size": 7}
+
+
+def test_pool_engine_kwargs_includes_zero_max_overflow():
+    """Keep MAX_OVERFLOW=0 because 0 is set, not None."""
+    db_options = DatabaseOptions(NAME="test.db", MAX_OVERFLOW=0)
+
+    assert db_options.pool_engine_kwargs == {"max_overflow": 0}
+
+
+@pytest.mark.parametrize(
+    "field_kwargs",
+    [
+        {"POOL_SIZE": 0},
+        {"MAX_OVERFLOW": -1},
+        {"POOL_TIMEOUT": 0},
+    ],
+)
+def test_pool_field_bounds_rejected_at_config_load(field_kwargs):
+    """Reject out-of-range pool values at config load, not at engine creation."""
+    with pytest.raises(ValidationError):
+        DatabaseOptions(NAME="test.db", **field_kwargs)

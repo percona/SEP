@@ -19,7 +19,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
 import { AppDetailPage, resolveTabFromSplat } from './AppDetailPage';
@@ -49,7 +49,7 @@ vi.mock('@sep/api', () => ({
   // the summary renders its "Not scheduled" state, leaving the execute/delete
   // flows under test untouched.
   useAppTasks: () => ({
-    data: [],
+    data: { items: [], pagination: null },
     isLoading: false,
     isError: false,
     error: null,
@@ -88,7 +88,10 @@ vi.mock('../../hooks', () => ({
 
 // Execution History tab renders the real TaskHistoryTable; stub it to capture the wired
 // onStopTask handler (no other test exercises the Execution History tab / this component).
-vi.mock('../TaskHistoryTable', () => ({
+vi.mock('../TaskHistoryTable', async (importOriginal) => ({
+  // Keep the real TaskHistoryStatusBadge + isTaskHistoryStatus (now used by the
+  // detail header); only the table itself is stubbed.
+  ...(await importOriginal<typeof import('../TaskHistoryTable')>()),
   TaskHistoryTable: ({ onStopTask }: { onStopTask?: (entry: { id: number }) => void }) =>
     onStopTask ? (
       <button type="button" onClick={() => onStopTask({ id: 7 })}>
@@ -968,6 +971,200 @@ describe('AppDetailPage — overview_hidden_fields', () => {
     expect(screen.getByText('extra_visible')).toBeInTheDocument();
     expect(screen.getByText('hello')).toBeInTheDocument();
   });
+
+  it('hides a list_view.columns entry named in overview_hidden_fields (multi-entity)', () => {
+    function multiEntitySchemaWithHiddenColumn(): AppSchema {
+      return {
+        pluginName: 'inventory',
+        display_name: 'Inventory',
+        description: 'Test',
+        capabilities: {},
+        entities: [
+          {
+            name: 'services',
+            display_name: 'Services',
+            description: 'Service entities',
+            forms: [],
+            list_view: {
+              columns: [
+                { key: 'name', label: 'Name' },
+                { key: 'status', label: 'Status', format: 'status' },
+              ],
+              default_sort: '-name',
+              overview_hidden_fields: ['status'],
+            },
+          },
+        ],
+        list_view: {
+          columns: [{ key: 'name', label: 'Name' }],
+          default_sort: '-name',
+        },
+        formSchema: { sections: [] },
+      } as unknown as AppSchema;
+    }
+
+    mockUseAppEntityDetail.mockReturnValue({
+      data: { id: 1, name: 'mysql-01', status: 'active' },
+      isLoading: false,
+      error: null,
+    });
+
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <SnackbarProvider>
+          <MemoryRouter initialEntries={['/apps/inventory/services/1']}>
+            <Routes>
+              <Route
+                path="/apps/:plugin/:entityName/:id/*"
+                element={
+                  <AppDetailPage
+                    schema={multiEntitySchemaWithHiddenColumn()}
+                    pluginName="inventory"
+                  />
+                }
+              />
+            </Routes>
+          </MemoryRouter>
+        </SnackbarProvider>
+      </QueryClientProvider>,
+    );
+
+    // The Status column is suppressed from the detail body; Name still renders.
+    expect(screen.queryByText('Status')).toBeNull();
+    expect(screen.getByText('Name')).toBeInTheDocument();
+  });
+});
+
+describe('AppDetailPage — header de-duplication', () => {
+  it('does not repeat the header task name or status chip in the Task information card', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed', extra_visible: 'hello' },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    // The header owns name + status; the card must not re-list their labels.
+    const card = screen.getByText('Task information').closest('div') as HTMLElement;
+    expect(within(card).queryByText('Name')).toBeNull();
+    expect(within(card).queryByText('Status')).toBeNull();
+
+    // The task name value appears exactly once (header only).
+    expect(screen.getAllByText('FECHK')).toHaveLength(1);
+    // Genuinely-distinct extra fields still render in the card.
+    expect(within(card).getByText('Extra Visible')).toBeInTheDocument();
+  });
+
+  it('still lists status in the card when the header omits the chip (non-string status)', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 42 },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    // Header renders the chip only for string status, so status stays visible
+    // in the card to avoid dropping a value nothing else surfaces.
+    const card = screen.getByText('Task information').closest('div') as HTMLElement;
+    expect(within(card).getByText('Status')).toBeInTheDocument();
+  });
+
+  it('still lists name in the card when the header falls back to the id (non-string name)', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 42, status: 'completed' },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    // Header shows task.name only when it's a string; otherwise it falls back
+    // to the route id, so a non-string name must remain visible in the card.
+    const card = screen.getByText('Task information').closest('div') as HTMLElement;
+    expect(within(card).getByText('Name')).toBeInTheDocument();
+    expect(within(card).getByText('42')).toBeInTheDocument();
+  });
+});
+
+describe('AppDetailPage — header status badge', () => {
+  it('renders the shared status badge for the single-task header, with running in the animated state', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'running' },
+      isLoading: false,
+    });
+
+    const { container } = renderAt('/apps/checksums/task/FECHK');
+
+    // Mapped label + data-status attribute from TaskHistoryStatusBadge, not the
+    // raw 'running' string of the removed inline chip.
+    expect(screen.getByText('Running')).toBeInTheDocument();
+    expect(container.querySelector('[data-status="running"]')).toBeInTheDocument();
+  });
+
+  it('falls back to a plain chip (no badge) for an unrecognized status', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'weird' },
+      isLoading: false,
+    });
+
+    const { container } = renderAt('/apps/checksums/task/FECHK');
+
+    // Unrecognized string still shows the raw value in a plain header chip so
+    // status never silently disappears, but without the badge's data-status
+    // attribute. (The Overview field also echoes the raw value, hence getAll.)
+    expect(screen.getAllByText('weird').length).toBeGreaterThan(0);
+    expect(container.querySelector('.MuiChip-root')).toHaveTextContent('weird');
+    expect(container.querySelector('[data-status]')).toBeNull();
+  });
+
+  it('renders the shared status badge for the multi-entity detail header', () => {
+    const multiSchema = {
+      pluginName: 'inventory',
+      display_name: 'Inventory',
+      description: 'Test',
+      capabilities: {},
+      entities: [
+        {
+          name: 'services',
+          display_name: 'Services',
+          description: 'Service entities',
+          forms: [],
+          list_view: {
+            columns: [
+              { key: 'name', label: 'Name' },
+              { key: 'status', label: 'Status', format: 'status' },
+            ],
+            default_sort: '-name',
+          },
+        },
+      ],
+      list_view: { columns: [{ key: 'name', label: 'Name' }], default_sort: '-name' },
+      formSchema: { sections: [] },
+    } as unknown as AppSchema;
+
+    mockUseAppEntityDetail.mockReturnValue({
+      data: { id: 1, name: 'mysql-01', status: 'failed' },
+      isLoading: false,
+      error: null,
+    });
+
+    const { container } = render(
+      <QueryClientProvider client={makeClient()}>
+        <SnackbarProvider>
+          <MemoryRouter initialEntries={['/apps/inventory/services/1']}>
+            <Routes>
+              <Route
+                path="/apps/:plugin/:entityName/:id/*"
+                element={<AppDetailPage schema={multiSchema} pluginName="inventory" />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </SnackbarProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+    expect(container.querySelector('[data-status="failed"]')).toBeInTheDocument();
+  });
 });
 
 describe('AppDetailPage — Edit affordance', () => {
@@ -1123,6 +1320,29 @@ describe('AppDetailPage — connectivity warning', () => {
     expect(screen.queryByTestId('connectivity-log-button')).toBeNull();
   });
 });
+describe('AppDetailPage — schedule summary placement', () => {
+  it('renders the ScheduleSummary before the Task information card', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+
+    // `schema` (module-level) has capabilities.scheduling enabled.
+    renderAt('/apps/checksums/task/FECHK');
+
+    const summary = screen.getByTestId('schedule-summary');
+    const taskInfo = screen.getByText('Task information');
+
+    // DOM order: the schedule summary node comes before the Task information
+    // heading, so it is reachable without scrolling past the info card.
+    // Bit test (not strict equality) stays correct if a future refactor wraps
+    // either node in a container and the browser ORs in containment bits.
+    expect(
+      summary.compareDocumentPosition(taskInfo) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
 describe('AppDetailPage delete flow', () => {
   it('confirms then calls delete mutation and navigates to list on success', async () => {
     mockDeleteMutate.mockReset();
