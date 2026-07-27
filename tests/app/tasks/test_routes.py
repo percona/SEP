@@ -49,6 +49,7 @@ from app.tasks.main import tasks_app
 from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
@@ -2812,11 +2813,10 @@ class TestSyncTaskHistoryRealSession:
                     protected=False,
                     alert_on_fail=False,
                     run_result_recorder="pkg:rec",
+                    output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
                 )
             ),
         )
-        task.output_files_path = "run-script/local/output_files"
-        task = await TaskManager.save(session, task)
         saved_history = await TaskHistoryManager.save(
             session,
             build_task_history(task, status=TaskHistoryStatusEnum.RUNNING),
