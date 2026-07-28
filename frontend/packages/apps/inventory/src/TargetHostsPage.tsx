@@ -20,7 +20,7 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import type { ListView } from '@sep/api';
 import { SchemaListView, useHosts, type HostOption } from '@sep/framework';
 

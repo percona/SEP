@@ -759,7 +759,9 @@ class TestRestoreMongoApiDelete:
         response = test_client.delete(f"{API_BASE}/parent-restore")
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-        assert "parent-restore-pbm-list" in response.json()["detail"]
+        detail = response.json()["detail"]
+        assert detail["message"] == "Partial delete failure; orphaned tasks"
+        assert "parent-restore-pbm-list" in detail["errors"]
 
 
 class TestRestoreMongoApiUpdate:

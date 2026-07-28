@@ -16,7 +16,7 @@
  */
 
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
-import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -158,6 +158,23 @@ const detailFieldValueSx = {
   wordBreak: 'break-word',
 } as const;
 
+/** Suspense placeholder sized to match a rendered syntax block. */
+function SyntaxBlockFallback() {
+  return <Skeleton variant="rectangular" height={120} sx={{ ...detailSyntaxBlockSx, mt: 0.5 }} />;
+}
+
+/**
+ * Lazy JSON highlight of an object value. Shared by the detail-field components
+ * so the un-hinted object branch renders identically wherever it appears.
+ */
+function JsonObjectPreview({ value }: { value: unknown }) {
+  return (
+    <Suspense fallback={<SyntaxBlockFallback />}>
+      <DetailSyntaxHighlighter value={value} language="json" />
+    </Suspense>
+  );
+}
+
 /** Compact label/value cell; wide content (JSON / syntax blocks) spans the full row. */
 function EntityDetailField({
   label,
@@ -172,9 +189,6 @@ function EntityDetailField({
     return null;
   }
 
-  const syntaxFallback = (
-    <Skeleton variant="rectangular" height={120} sx={{ ...detailSyntaxBlockSx, mt: 0.5 }} />
-  );
   const isWide = typeof value === 'object';
 
   if (highlightLanguage) {
@@ -183,7 +197,7 @@ function EntityDetailField({
         <Typography variant="caption" color="text.secondary">
           {label}
         </Typography>
-        <Suspense fallback={syntaxFallback}>
+        <Suspense fallback={<SyntaxBlockFallback />}>
           <DetailSyntaxHighlighter value={value} language={highlightLanguage} />
         </Suspense>
       </Grid>
@@ -194,11 +208,7 @@ function EntityDetailField({
   if (typeof value === 'boolean') {
     display = value ? 'Yes' : 'No';
   } else if (typeof value === 'object') {
-    display = (
-      <Suspense fallback={syntaxFallback}>
-        <DetailSyntaxHighlighter value={value} language="json" />
-      </Suspense>
-    );
+    display = <JsonObjectPreview value={value} />;
   } else {
     display = String(value);
   }
@@ -265,15 +275,9 @@ function TaskOverviewDetailField({ label, value }: { label: string; value: unkno
   if (typeof value === 'boolean') {
     display = value ? 'Yes' : 'No';
   } else if (typeof value === 'object') {
-    display = (
-      <Typography
-        component="pre"
-        variant="body2"
-        sx={{ fontFamily: "'Roboto Mono', monospace", whiteSpace: 'pre-wrap', m: 0 }}
-      >
-        {JSON.stringify(value, null, 2) as string}
-      </Typography>
-    );
+    // No schema highlight hint here — this component is fed from
+    // list_view.columns / extra task keys, not DetailField.
+    display = <JsonObjectPreview value={value} />;
   } else {
     display = String(value);
   }

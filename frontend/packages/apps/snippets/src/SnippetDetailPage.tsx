@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { Alert, Box, CircularProgress, IconButton, Link as MuiLink, Tooltip } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import { SnippetExecutionAccordion } from '@sep/framework';

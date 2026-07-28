@@ -18,7 +18,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { createMemoryRouter, RouterProvider, Link } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider, Link } from 'react-router';
 import { Controller, useFormContext } from 'react-hook-form';
 import Slider from '@mui/material/Slider';
 import Typography from '@mui/material/Typography';
