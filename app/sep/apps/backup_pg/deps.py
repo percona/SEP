@@ -218,7 +218,7 @@ def build_backup_pg_api_detail_response(
         server_config=server_config,
     )
     return BackupTaskDetailResponse(
-        **base.model_dump_for_rebuild(),
+        **base.model_dump_with_excluded_fields(),
         host=server_config.get("HOST"),
         port=server_config.get("PORT")
         or meta.get(CONNECTIVITY_META_PORT_KEY)

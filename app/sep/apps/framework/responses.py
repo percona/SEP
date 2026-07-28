@@ -37,7 +37,7 @@ from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum
 R = TypeVar("R", bound=BaseModel)
 
 
-def dump_for_rebuild(
+def dump_with_excluded_fields(
     model: BaseModel, *, exclude: set[str] | None = None
 ) -> dict[str, Any]:
     """Dump ``model`` including serialization-excluded fields for rebuilds.
@@ -137,19 +137,19 @@ class BaseTaskResponse(BaseModel):
         )
         return sorted(entity.name for entity in entities)
 
-    def model_dump_for_rebuild(
+    def model_dump_with_excluded_fields(
         self, *, exclude: set[str] | None = None
     ) -> dict[str, Any]:
         """Dump fields for reconstructing this response or a subclass.
 
-        Convenience wrapper around :func:`dump_for_rebuild` for
+        Convenience wrapper around :func:`dump_with_excluded_fields` for
         ``BaseTaskResponse`` subclasses.
 
         :param exclude: Field names forwarded to :meth:`model_dump` (for example
             computed fields).
         :return: A dump including serialization-excluded fields.
         """
-        return dump_for_rebuild(self, exclude=exclude)
+        return dump_with_excluded_fields(self, exclude=exclude)
 
 
 class TaskExecuteWrite(BaseModel):

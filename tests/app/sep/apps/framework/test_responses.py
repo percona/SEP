@@ -32,7 +32,7 @@ from app.sep.apps.framework import (
     ConnectivityWarning,
     derive_create_response_model,
 )
-from app.sep.apps.framework.responses import dump_for_rebuild
+from app.sep.apps.framework.responses import dump_with_excluded_fields
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import Task, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
@@ -579,19 +579,21 @@ class TestBaseTaskResponse:
         assert "owner" not in dumped
         assert "service_type" not in dumped
 
-    def test_model_dump_for_rebuild_restores_excluded_fields(self) -> None:
+    def test_model_dump_with_excluded_fields_restores_excluded_fields(self) -> None:
         """Include ``owner`` and ``service_type`` in rebuild dumps used by detail builders."""
         response = BaseTaskResponse.model_validate(
             {**self.BASE_FIELDS, "service_type": ServiceTypeEnum.MYSQL.value}
         )
 
-        dumped = response.model_dump_for_rebuild()
+        dumped = response.model_dump_with_excluded_fields()
 
         assert dumped["owner"] == "CHECKSUMS"
         assert dumped["service_type"] == ServiceTypeEnum.MYSQL
         assert BaseTaskResponse.model_validate(dumped).owner == "CHECKSUMS"
 
-    def test_dump_for_rebuild_restores_exclude_true_fields_on_any_model(self) -> None:
+    def test_dump_with_excluded_fields_restores_exclude_true_fields_on_any_model(
+        self,
+    ) -> None:
         """Restore every ``Field(exclude=True)`` attribute for non-BaseTaskResponse models."""
 
         class _ExcludedResponse(BaseModel):
@@ -600,7 +602,7 @@ class TestBaseTaskResponse:
 
         response = _ExcludedResponse(name="task-a", service_type=ServiceTypeEnum.MYSQL)
 
-        dumped = dump_for_rebuild(response)
+        dumped = dump_with_excluded_fields(response)
 
         assert dumped["name"] == "task-a"
         assert dumped["service_type"] == ServiceTypeEnum.MYSQL

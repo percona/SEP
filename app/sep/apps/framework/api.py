@@ -55,7 +55,7 @@ from app.sep.apps.framework.connectivity import (
 from app.sep.apps.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
-    dump_for_rebuild,
+    dump_with_excluded_fields,
     TaskExecuteWrite,
     TaskExecutionResponse,
     TaskResponseBuilder,
@@ -596,7 +596,7 @@ def _register_create_route(
         base = builder(task, status=None)
         if warning is not None:
             return create_response_model(
-                **{**dump_for_rebuild(base), "connectivity_warning": warning}
+                **{**dump_with_excluded_fields(base), "connectivity_warning": warning}
             )
         return base
 
@@ -724,7 +724,7 @@ def _register_update_route(
         )
         if warning is not None:
             return create_response_model(
-                **{**dump_for_rebuild(base), "connectivity_warning": warning}
+                **{**dump_with_excluded_fields(base), "connectivity_warning": warning}
             )
         return base
 
