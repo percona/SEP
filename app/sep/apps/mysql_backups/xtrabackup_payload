@@ -40,7 +40,7 @@ BYTES_PER_MB = 1024**2
 
 # Restated inline from app.tasks.run_result.RUN_RESULT_FILENAME — this payload is
 # shipped standalone and cannot import project code; a CI test binds the two.
-RUN_RESULT_FILENAME = "sep-run-result.json"
+RUN_RESULT_FILENAME = ".sep-run-result.json"
 
 # Matches xtrabackup per-file copy progress lines emitted during the backup
 # data phase.  Anchored at ^ so it cannot fire on mid-line content.  The

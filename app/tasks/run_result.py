@@ -48,8 +48,10 @@ logger = logging.getLogger(__name__)
 
 #: Fixed name of the file a payload writes its result to, relative to the run's
 #: working directory — which the job spec pins to the task's output-files
-#: directory, so this resolves under :attr:`Task.output_files_path` on read.
-RUN_RESULT_FILENAME = "sep-run-result.json"
+#: directory, so this resolves under :attr:`Task.output_files_path` on read. The
+#: leading dot keeps it out of the output-files listing, which skips dot-prefixed
+#: names: this is SEP's own protocol, not an artifact for a user to download.
+RUN_RESULT_FILENAME = ".sep-run-result.json"
 
 #: Upper bound on a result file's size. A run result is a handful of scalar
 #: fields; anything larger is a payload bug and is discarded unread.

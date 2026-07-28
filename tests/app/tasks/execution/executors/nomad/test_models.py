@@ -63,6 +63,7 @@ from app.tasks.models import (
     TaskLog,
     TaskLogType,
 )
+from app.tasks.run_result import RUN_RESULT_FILENAME
 
 EXPECTED_ALLOC_STATUS_COUNT = 6
 NOMAD_DEFAULT_TIMEOUT = 10
@@ -2297,6 +2298,42 @@ class TestListFiles:
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_list_files_excludes_the_run_result_file(self, mock_nomad_cls):
+        """Assert SEP's own run-result file never reaches the output-files browser."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        mock_response = AsyncMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = AsyncMock(
+            return_value=[
+                {"Name": "backup.sql", "Size": 1024, "IsDir": False},
+                {"Name": RUN_RESULT_FILENAME, "Size": 96, "IsDir": False},
+            ]
+        )
+
+        mock_ctx_manager = AsyncMock()
+        mock_ctx_manager.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx_manager.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(executor, "_request", return_value=mock_ctx_manager):
+            result = await executor.list_files(queue_item, "/alloc/data")
+
+        assert RUN_RESULT_FILENAME not in result
+        assert "backup.sql" in result
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_list_files_no_filesystem_returns_empty_dict(self, mock_nomad_cls):
         """Assert list_files returns {} when allocation has no filesystem (prestart 404)."""
         mock_backend = MagicMock()
@@ -2620,7 +2657,7 @@ class TestStreamFile:
             chunks = [
                 chunk
                 async for chunk in executor.stream_file(
-                    queue_item, "/output/sep-run-result.json", anonymize=False
+                    queue_item, "/output/.sep-run-result.json", anonymize=False
                 )
             ]
 

@@ -39,7 +39,7 @@ ST_BLOCKS_SIZE = 512
 BACKUP_DIR_REGEX = r"^2[0-9]{7}$"
 # Restated inline from app.tasks.run_result.RUN_RESULT_FILENAME — this payload is
 # shipped standalone and cannot import project code; a CI test binds the two.
-RUN_RESULT_FILENAME = "sep-run-result.json"
+RUN_RESULT_FILENAME = ".sep-run-result.json"
 CURRENT_USER = os.getenv("PERCONA_BACKUP_USER") or os.getenv("SUDO_USER") or getuser()
 CURRENT_USER_HOME_DIR = Path(pwd.getpwnam(CURRENT_USER).pw_dir)
 BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
