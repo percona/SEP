@@ -189,16 +189,21 @@ def _textfile_collector_dir() -> str:
 
     Mirror the MySQL/PostgreSQL payloads: honour
     ``PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR`` and otherwise fall back to the PMM
-    low-resolution collector under ``$HOME``. The path is trailing-slash
-    normalised so it can be joined with a filename.
+    low-resolution collector under the current user's home. Resolve the home
+    absolutely via ``expanduser`` -- when it cannot be resolved (no ``$HOME``,
+    no passwd entry) return ``""`` so ``_write_textfile_metric`` no-ops rather
+    than writing a relative ``pmm/collectors/...`` path under the payload's cwd.
+    The path is trailing-slash normalised so it can be joined with a filename.
 
-    :return: The collector directory path, ending in a trailing slash.
+    :return: The collector directory path ending in a trailing slash, or ``""``
+        when neither the override nor a home directory can be resolved.
     """
     base = os.environ.get("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR")
     if not base:
-        base = os.path.join(
-            os.environ.get("HOME", ""), _TEXTFILE_COLLECTOR_DEFAULT_SUBPATH
-        )
+        home = os.path.expanduser("~")
+        if not os.path.isabs(home):
+            return ""
+        base = os.path.join(home, _TEXTFILE_COLLECTOR_DEFAULT_SUBPATH)
     if not base.endswith("/"):
         base += "/"
     return base

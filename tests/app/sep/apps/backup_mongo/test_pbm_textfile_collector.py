@@ -16,6 +16,7 @@
 """Define tests for the PBM textfile-collector metric writer across the Mongo payloads."""
 
 import builtins
+import os
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,12 @@ class TestTextfileCollectorDir:
         assert _textfile_collector_dir() == (
             "/home/pbm/pmm/collectors/textfile-collector/low-resolution/"
         )
+
+    def test_returns_empty_when_home_unresolvable(self, monkeypatch) -> None:
+        """Return ``""`` -- not a relative path -- when no home can be resolved."""
+        monkeypatch.delenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", raising=False)
+        monkeypatch.setattr(os.path, "expanduser", lambda _path: "~")
+        assert _textfile_collector_dir() == ""
 
 
 class TestMetricAlias:
