@@ -21,23 +21,28 @@ import Tooltip from '@mui/material/Tooltip';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 export interface FieldHelpIconProps {
-  /** Tooltip body shown on hover. */
+  /** Tooltip body shown on hover/focus; also the accessible description. */
   description: string;
-  /** Used in the hover target's accessible name (`Help for ${label}`). */
+  /** Used in the trigger's accessible name (`Help for ${label}`). */
   label: string;
 }
 
 /**
  * Info-icon tooltip for schema form field help. Uses a non-button span so it
  * can sit inside MUI floating labels without nesting interactive controls.
- * Callers must omit this component when there is no description to show.
+ * Focusable via tabIndex so keyboard users can open the tooltip; describeChild
+ * keeps aria-label as the accessible name and attaches the description
+ * (native title when closed / aria-describedby when open) instead of
+ * overriding it. Callers must omit this component when there is no description
+ * to show.
  */
 export function FieldHelpIcon({ description, label }: FieldHelpIconProps) {
   return (
-    <Tooltip title={description}>
+    <Tooltip title={description} describeChild>
       <Box
         component="span"
         role="img"
+        tabIndex={0}
         aria-label={`Help for ${label}`}
         sx={{
           display: 'inline-flex',

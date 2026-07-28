@@ -51,4 +51,15 @@ describe('FieldHelpIcon', () => {
     await user.hover(screen.getByLabelText('Help for Enabled'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Turn this on');
   });
+
+  it('is keyboard-focusable and describes the child with the tooltip title', () => {
+    render(<FieldHelpIcon label="Enabled" description="Turn this on" />);
+
+    const help = screen.getByLabelText('Help for Enabled');
+    expect(help).toHaveAttribute('tabindex', '0');
+    // describeChild keeps aria-label as the name and attaches the description
+    // (native title when closed / aria-describedby when open) instead of
+    // shadowing it with the tooltip title as the accessible name.
+    expect(help).toHaveAccessibleDescription('Turn this on');
+  });
 });
