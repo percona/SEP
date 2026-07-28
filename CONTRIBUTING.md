@@ -189,13 +189,6 @@ Mutation testing (`mutmut`) is an optional local spike tool, not part of
 `make test`, pre-commit, or CI. To re-run the SEP-1166-style pilot scoped to
 `app/core/db/utils.py`:
 
-```shell
-# On macOS, export Homebrew libs so WeasyPrint can import (same as `make test`):
-export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib:${DYLD_FALLBACK_LIBRARY_PATH}"
-unset SEP_TEST_POSTGRES_DSN   # optional: skip @pytest.mark.postgres
-poetry run mutmut run
-```
-
 Configuration lives under `[tool.mutmut]` in `pyproject.toml`. Mutmut writes a
 gitignored `mutants/` working copy; run it from the repo root.
 
