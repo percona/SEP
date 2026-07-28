@@ -20,8 +20,10 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "defaults_minimal": {
     "alert_detail_builder": null,
@@ -44,8 +46,10 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "dsn_recursion_custom_table": {
     "alert_detail_builder": null,
@@ -68,8 +72,10 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "dsn_recursion_default_table": {
     "alert_detail_builder": null,
@@ -92,8 +98,10 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "port_none_localhost_dsn_elision": {
     "alert_detail_builder": null,
@@ -116,8 +124,10 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "recursion_none": {
     "alert_detail_builder": null,
@@ -140,8 +150,10 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "value_with_space_quoting": {
     "alert_detail_builder": null,
@@ -164,7 +176,9 @@
     },
     "is_template": false,
     "name": "checksums-golden",
+    "output_files_path": null,
     "owner": "CHECKSUMS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   }
 }
