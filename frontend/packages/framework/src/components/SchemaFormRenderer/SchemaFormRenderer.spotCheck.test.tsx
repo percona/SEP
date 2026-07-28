@@ -44,7 +44,8 @@ function renderWithProviders(ui: ReactNode) {
 }
 
 function expectHelp(label: string, present: boolean) {
-  const matches = screen.queryAllByLabelText(`Help for ${label}`);
+  // Prefer data-help-for over aria-label so the icon stays out of label matchers.
+  const matches = document.querySelectorAll(`[data-help-for="${CSS.escape(label)}"]`);
   if (present) {
     expect(matches.length).toBeGreaterThan(0);
   } else {

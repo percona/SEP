@@ -25,7 +25,7 @@ describe('FieldLabelWithHelp', () => {
     const { container } = render(<FieldLabelWithHelp label="Title" />);
 
     expect(screen.getByText('Title')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Help for Title')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Help')).not.toBeInTheDocument();
     // Plain string path — no wrapper span around the label alone.
     expect(container.querySelector('span')).toBeNull();
   });
@@ -35,11 +35,19 @@ describe('FieldLabelWithHelp', () => {
     render(<FieldLabelWithHelp label="Title" description="A title" />);
 
     expect(screen.getByText('Title')).toBeInTheDocument();
-    const help = screen.getByLabelText('Help for Title');
-    expect(help).toBeInTheDocument();
+    const help = screen.getByLabelText('Help');
+    expect(help).toHaveAttribute('data-help-for', 'Title');
 
     await user.hover(help);
     expect(await screen.findByRole('tooltip')).toHaveTextContent('A title');
+  });
+
+  it('does not put the field label in the help icon accessible name', () => {
+    render(<FieldLabelWithHelp label="Title" description="A title" />);
+
+    const help = screen.getByLabelText('Help');
+    expect(help).toHaveAttribute('aria-label', 'Help');
+    expect(help.getAttribute('aria-label')).not.toMatch(/Title/);
   });
 });
 
@@ -48,18 +56,17 @@ describe('FieldHelpIcon', () => {
     const user = userEvent.setup();
     render(<FieldHelpIcon label="Enabled" description="Turn this on" />);
 
-    await user.hover(screen.getByLabelText('Help for Enabled'));
+    await user.hover(screen.getByLabelText('Help'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Turn this on');
   });
 
   it('is keyboard-focusable and describes the child with the tooltip title', () => {
     render(<FieldHelpIcon label="Enabled" description="Turn this on" />);
 
-    const help = screen.getByLabelText('Help for Enabled');
+    const help = screen.getByLabelText('Help');
     expect(help).toHaveAttribute('tabindex', '0');
-    // describeChild keeps aria-label as the name and attaches the description
-    // (native title when closed / aria-describedby when open) instead of
-    // shadowing it with the tooltip title as the accessible name.
+    expect(help).toHaveAttribute('data-help-for', 'Enabled');
+    // describeChild: name stays "Help"; description comes from title / aria-describedby.
     expect(help).toHaveAccessibleDescription('Turn this on');
   });
 });

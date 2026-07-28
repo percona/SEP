@@ -231,8 +231,8 @@ describe('SchemaFormRenderer — field rendering', () => {
     renderWithProviders(<SchemaFormRenderer sections={helpSections} onSubmit={() => {}} />);
 
     // MUI clones the label into the notched outline, so the help node may appear twice.
-    expect(screen.getAllByLabelText('Help for Title').length).toBeGreaterThan(0);
-    expect(screen.queryByLabelText('Help for Code')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('[data-help-for="Title"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('[data-help-for="Code"]')).toHaveLength(0);
   });
 });
 
