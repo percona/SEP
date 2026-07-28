@@ -455,57 +455,52 @@ def test_broken_symlink_blocks_scaffold(tmp_settings: Path) -> None:
         app_dir.unlink(missing_ok=True)
 
 
-def test_ruff_fix_noop_without_python_files(monkeypatch: pytest.MonkeyPatch) -> None:
+def _fail_run(*args, **kwargs):
+    """Fail the calling test instead of spawning a subprocess."""
+    raise AssertionError(f"ruff should not run: {args}, {kwargs}")
+
+
+@pytest.fixture
+def no_ruff_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make any ``subprocess.run`` call from the scaffolder fail the test."""
+    monkeypatch.setattr(scaffold.subprocess, "run", _fail_run)
+
+
+@pytest.mark.usefixtures("no_ruff_run")
+def test_ruff_fix_noop_without_python_files() -> None:
     """Skip ruff entirely when no rendered file is a ``.py`` file."""
-
-    def _fail(*args, **kwargs):
-        raise AssertionError(f"ruff should not run: {args}, {kwargs}")
-
-    monkeypatch.setattr(scaffold.subprocess, "run", _fail)
     scaffold._ruff_fix([Path("a.txt"), Path("b.tmpl")])
 
 
+@pytest.mark.usefixtures("no_ruff_run")
 def test_ruff_fix_skips_when_ruff_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Skip ruff when the executable is absent beside the Python interpreter."""
-
-    def _fail(*args, **kwargs):
-        raise AssertionError(f"ruff should not run: {args}, {kwargs}")
-
     monkeypatch.setattr(scaffold.sys, "executable", str(tmp_path / "bin" / "python"))
-    monkeypatch.setattr(scaffold.subprocess, "run", _fail)
     scaffold._ruff_fix([Path("a.py")])
 
 
+@pytest.mark.usefixtures("no_ruff_run")
 def test_ruff_fix_skips_when_ruff_not_executable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Skip ruff when the path exists but is not executable."""
-
-    def _fail(*args, **kwargs):
-        raise AssertionError(f"ruff should not run: {args}, {kwargs}")
-
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "ruff").touch()
     monkeypatch.setattr(scaffold.sys, "executable", str(bin_dir / "python"))
-    monkeypatch.setattr(scaffold.subprocess, "run", _fail)
     scaffold._ruff_fix([Path("a.py")])
 
 
+@pytest.mark.usefixtures("no_ruff_run")
 def test_ruff_fix_skips_when_ruff_is_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Skip ruff when the path beside the interpreter is a directory."""
-
-    def _fail(*args, **kwargs):
-        raise AssertionError(f"ruff should not run: {args}, {kwargs}")
-
     bin_dir = tmp_path / "bin"
     (bin_dir / "ruff").mkdir(parents=True)
     monkeypatch.setattr(scaffold.sys, "executable", str(bin_dir / "python"))
-    monkeypatch.setattr(scaffold.subprocess, "run", _fail)
     scaffold._ruff_fix([Path("a.py")])
 
 
