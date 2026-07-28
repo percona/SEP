@@ -91,6 +91,7 @@ export type {
   MultiTableField,
   HostField,
   MultiHostField,
+  RemoteChoiceField,
   ScriptPreviewField,
   Predicate,
   FieldGate,
