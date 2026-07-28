@@ -200,7 +200,7 @@ def test_backup_pg_form_rejects_negative_retention() -> None:
 
 
 def test_backup_task_response_roundtrips_backup_type() -> None:
-    """BackupTaskResponse serializes backup_type and omits internal owner fields."""
+    """Serialize backup_type and omit the internal owner fields."""
     response = BackupTaskResponse(
         name="pg-task",
         owner="BACKUP_PG",

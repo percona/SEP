@@ -20,10 +20,11 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.requests import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import (
     BaseTaskResponse,
     build_default_task_response,
@@ -31,6 +32,7 @@ from app.sep.apps.framework import (
     ConnectivityWarning,
     derive_create_response_model,
 )
+from app.sep.apps.framework.responses import dump_for_rebuild
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import Task, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
@@ -567,7 +569,7 @@ class TestBaseTaskResponse:
     def test_serialized_payload_omits_owner_and_service_type(self) -> None:
         """Drop ``owner`` and ``service_type`` from the serialized detail/list payload."""
         response = BaseTaskResponse.model_validate(
-            {**self.BASE_FIELDS, "service_type": "mysql"}
+            {**self.BASE_FIELDS, "service_type": ServiceTypeEnum.MYSQL.value}
         )
 
         dumped = response.model_dump(mode="json")
@@ -580,14 +582,29 @@ class TestBaseTaskResponse:
     def test_model_dump_for_rebuild_restores_excluded_fields(self) -> None:
         """Include ``owner`` and ``service_type`` in rebuild dumps used by detail builders."""
         response = BaseTaskResponse.model_validate(
-            {**self.BASE_FIELDS, "service_type": "mysql"}
+            {**self.BASE_FIELDS, "service_type": ServiceTypeEnum.MYSQL.value}
         )
 
-        dumped = response.model_dump_for_rebuild(mode="json")
+        dumped = response.model_dump_for_rebuild()
 
         assert dumped["owner"] == "CHECKSUMS"
-        assert dumped["service_type"] == "mysql"
+        assert dumped["service_type"] == ServiceTypeEnum.MYSQL
         assert BaseTaskResponse.model_validate(dumped).owner == "CHECKSUMS"
+
+    def test_dump_for_rebuild_restores_exclude_true_fields_on_any_model(self) -> None:
+        """Restore every ``Field(exclude=True)`` attribute for non-BaseTaskResponse models."""
+
+        class _ExcludedResponse(BaseModel):
+            name: str
+            service_type: ServiceTypeEnum | None = Field(default=None, exclude=True)
+
+        response = _ExcludedResponse(name="task-a", service_type=ServiceTypeEnum.MYSQL)
+
+        dumped = dump_for_rebuild(response)
+
+        assert dumped["name"] == "task-a"
+        assert dumped["service_type"] == ServiceTypeEnum.MYSQL
+        assert "service_type" not in response.model_dump()
 
     def test_anonymized_entities_still_resolves_when_owner_excluded(self) -> None:
         """Keep ``owner`` available to ``anonymized_entities`` despite serialization exclude."""
@@ -616,5 +633,3 @@ class TestBaseTaskResponse:
         assert result.name == "task-a"
         assert result.status == TaskHistoryStatusEnum.SUCCESS
         assert result.connectivity_warning is None
-        assert "owner" not in result.model_dump(mode="json")
-        assert "service_type" not in result.model_dump(mode="json")

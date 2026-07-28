@@ -53,9 +53,9 @@ from app.sep.apps.framework.connectivity import (
     maybe_record_connectivity_warning,
 )
 from app.sep.apps.framework.responses import (
-    BaseTaskResponse,
     build_task_list_responses,
     derive_create_response_model,
+    dump_for_rebuild,
     TaskExecuteWrite,
     TaskExecutionResponse,
     TaskResponseBuilder,
@@ -595,12 +595,9 @@ def _register_create_route(
         builder = await _bind_context(base_builder, context_provider)
         base = builder(task, status=None)
         if warning is not None:
-            dump = (
-                base.model_dump_for_rebuild()
-                if isinstance(base, BaseTaskResponse)
-                else base.model_dump()
+            return create_response_model(
+                **{**dump_for_rebuild(base), "connectivity_warning": warning}
             )
-            return create_response_model(**{**dump, "connectivity_warning": warning})
         return base
 
     if not connectivity_check:
@@ -726,12 +723,9 @@ def _register_update_route(
             updated_task, status=latest.status, last_executed_at=latest.finished_at
         )
         if warning is not None:
-            dump = (
-                base.model_dump_for_rebuild()
-                if isinstance(base, BaseTaskResponse)
-                else base.model_dump()
+            return create_response_model(
+                **{**dump_for_rebuild(base), "connectivity_warning": warning}
             )
-            return create_response_model(**{**dump, "connectivity_warning": warning})
         return base
 
     if not connectivity_check:

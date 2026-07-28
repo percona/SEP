@@ -92,7 +92,7 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
     remapped_username = None
 
     def test_create_injects_extras(self, contract_client: Any) -> None:
-        """Create binds the context provider; assert 201 without internal fields.
+        """Assert create binds the context provider and omits internal fields.
 
         Overrides the generic suite method: the per-mode ``FailRule``s and
         upload-consistency validator defeat the Polyfactory body, so a hand-built
@@ -107,7 +107,7 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         assert "owner" not in response.json()
 
     def test_update_derived_injects_extras(self, contract_client: Any) -> None:
-        """Derived PUT binds the context provider; assert 200 without internal fields.
+        """Assert the derived PUT binds the context provider and omits internal fields.
 
         Overrides the generic suite method for the same gating reason as
         :meth:`test_create_injects_extras`.

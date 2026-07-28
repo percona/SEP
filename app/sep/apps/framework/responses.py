@@ -37,6 +37,29 @@ from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum
 R = TypeVar("R", bound=BaseModel)
 
 
+def dump_for_rebuild(
+    model: BaseModel, *, exclude: set[str] | None = None
+) -> dict[str, Any]:
+    """Dump ``model`` including serialization-excluded fields for rebuilds.
+
+    ``model_dump`` omits fields marked ``Field(exclude=True)``. Detail/create
+    builders that rebuild via ``Subclass(**base.model_dump(), ...)`` need those
+    attributes restored. Reinjection uses the live attribute values so callers
+    only need the ``exclude`` kwarg used for computed fields.
+
+    :param model: The response model instance to dump.
+    :param exclude: Field names forwarded to :meth:`BaseModel.model_dump`.
+    :return: A dump including every ``exclude=True`` field on ``model``.
+    """
+    data = model.model_dump(exclude=exclude)
+    data |= {
+        name: getattr(model, name)
+        for name, field in type(model).model_fields.items()
+        if field.exclude
+    }
+    return data
+
+
 class BaseTaskResponse(BaseModel):
     """Represent the universal task-response surface for standard task apps.
 
@@ -49,7 +72,7 @@ class BaseTaskResponse(BaseModel):
     serialized detail/list payload (as is ``service_type``).
 
     :param name: The task name.
-    :param owner: The task-category owner enum (for example ``BACKUPS``). Kept
+    :param owner: The task-category owner (for example ``BACKUPS``). Kept
         as a model attribute for ``anonymized_entities`` and server-side
         filtering; excluded from the serialized detail/list payload.
     :param service_type: The database service type, stamped by the builder;
@@ -114,21 +137,19 @@ class BaseTaskResponse(BaseModel):
         )
         return sorted(entity.name for entity in entities)
 
-    def model_dump_for_rebuild(self, **kwargs: Any) -> dict[str, Any]:
+    def model_dump_for_rebuild(
+        self, *, exclude: set[str] | None = None
+    ) -> dict[str, Any]:
         """Dump fields for reconstructing this response or a subclass.
 
-        ``model_dump`` omits serialization-excluded fields (``owner``,
-        ``service_type``). Detail/create builders that rebuild via
-        ``Subclass(**base.model_dump(), ...)`` need those attributes restored.
+        Convenience wrapper around :func:`dump_for_rebuild` for
+        ``BaseTaskResponse`` subclasses.
 
-        :param kwargs: Forwarded to :meth:`model_dump` (for example
-            ``exclude`` for computed fields).
+        :param exclude: Field names forwarded to :meth:`model_dump` (for example
+            computed fields).
         :return: A dump including serialization-excluded fields.
         """
-        data = self.model_dump(**kwargs)
-        data["owner"] = self.owner
-        data["service_type"] = self.service_type
-        return data
+        return dump_for_rebuild(self, exclude=exclude)
 
 
 class TaskExecuteWrite(BaseModel):
