@@ -19,7 +19,6 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.db import ListQuery, make_list_query_dep
@@ -42,6 +41,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/schemas", tags=["schemas"])
 
 SchemaListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(SchemaManager))]
+TableListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(TableManager))]
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
@@ -98,16 +98,13 @@ async def list_tables_by_schema(
     session: SessionDep,
     schema: SchemaDep,
     pagination: PaginationDep,
-    search: str | None = None,
+    list_query: TableListQueryDep,
 ) -> PaginatedResponse[TableResponse]:
     """List Tables by Schema."""
     logger.debug("Listing tables for schema '%s'", schema.id)
-    whereclause = []
-    if search:
-        whereclause.append(col(Table.name).ilike(f"%{search}%"))
-    return await TableManager.list_paginated(
+    return await TableManager.list_query_paginated(
         session,
-        *whereclause,
+        list_query=list_query,
         pagination=pagination,
         schema_id=schema.id,
     )

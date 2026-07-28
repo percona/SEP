@@ -19,7 +19,6 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.db import ListQuery, make_list_query_dep
@@ -50,6 +49,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/services", tags=["services"])
 
 ServiceListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(ServiceManager))]
+SchemaListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(SchemaManager))]
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
@@ -138,7 +138,7 @@ async def list_schemas_by_service(
     session: SessionDep,
     service: ServiceDep,
     pagination: PaginationDep,
-    search: str | None = None,
+    list_query: SchemaListQueryDep,
     include_tables: str | None = None,
 ) -> PaginatedResponse[SchemaResponse | SchemaCompactResponse]:
     """List Schemas by Service.
@@ -150,24 +150,22 @@ async def list_schemas_by_service(
     :type session: AsyncSession
     :param service: The resolved service dependency.
     :type service: Service
-    :param search: Filter schemas by name using ILIKE matching.
-    :type search: str | None
+    :param pagination: Validated offset/limit query parameters.
+    :type pagination: Pagination
+    :param list_query: The resolved sort/search produced at the request
+        boundary.
+    :type list_query: ListQuery
     :param include_tables: Include nested tables in the response when set to
         any non-empty value. Defaults to compact mode (no tables).
     :type include_tables: str | None
-    :param pagination: Validated offset/limit query parameters.
-    :type pagination: Pagination
     :return: A paginated response of schema responses.
     :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
     """
     logger.debug("Listing schemas for service '%s'", service.id)
-    whereclause = []
-    if search:
-        whereclause.append(col(Schema.name).ilike(f"%{search}%"))
     select_related = [Schema.tables] if include_tables else []
-    result = await SchemaManager.list_paginated(
+    result = await SchemaManager.list_query_paginated(
         session,
-        *whereclause,
+        list_query=list_query,
         select_related=select_related,
         pagination=pagination,
         service_id=service.id,
