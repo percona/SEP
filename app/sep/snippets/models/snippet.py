@@ -84,6 +84,9 @@ from app.sep.snippets.forms import (
     TextInputElement,
 )
 from app.sep.snippets.models.meta import (
+    META_KEY_DESCRIPTION,
+    META_KEY_SERVICE_TYPE,
+    META_KEY_TITLE,
     serialize_cli_value,
     SnippetMetaParameter,
     SnippetMetaParametersValidationResult,
@@ -441,7 +444,7 @@ class BaseSnippet(BaseModel):
             the metadata.
         :rtype: str
         """
-        return self.meta.get("title", self.filename)
+        return self.meta.get(META_KEY_TITLE, self.filename)
 
     @cached_property
     def description(self) -> str:
@@ -451,7 +454,7 @@ class BaseSnippet(BaseModel):
             specified in the metadata.
         :rtype: str
         """
-        return self.meta.get("description", "")
+        return self.meta.get(META_KEY_DESCRIPTION, "")
 
     @cached_property
     def service_type(self) -> str | None:
@@ -463,7 +466,7 @@ class BaseSnippet(BaseModel):
             distinct from the inventory ``ServiceTypeEnum``.
         :rtype: str | None
         """
-        return self.meta.get("service_type")
+        return self.meta.get(META_KEY_SERVICE_TYPE)
 
     @cached_property
     def allow_extra_args(self) -> bool:
