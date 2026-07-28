@@ -16,11 +16,13 @@
 """Back the snippets plugin's JSON surface with the framework ``ScriptSource`` seam.
 
 This adapter is the first real adoption of
-:class:`~app.sep.apps.framework.script_source.ScriptSource`: it wires the
-hooks ``derive_script_routes`` needs around the existing snippets engine
+:class:`~app.sep.apps.framework.script_source.ScriptSource`: it wires the hooks
+``derive_script_routes`` needs around the existing snippets engine
 (``app/sep/snippets/``), so :data:`~app.sep.apps.snippets.app.app` can declare
 ``script_source=`` instead of hand-wiring the listing / per-script schema /
-execute / history routes.
+execute / history routes. Being DB-backed, it also opts into the server list-page
+capability (``list_query_dep`` + ``list_page``), pushing search/filter/sort/paging
+down to SQL instead of fetching every row and slicing in-process.
 
 Three real couplings the synthetic kit deferred are bridged here:
 
@@ -56,12 +58,14 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.pagination import PaginatedResponse, Pagination
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.framework.script_helpers import build_artifact_download_url
 from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
 from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.apps.snippets.deps import (
     build_snippet_execution_meta,
+    get_snippet_list_query,
     validate_snippet_filename,
 )
 from app.sep.apps.snippets.models import build_snippet_response, SnippetResponse
@@ -73,6 +77,7 @@ from app.sep.apps.snippets.schema import (
 from app.sep.db import get_async_session_maker
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.list_query import SnippetListQuery
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
     EXECUTOR_HOSTS_INPUT_NAME,
@@ -266,6 +271,31 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
     return {filename: SnippetScript(snippet) for filename, snippet in resolved.items()}
 
 
+async def _list_page(
+    pagination: Pagination, list_query: SnippetListQuery
+) -> PaginatedResponse[SnippetScript]:
+    """Return a filtered, sorted, paginated page of snippets from the local DB.
+
+    The SQL search/filter/sort and the filtered total run in
+    :meth:`~app.sep.snippets.crud.SnippetManager.snippet_list_page`; the rows are
+    expunged (mirroring :func:`_list_scripts`) so they stay usable after the
+    request-less session closes, and wrapped as :class:`SnippetScript` for the
+    framework to project through ``list_response``.
+
+    :param pagination: The validated offset/limit window for this page.
+    :param list_query: The validated sort/search/filter selections.
+    :return: A paginated response over the page's wrapped snippets.
+    """
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        page = await SnippetManager.snippet_list_page(
+            session, list_query=list_query, pagination=pagination
+        )
+        for snippet in page.items:
+            session.expunge(snippet)
+    return page.map_items(SnippetScript)
+
+
 def _build_form_schema(script: SnippetScript) -> AppSchema:
     """Build the per-snippet form schema from the snippet's parameters."""
     return build_snippet_schema(script.snippet)
@@ -331,4 +361,6 @@ snippet_source = ScriptSource(
     list_response=_list_response,
     static_schema=SNIPPETS_PLUGIN_SCHEMA,
     list_response_model=SnippetResponse,
+    list_query_dep=get_snippet_list_query,
+    list_page=_list_page,
 )

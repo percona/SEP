@@ -1019,6 +1019,37 @@
         "title": "SettingsPatch",
         "type": "object"
       },
+      "SnippetApprovalFilter": {
+        "description": "Enumerate the approval-status filter selections.\n\n:cvar ALL: Do not filter on approval status.\n:cvar APPROVED: Keep only approved snippets (``approved_at IS NOT NULL``).\n:cvar NOT_APPROVED: Keep only unapproved snippets (``approved_at IS NULL``).",
+        "enum": [
+          "all",
+          "approved",
+          "not_approved"
+        ],
+        "title": "SnippetApprovalFilter",
+        "type": "string"
+      },
+      "SnippetSortDirection": {
+        "description": "Enumerate the sort direction.\n\n:cvar ASC: Ascending order.\n:cvar DESC: Descending order.",
+        "enum": [
+          "asc",
+          "desc"
+        ],
+        "title": "SnippetSortDirection",
+        "type": "string"
+      },
+      "SnippetSortKey": {
+        "description": "Enumerate the allowlisted public sort keys.\n\nMembership is the type: an out-of-allowlist key fails to coerce at the\nrequest boundary, so no raw client-supplied column name can reach a query.\n\n:cvar CREATED_AT: Sort by the ``created_at`` column.\n:cvar FILENAME: Sort by the ``filename`` column.\n:cvar APPROVED_AT: Sort by the ``approved_at`` column.\n:cvar TITLE: Sort by the ``meta.title`` JSON value.\n:cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.",
+        "enum": [
+          "created_at",
+          "filename",
+          "approved_at",
+          "title",
+          "service_type"
+        ],
+        "title": "SnippetSortKey",
+        "type": "string"
+      },
       "SourceEnum": {
         "const": "pmm",
         "description": "Enumeration of possible data sources for a node.\n\n:cvar PMM: Represents the PMM data source.\n:vartype PMM: str",
@@ -12329,6 +12360,28 @@
         "title": "SnippetResponse",
         "type": "object"
       },
+      "snippets__SnippetServiceTypesResponse": {
+        "description": "Carry the whole-dataset service-type facet for the list filter.\n\nSourced across every snippet (not the loaded page) so the list page's\nservice-type dropdown can offer every value the dataset contains.\n\n:param service_types: The sorted distinct non-blank service types.\n:param has_uncategorized: Whether any snippet has an absent or blank service\n    type (surfaced as the \"Uncategorized\" filter option).",
+        "properties": {
+          "has_uncategorized": {
+            "title": "Has Uncategorized",
+            "type": "boolean"
+          },
+          "service_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Service Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "service_types",
+          "has_uncategorized"
+        ],
+        "title": "SnippetServiceTypesResponse",
+        "type": "object"
+      },
       "snippets__SnippetsCapabilitiesResponse": {
         "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.apps.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
         "properties": {
@@ -18110,7 +18163,7 @@
     },
     "/api/apps/snippets/": {
       "get": {
-        "description": "List discovered scripts as a paginated projection.",
+        "description": "List scripts as a server-filtered, sorted, paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
         "parameters": [
           {
@@ -18134,6 +18187,87 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive search over filename, title, description.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive search over filename, title, description.",
+              "title": "Search"
+            }
+          },
+          {
+            "description": "Sort key; one of the allowlisted public sort keys.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SnippetSortKey",
+              "default": "created_at",
+              "description": "Sort key; one of the allowlisted public sort keys."
+            }
+          },
+          {
+            "description": "Sort direction.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SnippetSortDirection",
+              "default": "desc",
+              "description": "Sort direction."
+            }
+          },
+          {
+            "description": "Approval-status filter.",
+            "in": "query",
+            "name": "approval",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SnippetApprovalFilter",
+              "default": "all",
+              "description": "Approval-status filter."
+            }
+          },
+          {
+            "description": "Service-type equality filter, or omitted for no filter.",
+            "in": "query",
+            "name": "service_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Service-type equality filter, or omitted for no filter.",
+              "title": "Service Type"
+            }
+          },
+          {
+            "description": "When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'.",
+            "in": "query",
+            "name": "uncategorized",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'.",
+              "title": "Uncategorized",
+              "type": "boolean"
             }
           }
         ],
@@ -18268,6 +18402,28 @@
           }
         },
         "summary": "Get Schema",
+        "tags": [
+          "snippets"
+        ]
+      }
+    },
+    "/api/apps/snippets/service_types": {
+      "get": {
+        "description": "List the distinct service types across the whole snippets dataset.\n\nBacks the list page's service-type filter so its options reflect every value\nin the dataset rather than only the loaded page.\n\n:param session: The SEP database session.\n:return: The sorted distinct service types and whether any snippet is\n    uncategorized (absent or blank service type).",
+        "operationId": "snippets_snippets_api_service_types_api_apps_snippets_service_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/snippets__SnippetServiceTypesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Snippets Api Service Types",
         "tags": [
           "snippets"
         ]
