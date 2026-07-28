@@ -16,11 +16,14 @@
  */
 
 /**
- * Spot-check: render SchemaFormRenderer with form shapes representative of
- * SchemaDrivenApp plugins that share this renderer (backup_mongo, alters,
- * archives-style tasks). Confirms help icons appear only on described fields
- * and core inputs still mount — a regression guard for the framework-global
- * label change. Apps that do not use SchemaFormRenderer (report, alerts list,
+ * Spot-check: one representative form per SchemaFormRenderer consumer.
+ *
+ * Direct consumers: backup_mongo, alters, atw (CollectPane), dipper.
+ * Via SnippetExecutionAccordion: snippets and alert_troubleshooting (same
+ * synthesised schema path — user-authored snippet parameters plus Execution
+ * controls). Confirms help icons appear only on described fields and core
+ * inputs still mount — a regression guard for the framework-global label
+ * change. Apps that do not use SchemaFormRenderer (report, alerts list,
  * inventory browse, tasks list) are unaffected by this change.
  */
 
@@ -32,7 +35,7 @@ import { SchemaFormRenderer } from './SchemaFormRenderer';
 import type { FormSection } from './types';
 
 vi.mock('@sep/api', () => ({
-  apiClient: { get: vi.fn(), post: vi.fn() },
+  apiClient: { get: vi.fn().mockResolvedValue({ data: [] }), post: vi.fn() },
   useAlertConfig: () => ({ data: undefined, isLoading: false }),
 }));
 
@@ -44,7 +47,7 @@ function renderWithProviders(ui: ReactNode) {
 }
 
 function expectHelp(label: string, present: boolean) {
-  // Prefer data-help-for over aria-label so the icon stays out of label matchers.
+  // aria-label is the constant "Help"; data-help-for disambiguates per field.
   const matches = document.querySelectorAll(`[data-help-for="${CSS.escape(label)}"]`);
   if (present) {
     expect(matches.length).toBeGreaterThan(0);
@@ -179,36 +182,192 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
     expectHelp('Chunk Time', false);
   });
 
-  it('archives/tasks-style mixed section still renders selects + undescribed fields', () => {
+  it('atw CollectPane-like form: shared section plus namespaced per-snippet overrides', () => {
+    // Mirrors CollectPane: shared parameters first, then a collapsible card per
+    // selected snippet whose fields are namespaced (overrides.snipN.*) so two
+    // snippets can declare the same parameter name without colliding.
     const sections: FormSection[] = [
       {
-        title: 'Source',
+        title: 'Shared parameters',
         fields: [
-          { type: 'integer', name: 'source_db_id', label: 'Source DB' },
+          { type: 'host', name: 'executor_host', label: 'Execution Host', required: true },
           {
-            type: 'choice',
-            name: 'swap_drop',
-            label: 'Swap Drop',
-            description: 'Choose how tables are swapped after archive.',
-            choices: [
-              { label: 'Swap', value: 'swap' },
-              { label: 'Drop', value: 'drop' },
-              { label: 'None', value: 'none' },
-              { label: 'Rename', value: 'rename' },
-            ],
+            type: 'bool',
+            name: 'sudo',
+            label: 'Run with sudo',
+            description: 'Prepend sudo to the interpreter when the snippet is executed.',
           },
-          { type: 'string', name: 'where', label: 'Where' },
+          {
+            type: 'integer',
+            name: 'minutes',
+            label: 'Lookback minutes',
+            description: 'Shared window applied to every selected snippet.',
+          },
+          { type: 'string', name: 'note', label: 'Operator note' },
+        ],
+      },
+      {
+        title: 'Disk usage check',
+        description: 'Reports free space on the executor host.',
+        collapsible: true,
+        fields: [
+          {
+            type: 'string',
+            name: 'overrides.snip0.path',
+            label: 'Path',
+            description: 'Filesystem path to inspect for this snippet only.',
+          },
+          { type: 'integer', name: 'overrides.snip0.threshold', label: 'Threshold %' },
         ],
       },
     ];
 
     renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
 
-    expect(screen.getByTestId('text-input-source_db_id')).toBeInTheDocument();
-    expect(screen.getByTestId('select-swap_drop-button')).toBeInTheDocument();
-    expect(screen.getByTestId('text-input-where')).toBeInTheDocument();
-    expectHelp('Swap Drop', true);
-    expectHelp('Source DB', false);
-    expectHelp('Where', false);
+    expect(screen.getByLabelText(/Execution Host/i)).toBeInTheDocument();
+    expect(screen.getByTestId('switch-input-sudo')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-minutes')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-note')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-overrides.snip0.path')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-overrides.snip0.threshold')).toBeInTheDocument();
+
+    expectHelp('Execution Host', false);
+    expectHelp('Run with sudo', true);
+    expectHelp('Lookback minutes', true);
+    expectHelp('Operator note', false);
+    expectHelp('Path', true);
+    expectHelp('Threshold %', false);
+  });
+
+  it('dipper-like collector form: icons follow payload parameter descriptions', () => {
+    // Shape of a Dipper pcs-collect-pmm-* payload: mixed types whose descriptions
+    // come from the script frontmatter. Extra tag is undescribed on purpose to
+    // assert the negative case (real payloads usually describe every parameter).
+    const sections: FormSection[] = [
+      {
+        title: 'Parameters',
+        fields: [
+          {
+            type: 'string',
+            name: 'pmmserver',
+            label: 'PMM server URL',
+            description:
+              'Base URL of PMM server. Leave empty to use configured default (PMM.ENDPOINT).',
+          },
+          {
+            type: 'string',
+            name: 'node',
+            label: 'Node name',
+            description: 'Node name of audit target (required unless using --list).',
+          },
+          {
+            type: 'bool',
+            name: 'list',
+            label: 'List services',
+            description: 'List nodes and services on the PMM server instead of collecting graphs.',
+          },
+          {
+            type: 'integer',
+            name: 'width',
+            label: 'Image width',
+            description: 'Width of images in pixels.',
+            default: 1280,
+          },
+          {
+            type: 'datetime',
+            name: 'start',
+            label: 'Start time (UTC)',
+            description: 'Starting timestamp for graph data. Defaults to 24h ago.',
+          },
+          { type: 'string', name: 'extra_tag', label: 'Extra tag' },
+        ],
+      },
+    ];
+
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    expect(screen.getByTestId('text-input-pmmserver')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-node')).toBeInTheDocument();
+    expect(screen.getByTestId('switch-input-list')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-width')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-start')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-extra_tag')).toBeInTheDocument();
+
+    expectHelp('PMM server URL', true);
+    expectHelp('Node name', true);
+    expectHelp('List services', true);
+    expectHelp('Image width', true);
+    expectHelp('Start time (UTC)', true);
+    expectHelp('Extra tag', false);
+  });
+
+  it('snippet-execution form: user-authored params drive help icons (snippets + alert_troubleshooting)', () => {
+    // Widest-reach consumer via SnippetExecutionAccordion. Parameter descriptions
+    // come from snippet YAML frontmatter (not a fixed backend model); Execution
+    // adds framework controls — sudo carries a description when present, the host does not.
+    const sections: FormSection[] = [
+      {
+        title: 'Parameters',
+        fields: [
+          {
+            type: 'string',
+            name: 'table_name',
+            label: 'Table Name',
+            description: 'Table to inspect on the executor host.',
+          },
+          { type: 'string', name: 'database_name', label: 'Database Name' },
+          {
+            type: 'choice',
+            name: 'format',
+            label: 'Output format',
+            description: 'How to render the snippet result.',
+            // >3 choices use the select shell (help icon); ≤3 use radios + caption.
+            choices: [
+              { label: 'Plain text', value: 'text' },
+              { label: 'JSON', value: 'json' },
+              { label: 'CSV', value: 'csv' },
+              { label: 'YAML', value: 'yaml' },
+            ],
+          },
+          {
+            type: 'bool',
+            name: 'verbose',
+            label: 'Verbose',
+            description: 'Increase output verbosity.',
+          },
+          { type: 'integer', name: 'limit', label: 'Row limit' },
+        ],
+      },
+      {
+        title: 'Execution',
+        fields: [
+          { type: 'host', name: 'executor_host', label: 'Execution Host', required: true },
+          {
+            type: 'bool',
+            name: 'sudo',
+            label: 'Run with sudo',
+            description: 'Prepend sudo to the interpreter when the snippet is executed.',
+          },
+        ],
+      },
+    ];
+
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+
+    expect(screen.getByTestId('text-input-table_name')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-database_name')).toBeInTheDocument();
+    expect(screen.getByTestId('select-format-button')).toBeInTheDocument();
+    expect(screen.getByTestId('switch-input-verbose')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-limit')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Execution Host/i)).toBeInTheDocument();
+    expect(screen.getByTestId('switch-input-sudo')).toBeInTheDocument();
+
+    expectHelp('Table Name', true);
+    expectHelp('Database Name', false);
+    expectHelp('Output format', true);
+    expectHelp('Verbose', true);
+    expectHelp('Row limit', false);
+    expectHelp('Execution Host', false);
+    expectHelp('Run with sudo', true);
   });
 });

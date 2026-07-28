@@ -24,9 +24,8 @@ export interface FieldHelpIconProps {
   /** Tooltip body shown on hover/focus; also the accessible description. */
   description: string;
   /**
-   * Field label mirrored on `data-help-for` for per-field queries.
-   * Not included in aria-label — embedding it would make substring label
-   * matchers (testing-library / Playwright) resolve the icon as well as the control.
+   * Field label stored on `data-help-for` for per-field targeting.
+   * Kept out of aria-label so substring label queries do not also match the icon.
    */
   label: string;
 }
@@ -34,8 +33,8 @@ export interface FieldHelpIconProps {
 /**
  * Info-icon tooltip for schema form field help. Uses a non-button span so it
  * can sit inside MUI floating labels without nesting interactive controls.
- * Named with a constant aria-label ("Help"), focusable via tabIndex, and wrapped
- * with describeChild so the description reaches assistive tech without replacing
+ * Uses a constant aria-label ("Help"), is focusable via tabIndex, and passes
+ * describeChild so the description reaches assistive tech without replacing
  * that name. Callers must omit this component when there is no description to show.
  */
 export function FieldHelpIcon({ description, label }: FieldHelpIconProps) {
