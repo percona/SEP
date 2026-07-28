@@ -6293,7 +6293,7 @@ export interface components {
      *     serialized detail/list payload (as is ``service_type``).
      *
      *     :param name: The task name.
-     *     :param owner: The task-category owner enum (for example ``BACKUPS``). Kept
+     *     :param owner: The task-category owner (for example ``BACKUPS``). Kept
      *         as a model attribute for ``anonymized_entities`` and server-side
      *         filtering; excluded from the serialized detail/list payload.
      *     :param service_type: The database service type, stamped by the builder;
