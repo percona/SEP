@@ -255,6 +255,28 @@ class TestAtwExecutionSchema:
         assert field_names(per_snippet_fields(payload, "b.sh")) == ["minutes"]
 
     @pytest.mark.asyncio
+    async def test_whole_selection_resolves_in_one_snippet_lookup(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Resolve the whole selection with one batch lookup, not one per snippet."""
+        await create_snippet("a.sh", parameters=[_DEFAULTS_FILE_PARAM])
+        await create_snippet("b.sh", parameters=[_DEFAULTS_FILE_PARAM])
+        await create_snippet("c.sh", parameters=[_DEFAULTS_FILE_PARAM])
+        batch = mocker.spy(SnippetManager, "list")
+        single = mocker.spy(SnippetManager, "get_or_404")
+
+        response = api_client.get(
+            SCHEMA_URL, params={"snippet_filename": ["a.sh", "b.sh", "c.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert batch.call_count == 1
+        assert single.call_count == 0
+
+    @pytest.mark.asyncio
     async def test_duplicate_filenames_are_deduped_order_preserving(
         self, api_client: TestClient, create_snippet: Callable[..., Awaitable[Snippet]]
     ) -> None:
@@ -420,6 +442,34 @@ class TestAtwBatchExecute:
         ]
 
     @pytest.mark.asyncio
+    async def test_whole_batch_resolves_in_one_snippet_lookup(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """Resolve every item's snippet with one batch lookup before the dispatch loop."""
+        await create_snippet("a.sh", parameters=[])
+        await create_snippet("b.sh", parameters=[])
+        tasks_api.post.side_effect = [{"id": _FIRST_TASK_ID}, {"id": _SECOND_TASK_ID}]
+        batch = mocker.spy(SnippetManager, "list")
+        single = mocker.spy(SnippetManager, "get_or_404")
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [{"snippet_filename": "a.sh"}, {"snippet_filename": "b.sh"}],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert batch.call_count == 1
+        assert single.call_count == 0
+
+    @pytest.mark.asyncio
     async def test_shared_args_are_filtered_to_declared_parameters(
         self,
         api_client: TestClient,
@@ -472,6 +522,36 @@ class TestAtwBatchExecute:
         meta = tasks_api.post.await_args.kwargs["json"]["meta"]
         assert "/item.cnf" in meta["args"]
         assert "/shared.cnf" not in meta["args"]
+
+    @pytest.mark.asyncio
+    async def test_traversal_filename_fails_the_whole_batch(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Reject the whole batch with 400 when any item names an unsafe filename.
+
+        A traversal string is malformed input, not an unknown snippet: the seam's
+        guard runs before any lookup, so it fails the request rather than
+        degrading to a per-item error, and nothing dispatches.
+        """
+        await create_snippet("a.sh", parameters=[])
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [
+                    {"snippet_filename": "../secret.sh"},
+                    {"snippet_filename": "a.sh"},
+                ],
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        tasks_api.post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_unknown_snippet_fails_only_its_item(

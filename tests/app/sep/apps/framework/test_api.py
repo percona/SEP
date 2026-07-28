@@ -30,6 +30,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import APIRouter, Body, Depends, FastAPI, status
+from fastapi.dependencies.utils import get_flat_dependant
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict, Field
@@ -1325,6 +1326,8 @@ class _ScriptListRow(BaseModel):
 def _make_script_source(
     *,
     list_response_model: type[BaseModel] | None = None,
+    list_query_dep: object = None,
+    list_page: object = None,
 ) -> ScriptSource[_StubScript]:
     """Build a minimal ``ScriptSource`` for ``derive_script_routes`` tests."""
     script = _StubScript()
@@ -1343,6 +1346,8 @@ def _make_script_source(
         build_execution_meta=lambda _script, _request: BaseModel(),
         list_response=lambda stub: _ScriptListRow(filename=stub.filename),
         list_response_model=list_response_model,
+        list_query_dep=list_query_dep,
+        list_page=list_page,
     )
 
 
@@ -1350,7 +1355,11 @@ def _script_router(**overrides: object) -> APIRouter:
     """Build a ``derive_script_routes`` router with sane synthetic defaults."""
     pagination_dep = overrides.pop("pagination_dep", None)
     list_response_model = overrides.pop("list_response_model", _ScriptListRow)
-    source = _make_script_source(list_response_model=list_response_model)
+    source = _make_script_source(
+        list_response_model=list_response_model,
+        list_query_dep=overrides.pop("list_query_dep", None),
+        list_page=overrides.pop("list_page", None),
+    )
     return derive_script_routes(
         source,
         name="test-scripts",
@@ -1606,6 +1615,87 @@ class TestDeriveScriptRoutesPaginatedList:
         body = response.json()
         assert body["total"] == 1
         assert body["items"] == []
+
+
+def _search_list_query_dep(q: str | None = None) -> str | None:
+    """Parse an opt-in ``q`` list-query param for the seam regression test."""
+    return q
+
+
+class TestDeriveScriptRoutesListQuerySeam:
+    """Cover the opt-in ``list_query_dep``/``list_page`` seam on the list route."""
+
+    def _routed_source(self) -> ScriptSource[_StubScript]:
+        rows = [_StubScript("alpha.sh"), _StubScript("beta.sh")]
+
+        async def _list_page(pagination, list_query) -> PaginatedResponse:
+            matched = [
+                row for row in rows if not list_query or list_query in row.filename
+            ]
+            return PaginatedResponse.from_pagination(
+                pagination.slice(matched), len(matched), pagination
+            )
+
+        return _make_script_source(
+            list_response_model=_ScriptListRow,
+            list_query_dep=_search_list_query_dep,
+            list_page=_list_page,
+        )
+
+    def test_only_list_query_dep_raises(self) -> None:
+        """Reject a source that sets ``list_query_dep`` without ``list_page``."""
+        with pytest.raises(ValueError, match="both or neither"):
+            _make_script_source(
+                list_response_model=_ScriptListRow,
+                list_query_dep=_search_list_query_dep,
+            )
+
+    def test_only_list_page_raises(self) -> None:
+        """Reject a source that sets ``list_page`` without ``list_query_dep``."""
+
+        async def _list_page(pagination, list_query) -> PaginatedResponse:
+            return PaginatedResponse.from_pagination([], 0, pagination)
+
+        with pytest.raises(ValueError, match="both or neither"):
+            _make_script_source(
+                list_response_model=_ScriptListRow, list_page=_list_page
+            )
+
+    def test_opt_in_routes_through_list_page(self, regular_user: CasdoorUser) -> None:
+        """Filter via ``list_page`` and its filtered total when the seam is set."""
+        router = derive_script_routes(
+            self._routed_source(),
+            name="test-scripts",
+            pagination_dep=make_pagination_dep(max_limit=50),
+        )
+        client = _authed_script_client(router, regular_user)
+
+        response = client.get(f"{_SCRIPT_BASE_URL}/", params={"q": "alpha"})
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert [item["filename"] for item in body["items"]] == ["alpha.sh"]
+
+    def test_opt_in_exposes_the_list_query_param(self) -> None:
+        """Declare the list-query param on the route when the seam is set."""
+        router = derive_script_routes(
+            self._routed_source(),
+            name="test-scripts",
+            pagination_dep=make_pagination_dep(max_limit=50),
+        )
+        route = _route_for(router, "/", "GET")
+        flat = get_flat_dependant(route.dependant)
+
+        assert "q" in {param.name for param in flat.query_params}
+
+    def test_without_seam_uses_fetch_all_slice(self, regular_user: CasdoorUser) -> None:
+        """Keep the fetch-all-then-slice path when the source omits the seam."""
+        router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
+        route = _route_for(router, "/", "GET")
+        flat = get_flat_dependant(route.dependant)
+
+        assert "q" not in {param.name for param in flat.query_params}
 
 
 class TestDeriveCrudRoutesCreateSkip:
