@@ -73,6 +73,15 @@ describe('normalizeAppListResponse', () => {
   it('returns empty items when items is null in a partial envelope', () => {
     expect(normalizeAppListResponse({ items: null })).toEqual({ items: [], pagination: null });
   });
+
+  it('drops malformed pagination when total is not a number', () => {
+    // A field of the wrong type fails the envelope guard, so the response falls
+    // through to the partial branch: items survive, pagination is discarded
+    // rather than surfacing a NaN total to the pager.
+    const items = [{ name: 'a' }];
+    const malformed = { items, total: '120', offset: 0, limit: 50 } as never;
+    expect(normalizeAppListResponse(malformed)).toEqual({ items, pagination: null });
+  });
 });
 
 describe('fetchAppTasksList', () => {

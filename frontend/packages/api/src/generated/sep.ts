@@ -1940,7 +1940,7 @@ export interface paths {
     };
     /**
      * List
-     * @description List discovered scripts as a paginated projection.
+     * @description List scripts as a server-filtered, sorted, paginated projection.
      */
     get: operations['snippets_snippets_api_list_api_apps_snippets__get'];
     put?: never;
@@ -2058,6 +2058,33 @@ export interface paths {
      *     :return: The plugin schema instance.
      */
     get: operations['snippets_get_schema_api_apps_snippets_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/snippets/service_types': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api Service Types
+     * @description List the distinct service types across the whole snippets dataset.
+     *
+     *     Backs the list page's service-type filter so its options reflect every value
+     *     in the dataset rather than only the loaded page.
+     *
+     *     :param session: The SEP database session.
+     *     :return: The sorted distinct service types and whether any snippet is
+     *         uncategorized (absent or blank service type).
+     */
+    get: operations['snippets_snippets_api_service_types_api_apps_snippets_service_types_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3833,6 +3860,40 @@ export interface components {
     SettingsPatch: {
       [key: string]: components['schemas']['JsonValue'];
     };
+    /**
+     * SnippetApprovalFilter
+     * @description Enumerate the approval-status filter selections.
+     *
+     *     :cvar ALL: Do not filter on approval status.
+     *     :cvar APPROVED: Keep only approved snippets (``approved_at IS NOT NULL``).
+     *     :cvar NOT_APPROVED: Keep only unapproved snippets (``approved_at IS NULL``).
+     * @enum {string}
+     */
+    SnippetApprovalFilter: 'all' | 'approved' | 'not_approved';
+    /**
+     * SnippetSortDirection
+     * @description Enumerate the sort direction.
+     *
+     *     :cvar ASC: Ascending order.
+     *     :cvar DESC: Descending order.
+     * @enum {string}
+     */
+    SnippetSortDirection: 'asc' | 'desc';
+    /**
+     * SnippetSortKey
+     * @description Enumerate the allowlisted public sort keys.
+     *
+     *     Membership is the type: an out-of-allowlist key fails to coerce at the
+     *     request boundary, so no raw client-supplied column name can reach a query.
+     *
+     *     :cvar CREATED_AT: Sort by the ``created_at`` column.
+     *     :cvar FILENAME: Sort by the ``filename`` column.
+     *     :cvar APPROVED_AT: Sort by the ``approved_at`` column.
+     *     :cvar TITLE: Sort by the ``meta.title`` JSON value.
+     *     :cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.
+     * @enum {string}
+     */
+    SnippetSortKey: 'created_at' | 'filename' | 'approved_at' | 'title' | 'service_type';
     /**
      * SourceEnum
      * @description Enumeration of possible data sources for a node.
@@ -9366,6 +9427,23 @@ export interface components {
       updated_by?: string | null;
     };
     /**
+     * SnippetServiceTypesResponse
+     * @description Carry the whole-dataset service-type facet for the list filter.
+     *
+     *     Sourced across every snippet (not the loaded page) so the list page's
+     *     service-type dropdown can offer every value the dataset contains.
+     *
+     *     :param service_types: The sorted distinct non-blank service types.
+     *     :param has_uncategorized: Whether any snippet has an absent or blank service
+     *         type (surfaced as the "Uncategorized" filter option).
+     */
+    snippets__SnippetServiceTypesResponse: {
+      /** Has Uncategorized */
+      has_uncategorized: boolean;
+      /** Service Types */
+      service_types: string[];
+    };
+    /**
      * SnippetsCapabilitiesResponse
      * @description Represent per-deployment capability flags for the Snippets plugin.
      *
@@ -12987,6 +13065,18 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
+        /** @description Case-insensitive search over filename, title, description. */
+        search?: string | null;
+        /** @description Sort key; one of the allowlisted public sort keys. */
+        sort?: components['schemas']['SnippetSortKey'];
+        /** @description Sort direction. */
+        order?: components['schemas']['SnippetSortDirection'];
+        /** @description Approval-status filter. */
+        approval?: components['schemas']['SnippetApprovalFilter'];
+        /** @description Service-type equality filter, or omitted for no filter. */
+        service_type?: string | null;
+        /** @description When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'. */
+        uncategorized?: boolean;
       };
       header?: never;
       path?: never;
@@ -13103,6 +13193,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_service_types_api_apps_snippets_service_types_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['snippets__SnippetServiceTypesResponse'];
         };
       };
     };
