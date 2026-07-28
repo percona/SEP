@@ -1112,7 +1112,7 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
 #: Pydantic's default JSON dump mask for :class:`~pydantic.SecretStr` /
 #: :class:`~pydantic.SecretBytes`. Distinct from
 #: :data:`~app.core.utils.fields.CREDENTIAL_URL_MASK` (``"****"``).
-SECRET_STR_MASK = "**********"  # noqa: S105
+SECRET_STR_MASK = "**********"  # noqa: S105 # nosec B105
 
 
 def _field_contains_secret(field_info: FieldInfo) -> bool:
