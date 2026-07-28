@@ -30,11 +30,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.apps.backup_mongo.deps import (
     _fetch_latest_pbm_status,
     BackupGeneratedTask,
     BackupsIndexContextDep,
     BackupsTask,
+    get_backups_task,
 )
 from app.sep.apps.backup_mongo.schema import BACKUP_MONGO_DERIVED
 from app.sep.apps.framework.cascade import cascade_create_tasks
@@ -104,6 +106,14 @@ async def pbm_backups_detail(
         return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
     meta = data["meta"]
+    incremental_name = f"{task.name}-incremental"
+    try:
+        await get_backups_task(incremental_name, tasks_api)
+    except HTTPNotFoundException:
+        has_incremental = False
+    else:
+        has_incremental = True
+
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -119,11 +129,15 @@ async def pbm_backups_detail(
         "physical_backup_url": request.url_for(
             "pbm_backups_execute", task_name=task.name + "-physical"
         ),
-        "incremental_backup_url": request.url_for(
-            "pbm_backups_execute", task_name=task.name + "-incremental"
-        ),
         "alert_on_fail": task.alert_on_fail,
     }
+    if has_incremental:
+        # Omit the URL (and therefore the Run button) when the sibling is missing
+        # — pre-SEP-1373 groups only gain ``-incremental`` on edit/backfill, and
+        # execute would 404 if we linked a task that does not exist yet.
+        task_data["incremental_backup_url"] = request.url_for(
+            "pbm_backups_execute", task_name=incremental_name
+        )
 
     context["task"] = task_data
     response = await tasks_api.get(f"/{task.name}/history/")
@@ -132,8 +146,11 @@ async def pbm_backups_detail(
     context["history_logical"] = response["items"]
     response = await tasks_api.get(f"/{task.name}-physical/history/")
     context["history_physical"] = response["items"]
-    response = await tasks_api.get(f"/{task.name}-incremental/history/")
-    context["history_incremental"] = response["items"]
+    if has_incremental:
+        response = await tasks_api.get(f"/{incremental_name}/history/")
+        context["history_incremental"] = response["items"]
+    else:
+        context["history_incremental"] = []
     response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
@@ -148,11 +165,12 @@ async def pbm_backups_detail(
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["running_tasks"] += response["items"]
-    response = await tasks_api.get(
-        f"/{task.name}-incremental/history/",
-        params={"status": TaskHistoryStatusEnum.RUNNING},
-    )
-    context["running_tasks"] += response["items"]
+    if has_incremental:
+        response = await tasks_api.get(
+            f"/{incremental_name}/history/",
+            params={"status": TaskHistoryStatusEnum.RUNNING},
+        )
+        context["running_tasks"] += response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
     response = await tasks_api.get(f"/{task.name}-status/history/")

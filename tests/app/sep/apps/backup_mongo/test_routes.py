@@ -21,12 +21,35 @@ from unittest.mock import AsyncMock
 import yaml
 from fastapi import status
 
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.apps.backup_mongo.models import BackupCreate, BackupType
 from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 EXPECTED_PBM_TASK_POSTS = 5
+
+
+def _parent_backup_task() -> dict[str, Any]:
+    """Build a parent ``pbm_config`` task payload for legacy detail tests."""
+    task = TaskFactory.build(
+        name="mongo-backup-task",
+        owner="BACKUP_MONGO",
+        backend=TaskBackendEnum.PROXY,
+    ).model_dump(mode="json")
+    task["data"] = {
+        "task": "run-python",
+        "backup_type": BackupType.PBM_CONFIG.value,
+        "meta": {
+            "target": "mongo-host",
+            "config": yaml.dump(
+                {"storage": {"type": "filesystem", "filesystem": {"path": "/tmp/pbm"}}},
+                default_flow_style=False,
+            ),
+        },
+        "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+    }
+    return task
 
 
 def test_pbm_backups_create_full_form_dependency_chain_without_payload_override(
@@ -106,22 +129,18 @@ def test_pbm_backups_detail_loads_incremental_history_and_action(
     mock_inventory_api_dep,
 ):
     """GET detail fetches incremental history/running state and exposes the run URL."""
-    task = TaskFactory.build(
-        name="mongo-backup-task",
+    task = _parent_backup_task()
+    incremental = TaskFactory.build(
+        name="mongo-backup-task-incremental",
         owner="BACKUP_MONGO",
         backend=TaskBackendEnum.PROXY,
     ).model_dump(mode="json")
-    task["data"] = {
+    incremental["data"] = {
         "task": "run-python",
-        "backup_type": BackupType.PBM_CONFIG.value,
-        "meta": {
-            "target": "mongo-host",
-            "config": yaml.dump(
-                {"storage": {"type": "filesystem", "filesystem": {"path": "/tmp/pbm"}}},
-                default_flow_style=False,
-            ),
-        },
-        "payload": "file:///plugins/backup_mongo/pbm_config_payload",
+        "backup_type": BackupType.PBM_INCREMENTAL.value,
+        "parent": "mongo-backup-task",
+        "meta": task["data"]["meta"],
+        "payload": "file:///plugins/backup_mongo/pbm_incremental_payload",
     }
     fetched_paths: list[str] = []
 
@@ -129,6 +148,8 @@ def test_pbm_backups_detail_loads_incremental_history_and_action(
         fetched_paths.append(path)
         if path == "/mongo-backup-task":
             return task
+        if path == "/mongo-backup-task-incremental":
+            return incremental
         if path == "/":
             return {"items": [], "total": 0}
         if path.startswith("/stats/"):
@@ -143,6 +164,41 @@ def test_pbm_backups_detail_loads_incremental_history_and_action(
     response = test_client.get("/backup_mongo/mongo-backup-task")
 
     assert response.status_code == status.HTTP_200_OK
+    assert "/mongo-backup-task-incremental" in fetched_paths
     assert "/mongo-backup-task-incremental/history/" in fetched_paths
     assert "Run Incremental Backup" in response.text
     assert "mongo-backup-task-incremental" in response.text
+
+
+def test_pbm_backups_detail_hides_incremental_action_when_sibling_missing(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+):
+    """Omit the Run Incremental control when ``-incremental`` has not been backfilled."""
+    task = _parent_backup_task()
+    fetched_paths: list[str] = []
+
+    async def _mock_get(path: str, **kwargs: Any) -> Any:
+        fetched_paths.append(path)
+        if path == "/mongo-backup-task":
+            return task
+        if path == "/mongo-backup-task-incremental":
+            raise HTTPNotFoundException(f"Task not found: {path}")
+        if path == "/":
+            return {"items": [], "total": 0}
+        if path.startswith("/stats/"):
+            return {}
+        if path.endswith("/history/"):
+            return {"items": []}
+        raise AssertionError(f"Unexpected path: {path!r}, kwargs={kwargs!r}")
+
+    mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+    mock_inventory_api_dep.get = AsyncMock(return_value={"items": []})
+
+    response = test_client.get("/backup_mongo/mongo-backup-task")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "/mongo-backup-task-incremental" in fetched_paths
+    assert "/mongo-backup-task-incremental/history/" not in fetched_paths
+    assert "Run Incremental Backup" not in response.text
