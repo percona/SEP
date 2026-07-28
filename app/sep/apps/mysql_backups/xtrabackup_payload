@@ -611,6 +611,8 @@ def is_encrypted_dir(
     :param method: Encryption format to verify against (``"gpg"`` or ``"aes256"``).
     :return: True if all files are encrypted, False otherwise.
     """
+    if method not in ("gpg", "aes256"):
+        raise BackupError("Unknown encryption method: %s" % (method,))
     ppath = Path(path)
     for p in ppath.rglob("*"):
         if p.is_file() and p.name not in exclude_files:
@@ -2208,7 +2210,7 @@ class Xtrabackup(Backup):
             if not is_encrypted_dir(
                 self.last_backup_dir, method='aes256', logger=self.logger
             ):
-                raise BackupError('AES-256 verification failed')
+                raise BackupError('AES-256 verification failed: %s' % (self.last_backup_dir,))
 
         # Encrypt backup w/o upload as a separate option.
         # No hardlinking or rsync upload to avoid the mess.

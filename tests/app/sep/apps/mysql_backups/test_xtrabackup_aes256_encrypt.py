@@ -97,7 +97,7 @@ def _load_function(name: str) -> object:
 
 
 class _FakeProc:
-    """A ``Popen`` result with a fixed return code and canned stderr."""
+    """Stand in for a ``Popen`` result with a fixed return code and canned stderr."""
 
     def __init__(self, returncode: int) -> None:
         self.returncode = returncode
@@ -189,6 +189,11 @@ class TestIsEncryptedDirAes256:
         (tmp_path / "ibdata1.xbcrypt").write_text("x")
         (tmp_path / "_etc_my.cnf").write_text("plaintext")
         assert self._fn()(str(tmp_path), method="aes256") is False
+
+    def test_unknown_method_raises(self, tmp_path) -> None:
+        """Assert an unrecognized method fails fast instead of silently using gpg."""
+        with pytest.raises(Exception, match="Unknown encryption method"):
+            self._fn()(str(tmp_path), method="AES256")
 
     def test_excluded_metadata_left_plaintext_still_true(self, tmp_path) -> None:
         """Assert plaintext metadata files SEP reads post-backup do not fail verification."""

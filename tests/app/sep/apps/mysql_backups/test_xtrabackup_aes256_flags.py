@@ -67,7 +67,7 @@ class TestInlineEncryptFlagGatedByBinary:
         )
         return ifs[0]
 
-    def _test_constants(self) -> list:
+    def _test_constants(self) -> list[str]:
         """Return the string constants referenced in the gate's condition."""
         return [
             c.value for c in ast.walk(self._gate().test) if isinstance(c, ast.Constant)
