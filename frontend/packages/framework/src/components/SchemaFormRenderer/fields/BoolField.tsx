@@ -29,7 +29,7 @@ export function BoolField({ field }: BoolFieldProps) {
   const { control } = useFormContext();
   return (
     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
+      <Box sx={{ minWidth: 0 }}>
         <SwitchInput
           name={field.name}
           label={field.label}
