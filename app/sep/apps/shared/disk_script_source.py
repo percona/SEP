@@ -39,11 +39,14 @@ from pathlib import Path
 
 from pydantic import BaseModel, create_model, Field
 
+from app.core.db.list_query import ListQuerySpec
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.pagination import Pagination
+from app.sep.apps.framework.list_query import apply_in_memory, InMemoryListQuery
 from app.sep.apps.framework.schema import (
     AppSchema,
     BoolField,
@@ -286,6 +289,7 @@ def build_disk_script_source(
     artifact_type: str,
     name: str,
     display_name: str,
+    list_query_spec: ListQuerySpec | None = None,
 ) -> ScriptSource[_DiskScript]:
     """Wire a disk-backed ``BaseSnippet`` subclass into a framework ``ScriptSource``.
 
@@ -296,6 +300,11 @@ def build_disk_script_source(
         download URL (register it in the app's ``artifact_base_dirs``).
     :param name: The app name recorded on the derived schemas.
     :param display_name: The plugin-level display name served at ``GET /schema``.
+    :param list_query_spec: The sort/search allowlist the source replays in-process
+        when the list route derives a query (must equal the app's
+        ``list_query_spec``); its public keys must name ``_DiskScript`` attributes
+        (``filename``, ``execution_task_name``). ``None`` when the app derives no
+        list query.
     :return: A ``ScriptSource`` carrying the disk-backed listing, form, and execute
         hooks for ``derive_script_routes``.
     """
@@ -305,12 +314,24 @@ def build_disk_script_source(
             raise HTTPNotFoundException(detail=f"Script {filename!r} not found.")
         return _DiskScript(await script_cls.from_path(filename, update_meta=True))
 
-    async def list_scripts() -> list[_DiskScript]:
-        return [
+    async def list_scripts(
+        list_query: InMemoryListQuery | None, pagination: Pagination | None
+    ) -> tuple[list[_DiskScript], int]:
+        scripts = [
             _DiskScript(await script_cls.from_path(path.name, update_meta=True))
             for path in sorted(script_dir.iterdir())
             if path.is_file()
         ]
+        if list_query is not None and pagination is not None:
+            if list_query_spec is None:
+                raise ValueError(
+                    "A disk script source resolving a list query requires a "
+                    "list_query_spec."
+                )
+            return apply_in_memory(scripts, list_query_spec, list_query, pagination)
+        if pagination is not None:
+            return pagination.slice(scripts), len(scripts)
+        return scripts, len(scripts)
 
     def build_form_schema(script: _DiskScript) -> AppSchema:
         return _build_form_schema(script, name=name)
@@ -331,4 +352,5 @@ def build_disk_script_source(
             name=name, display_name=display_name, list_view=_list_view()
         ),
         list_response_model=DiskScriptListRow,
+        in_memory_list_query=True,
     )

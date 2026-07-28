@@ -43,6 +43,7 @@ from app.sep.apps.snippets.models import SnippetsCapabilitiesResponse
 from app.sep.apps.snippets.routes import router as jinja_router
 from app.sep.apps.snippets.script_source import snippet_source
 from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.crud import SnippetManager
 from app.tasks.models import ANY_OWNER
 
 
@@ -70,6 +71,7 @@ app = TaskExecutionApp(
     description="Browse, approve, and execute operational snippets.",
     owner=ANY_OWNER,
     script_source=snippet_source,
+    list_query_spec=SnippetManager.list_query_spec,
     capabilities_provider=_snippets_capabilities_provider,
     extra_routes=(approval_router, maintenance_router, artifact_router),
     jinja_router=jinja_router,

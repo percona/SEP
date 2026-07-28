@@ -139,7 +139,7 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     :param session: The database session.
     :return: One listing row per category that has at least one snippet.
     """
-    snippets = await SnippetManager.list(session)
+    snippets = await SnippetManager.list(session, order_by=SnippetManager.ordering)
     snippets_by_cell = defaultdict(list)
     for snippet in snippets:
         root = derive_category_root(snippet.meta.get("service_type"))

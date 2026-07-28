@@ -368,6 +368,12 @@ class TaskExecutionApp(BaseApp):
         ``status`` / ``service_type`` query-parameter toggles plus the server-side
         ``roots_only`` and ``extra_params`` upstream filters. Defaults to an
         all-off :class:`ListFilterConfig`.
+    :param list_query_spec: The :class:`~app.core.db.list_query.ListQuerySpec`
+        backing a ``script_source`` app's list route sort/search allowlist. When set,
+        the derived paginated list route exposes exactly the Core ``sort`` param
+        (plus ``search`` when the spec has searchable columns) and hands the resolved
+        query to the source's ``list_scripts`` hook. Defaults to ``None`` (the
+        paginated list route fetches the full set and slices it client-side).
     :param response_builder: A sync list/detail builder override injecting the
         per-plugin response extras; replaces the framework default builder. When
         ``None`` (default) the framework builds a default list/detail builder
@@ -446,6 +452,12 @@ class TaskExecutionApp(BaseApp):
     capabilities_provider: Callable[..., BaseModel] | None = None
     service_type: ServiceTypeEnum | None = None
     list_filter: ListFilterConfig = Field(default_factory=ListFilterConfig)
+    # Typed ``Any`` (not ``ListQuerySpec``) because that Core dataclass declares its
+    # fields under ``from __future__ import annotations`` + ``TYPE_CHECKING`` imports,
+    # so pydantic cannot resolve them to build a schema even under ``SkipValidation``.
+    # It is a ``ListQuerySpec | None`` reference threaded verbatim into
+    # ``derive_script_routes``; never validated here.
+    list_query_spec: SkipValidation[Any] = None
     response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_model: type[BaseModel] | None = None
@@ -1040,6 +1052,7 @@ class TaskExecutionApp(BaseApp):
                 self.script_source,
                 name=self.name,
                 pagination_dep=pagination_dep,
+                list_query_spec=self.list_query_spec,
             )
             if self.capabilities_provider is not None:
                 capabilities_endpoint(router, self.capabilities_provider)

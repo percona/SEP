@@ -27,13 +27,17 @@ without a database, since a scaffolded script app loads its catalogue from disk.
 from pathlib import Path
 
 import pytest
+from sqlalchemy import column
 from starlette.datastructures import URL
 
+from app.core.db.list_query import ListQuerySpec
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.pagination import Pagination
+from app.sep.apps.framework.list_query import InMemoryListQuery
 from app.sep.apps.framework.schema import (
     BoolField,
     ChoiceField,
@@ -216,10 +220,95 @@ class TestLoadAndList:
         """Return one list row per discovered file, projected to the row model."""
         _write_script(script_dir, "a.sh", _SHELL_NO_PARAMS)
         _write_script(script_dir, "b.sh", _SHELL_NO_PARAMS)
-        scripts = await source.list_scripts()
+        scripts, total = await source.list_scripts(None, None)
         rows = [source.list_response(script) for script in scripts]
         assert all(isinstance(row, DiskScriptListRow) for row in rows)
         assert sorted(row.filename for row in rows) == ["a.sh", "b.sh"]
+        assert total == len(scripts)
+
+    async def test_in_memory_list_query_flag_is_set(self, source: ScriptSource) -> None:
+        """Flag the disk source as in-memory so the framework builds that dep."""
+        assert source.in_memory_list_query is True
+
+
+_LIST_SPEC = ListQuerySpec(
+    sortable={
+        "filename": column("filename"),
+        "execution_task_name": column("execution_task_name"),
+    },
+    default_sort="filename",
+    tie_breaker=column("filename"),
+    searchable=(column("filename"),),
+)
+
+
+class TestListQueryApplied:
+    """Exercise the disk source's in-memory sort/search/paginate over real files."""
+
+    @pytest.fixture
+    def spec_source(
+        self, script_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> ScriptSource:
+        """Build a disk source carrying a list-query spec over ``_DiskScript`` attrs."""
+        monkeypatch.setattr(
+            snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
+        )
+
+        class _KitScript(BaseSnippet):
+            BASE_DIR = script_dir
+
+        return build_disk_script_source(
+            script_dir=script_dir,
+            script_cls=_KitScript,
+            artifact_type="testkit",
+            name="testkit",
+            display_name="Test Kit",
+            list_query_spec=_LIST_SPEC,
+        )
+
+    async def _seed(self, script_dir: Path, *names: str) -> None:
+        for name in names:
+            _write_script(script_dir, name, _SHELL_NO_PARAMS)
+
+    async def test_sort_descending_by_filename(
+        self, spec_source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Order by the filename attribute descending via the in-memory applier."""
+        names = ("a.sh", "b.sh", "c.sh")
+        await self._seed(script_dir, *names)
+        query = InMemoryListQuery(sort_key="filename", descending=True, search=None)
+
+        rows, total = await spec_source.list_scripts(query, Pagination())
+
+        assert [row.filename for row in rows] == ["c.sh", "b.sh", "a.sh"]
+        assert total == len(names)
+
+    async def test_search_narrows_rows_and_total(
+        self, spec_source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Narrow the rows and the total by a case-insensitive filename substring."""
+        await self._seed(script_dir, "mysql-dump.sh", "pg-vacuum.sh")
+        query = InMemoryListQuery(sort_key="filename", descending=False, search="MYSQL")
+
+        rows, total = await spec_source.list_scripts(query, Pagination())
+
+        assert [row.filename for row in rows] == ["mysql-dump.sh"]
+        assert total == 1
+
+    async def test_pagination_slices_with_full_total(
+        self, spec_source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Return the pagination window while reporting the full filtered total."""
+        names = ("a.sh", "b.sh", "c.sh", "d.sh")
+        await self._seed(script_dir, *names)
+        query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
+
+        rows, total = await spec_source.list_scripts(
+            query, Pagination(offset=1, limit=2)
+        )
+
+        assert [row.filename for row in rows] == ["b.sh", "c.sh"]
+        assert total == len(names)
 
 
 class TestTaskAndInterpreterDerivation:

@@ -34,11 +34,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.datastructures import URL
 
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.db.list_query import build_search_predicate, ListQuery
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.pagination import Pagination
 from app.sep.apps.framework.script_source import ScriptExecuteWrite
 from app.sep.apps.snippets.deps import build_snippet_execution_meta
 from app.sep.apps.snippets.script_source import (
@@ -48,6 +50,7 @@ from app.sep.apps.snippets.script_source import (
 )
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.list_query import SnippetApprovalFilter, SnippetListQuery
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     Snippet,
@@ -55,6 +58,28 @@ from app.sep.snippets.models.snippet import (
 )
 
 pytestmark = pytest.mark.asyncio
+
+
+def _snippet_query(
+    sort: str | None = None,
+    search: str | None = None,
+    approval: SnippetApprovalFilter = SnippetApprovalFilter.ALL,
+) -> SnippetListQuery:
+    """Build the composed list query the route's dependency yields.
+
+    :param sort: The raw ``sort`` value, or ``None`` for the spec default.
+    :param search: The raw search term, or ``None`` for no search.
+    :param approval: The approval-status filter.
+    :return: The composed list query.
+    """
+    spec = SnippetManager.list_query_spec
+    return SnippetListQuery(
+        core=ListQuery(
+            order_by=tuple(spec.resolve_sort(sort)),
+            search_predicate=build_search_predicate(search, spec.searchable),
+        ),
+        approval=approval,
+    )
 
 
 def _framework_processed_body(
@@ -121,11 +146,44 @@ class TestLoadAndListScripts:
         request_less_session: AsyncSession,
         create_snippet: Callable[..., Awaitable[Snippet]],
     ) -> None:
-        """Return one ``SnippetScript`` per discovered snippet row."""
+        """Return one ``SnippetScript`` per discovered snippet row, with the total."""
         await create_snippet("a.sh")
         await create_snippet("b.sh")
-        scripts = await snippet_source.list_scripts()
+        scripts, total = await snippet_source.list_scripts(None, None)
         assert sorted(script.filename for script in scripts) == ["a.sh", "b.sh"]
+        assert total == len(scripts)
+
+    async def test_list_scripts_pushes_query_down_to_sql(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Filter and order the page through the Core list-query push-down."""
+        await create_snippet("mysql-dump.sh")
+        await create_snippet("pg-vacuum.sh")
+
+        scripts, total = await snippet_source.list_scripts(
+            _snippet_query(sort="filename", search="mysql"), Pagination()
+        )
+
+        assert [script.filename for script in scripts] == ["mysql-dump.sh"]
+        assert total == 1
+
+    async def test_list_scripts_applies_the_snippets_filters(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Compose the approval filter with the Core query in the same push-down."""
+        await create_snippet("approved.sh", approved=True)
+        await create_snippet("pending.sh")
+
+        scripts, total = await snippet_source.list_scripts(
+            _snippet_query(approval=SnippetApprovalFilter.APPROVED), Pagination()
+        )
+
+        assert [script.filename for script in scripts] == ["approved.sh"]
+        assert total == 1
 
 
 class TestLoadScriptsBatch:

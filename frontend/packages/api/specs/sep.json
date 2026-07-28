@@ -1029,27 +1029,6 @@
         "title": "SnippetApprovalFilter",
         "type": "string"
       },
-      "SnippetSortDirection": {
-        "description": "Enumerate the sort direction.\n\n:cvar ASC: Ascending order.\n:cvar DESC: Descending order.",
-        "enum": [
-          "asc",
-          "desc"
-        ],
-        "title": "SnippetSortDirection",
-        "type": "string"
-      },
-      "SnippetSortKey": {
-        "description": "Enumerate the allowlisted public sort keys.\n\nMembership is the type: an out-of-allowlist key fails to coerce at the\nrequest boundary, so no raw client-supplied column name can reach a query.\n\n:cvar CREATED_AT: Sort by the ``created_at`` column.\n:cvar FILENAME: Sort by the ``filename`` column.\n:cvar APPROVED_AT: Sort by the ``approved_at`` column.\n:cvar TITLE: Sort by the ``meta.title`` JSON value.\n:cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.",
-        "enum": [
-          "created_at",
-          "filename",
-          "approved_at",
-          "title",
-          "service_type"
-        ],
-        "title": "SnippetSortKey",
-        "type": "string"
-      },
       "SourceEnum": {
         "const": "pmm",
         "description": "Enumeration of possible data sources for a node.\n\n:cvar PMM: Represents the PMM data source.\n:vartype PMM: str",
@@ -18163,7 +18142,7 @@
     },
     "/api/apps/snippets/": {
       "get": {
-        "description": "List scripts as a server-filtered, sorted, paginated projection.",
+        "description": "List scripts as a filtered, sorted, paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
         "parameters": [
           {
@@ -18187,46 +18166,6 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Case-insensitive search over filename, title, description.",
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Case-insensitive search over filename, title, description.",
-              "title": "Search"
-            }
-          },
-          {
-            "description": "Sort key; one of the allowlisted public sort keys.",
-            "in": "query",
-            "name": "sort",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortKey",
-              "default": "created_at",
-              "description": "Sort key; one of the allowlisted public sort keys."
-            }
-          },
-          {
-            "description": "Sort direction.",
-            "in": "query",
-            "name": "order",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortDirection",
-              "default": "desc",
-              "description": "Sort direction."
             }
           },
           {
@@ -18268,6 +18207,32 @@
               "description": "When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'.",
               "title": "Uncategorized",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-approved_at",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
             }
           }
         ],

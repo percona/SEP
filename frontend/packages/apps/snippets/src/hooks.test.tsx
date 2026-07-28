@@ -241,7 +241,7 @@ describe('useSnippets', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50 });
+    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50, sort: '-created_at' });
     expect(result.current.data).toEqual({
       items: [{ filename: 'a.sh' }, { filename: 'b.sh' }],
       pagination: { total: 2, offset: 0, limit: 50 },
@@ -259,7 +259,21 @@ describe('useSnippets', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(lastConfig?.params).toEqual({ offset: 50, limit: 50 });
+    expect(lastConfig?.params).toEqual({ offset: 50, limit: 50, sort: '-created_at' });
+  });
+
+  it('pins the newest-first sort rather than relying on the endpoint default', async () => {
+    responseBody = { items: [], total: 0, offset: 0, limit: 50 };
+
+    // The endpoint defaults to approved-first, since the manager spec is the single
+    // ordering authority for every consumer; this page wants newest-first and says so.
+    const { result } = renderHook(() => useSnippets(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.params).toMatchObject({ sort: '-created_at' });
   });
 
   it('forwards search/approval/service_type filters as query params', async () => {
@@ -298,7 +312,12 @@ describe('useSnippets', () => {
 
     // toEqual ignores undefined-valued keys, so the blank search is absent while
     // the defined service_type survives.
-    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50, service_type: 'all' });
+    expect(lastConfig?.params).toEqual({
+      offset: 0,
+      limit: 50,
+      service_type: 'all',
+      sort: '-created_at',
+    });
   });
 
   it('forwards the uncategorized flag as a query param', async () => {
@@ -344,7 +363,7 @@ describe('useSnippets', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50 });
+    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50, sort: '-created_at' });
   });
 
   it('keeps the previous page visible while the next page loads (keepPreviousData)', async () => {

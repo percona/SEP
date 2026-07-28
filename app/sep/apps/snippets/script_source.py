@@ -20,9 +20,13 @@ This adapter is the first real adoption of
 ``derive_script_routes`` needs around the existing snippets engine
 (``app/sep/snippets/``), so :data:`~app.sep.apps.snippets.app.app` can declare
 ``script_source=`` instead of hand-wiring the listing / per-script schema /
-execute / history routes. Being DB-backed, it also opts into the server list-page
-capability (``list_query_dep`` + ``list_page``), pushing search/filter/sort/paging
-down to SQL instead of fetching every row and slicing in-process.
+execute / history routes. Being DB-backed, its ``list_scripts`` hook pushes the
+list route's search/sort/filter/paging down to SQL (via
+:meth:`~app.sep.snippets.crud.SnippetManager.snippet_list_page` over
+:attr:`~app.sep.snippets.crud.SnippetManager.list_query_spec`) instead of fetching
+every row and slicing in-process. Its ``list_query_dep`` composes the Core sort/search
+dependency with the snippets approval and service-type filters, so the spec stays the
+sole sort allowlist while the route keeps its filter surface.
 
 Three real couplings the synthetic kit deferred are bridged here:
 
@@ -58,7 +62,7 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
-from app.core.pagination import PaginatedResponse, Pagination
+from app.core.pagination import Pagination
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.framework.script_helpers import build_artifact_download_url
 from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
@@ -210,12 +214,38 @@ async def _load_script(filename: str) -> SnippetScript:
         return SnippetScript(_detach(session, snippet))
 
 
-async def _list_scripts() -> list[SnippetScript]:
-    """Return every discovered snippet as a detached :class:`SnippetScript`."""
+async def _list_scripts(
+    list_query: SnippetListQuery | None, pagination: Pagination | None
+) -> tuple[list[SnippetScript], int]:
+    """Return a filtered, sorted, paginated page of snippets and the filtered total.
+
+    The Core sort/search, the snippets approval and service-type filters, and the
+    filtered total are all pushed down to
+    :meth:`~app.sep.snippets.crud.SnippetManager.snippet_list_page`, so the count and
+    data queries share predicates and the ``total`` matches the visible page. The rows
+    are expunged so they stay usable after the request-less session closes, mirroring
+    :func:`_load_script`. The snippets list route always derives a query, so
+    ``list_query`` and ``pagination`` are always supplied; the ``None`` fallbacks keep
+    the hook honest against the framework's non-query call shapes.
+
+    :param list_query: The resolved sort/search/filter selections, or ``None`` for the
+        manager's default ordering with no filters.
+    :param pagination: The validated offset/limit window, or ``None`` for the first
+        default page.
+    :return: The page's wrapped snippets and the filtered total across all pages.
+    """
+    window = pagination if pagination is not None else Pagination()
     async_session = get_async_session_maker()
     async with async_session() as session:
-        snippets = await SnippetManager.list(session)
-        return [SnippetScript(_detach(session, snippet)) for snippet in snippets]
+        if list_query is not None:
+            page = await SnippetManager.snippet_list_page(
+                session, list_query=list_query, pagination=window
+            )
+        else:
+            page = await SnippetManager.list_paginated(session, pagination=window)
+        for snippet in page.items:
+            session.expunge(snippet)
+    return [SnippetScript(snippet) for snippet in page.items], page.total
 
 
 async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
@@ -269,31 +299,6 @@ async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
             for spelling in requested:
                 resolved[spelling] = detached
     return {filename: SnippetScript(snippet) for filename, snippet in resolved.items()}
-
-
-async def _list_page(
-    pagination: Pagination, list_query: SnippetListQuery
-) -> PaginatedResponse[SnippetScript]:
-    """Return a filtered, sorted, paginated page of snippets from the local DB.
-
-    The SQL search/filter/sort and the filtered total run in
-    :meth:`~app.sep.snippets.crud.SnippetManager.snippet_list_page`; the rows are
-    expunged (mirroring :func:`_list_scripts`) so they stay usable after the
-    request-less session closes, and wrapped as :class:`SnippetScript` for the
-    framework to project through ``list_response``.
-
-    :param pagination: The validated offset/limit window for this page.
-    :param list_query: The validated sort/search/filter selections.
-    :return: A paginated response over the page's wrapped snippets.
-    """
-    async_session = get_async_session_maker()
-    async with async_session() as session:
-        page = await SnippetManager.snippet_list_page(
-            session, list_query=list_query, pagination=pagination
-        )
-        for snippet in page.items:
-            session.expunge(snippet)
-    return page.map_items(SnippetScript)
 
 
 def _build_form_schema(script: SnippetScript) -> AppSchema:
@@ -362,5 +367,4 @@ snippet_source = ScriptSource(
     static_schema=SNIPPETS_PLUGIN_SCHEMA,
     list_response_model=SnippetResponse,
     list_query_dep=get_snippet_list_query,
-    list_page=_list_page,
 )
