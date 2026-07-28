@@ -55,6 +55,7 @@ __all__ = [
     "resolve_nested_field",
     "resolve_nested_field_metadata",
     "resolve_nested_value",
+    "unwrap_secrets_for_storage",
 ]
 
 import functools
@@ -1145,6 +1146,41 @@ def _unwrap_secret_value(current: Any) -> str | bytes | None:
     if isinstance(current, SecretStr | SecretBytes):
         return current.get_secret_value()
     return None
+
+
+def unwrap_secrets_for_storage(value: Any) -> Any:
+    """Return a JSON-column-safe form of ``value`` with secrets as plaintext.
+
+    Override rows persist through a JSON column. Assigning a
+    :class:`~pydantic.SecretStr` / :class:`~pydantic.SecretBytes` (or a
+    model/mapping that contains one) is unsafe: Pydantic's secret-aware
+    serialisation rewrites the credential to :data:`SECRET_STR_MASK`, and that
+    mask is what ends up stored. Snapshot load expects plaintext JSON and
+    re-wraps via :func:`coerce_field_value` / :func:`materialize_override_value`.
+
+    :param value: A coerced/materialized PATCH value, possibly containing
+        secret wrappers.
+    :type value: Any
+    :return: ``value`` with every secret wrapper replaced by its plain
+        ``get_secret_value()`` (``SecretBytes`` decoded as UTF-8 with
+        surrogateescape so the result stays JSON-serialisable).
+    :rtype: Any
+    """
+    unwrapped = _unwrap_secret_value(value)
+    if unwrapped is not None:
+        if isinstance(unwrapped, bytes):
+            return unwrapped.decode("utf-8", errors="surrogateescape")
+        return unwrapped
+    if isinstance(value, BaseModel):
+        return {
+            name: unwrap_secrets_for_storage(getattr(value, name))
+            for name in value.__class__.model_fields
+        }
+    if isinstance(value, Mapping):
+        return {key: unwrap_secrets_for_storage(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [unwrap_secrets_for_storage(item) for item in value]
+    return value
 
 
 def _metadata_has_credential_url_serializer(metadata: tuple[Any, ...]) -> bool:

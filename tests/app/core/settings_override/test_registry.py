@@ -40,6 +40,7 @@ from app.core.settings_override.registry import (
     ReloadClassification,
     resolve_nested_field_metadata,
     SECRET_STR_MASK,
+    unwrap_secrets_for_storage,
 )
 from app.core.utils.pydantic import field_with_metadata
 from app.inventory.config import InventorySettings
@@ -214,6 +215,41 @@ def test_preserve_patch_secret_value_for_dict_of_secrets() -> None:
     preserved = preserve_patch_credential_url_value(field, current, incoming)
     assert preserved["api_key"] == "stored-dict-secret"
     assert preserved["token"] == "replacement-token"
+
+
+def test_unwrap_secrets_for_storage_scalar_secret() -> None:
+    """Assert a SecretStr is persisted as plaintext, not the JSON mask."""
+    assert (
+        unwrap_secrets_for_storage(SecretStr("stored-top-secret"))
+        == "stored-top-secret"
+    )
+
+
+def test_unwrap_secrets_for_storage_nested_model() -> None:
+    """Assert SecretStr leaves inside a model dump to plaintext for JSON storage."""
+    current = _SecretLeafModel(api_key=SecretStr("stored-nested-secret"), label="ok")
+    assert unwrap_secrets_for_storage(current) == {
+        "api_key": "stored-nested-secret",
+        "label": "ok",
+    }
+
+
+def test_unwrap_secrets_for_storage_dict_of_secrets() -> None:
+    """Assert secret-valued dict entries unwrap per key."""
+    current = {
+        "api_key": SecretStr("stored-dict-secret"),
+        "token": SecretStr("keep-me"),
+    }
+    assert unwrap_secrets_for_storage(current) == {
+        "api_key": "stored-dict-secret",
+        "token": "keep-me",
+    }
+
+
+def test_unwrap_secrets_for_storage_passes_through_non_secrets() -> None:
+    """Assert non-secret scalars and mappings are unchanged."""
+    assert unwrap_secrets_for_storage("plain") == "plain"
+    assert unwrap_secrets_for_storage({"a": 1}) == {"a": 1}
 
 
 def test_is_hot_reloadable_true_for_marked_field() -> None:

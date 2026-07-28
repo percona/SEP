@@ -1323,6 +1323,54 @@ class TestGlobalSettingsClass:
         )
         assert [r.key for r in rows] == ["PMM__verify_ssl"]
 
+    async def test_pmm_api_key_patch_persists_plaintext(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Persist the real secret string, not Pydantic's ``**********`` JSON mask."""
+        secret = "sep-1615-persist-plaintext"
+        try:
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__api_key": secret},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json()[0]["value"] == "**********"
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.SETTINGS
+            )
+            assert len(rows) == 1
+            assert rows[0].key == "PMM__api_key"
+            assert rows[0].value == secret
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
+
+    async def test_pmm_api_key_masked_patch_preserves_stored_secret(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep the stored secret when the client resubmits the redacted mask."""
+        secret = "sep-1615-mask-roundtrip"
+        try:
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/Settings",
+                    json={"PMM__api_key": secret},
+                ).status_code
+                == status.HTTP_200_OK
+            )
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__api_key": "**********"},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json()[0]["value"] == "**********"
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.SETTINGS
+            )
+            assert len(rows) == 1
+            assert rows[0].value == secret
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
+
     async def test_logging_hot_patch_persists(
         self, api_admin_client: TestClient, override_session: AsyncSession
     ) -> None:
