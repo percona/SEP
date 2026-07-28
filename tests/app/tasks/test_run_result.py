@@ -107,7 +107,7 @@ def _history(output_files_path: str | None = _OUTPUT_FILES_PATH) -> TaskHistory:
 
 
 class _SessionBoundExecutor(NomadExecutor):
-    """A Nomad executor whose file read is bound to the live aiohttp session.
+    """Stand in for a Nomad executor whose file read needs the live session.
 
     ``NomadExecutor.stream_file`` reaches ``self.session`` on its first line, by
     way of ``BaseRemoteAPI._request``, and raises exactly this ``AttributeError``
