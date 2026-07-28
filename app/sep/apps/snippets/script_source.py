@@ -277,7 +277,7 @@ async def _list_page(
     """Return a filtered, sorted, paginated page of snippets from the local DB.
 
     The SQL search/filter/sort and the filtered total run in
-    :meth:`~app.sep.snippets.crud.SnippetManager.list_query_page`; the rows are
+    :meth:`~app.sep.snippets.crud.SnippetManager.snippet_list_page`; the rows are
     expunged (mirroring :func:`_list_scripts`) so they stay usable after the
     request-less session closes, and wrapped as :class:`SnippetScript` for the
     framework to project through ``list_response``.
@@ -288,7 +288,7 @@ async def _list_page(
     """
     async_session = get_async_session_maker()
     async with async_session() as session:
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session, list_query=list_query, pagination=pagination
         )
         for snippet in page.items:

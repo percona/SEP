@@ -246,7 +246,7 @@ class TestSnippetsApiList:
         )
 
     async def test_unauthenticated_caller_is_rejected(self, api_unauthenticated_client):
-        """Anonymous callers get a structured 401, not a redirect or a page."""
+        """Reject anonymous callers with a structured 401, not a redirect or a page."""
         response = api_unauthenticated_client.get(
             f"{API_BASE}/", follow_redirects=False
         )
@@ -328,7 +328,7 @@ class TestSnippetsApiServiceTypes:
         assert body["has_uncategorized"] is True
 
     async def test_unauthenticated_caller_is_rejected(self, api_unauthenticated_client):
-        """The facet endpoint rejects anonymous callers with a 401."""
+        """Reject anonymous callers on the facet endpoint with a 401."""
         response = api_unauthenticated_client.get(
             f"{API_BASE}/service_types", follow_redirects=False
         )

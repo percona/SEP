@@ -605,6 +605,3 @@ def get_snippet_list_query(
         service_type=service_type,
         uncategorized=uncategorized,
     )
-
-
-SnippetListQueryDep = Annotated[SnippetListQuery, Depends(get_snippet_list_query)]

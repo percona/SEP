@@ -235,9 +235,9 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         query_options: Sequence = (),
-        order_by: Iterable[ColumnExpressionOrStrLabelArgument] | None = None,
         offset: int | None = None,
         limit: int | None = None,
+        order_by: Sequence[ColumnExpressionOrStrLabelArgument] | None = None,
         **equal_filters: Any,
     ) -> TupleResult | ScalarResult:
         ordering = order_by if order_by is not None else cls._get_ordering()
@@ -507,9 +507,9 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         query_options: Sequence = (),
-        order_by: Iterable[ColumnExpressionOrStrLabelArgument] | None = None,
         offset: int | None = None,
         limit: int | None = None,
+        order_by: Sequence[ColumnExpressionOrStrLabelArgument] | None = None,
         **equal_filters: Any,
     ) -> list[T]:
         """Return a list of matching records, optionally paginated.
@@ -519,12 +519,12 @@ class BaseManager:
         :param select_related: Fields to be loaded using `joinedload` for related
             objects.
         :param query_options: Additional SQLAlchemy query options to apply.
-        :param order_by: Column expressions overriding the manager's default
-            ordering for this call, or ``None`` (default) to use it.
         :param offset: The zero-based starting offset for the query results, or
             ``None`` (default) to return all matching records from the beginning.
         :param limit: The maximum number of records to return, or ``None``
             (default) to return all matching records.
+        :param order_by: Column expressions overriding the manager's default
+            ordering for this call, or ``None`` (default) to use it.
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :return: A list of matching records.
@@ -548,7 +548,7 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         select_related: Sequence = (),
         query_options: Sequence = (),
-        order_by: Iterable[ColumnExpressionOrStrLabelArgument] | None = None,
+        order_by: Sequence[ColumnExpressionOrStrLabelArgument] | None = None,
         pagination: Pagination,
         **equal_filters: Any,
     ) -> PaginatedResponse[T]:

@@ -259,6 +259,12 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const snippets = listResult?.items ?? [];
   const listPagination = listResult?.pagination ?? null;
 
+  const step = listPagination ? Math.max(listPagination.limit, 1) : 1;
+  const lastPageIndex = listPagination
+    ? Math.max(0, Math.ceil(listPagination.total / step) - 1)
+    : 0;
+  const currentPageIndex = listPagination ? Math.floor(listPagination.offset / step) : 0;
+
   // Snap back to the last populated page when a mutation (approve / remove /
   // batch) shrinks the filtered total below the current offset, so the user is
   // never stranded on an out-of-range empty page. Filter-change resets are
@@ -267,13 +273,11 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
     if (!listPagination) {
       return;
     }
-    const { total, limit, offset } = listPagination;
-    const step = Math.max(limit, 1);
-    const lastOffset = total === 0 ? 0 : (Math.ceil(total / step) - 1) * step;
-    if (offset > lastOffset) {
+    const lastOffset = lastPageIndex * step;
+    if (listPagination.offset > lastOffset) {
       setListPage((prev) => ({ ...prev, offset: lastOffset }));
     }
-  }, [listPagination]);
+  }, [listPagination, lastPageIndex, step]);
   const batchApprove = useBatchApproveSnippets();
   const { data: capabilities } = useSnippetsCapabilities();
   const refresh = useRefreshSnippets();
@@ -311,15 +315,10 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const hasActiveFilters =
     debouncedSearch !== '' || approvalFilter !== 'all' || serviceTypeFilter !== ALL_SERVICES;
 
-  // Search, approval, and service-type filtering now run server-side over the
-  // whole dataset (see `useSnippets` above), so the current page is already the
-  // filtered result set — no client-side re-filtering.
-  const filteredSnippets = snippets;
-
   // Selection is scoped to the currently visible rows so batch approval never
   // touches snippets hidden by the active filters. Stale entries in `selected`
   // for now-hidden rows are ignored here rather than submitted.
-  const selectableSnippets = filteredSnippets.filter((snippet) => !snippet.is_approved);
+  const selectableSnippets = snippets.filter((snippet) => !snippet.is_approved);
   const selectedFilenames = selectableSnippets
     .filter((snippet) => selected.has(snippet.filename))
     .map((snippet) => snippet.filename);
@@ -643,7 +642,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredSnippets.map((snippet) => (
+                {snippets.map((snippet) => (
                   <TableRow
                     key={snippet.filename}
                     hover
@@ -716,13 +715,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
             <TablePagination
               component="div"
               count={listPagination.total}
-              page={Math.min(
-                Math.floor(listPagination.offset / Math.max(listPagination.limit, 1)),
-                Math.max(
-                  0,
-                  Math.ceil(listPagination.total / Math.max(listPagination.limit, 1)) - 1,
-                ),
-              )}
+              page={Math.min(currentPageIndex, lastPageIndex)}
               rowsPerPage={listPagination.limit}
               onPageChange={(_event, newPage) => {
                 setListPage((prev) => ({

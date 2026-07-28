@@ -83,7 +83,7 @@ class TestSnippetManagerGetOrCreate:
 
 @pytest.mark.asyncio
 class TestSnippetManagerListQueryPage:
-    """Test server-side search/filter/sort in ``SnippetManager.list_query_page``."""
+    """Test server-side search/filter/sort in ``SnippetManager.snippet_list_page``."""
 
     async def test_search_matches_filename_title_and_description(
         self, session, seed_snippet
@@ -94,7 +94,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "third.sh", description="dumps the MYSQL log")
         await seed_snippet(session, "skip.sh", title="Postgres", description="pg only")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(search="mysql"),
             pagination=Pagination(offset=0, limit=50),
@@ -114,7 +114,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "literal.sh", title="100% done")
         await seed_snippet(session, "decoy.sh", title="nothing here")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(search="100%"),
             pagination=Pagination(offset=0, limit=50),
@@ -127,7 +127,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "a.sh")
         await seed_snippet(session, "b.sh")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(search="   "),
             pagination=Pagination(offset=0, limit=50),
@@ -140,7 +140,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "approved.sh", approved=True)
         await seed_snippet(session, "pending.sh", approved=False)
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(approval=SnippetApprovalFilter.APPROVED),
             pagination=Pagination(offset=0, limit=50),
@@ -153,7 +153,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "approved.sh", approved=True)
         await seed_snippet(session, "pending.sh", approved=False)
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(approval=SnippetApprovalFilter.NOT_APPROVED),
             pagination=Pagination(offset=0, limit=50),
@@ -166,7 +166,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "mongo.sh", service_type="mongodb")
         await seed_snippet(session, "mysql.sh", service_type="mysql")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(service_type="mongodb"),
             pagination=Pagination(offset=0, limit=50),
@@ -181,7 +181,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "padded.sh", service_type="  mysql  ")
         await seed_snippet(session, "mongo.sh", service_type="mongodb")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(service_type="mysql"),
             pagination=Pagination(offset=0, limit=50),
@@ -198,7 +198,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "empty.sh", service_type="")
         await seed_snippet(session, "blank.sh", service_type="   ")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(uncategorized=True),
             pagination=Pagination(offset=0, limit=50),
@@ -217,12 +217,12 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "literal.sh", service_type="__uncategorized__")
         await seed_snippet(session, "absent.sh")
 
-        uncategorized_page = await SnippetManager.list_query_page(
+        uncategorized_page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(uncategorized=True),
             pagination=Pagination(offset=0, limit=50),
         )
-        equality_page = await SnippetManager.list_query_page(
+        equality_page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(service_type="__uncategorized__"),
             pagination=Pagination(offset=0, limit=50),
@@ -238,7 +238,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "typed.sh", service_type="mysql")
         await seed_snippet(session, "absent.sh")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(service_type="mysql", uncategorized=True),
             pagination=Pagination(offset=0, limit=50),
@@ -256,7 +256,7 @@ class TestSnippetManagerListQueryPage:
             await seed_snippet(session, f"mysql-{index}.sh", service_type="mysql")
         await seed_snippet(session, "mongo.sh", service_type="mongodb")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(service_type="mysql"),
             pagination=Pagination(offset=0, limit=page_limit),
@@ -276,10 +276,10 @@ class TestSnippetManagerListQueryPage:
             sort_key=SnippetSortKey.SERVICE_TYPE,
             sort_direction=SnippetSortDirection.ASC,
         )
-        first = await SnippetManager.list_query_page(
+        first = await SnippetManager.snippet_list_page(
             session, list_query=query, pagination=Pagination(offset=0, limit=2)
         )
-        second = await SnippetManager.list_query_page(
+        second = await SnippetManager.snippet_list_page(
             session, list_query=query, pagination=Pagination(offset=2, limit=2)
         )
 
@@ -292,7 +292,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "two.sh", title="Alpha")
         await seed_snippet(session, "three.sh", title="Bravo")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(
                 sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.ASC
@@ -308,7 +308,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "b.sh", title="B", service_type="mysql")
         await seed_snippet(session, "a.sh", title="A", service_type="mongodb")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(sort_key=sort_key),
             pagination=Pagination(offset=0, limit=50),
@@ -331,14 +331,14 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "no-title-1.sh")
         await seed_snippet(session, "no-title-2.sh")
 
-        ascending = await SnippetManager.list_query_page(
+        ascending = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(
                 sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.ASC
             ),
             pagination=Pagination(offset=0, limit=50),
         )
-        descending = await SnippetManager.list_query_page(
+        descending = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(
                 sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.DESC
@@ -370,7 +370,7 @@ class TestSnippetManagerListQueryPage:
         for name in ("b.sh", "a.sh", "c.sh"):
             await seed_snippet(session, name)
 
-        ascending = await SnippetManager.list_query_page(
+        ascending = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(
                 sort_key=SnippetSortKey.FILENAME,
@@ -378,7 +378,7 @@ class TestSnippetManagerListQueryPage:
             ),
             pagination=Pagination(offset=0, limit=50),
         )
-        descending = await SnippetManager.list_query_page(
+        descending = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(
                 sort_key=SnippetSortKey.FILENAME,
@@ -405,12 +405,12 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "blank.sh", service_type="   ")
         await seed_snippet(session, "typed.sh", service_type="mysql")
 
-        equality_page = await SnippetManager.list_query_page(
+        equality_page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(service_type=""),
             pagination=Pagination(offset=0, limit=50),
         )
-        uncategorized_page = await SnippetManager.list_query_page(
+        uncategorized_page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(uncategorized=True),
             pagination=Pagination(offset=0, limit=50),
@@ -430,7 +430,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "a_b.sh", title="a_b match")
         await seed_snippet(session, "axb.sh", title="axb decoy")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(search="a_b"),
             pagination=Pagination(offset=0, limit=50),
@@ -443,7 +443,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "match.sh", title=r"path\to\file")
         await seed_snippet(session, "decoy.sh", title="pathtofile")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(search=r"path\to"),
             pagination=Pagination(offset=0, limit=50),
@@ -456,7 +456,7 @@ class TestSnippetManagerListQueryPage:
         await seed_snippet(session, "cafe.sh", title="Café Menu")
         await seed_snippet(session, "plain.sh", title="Diner")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(search="café"),
             pagination=Pagination(offset=0, limit=50),
@@ -466,7 +466,7 @@ class TestSnippetManagerListQueryPage:
 
     async def test_empty_table_returns_zero_total(self, session):
         """Yield an empty page with a zero total for an empty table."""
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(),
             pagination=Pagination(offset=0, limit=50),
@@ -556,7 +556,7 @@ class TestSnippetManagerServiceTypeNormalizationAgrees:
         service_types, has_uncategorized = await SnippetManager.list_service_types(
             session
         )
-        uncategorized_page = await SnippetManager.list_query_page(
+        uncategorized_page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(uncategorized=True),
             pagination=Pagination(offset=0, limit=50),
@@ -576,7 +576,7 @@ class TestSnippetManagerServiceTypeNormalizationAgrees:
         await seed_snippet(session, "mongo.sh", service_type="mongodb")
 
         service_types, _ = await SnippetManager.list_service_types(session)
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             session,
             list_query=SnippetListQuery(service_type="mysql\t"),
             pagination=Pagination(offset=0, limit=50),
@@ -603,7 +603,7 @@ class TestSnippetManagerListQueryOnPostgres:
         await seed_snippet(postgres_session, "third.sh", description="the MYSQL log")
         await seed_snippet(postgres_session, "skip.sh", title="Postgres")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             postgres_session,
             list_query=SnippetListQuery(search="mysql"),
             pagination=Pagination(offset=0, limit=50),
@@ -618,7 +618,7 @@ class TestSnippetManagerListQueryOnPostgres:
         await seed_snippet(postgres_session, "padded.sh", service_type="  mysql  ")
         await seed_snippet(postgres_session, "mongo.sh", service_type="mongodb")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             postgres_session,
             list_query=SnippetListQuery(service_type="mysql"),
             pagination=Pagination(offset=0, limit=50),
@@ -634,7 +634,7 @@ class TestSnippetManagerListQueryOnPostgres:
         await seed_snippet(postgres_session, "absent.sh")
         await seed_snippet(postgres_session, "blank.sh", service_type="   ")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             postgres_session,
             list_query=SnippetListQuery(uncategorized=True),
             pagination=Pagination(offset=0, limit=50),
@@ -650,7 +650,7 @@ class TestSnippetManagerListQueryOnPostgres:
         await seed_snippet(postgres_session, "two.sh", title="Alpha")
         await seed_snippet(postgres_session, "three.sh", title="Bravo")
 
-        page = await SnippetManager.list_query_page(
+        page = await SnippetManager.snippet_list_page(
             postgres_session,
             list_query=SnippetListQuery(
                 sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.ASC
@@ -674,14 +674,14 @@ class TestSnippetManagerListQueryOnPostgres:
         await seed_snippet(postgres_session, "no-title-1.sh")
         await seed_snippet(postgres_session, "no-title-2.sh")
 
-        ascending = await SnippetManager.list_query_page(
+        ascending = await SnippetManager.snippet_list_page(
             postgres_session,
             list_query=SnippetListQuery(
                 sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.ASC
             ),
             pagination=Pagination(offset=0, limit=50),
         )
-        descending = await SnippetManager.list_query_page(
+        descending = await SnippetManager.snippet_list_page(
             postgres_session,
             list_query=SnippetListQuery(
                 sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.DESC
@@ -713,10 +713,10 @@ class TestSnippetManagerListQueryOnPostgres:
             sort_key=SnippetSortKey.SERVICE_TYPE,
             sort_direction=SnippetSortDirection.ASC,
         )
-        first = await SnippetManager.list_query_page(
+        first = await SnippetManager.snippet_list_page(
             postgres_session, list_query=query, pagination=Pagination(offset=0, limit=2)
         )
-        second = await SnippetManager.list_query_page(
+        second = await SnippetManager.snippet_list_page(
             postgres_session, list_query=query, pagination=Pagination(offset=2, limit=2)
         )
 
@@ -749,7 +749,7 @@ class TestSnippetManagerListQueryOnPostgres:
         service_types, has_uncategorized = await SnippetManager.list_service_types(
             postgres_session
         )
-        uncategorized_page = await SnippetManager.list_query_page(
+        uncategorized_page = await SnippetManager.snippet_list_page(
             postgres_session,
             list_query=SnippetListQuery(uncategorized=True),
             pagination=Pagination(offset=0, limit=50),

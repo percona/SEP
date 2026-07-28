@@ -31,6 +31,7 @@ from app.sep.snippets.list_query import (
     SnippetListQuery,
     SnippetSortColumn,
     SnippetSortDirection,
+    SnippetSortKey,
     TIE_BREAKER_COLUMN,
 )
 from app.sep.snippets.models import Snippet
@@ -111,8 +112,9 @@ class SnippetManager(BaseSQLModelManager):
         """
         filters: list[ColumnExpressionArgument[bool]] = []
 
-        if list_query.search and list_query.search.strip():
-            pattern = f"%{_escape_like(list_query.search.strip())}%"
+        term = list_query.search.strip() if list_query.search else ""
+        if term:
+            pattern = f"%{_escape_like(term)}%"
             filters.append(
                 or_(
                     col(Snippet.filename).ilike(pattern, escape=_LIKE_ESCAPE_CHAR),
@@ -132,7 +134,6 @@ class SnippetManager(BaseSQLModelManager):
 
         service_type_raw, service_type_trimmed = cls._service_type_exprs(engine)
         if list_query.uncategorized:
-            # "No service type" means absent (JSON NULL) or blank after trimming.
             filters.append(or_(service_type_raw.is_(None), service_type_trimmed == ""))
         elif list_query.service_type is not None:
             # Strip only spaces on the filter value to mirror SQL ``TRIM``'s default,
@@ -167,13 +168,12 @@ class SnippetManager(BaseSQLModelManager):
         else:
             primary = primary.asc()
         primary = primary.nulls_last()
-        tie_breaker = SnippetSortColumn("column", TIE_BREAKER_COLUMN)
-        if sort_column == tie_breaker:
+        if list_query.sort_key is SnippetSortKey.FILENAME:
             return [primary]
         return [primary, col(getattr(Snippet, TIE_BREAKER_COLUMN)).asc()]
 
     @classmethod
-    async def list_query_page(
+    async def snippet_list_page(
         cls,
         session: AsyncSession,
         *,

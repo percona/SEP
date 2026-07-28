@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared fixtures for the ``tests/app/sep/snippets`` subtree."""
+"""Define shared fixtures for the ``tests/app/sep/snippets`` subtree."""
 
 from collections.abc import Awaitable, Callable
 
