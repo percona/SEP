@@ -24,18 +24,17 @@ export interface FieldHelpIconProps {
   /** Tooltip body shown on hover/focus; also the accessible description. */
   description: string;
   /**
-   * Field label stored on `data-help-for` for per-field targeting.
-   * Kept out of aria-label so substring label queries do not also match the icon.
+   * Field label for `data-help-for` only — kept out of aria-label so label
+   * queries do not also match the icon.
    */
   label: string;
 }
 
 /**
- * Info-icon tooltip for schema form field help. Uses a non-button span so it
- * can sit inside MUI floating labels without nesting interactive controls.
- * Uses a constant aria-label ("Help"), is focusable via tabIndex, and passes
- * describeChild so the description reaches assistive tech without replacing
- * that name. Callers must omit this component when there is no description to show.
+ * Info-icon tooltip for schema form field help. Non-button span so it can sit
+ * inside MUI floating labels; focusable, with a constant accessible name and
+ * the description exposed via Tooltip describeChild. Omit when there is no
+ * description to show.
  */
 export function FieldHelpIcon({ description, label }: FieldHelpIconProps) {
   return (
@@ -70,11 +69,9 @@ export interface FieldLabelWithHelpProps {
 }
 
 /**
- * Field label with an optional info-icon tooltip sourced from `description`.
- * Returns a plain string when there is no description so callers that accept
- * `string | ReactNode` (and undescribed fields) keep a stable, icon-free label.
- * When a description is set, returns a ReactNode suitable for MUI label slots
- * (e.g. TextInput's `textFieldProps.label`, which overrides the string label).
+ * Field label with an optional info-icon tooltip from `description`.
+ * Returns a plain string when undescribed; otherwise a ReactNode for MUI
+ * label slots (e.g. TextInput `textFieldProps.label`).
  */
 export function FieldLabelWithHelp({ label, description }: FieldLabelWithHelpProps): ReactNode {
   if (!description) {

@@ -74,10 +74,11 @@ describe('SchemaFormRenderer field errors', () => {
     // Integer (helperText) field also surfaces its mapped error.
     expect(screen.getByText('must be positive')).toBeInTheDocument();
     expect(screen.queryByText('Max rows')).not.toBeInTheDocument();
-    // Help icons keep descriptions available even while helperText shows the error.
-    // MUI clones the label into the notched outline, so the help node may appear twice.
-    expect(document.querySelectorAll('[data-help-for="Title"]').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('[data-help-for="Row Limit"]').length).toBeGreaterThan(0);
+    // Help icons remain while helperText shows the error; pin count + visible <label>.
+    expect(document.querySelectorAll('[data-help-for="Title"]')).toHaveLength(2);
+    expect(document.querySelectorAll('label [data-help-for="Title"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-help-for="Row Limit"]')).toHaveLength(2);
+    expect(document.querySelectorAll('label [data-help-for="Row Limit"]')).toHaveLength(1);
     // The persistent banner is rendered.
     expect(screen.getByText(/Failed/)).toBeInTheDocument();
   });

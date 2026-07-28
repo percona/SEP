@@ -66,7 +66,7 @@ describe('FieldHelpIcon', () => {
     const help = screen.getByLabelText('Help');
     expect(help).toHaveAttribute('tabindex', '0');
     expect(help).toHaveAttribute('data-help-for', 'Enabled');
-    // describeChild: name stays "Help"; description comes from title / aria-describedby.
+    // describeChild keeps name "Help"; description via title / aria-describedby.
     expect(help).toHaveAccessibleDescription('Turn this on');
   });
 });

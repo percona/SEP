@@ -230,8 +230,9 @@ describe('SchemaFormRenderer — field rendering', () => {
     ];
     renderWithProviders(<SchemaFormRenderer sections={helpSections} onSubmit={() => {}} />);
 
-    // MUI clones the label into the notched outline, so the help node may appear twice.
-    expect(document.querySelectorAll('[data-help-for="Title"]').length).toBeGreaterThan(0);
+    // Notched-outline clone is aria-hidden; pin count + require a visible <label> hit.
+    expect(document.querySelectorAll('[data-help-for="Title"]')).toHaveLength(2);
+    expect(document.querySelectorAll('label [data-help-for="Title"]')).toHaveLength(1);
     expect(document.querySelectorAll('[data-help-for="Code"]')).toHaveLength(0);
   });
 });

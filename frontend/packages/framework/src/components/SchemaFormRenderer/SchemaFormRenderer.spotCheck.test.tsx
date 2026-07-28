@@ -47,10 +47,12 @@ function renderWithProviders(ui: ReactNode) {
 }
 
 function expectHelp(label: string, present: boolean) {
-  // aria-label is the constant "Help"; data-help-for disambiguates per field.
-  const matches = document.querySelectorAll(`[data-help-for="${CSS.escape(label)}"]`);
+  // Ignore the notched-outline legend clone so a legend-only render fails.
+  // Bool icons sit outside <label>, so we cannot scope to label alone.
+  const matches = [...document.querySelectorAll(`[data-help-for="${CSS.escape(label)}"]`)];
+  const visible = matches.filter((el) => !el.closest('.MuiOutlinedInput-notchedOutline'));
   if (present) {
-    expect(matches.length).toBeGreaterThan(0);
+    expect(visible.length).toBeGreaterThan(0);
   } else {
     expect(matches).toHaveLength(0);
   }
@@ -183,9 +185,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
   });
 
   it('atw CollectPane-like form: shared section plus namespaced per-snippet overrides', () => {
-    // Mirrors CollectPane: shared parameters first, then a collapsible card per
-    // selected snippet whose fields are namespaced (overrides.snipN.*) so two
-    // snippets can declare the same parameter name without colliding.
+    // CollectPane shape: shared params, then namespaced per-snippet overrides.
     const sections: FormSection[] = [
       {
         title: 'Shared parameters',
@@ -240,9 +240,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
   });
 
   it('dipper-like collector form: icons follow payload parameter descriptions', () => {
-    // Shape of a Dipper pcs-collect-pmm-* payload: mixed types whose descriptions
-    // come from the script frontmatter. Extra tag is undescribed on purpose to
-    // assert the negative case (real payloads usually describe every parameter).
+    // Dipper pcs-collect-pmm-* shape; Extra tag is undescribed for the negative case.
     const sections: FormSection[] = [
       {
         title: 'Parameters',
@@ -302,9 +300,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
   });
 
   it('snippet-execution form: user-authored params drive help icons (snippets + alert_troubleshooting)', () => {
-    // Widest-reach consumer via SnippetExecutionAccordion. Parameter descriptions
-    // come from snippet YAML frontmatter (not a fixed backend model); Execution
-    // adds framework controls — sudo carries a description when present, the host does not.
+    // SnippetExecutionAccordion: user-authored params + Execution (sudo described, host not).
     const sections: FormSection[] = [
       {
         title: 'Parameters',
