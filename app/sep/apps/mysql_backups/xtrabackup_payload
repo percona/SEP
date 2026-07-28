@@ -594,17 +594,30 @@ def is_encrypted_dir(
         XTRABACKUP_CHECKPOINTS,
     ),
     logger: logging.Logger | None = None,
+    method: str = "gpg",
 ) -> bool:
     """Check if all files in the directory are encrypted.
+
+    For ``method == "gpg"`` every non-excluded file is probed with
+    ``gpg --list-only --decrypt``. For ``method == "aes256"`` verification is by
+    file extension (every non-excluded file must end in ``.xbcrypt``), because
+    ``xbcrypt`` has no cheap header-only listing mode and this matches how the
+    restore side detects encryption. Excluded files are the backup metadata SEP
+    keeps in plaintext to read post-backup.
 
     :param path: Directory path.
     :param exclude_files: Files to exclude from the check.
     :param logger: Logger instance.
+    :param method: Encryption format to verify against (``"gpg"`` or ``"aes256"``).
     :return: True if all files are encrypted, False otherwise.
     """
     ppath = Path(path)
     for p in ppath.rglob("*"):
         if p.is_file() and p.name not in exclude_files:
+            if method == "aes256":
+                if p.suffix != ".xbcrypt":
+                    return False
+                continue
             cmd = [
                 GPG_BIN,
                 "--batch",
@@ -2187,6 +2200,16 @@ class Xtrabackup(Backup):
         # Purge old backups
         self._purge_old_backups()
 
+        # Runs for xtrabackup too (not just mariadb-backup): it mops up plaintext
+        # stragglers inline encryption misses (the copied my.cnf) and closes the
+        # gap where the aes256 path shipped entirely unverified.
+        if self.xtrabackup_aes256_keyfile:
+            self.encrypt_files_aes256(self.last_backup_dir)
+            if not is_encrypted_dir(
+                self.last_backup_dir, method='aes256', logger=self.logger
+            ):
+                raise BackupError('AES-256 verification failed')
+
         # Encrypt backup w/o upload as a separate option.
         # No hardlinking or rsync upload to avoid the mess.
         if self.post_run_encrypt:
@@ -2249,31 +2272,49 @@ class Xtrabackup(Backup):
                 self.logger.exception("Failed to write the run-result file.")
 
     def encrypt_files_aes256(self, dir_path, file_filter='*'):
-        """"aes256 encryption for specific file"""
+        """Encrypt matching plaintext files under a directory with xbcrypt/AES-256.
 
+        Recurses ``dir_path``, skipping files already carrying a ``.xbcrypt``
+        suffix and the backup metadata SEP keeps in plaintext to read post-backup.
+        With the default ``file_filter`` this is the xbcrypt analogue of the gpg
+        :func:`encrypt_dir`: for ``mariadb-backup`` (no inline encryption) it
+        encrypts the whole finished directory; for ``xtrabackup`` it only mops up
+        plaintext stragglers (e.g. the copied ``my.cnf``).
+
+        :param dir_path: Directory whose matching plaintext files are encrypted.
+        :param file_filter: ``rglob`` pattern selecting which files to encrypt.
+        """
+        exclude = (MD5SUM_FILE, UPLOADME_FILE, XTRABACKUP_INFO, XTRABACKUP_CHECKPOINTS)
         if dir_path:
-            files = iglob(os.path.join(dir_path, file_filter))
-            for filename in files:
-                self._run_encrypt_file_aes256(filename)
+            for p in sorted(Path(dir_path).rglob(file_filter)):
+                if p.is_file() and p.suffix != '.xbcrypt' and p.name not in exclude:
+                    self._run_encrypt_file_aes256(str(p))
+
+    def _run_xbcrypt(self, cmd, remove_path):
+        """Run an ``xbcrypt`` command, then delete ``remove_path`` on success.
+
+        :param cmd: The ``xbcrypt`` argument list to execute.
+        :param remove_path: File removed once the command succeeds (the plaintext
+            input on encrypt, the ``.xbcrypt`` input on decrypt).
+        :raises BackupError: If the command exits non-zero.
+        """
+        self.logger.info('Running: %s', ' '.join(cmd))
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _, err = proc.communicate()
+        if proc.returncode != 0:
+            self._clean_after_error()
+            raise BackupError('xbcrypt failed: %s' % (err,))
+        os.remove(remove_path)
 
     def _run_encrypt_file_aes256(self, file_path):
-        """Encrypt xtrabackup_checkpoints after backup."""
-
+        """Encrypt a single file in place with xbcrypt/AES-256."""
         if os.path.exists(file_path):
-            cmd = [XBCRYPT_BIN, '--encrypt-algo=AES256']
-            cmd.append('--encrypt-key-file=%s' % (self.xtrabackup_aes256_keyfile,))
-            cmd.append('--input=%s' % (file_path,))
-            cmd.append('--output=%s.xbcrypt' % (file_path,))
-
-            self.logger.info('Running: %s', ' '.join(cmd))
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            _, err = proc.communicate()
-            if proc.returncode != 0:
-                msg = 'Encrypting file failed: %s' % (err)
-                self._clean_after_error()
-                raise BackupError(msg)
-            else:
-                os.remove(file_path)
+            self._run_xbcrypt(
+                [XBCRYPT_BIN, '--encrypt-algo=AES256',
+                 '--encrypt-key-file=%s' % (self.xtrabackup_aes256_keyfile,),
+                 '--input=%s' % (file_path,), '--output=%s.xbcrypt' % (file_path,)],
+                file_path,
+            )
 
     def _check_ssh(self):
         """
@@ -2346,7 +2387,9 @@ class Xtrabackup(Backup):
             self.logger.info('Enabling compression using %s', self.compression_algorithm)
             xtrabackup_cmd.append('--compress={}'.format(self.compression_algorithm))
 
-        if self.xtrabackup_aes256_keyfile:
+        # mariadb-backup has no --encrypt option; it is encrypted post-run by
+        # _encrypt_dir_aes256 instead, so it keeps inline verify (verify_innodb).
+        if self.xtrabackup_aes256_keyfile and self.xtrabackup_bin_cmd != 'mariadb-backup':
             self.verify_innodb = False
             xtrabackup_cmd.append('--encrypt=AES256')
             xtrabackup_cmd.append('--encrypt-key-file=%s' % (self.xtrabackup_aes256_keyfile,))
@@ -2448,45 +2491,40 @@ class Xtrabackup(Backup):
 
         self.logger.info('OK Xtrabackup complete: %s', self.last_backup_dir)
 
+    def _decrypt_file_aes256(self, keyfile, input_path, output_path):
+        """Decrypt one xbcrypt/AES-256 file to ``output_path`` and drop the input.
+
+        No-ops when ``input_path`` is absent, so callers need not pre-check.
+
+        :param keyfile: Path to the AES-256 key file.
+        :param input_path: Path to the ``.xbcrypt`` file to decrypt.
+        :param output_path: Path the decrypted plaintext is written to.
+        :raises BackupError: If decryption fails.
+        """
+        if os.path.exists(input_path):
+            self._run_xbcrypt(
+                [XBCRYPT_BIN, '-d', '--encrypt-algo=AES256',
+                 '--encrypt-key-file=%s' % (keyfile,),
+                 '--input=%s' % (input_path,), '--output=%s' % (output_path,)],
+                input_path,
+            )
+
     def _decrypt_checkpoint_file(self, keyfile, path):
         """Decrypt xtrabackup_checkpoints after backup."""
-
-        if os.path.exists('%s/xtrabackup_checkpoints.xbcrypt' % (path,)):
-            cmd = [XBCRYPT_BIN, '-d', '--encrypt-algo=AES256', '--encrypt-key-file=%s' % (keyfile,),
-                   '--input=%s/xtrabackup_checkpoints.xbcrypt' % (path,),
-                   '--output=%s/xtrabackup_checkpoints' % (path,)]
-            self.logger.info('Running: %s', ' '.join(cmd))
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            _, err = proc.communicate()
-            if proc.returncode != 0:
-                msg = 'Checkpoint file decrypt failed: %s' % (err)
-                self._clean_after_error()
-                raise BackupError(msg)
-            else:
-                os.remove(os.path.join(path, 'xtrabackup_checkpoints.xbcrypt'))
+        self._decrypt_file_aes256(
+            keyfile,
+            '%s/xtrabackup_checkpoints.xbcrypt' % (path,),
+            '%s/xtrabackup_checkpoints' % (path,),
+        )
 
     def _decrypt_info_file(self, keyfile, path):
         """Decrypt xtrabackup_info after backup."""
-        if self.compress:
-            ext = self.get_compression_ext()
-            input_file = "xtrabackup_info{}.xbcrypt".format(ext)
-            output_file = "xtrabackup_info{}".format(ext)
-        else:
-            input_file = "xtrabackup_info.xbcrypt"
-            output_file = "xtrabackup_info"
-
-        if os.path.exists('%s/%s' % (path, input_file)):
-            cmd = [XBCRYPT_BIN, '-d', '--encrypt-algo=AES256', '--encrypt-key-file=%s' % (keyfile,),
-                   '--input=%s/%s' % (path, input_file), '--output=%s/%s' % (path, output_file)]
-            self.logger.info('Running: %s', ' '.join(cmd))
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            _, err = proc.communicate()
-            if proc.returncode != 0:
-                msg = 'Info file decrypt failed: %s' % (err)
-                self._clean_after_error()
-                raise BackupError(msg)
-            else:
-                os.remove(os.path.join(path, input_file))
+        ext = self.get_compression_ext() if self.compress else ''
+        self._decrypt_file_aes256(
+            keyfile,
+            '%s/xtrabackup_info%s.xbcrypt' % (path, ext),
+            '%s/xtrabackup_info%s' % (path, ext),
+        )
 
     def _decompress_info_file(self, path):
         """Decompress xtrabackup_info after backup."""
