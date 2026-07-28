@@ -30,11 +30,13 @@ import json
 import logging
 import posixpath
 from collections.abc import Awaitable, Callable
+from contextlib import AsyncExitStack
 from typing import Any
 
 import aiohttp
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.requests.remote_api import BaseRemoteAPI
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
@@ -73,6 +75,14 @@ async def read_run_result(
     undecodable, or not a JSON object. Only an unanticipated failure propagates
     to the caller's failure logging.
 
+    The read owns the executor's aiohttp session only when it arrives without
+    one: the Celery seam builds its executor through
+    :func:`app.tasks.deps.get_executor`, which never enters the async context, so
+    the session has to be opened here — and closed again, being bound to whatever
+    loop the worker reused for that task. A session the caller already opened is
+    left untouched, since the route seam is handed the one ``NomadLifecycle``
+    owns and every later log and file stream keeps streaming through it.
+
     :param executor: The executor that ran the task, used to read its files.
     :param history: The terminal history to read the result of; must have both
         ``task`` and ``execution_request`` loaded.
@@ -84,15 +94,19 @@ async def read_run_result(
     path = posixpath.join(task.output_files_path, RUN_RESULT_FILENAME)
     buffer = bytearray()
     try:
-        async for chunk in executor.stream_file(history, path, anonymize=False):
-            buffer.extend(chunk)
-            if len(buffer) > RUN_RESULT_MAX_BYTES:
-                logger.warning(
-                    "Run-result file for task history %s exceeds %d bytes; ignoring.",
-                    history.id,
-                    RUN_RESULT_MAX_BYTES,
-                )
-                return None
+        async with AsyncExitStack() as stack:
+            if isinstance(executor, BaseRemoteAPI) and executor.session is None:
+                await stack.enter_async_context(executor)
+            async for chunk in executor.stream_file(history, path, anonymize=False):
+                buffer.extend(chunk)
+                if len(buffer) > RUN_RESULT_MAX_BYTES:
+                    logger.warning(
+                        "Run-result file for task history %s exceeds %d bytes;"
+                        " ignoring.",
+                        history.id,
+                        RUN_RESULT_MAX_BYTES,
+                    )
+                    return None
         result = json.loads(buffer.decode())
     except (
         NotImplementedError,

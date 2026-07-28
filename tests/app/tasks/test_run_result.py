@@ -33,6 +33,7 @@ from app.tasks import hook_resolver
 from app.tasks.celery import sync_queue_item
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
+from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     Task,
@@ -52,6 +53,7 @@ from tests.app.factories import build_task_history, TaskFactory
 _RESULT = {"backup_dir": "/data/x", "size_bytes": 123, "upload_destination": "s3://b/x"}
 _OUTPUT_FILES_PATH = "run-script/local/output_files"
 _RESULT_PATH = f"{_OUTPUT_FILES_PATH}/{RUN_RESULT_FILENAME}"
+_NOMAD_ENDPOINT = "http://nomad.example:4646"
 
 _Stream = Callable[..., AsyncGenerator[bytes, None]]
 
@@ -102,6 +104,24 @@ def _history(output_files_path: str | None = _OUTPUT_FILES_PATH) -> TaskHistory:
     """Return an unsaved terminal history whose task has ``output_files_path``."""
     task = Task(name="recorder-task", output_files_path=output_files_path)
     return build_task_history(task)
+
+
+class _SessionBoundExecutor(NomadExecutor):
+    """A Nomad executor whose file read is bound to the live aiohttp session.
+
+    ``NomadExecutor.stream_file`` reaches ``self.session`` on its first line, by
+    way of ``BaseRemoteAPI._request``, and raises exactly this ``AttributeError``
+    when the executor was never entered. Standing in for that transport keeps the
+    session lifecycle in the test — a ``MagicMock`` executor stubs ``stream_file``
+    whole, so it cannot tell an entered executor from an un-entered one.
+    """
+
+    async def stream_file(self, *args, **kwargs) -> AsyncGenerator[bytes, None]:
+        """Yield the result bytes, failing as the real reader does with no session."""
+        del args, kwargs
+        if self.session is None:
+            raise AttributeError("'NoneType' object has no attribute 'request'")
+        yield _result_bytes()
 
 
 class TestReadRunResult:
@@ -248,6 +268,62 @@ class TestMaybeRecordRun:
             )
 
         assert results == [None]
+
+    @pytest.mark.asyncio
+    async def test_opens_the_session_of_a_non_entered_executor(self, mocker):
+        """Read through an un-entered executor, the one the Celery seam hands over.
+
+        ``sync_queue_item`` builds its executor with ``get_executor``, which never
+        enters the async context, so the read has to open the aiohttp session
+        itself — and close it again, since that session is bound to the loop the
+        Celery worker happened to reuse for the task.
+        """
+        calls = []
+
+        async def _recorder(session, history, result):
+            calls.append((history.id, result))
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder})
+        executor = _SessionBoundExecutor(endpoint=_NOMAD_ENDPOINT)
+        async with _recorder_db(
+            recorder="pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
+        ) as (maker, history_id):
+            mocker.patch(
+                "app.tasks.run_result.get_async_session_maker", return_value=maker
+            )
+            await maybe_record_run(history_id, executor)
+
+        assert calls == [(history_id, _RESULT)]
+        assert executor.session is None
+
+    @pytest.mark.asyncio
+    async def test_leaves_a_caller_owned_session_open(self, mocker):
+        """Leave an already-entered executor's session open after the read.
+
+        ``POST /history/{id}/sync/`` is handed the entered executor owned by
+        ``NomadLifecycle``; closing that session here would break every later log
+        and file stream the app serves through it.
+        """
+        calls = []
+
+        async def _recorder(session, history, result):
+            calls.append(result)
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder})
+        executor = _SessionBoundExecutor(endpoint=_NOMAD_ENDPOINT)
+        async with _recorder_db(
+            recorder="pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
+        ) as (maker, history_id):
+            mocker.patch(
+                "app.tasks.run_result.get_async_session_maker", return_value=maker
+            )
+            async with executor:
+                opened = executor.session
+                await maybe_record_run(history_id, executor)
+                still_open = executor.session is opened and not opened.closed
+
+        assert calls == [_RESULT]
+        assert still_open
 
     @pytest.mark.asyncio
     async def test_no_op_when_no_recorder_stamped(self, mocker):
