@@ -34,6 +34,7 @@ import { TableField } from './TableField';
 import { MultiTableField } from './MultiTableField';
 import { HostField } from './HostField';
 import { MultiHostField } from './MultiHostField';
+import { RemoteChoiceField } from './RemoteChoiceField';
 import { ScriptPreviewField } from './ScriptPreviewField';
 
 export {
@@ -55,6 +56,7 @@ export {
   MultiTableField,
   HostField,
   MultiHostField,
+  RemoteChoiceField,
   ScriptPreviewField,
 };
 
@@ -108,6 +110,8 @@ export function FieldRenderer({ field }: FieldRendererProps) {
       return <MultiHostField field={field} />;
     case 'script_preview':
       return <ScriptPreviewField field={field} />;
+    case 'remote_choice':
+      return <RemoteChoiceField field={field} />;
     default: {
       const exhaustive: never = field;
       void exhaustive;

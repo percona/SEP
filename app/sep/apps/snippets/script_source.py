@@ -16,7 +16,7 @@
 """Back the snippets plugin's JSON surface with the framework ``ScriptSource`` seam.
 
 This adapter is the first real adoption of
-:class:`~app.sep.apps.framework.script_source.ScriptSource`: it wires the six
+:class:`~app.sep.apps.framework.script_source.ScriptSource`: it wires the
 hooks ``derive_script_routes`` needs around the existing snippets engine
 (``app/sep/snippets/``), so :data:`~app.sep.apps.snippets.app.app` can declare
 ``script_source=`` instead of hand-wiring the listing / per-script schema /
@@ -30,20 +30,26 @@ Three real couplings the synthetic kit deferred are bridged here:
   ``-hostname-``). :class:`SnippetScript.get_execution_model` returns an *args-only*
   subclass that makes ``executor_host`` optional so that validation succeeds; the
   execute hook re-attaches the real host via ``model_construct``.
-* **The request-less listing.** ``load_script`` / ``list_scripts`` are plain
-  callables with no request or session, so they open their own request-less
-  session (mirroring ``app/sep/apps/snippets/celery.py``). Only loaded columns and file/meta
-  ``cached_property`` values are read after it closes — never a lazy relationship.
+* **The request-less listing.** ``load_script`` / ``list_scripts`` /
+  ``load_scripts`` are plain callables with no request or session, so they open
+  their own request-less session (mirroring ``app/sep/apps/snippets/celery.py``).
+  ``load_scripts`` resolves a whole selection in one ``IN`` query. Only loaded
+  columns and file/meta ``cached_property`` values are read after it closes —
+  never a lazy relationship.
 * **The request-less artifact URL.** :func:`build_snippet_source` reads
   ``SNIPPETS_BASE_URL`` / ``BASE_URL`` rather than the legacy request-derived
   fallback, so an unconfigured deployment fails loudly instead of emitting an
   executor-unreachable localhost URL.
 """
 
+from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
 from pydantic import create_model, Field
+from sqlmodel import col
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import (
@@ -151,12 +157,38 @@ def build_snippet_source(snippet: Snippet) -> str:
     )
 
 
+def snippet_not_found_detail(filename: str) -> str:
+    """Return the client-facing 404 detail for an unresolved snippet filename.
+
+    Single-sources the message shared by :func:`_load_script` and the ATW batch
+    routes, which reconstruct it for filenames the batch loader left unresolved.
+
+    :param filename: The requested snippet filename.
+    :return: The 404 detail string.
+    """
+    return f"Snippet {filename!r} not found."
+
+
+def _detach(session: AsyncSession, snippet: Snippet) -> Snippet:
+    """Expunge a snippet from its session so it stays usable after the session closes.
+
+    The request-less loaders below each read only loaded columns and file/meta
+    ``cached_property`` values once their session closes — never a lazy
+    relationship — so detaching the row keeps it usable without a live session.
+
+    :param session: The open session the snippet was loaded in.
+    :param snippet: The loaded snippet row.
+    :return: The now-detached snippet.
+    """
+    session.expunge(snippet)
+    return snippet
+
+
 async def _load_script(filename: str) -> SnippetScript:
     """Resolve a snippet filename to a detached :class:`SnippetScript`.
 
-    Opens a request-less session, fetches the row, and expunges it so the script
-    stays usable after the session closes (only loaded columns and file/meta
-    ``cached_property`` values are read thereafter).
+    Opens a request-less session, fetches the row, and detaches it via
+    :func:`_detach` so the script stays usable after the session closes.
 
     :param filename: The snippet filename.
     :return: The wrapped, detached snippet.
@@ -169,9 +201,8 @@ async def _load_script(filename: str) -> SnippetScript:
     async with async_session() as session:
         snippet = await SnippetManager.get_or_404(session, filename=filename)
         if not snippet.path.is_file():
-            raise HTTPNotFoundException(detail=f"Snippet {filename!r} not found.")
-        session.expunge(snippet)
-    return SnippetScript(snippet)
+            raise HTTPNotFoundException(detail=snippet_not_found_detail(filename))
+        return SnippetScript(_detach(session, snippet))
 
 
 async def _list_scripts() -> list[SnippetScript]:
@@ -179,9 +210,60 @@ async def _list_scripts() -> list[SnippetScript]:
     async_session = get_async_session_maker()
     async with async_session() as session:
         snippets = await SnippetManager.list(session)
+        return [SnippetScript(_detach(session, snippet)) for snippet in snippets]
+
+
+async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
+    """Resolve several snippet filenames in one query, keyed by filename.
+
+    The batch counterpart of :func:`_load_script`: one request-less session and a
+    single ``filename IN (...)`` query answer the whole selection instead of one
+    session and one query per filename. Each returned row is detached via
+    :func:`_detach` before the session closes so the scripts stay usable
+    afterwards. A filename whose row is absent, or whose file is missing on disk,
+    is simply left out of the result — the framework's caller decides what an
+    unresolved filename means.
+
+    Each row is keyed by every requested spelling that matched it, not the stored
+    ``filename``: the ``IN (...)`` match honours the column's collation, so on a
+    case-insensitive collation a request for ``Check.sh`` matches row ``check.sh``.
+    Folding the returned row back to each requested string keeps this hook's keys
+    aligned with :func:`_load_script`, whose ``get_or_404`` compared inside the
+    database, and means a selection carrying two case variants of one file
+    (``Check.sh`` and ``check.sh``) resolves both rather than dropping one.
+    Accent-insensitive collations remain a known boundary — casefolding covers
+    case, not accents.
+
+    :param filenames: The snippet filenames to resolve. Callers routing through
+        :func:`~app.sep.apps.framework.script_source.resolve_scripts` pass a
+        deduplicated, traversal-checked selection, but the hook is independently
+        callable, so it re-validates each filename and tolerates duplicates.
+    :return: A mapping of each resolved filename to its detached
+        :class:`SnippetScript`; unresolved filenames are absent.
+    :raises HTTPBadRequestException: When any filename is unsafe or malformed (the
+        snippets-specific strictness the generic seam guard does not enforce).
+    """
+    for filename in filenames:
+        validate_snippet_filename(filename)
+    requested_by_casefold: dict[str, list[str]] = defaultdict(list)
+    for filename in filenames:
+        requested_by_casefold[filename.casefold()].append(filename)
+    async_session = get_async_session_maker()
+    async with async_session() as session:
+        snippets = await SnippetManager.list(
+            session, col(Snippet.filename).in_(filenames)
+        )
+        resolved: dict[str, Snippet] = {}
         for snippet in snippets:
-            session.expunge(snippet)
-    return [SnippetScript(snippet) for snippet in snippets]
+            if not snippet.path.is_file():
+                continue
+            detached = _detach(session, snippet)
+            requested = requested_by_casefold.get(
+                snippet.filename.casefold(), [snippet.filename]
+            )
+            for spelling in requested:
+                resolved[spelling] = detached
+    return {filename: SnippetScript(snippet) for filename, snippet in resolved.items()}
 
 
 def _build_form_schema(script: SnippetScript) -> AppSchema:
@@ -243,6 +325,7 @@ snippet_source = ScriptSource(
     script_dir=snippets_settings.SNIPPETS_DIR,
     load_script=_load_script,
     list_scripts=_list_scripts,
+    load_scripts=_load_scripts,
     build_form_schema=_build_form_schema,
     build_execution_meta=_build_execution_meta,
     list_response=_list_response,
