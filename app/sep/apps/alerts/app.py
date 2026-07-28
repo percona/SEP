@@ -24,6 +24,7 @@ contribute the alert-config backup beat schedule via
 
 from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
 from app.sep.apps.alerts.api_routes import router as api_router
+from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.alerts.routes import router as jinja_router
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import app_celery_module_for
@@ -36,8 +37,6 @@ def _alerts_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     :return: The ``sep__backup_alert_config`` schedule, or an empty list when
         alerts owns no Celery module.
     """
-    from app.sep.apps.alerts.config import alerts_settings
-
     alerts_celery = app_celery_module_for("alerts")
     if not alerts_celery:
         return []
