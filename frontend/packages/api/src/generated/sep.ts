@@ -996,7 +996,7 @@ export interface paths {
      * @description Update a backup task group from a JSON payload request body.
      *
      *     Cascade-updates the parent ``pbm_config`` task and its derived logical,
-     *     physical, and status siblings, re-stamping ``_form`` so the edit page keeps
+     *     physical, status, and incremental siblings, re-stamping ``_form`` so the edit page keeps
      *     prefilling. The ``EditableBackupParent`` dependency resolves a satellite URL
      *     to the parent and blocks protected or in-flight groups before any write.
      *     Rejects a parent rename with a conflict and surfaces a partial cascade
@@ -5289,8 +5289,8 @@ export interface components {
      * BackupTaskDetailResponse
      * @description Represent a backup task detail API response.
      *
-     *     :param derived_tasks: Latest status for each derived logical, physical, and
-     *         status sibling.
+     *     :param derived_tasks: Latest status for each derived logical, physical,
+     *         status, and incremental sibling.
      *     :type derived_tasks: list[BackupDerivedTaskSummary]
      *     :param latest_pbm_status: Tail of the latest PBM status task stdout, if
      *         available.
@@ -5390,7 +5390,7 @@ export interface components {
      *
      *     Mirrors :class:`BackupCreate` except ``backup_type``, which is always
      *     ``pbm_config`` on create. POST creates the parent config task plus derived
-     *     logical, physical, and status siblings.
+     *     logical, physical, status, and incremental siblings.
      *
      *     :param task_name: The name of the task to be created.
      *     :type task_name: NonEmptyStr
@@ -5431,6 +5431,10 @@ export interface components {
      *     :type backup_oplog_span_min: float | None
      *     :param backup_num_parallel_collections: Parallel collections for logical backup.
      *     :type backup_num_parallel_collections: int | None
+     *     :param backup_namespaces: Selective ``--ns`` namespaces for logical backups.
+     *     :type backup_namespaces: str | None
+     *     :param backup_with_users_and_roles: Opt-in ``--with-users-and-roles`` for ``db.*``.
+     *     :type backup_with_users_and_roles: bool
      *     :param credentials_path: Path to MongoDB URI credentials on the Nomad node.
      *     :type credentials_path: str | None
      */
@@ -5443,6 +5447,8 @@ export interface components {
       backup_compression?: components['schemas']['backup_mongo__CompressionAlgorithm'] | null;
       /** Backup Compression Level */
       backup_compression_level?: number | null;
+      /** Backup Namespaces */
+      backup_namespaces?: string | null;
       /** Backup Num Parallel Collections */
       backup_num_parallel_collections?: number | null;
       /** Backup Oplog Span Min */
@@ -5451,6 +5457,11 @@ export interface components {
       backup_priority?: string | null;
       /** Backup Timeouts Starting Status */
       backup_timeouts_starting_status?: number | null;
+      /**
+       * Backup With Users And Roles
+       * @default false
+       */
+      backup_with_users_and_roles: boolean;
       /** Credentials Path */
       credentials_path?: string | null;
       /** Hostname */
@@ -5489,6 +5500,7 @@ export interface components {
     backup_mongo__BackupType:
       | 'pbm_logical'
       | 'pbm_physical'
+      | 'pbm_incremental'
       | 'pbm_snapshot'
       | 'pbm_config'
       | 'pbm_status';
