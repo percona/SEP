@@ -16,11 +16,13 @@
 """Define the routes for the Schemas resource."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.db import ListQuery, make_list_query_dep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import SchemaManager, TableManager
@@ -39,16 +41,20 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/schemas", tags=["schemas"])
 
+SchemaListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(SchemaManager))]
+
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_schemas(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: SchemaListQueryDep,
 ) -> PaginatedResponse[SchemaResponse]:
     """List Schemas."""
     logger.debug("Listing schemas")
-    return await SchemaManager.list_paginated(
+    return await SchemaManager.list_query_paginated(
         session,
+        list_query=list_query,
         select_related=[Schema.tables],
         pagination=pagination,
     )

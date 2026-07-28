@@ -16,11 +16,13 @@
 """Define the routes for the Services resource."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.db import ListQuery, make_list_query_dep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import (
@@ -47,17 +49,21 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/services", tags=["services"])
 
+ServiceListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(ServiceManager))]
+
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_services(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: ServiceListQueryDep,
     service_type: ServiceTypeEnum | None = None,
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services."""
     logger.debug("Listing services for type '%s'", service_type or "all")
-    return await ServiceManager.list_paginated(
+    return await ServiceManager.list_query_paginated(
         session,
+        list_query=list_query,
         select_related=[Service.schemas, Service.node],
         pagination=pagination,
         type=service_type,

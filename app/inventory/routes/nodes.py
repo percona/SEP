@@ -16,10 +16,12 @@
 """Define the routes for the Nodes resource."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.db import ListQuery, make_list_query_dep
 from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
@@ -43,11 +45,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
 
+NodeListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(NodeManager))]
+
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_nodes(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: NodeListQueryDep,
     external_id: NonEmptyStr | None = None,
     source: SourceEnum | None = None,
     node_type: NonEmptyStr | None = None,
@@ -58,8 +63,9 @@ async def list_nodes(
         source or "all",
         node_type or "all",
     )
-    return await NodeManager.list_paginated(
+    return await NodeManager.list_query_paginated(
         session,
+        list_query=list_query,
         select_related=[Node.services],
         pagination=pagination,
         external_id=external_id,

@@ -16,10 +16,12 @@
 """Define the routes for the Tables resource."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.db import ListQuery, make_list_query_dep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import TableManager
@@ -30,16 +32,20 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tables", tags=["tables"])
 
+TableListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(TableManager))]
+
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_tables(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: TableListQueryDep,
 ) -> PaginatedResponse[TableResponse]:
     """List Tables."""
     logger.debug("Listing tables")
-    return await TableManager.list_paginated(
+    return await TableManager.list_query_paginated(
         session,
+        list_query=list_query,
         pagination=pagination,
     )
 
