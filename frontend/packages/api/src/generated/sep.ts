@@ -678,7 +678,8 @@ export interface paths {
      *     :param snippet_filename: The selected snippet filenames, repeated per snippet
      *         and deduplicated order-preserving.
      *     :return: The shared section followed by each snippet's remaining fields.
-     *     :raises HTTPBadRequestException: When a filename attempts directory traversal.
+     *     :raises HTTPBadRequestException: When a filename is unsafe or malformed, failing
+     *         the whole request before any item is dispatched.
      *     :raises HTTPNotFoundException: When a filename matches no snippet.
      */
     get: operations['atw_atw_execution_schema_api_apps_atw_execution_schema__get'];
@@ -785,10 +786,13 @@ export interface paths {
      * Atw Batch Execute
      * @description Execute several snippets against one incident, reporting each item separately.
      *
-     *     One failing item never blocks the rest: each is dispatched and recorded inside
-     *     its own guard, and the response always carries an entry per requested item. A
-     *     failed attempt produces no task-history row to reference, so it is reported
-     *     here rather than persisted.
+     *     A malformed selection fails the whole request up front: ``resolve_snippets``
+     *     runs the traversal guard over every filename before dispatch, so an unsafe
+     *     filename raises before any item runs. Past that guard, one failing item never
+     *     blocks the rest: each is dispatched and recorded inside its own guard, and the
+     *     response always carries an entry per requested item — an unresolved filename
+     *     becomes that item's error. A failed attempt produces no task-history row to
+     *     reference, so it is reported here rather than persisted.
      *
      *     The row-write guard rolls the shared session back before the loop continues,
      *     or one failed write would leave the transaction aborted and doom every later
@@ -801,6 +805,8 @@ export interface paths {
      *     :param body: The batch payload.
      *     :param tasks_api: The authenticated Tasks API client.
      *     :return: One outcome entry per requested item, in request order.
+     *     :raises HTTPBadRequestException: When any filename is unsafe or malformed,
+     *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
     delete?: never;
@@ -1934,7 +1940,7 @@ export interface paths {
     };
     /**
      * List
-     * @description List discovered scripts as a paginated projection.
+     * @description List scripts as a server-filtered, sorted, paginated projection.
      */
     get: operations['snippets_snippets_api_list_api_apps_snippets__get'];
     put?: never;
@@ -2052,6 +2058,33 @@ export interface paths {
      *     :return: The plugin schema instance.
      */
     get: operations['snippets_get_schema_api_apps_snippets_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/snippets/service_types': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api Service Types
+     * @description List the distinct service types across the whole snippets dataset.
+     *
+     *     Backs the list page's service-type filter so its options reflect every value
+     *     in the dataset rather than only the loaded page.
+     *
+     *     :param session: The SEP database session.
+     *     :return: The sorted distinct service types and whether any snippet is
+     *         uncategorized (absent or blank service type).
+     */
+    get: operations['snippets_snippets_api_service_types_api_apps_snippets_service_types_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3828,6 +3861,40 @@ export interface components {
       [key: string]: components['schemas']['JsonValue'];
     };
     /**
+     * SnippetApprovalFilter
+     * @description Enumerate the approval-status filter selections.
+     *
+     *     :cvar ALL: Do not filter on approval status.
+     *     :cvar APPROVED: Keep only approved snippets (``approved_at IS NOT NULL``).
+     *     :cvar NOT_APPROVED: Keep only unapproved snippets (``approved_at IS NULL``).
+     * @enum {string}
+     */
+    SnippetApprovalFilter: 'all' | 'approved' | 'not_approved';
+    /**
+     * SnippetSortDirection
+     * @description Enumerate the sort direction.
+     *
+     *     :cvar ASC: Ascending order.
+     *     :cvar DESC: Descending order.
+     * @enum {string}
+     */
+    SnippetSortDirection: 'asc' | 'desc';
+    /**
+     * SnippetSortKey
+     * @description Enumerate the allowlisted public sort keys.
+     *
+     *     Membership is the type: an out-of-allowlist key fails to coerce at the
+     *     request boundary, so no raw client-supplied column name can reach a query.
+     *
+     *     :cvar CREATED_AT: Sort by the ``created_at`` column.
+     *     :cvar FILENAME: Sort by the ``filename`` column.
+     *     :cvar APPROVED_AT: Sort by the ``approved_at`` column.
+     *     :cvar TITLE: Sort by the ``meta.title`` JSON value.
+     *     :cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.
+     * @enum {string}
+     */
+    SnippetSortKey: 'created_at' | 'filename' | 'approved_at' | 'title' | 'service_type';
+    /**
      * SourceEnum
      * @description Enumeration of possible data sources for a node.
      *
@@ -5040,6 +5107,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -5073,6 +5141,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -6976,6 +7045,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -7398,6 +7468,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -7490,6 +7561,61 @@ export interface components {
       label: string;
       /** Route Segment */
       route_segment: string;
+    };
+    /**
+     * RemoteChoiceField
+     * @description Represent a field whose options are fetched at render from an app endpoint.
+     *
+     *     The renderer fetches ``endpoint_url`` and renders the returned
+     *     ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
+     *     / ``disabled_reason``). When ``depends_on`` is set, the fetch is
+     *     parameterised by the dependency's value (appended as a query parameter named
+     *     after ``depends_on``) and the field stays disabled/empty until the
+     *     dependency has a value. When ``allow_custom`` is set, the renderer also
+     *     accepts a free-typed value. The endpoint response contract is a JSON array
+     *     of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
+     *     "disabled"?: bool, "disabled_reason"?: str}``.
+     *
+     *     :param field_type: The discriminator literal; always ``"remote_choice"``.
+     *         Serialised as the JSON key ``"type"``.
+     *     :param endpoint_url: The fully-resolved URL the renderer fetches options
+     *         from, relative to the frontend ``apiClient`` base (``/api``).
+     *     :param depends_on: Optional name of the sibling field whose value drives
+     *         (and parameterises) the option fetch. ``None`` (the default) omits the
+     *         key from the wire so plugins that do not cascade stay byte-identical.
+     *     :param allow_custom: When ``True``, the selector also accepts a free-typed
+     *         value. ``None`` (the default) omits the key from the wire so plugins
+     *         that do not opt in stay byte-identical.
+     */
+    framework__RemoteChoiceField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on?: string | null;
+      /** Description */
+      description?: string | null;
+      /** Endpoint Url */
+      endpoint_url: string;
+      /** Forbidden */
+      forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['framework__FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'remote_choice';
     };
     /**
      * SchemaField
@@ -9299,6 +9425,23 @@ export interface components {
       updated_at?: string | null;
       /** Updated By */
       updated_by?: string | null;
+    };
+    /**
+     * SnippetServiceTypesResponse
+     * @description Carry the whole-dataset service-type facet for the list filter.
+     *
+     *     Sourced across every snippet (not the loaded page) so the list page's
+     *     service-type dropdown can offer every value the dataset contains.
+     *
+     *     :param service_types: The sorted distinct non-blank service types.
+     *     :param has_uncategorized: Whether any snippet has an absent or blank service
+     *         type (surfaced as the "Uncategorized" filter option).
+     */
+    snippets__SnippetServiceTypesResponse: {
+      /** Has Uncategorized */
+      has_uncategorized: boolean;
+      /** Service Types */
+      service_types: string[];
     };
     /**
      * SnippetsCapabilitiesResponse
@@ -12922,6 +13065,18 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
+        /** @description Case-insensitive search over filename, title, description. */
+        search?: string | null;
+        /** @description Sort key; one of the allowlisted public sort keys. */
+        sort?: components['schemas']['SnippetSortKey'];
+        /** @description Sort direction. */
+        order?: components['schemas']['SnippetSortDirection'];
+        /** @description Approval-status filter. */
+        approval?: components['schemas']['SnippetApprovalFilter'];
+        /** @description Service-type equality filter, or omitted for no filter. */
+        service_type?: string | null;
+        /** @description When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'. */
+        uncategorized?: boolean;
       };
       header?: never;
       path?: never;
@@ -13038,6 +13193,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_service_types_api_apps_snippets_service_types_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['snippets__SnippetServiceTypesResponse'];
         };
       };
     };
