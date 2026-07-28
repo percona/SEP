@@ -106,6 +106,9 @@ async def pbm_backups_detail(
         return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
     meta = data["meta"]
+    # Probe for the incremental sibling before linking a Run control. Groups
+    # created before this release only gain ``-incremental`` on edit/backfill;
+    # linking a missing task would 404 on execute.
     incremental_name = f"{task.name}-incremental"
     try:
         await get_backups_task(incremental_name, tasks_api)
@@ -132,9 +135,6 @@ async def pbm_backups_detail(
         "alert_on_fail": task.alert_on_fail,
     }
     if has_incremental:
-        # Omit the URL (and therefore the Run button) when the sibling is missing
-        # — pre-SEP-1373 groups only gain ``-incremental`` on edit/backfill, and
-        # execute would 404 if we linked a task that does not exist yet.
         task_data["incremental_backup_url"] = request.url_for(
             "pbm_backups_execute", task_name=incremental_name
         )
