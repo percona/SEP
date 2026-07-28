@@ -213,6 +213,21 @@ class RefreshResponse(BaseModel):
     refreshed_at: datetime
 
 
+class SnippetServiceTypesResponse(BaseModel):
+    """Carry the whole-dataset service-type facet for the list filter.
+
+    Sourced across every snippet (not the loaded page) so the list page's
+    service-type dropdown can offer every value the dataset contains.
+
+    :param service_types: The sorted distinct non-blank service types.
+    :param has_uncategorized: Whether any snippet has an absent or blank service
+        type (surfaced as the "Uncategorized" filter option).
+    """
+
+    service_types: list[str]
+    has_uncategorized: bool
+
+
 class SnippetsCapabilitiesResponse(AppDeploymentCapabilities):
     """Represent per-deployment capability flags for the Snippets plugin.
 

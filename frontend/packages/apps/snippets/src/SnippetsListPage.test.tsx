@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import { SnippetsListPage } from './SnippetsListPage';
@@ -25,6 +25,7 @@ import {
   useRemoveSnippetApproval,
   useBatchApproveSnippets,
   useSnippetsCapabilities,
+  useSnippetServiceTypes,
   useRefreshSnippets,
 } from './hooks';
 
@@ -38,6 +39,11 @@ vi.mock('./hooks', () => ({
   useRemoveSnippetApproval: vi.fn(),
   useBatchApproveSnippets: vi.fn(),
   useSnippetsCapabilities: vi.fn(),
+  // Default to an empty facet so describes that ignore it never crash on the
+  // destructure; clearAllMocks keeps this implementation (only resetAllMocks drops it).
+  useSnippetServiceTypes: vi.fn(() => ({
+    data: { service_types: [], has_uncategorized: false },
+  })),
   useRefreshSnippets: vi.fn(),
 }));
 
@@ -46,7 +52,14 @@ const mockUseApproveSnippet = vi.mocked(useApproveSnippet);
 const mockUseRemoveSnippetApproval = vi.mocked(useRemoveSnippetApproval);
 const mockUseBatchApproveSnippets = vi.mocked(useBatchApproveSnippets);
 const mockUseSnippetsCapabilities = vi.mocked(useSnippetsCapabilities);
+const mockUseSnippetServiceTypes = vi.mocked(useSnippetServiceTypes);
 const mockUseRefreshSnippets = vi.mocked(useRefreshSnippets);
+
+function serviceTypeFacet(service_types: string[], has_uncategorized: boolean) {
+  return {
+    data: { service_types, has_uncategorized },
+  } as unknown as ReturnType<typeof useSnippetServiceTypes>;
+}
 
 function snippetsListResult(
   items: Record<string, unknown>[],
@@ -481,6 +494,7 @@ describe('SnippetsListPage — RefreshButton', () => {
     mockUseSnippets.mockReturnValue(
       snippetsListResult([{ ...unapprovedSnippet, filename: 'mysql.sh', service_type: 'mysql' }]),
     );
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['mysql'], false));
     mockUseSnippetsCapabilities.mockReturnValue({
       data: { manual_sync_enabled: true },
       isLoading: false,
@@ -509,7 +523,7 @@ describe('SnippetsListPage — RefreshButton', () => {
   });
 });
 
-describe('SnippetsListPage — filters', () => {
+describe('SnippetsListPage — server-driven filters', () => {
   const mysqlUnapproved = {
     ...unapprovedSnippet,
     filename: 'mysql-log.sh',
@@ -545,10 +559,9 @@ describe('SnippetsListPage — filters', () => {
 
   const allSnippets = [mysqlUnapproved, mongoApproved, mongoUnapproved, uncategorized];
 
-  function bodyFilenames(): string[] {
-    const rows = screen.getAllByRole('row').slice(1); // drop header row
-    // Non-admin rows have no checkbox column, so the first cell is Filename.
-    return rows.map((row) => within(row).getAllByRole('cell')[0].textContent ?? '');
+  function lastQuery(): Record<string, unknown> {
+    const { calls } = mockUseSnippets.mock;
+    return (calls[calls.length - 1]?.[0] ?? {}) as Record<string, unknown>;
   }
 
   function selectOption(controlLabel: string, optionName: string) {
@@ -558,7 +571,11 @@ describe('SnippetsListPage — filters', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseSnippets.mockReturnValue(snippetsListResult(allSnippets));
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult(allSnippets, { total: allSnippets.length, offset: 0, limit: 50 }),
+    );
+    // The dropdown options come from the whole-dataset facet, not the page rows.
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['mongodb', 'mysql'], true));
     mockUseApproveSnippet.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
@@ -581,41 +598,57 @@ describe('SnippetsListPage — filters', () => {
     } as unknown as ReturnType<typeof useRefreshSnippets>);
   });
 
-  it('free-text search matches filename, title, and description (case-insensitive)', () => {
+  it('drives the free-text search into the server query (debounced, case preserved)', async () => {
     render(<SnippetsListPage />);
 
     fireEvent.change(screen.getByLabelText('Search snippets'), {
       target: { value: 'SLOW' },
     });
 
-    expect(bodyFilenames()).toEqual(['mongo-slow.sh']);
+    await waitFor(() => {
+      expect(lastQuery()).toMatchObject({ search: 'SLOW' });
+    });
   });
 
-  it('approval filter narrows to not-approved snippets', () => {
+  it('drives the approval filter into the server query', () => {
     render(<SnippetsListPage />);
 
     selectOption('Filter by approval status', 'Not approved');
 
-    expect(bodyFilenames()).toEqual(['mysql-log.sh', 'mongo-slow.sh', 'misc.sh']);
+    expect(lastQuery()).toMatchObject({ approval: 'not_approved' });
   });
 
-  it('service-type filter narrows to a single service', () => {
+  it('drives the service-type filter into the server query', () => {
     render(<SnippetsListPage />);
 
     selectOption('Filter by service type', 'mongodb');
 
-    expect(bodyFilenames()).toEqual(['mongo-status.sh', 'mongo-slow.sh']);
+    expect(lastQuery()).toMatchObject({ serviceType: 'mongodb' });
   });
 
-  it('Uncategorized option shows only snippets without a service type', () => {
+  it('maps the Uncategorized option to the uncategorized flag', () => {
     render(<SnippetsListPage />);
 
     selectOption('Filter by service type', 'Uncategorized');
 
-    expect(bodyFilenames()).toEqual(['misc.sh']);
+    // A distinct flag carries "no service type" — not an overloaded service_type
+    // value that a real free-form service type could collide with.
+    expect(lastQuery()).toMatchObject({ uncategorized: true, serviceType: undefined });
   });
 
-  it('combines filters with AND semantics', () => {
+  it('sends the raw value for a service type that collides with the "all" sentinel', () => {
+    // The facet offers a real service type literally equal to "all", distinct from
+    // the "All services" (no-filter) entry.
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['all', 'mongodb'], false));
+
+    render(<SnippetsListPage />);
+
+    selectOption('Filter by service type', 'all');
+
+    expect(lastQuery()).toMatchObject({ serviceType: 'all', uncategorized: false });
+  });
+
+  it('drives all three filters into the server query together', async () => {
     render(<SnippetsListPage />);
 
     selectOption('Filter by approval status', 'Not approved');
@@ -624,59 +657,171 @@ describe('SnippetsListPage — filters', () => {
       target: { value: 'log' },
     });
 
-    expect(bodyFilenames()).toEqual(['mongo-slow.sh']);
+    await waitFor(() => {
+      expect(lastQuery()).toMatchObject({
+        search: 'log',
+        approval: 'not_approved',
+        serviceType: 'mongodb',
+      });
+    });
   });
 
-  it('shows an empty state when no snippet matches the active filters', () => {
+  it('resets to the first page when a filter changes', () => {
+    // A total beyond one page so the next-page control is enabled.
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult(allSnippets, { total: 120, offset: 0, limit: 50 }),
+    );
+
+    render(<SnippetsListPage />);
+
+    // Move to the second page, then change a filter.
+    fireEvent.click(screen.getByRole('button', { name: /go to next page/i }));
+    expect(lastQuery()).toMatchObject({ offset: 50 });
+
+    selectOption('Filter by approval status', 'Approved');
+
+    expect(lastQuery()).toMatchObject({ offset: 0, approval: 'approved' });
+  });
+
+  it('shows the filtered-empty state while keeping the filter controls visible', async () => {
+    // The server returns rows until a search narrows them to nothing.
+    mockUseSnippets.mockImplementation(
+      (options?: { search?: string }) =>
+        (options?.search
+          ? snippetsListResult([], { total: 0, offset: 0, limit: 50 })
+          : snippetsListResult(allSnippets, {
+              total: allSnippets.length,
+              offset: 0,
+              limit: 50,
+            })) as ReturnType<typeof useSnippets>,
+    );
+
     render(<SnippetsListPage />);
 
     fireEvent.change(screen.getByLabelText('Search snippets'), {
       target: { value: 'no-such-snippet' },
     });
 
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    expect(screen.getByText(/no snippets match the current filters/i)).toBeInTheDocument();
+    // The search box stays reachable (so the filter can be cleared) and the
+    // filtered-empty message replaces the table.
+    await waitFor(() => {
+      expect(screen.getByText(/no snippets match the current filters/i)).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText('Search snippets')).toBeInTheDocument();
   });
 
-  it('keeps a snippet whose service_type equals the "all" sentinel selectable', () => {
-    const literalAll = {
-      ...unapprovedSnippet,
-      filename: 'literal-all.sh',
-      title: 'Literal all',
-      description: '',
-      service_type: 'all',
-      is_approved: false,
-    };
-    mockUseSnippets.mockReturnValue(snippetsListResult([literalAll, mongoUnapproved]));
+  it('coalesces rapid keystrokes into a single settled search term', () => {
+    vi.useFakeTimers();
+    try {
+      render(<SnippetsListPage />);
+      const box = screen.getByLabelText('Search snippets');
+
+      fireEvent.change(box, { target: { value: 'a' } });
+      fireEvent.change(box, { target: { value: 'ab' } });
+      fireEvent.change(box, { target: { value: 'abc' } });
+
+      // Before the debounce window elapses, no intermediate term reaches the query.
+      act(() => {
+        vi.advanceTimersByTime(299);
+      });
+      expect(lastQuery().search).toBeUndefined();
+
+      // One tick later the window closes and only the final term is sent.
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(lastQuery()).toMatchObject({ search: 'abc' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clearing the search box drops the term and resets to the first page', () => {
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult(allSnippets, { total: 120, offset: 0, limit: 50 }),
+    );
+    vi.useFakeTimers();
+    try {
+      render(<SnippetsListPage />);
+      const box = screen.getByLabelText('Search snippets');
+
+      fireEvent.change(box, { target: { value: 'slow' } });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(lastQuery()).toMatchObject({ search: 'slow', offset: 0 });
+
+      // Advance to a later page, then clear the search box.
+      fireEvent.click(screen.getByRole('button', { name: /go to next page/i }));
+      expect(lastQuery()).toMatchObject({ offset: 50, search: 'slow' });
+
+      fireEvent.change(box, { target: { value: '' } });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      expect(lastQuery().search).toBeUndefined();
+      expect(lastQuery()).toMatchObject({ offset: 0 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sends a service type literally named "uncategorized" as an equality value, not the flag', () => {
+    // A real service type named "uncategorized" is prefixed, so it stays distinct
+    // from the bare UNCATEGORIZED sentinel and must not flip the flag.
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['mysql', 'uncategorized'], false));
 
     render(<SnippetsListPage />);
 
-    // The literal "all" service type gets its own option, distinct from the
-    // "All services" (no-filter) entry, and selecting it narrows to that row.
-    selectOption('Filter by service type', 'all');
+    selectOption('Filter by service type', 'uncategorized');
 
-    expect(bodyFilenames()).toEqual(['literal-all.sh']);
+    expect(lastQuery()).toMatchObject({ serviceType: 'uncategorized', uncategorized: false });
   });
 
-  it('drops selections for rows hidden by a filter from the batch payload', () => {
+  it('round-trips a service type that itself starts with the "type:" prefix', () => {
+    // The MenuItem value double-prefixes ("type:type:foo"); decoding strips only
+    // the first prefix so the real value reaches the server intact.
+    mockUseSnippetServiceTypes.mockReturnValue(serviceTypeFacet(['type:foo'], false));
+
+    render(<SnippetsListPage />);
+
+    selectOption('Filter by service type', 'type:foo');
+
+    expect(lastQuery()).toMatchObject({ serviceType: 'type:foo', uncategorized: false });
+  });
+
+  it('excludes selections for rows hidden by a server filter from the batch payload', () => {
+    // Selection is scoped to the visible (current-page) rows, so a row that a
+    // server-side filter later drops from the page is never batch-approved.
     const batchMutate = vi.fn();
     mockUseBatchApproveSnippets.mockReturnValue({
       mutate: batchMutate,
       isPending: false,
     } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([mysqlUnapproved, mongoUnapproved], {
+        total: 2,
+        offset: 0,
+        limit: 50,
+      }),
+    );
 
-    render(<SnippetsListPage isAdmin />);
+    const { rerender } = render(<SnippetsListPage isAdmin />);
 
-    // Select an unapproved mysql snippet.
-    fireEvent.click(screen.getByRole('checkbox', { name: /select mysql-log\.sh/i }));
-    expect(screen.getByRole('button', { name: /batch approve \(1\)/i })).toBeInTheDocument();
+    // Select every visible unapproved row.
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all snippets/i }));
 
-    // Filter to mongodb — mysql-log.sh is now hidden, so the batch action
-    // (and its payload) must no longer include it.
-    selectOption('Filter by service type', 'mongodb');
+    // A server filter narrows the page so mongo-slow.sh is no longer present.
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([mysqlUnapproved], { total: 1, offset: 0, limit: 50 }),
+    );
+    rerender(<SnippetsListPage isAdmin />);
 
-    expect(screen.queryByRole('button', { name: /batch approve/i })).not.toBeInTheDocument();
-    expect(batchMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /batch approve/i }));
+    fireEvent.click(screen.getByRole('button', { name: /approve selected/i }));
+
+    expect(batchMutate).toHaveBeenCalledWith({ filenames: ['mysql-log.sh'] }, expect.anything());
   });
 });
 
@@ -710,10 +855,12 @@ describe('SnippetsListPage — server pagination', () => {
 
     render(<SnippetsListPage />);
 
-    expect(mockUseSnippets).toHaveBeenCalledWith({
-      offset: DEFAULT_APP_LIST_OFFSET,
-      limit: DEFAULT_APP_LIST_LIMIT,
-    });
+    expect(mockUseSnippets).toHaveBeenCalledWith(
+      expect.objectContaining({
+        offset: DEFAULT_APP_LIST_OFFSET,
+        limit: DEFAULT_APP_LIST_LIMIT,
+      }),
+    );
   });
 
   it('renders TablePagination when the hook returns pagination metadata', () => {
@@ -746,9 +893,159 @@ describe('SnippetsListPage — server pagination', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /go to next page/i }));
 
-    expect(mockUseSnippets).toHaveBeenCalledWith({
-      offset: 50,
-      limit: 50,
+    expect(mockUseSnippets).toHaveBeenCalledWith(
+      expect.objectContaining({
+        offset: 50,
+        limit: 50,
+      }),
+    );
+  });
+
+  it('guards the page index against a zero limit so the pager never shows NaN', () => {
+    // `Math.max(limit, 1)` keeps the page-index division finite even if the
+    // backend ever returns a zero limit.
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([unapprovedSnippet], { total: 1, offset: 0, limit: 0 }),
+    );
+
+    render(<SnippetsListPage />);
+
+    const pager = screen.getByText(/of 1/i);
+    expect(pager).toBeInTheDocument();
+    expect(pager.textContent ?? '').not.toContain('NaN');
+  });
+
+  it('snaps back to the last valid page when the filtered total shrinks below the offset', async () => {
+    // The server echoes the requested offset; `total` shrinks after a mutation.
+    let total = 120;
+    mockUseSnippets.mockImplementation(
+      (opts?: { offset?: number }) =>
+        snippetsListResult([unapprovedSnippet], {
+          total,
+          offset: opts?.offset ?? 0,
+          limit: 50,
+        }) as ReturnType<typeof useSnippets>,
+    );
+
+    const { rerender } = render(<SnippetsListPage />);
+
+    // Page to the second page (offset 50), still in range while total is 120.
+    fireEvent.click(screen.getByRole('button', { name: /go to next page/i }));
+    expect(mockUseSnippets).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 }));
+
+    // A mutation shrinks the filtered total to a single page; the next render
+    // surfaces it and the out-of-range offset must be clamped to page one.
+    total = 20;
+    mockUseSnippets.mockClear();
+    rerender(<SnippetsListPage />);
+
+    await waitFor(() => {
+      expect(mockUseSnippets).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0 }));
     });
+    // The row is visible again rather than a stranded empty page.
+    expect(screen.getByText('check.sh')).toBeInTheDocument();
+    expect(screen.queryByText(/no snippets match the current filters/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('SnippetsListPage — service-type label normalization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseApproveSnippet.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useApproveSnippet>);
+    mockUseRemoveSnippetApproval.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRemoveSnippetApproval>);
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+  });
+
+  function renderWithServiceType(serviceType: string | null) {
+    mockUseSnippets.mockReturnValue(
+      snippetsListResult([{ ...unapprovedSnippet, service_type: serviceType }], {
+        total: 1,
+        offset: 0,
+        limit: 50,
+      }),
+    );
+    render(<SnippetsListPage />);
+  }
+
+  it('labels a spaces-only service type as Uncategorized', () => {
+    renderWithServiceType('   ');
+
+    expect(screen.getByText('Uncategorized')).toBeInTheDocument();
+  });
+
+  it('space-trims a padded service type for display', () => {
+    renderWithServiceType('  mysql  ');
+
+    expect(screen.getByText('mysql')).toBeInTheDocument();
+    expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument();
+  });
+
+  it('keeps a tab-only service type as a real value, not Uncategorized', () => {
+    // SQL TRIM (and the aligned frontend) strip spaces only, so a tab survives —
+    // the row is not folded into Uncategorized, matching the server facet.
+    renderWithServiceType('\t');
+
+    expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument();
+  });
+});
+
+describe('SnippetsListPage — loading and error states', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+  });
+
+  it('renders a loading spinner while the list query is pending', () => {
+    mockUseSnippets.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    } as unknown as ReturnType<typeof useSnippets>);
+
+    render(<SnippetsListPage />);
+
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('renders an error alert with the failure message when the list query fails', () => {
+    mockUseSnippets.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error('backend exploded'),
+    } as unknown as ReturnType<typeof useSnippets>);
+
+    render(<SnippetsListPage />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Failed to load snippets: backend exploded',
+    );
   });
 });

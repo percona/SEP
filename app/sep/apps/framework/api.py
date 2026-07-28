@@ -1700,9 +1700,11 @@ def derive_script_routes(
         ``operationId``), so two script apps never collide on a generic route name.
     :param pagination_dep: A ``make_pagination_dep(...)`` dependency callable.
         When given, the list route takes that dependency (wrapped in
-        ``Annotated[Pagination, Depends(...)]``) and returns a
-        ``PaginatedResponse`` whose ``items`` are a client-side slice of the full
-        discovered script set; when ``None`` the list returns a plain list.
+        ``Annotated[Pagination, Depends(...)]``) and returns a ``PaginatedResponse``.
+        A source that opts into the server list-page capability
+        (``list_query_dep`` + ``list_page``) has its search/filter/sort/paging pushed
+        down to that hook; otherwise the route fetches the full discovered set and
+        returns a client-side slice of it. When ``None`` the list returns a plain list.
     :return: A plugin ``APIRouter`` carrying the derived script surface.
     """
     router = APIRouter()
@@ -1741,15 +1743,32 @@ def derive_script_routes(
             else PaginatedResponse
         )
 
-        async def list_scripts_paginated(
-            pagination: paginated_param,
-        ) -> PaginatedResponse:
-            """List discovered scripts as a paginated projection."""
-            scripts = await source.list_scripts()
-            total = len(scripts)
-            page_scripts = pagination.slice(scripts)
-            items = [source.list_response(script) for script in page_scripts]
-            return PaginatedResponse.from_pagination(items, total, pagination)
+        # FastAPI derives each route's dependencies from its handler signature, so
+        # the server-backed path (which needs the list-query dependency injected)
+        # and the fetch-all-then-slice fallback require distinct handler signatures
+        # — hence two closures, exactly one of which is registered below.
+        if source.list_query_dep is not None and source.list_page is not None:
+            list_query_param = Annotated[Any, Depends(source.list_query_dep)]
+            list_page = source.list_page
+
+            async def list_scripts_paginated(
+                pagination: paginated_param, list_query: list_query_param
+            ) -> PaginatedResponse:
+                """List scripts as a server-filtered, sorted, paginated projection."""
+                page = await list_page(pagination, list_query)
+                return page.map_items(source.list_response)
+
+        else:
+
+            async def list_scripts_paginated(
+                pagination: paginated_param,
+            ) -> PaginatedResponse:
+                """List discovered scripts as a paginated projection."""
+                scripts = await source.list_scripts()
+                total = len(scripts)
+                page_scripts = pagination.slice(scripts)
+                items = [source.list_response(script) for script in page_scripts]
+                return PaginatedResponse.from_pagination(items, total, pagination)
 
         router.add_api_route(
             "/",

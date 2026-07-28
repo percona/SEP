@@ -19,7 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.tasks import alert_hooks
+from app.tasks import hook_resolver
 from app.tasks.alert_hooks import build_owner_alert_details, OwnerAlertDetails
 
 
@@ -45,7 +45,7 @@ class TestBuildOwnerAlertDetails:
             return expected
 
         mocker.patch.dict(
-            alert_hooks._RESOLVED, {"some.module:builder": _fake_builder}, clear=False
+            hook_resolver._RESOLVED, {"some.module:builder": _fake_builder}, clear=False
         )
 
         assert (
@@ -55,7 +55,7 @@ class TestBuildOwnerAlertDetails:
     @pytest.mark.asyncio
     async def test_swallows_unresolvable_builder(self, mocker):
         """Return ``None`` (logged) when the builder path cannot be imported."""
-        mocker.patch.dict(alert_hooks._RESOLVED, {}, clear=True)
+        mocker.patch.dict(hook_resolver._RESOLVED, {}, clear=True)
 
         assert (
             await build_owner_alert_details(_history("no.such.module:builder")) is None
@@ -69,7 +69,7 @@ class TestBuildOwnerAlertDetails:
             raise RuntimeError("boom")
 
         mocker.patch.dict(
-            alert_hooks._RESOLVED,
+            hook_resolver._RESOLVED,
             {"some.module:raising": _raising_builder},
             clear=False,
         )
