@@ -9,8 +9,6 @@
 .idea/
 .DS_Store
 
-.pnpm-store/
-
 # CMake
 cmake-build-*/
 
