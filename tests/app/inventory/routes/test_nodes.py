@@ -28,6 +28,7 @@ from tests.app.factories import (
 
 CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
+LIST_QUERY_MATCH_TOTAL = 2
 
 
 class TestListNodes:
@@ -56,6 +57,11 @@ class TestListNodes:
     def test_rejects_negative_limit(self, test_client: TestClient) -> None:
         """Return 422 when limit is negative."""
         response = test_client.get("/nodes/", params={"limit": -1})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_list_nodes_rejects_unknown_sort_key(self, test_client: TestClient) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        response = test_client.get("/nodes/", params={"sort": "evil"})
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_list_nodes_multiple(self, test_client: TestClient) -> None:
@@ -150,6 +156,65 @@ class TestListNodes:
         data = response.json()
         assert data["total"] == 1
         assert len(data["items"]) == 1
+
+    def test_list_nodes_search_ilike(self, test_client: TestClient) -> None:
+        """Return only nodes whose name matches the search case-insensitively."""
+        match = NodeWriteFactory.build(name="AlphaSearchNode")
+        other = NodeWriteFactory.build(name="OtherNode")
+        test_client.post("/nodes/", json=match.model_dump(mode="json"))
+        test_client.post("/nodes/", json=other.model_dump(mode="json"))
+
+        response = test_client.get("/nodes/", params={"search": "alphasearch"})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["name"] == match.name
+
+    def test_list_nodes_search_reports_filtered_total(
+        self, test_client: TestClient
+    ) -> None:
+        """Filter rows by search and report the filtered total, not the page size."""
+        for suffix in ("a", "b"):
+            payload = NodeWriteFactory.build(name=f"FilterMatchNode_{suffix}")
+            test_client.post("/nodes/", json=payload.model_dump(mode="json"))
+        other = NodeWriteFactory.build(name="UnrelatedNode")
+        test_client.post("/nodes/", json=other.model_dump(mode="json"))
+
+        response = test_client.get(
+            "/nodes/", params={"search": "filtermatchnode", "limit": 1}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == LIST_QUERY_MATCH_TOTAL
+        assert len(data["items"]) == 1
+
+    def test_list_nodes_deterministic_ordering_across_pages(
+        self, test_client: TestClient
+    ) -> None:
+        """Order equal names stably across pages via the id tie-breaker."""
+        shared_name = "SameSortNode"
+        created_ids: list[int] = []
+        for _ in range(LIST_QUERY_MATCH_TOTAL):
+            payload = NodeWriteFactory.build(name=shared_name)
+            create_response = test_client.post(
+                "/nodes/", json=payload.model_dump(mode="json")
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+            created_ids.append(create_response.json()["id"])
+        created_ids.sort()
+
+        first_page = test_client.get(
+            "/nodes/",
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 0},
+        )
+        second_page = test_client.get(
+            "/nodes/",
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 1},
+        )
+        assert first_page.status_code == status.HTTP_200_OK
+        assert second_page.status_code == status.HTTP_200_OK
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
 
 class TestRetrieveNode:

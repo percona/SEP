@@ -28,6 +28,7 @@ from tests.app.factories import (
 
 SCHEMA_COUNT_WITH_SECOND = 2
 OFFSET_BEYOND_TOTAL = 999
+LIST_QUERY_MATCH_TOTAL = 2
 
 
 class TestListSchemas:
@@ -42,6 +43,13 @@ class TestListSchemas:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_schemas_rejects_unknown_sort_key(
+        self, test_client: TestClient
+    ) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        response = test_client.get("/schemas/", params={"sort": "evil"})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_list_schemas_multiple(
         self, test_client: TestClient, schema: Schema, service: Service
@@ -85,6 +93,75 @@ class TestListSchemas:
         assert len(data["items"]) == 1
         assert data["total"] == 1
         assert data["limit"] == 1
+
+    def test_list_schemas_search_ilike(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return only schemas whose name matches the search case-insensitively."""
+        match = SchemaWriteFactory.build(name="AlphaSearchSchema")
+        other = SchemaWriteFactory.build(name="OtherSchema")
+        test_client.post(
+            f"/services/{service.id}/schemas/", json=match.model_dump(mode="json")
+        )
+        test_client.post(
+            f"/services/{service.id}/schemas/", json=other.model_dump(mode="json")
+        )
+
+        response = test_client.get("/schemas/", params={"search": "alphasearch"})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["name"] == match.name
+
+    def test_list_schemas_search_reports_filtered_total(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Filter rows by search and report the filtered total, not the page size."""
+        for suffix in ("a", "b"):
+            payload = SchemaWriteFactory.build(name=f"FilterMatchSchema_{suffix}")
+            test_client.post(
+                f"/services/{service.id}/schemas/",
+                json=payload.model_dump(mode="json"),
+            )
+        other = SchemaWriteFactory.build(name="UnrelatedSchema")
+        test_client.post(
+            f"/services/{service.id}/schemas/",
+            json=other.model_dump(mode="json"),
+        )
+
+        response = test_client.get(
+            "/schemas/", params={"search": "filtermatchschema", "limit": 1}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == LIST_QUERY_MATCH_TOTAL
+        assert len(data["items"]) == 1
+
+    def test_list_schemas_deterministic_ordering_across_pages(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Order by name stably across pages."""
+        ordered_names = ("aaa_lq_schema", "bbb_lq_schema")
+        for name in ordered_names:
+            payload = SchemaWriteFactory.build(name=name)
+            create_response = test_client.post(
+                f"/services/{service.id}/schemas/",
+                json=payload.model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+
+        first_page = test_client.get(
+            "/schemas/",
+            params={"sort": "name", "search": "lq_schema", "limit": 1, "offset": 0},
+        )
+        second_page = test_client.get(
+            "/schemas/",
+            params={"sort": "name", "search": "lq_schema", "limit": 1, "offset": 1},
+        )
+        assert first_page.status_code == status.HTTP_200_OK
+        assert second_page.status_code == status.HTTP_200_OK
+        assert first_page.json()["items"][0]["name"] == ordered_names[0]
+        assert second_page.json()["items"][0]["name"] == ordered_names[1]
 
 
 class TestRetrieveSchema:
@@ -216,6 +293,16 @@ class TestListTablesBySchema:
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
+    def test_list_tables_by_schema_rejects_unknown_sort_key(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"sort": "evil"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
     def test_list_tables_by_schema(
         self, test_client: TestClient, schema: Schema, table: Table
     ) -> None:
@@ -231,7 +318,7 @@ class TestListTablesBySchema:
     def test_list_tables_by_schema_search(
         self, test_client: TestClient, schema: Schema, table: Table
     ) -> None:
-        """Return only tables whose name matches the search query."""
+        """Return only tables whose name matches the search case-insensitively."""
         response = test_client.get(
             f"/schemas/{schema.id}/tables/",
             params={"search": table.name[:3]},
@@ -295,6 +382,58 @@ class TestListTablesBySchema:
         data = response.json()
         assert data["total"] >= 1
         assert len(data["items"]) <= 1
+
+    def test_list_tables_by_schema_search_reports_filtered_total(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Filter rows by search and report the filtered total, not the page size."""
+        for suffix in ("a", "b"):
+            payload = TableWriteFactory.build(name=f"FilterMatchTable_{suffix}")
+            create_response = test_client.post(
+                f"/schemas/{schema.id}/tables/",
+                json=payload.model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+        other = TableWriteFactory.build(name="UnrelatedTable")
+        test_client.post(
+            f"/schemas/{schema.id}/tables/",
+            json=other.model_dump(mode="json"),
+        )
+
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"search": "filtermatchtable", "limit": 1},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == LIST_QUERY_MATCH_TOTAL
+        assert len(data["items"]) == 1
+
+    def test_list_tables_by_schema_deterministic_ordering_across_pages(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Order by name stably across pages."""
+        ordered_names = ("aaa_lq_table", "bbb_lq_table")
+        for name in ordered_names:
+            payload = TableWriteFactory.build(name=name)
+            create_response = test_client.post(
+                f"/schemas/{schema.id}/tables/",
+                json=payload.model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+
+        first_page = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"sort": "name", "search": "lq_table", "limit": 1, "offset": 0},
+        )
+        second_page = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"sort": "name", "search": "lq_table", "limit": 1, "offset": 1},
+        )
+        assert first_page.status_code == status.HTTP_200_OK
+        assert second_page.status_code == status.HTTP_200_OK
+        assert first_page.json()["items"][0]["name"] == ordered_names[0]
+        assert second_page.json()["items"][0]["name"] == ordered_names[1]
 
 
 class TestCreateTableForSchema:
