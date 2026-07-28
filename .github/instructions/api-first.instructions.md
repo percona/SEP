@@ -22,6 +22,8 @@ Default: define an `AppSchema` in `app/sep/apps/{name}/schema.py`, register an a
 
 **Custom React (escape hatch)** requires (a) no `AppSchema` shape covers the app AND (b) the missing extension wouldn't benefit any other planned app. Only **alerts** and **report** qualify today. **alters** and **archives** are schema-driven via the DSL primitives (conditional rules + side-actions + derived tasks) — reject any proposal to revert either to custom React.
 
+**snippets** is schema-driven for its forms and execution but keeps one custom-React screen, `SnippetsListPage`. Its list needs whole-dataset server-side search, a service-type facet, an approval filter, and server-side sort — none of which the `<SchemaListView>` / `ListView` schema stack exposes today (that stack drives only server-side pagination). This is a scoped, temporary exception: when the schema stack grows filter/facet/search/sort primitives, fold these into it and migrate the page onto `<SchemaListView>`. Reject any *new* bespoke list screen that a schema-stack primitive could serve.
+
 After an app adopts `derive_crud_routes` (deleting its hand-written `api_routes.py`), the old `<App>CreateResponse = derive_create_response_model(...)` line in `models.py` and its now-unused import become dead code that lint won't flag (the assignment still references the import). Flag the leftover — a stray model sharing the auto-derived OpenAPI component name is a latent collision.
 
 ## Rule 3 — Reuse the framework layer

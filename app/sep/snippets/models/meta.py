@@ -16,6 +16,9 @@
 """Define models for snippet metadata in the SEP app."""
 
 __all__ = [
+    "META_KEY_DESCRIPTION",
+    "META_KEY_SERVICE_TYPE",
+    "META_KEY_TITLE",
     "SnippetMetaParameter",
     "SnippetMetaParameterChoice",
     "SnippetMetaParameterType",
@@ -78,6 +81,15 @@ from app.sep.snippets.forms import (
 ParameterType = str | int | float | bool | datetime | None
 
 logger = logging.getLogger(__name__)
+
+META_KEY_TITLE = "title"
+"""``meta`` JSON key holding a snippet's human title."""
+
+META_KEY_DESCRIPTION = "description"
+"""``meta`` JSON key holding a snippet's description."""
+
+META_KEY_SERVICE_TYPE = "service_type"
+"""``meta`` JSON key holding a snippet's free-form service type."""
 
 
 class SnippetMetaParameterType(EnumFieldMixin, Enum):
