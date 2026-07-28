@@ -34,7 +34,6 @@ export function StringField({ field }: StringFieldProps) {
       isRequired={field.required}
       control={control}
       textFieldProps={{
-        // textFieldProps.label overrides TextInput's string label (MUI accepts ReactNode).
         label: <FieldLabelWithHelp label={field.label} description={field.description} />,
         placeholder: field.placeholder,
         helperText: field.description,

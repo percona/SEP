@@ -34,7 +34,6 @@ export function DateTimeField({ field }: DateTimeFieldProps) {
       isRequired={field.required}
       control={control}
       textFieldProps={{
-        // textFieldProps.label overrides TextInput's string label (MUI accepts ReactNode).
         label: <FieldLabelWithHelp label={field.label} description={field.description} />,
         type: 'datetime-local',
         helperText: field.description,

@@ -73,6 +73,8 @@ export interface FieldLabelWithHelpProps {
  * Field label with an optional info-icon tooltip sourced from `description`.
  * Returns a plain string when there is no description so callers that accept
  * `string | ReactNode` (and undescribed fields) keep a stable, icon-free label.
+ * When a description is set, returns a ReactNode suitable for MUI label slots
+ * (e.g. TextInput's `textFieldProps.label`, which overrides the string label).
  */
 export function FieldLabelWithHelp({ label, description }: FieldLabelWithHelpProps): ReactNode {
   if (!description) {

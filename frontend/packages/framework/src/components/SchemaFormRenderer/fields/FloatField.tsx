@@ -34,7 +34,6 @@ export function FloatField({ field }: FloatFieldProps) {
       isRequired={field.required}
       control={control}
       textFieldProps={{
-        // textFieldProps.label overrides TextInput's string label (MUI accepts ReactNode).
         label: <FieldLabelWithHelp label={field.label} description={field.description} />,
         type: 'number',
         helperText: field.description,

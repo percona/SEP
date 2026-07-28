@@ -34,7 +34,6 @@ export function YamlField({ field }: YamlFieldProps) {
       isRequired={field.required}
       control={control}
       textFieldProps={{
-        // textFieldProps.label overrides TextInput's string label (MUI accepts ReactNode).
         label: <FieldLabelWithHelp label={field.label} description={field.description} />,
         multiline: true,
         rows: field.rows ?? 8,
