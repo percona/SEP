@@ -15,6 +15,9 @@
 
 """Define database operations for the Inventory API."""
 
+from sqlmodel import col
+
+from app.core.db import ListQuerySpec
 from app.core.db.crud import BaseSQLModelChildManager, BaseSQLModelManager
 from app.inventory.models import (
     HostSystemObservation,
@@ -31,9 +34,21 @@ class NodeManager(BaseSQLModelManager):
 
     :ivar Model: The SQLModel class this manager is responsible for (`Node`).
     :vartype Model: type[Node]
+    :ivar list_query_spec: The list-query spec declaring this entity's sortable
+        allowlist, searchable columns, and default sort.
+    :vartype list_query_spec: ListQuerySpec
     """
 
     Model = Node
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "name": col(Node.name),
+            "created_at": col(Node.created_at),
+        },
+        default_sort="name",
+        tie_breaker=col(Node.id),
+        searchable=[col(Node.name)],
+    )
 
 
 class ServiceManager(BaseSQLModelChildManager):
@@ -47,11 +62,23 @@ class ServiceManager(BaseSQLModelChildManager):
     :ivar connected_by: The field name that connects the child model to the parent
         model (`node_id`).
     :vartype connected_by: str
+    :ivar list_query_spec: The list-query spec declaring this entity's sortable
+        allowlist, searchable columns, and default sort.
+    :vartype list_query_spec: ListQuerySpec
     """
 
     Model = Service
     ParentManager = NodeManager
     connected_by = "node_id"
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "name": col(Service.name),
+            "created_at": col(Service.created_at),
+        },
+        default_sort="name",
+        tie_breaker=col(Service.id),
+        searchable=[col(Service.name)],
+    )
 
 
 class SchemaManager(BaseSQLModelChildManager):
@@ -65,11 +92,23 @@ class SchemaManager(BaseSQLModelChildManager):
     :ivar connected_by: The field name that connects the child model to the parent
         model (`service_id`).
     :vartype connected_by: str
+    :ivar list_query_spec: The list-query spec declaring this entity's sortable
+        allowlist, searchable columns, and default sort.
+    :vartype list_query_spec: ListQuerySpec
     """
 
     Model = Schema
     ParentManager = ServiceManager
     connected_by = "service_id"
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "name": col(Schema.name),
+            "created_at": col(Schema.created_at),
+        },
+        default_sort="name",
+        tie_breaker=col(Schema.id),
+        searchable=[col(Schema.name)],
+    )
 
 
 class TableManager(BaseSQLModelChildManager):
@@ -83,11 +122,23 @@ class TableManager(BaseSQLModelChildManager):
     :ivar connected_by: The field name that connects the child model to the parent
         model (`schema_id`).
     :vartype connected_by: str
+    :ivar list_query_spec: The list-query spec declaring this entity's sortable
+        allowlist, searchable columns, and default sort.
+    :vartype list_query_spec: ListQuerySpec
     """
 
     Model = Table
     ParentManager = SchemaManager
     connected_by = "schema_id"
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "name": col(Table.name),
+            "created_at": col(Table.created_at),
+        },
+        default_sort="name",
+        tie_breaker=col(Table.id),
+        searchable=[col(Table.name)],
+    )
 
 
 class HostSystemObservationManager(BaseSQLModelChildManager):
