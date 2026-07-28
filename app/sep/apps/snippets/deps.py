@@ -47,6 +47,13 @@ from app.sep.deps import SessionDep
 from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.list_query import (
+    DEFAULT_SNIPPET_SORT_KEY,
+    SnippetApprovalFilter,
+    SnippetListQuery,
+    SnippetSortDirection,
+    SnippetSortKey,
+)
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
     Snippet,
@@ -543,3 +550,58 @@ async def get_batch_existence(
 SnippetBatchExistenceDep = Annotated[
     SnippetBatchExistenceResult, Depends(get_batch_existence)
 ]
+
+
+def get_snippet_list_query(
+    search: Annotated[
+        str | None,
+        Query(description="Case-insensitive search over filename, title, description."),
+    ] = None,
+    sort: Annotated[
+        SnippetSortKey,
+        Query(description="Sort key; one of the allowlisted public sort keys."),
+    ] = DEFAULT_SNIPPET_SORT_KEY,
+    order: Annotated[
+        SnippetSortDirection, Query(description="Sort direction.")
+    ] = SnippetSortDirection.DESC,
+    approval: Annotated[
+        SnippetApprovalFilter, Query(description="Approval-status filter.")
+    ] = SnippetApprovalFilter.ALL,
+    service_type: Annotated[
+        str | None,
+        Query(description="Service-type equality filter, or omitted for no filter."),
+    ] = None,
+    *,
+    uncategorized: Annotated[
+        bool,
+        Query(
+            description=(
+                "When true, keep only snippets with no (absent or blank) service "
+                "type. A separate flag so a real service type can never collide "
+                "with a reserved sentinel. Takes precedence over 'service_type'."
+            )
+        ),
+    ] = False,
+) -> SnippetListQuery:
+    """Parse the opt-in snippets list-query parameters.
+
+    ``sort`` is typed as :class:`SnippetSortKey`, so an out-of-allowlist key
+    fails enum coercion at the request boundary (a 422 keyed to the ``sort``
+    query param) and no raw client-supplied column name can reach the query.
+
+    :param search: Free-text search term, or ``None`` for no search.
+    :param sort: The requested public sort key.
+    :param order: The requested sort direction.
+    :param approval: The requested approval-status filter.
+    :param service_type: The requested service-type equality filter.
+    :param uncategorized: When ``True``, filter to snippets with no service type.
+    :return: An immutable list-query value object.
+    """
+    return SnippetListQuery(
+        search=search,
+        sort_key=sort,
+        sort_direction=order,
+        approval=approval,
+        service_type=service_type,
+        uncategorized=uncategorized,
+    )
