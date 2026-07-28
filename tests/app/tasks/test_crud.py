@@ -15,7 +15,7 @@
 
 """Define tests for the Tasks CRUD managers."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from uuid import uuid4
 
 import pytest
@@ -60,6 +60,7 @@ PAGINATED_CUSTOM_TASK_COUNT = 3
 PBM_CONFIG_BACKUP_TYPE = "pbm_config"
 PARENT_FILTER_TASK_COUNT = 3
 CHUNKS_AT_OR_BELOW_OFFSET = 2
+RESOLVED_ORDER_BY_LENGTH = 2
 
 
 def _default_list_query(
@@ -537,6 +538,81 @@ class TestTaskHistoryManagerListByTaskName:
         )
 
         assert result == []
+
+
+class TestTaskAndHistoryManagerGetOrdering:
+    """Cover spec-derived default ordering used by non-HTTP list callers."""
+
+    def test_task_manager_derives_default_sort_from_spec(self) -> None:
+        """Derive ``created_at`` DESC NULLS LAST plus ``id`` ASC from the Task spec."""
+        ordering = list(TaskManager._get_ordering())
+
+        assert len(ordering) == RESOLVED_ORDER_BY_LENGTH
+        assert "created_at" in str(ordering[0])
+        assert "DESC" in str(ordering[0])
+        assert "NULLS LAST" in str(ordering[0])
+        assert ".id" in str(ordering[1])
+        assert "ASC" in str(ordering[1])
+
+    def test_task_history_manager_derives_default_sort_from_spec(self) -> None:
+        """Derive ``created_at`` DESC NULLS LAST plus ``id`` ASC from the history spec."""
+        ordering = list(TaskHistoryManager._get_ordering())
+
+        assert len(ordering) == RESOLVED_ORDER_BY_LENGTH
+        assert "created_at" in str(ordering[0])
+        assert "DESC" in str(ordering[0])
+        assert "NULLS LAST" in str(ordering[0])
+        assert ".id" in str(ordering[1])
+        assert "ASC" in str(ordering[1])
+
+
+class TestTaskHistoryManagerListByTaskNameOrdering:
+    """Cover ``list_by_task_name`` ordering driven by the shared history spec."""
+
+    @pytest.mark.asyncio
+    async def test_orders_by_created_at_descending(self, session: AsyncSession) -> None:
+        """Return histories newest-first when ``created_at`` values differ."""
+        task = await _create_task(session, name="order-created-at")
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        older = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.SUCCESS, created_at=base
+        )
+        newer = await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.FAILED,
+            created_at=base + timedelta(minutes=1),
+        )
+
+        result = await TaskHistoryManager.list_by_task_name(
+            session=session, task_name="order-created-at"
+        )
+
+        assert [row.id for row in result] == [newer.id, older.id]
+
+    @pytest.mark.asyncio
+    async def test_tie_breaks_equal_created_at_by_id_ascending(
+        self, session: AsyncSession
+    ) -> None:
+        """Tie-break equal ``created_at`` values with ascending unique ``id``."""
+        task = await _create_task(session, name="order-tie-break")
+        tied_at = datetime(2026, 1, 1, tzinfo=UTC)
+        first = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.SUCCESS, created_at=tied_at
+        )
+        second = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.FAILED, created_at=tied_at
+        )
+        third = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.RUNNING, created_at=tied_at
+        )
+
+        result = await TaskHistoryManager.list_by_task_name(
+            session=session, task_name="order-tie-break"
+        )
+
+        assert [row.id for row in result] == [first.id, second.id, third.id]
+        assert first.id < second.id < third.id
 
 
 # ---------------------------------------------------------------------------
