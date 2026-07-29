@@ -72,6 +72,10 @@ def _sep_section_bounds(lines: list[str]) -> tuple[int, int]:
 
     ``start`` is the first line after ``[sep]``; ``end`` is the index of the
     next section header (or ``len(lines)``).
+
+    :param lines: ``alembic.ini`` lines (``keepends`` optional).
+    :return: Inclusive-exclusive body span after the ``[sep]`` header.
+    :raises ValueError: If no ``[sep]`` section header is present.
     """
     sep_header: int | None = None
     for index, line in enumerate(lines):
@@ -94,10 +98,14 @@ def _reject_multiline_version_locations(
 ) -> None:
     """Require a single-line ``version_locations`` assignment.
 
-    Raises ``ValueError`` if an indented ConfigParser continuation follows
-    the assignment inside the ``[sep]`` section. Continuations are not
-    rewritten, so leaving them would let a later sync falsely report
-    the file as in sync.
+    Continuations are not rewritten, so leaving them would let a later
+    sync falsely report the file as in sync.
+
+    :param lines: ``alembic.ini`` lines (``keepends`` optional).
+    :param assignment_idx: Index of the ``version_locations =`` line.
+    :param body_end: Exclusive end of the ``[sep]`` section body.
+    :raises ValueError: If an indented ConfigParser continuation follows
+        the assignment inside the ``[sep]`` section.
     """
     for index in range(assignment_idx + 1, body_end):
         content = lines[index].rstrip("\r\n")
@@ -122,12 +130,13 @@ def render_sep_version_locations(text: str, value: str) -> str:
     ``version_locations =`` (and that assignment line) inside ``[sep]``.
     Leaves every other section and line untouched. Re-emits the same
     line ending style present in ``text`` (``LF`` or ``CRLF``).
-    Raises ``ValueError`` if the existing value uses indented continuations.
 
     :param text: Full ``alembic.ini`` contents with original line endings
         preserved (not universal-newline-normalized).
     :param value: The computed ``version_locations`` value.
     :return: Updated file contents.
+    :raises ValueError: If ``[sep]`` is missing, ``version_locations`` is
+        missing inside it, or the existing value uses indented continuations.
     """
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines(keepends=True)
@@ -172,13 +181,14 @@ def sync_alembic_ini(
     """Rewrite or check ``ini_path`` against discovery.
 
     Preserves the file's existing line endings (``LF`` or ``CRLF``).
-    Raises ``ValueError`` when ``version_locations`` spans multiple lines.
 
     :param ini_path: Path to ``alembic.ini``.
     :param apps_root: Plugin packages directory to scan.
     :param check: When true, report drift without writing.
     :return: ``True`` when the file already matched (or was rewritten);
         ``False`` when ``check`` found drift.
+    :raises ValueError: When the ini is missing ``[sep]``, missing
+        ``version_locations``, or uses a multi-line value.
     """
     value = compute_version_locations(apps_root)
     # newline="" disables universal-newline translation so a CRLF file still
@@ -199,7 +209,8 @@ def main(argv: list[str] | None = None) -> int:
     """Sync or check ``[sep] version_locations`` in ``alembic.ini``.
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
-    :return: ``0`` on success / in sync; ``1`` when ``--check`` finds drift.
+    :return: ``0`` on success / in sync; ``1`` when ``--check`` finds drift
+        or the ini is malformed.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -221,7 +232,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    matched = sync_alembic_ini(args.ini, args.apps_root, check=args.check)
+    try:
+        matched = sync_alembic_ini(args.ini, args.apps_root, check=args.check)
+    except ValueError as exc:
+        print(f"{args.ini}: {exc}", file=sys.stderr)
+        return 1
     if args.check:
         if not matched:
             print(

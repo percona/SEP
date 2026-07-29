@@ -55,12 +55,8 @@ def _load_models_module(full_name: str, models_path: Path) -> None:
 
     :param full_name: The fully qualified module name under which to
         register the loaded module (e.g. ``app.sep.apps.alerts.models``).
-    :type full_name: str
     :param models_path: Filesystem path to the plugin's ``models.py``
         file.
-    :type models_path: Path
-    :return: ``None``.
-    :rtype: None
     """
     if full_name in sys.modules:
         return
@@ -87,10 +83,8 @@ def discover_plugin_version_dirs(apps_root: Path | None = None) -> list[str]:
 
     :param apps_root: Directory of plugin packages to scan. Defaults to
         every entry on ``app.sep.apps.__path__``.
-    :type apps_root: Path | None
     :return: Absolute paths to each participating plugin's migration
         ``versions/`` directory, sorted for stable ordering.
-    :rtype: list[str]
     """
     roots = (
         [apps_root]
@@ -131,7 +125,6 @@ def discover_plugin_migrations_and_models() -> list[str]:
 
     :return: Absolute paths to each participating plugin's migration
         ``versions/`` directory, sorted for stable ordering.
-    :rtype: list[str]
     """
     version_dirs = discover_plugin_version_dirs()
     for versions_dir_str in version_dirs:

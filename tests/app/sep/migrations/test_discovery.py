@@ -241,7 +241,7 @@ def test_discover_plugin_version_dirs_sorted_without_loading_models(tmp_path):
 
 
 def test_discover_skips_namespace_package_without_init(tmp_path):
-    """Dirs without ``__init__.py`` are not treated as migration-owning plugins."""
+    """Skip dirs without ``__init__.py`` as migration-owning plugins."""
     _build_plugin(
         tmp_path,
         "namespace_only",
@@ -300,7 +300,7 @@ def test_sync_is_idempotent_on_second_run(tmp_path):
 
 
 def test_sync_preserves_crlf_line_endings(tmp_path):
-    """Sync preserves CRLF ``alembic.ini`` without converting to ``LF``."""
+    """Preserve CRLF ``alembic.ini`` without converting to ``LF``."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     _build_plugin(apps_root, "alpha", with_migrations=True, models_source=None)
@@ -316,7 +316,7 @@ def test_sync_preserves_crlf_line_endings(tmp_path):
 
 
 def test_sync_rejects_multiline_version_locations(tmp_path):
-    """Sync raises when ``version_locations`` has indented continuation lines."""
+    """Reject ``version_locations`` values with indented continuation lines."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     _build_plugin(apps_root, "alpha", with_migrations=True, models_source=None)
@@ -331,6 +331,46 @@ def test_sync_rejects_multiline_version_locations(tmp_path):
 
     with pytest.raises(ValueError, match="single line"):
         sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+
+
+def test_sync_rejects_missing_sep_section(tmp_path):
+    """Reject an ini that lacks a ``[sep]`` section."""
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    ini_path = tmp_path / "alembic.ini"
+    ini_path.write_text("[alembic]\ndatabases = sep\n")
+
+    with pytest.raises(ValueError, match=r"no \[sep\] section"):
+        sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+
+
+def test_sync_rejects_missing_version_locations_assignment(tmp_path):
+    """Reject a ``[sep]`` section that has no ``version_locations`` assignment."""
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    ini_path = tmp_path / "alembic.ini"
+    ini_path.write_text("[alembic]\ndatabases = sep\n\n[sep]\nscript_location = x\n")
+
+    with pytest.raises(ValueError, match="no version_locations assignment"):
+        sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+
+
+def test_main_reports_malformed_ini_cleanly(tmp_path, capsys):
+    """Report a malformed ini as a one-line CLI error, not a traceback."""
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    ini_path = tmp_path / "alembic.ini"
+    ini_path.write_text("[alembic]\ndatabases = sep\n")
+
+    assert (
+        sync_alembic_version_locations.main(
+            ["--ini", str(ini_path), "--apps-root", str(apps_root)]
+        )
+        == 1
+    )
+    err = capsys.readouterr().err
+    assert "no [sep] section" in err
+    assert "Traceback" not in err
 
 
 def test_sync_preserves_comment_block_and_other_sections(tmp_path):
