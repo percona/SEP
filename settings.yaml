@@ -243,6 +243,7 @@ development:
     SNIPPETS:
       SYNC_INTERVAL: 60 seconds
       ENABLE_MANUAL_SYNC: true
+      AUTO_APPROVE_BUILTIN_SNIPPETS: true
     INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
     TASKS_ENDPOINT: http://localhost:8000/api/tasks
     SECURITY_HEADERS:
