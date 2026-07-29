@@ -340,17 +340,24 @@ def _decode_log_line(line: bytes, task_history_id: int) -> dict[str, Any] | None
     :param line: The raw line, carrying the trailing newline
         :meth:`RemoteAPI.stream` preserves.
     :param task_history_id: The execution the line came from.
-    :return: The decoded record, or ``None`` for a blank or unparseable line.
+    :return: The decoded record, or ``None`` when the line is blank, unparseable,
+        or not a JSON object.
     """
     if not (text := line.strip()):
         return None
     try:
-        return json.loads(text)
+        record = json.loads(text)
     except json.JSONDecodeError:
         logger.warning(
             "Skipping an unparseable log line from execution %s.", task_history_id
         )
         return None
+    if not isinstance(record, dict):
+        logger.warning(
+            "Skipping a non-object log line from execution %s.", task_history_id
+        )
+        return None
+    return record
 
 
 class _LogMember:

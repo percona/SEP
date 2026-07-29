@@ -635,7 +635,7 @@ class TestRunSendExecutionLogs:
     async def test_blank_and_malformed_lines_are_skipped(
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
     ) -> None:
-        """Drop unparseable lines and keep streaming the rest of the group."""
+        """Drop lines that carry no usable record and keep streaming the group."""
         _fake_tasks_api(
             mocker,
             files={},
@@ -643,6 +643,7 @@ class TestRunSendExecutionLogs:
                 _log_record("first\n"),
                 b"\n",
                 b"not json\n",
+                b"[1, 2]\n",
                 _log_record("second\n"),
             ],
         )
