@@ -29,7 +29,11 @@ default:
     ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
   SEP:
     SNIPPETS:
-      FILTER_EXTENSIONS:
+      # Restrict snippet sync to shell scripts. Bare strings are parsed as
+      # extension filters; MIME-type filters use the "mime:<value>" form.
+      # Files that don't match are skipped, so add ".py" here to sync Python
+      # snippets even though an interpreter for them is configured by default.
+      SYNC_FILTER:
         - .sh
     UVICORN_HOST: "127.0.0.1"
     UVICORN_PORT: 8000
