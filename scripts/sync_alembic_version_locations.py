@@ -89,6 +89,31 @@ def _sep_section_bounds(lines: list[str]) -> tuple[int, int]:
     return sep_header + 1, len(lines)
 
 
+def _reject_multiline_version_locations(
+    lines: list[str], assignment_idx: int, body_end: int
+) -> None:
+    """Raise when ``version_locations`` has ConfigParser continuation lines.
+
+    Only the assignment line is rewritten; indented lines below it would be
+    left behind and folded back into the value, so a second sync could
+    falsely report the file as in sync.
+    """
+    for index in range(assignment_idx + 1, body_end):
+        content = lines[index].rstrip("\r\n")
+        # Mirror ConfigParser: blank lines and full-line comments are skipped
+        # without ending the current option, so an indented line after them
+        # is still a continuation.
+        if content.strip() == "" or content[0] in "#;":
+            continue
+        if content[0].isspace():
+            msg = (
+                "[sep] version_locations must be a single line; "
+                "indented continuation lines are not supported"
+            )
+            raise ValueError(msg)
+        return
+
+
 def render_sep_version_locations(text: str, value: str) -> str:
     """Return ``text`` with the ``[sep] version_locations`` block rewritten.
 
@@ -96,6 +121,7 @@ def render_sep_version_locations(text: str, value: str) -> str:
     ``version_locations =`` (and that assignment line) inside ``[sep]``.
     Leaves every other section and line untouched. Re-emits the same
     line ending style present in ``text`` (``LF`` or ``CRLF``).
+    Rejects multi-line (indented continuation) values.
 
     :param text: Full ``alembic.ini`` contents with original line endings
         preserved (not universal-newline-normalized).
@@ -114,6 +140,7 @@ def render_sep_version_locations(text: str, value: str) -> str:
     if assignment_idx is None:
         msg = "[sep] section has no version_locations assignment"
         raise ValueError(msg)
+    _reject_multiline_version_locations(lines, assignment_idx, body_end)
 
     comment_start = assignment_idx
     while comment_start > body_start and lines[comment_start - 1].lstrip().startswith(
@@ -144,6 +171,7 @@ def sync_alembic_ini(
     """Rewrite or check ``ini_path`` against discovery.
 
     Preserves the file's existing line endings (``LF`` or ``CRLF``).
+    Raises ``ValueError`` when ``version_locations`` spans multiple lines.
 
     :param ini_path: Path to ``alembic.ini``.
     :param apps_root: Plugin packages directory to scan.

@@ -279,7 +279,7 @@ def test_sync_is_idempotent_on_second_run(tmp_path):
 
 
 def test_sync_preserves_crlf_line_endings(tmp_path):
-    """Rewrite a CRLF ``alembic.ini`` without converting to ``LF``."""
+    """Sync preserves CRLF ``alembic.ini`` without converting to ``LF``."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     _build_plugin(apps_root, "alpha", with_migrations=True, models_source=None)
@@ -292,6 +292,24 @@ def test_sync_preserves_crlf_line_endings(tmp_path):
     assert b"\r\n" in rewritten
     assert b"\n" not in rewritten.replace(b"\r\n", b"")
     assert b"app/sep/apps/alpha/migrations/versions" in rewritten
+
+
+def test_sync_rejects_multiline_version_locations(tmp_path):
+    """Sync raises when ``version_locations`` has indented continuation lines."""
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    _build_plugin(apps_root, "alpha", with_migrations=True, models_source=None)
+    ini_path = tmp_path / "alembic.ini"
+    ini_path.write_text(
+        _MINIMAL_INI.replace(
+            "version_locations = %(here)s/app/sep/migrations/versions\n",
+            "version_locations = %(here)s/app/sep/migrations/versions:\n"
+            "    %(here)s/app/sep/apps/stale/migrations/versions\n",
+        )
+    )
+
+    with pytest.raises(ValueError, match="single line"):
+        sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
 
 
 def test_sync_preserves_comment_block_and_other_sections(tmp_path):
