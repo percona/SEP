@@ -68,7 +68,7 @@ def generate_manifest() -> tuple[int, Path]:
     :raises OSError: If a snippet file or the manifest cannot be read or written.
     """
     sys.path.insert(0, str(REPO_ROOT))
-    from app.sep.apps.snippets.constants import BUILTIN_CHECKSUM_MANIFEST
+    from app.sep.apps.snippets.builtin_manifest import BUILTIN_CHECKSUM_MANIFEST
 
     if not SNIPPETS_DIR.is_dir():
         raise SystemExit(f"Snippets directory not found: {SNIPPETS_DIR}")

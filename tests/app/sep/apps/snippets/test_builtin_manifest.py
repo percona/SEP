@@ -20,10 +20,10 @@ import hashlib
 import pytest
 
 from app.sep.apps.snippets.builtin_manifest import (
+    BUILTIN_CHECKSUM_MANIFEST,
     load_builtin_checksum_manifest,
     sha256_file,
 )
-from app.sep.apps.snippets.constants import BUILTIN_CHECKSUM_MANIFEST
 
 MODULE = "app.sep.apps.snippets.builtin_manifest"
 

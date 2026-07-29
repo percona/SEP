@@ -28,14 +28,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.celery import celery
 from app.sep.app_drain import owned_by, should_cancel
 from app.sep.apps.snippets.builtin_manifest import (
+    BUILTIN_CHECKSUM_MANIFEST,
     load_builtin_checksum_manifest,
     manifest_relative_path,
     sha256_file,
-)
-from app.sep.apps.snippets.constants import (
-    BUILTIN_APPROVAL_REASON,
-    BUILTIN_APPROVAL_USER_ID,
-    BUILTIN_CHECKSUM_MANIFEST,
 )
 from app.sep.db import get_async_session_maker
 from app.sep.snippets.config import SnippetFilterType, snippets_settings
@@ -46,6 +42,13 @@ from app.sep.snippets.utils import guess_mime_type
 logger = logging.getLogger(__name__)
 
 _CONTENT_CHANGED_REASON = "File contents have changed"
+
+# Audit trail for automatic approvals of manifest-verified built-in snippets.
+# Kept next to the sync approval transition: the ``system`` sentinel lands in
+# ``Snippet.updated_by`` alongside real user ids, and ``is_human_revoked``
+# treats a non-null ``updated_by`` on an unapproved row as sticky revocation.
+_BUILTIN_APPROVAL_USER_ID = "system"
+_BUILTIN_APPROVAL_REASON = "Auto-approved: matches built-in checksum manifest"
 
 
 @owned_by("snippets")
@@ -191,12 +194,11 @@ async def _sync_snippet_file(
             created_snippet.md5_digest,
             snippet.md5_digest,
         )
-        human_revoked = created_snippet.is_human_revoked
         await created_snippet.update_from_snippet(snippet)
         _apply_builtin_approval_policy(
             created_snippet,
             manifest_match=manifest_match,
-            human_revoked=human_revoked,
+            human_revoked=created_snippet.is_human_revoked,
             content_changed=True,
         )
         content_changed_snippets.append(created_snippet)
@@ -234,7 +236,7 @@ def _apply_builtin_approval_policy(
         return False
     if manifest_match:
         if content_changed or not snippet.is_approved:
-            snippet.approve(BUILTIN_APPROVAL_REASON, BUILTIN_APPROVAL_USER_ID)
+            snippet.approve(_BUILTIN_APPROVAL_REASON, _BUILTIN_APPROVAL_USER_ID)
             return True
         return False
     if content_changed:

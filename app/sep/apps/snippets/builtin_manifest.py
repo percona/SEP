@@ -23,12 +23,14 @@ from typing import TYPE_CHECKING
 
 import aiofiles
 
-from app.sep.apps.snippets.constants import BUILTIN_CHECKSUM_MANIFEST
-
 if TYPE_CHECKING:
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Built-in snippet checksum manifest (sha256sum two-space format under SNIPPETS_DIR).
+# Shared by the generator script and the in-app verifier so the name cannot drift.
+BUILTIN_CHECKSUM_MANIFEST = "builtin-snippets.sha256"
 
 _CHUNK_SIZE = 8192
 

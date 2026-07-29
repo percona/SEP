@@ -16,10 +16,3 @@
 """Constants for the Snippets plugin."""
 
 ARTIFACT_TYPE_SNIPPET = "snippet"
-
-# Built-in snippet checksum manifest (sha256sum two-space format under SNIPPETS_DIR).
-BUILTIN_CHECKSUM_MANIFEST = "builtin-snippets.sha256"
-
-# Audit trail for automatic approvals of manifest-verified built-in snippets.
-BUILTIN_APPROVAL_USER_ID = "system"
-BUILTIN_APPROVAL_REASON = "Auto-approved: matches built-in checksum manifest"
