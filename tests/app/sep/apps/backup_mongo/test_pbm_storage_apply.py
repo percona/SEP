@@ -368,6 +368,38 @@ class TestApplyPbmConfigCanonical:
         assert "credentials_path" not in written
         assert "pitr" not in written
 
+    def test_strips_selective_backup_keys_before_pbm_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Strip ``namespaces`` / ``withUsersAndRoles`` from the backup block.
+
+        Those keys drive ``pbm backup --ns`` in runners but are invalid PBM
+        config-file keys, so ``pbm config --file`` must not see them.
+        """
+        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+        captured: list[list[str]] = []
+        self._stub_popen(monkeypatch, captured)
+
+        pbm_creds_common._apply_pbm_config(
+            {
+                "storage": {"type": "filesystem", "filesystem": {"path": "/tmp/pbm"}},
+                "backup": {
+                    "compression": "gzip",
+                    "namespaces": "db1.*,db2.coll",
+                    "withUsersAndRoles": True,
+                },
+            }
+        )
+
+        assert captured == [["pbm", "config", "--file", f"{tmp_path}/script_config"]]
+        written = yaml.safe_load((tmp_path / "script_config").read_text())
+        assert written == {
+            "storage": {"type": "filesystem", "filesystem": {"path": "/tmp/pbm"}},
+            "backup": {"compression": "gzip"},
+        }
+        assert "namespaces" not in written["backup"]
+        assert "withUsersAndRoles" not in written["backup"]
+
     def test_exits_when_task_dir_unset(
         self,
         monkeypatch: pytest.MonkeyPatch,

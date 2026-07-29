@@ -1,5 +1,6 @@
-""" PBM Physical Payload """
+""" PBM Incremental Payload """
 
+import json
 import subprocess
 import os
 import sys
@@ -127,6 +128,7 @@ def _compression_flags(config):
     return flags
 
 
+
 # --- BEGIN GENERATED PBM CONFIG APPLY ---
 def _apply_pbm_config(config: dict) -> None:
     """Apply the SEP-managed PBM config to the cluster via ``pbm config --file``.
@@ -190,15 +192,60 @@ def _apply_pbm_config(config: dict) -> None:
 # --- END GENERATED PBM CONFIG APPLY ---
 
 
+def _needs_incremental_base() -> bool:
+    """Return True when the cluster has no incremental backup base yet.
+
+    Inspect ``pbm list -o json`` for any snapshot whose type mentions
+    incremental. Abort when listing fails or cannot be parsed — guessing
+    ``--base`` on a transient failure would start an unintended new chain.
+    """
+    try:
+        result = subprocess.run(  # noqa: S603 # nosec B603
+            ['pbm', 'list', '-o', 'json'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as err:
+        print(f'Failed to query pbm list for incremental base: {err}', file=sys.stderr)
+        sys.exit(1)
+    if result.returncode != 0:
+        print(
+            'Failed to query pbm list for incremental base '
+            f'(exited {result.returncode}).',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    try:
+        payload = json.loads(result.stdout or '') or {}
+    except json.JSONDecodeError as err:
+        print(f'Failed to parse pbm list JSON: {err}', file=sys.stderr)
+        sys.exit(1)
+    snapshots = []
+    if isinstance(payload, dict):
+        value = payload.get('snapshots')
+        if isinstance(value, list):
+            snapshots = value
+    for entry in snapshots:
+        if not isinstance(entry, dict):
+            continue
+        backup_type = str(entry.get('type') or '').lower()
+        if 'incremental' in backup_type:
+            return False
+    return True
+
+
 def pbm():
-    """ PBM Physical Payload """
+    """ PBM Incremental Payload """
 
     os.environ['PBM_MONGODB_URI'] = pbm_creds(_creds_path('backup'))
     config = _load_config()
     if isinstance(config.get('storage'), dict):
         _apply_pbm_config(config)
-    # Selective --ns is logical-only in PBM; ignore namespaces on physical runs.
-    cmd = ['pbm', 'backup', '--type', 'physical', '--wait'] + _compression_flags(config)
+    cmd = ['pbm', 'backup', '--type', 'incremental']
+    if _needs_incremental_base():
+        cmd.append('--base')
+    cmd += ['--wait'] + _compression_flags(config)
 
     try:
         proc = subprocess.Popen(cmd)
