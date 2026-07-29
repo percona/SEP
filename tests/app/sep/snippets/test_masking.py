@@ -339,11 +339,40 @@ class TestMaskExtraArgs:
         )
 
     def test_extra_arg_glued_short_password_flag_is_masked(self):
-        """Mask a pasted ``-pSECRET`` following the archiver-egress precedent."""
+        """Mask a pasted ``-pSECRET`` the way ``redact_secrets`` treats a glued ``-p``."""
         model = _model([{"name": "dest", "type": "str", "required": True}])
         args = "--dest /tmp -phunter2"
 
         assert mask_snippet_args(args, model) == f"--dest /tmp -p{SENSITIVE_ARG_MASK}"
+
+    def test_bare_credential_flag_does_not_consume_a_following_credential_flag(self):
+        """Mask the value owned by the flag after a valueless credential flag.
+
+        A bare ``--password`` takes no value, so reading the next token as one both
+        erases that token's own flag name and advances the scan past it -- leaving
+        the value that flag really owns rendered in the clear.
+        """
+        model = _model([{"name": "dest", "type": "str", "required": True}])
+        args = "--dest /tmp --password --token hunter2"
+
+        masked = mask_snippet_args(args, model)
+
+        assert masked == f"--dest /tmp --password --token {SENSITIVE_ARG_MASK}"
+        assert "hunter2" not in masked
+
+    def test_dash_leading_value_after_a_credential_flag_is_still_masked(self):
+        """Keep masking a secret whose own first character is a single dash.
+
+        Only the ``--`` spelling reads as a flag; a single-dash token stays
+        eligible to be the credential flag's value.
+        """
+        model = _model([{"name": "dest", "type": "str", "required": True}])
+        args = "--dest /tmp --password -abc123"
+
+        masked = mask_snippet_args(args, model)
+
+        assert masked == f"--dest /tmp --password {SENSITIVE_ARG_MASK}"
+        assert "-abc123" not in masked
 
     def test_bare_short_password_flag_without_a_value_is_left_alone(self):
         """Leave a valueless ``-p`` token untouched -- there is nothing glued to it."""
@@ -599,6 +628,37 @@ class TestMaskingFailureIsWithheld:
         )
         args = _args(model, password="s3cr3t")
 
+        assert mask_snippet_args(args, model) is None
+
+    def test_falsy_boolean_sharing_a_later_shape_is_withheld(self):
+        """Withhold when a boolean that rendered nothing could fit a later token.
+
+        A boolean renders no tokens at all whenever its value is falsy, whether or
+        not its value could have been ``None``. So it vanishes from the recorded
+        line exactly like an omitted optional, and the walk would consume the
+        sensitive parameter's token under the boolean's identity, then read that
+        parameter as never supplied and leave its value in the clear.
+        """
+        model = _model(
+            [
+                {
+                    "name": "m",
+                    "type": "bool",
+                    "required": True,
+                    "arg_format": "--m${value}",
+                },
+                {
+                    "name": "muri",
+                    "type": "str",
+                    "required": True,
+                    "sensitive": True,
+                    "arg_format": "--muri:${value}",
+                },
+            ]
+        )
+        args = _args(model, m=False, muri="s3cr3t")
+
+        assert args == "--muri:s3cr3t"
         assert mask_snippet_args(args, model) is None
 
     def test_optional_parameter_sharing_a_later_shape_is_withheld(self):

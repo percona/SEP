@@ -96,8 +96,10 @@ class _ParamSpec:
         in for its value.
     :param sensitive: Whether the parameter's value must be masked.
     :param positional: Whether the parameter renders as a bare positional token.
-    :param omittable: Whether the value can be ``None`` and so be dropped from
-        the rendered line entirely.
+    :param omittable: Whether the parameter can be absent from the rendered line.
+        Two things make it so: a value that can be ``None``, which
+        ``to_args_string`` drops, and a non-positional boolean, which renders
+        nothing at all whenever its value is falsy.
     """
 
     name: str
@@ -146,7 +148,7 @@ def _masking_spec(execution_model: type[BaseSnippetArgs]) -> tuple[_ParamSpec, .
         execution_model.extra_args_field,
         execution_model.sudo_field,
     }
-    specs = []
+    specs: list[_ParamSpec] = []
     for identifier, field in execution_model.model_fields.items():
         if identifier in skipped or field.exclude:
             continue
@@ -154,13 +156,15 @@ def _masking_spec(execution_model: type[BaseSnippetArgs]) -> tuple[_ParamSpec, .
         tokens = tuple(execution_model.format_args(identifier, _SENTINEL))
         if not tokens:
             continue
+        positional = bool(metadata.get("positional"))
         specs.append(
             _ParamSpec(
                 name=name,
                 tokens=tokens,
                 sensitive=bool(metadata.get("sensitive")) or _is_credential_name(name),
-                positional=bool(metadata.get("positional")),
-                omittable=not field.is_required() and field.default is None,
+                positional=positional,
+                omittable=(not field.is_required() and field.default is None)
+                or (bool(metadata.get("is_flag")) and not positional),
             )
         )
     return tuple(specs)
@@ -343,7 +347,7 @@ def _sensitive_arg_names(specs: tuple[_ParamSpec, ...]) -> frozenset[str]:
     :param specs: The snippet's parameter specs.
     :return: The frontmatter names and emitted flag names of sensitive parameters.
     """
-    names = set()
+    names: set[str] = set()
     for spec in specs:
         if not spec.sensitive:
             continue
@@ -370,6 +374,18 @@ def _valueless_flag_literals(specs: tuple[_ParamSpec, ...]) -> frozenset[str]:
     )
 
 
+def _is_long_flag(token: str) -> bool:
+    """Return whether a token reads as a long flag rather than as a value.
+
+    Only the ``--`` spelling counts. A single-dash token is a plausible secret
+    value, so it stays eligible to be read as one.
+
+    :param token: One recorded argument token.
+    :return: ``True`` when the token is a long flag, with or without a value.
+    """
+    return bool(_FLAG_RE.match(token) or _FLAG_VALUE_RE.match(token))
+
+
 def _mask_credential_named_tokens(
     tokens: list[str],
     sensitive_names: frozenset[str],
@@ -384,6 +400,11 @@ def _mask_credential_named_tokens(
     own parameters into the extra arguments, and a start index derived from it
     would then carry that error and skip exactly the tokens this pass exists to
     catch. Re-masking a value the walk already masked is a no-op.
+
+    A credential flag is only read as taking a value when the token after it is not
+    itself a long flag. Masking a successor that *is* one would erase its name and
+    advance the scan past it, so the value that flag really owns would ship in the
+    clear -- a bare ``--password`` before ``--token SECRET`` leaked ``SECRET``.
 
     :param tokens: The recorded argument tokens, mutated in place.
     :param sensitive_names: Argument names whose value must be masked, from
@@ -408,6 +429,7 @@ def _mask_credential_named_tokens(
             and (_is_credential_name(name := match["name"]) or name in sensitive_names)
             and token not in flag_literals
             and index + 1 < len(tokens)
+            and not _is_long_flag(tokens[index + 1])
         ):
             tokens[index + 1] = _MASK_PLACEHOLDER
             index += 1
