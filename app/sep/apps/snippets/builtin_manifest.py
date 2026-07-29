@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Hash snippet files, derive checksum-manifest keys, load the manifest, and match digests."""
+"""Hash snippet files, derive checksum-manifest keys, and load the manifest."""
 
 from __future__ import annotations
 
@@ -102,18 +102,3 @@ async def load_builtin_checksum_manifest(snippets_dir: Path) -> dict[str, str]:
             continue
         entries[filename] = digest
     return entries
-
-
-def matches_builtin_manifest(
-    filename: str,
-    digest: str,
-    manifest: dict[str, str],
-) -> bool:
-    """Return whether ``filename`` and ``digest`` match a manifest entry exactly.
-
-    :param filename: The snippet filename relative to the snippets directory.
-    :param digest: The SHA-256 hex digest of the snippet file contents.
-    :param manifest: The filename-to-digest mapping from the checksum manifest.
-    :return: ``True`` when both the filename and digest match an entry exactly.
-    """
-    return manifest.get(filename) == digest

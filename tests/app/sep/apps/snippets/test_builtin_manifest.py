@@ -21,7 +21,6 @@ import pytest
 
 from app.sep.apps.snippets.builtin_manifest import (
     load_builtin_checksum_manifest,
-    matches_builtin_manifest,
     sha256_file,
 )
 from app.sep.apps.snippets.constants import BUILTIN_CHECKSUM_MANIFEST
@@ -110,24 +109,6 @@ class TestLoadBuiltinChecksumManifest:
         )
 
         assert await load_builtin_checksum_manifest(tmp_path) == {}
-
-
-class TestMatchesBuiltinManifest:
-    """Test matches_builtin_manifest exact lookup."""
-
-    def test_exact_match(self):
-        """Assert matching filename and digest returns ``True``."""
-        assert (
-            matches_builtin_manifest("a.sh", "deadbeef", {"a.sh": "deadbeef"}) is True
-        )
-
-    def test_digest_mismatch(self):
-        """Assert a wrong digest returns ``False``."""
-        assert matches_builtin_manifest("a.sh", "nope", {"a.sh": "deadbeef"}) is False
-
-    def test_missing_filename(self):
-        """Assert an unknown filename returns ``False``."""
-        assert matches_builtin_manifest("missing.sh", "deadbeef", {}) is False
 
 
 class TestSha256File:

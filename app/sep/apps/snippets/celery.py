@@ -30,7 +30,6 @@ from app.sep.app_drain import owned_by, should_cancel
 from app.sep.apps.snippets.builtin_manifest import (
     load_builtin_checksum_manifest,
     manifest_relative_path,
-    matches_builtin_manifest,
     sha256_file,
 )
 from app.sep.apps.snippets.constants import (
@@ -164,11 +163,9 @@ async def _sync_snippet_file(
     """
     snippet = await Snippet.from_path(snippet_path)
     logger.debug("Processing file %s: %s", snippet_path, snippet.model_dump())
-    manifest_match = auto_approve_enabled and matches_builtin_manifest(
-        snippet_name,
-        await sha256_file(snippet_path),
-        manifest,
-    )
+    manifest_match = auto_approve_enabled and manifest.get(
+        snippet_name
+    ) == await sha256_file(snippet_path)
     created_snippet, created = await SnippetManager.get_or_create(
         session, snippet, {"filename"}
     )
