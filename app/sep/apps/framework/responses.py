@@ -44,18 +44,26 @@ def dump_with_excluded_fields(
 
     ``model_dump`` omits fields marked ``Field(exclude=True)``. Detail/create
     builders that rebuild via ``Subclass(**base.model_dump(), ...)`` need those
-    attributes restored. Reinjection uses the live attribute values so callers
-    only need the ``exclude`` kwarg used for computed fields.
+    attributes restored. Reinjection uses the live attribute values (not copies),
+    which is safe for the current scalar ``exclude=True`` fields; callers that
+    later mark a mutable container as ``exclude=True`` must treat the rebuilt
+    dump as aliased to the source. Computed fields are always omitted so the
+    dump is safe to splat into a subclass constructor. An explicit ``exclude``
+    entry still wins over reinjection.
 
     :param model: The response model instance to dump.
-    :param exclude: Field names forwarded to :meth:`BaseModel.model_dump`.
-    :return: A dump including every ``exclude=True`` field on ``model``.
+    :param exclude: Extra field names omitted from the dump (in addition to
+        computed fields). Wins over ``Field(exclude=True)`` reinjection.
+    :return: A dump including ``exclude=True`` fields not named in ``exclude``.
     """
-    data = model.model_dump(exclude=exclude)
+    excluded_names = exclude or set()
+    data = model.model_dump(
+        exclude=excluded_names | set(type(model).model_computed_fields)
+    )
     data |= {
         name: getattr(model, name)
         for name, field in type(model).model_fields.items()
-        if field.exclude
+        if field.exclude and name not in excluded_names
     }
     return data
 
@@ -145,8 +153,8 @@ class BaseTaskResponse(BaseModel):
         Convenience wrapper around :func:`dump_with_excluded_fields` for
         ``BaseTaskResponse`` subclasses.
 
-        :param exclude: Field names forwarded to :meth:`model_dump` (for example
-            computed fields).
+        :param exclude: Extra field names omitted from the dump; wins over
+            ``Field(exclude=True)`` reinjection.
         :return: A dump including serialization-excluded fields.
         """
         return dump_with_excluded_fields(self, exclude=exclude)

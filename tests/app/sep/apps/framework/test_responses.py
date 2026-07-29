@@ -589,7 +589,17 @@ class TestBaseTaskResponse:
 
         assert dumped["owner"] == "CHECKSUMS"
         assert dumped["service_type"] == ServiceTypeEnum.MYSQL
+        assert "anonymized_entities" not in dumped
         assert BaseTaskResponse.model_validate(dumped).owner == "CHECKSUMS"
+
+    def test_dump_with_excluded_fields_honours_explicit_exclude(self) -> None:
+        """Let an explicit ``exclude`` entry win over excluded-field reinjection."""
+        response = BaseTaskResponse.model_validate(self.BASE_FIELDS)
+
+        dumped = response.model_dump_with_excluded_fields(exclude={"owner"})
+
+        assert "owner" not in dumped
+        assert "service_type" in dumped
 
     def test_dump_with_excluded_fields_restores_exclude_true_fields_on_any_model(
         self,
