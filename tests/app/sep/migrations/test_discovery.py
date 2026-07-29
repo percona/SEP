@@ -240,6 +240,27 @@ def test_discover_plugin_version_dirs_sorted_without_loading_models(tmp_path):
     assert "app.sep.apps.zebra.models" not in sys.modules
 
 
+def test_discover_skips_namespace_package_without_init(tmp_path):
+    """Dirs without ``__init__.py`` are not treated as migration-owning plugins."""
+    _build_plugin(
+        tmp_path,
+        "namespace_only",
+        with_migrations=True,
+        models_source=_MARKER_SRC,
+        init_source=None,
+    )
+    _build_plugin(
+        tmp_path,
+        "real_pkg",
+        with_migrations=True,
+        models_source=_MARKER_SRC,
+    )
+    version_dirs = discover_plugin_version_dirs(tmp_path)
+    assert version_dirs == [
+        str(tmp_path / "real_pkg" / "migrations" / "versions"),
+    ]
+
+
 def test_sync_regenerates_from_synthetic_app_tree(tmp_path):
     """Sync rewrites ``version_locations`` from a synthetic apps tree."""
     apps_root = tmp_path / "apps"

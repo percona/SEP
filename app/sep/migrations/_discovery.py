@@ -80,8 +80,10 @@ def discover_plugin_version_dirs(apps_root: Path | None = None) -> list[str]:
     """Return sorted migration ``versions/`` dirs for plugins that own migrations.
 
     Filesystem-only: does not import or load any plugin ``models.py``. A
-    plugin participates only when ``migrations/versions/`` exists on disk
-    (migrations-first). Does not consult ``sep_settings.APPS``.
+    plugin participates only when it is a regular package (``__init__.py``
+    present) and ``migrations/versions/`` exists on disk (migrations-first).
+    Namespace packages and plain directories are skipped. Does not consult
+    ``sep_settings.APPS``.
 
     :param apps_root: Directory of plugin packages to scan. Defaults to
         every entry on ``app.sep.apps.__path__``.
@@ -101,6 +103,9 @@ def discover_plugin_version_dirs(apps_root: Path | None = None) -> list[str]:
             continue
         for plugin_dir in root.iterdir():
             if not plugin_dir.is_dir():
+                continue
+            # Regular packages only; skip namespace dirs and plain folders.
+            if not (plugin_dir / "__init__.py").is_file():
                 continue
             versions_dir = plugin_dir / "migrations" / "versions"
             if versions_dir.is_dir():

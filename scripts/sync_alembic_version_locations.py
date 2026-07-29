@@ -92,11 +92,12 @@ def _sep_section_bounds(lines: list[str]) -> tuple[int, int]:
 def _reject_multiline_version_locations(
     lines: list[str], assignment_idx: int, body_end: int
 ) -> None:
-    """Raise when ``version_locations`` has ConfigParser continuation lines.
+    """Require a single-line ``version_locations`` assignment.
 
-    Only the assignment line is rewritten; indented lines below it would be
-    left behind and folded back into the value, so a second sync could
-    falsely report the file as in sync.
+    Raises ``ValueError`` if an indented ConfigParser continuation follows
+    the assignment inside the ``[sep]`` section. Continuations are not
+    rewritten, so leaving them would let a later sync falsely report
+    the file as in sync.
     """
     for index in range(assignment_idx + 1, body_end):
         content = lines[index].rstrip("\r\n")
@@ -121,7 +122,7 @@ def render_sep_version_locations(text: str, value: str) -> str:
     ``version_locations =`` (and that assignment line) inside ``[sep]``.
     Leaves every other section and line untouched. Re-emits the same
     line ending style present in ``text`` (``LF`` or ``CRLF``).
-    Rejects multi-line (indented continuation) values.
+    Raises ``ValueError`` if the existing value uses indented continuations.
 
     :param text: Full ``alembic.ini`` contents with original line endings
         preserved (not universal-newline-normalized).
