@@ -1248,8 +1248,6 @@ async def _stage_and_commit_overrides(
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
     for key, value in to_apply:
-        # SecretStr/SecretBytes must be unwrapped before the JSON column write;
-        # otherwise Pydantic/SQLAlchemy serialise them as SECRET_STR_MASK.
         stored_value = unwrap_secrets_for_storage(value)
         existing = await SettingsOverrideManager.first(
             session, setting_class=setting_class, key=key
