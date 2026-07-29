@@ -247,8 +247,9 @@ step down to `base` later if the derived router genuinely cannot express your ap
 whenever standard input is a TTY — with or without variables on the command
 line, since a supplied variable only pre-fills and skips that one prompt, and a
 final confirmation still gates the write. Pass `NO_INPUT=1` (or pipe/redirect
-stdin) to skip the wizard entirely and resolve every unset field to its
-default:
+stdin) to skip the wizard entirely; every other unset field then resolves to
+its default, but `NAME` has no default outside the wizard and must still be
+supplied:
 
 ```bash
 make startapp NAME=myapp TYPE=task DISPLAY_NAME="My App" \
@@ -638,9 +639,10 @@ model attaches `_MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")` to
 each of its non-boolean Mydumper-only fields.
 
 > **⚠ `Forbidden`/`Requires` cannot gate a bool field on its default.** The
-> predicate engine treats a field's zero value as absent, and a bare `bool`
-> field's default (`False`) *is* its zero value — so a `Forbidden(when=...)`
-> marker on such a field would never see it as "present" and would never fire.
+> predicate engine treats `None`, `False`, and empty strings/bytes/collections
+> as absent (numeric `0` still counts as present) — and a bare `bool` field's
+> default *is* `False`, so a `Forbidden(when=...)` marker on such a field would
+> never see it as "present" and would never fire.
 > MySQL Backups' mode-owned bool fields (`mydumper_dump_triggers` and its
 > siblings) are therefore gated by a generated `FailRule` instead — the
 > `truthy(name) & (F("backup_type") != owner_mode)` rule shown above — which
