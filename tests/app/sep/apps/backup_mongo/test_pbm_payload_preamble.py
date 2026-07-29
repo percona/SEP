@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the shared PBM creds preamble across the nine backup_mongo payloads."""
+"""Define tests for the shared PBM creds preamble across the ten backup_mongo payloads."""
 
 import builtins
 from pathlib import Path
@@ -40,6 +40,7 @@ _EXPECTED_PAYLOADS = {
     "pbm_logical_payload",
     "pbm_physical_payload",
     "pbm_status_payload",
+    "pbm_incremental_payload",
     "pbm_force_resync_payload",
     "pbm_list_payload",
     "pbm_logical_restore_payload",
@@ -52,6 +53,7 @@ _EXPECTED_PBM_URI_CALLS = {
     "pbm_logical_payload": "pbm_creds(_creds_path('backup'))",
     "pbm_physical_payload": "pbm_creds(_creds_path('backup'))",
     "pbm_status_payload": "pbm_creds(_creds_path('backup'))",
+    "pbm_incremental_payload": "pbm_creds(_creds_path('backup'))",
     "pbm_force_resync_payload": "pbm_creds(_creds_path('restore'))",
     "pbm_list_payload": "pbm_creds(_creds_path('restore'))",
     "pbm_logical_restore_payload": "pbm_creds(_creds_path_from_config(config))",
@@ -75,8 +77,8 @@ class TestInSyncGuard:
         """``gen_pbm_payloads.py --check`` exits 0 for the checked-in tree."""
         assert GEN.main(["--check"]) == 0
 
-    def test_discovers_exactly_the_nine_payloads(self) -> None:
-        """Discover the nine credential-bearing payloads and nothing else."""
+    def test_discovers_exactly_the_ten_payloads(self) -> None:
+        """Discover the ten credential-bearing payloads and nothing else."""
         found = {path.name for path in _shipped_payloads()}
         assert found == _EXPECTED_PAYLOADS
         assert set(_EXPECTED_PBM_URI_CALLS) == _EXPECTED_PAYLOADS

@@ -166,10 +166,25 @@ def _apply_pbm_config(config: dict) -> None:
     :param config: The parsed task config; SEP-only and ``None``-valued keys are
         dropped before it is written to the PBM config file.
     """
-    sep_only_keys = frozenset({"credentials_path", "credentialsPath", "alias", "ALIAS"})
-    pbm_config = {
-        k: v for k, v in config.items() if k not in sep_only_keys and v is not None
-    }
+    sep_only_keys = frozenset(
+        {"credentials_path", "credentialsPath", "alias", "ALIAS"}
+    )
+    # Selective --ns flags live under backup for NOMAD_META_CONFIG readers but are
+    # not valid PBM config keys, so strip them before ``pbm config --file``.
+    sep_only_backup_keys = frozenset({"namespaces", "withUsersAndRoles"})
+    pbm_config = {}
+    for key, value in config.items():
+        if key in sep_only_keys or value is None:
+            continue
+        if key == "backup" and isinstance(value, dict):
+            backup_value = {
+                backup_key: nested_value
+                for backup_key, nested_value in value.items()
+                if backup_key not in sep_only_backup_keys
+            }
+            pbm_config[key] = backup_value
+            continue
+        pbm_config[key] = value
     task_dir = os.environ.get("NOMAD_TASK_DIR")
     if not task_dir:
         print(

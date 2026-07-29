@@ -183,3 +183,16 @@ def test_build_spec_forwards_selected_pitr_compression():
     )
 
     assert config["pitr"]["compression"] == "snappy"
+
+
+def test_build_spec_forwards_selective_namespaces():
+    """Thread selective namespaces and users/roles into the backup config block."""
+    form = _s3_form(
+        backup_namespaces="mydb.*,other.*",
+        backup_with_users_and_roles=True,
+    )
+
+    config = _config(build_backup_mongo_spec(form, BackupMongoResolved()))
+
+    assert config["backup"]["namespaces"] == "mydb.*,other.*"
+    assert config["backup"]["withUsersAndRoles"] is True

@@ -61,9 +61,82 @@ class BackupType(EnumFieldMixin, StrEnum):
 
     PBM_LOGICAL = "pbm_logical"
     PBM_PHYSICAL = "pbm_physical"
+    PBM_INCREMENTAL = "pbm_incremental"
     PBM_SNAPSHOT = "pbm_snapshot"
     PBM_CONFIG = "pbm_config"
     PBM_STATUS = "pbm_status"
+
+
+#: Database name portion of a selective namespace (before the first ``.``).
+_NAMESPACE_DB_RE = re.compile(r"^[^.*\s]+$")
+#: Database-level selective namespace (``db.*``) required for ``--with-users-and-roles``.
+_DB_LEVEL_NAMESPACE_RE = re.compile(r"^[^.*\s]+\.\*$")
+
+
+def parse_backup_namespaces(namespaces: str) -> list[str]:
+    """Parse a comma-separated selective namespace list into tokens.
+
+    PBM splits each token at the first ``.``, so collection names may contain
+    additional dots (for example ``db.orders.archive``). Empty comma-separated
+    entries and database wildcards such as ``*.users`` are rejected.
+
+    :param namespaces: Raw ``db.collection`` / ``db.*`` list from the form.
+    :return: Non-empty stripped namespace tokens, preserving order.
+    :raises ValueError: When any token is empty after split or fails the
+        ``db.collection`` / ``db.*`` shape.
+    """
+    tokens = [part.strip() for part in namespaces.split(",")]
+    if any(not token for token in tokens):
+        raise ValueError("Backup namespaces must not contain empty entries")
+    invalid = []
+    for token in tokens:
+        if "." not in token:
+            invalid.append(token)
+            continue
+        database, collection = token.split(".", 1)
+        if not _NAMESPACE_DB_RE.fullmatch(database) or not collection:
+            invalid.append(token)
+    if invalid:
+        raise ValueError(
+            "Backup namespaces must be comma-separated db.collection or db.* "
+            f"entries; invalid: {', '.join(invalid)}"
+        )
+    return tokens
+
+
+def validate_selective_users_and_roles(
+    namespaces: str | None,
+    *,
+    with_users_and_roles: bool,
+) -> None:
+    """Reject ``--with-users-and-roles`` unless every namespace is database-level.
+
+    :param namespaces: Comma-separated selective namespaces, or ``None`` when unset.
+    :param with_users_and_roles: Whether the opt-in users/roles flag is enabled.
+    :raises ValueError: When the flag is set without namespaces, or any namespace
+        is a single collection rather than ``db.*``.
+    """
+    if not with_users_and_roles:
+        return
+    if not namespaces or not str(namespaces).strip():
+        raise ValueError(
+            "Include users and roles requires backup namespaces set to database-level "
+            "db.* entries"
+        )
+    tokens = parse_backup_namespaces(str(namespaces))
+    non_db_level = [
+        token for token in tokens if not _DB_LEVEL_NAMESPACE_RE.fullmatch(token)
+    ]
+    if non_db_level:
+        raise ValueError(
+            "Include users and roles is valid only with database-level db.* "
+            f"namespaces; invalid: {', '.join(non_db_level)}"
+        )
+
+
+BackupNamespacesList = Annotated[
+    str, AfterValidator(lambda value: ",".join(parse_backup_namespaces(value)))
+]
 
 
 class StorageType(StrEnum):
@@ -396,6 +469,9 @@ class BackupConfigBackup(BaseCaseInsensitiveModel):
     :type oplogSpanMin: float | EmptyStrToNone
     :param numParallelCollections: Number of parallel collections to process during logical backup.
     :type numParallelCollections: int | EmptyStrToNone
+    :param namespaces: Comma-separated selective namespaces for logical backups.
+    :param withUsersAndRoles: Whether to include users and roles with database-level selective.
+    :type withUsersAndRoles: bool | EmptyStrToNone
     """
 
     model_config = ConfigDict(alias_generator=None)
@@ -425,6 +501,14 @@ class BackupConfigBackup(BaseCaseInsensitiveModel):
             "numParallelCollections", "NUMPARALLELCOLLECTIONS"
         ),
         serialization_alias="numParallelCollections",
+    )
+    namespaces: NonEmptyStr | EmptyStrToNone = Field(
+        None, validation_alias=AliasChoices("namespaces", "NAMESPACES")
+    )
+    with_users_and_roles: bool | EmptyStrToNone = Field(
+        None,
+        validation_alias=AliasChoices("withUsersAndRoles", "WITHUSERSANDROLES"),
+        serialization_alias="withUsersAndRoles",
     )
 
 
@@ -533,7 +617,28 @@ class _StorageConfigValidatorMixin:
         return self
 
 
-class BackupCreate(_StorageConfigValidatorMixin, BaseCaseInsensitiveModel):
+class _SelectiveBackupValidatorMixin:
+    """Validate selective ``--ns`` / ``--with-users-and-roles`` combinations.
+
+    Shared by :class:`BackupCreate` and :class:`BackupTaskWrite` so create and
+    edit reject the same invalid pairings before a runner ever sees them.
+    """
+
+    @model_validator(mode="after")
+    def _validate_selective_backup(self) -> "_SelectiveBackupValidatorMixin":
+        """Reject ``with_users_and_roles`` unless namespaces are all ``db.*``."""
+        validate_selective_users_and_roles(
+            self.backup_namespaces,
+            with_users_and_roles=bool(self.backup_with_users_and_roles),
+        )
+        return self
+
+
+class BackupCreate(
+    _SelectiveBackupValidatorMixin,
+    _StorageConfigValidatorMixin,
+    BaseCaseInsensitiveModel,
+):
     """Represent a Backup creation form with proper case-insensitive fields.
 
     :param task_name: The PBM yaml payload to parse from CLI.
@@ -569,6 +674,8 @@ class BackupCreate(_StorageConfigValidatorMixin, BaseCaseInsensitiveModel):
     backup_timeouts_starting_status: int | EmptyStrToNone = None
     backup_oplog_span_min: float | EmptyStrToNone = None
     backup_num_parallel_collections: int | EmptyStrToNone = None
+    backup_namespaces: BackupNamespacesList | EmptyStrToNone = None
+    backup_with_users_and_roles: bool = False
     # Path to MongoDB URI credentials file on the Nomad node (passed as task meta, used by payloads).
     credentials_path: NonEmptyStr | EmptyStrToNone = None
 
@@ -577,6 +684,9 @@ _S3_STORAGE = Requires(when=F("storage_type") == StorageType.S3.value)
 _NOT_S3_STORAGE = Forbidden(when=F("storage_type") != StorageType.S3.value)
 _NOT_FILESYSTEM_STORAGE = Forbidden(
     when=F("storage_type") != StorageType.FILESYSTEM.value
+)
+_NAMESPACES_WHEN_USERS_AND_ROLES = Requires(
+    when=F("backup_with_users_and_roles") == True  # noqa: E712
 )
 _COMPRESSION_CHOICES = Choices(
     tuple((algorithm.value, algorithm.value) for algorithm in CompressionAlgorithm)
@@ -703,14 +813,40 @@ class BackupForm(TaskFormModel):
     backup_num_parallel_collections: Annotated[
         int | None, Ui(label="Parallel Collections", section="BackupOptions")
     ] = None
+    backup_namespaces: Annotated[
+        str | None,
+        _NAMESPACES_WHEN_USERS_AND_ROLES,
+        Ui(
+            label="Namespaces (selective)",
+            section="BackupOptions",
+            description=(
+                "Optional comma-separated db.collection or db.* list. Applied as "
+                "pbm backup --ns on the logical sibling only (PBM rejects --ns for "
+                "physical and incremental backups)."
+            ),
+        ),
+    ] = None
+    backup_with_users_and_roles: Annotated[
+        bool,
+        Ui(
+            label="Include users and roles",
+            section="BackupOptions",
+            description=(
+                "Pass --with-users-and-roles with selective backup. Valid only when "
+                "every namespace is database-level (db.*)."
+            ),
+        ),
+    ] = False
 
 
-class BackupTaskWrite(_StorageConfigValidatorMixin, BaseModel):
+class BackupTaskWrite(
+    _SelectiveBackupValidatorMixin, _StorageConfigValidatorMixin, BaseModel
+):
     """Represent a JSON request body for creating a backup task group.
 
     Mirrors :class:`BackupCreate` except ``backup_type``, which is always
     ``pbm_config`` on create. POST creates the parent config task plus derived
-    logical, physical, and status siblings.
+    logical, physical, status, and incremental siblings.
 
     :param task_name: The name of the task to be created.
     :type task_name: NonEmptyStr
@@ -751,6 +887,10 @@ class BackupTaskWrite(_StorageConfigValidatorMixin, BaseModel):
     :type backup_oplog_span_min: float | None
     :param backup_num_parallel_collections: Parallel collections for logical backup.
     :type backup_num_parallel_collections: int | None
+    :param backup_namespaces: Selective ``--ns`` namespaces for logical backups.
+    :type backup_namespaces: str | None
+    :param backup_with_users_and_roles: Opt-in ``--with-users-and-roles`` for ``db.*``.
+    :type backup_with_users_and_roles: bool
     :param credentials_path: Path to MongoDB URI credentials on the Nomad node.
     :type credentials_path: str | None
     """
@@ -774,6 +914,8 @@ class BackupTaskWrite(_StorageConfigValidatorMixin, BaseModel):
     backup_timeouts_starting_status: int | None = None
     backup_oplog_span_min: float | None = None
     backup_num_parallel_collections: int | None = None
+    backup_namespaces: BackupNamespacesList | EmptyStrToNone = None
+    backup_with_users_and_roles: bool = False
     credentials_path: str | None = None
 
 
@@ -805,8 +947,8 @@ class BackupTaskResponse(BackupTaskBase):
 class BackupTaskDetailResponse(BackupTaskResponse):
     """Represent a backup task detail API response.
 
-    :param derived_tasks: Latest status for each derived logical, physical, and
-        status sibling.
+    :param derived_tasks: Latest status for each derived logical, physical,
+        status, and incremental sibling.
     :type derived_tasks: list[BackupDerivedTaskSummary]
     :param latest_pbm_status: Tail of the latest PBM status task stdout, if
         available.
