@@ -539,15 +539,15 @@ def test_registers_app_disabled(tmp_settings: Path) -> None:
         )
 
 
-def test_summary_points_to_app_manager_without_changelog(
+def test_summary_points_to_apps_page_without_changelog(
     tmp_settings: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Assert the summary points at the Admin App Manager and omits a changelog command."""
+    """Assert the summary points at the Apps page and omits a changelog command."""
     name = "_scaffold_smoke_summary"
     try:
         assert scaffold.main(["--name", name, "--type", "task"]) == 0
         out = capsys.readouterr().out
-        assert "Admin App Manager" in out
+        assert "/admin/apps" in out
         assert "changelog" not in out.lower()
     finally:
         shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
@@ -566,7 +566,7 @@ def test_summary_notes_preexisting_registration(
         assert scaffold.main(["--name", name, "--type", "task"]) == 0
         out = capsys.readouterr().out
         assert "already registered" in out.lower()
-        assert "Admin App Manager" in out
+        assert "/admin/apps" in out
     finally:
         shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
         shutil.rmtree(scaffold.TESTS_DIR / name, ignore_errors=True)
