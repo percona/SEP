@@ -186,11 +186,9 @@ make test
 ```
 
 Mutation testing (`mutmut`) is an optional local spike tool, not part of
-`make test`, pre-commit, or CI. To re-run the SEP-1166-style pilot scoped to
-`app/core/db/utils.py`:
-
-Configuration lives under `[tool.mutmut]` in `pyproject.toml`. Mutmut writes a
-gitignored `mutants/` working copy; run it from the repo root.
+`make test`, pre-commit, or CI. Configuration for the pilot scoped to
+`app/core/db/utils.py` lives under `[tool.mutmut]` in `pyproject.toml`. Mutmut
+writes a gitignored `mutants/` working copy; run it from the repo root.
 
 ## Getting Help
 
