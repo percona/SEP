@@ -28,6 +28,7 @@ from app.sep.apps.framework.spec import (
     assemble_envelope,
     resolve_refs,
 )
+from app.sep.apps.mysql_backups.catalog_models import extract_backup_type_marker
 from app.sep.apps.mysql_backups.models import (
     BackupCreate,
     BackupTaskResponse,
@@ -147,29 +148,21 @@ get_backups_task = make_task_dep(OWNER)
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
 
-def _extract_backup_type_from_task(task: Task) -> BackupType | None:  # noqa: PLR0911
-    """Read ``BACKUP_TYPE`` out of the task's YAML config, if present."""
-    meta = task.data.get("meta") if task.data else None
-    raw_config = meta.get("config") if meta else None
-    if not raw_config:
+def _extract_backup_type_from_task(task: Task) -> BackupType | None:
+    """Read ``BACKUP_TYPE`` out of the task's YAML config as a typed value, if present.
+
+    Shares the defensive raw-marker parse with the run-result recorder via
+    :func:`~app.sep.apps.mysql_backups.catalog_models.extract_backup_type_marker`,
+    layering only the coercion to the typed :class:`BackupType` on top.
+
+    :param task: The task whose ``data`` carries the YAML config.
+    :return: The typed backup type, or ``None`` when absent or unrecognised.
+    """
+    marker = extract_backup_type_marker(task.data)
+    if marker is None:
         return None
     try:
-        config = yaml.safe_load(raw_config)
-    except yaml.YAMLError:
-        return None
-    if not isinstance(config, dict):
-        return None
-    server_list = config.get("SERVER_LIST")
-    if not isinstance(server_list, list) or not server_list:
-        return None
-    first = server_list[0]
-    if not isinstance(first, dict):
-        return None
-    raw_type = first.get("BACKUP_TYPE")
-    if raw_type is None:
-        return None
-    try:
-        return BackupType(raw_type)
+        return BackupType(marker)
     except ValueError:
         return None
 

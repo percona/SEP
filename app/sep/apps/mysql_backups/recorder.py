@@ -34,10 +34,12 @@ terminals, and unknown tools leave no record. A success that reported no result
 import logging
 from typing import Any, TypeVar
 
-import yaml
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.sep.apps.mysql_backups.catalog_models import MysqlBackupRun
+from app.sep.apps.mysql_backups.catalog_models import (
+    extract_backup_type_marker,
+    MysqlBackupRun,
+)
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.db import get_async_session_maker
 from app.tasks.models import TaskHistory, TaskHistoryStatusEnum
@@ -58,35 +60,6 @@ RUN_RESULT_RECORDER = f"{__name__}:record_backup_run"
 #: raw markers so this recorder stays free of the plugin's heavy form-model
 #: import, which the tasks service would otherwise pull in when resolving it.
 _CATALOGUED_TYPES = frozenset({"M", "X"})
-
-
-def _backup_type(task_data: dict[str, Any] | None) -> str | None:
-    """Return the ``BACKUP_TYPE`` from a task's YAML config, or ``None``.
-
-    Reads the value defensively: a missing meta, unparseable YAML, or an absent
-    key all resolve to ``None`` rather than raising.
-
-    :param task_data: The task's ``data`` dict (``meta`` carries the YAML config).
-    :return: The raw backup-type marker (``"M"``/``"X"``/``"B"``), or ``None``.
-    """
-    meta = task_data.get("meta") if task_data else None
-    raw_config = meta.get("config") if isinstance(meta, dict) else None
-    if not raw_config:
-        return None
-    try:
-        config = yaml.safe_load(raw_config)
-    except yaml.YAMLError:
-        return None
-    if not isinstance(config, dict):
-        return None
-    server_list = config.get("SERVER_LIST")
-    if not isinstance(server_list, list) or not server_list:
-        return None
-    first = server_list[0]
-    if not isinstance(first, dict):
-        return None
-    raw_type = first.get("BACKUP_TYPE")
-    return raw_type if isinstance(raw_type, str) else None
 
 
 def _coerce(value: Any, expected: type[T], field: str) -> T | None:
@@ -151,7 +124,7 @@ async def record_backup_run(
 
     task = history.task
     task_data = task.data if task else None
-    backup_type = _backup_type(task_data)
+    backup_type = extract_backup_type_marker(task_data)
     if backup_type not in _CATALOGUED_TYPES:
         return
 

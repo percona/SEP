@@ -16,16 +16,18 @@
 """Define the MySQL backup catalog's persisted model and query response.
 
 This module is intentionally **self-contained** — it imports only from
-``app.core``, ``pydantic``, ``sqlalchemy``, and ``sqlmodel``, never from the
-plugin's heavy form-model module (``models.py``) or from ``app.inventory`` /
-``app.tasks`` / the app framework. The sep Alembic ``env.py`` imports it to
-register the table in the migration metadata, and pulling in those other
-modules would bleed their tables into the sep autogenerate comparison and break
-``make checkmigrations``. Keep it that way (mirrors ``app.sep.apps.atw.models``).
+``app.core``, ``pydantic``, ``sqlalchemy``, ``sqlmodel``, and ``yaml`` (for the
+shared config parser), never from the plugin's heavy form-model module
+(``models.py``) or from ``app.inventory`` / ``app.tasks`` / the app framework.
+The sep Alembic ``env.py`` imports it to register the table in the migration
+metadata, and pulling in those other modules would bleed their tables into the
+sep autogenerate comparison and break ``make checkmigrations``. Keep it that way
+(mirrors ``app.sep.apps.atw.models``).
 """
 
-from typing import Literal
+from typing import Any, Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger
 from sqlmodel import Field as SQLField
@@ -101,3 +103,35 @@ class BackupRunResponse(BaseModel):
     size_bytes: int | None
     started_at: UTCDatetime | None
     finished_at: UTCDatetime | None
+
+
+def extract_backup_type_marker(task_data: dict[str, Any] | None) -> str | None:
+    """Return the ``BACKUP_TYPE`` marker from a task's YAML config, or ``None``.
+
+    Reads the value defensively: a missing ``meta``, unparseable YAML, or an
+    absent key all resolve to ``None`` rather than raising. Returns the raw
+    single-letter marker (``"M"``/``"X"``/``"B"``); callers that need the typed
+    ``BackupType`` coerce it themselves, keeping the plugin's heavy form-model
+    import out of this self-contained module.
+
+    :param task_data: The task's ``data`` dict (``meta`` carries the YAML config).
+    :return: The raw backup-type marker, or ``None``.
+    """
+    meta = task_data.get("meta") if task_data else None
+    raw_config = meta.get("config") if isinstance(meta, dict) else None
+    if not raw_config:
+        return None
+    try:
+        config = yaml.safe_load(raw_config)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(config, dict):
+        return None
+    server_list = config.get("SERVER_LIST")
+    if not isinstance(server_list, list) or not server_list:
+        return None
+    first = server_list[0]
+    if not isinstance(first, dict):
+        return None
+    raw_type = first.get("BACKUP_TYPE")
+    return raw_type if isinstance(raw_type, str) else None
