@@ -19,8 +19,9 @@ Before you start you need a running development setup — see
 The code examples are lifted from real, CI-exercised code in the SEP tree; each
 carries an HTML comment naming its source file and symbol (e.g.
 `<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->`) so you can
-diff it against the source as the framework evolves. The two labelled
-`constructed` illustrate features no current app uses.
+diff it against the source as the framework evolves. Long docstrings are
+shortened to their summary line, and larger trims are noted inline. The two
+examples labelled `constructed` illustrate features no current app uses.
 
 ---
 
@@ -148,7 +149,17 @@ def build_apps_router(registry: AppRegistry) -> APIRouter:
     for app in registry:
         if app.api_router is None:
             continue
-        apps_router.include_router(app.api_router, prefix=f"/{app.key}")
+        plugin_deps = (
+            []
+            if app.state_key in PROTECTED_APP_KEYS
+            else [Depends(require_app_enabled(app.key))]
+        )
+        apps_router.include_router(
+            app.api_router,
+            prefix=f"/{app.key}",
+            tags=[] if app.api_router.tags else [app.key],
+            dependencies=plugin_deps,
+        )
     return apps_router
 ```
 
@@ -158,7 +169,8 @@ def build_apps_router(registry: AppRegistry) -> APIRouter:
 > other SEP API routers.
 
 An app registered with `ENABLED: false` is discovered but its routes are guarded by
-a per-app enable check — an admin turns it on from the App Manager without a redeploy.
+a per-app enable check (the `require_app_enabled` dependency in the loop above) —
+an admin turns it on from the App Manager without a redeploy.
 
 ### What "derived router" means
 
@@ -333,9 +345,11 @@ type; everything after it is a marker the framework reads.
 
 ### `AppFormModel` / `TaskFormModel` and `Ui()`
 
-`AppFormModel` is the base form model; `TaskFormModel` extends it for task apps,
-supplying the shared `task_name` / `hostname` Task-section fields and the hidden
-`alert_on_fail` capability control, so your model declares only its own fields.
+`AppFormModel` is the base form model; it also carries the hidden `alert_on_fail`
+capability control (a field marked `Hidden()` stays on the model but is omitted
+from the form). `TaskFormModel` extends it for task apps, supplying the shared
+`task_name` / `hostname` Task-section fields, so your model declares only its
+own fields.
 `Ui(...)` carries the per-field presentation the type cannot express — label,
 section, description, display order, dependency:
 
@@ -419,10 +433,16 @@ strategy: Annotated[
 `Option.disabled` is a UI hint only — server-side rejection of a disabled value
 remains the app's `FormRules` responsibility (see the predicate DSL below).
 
+When the options cannot be listed statically at all, `RemoteChoices` marks a
+field whose options the form fetches live from an endpoint the app serves (with
+optional `depends_on` cascading). No app in the tree uses it yet — see its
+docstring in `app/sep/apps/framework/form_dsl/markers.py`.
+
 ### `FieldWidget`
 
-`FieldWidget` overrides the input widget the frontend renders for a field. For a
-multi-line YAML value, `FieldWidget.TEXTAREA`:
+`FieldWidget` overrides the input widget the form renders for a field
+(`TEXTAREA`, `YAML`, `CHOICE`, `MULTI_CHOICE`). For a multi-line value,
+`FieldWidget.TEXTAREA`:
 
 <!-- src: app/sep/apps/backup_mongo/models.py :: BackupForm -->
 ```python
@@ -432,7 +452,12 @@ backup_priority: Annotated[
         label="Node Priority (YAML)",
         section="BackupOptions",
         widget=FieldWidget.TEXTAREA,
-        description="YAML mapping of mongod addresses to backup priority.",
+        description=(
+            "YAML mapping of mongod addresses to backup priority (highest wins). "
+            "One entry per line, e.g.:\n"
+            '"host1:27018": 2\n'
+            '"host2:27018": 1'
+        ),
     ),
 ] = None
 ```
@@ -498,9 +523,19 @@ checksums_views = Views(
             SectionLayout(key="Advanced", title="Advanced"),
         )
     ),
-    list_view=ListView(columns=default_columns(SERVICE_TYPE_COLUMN)),
+    list_view=ListView(
+        columns=default_columns(
+            SERVICE_TYPE_COLUMN,
+        ),
+    ),
     detail_view=DetailView(sections=[...]),
-    capabilities=Capabilities(chaining=True, alert_on_fail=True, scheduling=True),
+    capabilities=Capabilities(
+        chaining=True,
+        alert_on_fail=True,
+        scheduling=True,
+        stats=True,
+        pii_anonymization=True,
+    ),
 )
 ```
 
@@ -511,10 +546,12 @@ section-level `forbidden` gates shown in the predicate DSL below.
 
 For rules that span more than one field, the framework has a small predicate
 DSL: the field reference `F(...)`, the truthiness predicates (`truthy`, `present`,
-…), boolean combinators (`&`, `|`, `not_`), and three rule envelopes — `FailRule`
-(reject a form when a predicate holds), `FieldGate` (gate a field or section), and
-`CardinalityRule` (bound the count of present fields). App-scoped rules live in a
-`FormRules` object on `__form_rules__`.
+`falsy`, `absent`, and their `any_`/`all_` siblings — the full set lives in
+`app/sep/apps/framework/rules.py`), boolean combinators (`&`, `|`, `not_`), the
+per-field gate markers `Requires` / `Forbidden`, and three rule envelopes —
+`FailRule` (reject a form when a predicate holds), `FieldGate` (gate a field or
+section), and `CardinalityRule` (bound the count of present fields). App-scoped
+rules live in a `FormRules` object on `__form_rules__`.
 
 **`FailRule` + `F`** — MySQL Backups fails validation when a mode-owned boolean is
 set outside its mode:
@@ -535,6 +572,25 @@ __form_rules__: ClassVar[FormRules] = FormRules(
     )
 )
 ```
+
+**`Requires` / `Forbidden`** — the same predicates gate a single field directly,
+as markers on the field itself: `Requires` makes the field mandatory when its
+predicate holds, `Forbidden` rejects it. MySQL Backups' encryption recipient is
+required exactly when encryption is on, and rejected when it is off:
+
+<!-- src: app/sep/apps/mysql_backups/models.py :: BackupCreate -->
+```python
+encryption_recipient: Annotated[
+    NonEmptyStr | EmptyStrToNone,
+    Requires(when=truthy("encrypt")),
+    Forbidden(when=falsy("encrypt")),
+    Ui(label="Encryption recipient", section="Encryption"),
+] = None
+```
+
+A marker bound to a name can gate a whole family of fields — the same model
+attaches `_MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")` to every
+Mydumper-only field.
 
 **`FieldGate`** — the same predicate DSL gates a whole section. Here the Mydumper
 section is forbidden unless `backup_type == "M"`:
@@ -650,7 +706,10 @@ app = TaskExecutionApp(
 `TaskExecutionApp` also exposes `update_handler` / `delete_handler`
 (`app/sep/apps/framework/apps.py`) for fully replacing a mutation handler — no app
 in the tree overrides those today; prefer the lighter response-builder override
-above.
+above. The derived PUT/DELETE guards are knobs of their own: `update_guard` /
+`delete_guard` default to the framework's protected-task and running-conflict
+checks, can be replaced with your own dependency tuple, or removed with
+`UNGUARDED`.
 
 ### Rung 4 — `response_context_provider` and cascade hooks
 
@@ -708,7 +767,9 @@ async def build_alters_cascade_plan(
 ```
 
 The `cascade_create_*` / `cascade_update_*` / `cascade_delete_*` helpers in
-`app/sep/apps/framework/cascade.py` are the toolbox the closure calls.
+`app/sep/apps/framework/cascade.py` are the toolbox the closure calls. They
+return a `CascadeResult`; call its `raise_if_failed()` to turn a partial cascade
+failure into an HTTP 500 instead of hand-rolling the error block.
 
 ### Rung 5 — fall back to `BaseApp`
 
@@ -731,16 +792,23 @@ snippet_source = ScriptSource(
     script_dir=snippets_settings.SNIPPETS_DIR,
     load_script=_load_script,
     list_scripts=_list_scripts,
+    load_scripts=_load_scripts,
     build_form_schema=_build_form_schema,
     build_execution_meta=_build_execution_meta,
     list_response=_list_response,
     static_schema=SNIPPETS_PLUGIN_SCHEMA,
     list_response_model=SnippetResponse,
+    list_query_dep=get_snippet_list_query,
+    list_page=_list_page,
 )
 ```
 
-The app then passes `script_source=snippet_source` instead of a `create_model`
-(`ScriptProtocol` and the `script_helpers.py` helpers back this extension point).
+`load_scripts` is the batch variant of `load_script`, for sources that can fetch
+many scripts in one round trip; `list_query_dep` + `list_page` let the source
+take over server-side sorting, searching, filtering, and paging of the list
+route. The app then passes `script_source=snippet_source` instead of a
+`create_model` (`ScriptProtocol` and the `script_helpers.py` helpers back this
+extension point).
 
 ---
 
@@ -751,8 +819,9 @@ The app then passes `script_source=snippet_source` instead of a `create_model`
 Because the router is *derived*, the framework can test the whole HTTP surface
 generically. `DerivedRouterContractTests`
 (`tests/app/sep/apps/framework/contract_suite.py`) exercises schema, list, detail,
-create, update, execute, delete, auth, 404, conflict, connectivity, and injected
-extras against the **real** app definition. Your app's contract test is a subclass
+create, update, execute, delete, auth, 404, the protected-task and
+running-conflict guards, connectivity, and injected extras against the **real**
+app definition. Your app's contract test is a subclass
 that binds the definition to `app_def` — the scaffolder emits exactly this:
 
 <!-- src: tests/app/sep/apps/checksums/test_contract.py :: TestChecksumsContract -->
