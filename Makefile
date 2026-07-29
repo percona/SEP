@@ -127,6 +127,7 @@ bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
 
 makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py app/sep/models.py
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@for app in $(APPS); do \
 		capitalized=$$(echo $$app | sed 's/^./\U&/'); \
 		echo "Checking migrations for $$capitalized"; \
@@ -161,10 +162,12 @@ makemigrations-plugin: venv alembic.ini
 ifndef PLUGIN
 	$(error PLUGIN is required. Usage: make makemigrations-plugin PLUGIN=<plugin-name>)
 endif
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@read -p "Enter description for new $(PLUGIN) plugin migration: " desc; \
 	"${VENV_BIN}"/alembic --name sep revision --autogenerate --head=$(PLUGIN)@head -m "$$desc"
 
 migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations/versions app/sep/migrations/versions
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@for app in $(APPS); do \
 		"${VENV_BIN}"/alembic --name $$app upgrade heads; \
 	done
