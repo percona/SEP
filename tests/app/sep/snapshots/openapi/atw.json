@@ -362,6 +362,7 @@
                   "multi_service": "#/components/schemas/framework__MultiServiceField",
                   "multi_table": "#/components/schemas/framework__MultiTableField",
                   "one_of": "#/components/schemas/framework__OneOfGroup",
+                  "remote_choice": "#/components/schemas/framework__RemoteChoiceField",
                   "schema": "#/components/schemas/framework__SchemaField",
                   "script_preview": "#/components/schemas/framework__ScriptPreviewField",
                   "service": "#/components/schemas/framework__ServiceField",
@@ -408,6 +409,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/framework__MultiTableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
                 },
                 {
                   "$ref": "#/components/schemas/framework__SchemaField"
@@ -466,6 +470,7 @@
                   "multi_service": "#/components/schemas/framework__MultiServiceField",
                   "multi_table": "#/components/schemas/framework__MultiTableField",
                   "one_of": "#/components/schemas/framework__OneOfGroup",
+                  "remote_choice": "#/components/schemas/framework__RemoteChoiceField",
                   "schema": "#/components/schemas/framework__SchemaField",
                   "script_preview": "#/components/schemas/framework__ScriptPreviewField",
                   "service": "#/components/schemas/framework__ServiceField",
@@ -512,6 +517,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/framework__MultiTableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
                 },
                 {
                   "$ref": "#/components/schemas/framework__SchemaField"
@@ -2008,6 +2016,9 @@
                   "$ref": "#/components/schemas/framework__MultiTableField"
                 },
                 {
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
+                },
+                {
                   "$ref": "#/components/schemas/framework__SchemaField"
                 },
                 {
@@ -2869,6 +2880,7 @@
                   "multi_schema": "#/components/schemas/framework__MultiSchemaField",
                   "multi_service": "#/components/schemas/framework__MultiServiceField",
                   "multi_table": "#/components/schemas/framework__MultiTableField",
+                  "remote_choice": "#/components/schemas/framework__RemoteChoiceField",
                   "schema": "#/components/schemas/framework__SchemaField",
                   "script_preview": "#/components/schemas/framework__ScriptPreviewField",
                   "service": "#/components/schemas/framework__ServiceField",
@@ -2915,6 +2927,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/framework__MultiTableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
                 },
                 {
                   "$ref": "#/components/schemas/framework__SchemaField"
@@ -3061,6 +3076,121 @@
           "route_segment"
         ],
         "title": "RelatedApp",
+        "type": "object"
+      },
+      "framework__RemoteChoiceField": {
+        "additionalProperties": false,
+        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field stays disabled/empty until the\ndependency has a value. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "endpoint_url": {
+            "minLength": 1,
+            "title": "Endpoint Url",
+            "type": "string"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "remote_choice",
+            "default": "remote_choice",
+            "enum": [
+              "remote_choice"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "endpoint_url"
+        ],
+        "title": "RemoteChoiceField",
         "type": "object"
       },
       "framework__SchemaField": {
@@ -3871,7 +4001,7 @@
     },
     "/api/apps/atw/execution-schema/": {
       "get": {
-        "description": "Build one execution form covering several snippets, merging common parameters.\n\nUnknown or unsafe filenames fail the whole request — a form the caller cannot\nfill for every selected snippet is not a partial success.\n\n:param snippet_filename: The selected snippet filenames, repeated per snippet\n    and deduplicated order-preserving.\n:return: The shared section followed by each snippet's remaining fields.\n:raises HTTPBadRequestException: When a filename attempts directory traversal.\n:raises HTTPNotFoundException: When a filename matches no snippet.",
+        "description": "Build one execution form covering several snippets, merging common parameters.\n\nUnknown or unsafe filenames fail the whole request — a form the caller cannot\nfill for every selected snippet is not a partial success.\n\n:param snippet_filename: The selected snippet filenames, repeated per snippet\n    and deduplicated order-preserving.\n:return: The shared section followed by each snippet's remaining fields.\n:raises HTTPBadRequestException: When a filename is unsafe or malformed, failing\n    the whole request before any item is dispatched.\n:raises HTTPNotFoundException: When a filename matches no snippet.",
         "operationId": "atw_atw_execution_schema_api_apps_atw_execution_schema__get",
         "parameters": [
           {
@@ -4214,7 +4344,7 @@
         ]
       },
       "post": {
-        "description": "Execute several snippets against one incident, reporting each item separately.\n\nOne failing item never blocks the rest: each is dispatched and recorded inside\nits own guard, and the response always carries an entry per requested item. A\nfailed attempt produces no task-history row to reference, so it is reported\nhere rather than persisted.\n\nThe row-write guard rolls the shared session back before the loop continues,\nor one failed write would leave the transaction aborted and doom every later\nitem on PostgreSQL; the dispatch guard rolls back defensively, having written\nnothing itself. ``incident.id`` is read once up front because both a commit and\na rollback expire the instance, and re-reading it would trigger a lazy load.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param body: The batch payload.\n:param tasks_api: The authenticated Tasks API client.\n:return: One outcome entry per requested item, in request order.",
+        "description": "Execute several snippets against one incident, reporting each item separately.\n\nA malformed selection fails the whole request up front: ``resolve_snippets``\nruns the traversal guard over every filename before dispatch, so an unsafe\nfilename raises before any item runs. Past that guard, one failing item never\nblocks the rest: each is dispatched and recorded inside its own guard, and the\nresponse always carries an entry per requested item — an unresolved filename\nbecomes that item's error. A failed attempt produces no task-history row to\nreference, so it is reported here rather than persisted.\n\nThe row-write guard rolls the shared session back before the loop continues,\nor one failed write would leave the transaction aborted and doom every later\nitem on PostgreSQL; the dispatch guard rolls back defensively, having written\nnothing itself. ``incident.id`` is read once up front because both a commit and\na rollback expire the instance, and re-reading it would trigger a lazy load.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param body: The batch payload.\n:param tasks_api: The authenticated Tasks API client.\n:return: One outcome entry per requested item, in request order.\n:raises HTTPBadRequestException: When any filename is unsafe or malformed,\n    failing the whole request before any item is dispatched.",
         "operationId": "atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post",
         "parameters": [
           {

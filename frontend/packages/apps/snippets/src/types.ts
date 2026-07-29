@@ -22,7 +22,16 @@
  * `app/sep/plugins/snippets/models.py`.
  */
 
+import type { SepComponents } from '@sep/api';
+
 export type { SnippetExecutionRequest, SnippetExecutionResponse } from '@sep/framework';
+
+/** Approval-status filter values, sourced from the generated API union. */
+export type SnippetApprovalFilter = SepComponents['schemas']['SnippetApprovalFilter'];
+
+/** Whole-dataset service-type facet backing the list filter's options. */
+export type SnippetServiceTypesResponse =
+  SepComponents['schemas']['snippets__SnippetServiceTypesResponse'];
 
 export interface SnippetResponse {
   filename: string;

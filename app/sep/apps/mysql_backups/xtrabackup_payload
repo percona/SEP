@@ -34,10 +34,13 @@ import pymysql
 import pymysql.cursors
 import yaml
 from botocore.exceptions import ClientError
-from packaging.version import Version
-from pymysql import Error, InternalError, OperationalError, ProgrammingError
+from pymysql import InternalError, OperationalError, ProgrammingError
 
 BYTES_PER_MB = 1024**2
+
+# Restated inline from app.tasks.run_result.RUN_RESULT_FILENAME — this payload is
+# shipped standalone and cannot import project code; a CI test binds the two.
+RUN_RESULT_FILENAME = ".sep-run-result.json"
 
 # Matches xtrabackup per-file copy progress lines emitted during the backup
 # data phase.  Anchored at ^ so it cannot fire on mid-line content.  The
@@ -328,6 +331,32 @@ def get_dir_size(start_path: str, unit: str = "text") -> int | str:
     if mbyte < 1024:
         return f"{int(mbyte)} MB"
     return f"{int(mbyte / 1024)} GB"
+
+
+def _write_run_result(
+    backup_dir: str, size_bytes: int, upload_destination: str | None
+) -> None:
+    """Write the run-result JSON file for a produced backup.
+
+    The path is relative to the run's working directory, which the ``run-python``
+    job spec pins to the task's output-files directory — the location SEP reads
+    results back from.  Written to a sibling temp file and renamed so a reader
+    never observes a partial write.
+
+    :param backup_dir: The resolved backup directory on the remote host.
+    :param size_bytes: The backup size in bytes.
+    :param upload_destination: The remote upload path, or ``None`` when the
+        backup was not uploaded.
+    """
+    payload = {
+        "backup_dir": backup_dir,
+        "size_bytes": size_bytes,
+        "upload_destination": upload_destination,
+    }
+    tmp_path = RUN_RESULT_FILENAME + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as result_file:
+        json.dump(payload, result_file, separators=(",", ":"))
+    os.replace(tmp_path, RUN_RESULT_FILENAME)
 
 
 def logging_setup(
@@ -846,12 +875,8 @@ class BaseBackup:
         :raises BackupError: If the algorithm is not compatible.
         """
         if not self.compress:
-            self.logger.debug("Compression is disabled, skipping check")
             return
         if algorithm in COMPRESSION_ALGORITHMS[self.backup_code]:
-            self.logger.debug(
-                "Algorithm %s accepted for backup type %s", algorithm, self.backup_code
-            )
             return
         raise BackupError(
             f"algorithm {algorithm} is not one of {COMPRESSION_ALGORITHMS[self.backup_code]}"
@@ -1131,7 +1156,6 @@ class Backup(BaseBackup):
 
         for filen in possible_files:
             if Path(filen).is_file():
-                self.logger.debug("my.cnf file found: %s", filen)
                 found_files.append(filen)
 
         return ",".join(found_files)
@@ -1596,7 +1620,6 @@ class Upload(Backup):
             self._collect_paths()
 
         if not self.paths:
-            self.logger.debug("Nothing to upload of %s backup.", self.backup_type)
             return "OK no new binlogs to upload." if self.backup_code == "B" else ""
 
         start_time = time.time()
@@ -1630,7 +1653,6 @@ class XtraBackupUpload(Upload):
         super(XtraBackupUpload, self).__init__(*args, **kwargs)
         if self.encrypt and not self.post_run_encrypt and not self.xtrabackup_aes256:
             self.encrypt_using_tmpdir = True
-            self.logger.debug('Enforced using tmpdir for xtrabackup upload because encryption is enabled.')
 
 
 
@@ -2179,31 +2201,28 @@ class Xtrabackup(Backup):
                 self._save_disk_space()
 
         # Upload if needed
-        for upload_type in self.upload_type:
+        upload_providers = {
+            "rsync": RsyncUploadProvider,
+            "s3": S3UploadProvider,
+            "gsutil": GSUploadProvider,
+        }
+        upload_destination = None
+        for upload_type in sorted(self.upload_type):
             self.enable_upload(self.last_backup_dir)
-            if upload_type == "rsync":
-                XtraBackupUpload(
-                    upload_type=upload_type,
-                    upload_provider=RsyncUploadProvider,
-                    settings=self.server_setting,
-                    logger=self.logger,
-                ).run()
-            elif upload_type == "s3":
-                XtraBackupUpload(
-                    upload_type=upload_type,
-                    upload_provider=S3UploadProvider,
-                    settings=self.server_setting,
-                    logger=self.logger,
-                ).run()
-            elif upload_type == "gsutil":
-                XtraBackupUpload(
-                    upload_type=upload_type,
-                    upload_provider=GSUploadProvider,
-                    settings=self.server_setting,
-                    logger=self.logger,
-                ).run()
-            else:
+            provider = upload_providers.get(upload_type)
+            if provider is None:
                 self.logger.warning("Unsupported upload type: %r", upload_type)
+                continue
+            uploader = XtraBackupUpload(
+                upload_type=upload_type,
+                upload_provider=provider,
+                settings=self.server_setting,
+                logger=self.logger,
+            )
+            uploader.run()
+            remote_path = uploader.report_options.get("options", {}).get("remote_path")
+            if remote_path:
+                upload_destination = remote_path
 
         # Report we are OK :)
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
@@ -2219,6 +2238,15 @@ class Xtrabackup(Backup):
         self.logger.info(msg)
         self.notify(notify_status, msg)
 
+        if self.last_backup_dir and os.path.isdir(self.last_backup_dir):
+            try:
+                _write_run_result(
+                    self.last_backup_dir,
+                    get_dir_size(self.last_backup_dir, "bytes"),
+                    upload_destination,
+                )
+            except Exception:
+                self.logger.exception("Failed to write the run-result file.")
 
     def encrypt_files_aes256(self, dir_path, file_filter='*'):
         """"aes256 encryption for specific file"""
@@ -2439,9 +2467,7 @@ class Xtrabackup(Backup):
 
     def _decrypt_info_file(self, keyfile, path):
         """Decrypt xtrabackup_info after backup."""
-        self.logger.debug('Checking for xtrabackup_info in %s', path)
         if self.compress:
-            self.logger.debug('Compression detected')
             ext = self.get_compression_ext()
             input_file = "xtrabackup_info{}.xbcrypt".format(ext)
             output_file = "xtrabackup_info{}".format(ext)
@@ -2449,7 +2475,6 @@ class Xtrabackup(Backup):
             input_file = "xtrabackup_info.xbcrypt"
             output_file = "xtrabackup_info"
 
-        self.logger.debug('Expected path for xtrabackup_info: %s', input_file)
         if os.path.exists('%s/%s' % (path, input_file)):
             cmd = [XBCRYPT_BIN, '-d', '--encrypt-algo=AES256', '--encrypt-key-file=%s' % (keyfile,),
                    '--input=%s/%s' % (path, input_file), '--output=%s/%s' % (path, output_file)]
@@ -2465,12 +2490,9 @@ class Xtrabackup(Backup):
 
     def _decompress_info_file(self, path):
         """Decompress xtrabackup_info after backup."""
-        self.logger.debug('Checking for compressed xtrabackup_info in %s', path)
         tool, ext = self.get_compression_tool(), self.get_compression_ext()
-        self.logger.debug('Tool = %s, extension = %s', tool, ext)
         info_file_out = 'xtrabackup_info'
         info_file = os.path.join(path, '{}{}'.format(info_file_out, ext))
-        self.logger.debug('Path determined to be %s', info_file)
         if tool == QPRESS_BIN:
             cmd = [QPRESS_BIN, '-d', info_file, path]
         elif tool == ZSTD_BIN:
@@ -2647,20 +2669,6 @@ class Xtrabackup(Backup):
             raise BackupError(msg)
 
         self.logger.info('OK Preparing complete.')
-
-    def _rsync_upload(self):
-        """Rsync backup to other location.
-
-        To keep backward compatibility we need to rsync here.
-        """
-        # Disable double Nagios reporting
-        self.server_setting['UPLOAD'] = 'rsync'
-        self.server_setting['RSYNC_PATH'] = self.rsync_dir
-        self.server_setting['ENCRYPT'] = False
-        self.server_setting['ENCRYPT_USING_TMPDIR'] = False
-        self.server_setting['UPLOAD_INTERVAL'] = 'daily'
-
-        XtraBackupUpload(upload_provider=RsyncUploadProvider, settings=self.server_setting).run()
 
     def _purge_old_backups(self):
         """Purge old backups.
