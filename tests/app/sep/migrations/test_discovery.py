@@ -278,6 +278,22 @@ def test_sync_is_idempotent_on_second_run(tmp_path):
     )
 
 
+def test_sync_preserves_crlf_line_endings(tmp_path):
+    """Rewrite a CRLF ``alembic.ini`` without converting to ``LF``."""
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    _build_plugin(apps_root, "alpha", with_migrations=True, models_source=None)
+    ini_path = tmp_path / "alembic.ini"
+    crlf_ini = _MINIMAL_INI.replace("\n", "\r\n").encode("utf-8")
+    ini_path.write_bytes(crlf_ini)
+
+    assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+    rewritten = ini_path.read_bytes()
+    assert b"\r\n" in rewritten
+    assert b"\n" not in rewritten.replace(b"\r\n", b"")
+    assert b"app/sep/apps/alpha/migrations/versions" in rewritten
+
+
 def test_sync_preserves_comment_block_and_other_sections(tmp_path):
     """Sync keeps ``script_location`` and non-``[sep]`` sections intact."""
     apps_root = tmp_path / "apps"

@@ -94,9 +94,11 @@ def render_sep_version_locations(text: str, value: str) -> str:
 
     Replaces the contiguous comment lines immediately above
     ``version_locations =`` (and that assignment line) inside ``[sep]``.
-    Leaves every other section and line untouched.
+    Leaves every other section and line untouched. Re-emits the same
+    line ending style present in ``text`` (``LF`` or ``CRLF``).
 
-    :param text: Full ``alembic.ini`` contents.
+    :param text: Full ``alembic.ini`` contents with original line endings
+        preserved (not universal-newline-normalized).
     :param value: The computed ``version_locations`` value.
     :return: Updated file contents.
     """
@@ -141,6 +143,8 @@ def sync_alembic_ini(
 ) -> bool:
     """Rewrite or check ``ini_path`` against discovery.
 
+    Preserves the file's existing line endings (``LF`` or ``CRLF``).
+
     :param ini_path: Path to ``alembic.ini``.
     :param apps_root: Plugin packages directory to scan.
     :param check: When true, report drift without writing.
@@ -148,13 +152,17 @@ def sync_alembic_ini(
         ``False`` when ``check`` found drift.
     """
     value = compute_version_locations(apps_root)
-    original = ini_path.read_text(encoding="utf-8")
+    # newline="" disables universal-newline translation so a CRLF file still
+    # contains "\r\n" for render_sep_version_locations to detect and re-emit.
+    with ini_path.open(encoding="utf-8", newline="") as handle:
+        original = handle.read()
     updated = render_sep_version_locations(original, value)
     if original == updated:
         return True
     if check:
         return False
-    ini_path.write_text(updated, encoding="utf-8")
+    with ini_path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(updated)
     return True
 
 
