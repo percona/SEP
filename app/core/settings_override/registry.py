@@ -1313,6 +1313,44 @@ def _annotation_is_secret_valued_dict(annotation: Any) -> bool:
     return False
 
 
+def _annotation_is_secret_valued_sequence(annotation: Any) -> bool:
+    """Return whether ``annotation`` is a sequence whose elements are secrets.
+
+    Matches ``list[SecretStr]`` / ``tuple[SecretBytes, ...]``-style shapes
+    (optional/union wrappers unwrapped at the top level only).
+
+    :param annotation: The field annotation to inspect.
+    :type annotation: Any
+    :return: ``True`` when the annotation is a secret-element sequence type.
+    :rtype: bool
+    """
+    candidates: list[Any] = [annotation]
+    origin = typing.get_origin(annotation)
+    if origin in {Union, UnionType}:
+        candidates = list(typing.get_args(annotation))
+    collection_origins = {list, tuple, Sequence}
+    for candidate in candidates:
+        if candidate is None or candidate is type(None):
+            continue
+        coll_origin = typing.get_origin(candidate)
+        if coll_origin not in collection_origins:
+            continue
+        args = typing.get_args(candidate)
+        if not args:
+            continue
+        element = args[0]
+        element_candidates: list[Any] = [element]
+        element_origin = typing.get_origin(element)
+        if element_origin in {Union, UnionType}:
+            element_candidates = list(typing.get_args(element))
+        for element_type in element_candidates:
+            if isinstance(element_type, type) and issubclass(
+                element_type, SecretStr | SecretBytes
+            ):
+                return True
+    return False
+
+
 def _preserve_masked_secret_scalar(current: Any, incoming: Any) -> Any:
     """Restore a stored secret when ``incoming`` equals :data:`SECRET_STR_MASK`.
 
@@ -1351,6 +1389,37 @@ def _preserve_secrets_in_dict_payload(
         stored = _unwrap_secret_value(leaf_current)
         if stored is not None:
             result[key] = stored
+    return result
+
+
+def _preserve_secrets_in_secret_sequence_payload(
+    current: Any,
+    incoming: Sequence[Any],
+) -> list[Any]:
+    """Restore masked secrets inside a ``list[SecretStr|SecretBytes]`` payload.
+
+    Pairing is positional: index ``i`` of ``incoming`` is restored from index
+    ``i`` of ``current`` when the submitted value equals :data:`SECRET_STR_MASK`.
+
+    :param current: The stored sequence of secret wrappers (or ``None``).
+    :type current: Any
+    :param incoming: The PATCH sequence that may contain mask literals.
+    :type incoming: Sequence[Any]
+    :return: A list copy of ``incoming`` with masked elements restored.
+    :rtype: list[Any]
+    """
+    if isinstance(current, list | tuple):
+        current_items: list[Any] = list(current)
+    else:
+        current_items = []
+    result: list[Any] = []
+    for index, value in enumerate(incoming):
+        if value != SECRET_STR_MASK:
+            result.append(value)
+            continue
+        leaf = current_items[index] if index < len(current_items) else None
+        stored = _unwrap_secret_value(leaf)
+        result.append(value if stored is None else stored)
     return result
 
 
@@ -1399,10 +1468,11 @@ def _match_collection_item_index(
 ) -> int | None:
     """Return the index of the stored collection item that ``incoming`` updates.
 
-    Matching order: optional ``PROVIDER`` / ``provider`` key against the
-    concrete class name (substring, case-insensitive); else the positional
-    ``preferred_index`` when still free; else the sole remaining unused item;
-    else the unused ``BaseModel`` with the largest field-name overlap.
+    Matching order: an optional type-discriminator string in the payload
+    (case-insensitive substring of the concrete class name); else the
+    positional ``preferred_index`` when still free; else the sole remaining
+    unused item; else the unused ``BaseModel`` with the largest field-name
+    overlap.
 
     :param incoming: One element of the PATCH collection payload.
     :type incoming: Mapping[str, Any]
@@ -1453,7 +1523,8 @@ def _preserve_secrets_in_sequence_payload(
     runtime class (polymorphic bases often declare no secret fields of their
     own). Fingerprint mappings restore masked keys shallowly.
 
-    :param current: The stored collection (``list``/``set``/``tuple``) or ``None``.
+    :param current: The stored collection (``list``/``set``/``tuple``/
+        ``frozenset``) or ``None``.
     :type current: Any
     :param incoming: The PATCH sequence that may contain mask literals.
     :type incoming: Sequence[Any]
@@ -1504,8 +1575,8 @@ def preserve_secrets_in_model_payload(
 ) -> dict[str, Any]:
     """Restore masked SecretStr/SecretBytes values inside a nested-model PATCH payload.
 
-    Recurses into nested models, secret-valued dicts, and homogeneous
-    list/set-of-model fields; scalar secret leaves use
+    Recurses into nested models, secret-valued dicts, secret-element sequences,
+    and homogeneous list/set-of-model fields; scalar secret leaves use
     :func:`_preserve_masked_secret_scalar`.
 
     :param model_cls: The Pydantic model whose fields ``incoming`` addresses.
@@ -1533,6 +1604,13 @@ def preserve_secrets_in_model_payload(
         ):
             result[name] = _preserve_secrets_in_dict_payload(leaf_current, result[name])
             continue
+        if _annotation_is_secret_valued_sequence(field_info.annotation) and isinstance(
+            result[name], list | tuple
+        ):
+            result[name] = _preserve_secrets_in_secret_sequence_payload(
+                leaf_current, result[name]
+            )
+            continue
         if _annotation_collection_element_model(field_info.annotation) is not None and (
             isinstance(result[name], list | tuple)
         ):
@@ -1555,9 +1633,10 @@ def preserve_patch_secret_value(
     When a client resubmits Pydantic's secret JSON mask
     (:data:`SECRET_STR_MASK`), replace it with the stored secret's plain value.
     Non-mask submissions are left unchanged. Recurses into nested Pydantic
-    models, ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` payloads, and
-    homogeneous ``list``/``set`` collections of models (including polymorphic
-    bases whose secrets live only on concrete subclasses).
+    models, ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` payloads,
+    ``list[SecretStr]``-style sequences, and homogeneous ``list``/``set``
+    collections of models (including polymorphic bases whose secrets live only
+    on concrete subclasses).
 
     :param field_info: The Pydantic field metadata for the target attribute.
     :type field_info: FieldInfo
@@ -1575,9 +1654,16 @@ def preserve_patch_secret_value(
         incoming, Mapping
     ):
         return _preserve_secrets_in_dict_payload(current, incoming)
+    if isinstance(incoming, list | tuple) and _annotation_is_secret_valued_sequence(
+        field_info.annotation
+    ):
+        return _preserve_secrets_in_secret_sequence_payload(current, incoming)
     if isinstance(incoming, list | tuple) and (
         _annotation_collection_element_model(field_info.annotation) is not None
-        or isinstance(current, list | set | tuple | frozenset)
+        or (
+            isinstance(current, list | set | tuple | frozenset)
+            and any(isinstance(item, BaseModel | Mapping) for item in current)
+        )
     ):
         return _preserve_secrets_in_sequence_payload(current, incoming)
     if _field_contains_secret(field_info):

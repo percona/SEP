@@ -253,6 +253,19 @@ def test_preserve_patch_secret_value_for_list_of_models() -> None:
     assert preserved[0]["label"] == "a"
 
 
+def test_preserve_patch_secret_value_for_list_of_secrets() -> None:
+    """Assert masked elements inside ``list[SecretStr]`` are restored by index."""
+
+    class _ListOfSecretsSettings(BaseModel):
+        tokens: list[SecretStr] = hot_field([])
+
+    field = _ListOfSecretsSettings.model_fields["tokens"]
+    current = [SecretStr("keep-first"), SecretStr("keep-second")]
+    incoming = [SECRET_STR_MASK, "brand-new-second"]
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved == ["keep-first", "brand-new-second"]
+
+
 def test_providers_field_reports_is_secret() -> None:
     """Assert ``PROVIDERS`` is flagged secret via subclass ``SecretStr`` fields."""
     meta = next(m for m in iter_class_fields(AlertSettings) if m.key == "PROVIDERS")

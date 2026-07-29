@@ -1152,6 +1152,45 @@ class TestSepSettingsAlertSettings:
         finally:
             alert_settings._set_snapshot({})
 
+    async def test_providers_masked_patch_preserves_routing_key(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep a stored PagerDuty routing key when PROVIDERS is resubmitted masked."""
+        secret = "sep-1615-pagerduty-routing-key"
+        try:
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/AlertSettings",
+                    json={
+                        "PROVIDERS": [
+                            {"PROVIDER": "pagerduty", "routing_key": secret},
+                        ]
+                    },
+                ).status_code
+                == status.HTTP_200_OK
+            )
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/AlertSettings",
+                json={
+                    "PROVIDERS": [
+                        {
+                            "PROVIDER": "pagerduty",
+                            "routing_key": "**********",
+                            "api_endpoint": "https://events.pagerduty.com/v2/",
+                        }
+                    ]
+                },
+            )
+            assert response.status_code == status.HTTP_200_OK
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.ALERT_SETTINGS
+            )
+            providers_row = next(row for row in rows if row.key == "PROVIDERS")
+            assert providers_row.value[0]["routing_key"] == secret
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
+            alert_settings._set_snapshot({})
+
 
 @pytest.mark.asyncio
 class TestSepSettingsCredentialUrlRedaction:
