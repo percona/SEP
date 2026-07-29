@@ -228,7 +228,8 @@ class AtwSendJobWrite(BaseModel):
     """Define the payload starting one diagnostics send.
 
     :param case_ref: The support-case reference to attach the bundle to.
-    :param execution_ids: The incident executions whose output and logs to send.
+    :param execution_ids: The incident executions whose output files and logs to
+        send.
     """
 
     case_ref: NonEmptyStr

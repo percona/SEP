@@ -73,10 +73,12 @@ _UNCONFIGURED_ERROR = "Diagnostics delivery is not configured"
 _NOTHING_TO_SEND_ERROR = (
     "The selected executions produced no output or logs -- nothing to send."
 )
-#: The Nomad task name carrying a snippet's own output. Every task an ATW snippet
-#: resolves to (``exec-artifact``, ``exec-python-artifact``) wraps it in prestart
-#: and poststop steps -- ``check-staleness``, ``prepare-env``, ``clean-up`` --
-#: whose logs are machinery, not diagnostics. See ``app/tasks/db/seed.py``.
+#: The Nomad task name carrying a snippet's own output. Both jobs an ATW snippet
+#: resolves to wrap it in a ``check-staleness`` prestart step, and
+#: ``exec-python-artifact`` adds a ``prepare-env`` prestart and a ``clean-up``
+#: poststop step; those steps log setup machinery, not diagnostics. See
+#: ``NOMAD_EXEC_ARTIFACT`` and ``NOMAD_EXEC_PYTHON_ARTIFACT`` in
+#: ``app/tasks/db/seed.py``.
 _MAIN_LOG_STEP = "run-script"
 _WORKER_LOST_ERROR = (
     "The worker running this send did not report back in time; it was most "
@@ -250,9 +252,15 @@ async def _execution_status(
             f"Could not read the status of execution {task_history_id} "
             f"({execution['snippet_filename']}): {_error_message(exc)}"
         ) from exc
+    status = payload.get("status")
     try:
-        return TaskHistoryStatusEnum(payload.get("status"))
+        return TaskHistoryStatusEnum(status)
     except ValueError:
+        logger.warning(
+            "Skipping the logs of execution %s: unrecognized status %r.",
+            task_history_id,
+            status,
+        )
         return None
 
 
@@ -449,14 +457,16 @@ async def _add_execution_logs(
             f"/history/{task_history_id}/logs/", params={"step": _MAIN_LOG_STEP}
         ):
             record = _decode_log_line(line, task_history_id)
-            if record is None or not record.get("msg"):
+            if record is None:
+                continue
+            if not isinstance(msg := record.get("msg"), str) or not msg:
                 continue
             group = (str(record.get("step", "")), str(record.get("type", "")))
             if member is None or member.group != group:
                 if member is not None:
                     entries.append(member.close())
                 member = _LogMember(archive, prefix, group)
-            total += member.write(record["msg"])
+            total += member.write(msg)
         if member is not None:
             entries.append(member.close())
     except (HTTPException, OSError, ClientError) as exc:
