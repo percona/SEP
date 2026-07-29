@@ -117,6 +117,27 @@ class TestSnippetsApprovalApiReviewContracts:
         assert second.missing_on_disk == []
 
 
+async def _seed_meta_snippet(
+    create_snippet,
+    session,
+    filename,
+    *,
+    title=None,
+    service_type=None,
+    approved=False,
+):
+    """Seed a snippet with persisted meta title/service_type and approval state."""
+    snippet = await create_snippet(filename, approved=approved)
+    meta = dict(snippet.meta)
+    if title is not None:
+        meta["title"] = title
+    if service_type is not None:
+        meta["service_type"] = service_type
+    snippet.meta = meta
+    await SnippetManager.save(session, snippet, flag_modified_fields=["meta"])
+    return snippet
+
+
 @pytest.mark.asyncio
 class TestSnippetsApiList:
     """Tests for ``GET /api/apps/snippets/``."""
@@ -132,7 +153,7 @@ class TestSnippetsApiList:
         assert response.json()["items"] == []
 
     async def test_returns_snippet_payload(self, test_client, create_snippet):
-        """A persisted snippet is projected into its API response shape."""
+        """Project a persisted snippet into its API response shape."""
         snippet = await create_snippet("hello.sh", approved=True)
 
         response = test_client.get(f"{API_BASE}/")
@@ -147,6 +168,172 @@ class TestSnippetsApiList:
         assert row["md5_digest"] == "a" * 32
         assert row["sudo_optional"] is False
         assert row["service_type"] == snippet.service_type
+
+    async def test_search_filters_rows_and_total_over_whole_dataset(
+        self, test_client, create_snippet, session
+    ):
+        """Narrow both the rows and the paginated total with server-side search."""
+        await _seed_meta_snippet(
+            create_snippet, session, "mysql-dump.sh", title="MySQL dump"
+        )
+        await _seed_meta_snippet(
+            create_snippet, session, "other.sh", title="Postgres vacuum"
+        )
+
+        response = test_client.get(f"{API_BASE}/", params={"search": "mysql"})
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert [row["filename"] for row in body["items"]] == ["mysql-dump.sh"]
+
+    async def test_service_type_and_approval_filters_combine_server_side(
+        self, test_client, create_snippet, session
+    ):
+        """Apply the service-type and approval filters together over the full set."""
+        await _seed_meta_snippet(
+            create_snippet, session, "a.sh", service_type="mysql", approved=True
+        )
+        await _seed_meta_snippet(
+            create_snippet, session, "b.sh", service_type="mysql", approved=False
+        )
+        await _seed_meta_snippet(
+            create_snippet, session, "c.sh", service_type="mongodb", approved=True
+        )
+
+        response = test_client.get(
+            f"{API_BASE}/",
+            params={"service_type": "mysql", "approval": "approved"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert [row["filename"] for row in body["items"]] == ["a.sh"]
+
+    async def test_invalid_sort_key_is_rejected_at_the_boundary(
+        self, test_client, create_snippet
+    ):
+        """Reject an out-of-allowlist sort key with 422 before any query runs."""
+        await create_snippet("hello.sh", approved=True)
+
+        response = test_client.get(f"{API_BASE}/", params={"sort": "meta"})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            err.get("loc") == ["query", "sort"]
+            for err in detail
+            if isinstance(err, dict)
+        )
+
+    @pytest.mark.parametrize(
+        ("param", "value"),
+        [("order", "sideways"), ("approval", "maybe")],
+    )
+    async def test_invalid_enum_query_param_is_rejected_at_the_boundary(
+        self, test_client, param, value
+    ):
+        """Reject an out-of-enum order/approval selection with 422 before querying."""
+        response = test_client.get(f"{API_BASE}/", params={param: value})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            err.get("loc") == ["query", param]
+            for err in detail
+            if isinstance(err, dict)
+        )
+
+    async def test_unauthenticated_caller_is_rejected(self, api_unauthenticated_client):
+        """Reject anonymous callers with a structured 401, not a redirect or a page."""
+        response = api_unauthenticated_client.get(
+            f"{API_BASE}/", follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_uncategorized_flag_filters_to_snippets_without_a_type(
+        self, test_client, create_snippet, session
+    ):
+        """Filter to snippets with no service type when ``uncategorized`` is set."""
+        await _seed_meta_snippet(
+            create_snippet, session, "typed.sh", service_type="mysql"
+        )
+        await _seed_meta_snippet(create_snippet, session, "untyped.sh")
+
+        response = test_client.get(f"{API_BASE}/", params={"uncategorized": "true"})
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert [row["filename"] for row in body["items"]] == ["untyped.sh"]
+
+    async def test_service_type_all_is_forwarded_as_a_real_value(
+        self, test_client, create_snippet, session
+    ):
+        """Treat a service type literally equal to ``all`` as a real filter value."""
+        await _seed_meta_snippet(
+            create_snippet, session, "special.sh", service_type="all"
+        )
+        await _seed_meta_snippet(
+            create_snippet, session, "mysql.sh", service_type="mysql"
+        )
+
+        response = test_client.get(f"{API_BASE}/", params={"service_type": "all"})
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert [row["filename"] for row in body["items"]] == ["special.sh"]
+
+
+@pytest.mark.asyncio
+class TestSnippetsApiServiceTypes:
+    """Tests for ``GET /api/apps/snippets/service_types``."""
+
+    async def test_returns_distinct_service_types_across_the_dataset(
+        self, test_client, create_snippet, session
+    ):
+        """Return the sorted distinct service types across every snippet."""
+        await _seed_meta_snippet(create_snippet, session, "a.sh", service_type="mysql")
+        await _seed_meta_snippet(
+            create_snippet, session, "b.sh", service_type="mongodb"
+        )
+        await create_snippet("c.sh")
+
+        response = test_client.get(f"{API_BASE}/service_types")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["service_types"] == ["mongodb", "mysql"]
+        assert body["has_uncategorized"] is True
+
+    async def test_omits_blank_service_types_from_the_option_list(
+        self, test_client, create_snippet, session
+    ):
+        """Fold a blank service type into the uncategorized flag, not the options."""
+        await _seed_meta_snippet(
+            create_snippet, session, "blank.sh", service_type="   "
+        )
+        await _seed_meta_snippet(
+            create_snippet, session, "typed.sh", service_type="mysql"
+        )
+
+        response = test_client.get(f"{API_BASE}/service_types")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["service_types"] == ["mysql"]
+        assert body["has_uncategorized"] is True
+
+    async def test_unauthenticated_caller_is_rejected(self, api_unauthenticated_client):
+        """Reject anonymous callers on the facet endpoint with a 401."""
+        response = api_unauthenticated_client.get(
+            f"{API_BASE}/service_types", follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.asyncio

@@ -31,12 +31,13 @@ from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/backup_mongo"
-EXPECTED_CASCADE_POSTS = 4
-EXPECTED_CASCADE_PUTS = 4
+EXPECTED_CASCADE_POSTS = 5
+EXPECTED_CASCADE_PUTS = 5
 DEFAULT_PAGE_LIMIT = 50
 THREE_PARENT_FIXTURE_TOTAL = 3
 TWO_PARENT_FIXTURE_TOTAL = 2
 TWO_DERIVED_SIBLINGS = 2
+THREE_DERIVED_SIBLINGS = 3
 
 
 def build_backup_task(name: str = "mongo-backup-task", **overrides: Any) -> dict:
@@ -93,14 +94,25 @@ def build_backup_write_body(
     }
 
 
-def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
-    """Return a path-keyed ``tasks_api.get`` mock safe for parallel fetches."""
+def mock_task_api_get_by_path(
+    tasks_by_path: dict[str, Any],
+    *,
+    not_found: tuple[str, ...] = (),
+) -> AsyncMock:
+    """Return a path-keyed ``tasks_api.get`` mock safe for parallel fetches.
+
+    Unknown paths raise ``AssertionError`` by default so typos fail loudly.
+    Pass ``not_found`` for paths that should surface as ``HTTPNotFoundException``
+    (for example a missing ``-incremental`` sibling during backfill).
+    """
 
     async def _mock_get(path: str, **kwargs: Any) -> Any:
         if path.endswith("/history/"):
             return {"items": []}
         if path in tasks_by_path:
             return tasks_by_path[path]
+        if path in not_found:
+            raise HTTPNotFoundException(f"Task not found: {path}")
         raise AssertionError(f"Unexpected tasks_api.get path: {path!r}")
 
     return AsyncMock(side_effect=_mock_get)
@@ -159,7 +171,7 @@ class TestBackupMongoAppSchemaEndpoint:
         assert "application/json" in response.headers["content-type"]
 
     def test_schema_declares_derived_cascade(self, test_client):
-        """Ensure the schema exposes the three derived backup legs."""
+        """Ensure the schema exposes the four derived backup legs."""
         response = test_client.get(f"{API_BASE}/schema")
 
         derived = response.json()["derived"]
@@ -167,6 +179,7 @@ class TestBackupMongoAppSchemaEndpoint:
             "-logical",
             "-physical",
             "-status",
+            "-incremental",
         ]
 
     def test_schema_storage_fields_use_forbidden_gates(self, test_client):
@@ -376,7 +389,7 @@ class TestBackupMongoApiCreate:
         mock_inventory_api_dep,
         mongo_service: CreatedService,
     ) -> None:
-        """POST creates the parent and three derived tasks via cascade."""
+        """POST creates the parent and four derived tasks via cascade."""
         mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
         mock_task_api_dep.post = AsyncMock(
             side_effect=[
@@ -399,6 +412,13 @@ class TestBackupMongoApiCreate:
                     "mongo-backup-task-status",
                     data={
                         "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                build_backup_task(
+                    "mongo-backup-task-incremental",
+                    data={
+                        "backup_type": BackupType.PBM_INCREMENTAL.value,
                         "parent": "mongo-backup-task",
                     },
                 ),
@@ -425,6 +445,13 @@ class TestBackupMongoApiCreate:
                     "mongo-backup-task-status",
                     data={
                         "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "mongo-backup-task",
+                    },
+                ),
+                "/mongo-backup-task-incremental": build_backup_task(
+                    "mongo-backup-task-incremental",
+                    data={
+                        "backup_type": BackupType.PBM_INCREMENTAL.value,
                         "parent": "mongo-backup-task",
                     },
                 ),
@@ -541,12 +568,20 @@ class TestBackupMongoApiDetail:
                 "parent": "parent-backup",
             },
         )
+        incremental = build_backup_task(
+            "parent-backup-incremental",
+            data={
+                "backup_type": BackupType.PBM_INCREMENTAL.value,
+                "parent": "parent-backup",
+            },
+        )
         mock_task_api_dep.get = mock_task_api_get_by_path(
             {
                 "/parent-backup": parent,
                 "/parent-backup-logical": logical,
                 "/parent-backup-physical": physical,
                 "/parent-backup-status": status_task,
+                "/parent-backup-incremental": incremental,
             }
         )
 
@@ -563,6 +598,7 @@ class TestBackupMongoApiDetail:
             "parent-backup-logical",
             "parent-backup-physical",
             "parent-backup-status",
+            "parent-backup-incremental",
         }
 
     def test_detail_tolerates_history_fetch_failure_for_one_derived(
@@ -591,12 +627,20 @@ class TestBackupMongoApiDetail:
                 "parent": "parent-backup",
             },
         )
+        incremental = build_backup_task(
+            "parent-backup-incremental",
+            data={
+                "backup_type": BackupType.PBM_INCREMENTAL.value,
+                "parent": "parent-backup",
+            },
+        )
         history_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         tasks_by_path = {
             "/parent-backup": parent,
             "/parent-backup-logical": logical,
             "/parent-backup-physical": physical,
             "/parent-backup-status": status_task,
+            "/parent-backup-incremental": incremental,
         }
 
         async def _mock_get(path: str, **kwargs: Any) -> Any:
@@ -614,11 +658,12 @@ class TestBackupMongoApiDetail:
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert len(body["derived_tasks"]) == TWO_DERIVED_SIBLINGS
+        assert len(body["derived_tasks"]) == THREE_DERIVED_SIBLINGS
         derived_names = {item["name"] for item in body["derived_tasks"]}
         assert derived_names == {
             "parent-backup-logical",
             "parent-backup-status",
+            "parent-backup-incremental",
         }
 
 
@@ -640,6 +685,7 @@ class TestBackupMongoApiDelete:
             call("/parent-backup-logical"),
             call("/parent-backup-physical"),
             call("/parent-backup-status"),
+            call("/parent-backup-incremental"),
             call("/parent-backup"),
         ]
 
@@ -702,6 +748,13 @@ class TestBackupMongoApiUpdate:
                         "parent": "parent-backup",
                     },
                 ),
+                "/parent-backup-incremental": build_backup_task(
+                    "parent-backup-incremental",
+                    data={
+                        "backup_type": BackupType.PBM_INCREMENTAL.value,
+                        "parent": "parent-backup",
+                    },
+                ),
             }
         )
         mock_task_api_dep.put = AsyncMock(return_value=parent)
@@ -759,6 +812,13 @@ class TestBackupMongoApiUpdate:
                     "parent-backup-status",
                     data={
                         "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+                "/parent-backup-incremental": build_backup_task(
+                    "parent-backup-incremental",
+                    data={
+                        "backup_type": BackupType.PBM_INCREMENTAL.value,
                         "parent": "parent-backup",
                     },
                 ),
@@ -919,7 +979,16 @@ class TestBackupMongoApiUpdate:
         """Return 500 naming the failed leg when a derived PUT fails mid-cascade."""
         parent = build_backup_task("parent-backup")
         mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
-        mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-backup": parent})
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {"/parent-backup": parent},
+            not_found=(
+                "/parent-backup-logical",
+                "/parent-backup-physical",
+                "/parent-backup-status",
+                "/parent-backup-incremental",
+            ),
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={})
         derived_exc = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         async def _put(path: str, **kwargs: Any) -> Any:
@@ -939,6 +1008,67 @@ class TestBackupMongoApiUpdate:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert "parent-backup-physical" in response.json()["detail"]
+
+    def test_update_backfills_missing_incremental_sibling(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+    ) -> None:
+        """Create a missing ``-incremental`` sibling before cascading PUTs.
+
+        Pre-SEP-1373 groups lack the incremental leg. Updating must backfill it
+        rather than partially mutate the group and then 500 on a missing PUT.
+        """
+        parent = build_backup_task("parent-backup")
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/parent-backup": parent,
+                "/parent-backup-logical": build_backup_task(
+                    "parent-backup-logical",
+                    data={
+                        "backup_type": BackupType.PBM_LOGICAL.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+                "/parent-backup-physical": build_backup_task(
+                    "parent-backup-physical",
+                    data={
+                        "backup_type": BackupType.PBM_PHYSICAL.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+                "/parent-backup-status": build_backup_task(
+                    "parent-backup-status",
+                    data={
+                        "backup_type": BackupType.PBM_STATUS.value,
+                        "parent": "parent-backup",
+                    },
+                ),
+            },
+            not_found=("/parent-backup-incremental",),
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={})
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup",
+            json=build_backup_write_body(
+                task_name="parent-backup",
+                service_id=mongo_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_task_api_dep.post.assert_awaited_once()
+        posted = mock_task_api_dep.post.await_args.kwargs["json"]
+        assert posted["name"] == "parent-backup-incremental"
+        assert posted["data"]["backup_type"] == BackupType.PBM_INCREMENTAL.value
+        assert mock_task_api_dep.put.await_count == EXPECTED_CASCADE_PUTS
+        put_paths = [call.args[0] for call in mock_task_api_dep.put.await_args_list]
+        assert "/parent-backup-incremental" in put_paths
 
     def test_update_returns_404_for_unknown_task(
         self, test_client, mock_task_api_dep

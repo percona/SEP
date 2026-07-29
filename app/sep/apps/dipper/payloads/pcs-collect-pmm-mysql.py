@@ -402,6 +402,7 @@ def render_graphs(
     time_from_ts = int(dashboard_params["time_from"].timestamp()) * 1000
     time_to_ts = int(dashboard_params["time_to"].timestamp()) * 1000
 
+    p = None
     try:
         panels = dashboard_params["panels"]
         for p in panels:
