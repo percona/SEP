@@ -214,8 +214,10 @@ ways to ship a runnable tool, and the scaffolder's three flavors map onto them.
 
 - **A flat, parameterized script** belongs in an **in-script YAML snippet** —
   the Snippet Manager runs it, and the form is described in a YAML header
-  alongside the script. Choose this when the check is a single command whose
-  only inputs are simple parameters.
+  alongside the script. This needs no `make startapp` at all: drop the
+  script, frontmatter included, into the existing Snippet Manager catalog.
+  Choose this when the check is a single command whose only inputs are
+  simple parameters.
 - **Anything that needs inventory or rules between fields** belongs in a
   **framework app**. Choose this when the form must offer values resolved from
   inventory (service / schema / table / host), enforce cross-field rules ("this
@@ -233,7 +235,7 @@ derives a form from.
 | Flavor | Use when | What you write |
 |---|---|---|
 | `task` | The app runs a task built from a typed form (the common case) — inventory refs, cross-field rules, a derived schema. | Framework app: a form model (`create_model`) + `views` + a spec/payload builder. |
-| `script` | The app executes scripts through the `ScriptSource` extension point (like the Snippet Manager). | Framework app wrapping a `ScriptSource`; per-script forms come from the script, not a `create_model`. |
+| `script` | The script-backed tool needs its own app identity — a sidebar entry, routes, and an isolated `ScriptSource` script catalog separate from the Snippet Manager's — not just another entry in the shared catalog. | Framework app wrapping a `ScriptSource`; per-script forms come from the script, not a `create_model`. |
 | `base` | The app is not a task-execution app at all — it needs a custom router and does not fit the derived spine. | `BaseApp` with a hand-written `api_router` (the bottom rung of the ladder). |
 
 If in doubt, start with `task`: it is the flavor the spine is built for, and you can
@@ -313,8 +315,12 @@ The resulting `settings.yaml` entry:
 
 The scaffolder does **not** finish the app for you. After scaffolding:
 
-1. **Fill in the skeleton** — the generated `models.py`, `spec.py`, and `views.py`
-   are stubs; write your fields, spec builder, and views.
+1. **Fill in the skeleton** — the generated files are stubs. For the `task`
+   flavor: `models.py`, `spec.py`, and `views.py` — write your fields, spec
+   builder, and views. For the `script` flavor: `source.py` plus the sample
+   script under `snippets/` — replace the sample and curate the script
+   catalog. For the `base` flavor: `api_routes.py` and `schema.py`, plus the
+   bespoke React UI it requires (see the frontend paragraph below).
 2. **Enable the app** — it is registered **disabled**. Turn it on from the
    sidebar's top-level **Apps** page (`/admin/apps`), or scaffold with `ENABLE`
    for a dev box.
@@ -334,12 +340,13 @@ fields — a list value comes back unresolved. `build_checksums_payload` runs it
 own multi-value resolution before assembling the task, which `task_spec_builder`'s
 fixed signature has no room for.
 
-No frontend work is needed: once enabled, the app appears in the sidebar and its
-pages render from the derived schema — `GET /api/apps/` carries the route,
-display name, and `nav_icon` the shell consumes. Only an app that ships its own
-bespoke React UI registers a component in
+For the schema-driven `task` and `script` flavors, no frontend work is
+needed: once enabled, the app appears in the sidebar and its pages render
+from the derived schema — `GET /api/apps/` carries the route, display name,
+and `nav_icon` the shell consumes. The `base` flavor is the bespoke-UI case:
+it scaffolds with `custom_ui=True`, so it must register a component in
 `frontend/packages/shell/src/appRegistry.tsx` and route metadata in
-`appNavConfig.ts`; schema-driven apps need no entry.
+`appNavConfig.ts`; the schema-driven flavors need no such entry.
 
 Task apps need **no database migration** — tasks are stored generically.
 
@@ -356,8 +363,9 @@ Then run SEP locally and open the app from the sidebar — the form you declared
 in `models.py` is what renders.
 
 The CI `startapp-check` gate (`make startapp-check`, wired into
-`.github/workflows/python.yaml`) proves all three flavors scaffold and pass their
-contract suite on every PR.
+`.github/workflows/python.yaml`) scaffolds all three flavors non-interactively
+and runs their generated test suites on every PR, protecting the default
+scaffold-and-test path.
 
 ---
 
@@ -505,9 +513,12 @@ backup_priority: Annotated[
 ### The four reference markers
 
 Four markers bind a field to **inventory**: `ServiceRef`, `SchemaRef`, `TableRef`,
-and `HostRef`. They make the field a dropdown resolved from inventory (optionally
-`allow_custom=True` to also accept a typed name), and they drive the connectivity
-and cascade wiring. The Alters app uses all four together:
+and `HostRef`. They make the field a dropdown resolved from inventory —
+`ServiceRef`, `SchemaRef`, and `TableRef` optionally take `allow_custom=True`
+to also accept a typed name — and they drive the connectivity and cascade
+wiring. `HostRef` declares the same `allow_custom` flag and emits it on the
+wire, but the host selector does not yet honor it, so a free-typed host is
+not currently accepted by the UI. The Alters app uses all four together:
 
 <!-- src: app/sep/apps/alters/models.py :: AltersCreate -->
 ```python
@@ -635,15 +646,16 @@ A marker bound to a name can gate a whole family of fields at once — the same
 model attaches `_MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")` to
 each of its non-boolean Mydumper-only fields.
 
-> **⚠ `Forbidden`/`Requires` cannot gate a bool field on its default.** The
+> **⚠ A presence gate sees a `bool` field only when it is `True`.** The
 > predicate engine treats `None`, `False`, and empty strings/bytes/collections
-> as absent (numeric `0` still counts as present) — and a bare `bool` field's
-> default *is* `False`, so a `Forbidden(when=...)` marker on such a field would
-> never see it as "present" and would never fire.
-> MySQL Backups' mode-owned bool fields (`mydumper_dump_triggers` and its
-> siblings) are therefore gated by a generated `FailRule` instead — the
-> `truthy(name) & (F("backup_type") != owner_mode)` rule shown above — which
-> checks the field's actual value rather than its presence.
+> as absent (numeric `0` still counts as present). A `Forbidden(when=...)`
+> marker on a bool field therefore fires only on an explicit `True` toggle —
+> never on the legitimate `False` default — and an explicitly submitted
+> `False` is indistinguishable from an unset field. MySQL Backups covers its
+> mode-owned bool fields (`mydumper_dump_triggers` and its siblings) with the
+> generated `FailRule`s shown above rather than per-field `Forbidden` markers;
+> both trigger on the same explicit `True`, and the model's own comment
+> documents the convention.
 
 **`FieldGate`** — the same predicate DSL gates a whole section. Here the Mydumper
 section is forbidden unless `backup_type == "M"`:
@@ -823,10 +835,14 @@ async def build_alters_cascade_plan(
 ```
 
 The `cascade_create_*` / `cascade_update_*` / `cascade_delete_*` helpers in
-`app/sep/apps/framework/cascade.py` are the toolbox the closure calls. They
-return a `CascadeResult`; call its `raise_if_failed(op="create")` (`op` is
-keyword-only, one of `"create"` / `"update"` / `"delete"`) to turn a partial
-cascade failure into an HTTP 500 instead of hand-rolling the error block.
+`app/sep/apps/framework/cascade.py` are the toolbox the closure calls. The
+create helpers (`cascade_create_tasks` and its siblings) are fail-fast and
+return `None`: on any POST failure they delete the already-created tasks in
+reverse creation order and re-raise the original exception. The update/delete
+helpers are best-effort and return a `CascadeResult`; call its
+`raise_if_failed(op="update")` / `raise_if_failed(op="delete")` (`op` is
+keyword-only) to turn a partial cascade failure into an HTTP 500 instead of
+hand-rolling the error block.
 
 ### Rung 5 — fall back to `BaseApp`
 
@@ -938,8 +954,9 @@ Two CI gates keep apps honest beyond their own contract test:
   rules every app must satisfy (the required knobs wired, disallowed shapes
   absent), run per-app by `tests/app/sep/apps/framework/test_conformance.py`.
 - **Scaffold check** — `make startapp-check` (`scripts/startapp_check.py`, wired into
-  `.github/workflows/python.yaml`) scaffolds all three flavors and runs their contract
-  suites on every PR, so the Quickstart above cannot silently rot.
+  `.github/workflows/python.yaml`) scaffolds all three flavors
+  non-interactively and runs their generated test suites on every PR,
+  protecting the default scaffold-and-test path.
 
 Conformance runs as part of the ordinary `make test` / CI `pytest` invocation,
 alongside every other test; the scaffold check does not — `make startapp-check`
