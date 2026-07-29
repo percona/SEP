@@ -620,8 +620,7 @@ class TestSepSettingsPatch:
         """Reject whole-plan and per-leaf overrides of the delivery plan alike.
 
         A per-leaf override would merge without re-running the plan's
-        cross-reference validator, and a whole-object write stores every secret
-        as its mask literal, so no row may be written for this block.
+        cross-reference validator, so no row may be written for this block.
         """
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
