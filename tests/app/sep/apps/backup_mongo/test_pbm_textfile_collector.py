@@ -17,6 +17,7 @@
 
 import builtins
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,7 @@ from tests.app.sep.apps.backup_mongo._payload_codegen import (
     payloads_with,
     region_between,
 )
+from tests.app.sep.apps.backup_mongo.pbm_payload_exec import FakePopen, run_payload
 
 # The three backup payloads that emit stale-backup metrics. Restore payloads are
 # out of scope, so they do not carry the textfile-collector region.
@@ -55,10 +57,22 @@ _EXPECTED_METRIC_TYPES = {
     "pbm_snapshot_payload": "PBM Snapshot",
 }
 
+# The two aborting backup payloads (logical/physical) that exec ``pbm backup``
+# via ``subprocess.Popen`` and exit non-zero on failure.
+_ABORTING_PAYLOADS = {
+    "pbm_logical_payload": "PBM Logical",
+    "pbm_physical_payload": "PBM Physical",
+}
+
 
 def _textfile_payloads() -> list[Path]:
     """Return the payloads carrying the textfile-collector region marker."""
     return payloads_with(TEXTFILE_BEGIN)
+
+
+def _payload_path(name: str) -> Path:
+    """Return the path of the named textfile-collector payload."""
+    return next(p for p in _textfile_payloads() if p.name == name)
 
 
 def _read_single_prom(collector_dir: Path) -> tuple[str, str]:
@@ -66,6 +80,11 @@ def _read_single_prom(collector_dir: Path) -> tuple[str, str]:
     proms = sorted(collector_dir.glob("*.prom"))
     assert len(proms) == 1, f"expected one .prom file, found {proms}"
     return proms[0].name, proms[0].read_text(encoding="utf-8")
+
+
+def _read_prom(collector_dir: Path, name: str) -> str:
+    """Return the contents of the named ``.prom`` file under ``collector_dir``."""
+    return (collector_dir / name).read_text(encoding="utf-8")
 
 
 class TestTextfileCollectorDir:
@@ -97,52 +116,16 @@ class TestTextfileCollectorDir:
 
 
 class TestMetricAlias:
-    """Cover the alias resolved from ``NOMAD_META_CONFIG`` / ``NOMAD_META_TARGET``."""
+    """Cover the alias resolved from ``NOMAD_META_TARGET``."""
 
-    @pytest.fixture(autouse=True)
-    def _clear_target(self, monkeypatch) -> None:
-        """Clear the target fallback so each test controls both alias sources."""
+    def test_reads_target(self, monkeypatch) -> None:
+        """Return the host identity Nomad sets as ``NOMAD_META_TARGET``."""
+        monkeypatch.setenv("NOMAD_META_TARGET", "target-host")
+        assert _metric_alias() == "target-host"
+
+    def test_empty_when_target_unset(self, monkeypatch) -> None:
+        """Return ``""`` when the target is unset, so a missing label never aborts."""
         monkeypatch.delenv("NOMAD_META_TARGET", raising=False)
-
-    def test_reads_alias_from_config(self, monkeypatch) -> None:
-        """Return the ``alias`` value parsed out of the config YAML."""
-        monkeypatch.setenv(
-            "NOMAD_META_CONFIG", "alias: host-1\ncredentials_path: /secrets/uri"
-        )
-        assert _metric_alias() == "host-1"
-
-    def test_prefers_config_alias_over_target(self, monkeypatch) -> None:
-        """Prefer the config ``alias`` even when the target fallback is present."""
-        monkeypatch.setenv("NOMAD_META_CONFIG", "alias: host-1")
-        monkeypatch.setenv("NOMAD_META_TARGET", "target-host")
-        assert _metric_alias() == "host-1"
-
-    def test_falls_back_to_target_when_config_lacks_alias(self, monkeypatch) -> None:
-        """Fall back to ``NOMAD_META_TARGET`` for tasks stored before the alias key."""
-        monkeypatch.setenv("NOMAD_META_CONFIG", "credentials_path: /secrets/uri")
-        monkeypatch.setenv("NOMAD_META_TARGET", "target-host")
-        assert _metric_alias() == "target-host"
-
-    def test_falls_back_to_target_when_config_unset(self, monkeypatch) -> None:
-        """Fall back to ``NOMAD_META_TARGET`` when the config is absent entirely."""
-        monkeypatch.delenv("NOMAD_META_CONFIG", raising=False)
-        monkeypatch.setenv("NOMAD_META_TARGET", "target-host")
-        assert _metric_alias() == "target-host"
-
-    def test_falls_back_to_target_on_malformed_yaml(self, monkeypatch) -> None:
-        """Fall back to the target (never raise) on unparseable config YAML."""
-        monkeypatch.setenv("NOMAD_META_CONFIG", "key: [unclosed")
-        monkeypatch.setenv("NOMAD_META_TARGET", "target-host")
-        assert _metric_alias() == "target-host"
-
-    def test_empty_when_no_source_resolves(self, monkeypatch) -> None:
-        """Return ``""`` only when neither the config alias nor the target exists."""
-        monkeypatch.delenv("NOMAD_META_CONFIG", raising=False)
-        assert _metric_alias() == ""
-
-    def test_empty_on_non_mapping_config(self, monkeypatch) -> None:
-        """Fall through to the (absent) target when the config is a non-mapping."""
-        monkeypatch.setenv("NOMAD_META_CONFIG", "- a\n- b")
         assert _metric_alias() == ""
 
 
@@ -166,10 +149,10 @@ class TestLabelAndFilenameSafety:
     def test_status_escapes_label_and_sanitises_filename(
         self, tmp_path, monkeypatch
     ) -> None:
-        """A quote/slash-bearing alias yields valid labels and an in-dir filename."""
+        """Escape labels and sanitise the filename for a quote/slash-bearing target."""
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
-        monkeypatch.delenv("NOMAD_META_TARGET", raising=False)
-        monkeypatch.setenv("NOMAD_META_CONFIG", 'alias: "ev/il\\"host"')
+        # Drive the real seam: the alias production reads NOMAD_META_TARGET.
+        monkeypatch.setenv("NOMAD_META_TARGET", 'ev/il"host')
         write_backup_status("PBM Logical", 0)
         name, body = _read_single_prom(tmp_path)
         # The filename never escapes the collector dir and carries no raw quote/slash.
@@ -178,31 +161,15 @@ class TestLabelAndFilenameSafety:
         # The label value is escaped, so the exposition line is well-formed.
         assert r'alias="ev/il\"host"' in body
 
-    def test_nul_in_alias_does_not_raise(self, tmp_path, monkeypatch) -> None:
-        """A NUL byte in the alias never raises (best-effort write is preserved)."""
-        monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
-        monkeypatch.delenv("NOMAD_META_TARGET", raising=False)
-        monkeypatch.setenv("NOMAD_META_CONFIG", "alias: host-1")
-        # Force a raw NUL through, bypassing the config sanitisation, to prove the
-        # writer's own guard also holds.
-        monkeypatch.setattr(
-            "app.sep.apps.backup_mongo.pbm_creds_common._metric_alias",
-            lambda: "ho\x00st",
-        )
-        # Must not raise even though the label carries a NUL the collector rejects.
-        write_backup_status("PBM Logical", 0)
-        name, _body = _read_single_prom(tmp_path)
-        assert "\x00" not in name
-
 
 class TestWriteBackupStatus:
     """Cover the ``msp_backup_status`` / ``msp_backup_last_report_ts`` writer."""
 
     @pytest.fixture
     def collector(self, tmp_path, monkeypatch) -> Path:
-        """Point the collector dir at a tmp dir and stamp an alias into the config."""
+        """Point the collector dir at a tmp dir and set the target host alias."""
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
-        monkeypatch.setenv("NOMAD_META_CONFIG", "alias: host-1")
+        monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
         return tmp_path
 
     def test_writes_success_status(self, collector) -> None:
@@ -235,7 +202,7 @@ class TestWriteBackupStatus:
         """Skip the write (no file, no error) when the collector dir is absent."""
         absent = tmp_path / "does-not-exist"
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(absent))
-        monkeypatch.setenv("NOMAD_META_CONFIG", "alias: host-1")
+        monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
         write_backup_status("PBM Logical", 0)
         assert not absent.exists()
 
@@ -253,7 +220,6 @@ class TestWriteBackupStatus:
     def test_empty_alias_still_writes(self, tmp_path, monkeypatch) -> None:
         """Fall back to an empty alias label (never abort) when none is resolved."""
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
-        monkeypatch.delenv("NOMAD_META_CONFIG", raising=False)
         monkeypatch.delenv("NOMAD_META_TARGET", raising=False)
         write_backup_status("PBM Logical", 0)
         _name, body = _read_single_prom(tmp_path)
@@ -266,7 +232,7 @@ class TestWriteBackupEnabled:
     def test_writes_enabled(self, tmp_path, monkeypatch) -> None:
         """Write ``msp_backup_enabled == 1`` with ``type``/``alias`` labels."""
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
-        monkeypatch.setenv("NOMAD_META_CONFIG", "alias: host-1")
+        monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
         write_backup_enabled("PBM Snapshot")
         name, body = _read_single_prom(tmp_path)
         assert name == "driver.backup.PBM Snapshot.host-1.prom"
@@ -278,7 +244,7 @@ class TestWriteBackupEnabled:
         """Skip the enable write when the collector dir is absent."""
         absent = tmp_path / "nope"
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(absent))
-        monkeypatch.setenv("NOMAD_META_CONFIG", "alias: host-1")
+        monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
         write_backup_enabled("PBM Logical")
         assert not absent.exists()
 
@@ -287,7 +253,7 @@ class TestTextfileRegionSync:
     """Assert the shared metric-writer region is embedded byte-identically."""
 
     def test_discovers_exactly_the_backup_payloads(self) -> None:
-        """The three backup payloads (and only them) carry the region."""
+        """Discover exactly the three backup payloads carrying the region."""
         found = {path.name for path in _textfile_payloads()}
         assert found == _EXPECTED_TEXTFILE_PAYLOADS
 
@@ -314,64 +280,147 @@ class TestPayloadCallSites:
         ("payload_name", "expected_type"), sorted(_EXPECTED_METRIC_TYPES.items())
     )
     def test_distinct_metric_type(self, payload_name: str, expected_type: str) -> None:
-        """Each payload declares its own distinct, stable ``PBM_METRIC_TYPE``."""
-        payload = next(p for p in _textfile_payloads() if p.name == payload_name)
+        """Require each payload to declare its own distinct, stable ``PBM_METRIC_TYPE``."""
+        payload = _payload_path(payload_name)
         line = assignment_line(payload.read_text(encoding="utf-8"), "PBM_METRIC_TYPE")
         assert line == f'PBM_METRIC_TYPE = "{expected_type}"'
 
-    @pytest.mark.parametrize("payload", _textfile_payloads(), ids=lambda p: p.name)
-    def test_enable_is_written_before_the_backup_try(self, payload: Path) -> None:
-        """Enable is emitted before the backup ``try`` so a preflight abort still shows it."""
-        # Anchor to the pbm() body -- the region helpers above also carry ``try:``.
-        body = payload.read_text(encoding="utf-8").split("def pbm():", 1)[1]
-        enable_at = body.index("write_backup_enabled(PBM_METRIC_TYPE)")
-        # The enable call precedes the backup ``try:``, so it is emitted even when
-        # credential/config-apply preflight aborts.
-        assert enable_at < body.index("\n    try:")
-
-    @pytest.mark.parametrize("payload", _textfile_payloads(), ids=lambda p: p.name)
-    def test_wires_enable_and_both_statuses(self, payload: Path) -> None:
-        """Each payload marks enabled and writes both success and failure status."""
-        text = payload.read_text(encoding="utf-8")
-        assert "write_backup_enabled(PBM_METRIC_TYPE)" in text
-        assert "write_backup_status(PBM_METRIC_TYPE, 0)" in text
-        assert "write_backup_status(PBM_METRIC_TYPE, 1)" in text
-
-    @pytest.mark.parametrize(
-        "payload",
-        [p for p in _textfile_payloads() if p.name != "pbm_snapshot_payload"],
-        ids=lambda p: p.name,
-    )
-    def test_aborting_payloads_record_failure_on_preflight_exit(
-        self, payload: Path
-    ) -> None:
-        """Logical/physical write a failure status when preflight aborts via ``sys.exit``."""
-        text = payload.read_text(encoding="utf-8")
-        # The preflight abort is caught and recorded before the exit propagates.
-        assert "except SystemExit:" in text
-        exit_handler = text.index("except SystemExit:")
-        assert "write_backup_status(PBM_METRIC_TYPE, 1)" in text[exit_handler:]
-
-    @pytest.mark.parametrize(
-        "payload",
-        [p for p in _textfile_payloads() if p.name != "pbm_snapshot_payload"],
-        ids=lambda p: p.name,
-    )
-    def test_aborting_payloads_record_failure_on_any_preflight_error(
-        self, payload: Path
-    ) -> None:
-        """Logical/physical record a failure status for any preflight exception."""
-        # The catch is ``except Exception``, not just ``OSError``, so a yaml/config
-        # parse error records the failure metric before the payload exits.
-        body = payload.read_text(encoding="utf-8").split("def pbm():", 1)[1]
-        assert "except Exception as err:" in body
-        handler = body.index("except Exception as err:")
-        assert "write_backup_status(PBM_METRIC_TYPE, 1)" in body[handler:]
-
     def test_snapshot_stays_non_aborting(self) -> None:
-        """The snapshot payload must keep swallowing failure (no ``sys.exit``)."""
-        snapshot = GEN.DEFAULT_SEARCH_ROOT / "pbm_snapshot_payload"
-        text = snapshot.read_text(encoding="utf-8")
+        """Keep swallowing failure -- the snapshot payload must not abort (no ``sys.exit``)."""
+        text = _payload_path("pbm_snapshot_payload").read_text(encoding="utf-8")
         assert "sys.exit" not in text
         # A missing PBM_CREATE_SNAPSHOT still records a failure without aborting.
         assert "except (OSError, KeyError)" in text
+
+
+def _drive_aborting_payload(
+    monkeypatch,
+    tmp_path,
+    *,
+    returncode: int = 0,
+    with_creds: bool = True,
+) -> None:
+    """Wire the env and a stubbed ``Popen`` to exec a logical/physical payload.
+
+    Point the collector dir and Nomad target at a tmp dir, and stub
+    ``subprocess.Popen`` with a :class:`FakePopen` reporting ``returncode``. When
+    ``with_creds`` is false, both the config and ``$HOME`` are unset so the
+    credential preflight aborts via ``sys.exit`` before the backup runs.
+
+    :param monkeypatch: The pytest monkeypatch fixture.
+    :param tmp_path: The pytest tmp_path used as the collector dir.
+    :param returncode: The exit code the stubbed ``pbm backup`` reports.
+    :param with_creds: Provide a resolvable credentials file when true.
+    """
+    monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
+    monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
+    monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+    monkeypatch.delenv("NOMAD_META_CONFIG", raising=False)
+    if with_creds:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        (tmp_path / ".mongodb_uri").write_text("mongodb://localhost:27017/")
+    else:
+        monkeypatch.delenv("HOME", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda cmd, *a, **kw: FakePopen(cmd, *a, returncode=returncode, **kw),
+    )
+
+
+class TestAbortingPayloadStatusByExitPath:
+    """Exec the logical/physical payloads and assert the status emitted per exit path.
+
+    Driving the real payload once per exit path pins the *value* written, so an
+    inverted literal -- ``1`` on the success path or ``0`` on the failure path --
+    fails here rather than slipping past a source-text presence check.
+    """
+
+    @pytest.mark.parametrize(
+        ("payload_name", "metric_type"), sorted(_ABORTING_PAYLOADS.items())
+    )
+    def test_success_writes_status_zero(
+        self, payload_name: str, metric_type: str, monkeypatch, tmp_path
+    ) -> None:
+        """Write status ``0`` when the backup command succeeds."""
+        _drive_aborting_payload(monkeypatch, tmp_path, returncode=0)
+        run_payload(_payload_path(payload_name))
+        body = _read_prom(tmp_path, f"backup.{metric_type}.host-1.prom")
+        assert f'msp_backup_status{{type="{metric_type}", alias="host-1"}} 0' in body
+
+    @pytest.mark.parametrize(
+        ("payload_name", "metric_type"), sorted(_ABORTING_PAYLOADS.items())
+    )
+    def test_command_failure_writes_status_one(
+        self, payload_name: str, metric_type: str, monkeypatch, tmp_path
+    ) -> None:
+        """Write status ``1`` and exit non-zero when the backup command fails."""
+        _drive_aborting_payload(monkeypatch, tmp_path, returncode=1)
+        with pytest.raises(SystemExit) as exc_info:
+            run_payload(_payload_path(payload_name))
+        assert exc_info.value.code == 1
+        body = _read_prom(tmp_path, f"backup.{metric_type}.host-1.prom")
+        assert f'msp_backup_status{{type="{metric_type}", alias="host-1"}} 1' in body
+
+    @pytest.mark.parametrize(
+        ("payload_name", "metric_type"), sorted(_ABORTING_PAYLOADS.items())
+    )
+    def test_preflight_abort_writes_status_one(
+        self, payload_name: str, metric_type: str, monkeypatch, tmp_path
+    ) -> None:
+        """Write status ``1`` when the credential preflight aborts before the backup."""
+        _drive_aborting_payload(monkeypatch, tmp_path, with_creds=False)
+        with pytest.raises(SystemExit):
+            run_payload(_payload_path(payload_name))
+        body = _read_prom(tmp_path, f"backup.{metric_type}.host-1.prom")
+        assert f'msp_backup_status{{type="{metric_type}", alias="host-1"}} 1' in body
+
+    @pytest.mark.parametrize(
+        ("payload_name", "metric_type"), sorted(_ABORTING_PAYLOADS.items())
+    )
+    def test_enable_written_even_on_preflight_abort(
+        self, payload_name: str, metric_type: str, monkeypatch, tmp_path
+    ) -> None:
+        """Emit the enabled metric before the backup try, so a preflight abort still shows it."""
+        _drive_aborting_payload(monkeypatch, tmp_path, with_creds=False)
+        with pytest.raises(SystemExit):
+            run_payload(_payload_path(payload_name))
+        body = _read_prom(tmp_path, f"driver.backup.{metric_type}.host-1.prom")
+        assert f'msp_backup_enabled{{type="{metric_type}", alias="host-1"}} 1' in body
+
+
+class TestSnapshotPayloadStatus:
+    """Exec the snapshot payload and assert its status per outcome, never aborting."""
+
+    @staticmethod
+    def _fake_run_success(*_args, **_kwargs):
+        """Return a completed-process stand-in for a clean snapshot run."""
+
+        class _Result:
+            stdout = ""
+            stderr = ""
+            returncode = 0
+
+        return _Result()
+
+    def test_success_writes_status_zero(self, monkeypatch, tmp_path) -> None:
+        """Write status ``0`` when the snapshot script exits cleanly."""
+        monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
+        monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
+        monkeypatch.setenv("PBM_CREATE_SNAPSHOT", "/usr/local/bin/pbm_create_snapshot")
+        monkeypatch.setattr(subprocess, "run", self._fake_run_success)
+        run_payload(_payload_path("pbm_snapshot_payload"))
+        body = _read_prom(tmp_path, "backup.PBM Snapshot.host-1.prom")
+        assert 'msp_backup_status{type="PBM Snapshot", alias="host-1"} 0' in body
+
+    def test_missing_script_writes_status_one_without_aborting(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Record status ``1`` without aborting when ``PBM_CREATE_SNAPSHOT`` is unset."""
+        monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
+        monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
+        monkeypatch.delenv("PBM_CREATE_SNAPSHOT", raising=False)
+        # Must not raise -- the snapshot payload records failure and returns.
+        run_payload(_payload_path("pbm_snapshot_payload"))
+        body = _read_prom(tmp_path, "backup.PBM Snapshot.host-1.prom")
+        assert 'msp_backup_status{type="PBM Snapshot", alias="host-1"} 1' in body

@@ -24,12 +24,13 @@ from drifting and gives every payload-region test one loader and one extractor.
 import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[5]
 _SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "gen_pbm_payloads.py"
 
 
-def _load_generator() -> object:
+def _load_generator() -> ModuleType:
     """Load ``scripts/gen_pbm_payloads.py`` as an importable module by path.
 
     The generator is a CLI script (not on the package path), so it is loaded from
