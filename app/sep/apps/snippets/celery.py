@@ -69,8 +69,12 @@ async def update_snippets() -> None:
         processed_filenames: list[str] = []
         skipped_filenames: list[str] = []
         created_count = 0
-        manifest = await load_builtin_checksum_manifest(snippets_settings.SNIPPETS_DIR)
         auto_approve_enabled = snippets_settings.AUTO_APPROVE_BUILTIN_SNIPPETS
+        manifest = (
+            await load_builtin_checksum_manifest(snippets_settings.SNIPPETS_DIR)
+            if auto_approve_enabled
+            else {}
+        )
         for snippet_path in snippets_settings.SNIPPETS_DIR.rglob("*"):
             if await should_cancel("snippets", session=session):
                 logger.info("Snippets app disabling; stopping snippet sync early.")

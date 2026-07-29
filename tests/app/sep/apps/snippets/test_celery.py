@@ -453,14 +453,16 @@ class TestBuiltinAutoApproval:
 
     @pytest.mark.asyncio
     async def test_toggle_disabled_skips_auto_approval(self, session, mocker, tmp_path):
-        """Assert disabling the setting leaves manifest matches unapproved."""
+        """Assert disabling the setting skips manifest load and leaves matches unapproved."""
         _patch_session(mocker, session)
         self._patch_snippets_dir(mocker, tmp_path, auto_approve=False)
         content = b"#!/bin/bash\necho builtin\n"
         _write_manifest(tmp_path, {"builtin.sh": content})
+        load_manifest = mocker.spy(sep_celery, "load_builtin_checksum_manifest")
 
         await sep_celery.update_snippets()
 
+        load_manifest.assert_not_called()
         row = await SnippetManager.first(session, filename="builtin.sh")
         assert row is not None
         assert row.is_approved is False
