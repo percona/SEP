@@ -8411,8 +8411,11 @@ export interface components {
      *     :param finished_at: When the run finished.
      */
     mysql_backups__BackupRunResponse: {
-      /** Backup Type */
-      backup_type: string;
+      /**
+       * Backup Type
+       * @enum {string}
+       */
+      backup_type: 'M' | 'X';
       /** Finished At */
       finished_at: string | null;
       /** Hostname */

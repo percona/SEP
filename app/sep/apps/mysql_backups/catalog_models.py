@@ -24,6 +24,8 @@ modules would bleed their tables into the sep autogenerate comparison and break
 ``make checkmigrations``. Keep it that way (mirrors ``app.sep.apps.atw.models``).
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger
 from sqlmodel import Field as SQLField
@@ -93,7 +95,7 @@ class BackupRunResponse(BaseModel):
     id: int
     service_name: str | None
     hostname: str | None
-    backup_type: str
+    backup_type: Literal["M", "X"]
     location: str | None
     upload_destination: str | None
     size_bytes: int | None

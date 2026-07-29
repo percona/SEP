@@ -174,6 +174,6 @@ async def record_backup_run(
     )
 
     async with get_async_session_maker()() as sep_session:
-        if await MysqlBackupRunManager.first(sep_session, task_history_id=history.id):
-            return
-        await MysqlBackupRunManager.save(sep_session, record)
+        await MysqlBackupRunManager.get_or_create(
+            sep_session, record, filter_include={"task_history_id"}
+        )
