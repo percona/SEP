@@ -36,8 +36,12 @@ _CHUNK_SIZE = 8192
 async def sha256_file(path: Path) -> str:
     """Return the SHA-256 hex digest of a file.
 
+    Read through ``aiofiles`` so async callers (snippet sync) do not block the
+    event loop on disk I/O — the same pattern as ``Snippet.from_path``.
+
     :param path: The file to hash.
     :return: The hex-encoded SHA-256 digest of the file contents.
+    :raises OSError: If the file cannot be opened or read.
     """
     digest = hashlib.sha256()
     async with aiofiles.open(path, "rb") as handle:

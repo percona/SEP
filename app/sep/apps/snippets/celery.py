@@ -65,7 +65,8 @@ async def update_snippets() -> None:
     """
     async_session = get_async_session_maker()
     async with async_session() as session:
-        updated_snippets: list[Snippet] = []
+        content_changed_snippets: list[Snippet] = []
+        approval_snippets: list[Snippet] = []
         processed_filenames: list[str] = []
         skipped_filenames: list[str] = []
         created_count = 0
@@ -91,7 +92,8 @@ async def update_snippets() -> None:
                 snippet_path,
                 snippet_name,
                 manifest,
-                updated_snippets,
+                content_changed_snippets,
+                approval_snippets,
                 auto_approve_enabled=auto_approve_enabled,
             )
             if created:
@@ -99,14 +101,42 @@ async def update_snippets() -> None:
         if await should_cancel("snippets", session=session):
             logger.info("Snippets app disabling; skipping post-sync snippet writes.")
             return
-        if created_count:
-            logger.info("Added %s new snippets", created_count)
-        if updated_snippets:
-            logger.info("Updating %s modified snippets", len(updated_snippets))
-            await SnippetManager.save_batch(
-                session, *updated_snippets, flag_modified_fields=["meta"]
-            )
+        await _persist_snippet_sync_batches(
+            session,
+            created_count=created_count,
+            content_changed_snippets=content_changed_snippets,
+            approval_snippets=approval_snippets,
+        )
         await _delete_unsynced_snippets(session, processed_filenames, skipped_filenames)
+
+
+async def _persist_snippet_sync_batches(
+    session: AsyncSession,
+    *,
+    created_count: int,
+    content_changed_snippets: list[Snippet],
+    approval_snippets: list[Snippet],
+) -> None:
+    """Log sync totals and batch-save content-change and approval-only rows.
+
+    :param session: The active database session.
+    :param created_count: Number of new snippet rows created during this sync.
+    :param content_changed_snippets: Rows whose file contents changed.
+    :param approval_snippets: Rows that only need approval fields persisted.
+    """
+    if created_count:
+        logger.info("Added %s new snippets", created_count)
+    if content_changed_snippets:
+        logger.info("Updating %s modified snippets", len(content_changed_snippets))
+        await SnippetManager.save_batch(
+            session, *content_changed_snippets, flag_modified_fields=["meta"]
+        )
+    if approval_snippets:
+        logger.info(
+            "Auto-approving %s snippets from built-in checksum manifest",
+            len(approval_snippets),
+        )
+        await SnippetManager.save_batch(session, *approval_snippets)
 
 
 async def _sync_snippet_file(
@@ -114,7 +144,8 @@ async def _sync_snippet_file(
     snippet_path: Path,
     snippet_name: str,
     manifest: dict[str, str],
-    updated_snippets: list[Snippet],
+    content_changed_snippets: list[Snippet],
+    approval_snippets: list[Snippet],
     *,
     auto_approve_enabled: bool,
 ) -> bool:
@@ -124,7 +155,10 @@ async def _sync_snippet_file(
     :param snippet_path: Absolute path to the snippet file on disk.
     :param snippet_name: Filename relative to the snippets directory.
     :param manifest: Built-in checksum mapping of filename to SHA-256 digest.
-    :param updated_snippets: Mutable list collecting rows that need a batch save.
+    :param content_changed_snippets: Mutable list collecting rows whose file
+        contents changed (caller batch-saves with ``meta`` flagged modified).
+    :param approval_snippets: Mutable list collecting rows that only need
+        approval fields persisted (new auto-approvals and upgrade-path approvals).
     :param auto_approve_enabled: Whether manifest-matched auto-approval is enabled.
     :return: ``True`` when a new snippet row was created.
     """
@@ -142,7 +176,7 @@ async def _sync_snippet_file(
         logger.debug("New snippet created: %s", created_snippet.filename)
         if manifest_match:
             _auto_approve(created_snippet)
-            await SnippetManager.save(session, created_snippet)
+            approval_snippets.append(created_snippet)
         return True
 
     if created_snippet.md5_digest != snippet.md5_digest:
@@ -159,14 +193,14 @@ async def _sync_snippet_file(
             manifest_match=manifest_match,
             human_revoked=human_revoked,
         )
-        updated_snippets.append(created_snippet)
+        content_changed_snippets.append(created_snippet)
     elif (
         manifest_match
         and not created_snippet.is_approved
         and not created_snippet.is_human_revoked
     ):
         _auto_approve(created_snippet)
-        updated_snippets.append(created_snippet)
+        approval_snippets.append(created_snippet)
     return False
 
 

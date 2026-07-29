@@ -38,7 +38,8 @@ async def _hash_snippet_entries(
 
     :param snippets_dir: The snippets directory to walk.
     :param manifest_name: The checksum-manifest filename to skip.
-    :return: Sorted ``(digest, relative_path)`` pairs for each snippet file.
+    :return: ``(digest, relative_path)`` pairs in sorted-path order.
+    :raises OSError: If a snippet file cannot be opened or read.
     """
     from app.sep.apps.snippets.builtin_manifest import (
         manifest_relative_path,

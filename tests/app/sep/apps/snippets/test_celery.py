@@ -456,6 +456,41 @@ class TestBuiltinAutoApproval:
         assert row.updated_by == BUILTIN_APPROVAL_USER_ID
         assert row.reason == BUILTIN_APPROVAL_REASON
 
+    @pytest.mark.asyncio
+    async def test_approvals_and_content_changes_use_split_batches(
+        self, session, mocker, tmp_path
+    ):
+        """Assert approval-only and content-change rows use separate save batches."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        create_content = b"#!/bin/bash\necho create\n"
+        old_content = b"#!/bin/bash\necho old\n"
+        new_content = b"#!/bin/bash\necho new\n"
+        await SnippetManager.create(
+            session,
+            Snippet(
+                filename="changed.sh",
+                size=len(old_content),
+                md5_digest=hashlib.md5(old_content, usedforsecurity=False).hexdigest(),
+            ),
+        )
+        _write_manifest(
+            tmp_path,
+            {"create.sh": create_content, "changed.sh": new_content},
+        )
+        save_batch = mocker.spy(SnippetManager, "save_batch")
+
+        await sep_celery.update_snippets()
+
+        meta_batch, approval_batch = save_batch.call_args_list
+        assert meta_batch.kwargs.get("flag_modified_fields") == ["meta"]
+        assert {s.filename for s in meta_batch.args[1:]} == {"changed.sh"}
+        assert approval_batch.kwargs.get("flag_modified_fields", ()) == ()
+        assert {s.filename for s in approval_batch.args[1:]} == {"create.sh"}
+        create_row = await SnippetManager.first(session, filename="create.sh")
+        assert create_row is not None
+        assert create_row.is_approved is True
+
 
 class TestSyncSnippets:
     """Test sync_snippets Celery task."""
