@@ -38,7 +38,6 @@ from app.sep.apps.framework.schema import (
     DetailView,
     EXECUTION_HOST_LABEL,
     ListView,
-    SERVICE_TYPE_COLUMN,
 )
 
 checksums_views = Views(
@@ -52,9 +51,7 @@ checksums_views = Views(
         )
     ),
     list_view=ListView(
-        columns=default_columns(
-            SERVICE_TYPE_COLUMN,
-        ),
+        columns=default_columns(),
     ),
     detail_view=DetailView(
         sections=[
