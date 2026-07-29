@@ -86,8 +86,7 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
 
     # Keyed off the recipient (not the encrypt flags) so it survives whichever
     # mode is on — post-run with in-place off still needs it. Safe only because
-    # BackupCreate's gates guarantee recipient <=> some encryption mode; keep that
-    # invariant if the gates ever move.
+    # BackupCreate's gates guarantee recipient <=> some encryption mode.
     if form.encryption_recipient:
         server_config["dir_encrypt_config"] = {
             "encryption_recipient": form.encryption_recipient
