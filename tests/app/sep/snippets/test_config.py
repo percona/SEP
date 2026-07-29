@@ -391,16 +391,16 @@ class TestShippedSyncFilterConfig:
                 yield from TestShippedSyncFilterConfig._iter_keys(item)
 
     def test_no_dead_filter_extensions_key(self):
-        """No section of the shipped config declares the dead key."""
+        """Assert no section of the shipped config declares the dead key."""
         assert "FILTER_EXTENSIONS" not in set(self._iter_keys(self._shipped_settings()))
 
     def test_sync_filter_declares_shell_scripts_only(self):
-        """The shipped config restricts sync to ``.sh`` via the live field."""
+        """Assert the shipped config restricts sync to ``.sh`` via the live field."""
         snippets = self._shipped_settings()["default"]["SEP"]["SNIPPETS"]
         assert snippets["SYNC_FILTER"] == [".sh"]
 
     def test_shipped_sync_filter_parses_to_extension_filter(self):
-        """The shipped value validates into an extension ``SnippetFilter``."""
+        """Verify the shipped value validates into an extension ``SnippetFilter``."""
         snippets = self._shipped_settings()["default"]["SEP"]["SNIPPETS"]
         parsed = SnippetsSettings(SYNC_FILTER=snippets["SYNC_FILTER"])
         assert {SnippetFilter(".sh", SnippetFilterType.EXTENSION)} == parsed.SYNC_FILTER
