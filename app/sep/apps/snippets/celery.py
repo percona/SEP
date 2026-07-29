@@ -175,8 +175,12 @@ async def _sync_snippet_file(
     )
     if created:
         logger.debug("New snippet created: %s", created_snippet.filename)
-        if manifest_match:
-            _auto_approve(created_snippet)
+        if _apply_builtin_approval_policy(
+            created_snippet,
+            manifest_match=manifest_match,
+            human_revoked=False,
+            content_changed=False,
+        ):
             approval_snippets.append(created_snippet)
         return True
 
@@ -189,53 +193,54 @@ async def _sync_snippet_file(
         )
         human_revoked = created_snippet.is_human_revoked
         await created_snippet.update_from_snippet(snippet)
-        _apply_content_change_approval(
+        _apply_builtin_approval_policy(
             created_snippet,
             manifest_match=manifest_match,
             human_revoked=human_revoked,
+            content_changed=True,
         )
         content_changed_snippets.append(created_snippet)
-    elif (
-        manifest_match
-        and not created_snippet.is_approved
-        and not created_snippet.is_human_revoked
+    elif _apply_builtin_approval_policy(
+        created_snippet,
+        manifest_match=manifest_match,
+        human_revoked=created_snippet.is_human_revoked,
+        content_changed=False,
     ):
-        _auto_approve(created_snippet)
         approval_snippets.append(created_snippet)
     return False
 
 
-def _auto_approve(snippet: Snippet) -> None:
-    """Mark ``snippet`` as automatically approved from the built-in manifest.
-
-    :param snippet: The snippet row to approve.
-    """
-    snippet.approve(BUILTIN_APPROVAL_REASON, BUILTIN_APPROVAL_USER_ID)
-
-
-def _apply_content_change_approval(
+def _apply_builtin_approval_policy(
     snippet: Snippet,
     *,
     manifest_match: bool,
     human_revoked: bool,
-) -> None:
-    """Apply approval policy after a content change.
+    content_changed: bool,
+) -> bool:
+    """Apply built-in checksum auto-approval policy for one sync transition.
 
-    Leave approval state unchanged when an administrator revoked it. Otherwise
-    auto-approve on a manifest match, or clear approval when the digest no
-    longer matches.
+    Owns the full branch: leave administrator revocations untouched; auto-approve
+    on a manifest match; clear approval when contents changed and no longer match.
+    Lives in the snippets app (not on ``Snippet``) because the reason string and
+    sentinel user id are app-level constants for the manifest feature.
 
-    :param snippet: The snippet row whose file contents just changed.
-    :param manifest_match: Whether the new contents match the built-in manifest.
-    :param human_revoked: Whether an administrator had revoked approval before the
-        content update.
+    :param snippet: The snippet row to transition.
+    :param manifest_match: Whether the on-disk file matches the built-in manifest.
+    :param human_revoked: Whether an administrator had revoked approval.
+    :param content_changed: Whether this sync refreshed file-derived fields.
+    :return: ``True`` when approval fields were mutated (caller may batch-save).
     """
     if human_revoked:
-        return
+        return False
     if manifest_match:
-        _auto_approve(snippet)
-    else:
+        if content_changed or not snippet.is_approved:
+            snippet.approve(BUILTIN_APPROVAL_REASON, BUILTIN_APPROVAL_USER_ID)
+            return True
+        return False
+    if content_changed:
         snippet.remove_approval(_CONTENT_CHANGED_REASON, None)
+        return True
+    return False
 
 
 async def _delete_unsynced_snippets(
