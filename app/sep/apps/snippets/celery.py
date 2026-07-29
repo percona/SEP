@@ -29,6 +29,7 @@ from app.celery import celery
 from app.sep.app_drain import owned_by, should_cancel
 from app.sep.apps.snippets.builtin_manifest import (
     load_builtin_checksum_manifest,
+    manifest_relative_path,
     matches_builtin_manifest,
     sha256_file,
 )
@@ -76,7 +77,9 @@ async def update_snippets() -> None:
                 return
             if not snippet_path.is_file():
                 continue
-            snippet_name = str(snippet_path.relative_to(snippets_settings.SNIPPETS_DIR))
+            snippet_name = manifest_relative_path(
+                snippet_path, snippets_settings.SNIPPETS_DIR
+            )
             if snippet_name == BUILTIN_CHECKSUM_MANIFEST:
                 continue
             processed_filenames.append(snippet_name)

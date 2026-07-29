@@ -22,55 +22,46 @@ Walk ``snippets/``, hash every file except the manifest itself, and write
 
 from __future__ import annotations
 
-import hashlib
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SNIPPETS_DIR = REPO_ROOT / "snippets"
-MANIFEST_NAME = "builtin-snippets.sha256"
-MANIFEST_PATH = SNIPPETS_DIR / MANIFEST_NAME
-CHUNK_SIZE = 8192
 
 
-def _sha256_file(path: Path) -> str:
-    """Return the SHA-256 hex digest of a file.
-
-    :param path: The file to hash.
-    :return: The hex-encoded SHA-256 digest of the file contents.
-    """
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(CHUNK_SIZE):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def generate_manifest() -> int:
+def generate_manifest() -> tuple[int, Path]:
     """Write the built-in snippets checksum manifest under ``snippets/``.
 
     Skip the manifest file itself. Raise ``SystemExit`` when ``snippets/`` is
     missing.
 
-    :return: The number of snippet files hashed into the manifest.
+    :return: The number of snippet files hashed and the written manifest path.
     :raises SystemExit: If the snippets directory does not exist.
     :raises OSError: If a snippet file or the manifest cannot be read or written.
     """
+    sys.path.insert(0, str(REPO_ROOT))
+    from app.sep.apps.snippets.builtin_manifest import (
+        manifest_relative_path,
+        sha256_file,
+    )
+    from app.sep.apps.snippets.constants import BUILTIN_CHECKSUM_MANIFEST
+
     if not SNIPPETS_DIR.is_dir():
         raise SystemExit(f"Snippets directory not found: {SNIPPETS_DIR}")
 
+    manifest_path = SNIPPETS_DIR / BUILTIN_CHECKSUM_MANIFEST
     entries: list[tuple[str, str]] = []
     for path in sorted(SNIPPETS_DIR.rglob("*")):
         if not path.is_file():
             continue
-        relative = path.relative_to(SNIPPETS_DIR).as_posix()
-        if relative == MANIFEST_NAME:
+        relative = manifest_relative_path(path, SNIPPETS_DIR)
+        if relative == BUILTIN_CHECKSUM_MANIFEST:
             continue
-        entries.append((_sha256_file(path), relative))
+        entries.append((sha256_file(path), relative))
 
     lines = [f"{digest}  {filename}\n" for digest, filename in entries]
-    MANIFEST_PATH.write_text("".join(lines), encoding="utf-8")
-    return len(entries)
+    manifest_path.write_text("".join(lines), encoding="utf-8")
+    return len(entries), manifest_path
 
 
 def main() -> None:
@@ -79,8 +70,8 @@ def main() -> None:
     :raises SystemExit: If the snippets directory is missing.
     :raises OSError: If a snippet file or the manifest cannot be read or written.
     """
-    count = generate_manifest()
-    print(f"Wrote {count} checksums to {MANIFEST_PATH.relative_to(REPO_ROOT)}")
+    count, manifest_path = generate_manifest()
+    print(f"Wrote {count} checksums to {manifest_path.relative_to(REPO_ROOT)}")
 
 
 if __name__ == "__main__":

@@ -44,6 +44,18 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def manifest_relative_path(path: Path, snippets_dir: Path) -> str:
+    """Return the checksum-manifest key for a file under ``snippets_dir``.
+
+    Use POSIX separators so generator and verifier keys match across platforms.
+
+    :param path: A file path under ``snippets_dir``.
+    :param snippets_dir: The snippets directory root.
+    :return: ``path`` relative to ``snippets_dir`` with POSIX separators.
+    """
+    return path.relative_to(snippets_dir).as_posix()
+
+
 def load_builtin_checksum_manifest(snippets_dir: Path) -> dict[str, str]:
     """Load the built-in snippet checksum manifest from ``snippets_dir``.
 
