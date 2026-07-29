@@ -46,10 +46,15 @@ function renderWithProviders(ui: ReactNode) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
 
+function escapeAttrSelectorValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 function expectHelp(label: string, present: boolean) {
   // Ignore the notched-outline legend clone so a legend-only render fails.
   // Bool icons sit outside <label>, so we cannot scope to label alone.
-  const matches = [...document.querySelectorAll(`[data-help-for="${CSS.escape(label)}"]`)];
+  const selector = `[data-help-for="${escapeAttrSelectorValue(label)}"]`;
+  const matches = [...document.querySelectorAll(selector)];
   const visible = matches.filter((el) => !el.closest('.MuiOutlinedInput-notchedOutline'));
   if (present) {
     expect(visible.length).toBeGreaterThan(0);
