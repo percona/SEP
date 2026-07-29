@@ -1,66 +1,78 @@
 # SEP App Developer Guide
 
-This guide takes a contributor with no prior framework knowledge from zero to a
-working, conformant SEP app. It covers the app framework under
-`app/sep/apps/framework/` — the declarative spine that derives a task app's whole
-HTTP router from a single object, the model-first form DSL that drives the create
-form and the generated schema, the escape hatches for the cases the spine does
-not cover, and how the whole thing is tested.
+SEP apps are the tools in the SEP sidebar — Checksums, MySQL Backups, Snippets,
+and the rest. Each one presents a form, turns a submitted form into a task that
+runs against your inventory, and shows the results. This guide takes you from
+zero to a working app of your own, assuming no prior knowledge of the app
+framework. You will write some Python, but most of it is filling in a scaffolded
+skeleton by following the patterns shown here.
+
+Before you start you need a running development setup — see
+[Setting Up Your Development Environment](../../CONTRIBUTING.md#setting-up-your-development-environment).
 
 > **In a hurry?** Jump to [§3 Quickstart](#3-quickstart) to scaffold a running app
 > with `make startapp`, then come back for the concepts. Reading top to bottom is
 > the recommended path: the Quickstart's very first choice — which scaffolder
-> flavor to use — is the decision [§2 Choosing an authoring surface](#2-choosing-an-authoring-surface)
+> flavor to use — is the decision [§2 Snippet or framework app?](#2-snippet-or-framework-app)
 > teaches.
 
-Every code example below is drawn from real, CI-exercised code in the SEP tree — a
-migrated app under `app/sep/apps/`, the framework, the SEP API and deps,
-`settings.yaml`, or the app test kit — copied verbatim (except where a trim is noted
-inline) or executed against the live framework. Each example carries
-an HTML comment naming its source file and symbol (e.g.
-`<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->`) so you can diff
-it against the tree as the framework evolves. A reference-integrity test
-(`tests/docs/test_guide_references.py`) parses those markers and fails CI if a
-cited file or symbol is renamed, moved, or deleted — so a stale example breaks the
-build instead of silently misleading the next reader. Two examples that no real
-app exercises are labelled `<!-- constructed -->`; they were executed against the
-framework before being pasted here.
+The code examples are lifted from real, CI-exercised code in the SEP tree; each
+carries an HTML comment naming its source file and symbol (e.g.
+`<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->`) so you can
+diff it against the source as the framework evolves. The two labelled
+`constructed` illustrate features no current app uses.
+
+---
+
+## Vocabulary
+
+A few terms this guide uses throughout:
+
+| Term | Meaning |
+|---|---|
+| **App** | One tool in the SEP sidebar: a form, the tasks it creates, and their list/detail pages. One package under `app/sep/apps/`. |
+| **Task** | One run of an app's job — created from the form, executed against a host or service, with stored status and output. |
+| **Inventory** | SEP's registry of services, schemas, tables, and hosts. Form fields can offer dropdowns resolved from it. |
+| **Form model** | The Python class declaring the app's form fields (the `create_model` knob) — both the validation of what users submit and the source of the rendered form. |
+| **Form schema** | The JSON description of the form that the UI renders, served at `GET /schema`. Not a database schema. |
+| **Knob** | A constructor argument on the app object (`create_model=...`, `capabilities=...`). You set knobs; the framework does the rest. |
+| **Derived router** | The HTTP routes (list, create, execute, …) the framework generates from your knobs — you never write them by hand. |
+| **Scaffolder** | `make startapp` — generates a complete app skeleton plus its test. |
+| **Snippet** | A parameterized script run by the Snippet Manager — the lighter alternative when you don't need a full app ([§2](#2-snippet-or-framework-app)). |
 
 ---
 
 ## Table of contents
 
 1. [Mental model](#1-mental-model)
-2. [Choosing an authoring surface](#2-choosing-an-authoring-surface)
+2. [Snippet or framework app?](#2-snippet-or-framework-app)
 3. [Quickstart](#3-quickstart)
 4. [Form DSL reference](#4-form-dsl-reference)
 5. [Escape-hatch ladder](#5-escape-hatch-ladder)
 6. [Testing](#6-testing)
-7. [Migration cookbook](#7-migration-cookbook)
 
 ---
 
 ## 1. Mental model
 
-### Two layers: a declarative spine over a composable toolbox
+### You describe the app; the framework builds it
 
-The framework is two layers. Underneath is a **toolbox** of composable helpers —
+Open the Checksums app in SEP: it has a create form, a list of runs, and a
+detail page per run. None of that is hand-written. The framework *derives* the
+entire HTTP surface — schema, list, detail, create, update, execute, delete —
+from a single `TaskExecutionApp` object whose constructor arguments ("knobs")
+describe *what* the app is.
+
+Under that **declarative spine** sits a **toolbox** of composable helpers —
 schema derivation, response builders, cascade helpers, spec builders, the rules
-engine. On top is a **declarative spine**: a single `TaskExecutionApp` object whose
-constructor arguments ("knobs") describe *what* the app is, and from which the
-framework *derives* the entire HTTP surface — schema, list, detail, create, update,
-execute, delete — with no hand-written routes.
-
-You describe the app; the framework builds the router. When the declarative knobs
-do not express something you need, you reach one rung down the
-[escape-hatch ladder](#5-escape-hatch-ladder) into the toolbox, not out of the
-framework entirely.
+engine. When the knobs do not express something you need, you reach one rung
+down the [escape-hatch ladder](#5-escape-hatch-ladder) into the toolbox, not
+out of the framework entirely.
 
 ### `BaseApp` vs `TaskExecutionApp`
 
-- **`BaseApp`** (`app/sep/apps/framework/base.py`) is the uniform registry entry:
-  the minimal thing the registry can discover, bind, and mount. It carries the
-  identity and navigation metadata and an optional API router. Reach for it
+- **`BaseApp`** (`app/sep/apps/framework/base.py`) is the minimal registry entry:
+  identity, navigation metadata, and an optional API router. Reach for it
   directly only when your app is *not* a task-execution app (the bottom rung of the
   ladder).
 - **`TaskExecutionApp`** (`app/sep/apps/framework/apps.py`) is the declarative spine
@@ -69,8 +81,8 @@ framework entirely.
   from which the task router is derived. Almost every app you write is a
   `TaskExecutionApp`.
 
-A minimal task app is one object. Here is the core of the Checksums app, with the
-deprecated Jinja wiring elided (see the [Migration cookbook](#7-migration-cookbook)):
+A minimal task app is one object. Here is the core of the Checksums app
+definition (trimmed to the knobs this guide covers):
 
 <!-- src: app/sep/apps/checksums/app.py :: app -->
 ```python
@@ -161,59 +173,47 @@ from the knobs.
 
 ### The copy hazard — scaffold, never copy a whole app
 
-> **⚠ Do not copy an existing app to start a new one.** *Every* app in the tree that
-> has a `routes.py` — **including every current `TaskExecutionApp`**
-> (checksums, alters, archives, backup_mongo, backup_pg, mysql_backups, snippets, and
-> the `backup_mongo/restore` and `mysql_backups/restore` sub-apps) —
-> still threads a **deprecated** Jinja surface: a `jinja_router` argument, a
-> `DeprecatedJinja2Route`, and repo-root templates at `templates/<slug>/*.html.j2`.
-> If you copy a whole app, you inherit that deprecated surface. The only clean
-> end-to-end starting point is the scaffolder (`make startapp`), whose templates
-> under `framework/templates/` carry no legacy wiring.
+> **⚠ Do not copy an existing app to start a new one.** The apps already in the
+> tree carry historical wiring that is on its way out — copy a whole app and you
+> inherit it. The only clean end-to-end starting point is the scaffolder
+> (`make startapp`), whose templates under `framework/templates/` carry none of
+> that baggage.
 
-The rule: **scaffold with `make startapp`; never copy a whole app.** When you want to
-*lift a pattern* from an existing app (a form field, a rule, a cascade hook), copy
-only that **named construct** — never its `routes.py`, its `jinja_router=` wiring, or
-its `templates/` directory. The concrete deprecated surfaces to avoid are:
-
-| Deprecated surface | Modern replacement |
-|---|---|
-| `jinja_router=` argument on the app | derived JSON router (omit it entirely) |
-| `DeprecatedJinja2Route` | derived routes from `create_model` + `views` |
-| repo-root `templates/<slug>/*.html.j2` | the React frontend + derived `GET /schema` |
-| `alerts/loader.py` layout | the framework's `Capabilities(alert_on_fail=...)` path |
+The rule: **scaffold with `make startapp`; never copy a whole app.** When you
+want to *lift a pattern* from an existing app (a form field, a rule, a cascade
+hook), copy only that **named construct** — never a whole module.
 
 ---
 
-## 2. Choosing an authoring surface
+## 2. Snippet or framework app?
 
-Before you scaffold, decide **what kind** of app you are writing. The framework
-supports two authoring surfaces, and the scaffolder's three flavors map onto them.
+Before you scaffold, decide **what kind** of thing you are writing. SEP has two
+ways to ship a runnable tool, and the scaffolder's three flavors map onto them.
 
-### The routing rule: snippet vs framework app
+### The routing rule
 
-- **A flat, parameterized script with no inventory cascade** belongs in an
-  **in-script YAML snippet** — the Snippet Manager runs it, and the form is described
-  in a YAML header alongside the script. Choose this when the check is a single
-  command whose only inputs are simple parameters, and it never needs to resolve
-  inventory references or enforce relationships between fields.
-- **Anything that needs cascade references, cross-field invariants, or import-time
-  validation** belongs in a **framework marker-DSL app**. Choose this when the form
-  must resolve inventory (service / schema / table / host references), enforce
-  cross-field rules (this field is required only when that one is set), or validate
-  its shape at class-definition time.
+- **A flat, parameterized script** belongs in an **in-script YAML snippet** —
+  the Snippet Manager runs it, and the form is described in a YAML header
+  alongside the script. Choose this when the check is a single command whose
+  only inputs are simple parameters.
+- **Anything that needs inventory or rules between fields** belongs in a
+  **framework app**. Choose this when the form must offer values resolved from
+  inventory (service / schema / table / host), enforce cross-field rules ("this
+  field is required only when that one is set"), or validate its shape when the
+  code loads.
 
-The dividing line is **inventory and invariants**. A snippet is prose-and-parameters;
-a framework app is a typed model the server validates and derives a schema from.
+The dividing line is **inventory and invariants**. A snippet is
+prose-and-parameters; a framework app is a typed model the server validates and
+derives a form from.
 
 ### Mapping the three scaffolder flavors
 
 `make startapp` offers three flavors that implement the rule:
 
-| Flavor | Use when | Authoring surface |
+| Flavor | Use when | What you write |
 |---|---|---|
-| `task` | The app runs a task built from a typed form (the common case) — inventory refs, cross-field rules, a derived schema. | Framework marker-DSL app (`create_model` + `views` + a spec/payload builder). |
-| `script` | The app executes scripts through the `ScriptSource` seam (like the Snippet Manager). | Framework app wrapping a `ScriptSource`; per-script forms come from the script, not a `create_model`. |
+| `task` | The app runs a task built from a typed form (the common case) — inventory refs, cross-field rules, a derived schema. | Framework app: a form model (`create_model`) + `views` + a spec/payload builder. |
+| `script` | The app executes scripts through the `ScriptSource` extension point (like the Snippet Manager). | Framework app wrapping a `ScriptSource`; per-script forms come from the script, not a `create_model`. |
 | `base` | The app is not a task-execution app at all — it needs a custom router and does not fit the derived spine. | `BaseApp` with a hand-written `api_router` (the bottom rung of the ladder). |
 
 If in doubt, start with `task`: it is the flavor the spine is built for, and you can
@@ -238,8 +238,8 @@ Recognised variables: `NAME`, `TYPE` (`task` / `script` / `base`), `DISPLAY_NAME
 
 ### What the scaffolder generates
 
-For **`task`** (`RUN_MODE=run-command` shown; `run-python` emits `spec_run_python.py`
-remapped onto `spec.py` instead of `spec.py`):
+For **`task`** (`RUN_MODE=run-command` shown; with `RUN_MODE=run-python` the
+generated `spec.py` contains the run-python variant instead):
 
 ```text
 app/sep/apps/myapp/
@@ -287,15 +287,17 @@ The scaffolder does **not** finish the app for you. After scaffolding:
 
 1. **Fill in the skeleton** — the generated `models.py`, `spec.py`, and `views.py`
    are stubs; write your fields, spec builder, and views.
-2. **Register the frontend route and navigation** — this is **not** automated. Add
-   the app's route and nav entry in
-   `frontend/packages/shell/src/appNavConfig.ts` and
-   `frontend/packages/shell/src/appRegistry.tsx`, and supply the `--nav-icon`.
-3. **Enable the app** — it is registered **disabled**. Turn it on from the Admin App
+2. **Enable the app** — it is registered **disabled**. Turn it on from the Admin App
    Manager (Settings → Apps), or scaffold with `ENABLE` for a dev box.
 
-Task apps need **no database migration** (tasks are stored generically), and the
-scaffolder does not print a `.claude/references` regen step.
+No frontend work is needed: once enabled, the app appears in the sidebar and its
+pages render from the derived schema — `GET /api/apps/` carries the route,
+display name, and `nav_icon` the shell consumes. Only an app that ships its own
+bespoke React UI registers a component in
+`frontend/packages/shell/src/appRegistry.tsx` and route metadata in
+`appNavConfig.ts`; schema-driven apps need no entry.
+
+Task apps need **no database migration** — tasks are stored generically.
 
 ### Verify it end to end
 
@@ -306,6 +308,9 @@ against your definition:
 pytest tests/app/sep/apps/myapp/test_contract.py -v
 ```
 
+Then run SEP locally and open the app from the sidebar — the form you declared
+in `models.py` is what renders.
+
 The CI `startapp-check` gate (`make startapp-check`, wired into
 `.github/workflows/python.yaml`) proves all three flavors scaffold and pass their
 contract suite on every PR.
@@ -314,12 +319,17 @@ contract suite on every PR.
 
 ## 4. Form DSL reference
 
-The form DSL is **model-first**: one Pydantic model is *both* the request body the
+The form DSL is **model-first**: one model class is *both* the request body the
 server validates *and* the source of the derived `GET /schema` form. You annotate
 each field with markers — `Ui(...)` for presentation, reference markers for
 inventory, `Choices(...)`/`ArgFormat(...)` for behaviour — and the framework derives
 the form and the command from them. The public surface is exported from
 `app/sep/apps/framework/form_dsl/__init__.py`.
+
+**How to read the examples.** Every field has the shape
+`name: Annotated[type, markers…] = default`. `Annotated` is Python's way of
+attaching extra information to a type: the first element is the field's real
+type; everything after it is a marker the framework reads.
 
 ### `AppFormModel` / `TaskFormModel` and `Ui()`
 
@@ -338,9 +348,8 @@ service_id: Annotated[
 ]
 ```
 
-Field **declaration order is load-bearing**: the derived section order follows each
-section's first field, and within a section the field order follows declaration
-order.
+Field **declaration order matters**: sections appear in the order of each
+section's first field, and within a section fields render in declaration order.
 
 ### `ArgFormat`
 
@@ -385,7 +394,7 @@ recursion_method: Annotated[
 
 When an option must render as **non-selectable** with an explanatory tooltip, use an
 `Option(...)` instance instead of a bare tuple. No app in the tree currently needs
-this, so the example below is **constructed** and was executed against the framework
+this, so the example below is **constructed** rather than lifted from a real app
 (it derives a schema in which the `thorough` option is marked `disabled`):
 
 <!-- constructed -->
@@ -500,10 +509,10 @@ section-level `forbidden` gates shown in the predicate DSL below.
 
 ### The predicate DSL (`rules.py`)
 
-For invariants a single field cannot express, the framework has a small predicate
+For rules that span more than one field, the framework has a small predicate
 DSL: the field reference `F(...)`, the truthiness predicates (`truthy`, `present`,
 …), boolean combinators (`&`, `|`, `not_`), and three rule envelopes — `FailRule`
-(predicate-only invariants), `FieldGate` (gate a field or section), and
+(reject a form when a predicate holds), `FieldGate` (gate a field or section), and
 `CardinalityRule` (bound the count of present fields). App-scoped rules live in a
 `FormRules` object on `__form_rules__`.
 
@@ -541,8 +550,8 @@ SectionLayout(
 ```
 
 **`CardinalityRule`** — bound how many of a set of fields may be present. No app in
-the tree uses it, so this example is **constructed** and was executed against the
-framework (a form with neither host set is rejected with the custom message):
+the tree uses it, so this example is **constructed** rather than lifted from a real
+app (a form with neither host set is rejected with the custom message):
 
 <!-- constructed -->
 ```python
@@ -624,8 +633,8 @@ async def snippets_api_refresh(
 
 When a derived route's *shape* is right but its response body needs custom
 assembly, override the builder rather than replacing the route. PostgreSQL Backups
-overrides the list and detail response builders (and their models) so the derived
-bodies stay byte-identical to the legacy hand-written ones:
+overrides the list and detail response builders (and their models) to keep its
+response bodies in the exact shape its clients consume:
 
 <!-- src: app/sep/apps/backup_pg/app.py :: app -->
 ```python
@@ -640,8 +649,8 @@ app = TaskExecutionApp(
 
 `TaskExecutionApp` also exposes `update_handler` / `delete_handler`
 (`app/sep/apps/framework/apps.py`) for fully replacing a mutation handler — no app
-in the tree overrides those today; the `response_builder` override above is the same
-rung one step lighter, so reach for the response builders first.
+in the tree overrides those today; prefer the lighter response-builder override
+above.
 
 ### Rung 4 — `response_context_provider` and cascade hooks
 
@@ -711,9 +720,10 @@ router opts out of the contract suite's derived-surface guarantees.
 
 ### Script-backed apps: `ScriptSource`
 
-Apps that execute **scripts** rather than a typed form use the `ScriptSource` seam
-(`app/sep/apps/framework/script_source.py`): each script supplies its own form
-schema, and listing/execute/history derive from the source. Snippets wires one:
+Apps that execute **scripts** rather than a typed form use the `ScriptSource`
+extension point (`app/sep/apps/framework/script_source.py`): each script supplies
+its own form schema, and listing/execute/history derive from the source. Snippets
+wires one:
 
 <!-- src: app/sep/apps/snippets/script_source.py :: snippet_source -->
 ```python
@@ -730,7 +740,7 @@ snippet_source = ScriptSource(
 ```
 
 The app then passes `script_source=snippet_source` instead of a `create_model`
-(`ScriptProtocol` and the `script_helpers.py` helpers back this seam).
+(`ScriptProtocol` and the `script_helpers.py` helpers back this extension point).
 
 ---
 
@@ -795,8 +805,8 @@ task/inventory seeding goes through the `MockTaskAPI` / `MockInventoryAPI` helpe
 Two CI gates keep apps honest beyond their own contract test:
 
 - **Conformance** — `app/sep/apps/framework/conformance.py` defines structural
-  detectors (an app must not carry certain deprecated shapes, must wire the required
-  knobs), run per-app by `tests/app/sep/apps/framework/test_conformance.py`.
+  rules every app must satisfy (the required knobs wired, disallowed shapes
+  absent), run per-app by `tests/app/sep/apps/framework/test_conformance.py`.
 - **Scaffold check** — `make startapp-check` (`scripts/startapp_check.py`, wired into
   `.github/workflows/python.yaml`) scaffolds all three flavors and runs their contract
   suites on every PR, so the Quickstart above cannot silently rot.
@@ -805,44 +815,7 @@ Both run under the ordinary `make test` / CI `pytest` invocation.
 
 ---
 
-## 7. Migration cookbook
-
-Moving an existing app onto the framework means **deleting** hand-written surface and
-declaring knobs in its place. The framework and its legacy predecessor still coexist
-in the tree, so the job is mostly subtraction. Work knob by knob, keeping the wire
-format identical (the contract suite catches drift).
-
-### Each deprecated pattern beside its modern replacement
-
-| Deprecated pattern | Modern replacement |
-|---|---|
-| Hand-written JSON API router (`api_routes.py` with `@router.get`/`@router.post` per verb) | `TaskExecutionApp` knobs (`create_model`, `views`, `capabilities`) — the router is derived. |
-| Hand-written `AppSchema` | Derived `GET /schema` from `create_model` + `views` (the `FormLayout`/`SectionLayout`/`Capabilities` carry what the model cannot). |
-| `jinja_router=` argument on the app | Nothing — omit it. The derived JSON router replaces it; the frontend is React. |
-| `DeprecatedJinja2Route` | Derived routes. |
-| Repo-root `templates/<slug>/*.html.j2` | The React frontend consuming the derived schema. |
-| `alerts/loader.py` layout | `Capabilities(alert_on_fail=...)` and the framework alert path. |
-| Manual arg-string assembly | `ArgFormat` markers + the spec/payload builder. |
-| Ad-hoc cross-field `if` checks in a route | The predicate DSL (`FailRule` / `FieldGate` / `CardinalityRule`) on `__form_rules__`. |
-
-### Migration order
-
-1. **Scaffold a sibling** with `make startapp` (do **not** edit in place first) to get
-   a clean skeleton to move logic into.
-2. **Move the form** into a `create_model` (marker DSL), lifting field types and
-   defaults verbatim so the request body is unchanged.
-3. **Move presentation** into `views` (`FormLayout`, `ListView`, `DetailView`,
-   `Capabilities`).
-4. **Move the command/payload logic** into the spec or payload builder.
-5. **Switch on capabilities** and, only where the derived route cannot express the
-   behaviour, add `extra_routes` or a handler override (walk the
-   [escape-hatch ladder](#5-escape-hatch-ladder)).
-6. **Delete** the hand-written `api_routes.py`, `AppSchema`, and — last — the
-   `jinja_router` / `templates/` surface once the React route is live.
-7. **Bind the contract suite** (`DerivedRouterContractTests`) and run it; it fails
-   loudly on any wire-format drift from the legacy surface.
-
-The migrated apps in the tree (checksums, backup_pg, mysql_backups, alters,
-backup_mongo, snippets) are the worked references — but remember the copy hazard:
-lift the *named construct* you need, never the whole app with its lingering
-`jinja_router`/`templates/` holdovers.
+*For guide maintainers:* the `src:` markers on the examples are enforced by
+`tests/docs/test_guide_references.py`, which fails CI when a cited file or
+symbol is renamed, moved, or deleted. Keep the marker on any new example, and
+execute a new `constructed` example against the framework before adding it.
