@@ -860,7 +860,7 @@ export interface paths {
     put?: never;
     /**
      * Atw Start Send Job
-     * @description Start delivering the selected executions' output files to the support case.
+     * @description Start delivering the selected executions' output files and logs to the support case.
      *
      *     The row is created before the task is queued so a broker failure is still
      *     recorded as a failed attempt rather than vanishing: the row is the only place
@@ -5356,7 +5356,7 @@ export interface components {
      * @description Define the payload starting one diagnostics send.
      *
      *     :param case_ref: The support-case reference to attach the bundle to.
-     *     :param execution_ids: The incident executions whose output files to send.
+     *     :param execution_ids: The incident executions whose output and logs to send.
      */
     atw__AtwSendJobWrite: {
       /** Case Ref */

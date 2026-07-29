@@ -52,11 +52,18 @@ from app.sep.apps.atw.send import (
 from app.sep.bundle_upload.plan import DeliveryPlan, DeliveryPlanError, StepRecord
 from app.sep.bundle_upload.seam import BundleSource, UploadResult
 from app.sep.config import sep_settings
+from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 _UPLOAD_DETAIL: dict[str, Any] = {"result": {"sys_id": "att-9", "size_bytes": 42}}
 _EXPECTED_FILE_COUNT = 4
-_EXPECTED_ENTRY_COUNT = 5
+_EXPECTED_ENTRY_COUNT = 9
+_EXPECTED_LOG_GROUP_COUNT = 3
 _STALE_ROW_COUNT = 2
+_MAIN_STEP = "run-script"
+_DEFAULT_FILES: dict[str, Any] = {
+    "stdout.log": {"is_dir": False, "size": 5},
+    "diag/report.txt": {"is_dir": False, "size": 7},
+}
 _ONE_EXECUTION: dict[str, Any] = {
     "id": str(uuid4()),
     "task_history_id": 11,
@@ -123,6 +130,35 @@ class _FakeUploader:
         return self.result
 
 
+def _log_record(
+    msg: str | None,
+    *,
+    step: str = _MAIN_STEP,
+    stream: str = TaskLogType.STDOUT.value,
+) -> dict[str, Any]:
+    """Build one log record as the Tasks API serializes ``TaskLog``.
+
+    :param msg: The message; ``None`` is the end-of-log sentinel for that step.
+    :param step: The step that produced the record.
+    :param stream: The record's stream.
+    :return: The record mapping.
+    """
+    return {"step": step, "type": stream, "msg": msg}
+
+
+async def _ndjson(records: list[dict[str, Any] | bytes]) -> AsyncIterator[bytes]:
+    """Yield each record as one line, with the trailing newline the API preserves.
+
+    :param records: Log records to serialize, or raw lines to hand out verbatim.
+    :return: One line of the NDJSON log stream.
+    """
+    for record in records:
+        if isinstance(record, bytes):
+            yield record
+        else:
+            yield json.dumps(record).encode() + b"\n"
+
+
 def _patch_tasks_api(mocker: MockerFixture, api: AsyncMock) -> AsyncMock:
     """Point the orchestrator at ``api``, yielding it from the auth context.
 
@@ -133,6 +169,53 @@ def _patch_tasks_api(mocker: MockerFixture, api: AsyncMock) -> AsyncMock:
     api.auth.return_value.__enter__.return_value = api
     mocker.patch("app.sep.apps.atw.send.get_tasks_api", new=AsyncMock(return_value=api))
     return api
+
+
+def _fake_tasks_api(
+    mocker: MockerFixture,
+    *,
+    files: dict[str, Any] | None = None,
+    files_error: Exception | None = None,
+    logs: list[dict[str, Any] | bytes] | None = None,
+    status: str = TaskHistoryStatusEnum.SUCCESS.value,
+) -> AsyncMock:
+    """Provide a Tasks API client answering the status, files, and logs routes.
+
+    ``api.get`` dispatches on the path: the orchestrator reads an execution's
+    status before listing its output files, and the two routes answer with
+    differently-shaped payloads.
+
+    :param mocker: The patching fixture.
+    :param files: The output-files listing; two files by default.
+    :param files_error: Raised instead of answering the files listing.
+    :param logs: The records the log stream yields; one stdout and one stderr
+        group by default.
+    :param status: The status reported for every execution.
+    :return: The faked client, for the caller to assert against.
+    """
+    listing = _DEFAULT_FILES if files is None else files
+    records = (
+        [
+            _log_record("out-1\n"),
+            _log_record("out-2\n"),
+            _log_record("err-1\n", stream=TaskLogType.STDERR.value),
+        ]
+        if logs is None
+        else logs
+    )
+
+    def _get(path: str, **_kwargs: Any) -> dict[str, Any]:
+        if not path.endswith("/files/"):
+            return {"status": status}
+        if files_error is not None:
+            raise files_error
+        return listing
+
+    api = AsyncMock(spec=RemoteAPI)
+    api.get.side_effect = _get
+    api.stream_chunks.side_effect = lambda *_a, **_k: _chunks(b"data!")
+    api.stream.side_effect = lambda *_a, **_k: _ndjson(records)
+    return _patch_tasks_api(mocker, api)
 
 
 @pytest_asyncio.fixture(name="send_session")
@@ -168,15 +251,8 @@ async def send_session_fixture(
 
 @pytest.fixture(name="tasks_api")
 def tasks_api_fixture(mocker: MockerFixture) -> AsyncMock:
-    """Provide a faked Tasks API client returning two files per execution."""
-    api = AsyncMock(spec=RemoteAPI)
-    api.get.return_value = {
-        "stdout.log": {"is_dir": False, "size": 5},
-        "diag/report.txt": {"is_dir": False, "size": 7},
-    }
-    api.stream_chunks.side_effect = lambda *_args, **_kwargs: _chunks(b"data!")
-    _patch_tasks_api(mocker, api)
-    return api
+    """Provide a faked Tasks API client with two files and two log groups."""
+    return _fake_tasks_api(mocker)
 
 
 @pytest.fixture(name="uploader")
@@ -341,10 +417,9 @@ class TestRunSendArcnameCollisions:
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
     ) -> None:
         """Keep both same-named files by namespacing each under its execution."""
-        api = AsyncMock(spec=RemoteAPI)
-        api.get.return_value = {"stdout.log": {"is_dir": False, "size": 5}}
-        api.stream_chunks.side_effect = lambda *_a, **_k: _chunks(b"data!")
-        _patch_tasks_api(mocker, api)
+        _fake_tasks_api(
+            mocker, files={"stdout.log": {"is_dir": False, "size": 5}}, logs=[]
+        )
         row = await _seed_send_log(send_session)
 
         await run_send(row.id)
@@ -364,13 +439,14 @@ class TestRunSendEntryNaming:
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
     ) -> None:
         """Write a directory member under a .tar.gz name so the receiver can open it."""
-        api = AsyncMock(spec=RemoteAPI)
-        api.get.return_value = {
-            "logs": {"is_dir": True, "size": 9},
-            "stdout.log": {"is_dir": False, "size": 5},
-        }
-        api.stream_chunks.side_effect = lambda *_a, **_k: _chunks(b"data!")
-        _patch_tasks_api(mocker, api)
+        _fake_tasks_api(
+            mocker,
+            files={
+                "logs": {"is_dir": True, "size": 9},
+                "stdout.log": {"is_dir": False, "size": 5},
+            },
+            logs=[],
+        )
         row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
 
         await run_send(row.id)
@@ -385,10 +461,9 @@ class TestRunSendEntryNaming:
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
     ) -> None:
         """Keep every member inside its execution's namespace."""
-        api = AsyncMock(spec=RemoteAPI)
-        api.get.return_value = {"/../../etc/passwd": {"is_dir": False, "size": 5}}
-        api.stream_chunks.side_effect = lambda *_a, **_k: _chunks(b"data!")
-        _patch_tasks_api(mocker, api)
+        _fake_tasks_api(
+            mocker, files={"/../../etc/passwd": {"is_dir": False, "size": 5}}, logs=[]
+        )
         row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
 
         await run_send(row.id)
@@ -398,6 +473,281 @@ class TestRunSendEntryNaming:
             names = sorted(name for name in zf.namelist() if name != "manifest.json")
 
         assert names == ["11-cpu.sh/etc/passwd"]
+
+
+@pytest.mark.asyncio
+class TestRunSendExecutionLogs:
+    """Cover the captured logs streamed into the bundle beside the output files."""
+
+    async def test_each_step_and_stream_group_becomes_its_own_member(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Write one member per log group, carrying that group's messages."""
+        _fake_tasks_api(mocker)
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            stdout = zf.read("11-cpu.sh/logs/run-script.stdout.log")
+            stderr = zf.read("11-cpu.sh/logs/run-script.stderr.log")
+
+        assert stdout == b"out-1\nout-2\n"
+        assert stderr == b"err-1\n"
+
+    @pytest.mark.usefixtures("uploader")
+    async def test_only_the_main_step_is_requested(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Scope the fetch to the step carrying the snippet's own output."""
+        api = _fake_tasks_api(mocker)
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        api.stream.assert_called_once_with(
+            "/history/11/logs/", params={"step": _MAIN_STEP}
+        )
+
+    async def test_a_step_that_logged_nothing_leaves_no_member(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Record neither a member nor a manifest entry when the stream is empty."""
+        _fake_tasks_api(mocker, logs=[])
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        assert uploader.manifest is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            names = zf.namelist()
+
+        assert not any("/logs/" in name for name in names)
+        assert uploader.manifest["executions"][0]["logs"] == []
+
+    async def test_messages_carrying_no_content_never_open_a_member(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Skip empty and sentinel messages rather than attach a 0-byte member."""
+        _fake_tasks_api(
+            mocker,
+            logs=[
+                _log_record(""),
+                _log_record(None),
+                _log_record("", stream=TaskLogType.STDERR.value),
+            ],
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        assert uploader.manifest is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            names = zf.namelist()
+
+        assert not any("/logs/" in name for name in names)
+        assert uploader.manifest["executions"][0]["logs"] == []
+
+    async def test_an_execution_with_only_logs_is_sendable(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Send a stdout-only diagnostic, which produced no output files at all."""
+        _fake_tasks_api(mocker, files={}, logs=[_log_record("cpu: 42%\n")])
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.SUCCESS
+        assert reloaded.detail["file_count"] == 0
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            assert zf.read("11-cpu.sh/logs/run-script.stdout.log") == b"cpu: 42%\n"
+
+    async def test_members_rotate_on_every_step_and_stream_change(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Keep each contiguous group in its own member as the groups change."""
+        _fake_tasks_api(
+            mocker,
+            files={},
+            logs=[
+                _log_record("a-out\n", step="a"),
+                _log_record("a-err\n", step="a", stream=TaskLogType.STDERR.value),
+                _log_record("b-out\n", step="b"),
+            ],
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            members = {
+                name: zf.read(name) for name in zf.namelist() if "/logs/" in name
+            }
+
+        assert len(members) == _EXPECTED_LOG_GROUP_COUNT
+        assert members["11-cpu.sh/logs/a.stdout.log"] == b"a-out\n"
+        assert members["11-cpu.sh/logs/a.stderr.log"] == b"a-err\n"
+        assert members["11-cpu.sh/logs/b.stdout.log"] == b"b-out\n"
+
+    async def test_a_stderr_first_stream_writes_both_members(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Handle the chunk store's stderr-first order, not one hardcoded sequence."""
+        _fake_tasks_api(
+            mocker,
+            files={},
+            logs=[
+                _log_record("err\n", stream=TaskLogType.STDERR.value),
+                _log_record("out\n"),
+            ],
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            stderr = zf.read("11-cpu.sh/logs/run-script.stderr.log")
+            stdout = zf.read("11-cpu.sh/logs/run-script.stdout.log")
+
+        assert stderr == b"err\n"
+        assert stdout == b"out\n"
+
+    async def test_a_whitespace_only_message_is_kept(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Treat a blank log line as real content rather than an absent message."""
+        _fake_tasks_api(mocker, files={}, logs=[_log_record("\n")])
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            assert zf.read("11-cpu.sh/logs/run-script.stdout.log") == b"\n"
+
+    async def test_blank_and_malformed_lines_are_skipped(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Drop unparseable lines and keep streaming the rest of the group."""
+        _fake_tasks_api(
+            mocker,
+            files={},
+            logs=[
+                _log_record("first\n"),
+                b"\n",
+                b"not json\n",
+                _log_record("second\n"),
+            ],
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            assert zf.read("11-cpu.sh/logs/run-script.stdout.log") == b"first\nsecond\n"
+
+    async def test_traversal_components_are_stripped_from_log_member_names(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Keep a log member inside its execution's namespace whatever the step."""
+        _fake_tasks_api(mocker, files={}, logs=[_log_record("x\n", step="../../etc")])
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            names = sorted(name for name in zf.namelist() if name != "manifest.json")
+
+        assert names == ["11-cpu.sh/logs/etc.stdout.log"]
+
+    async def test_the_manifest_records_every_log_group(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Describe each written log group beside the execution's output files."""
+        _fake_tasks_api(mocker)
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        assert uploader.manifest is not None
+        entry = uploader.manifest["executions"][0]
+        assert entry["logs"] == [
+            {
+                "step": _MAIN_STEP,
+                "stream": TaskLogType.STDOUT.value,
+                "arcname": "11-cpu.sh/logs/run-script.stdout.log",
+                "size": len(b"out-1\nout-2\n"),
+            },
+            {
+                "step": _MAIN_STEP,
+                "stream": TaskLogType.STDERR.value,
+                "arcname": "11-cpu.sh/logs/run-script.stderr.log",
+                "size": len(b"err-1\n"),
+            },
+        ]
+        assert [written["path"] for written in entry["files"]] == list(_DEFAULT_FILES)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("uploader")
+class TestRunSendLogStatusGate:
+    """Cover the finished-execution gate guarding the log fetch."""
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            TaskHistoryStatusEnum.RUNNING.value,
+            TaskHistoryStatusEnum.LOST.value,
+            "not-a-status",
+        ],
+    )
+    async def test_an_unfinished_execution_is_never_streamed(
+        self,
+        send_session: AsyncSession,
+        uploader: _FakeUploader,
+        mocker: MockerFixture,
+        status: str,
+    ) -> None:
+        """Skip the log fetch rather than live-tail an execution still in flight.
+
+        The output files are served normally so the send reaches the log branch:
+        the status is then the only thing that can suppress the fetch, which is
+        what makes the ``assert_not_called`` below evidence of the gate rather
+        than of an earlier failure short-circuiting it.
+        """
+        api = _fake_tasks_api(mocker, status=status)
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        api.stream.assert_not_called()
+        assert uploader.manifest is not None
+        assert uploader.manifest["executions"][0]["logs"] == []
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.SUCCESS
+
+    async def test_a_status_fetch_failure_names_the_execution(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Fail loudly instead of shipping a bundle whose logs are silently absent."""
+        api = _fake_tasks_api(mocker)
+        api.get.side_effect = OSError("tasks api unreachable")
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert "status of execution 11 (cpu.sh)" in reloaded.detail["error"]
 
 
 @pytest.mark.asyncio
@@ -446,9 +796,9 @@ class TestRunSendFailures:
         self, send_session: AsyncSession, mocker: MockerFixture
     ) -> None:
         """Fail naming the execution whose output files are not ready."""
-        api = AsyncMock(spec=RemoteAPI)
-        api.get.side_effect = HTTPConflictException(detail="Task is still running")
-        _patch_tasks_api(mocker, api)
+        _fake_tasks_api(
+            mocker, files_error=HTTPConflictException(detail="Task is still running")
+        )
         row = await _seed_send_log(send_session)
 
         await run_send(row.id)
@@ -457,13 +807,11 @@ class TestRunSendFailures:
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "11" in reloaded.detail["error"]
 
-    async def test_zero_files_across_every_execution_sends_nothing(
+    async def test_zero_files_and_zero_log_bytes_sends_nothing(
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
     ) -> None:
         """Refuse to upload a manifest-only bundle when nothing was collected."""
-        api = AsyncMock(spec=RemoteAPI)
-        api.get.return_value = {}
-        _patch_tasks_api(mocker, api)
+        _fake_tasks_api(mocker, files={}, logs=[])
         row = await _seed_send_log(send_session)
 
         await run_send(row.id)
@@ -471,6 +819,7 @@ class TestRunSendFailures:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "nothing to send" in reloaded.detail["error"].lower()
+        assert "output files" not in reloaded.detail["error"]
         assert uploader.called is False
 
     @pytest.mark.usefixtures("tasks_api")
@@ -552,13 +901,47 @@ class TestRunSendSizeCap:
             "DIAGNOSTICS_DELIVERY",
             delivery_plan.model_copy(update={"max_bundle_size_mb": 1}),
         )
-        api = AsyncMock(spec=RemoteAPI)
-        api.get.return_value = {"big.bin": {"is_dir": False, "size": 1}}
+        api = _fake_tasks_api(
+            mocker, files={"big.bin": {"is_dir": False, "size": 1}}, logs=[]
+        )
         api.stream_chunks.side_effect = lambda *_a, **_k: _blocks(
             os.urandom(2 * 1024 * 1024)
         )
-        _patch_tasks_api(mocker, api)
         row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert "1 MiB" in reloaded.detail["error"]
+        assert uploader.called is False
+        assert list(tmp_path.glob("*.zip")) == []
+
+    async def test_an_oversized_log_stream_aborts_before_any_upload(
+        self,
+        send_session: AsyncSession,
+        uploader: _FakeUploader,
+        mocker: MockerFixture,
+        tmp_path: Path,
+        delivery_plan: DeliveryPlan,
+    ) -> None:
+        """Stop while streaming logs, delete the partial zip, and never upload."""
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY",
+            delivery_plan.model_copy(update={"max_bundle_size_mb": 1}),
+        )
+        noise = os.urandom(2 * 1024 * 1024).hex()
+        block = 64 * 1024
+        _fake_tasks_api(
+            mocker,
+            files={},
+            logs=[
+                _log_record(noise[start : start + block])
+                for start in range(0, len(noise), block)
+            ],
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
 
         await run_send(row.id)
 

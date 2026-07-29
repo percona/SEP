@@ -33,6 +33,7 @@ __all__ = [
     "run_send",
 ]
 
+import json
 import logging
 import time
 import zipfile
@@ -61,6 +62,7 @@ from app.sep.bundle_upload.seam import BundleSource
 from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
 from app.tasks.config import tasks_settings
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +71,13 @@ _MANIFEST_ARCNAME = "manifest.json"
 _BUNDLE_SUFFIX = ".zip"
 _UNCONFIGURED_ERROR = "Diagnostics delivery is not configured"
 _NOTHING_TO_SEND_ERROR = (
-    "The selected executions produced no output files -- nothing to send."
+    "The selected executions produced no output or logs -- nothing to send."
 )
+#: The Nomad task name carrying a snippet's own output. Every task an ATW snippet
+#: resolves to (``exec-artifact``, ``exec-python-artifact``) wraps it in prestart
+#: and poststop steps -- ``check-staleness``, ``prepare-env``, ``clean-up`` --
+#: whose logs are machinery, not diagnostics. See ``app/tasks/db/seed.py``.
+_MAIN_LOG_STEP = "run-script"
 _WORKER_LOST_ERROR = (
     "The worker running this send did not report back in time; it was most "
     "likely lost. Re-send to try again."
@@ -86,7 +93,7 @@ class AtwBundleSizeError(AtwSendError):
 
 
 class AtwNothingToSendError(AtwSendError):
-    """Signal that the selected executions produced no files to send."""
+    """Signal that the selected executions produced no files or logs to send."""
 
 
 def bundle_dir() -> Path:
@@ -203,6 +210,52 @@ def _entry_arcname(prefix: str, path: str, *, is_dir: bool) -> str:
     return f"{arcname}.tar.gz" if is_dir else arcname
 
 
+def _log_arcname(prefix: str, step: str, stream: str) -> str:
+    """Return the archive entry name one execution's log group is written under.
+
+    ``step`` is an upstream Nomad task name, so its components are filtered for
+    the same reason :func:`_entry_arcname` filters an upstream file path.
+
+    :param prefix: The per-execution namespace.
+    :param step: The step whose logs the member holds.
+    :param stream: The stream the member holds, ``stdout`` or ``stderr``.
+    :return: The entry name to write the member under.
+    """
+    parts = [
+        part
+        for part in PurePosixPath(f"{step}.{stream}.log").parts
+        if part not in ("/", "..")
+    ]
+    return f"{prefix}/logs/{'/'.join(parts)}"
+
+
+async def _execution_status(
+    tasks_api: RemoteAPI, execution: dict[str, Any]
+) -> TaskHistoryStatusEnum | None:
+    """Return one execution's upstream status.
+
+    The send log snapshots only an execution's identity, so whether its logs are
+    safe to fetch has to be read back from the Tasks API.
+
+    :param tasks_api: The authenticated Tasks API client.
+    :param execution: The selected execution descriptor.
+    :return: The upstream status, or ``None`` when it is unrecognized.
+    :raises AtwSendError: When the execution's status cannot be read.
+    """
+    task_history_id = execution["task_history_id"]
+    try:
+        payload = await tasks_api.get(f"/history/{task_history_id}") or {}
+    except (HTTPException, OSError, ClientError) as exc:
+        raise AtwSendError(
+            f"Could not read the status of execution {task_history_id} "
+            f"({execution['snippet_filename']}): {_error_message(exc)}"
+        ) from exc
+    try:
+        return TaskHistoryStatusEnum(payload.get("status"))
+    except ValueError:
+        return None
+
+
 async def _add_execution_files(
     archive: zipfile.ZipFile, tasks_api: RemoteAPI, execution: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -281,6 +334,135 @@ async def _write_entry(
     return size
 
 
+def _decode_log_line(line: bytes, task_history_id: int) -> dict[str, Any] | None:
+    """Decode one NDJSON line of an execution's log stream.
+
+    :param line: The raw line, carrying the trailing newline
+        :meth:`RemoteAPI.stream` preserves.
+    :param task_history_id: The execution the line came from.
+    :return: The decoded record, or ``None`` for a blank or unparseable line.
+    """
+    if not (text := line.strip()):
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Skipping an unparseable log line from execution %s.", task_history_id
+        )
+        return None
+
+
+class _LogMember:
+    """Hold the one open archive member a single log group is streamed into.
+
+    :mod:`zipfile` rejects a second open writable member while one is still open,
+    so exactly one of these exists at a time and the caller replaces it when the
+    group changes.
+    """
+
+    def __init__(
+        self, archive: zipfile.ZipFile, prefix: str, group: tuple[str, str]
+    ) -> None:
+        """Open the member this group's messages are written into.
+
+        :param archive: The open archive to write into.
+        :param prefix: The per-execution namespace.
+        :param group: The group's ``(step, stream)`` pair.
+        """
+        self.group = group
+        self._arcname = _log_arcname(prefix, *group)
+        self._size = 0
+        self._handle = archive.open(self._arcname, "w", force_zip64=True)
+
+    def write(self, msg: str) -> int:
+        """Append one log message to the member.
+
+        :param msg: The message to append.
+        :return: The number of uncompressed bytes written.
+        :raises AtwBundleSizeError: Propagated from the archive's capped writer
+            when this message pushes the bundle past the plan's cap.
+        """
+        written = self._handle.write(msg.encode())
+        self._size += written
+        return written
+
+    def close(self) -> dict[str, Any]:
+        """Finalize the member and describe it for the manifest.
+
+        Safe to call more than once, so a caller that closes on its normal path
+        can still close unconditionally on the way out.
+
+        :return: The manifest entry describing the finished member.
+        :raises AtwBundleSizeError: Propagated from the archive's capped writer
+            when flushing the compressor's tail outgrows the plan's cap.
+        """
+        self._handle.close()
+        step, stream = self.group
+        return {
+            "step": step,
+            "stream": stream,
+            "arcname": self._arcname,
+            "size": self._size,
+        }
+
+
+async def _add_execution_logs(
+    archive: zipfile.ZipFile, tasks_api: RemoteAPI, execution: dict[str, Any]
+) -> tuple[list[dict[str, Any]], int]:
+    """Stream one execution's captured main-step logs into the archive.
+
+    Only :data:`_MAIN_LOG_STEP` is fetched: the prestart and poststop steps
+    surrounding it log setup machinery, which is noise on a support case.
+
+    Members are keyed by a record's ``(step, stream)`` group and replaced when it
+    changes -- the two upstream read paths both deliver contiguous runs per group
+    but in opposite stream order, so keying on the group covers either without
+    assuming a sequence. A record carrying no message is skipped before its group
+    is considered, so a stream with nothing to say opens no member at all.
+
+    :param archive: The open archive to write into.
+    :param tasks_api: The authenticated Tasks API client.
+    :param execution: The selected execution descriptor.
+    :return: One manifest entry per log group written, and the total number of
+        uncompressed bytes they carry.
+    :raises AtwSendError: When the execution's logs cannot be streamed.
+    :raises AtwBundleSizeError: Propagated from the archive's capped writer when
+        this execution's logs push the bundle past the plan's cap.
+    :raises ValueError: Propagated from :meth:`RemoteAPI.stream` when one log line
+        outgrows its line cap.
+    """
+    task_history_id = execution["task_history_id"]
+    prefix = _execution_prefix(execution)
+    entries: list[dict[str, Any]] = []
+    total = 0
+    member: _LogMember | None = None
+    try:
+        async for line in tasks_api.stream(
+            f"/history/{task_history_id}/logs/", params={"step": _MAIN_LOG_STEP}
+        ):
+            record = _decode_log_line(line, task_history_id)
+            if record is None or not record.get("msg"):
+                continue
+            group = (str(record.get("step", "")), str(record.get("type", "")))
+            if member is None or member.group != group:
+                if member is not None:
+                    entries.append(member.close())
+                member = _LogMember(archive, prefix, group)
+            total += member.write(record["msg"])
+        if member is not None:
+            entries.append(member.close())
+    except (HTTPException, OSError, ClientError) as exc:
+        raise AtwSendError(
+            f"Could not read logs for execution {task_history_id} "
+            f"({execution['snippet_filename']}): {_error_message(exc)}"
+        ) from exc
+    finally:
+        if member is not None:
+            member.close()
+    return entries, total
+
+
 def _build_manifest(
     row: AtwSendLog, incident_name: str, executions: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -315,14 +497,18 @@ async def _stage_bundle(
     :param incident_name: The incident's human-readable label.
     :param tasks_api: The authenticated Tasks API client.
     :param cap_mb: The largest the bundle may grow, in mebibytes.
-    :return: The number of collected files and the bundle manifest.
+    :return: The number of collected output files and the bundle manifest.
     :raises AtwBundleSizeError: When the archive outgrows the plan's cap.
-    :raises AtwNothingToSendError: When no execution produced a file.
-    :raises AtwSendError: When an execution's files cannot be collected.
+    :raises AtwNothingToSendError: When no execution produced a file or a log.
+    :raises AtwSendError: When an execution's status, files, or logs cannot be
+        collected.
+    :raises ValueError: Propagated from :meth:`RemoteAPI.stream` when one log line
+        outgrows its line cap.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     manifest_executions: list[dict[str, Any]] = []
     file_count = 0
+    log_bytes = 0
     with (
         path.open("wb") as handle,
         zipfile.ZipFile(
@@ -330,10 +516,15 @@ async def _stage_bundle(
         ) as archive,
     ):
         for execution in row.detail.get("executions", []):
+            status = await _execution_status(tasks_api, execution)
             files = await _add_execution_files(archive, tasks_api, execution)
             file_count += len(files)
-            manifest_executions.append({**execution, "files": files})
-        if not file_count:
+            logs: list[dict[str, Any]] = []
+            if status is not None and status.is_finished():
+                logs, written = await _add_execution_logs(archive, tasks_api, execution)
+                log_bytes += written
+            manifest_executions.append({**execution, "files": files, "logs": logs})
+        if not file_count and not log_bytes:
             raise AtwNothingToSendError(_NOTHING_TO_SEND_ERROR)
         manifest = _build_manifest(row, incident_name, manifest_executions)
         archive.writestr(_MANIFEST_ARCNAME, json_serializer(manifest))
