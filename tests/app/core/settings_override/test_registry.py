@@ -23,6 +23,7 @@ from pydantic import BaseModel, SecretStr
 
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
+from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
 from app.core.settings_override.registry import (
     chain_has_advanced,
     field_materializer,
@@ -32,6 +33,7 @@ from app.core.settings_override.registry import (
     is_advanced_field,
     is_explicit_not_overridable,
     is_hot_reloadable,
+    iter_class_fields,
     materialize_template,
     materialize_via_owning_model,
     MaterializerContext,
@@ -215,6 +217,46 @@ def test_preserve_patch_secret_value_for_dict_of_secrets() -> None:
     preserved = preserve_patch_credential_url_value(field, current, incoming)
     assert preserved["api_key"] == "stored-dict-secret"
     assert preserved["token"] == "replacement-token"
+
+
+def test_preserve_patch_secret_value_for_polymorphic_provider_set() -> None:
+    """Assert masked subclass secrets in ``set[BaseAlertProvider]`` are restored."""
+    field = AlertSettings.model_fields["PROVIDERS"]
+    current = {PagerDutyEventsAlertProvider(routing_key=SecretStr("real-routing-key"))}
+    incoming = [
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": "https://events.pagerduty.com/v2/",
+        }
+    ]
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved[0]["routing_key"] == "real-routing-key"
+    assert preserved[0]["PROVIDER"] == "pagerduty"
+
+
+def test_preserve_patch_secret_value_for_list_of_models() -> None:
+    """Assert masked secrets inside ``list[Model]`` whole-object PATCHes are restored."""
+
+    class _Leaf(BaseModel):
+        api_key: SecretStr
+        label: str = "ok"
+
+    class _ListSecretSettings(BaseModel):
+        items: list[_Leaf] = hot_field([])
+
+    field = _ListSecretSettings.model_fields["items"]
+    current = [_Leaf(api_key=SecretStr("stored-list-secret"), label="a")]
+    incoming = [{"api_key": SECRET_STR_MASK, "label": "a"}]
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved[0]["api_key"] == "stored-list-secret"
+    assert preserved[0]["label"] == "a"
+
+
+def test_providers_field_reports_is_secret() -> None:
+    """Assert ``PROVIDERS`` is flagged secret via subclass ``SecretStr`` fields."""
+    meta = next(m for m in iter_class_fields(AlertSettings) if m.key == "PROVIDERS")
+    assert meta.is_secret is True
 
 
 def test_unwrap_secrets_for_storage_scalar_secret() -> None:
