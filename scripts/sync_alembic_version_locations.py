@@ -57,7 +57,9 @@ def compute_version_locations(apps_root: Path) -> str:
     :param apps_root: Directory of plugin packages to scan.
     :return: Colon-joined ``%(here)s/...`` entries, main chain first.
     """
-    sys.path.insert(0, str(REPO_ROOT))
+    repo_root = str(REPO_ROOT)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
     from app.sep.migrations._discovery import discover_plugin_version_dirs
 
     entries = [MAIN_VERSIONS_ENTRY]
@@ -167,8 +169,6 @@ def render_sep_version_locations(text: str, value: str) -> str:
         + [comment_block, assignment]
         + lines[assignment_idx + 1 :]
     )
-    # comment_block is a multi-line string inserted as one list element;
-    # flatten so callers comparing line-oriented edits stay simple.
     return "".join(new_lines)
 
 

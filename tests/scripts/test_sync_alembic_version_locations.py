@@ -63,7 +63,7 @@ def _migration_plugin(root: Path, name: str) -> Path:
 
 
 def test_sync_regenerates_from_synthetic_app_tree(tmp_path):
-    """Sync rewrites ``version_locations`` from a synthetic apps tree."""
+    """Rewrite ``version_locations`` from a synthetic apps tree."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     _migration_plugin(apps_root, "zebra")
@@ -84,7 +84,7 @@ def test_sync_regenerates_from_synthetic_app_tree(tmp_path):
 
 
 def test_sync_is_idempotent_on_second_run(tmp_path):
-    """A second sync leaves the file byte-identical."""
+    """Leave the file byte-identical on a second sync."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     _migration_plugin(apps_root, "alpha")
@@ -175,7 +175,7 @@ def test_main_reports_malformed_ini_cleanly(tmp_path, capsys):
 
 
 def test_sync_preserves_comment_block_and_other_sections(tmp_path):
-    """Sync keeps ``script_location`` and non-``[sep]`` sections intact."""
+    """Keep ``script_location`` and non-``[sep]`` sections intact."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     _migration_plugin(apps_root, "alpha")
@@ -192,7 +192,7 @@ def test_sync_preserves_comment_block_and_other_sections(tmp_path):
 
 
 def test_sync_check_detects_drift(tmp_path):
-    """``--check`` returns false when the committed value is stale."""
+    """Fail ``--check`` when the committed value is stale."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     _migration_plugin(apps_root, "alpha")
@@ -211,5 +211,5 @@ def test_sync_check_detects_drift(tmp_path):
 
 
 def test_committed_alembic_ini_matches_discovery():
-    """Guard: committed ``alembic.ini`` matches the filesystem walk."""
+    """Confirm committed ``alembic.ini`` matches the filesystem walk."""
     assert sync_alembic_version_locations.main(["--check"]) == 0

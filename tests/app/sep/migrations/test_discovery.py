@@ -200,7 +200,7 @@ def test_all_migration_owning_plugins_have_loadable_models():
 
 
 def test_discover_plugin_version_dirs_sorted_without_loading_models(tmp_path):
-    """Filesystem helper returns sorted dirs and never loads ``models.py``."""
+    """Return sorted version dirs without loading ``models.py``."""
     _build_plugin(tmp_path, "zebra", with_migrations=True, models_source=_MARKER_SRC)
     _build_plugin(tmp_path, "alpha", with_migrations=True, models_source=_MARKER_SRC)
     _build_plugin(tmp_path, "no_mig", with_migrations=False, models_source=_MARKER_SRC)
