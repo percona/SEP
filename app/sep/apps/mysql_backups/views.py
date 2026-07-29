@@ -22,7 +22,7 @@ express: the section titles, the collapse/whole-section-hide metadata, the list
 columns, and the UI capability flags. These feed the derived ``GET /schema`` and
 are carried over from the previous hand-written ``AppSchema``; the one addition
 is the Encryption section's group ``description`` that guides operators through
-the master-switch encryption options.
+the mutually exclusive encryption modes.
 """
 
 from app.sep.apps.framework.apps import Views
@@ -78,10 +78,10 @@ mysql_backups_views = Views(
                 title="Encryption",
                 collapsible=True,
                 description=(
-                    "GPG-encrypt the backup. Enable 'Encrypt backup' first, then "
-                    "optionally pick 'Encrypt using tmpdir' or 'Encrypt after backup "
-                    "completes' (mutually exclusive). A recipient is required when "
-                    "encryption is enabled."
+                    "GPG-encrypt the backup. Pick in-place encryption ('Encrypt "
+                    "backup', optionally with 'Encrypt using tmpdir') or post-run "
+                    "encryption ('Encrypt after backup completes') — those two are "
+                    "mutually exclusive. Either mode needs a recipient."
                 ),
             ),
             SectionLayout(key="Upload", title="Upload", collapsible=True),

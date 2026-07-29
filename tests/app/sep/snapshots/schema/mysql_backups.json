@@ -938,7 +938,7 @@
     {
       "collapsed_by_default": false,
       "collapsible": true,
-      "description": "GPG-encrypt the backup. Enable 'Encrypt backup' first, then optionally pick 'Encrypt using tmpdir' or 'Encrypt after backup completes' (mutually exclusive). A recipient is required when encryption is enabled.",
+      "description": "GPG-encrypt the backup. Pick in-place encryption ('Encrypt backup', optionally with 'Encrypt using tmpdir') or post-run encryption ('Encrypt after backup completes') — those two are mutually exclusive. Either mode needs a recipient.",
       "fields": [
         {
           "default": false,

@@ -45,7 +45,8 @@ _PAYLOAD_ANCHOR = "app/sep/apps/mysql_backups/"
 # Each case names a slug and the backups field values; the cases cover the three
 # backup types, their per-type server host (M → service address, X → localhost,
 # B → alternative host or service address), the requirements / payload-file
-# selection, and the encryption modes (tmpdir vs post-run).
+# selection, and the encryption modes (tmpdir, post-run with in-place on, and
+# post-run standalone with in-place off).
 _CASES = [
     {
         "slug": "mydumper_rsync",
@@ -92,6 +93,17 @@ _CASES = [
             "upload": ["S3"],
             "s3_bucket": "my-s3-bucket",
             "encrypt": True,
+            "post_run_encrypt": True,
+            "encryption_recipient": "ops@example.com",
+        },
+        "alert_on_fail": False,
+    },
+    {
+        "slug": "mydumper_s3_post_run_only",
+        "form": {
+            "backup_type": "M",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
             "post_run_encrypt": True,
             "encryption_recipient": "ops@example.com",
         },
