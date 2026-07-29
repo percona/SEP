@@ -376,6 +376,41 @@ class TestBuiltinAutoApproval:
         assert row.is_approved is False
 
     @pytest.mark.asyncio
+    async def test_content_change_auto_clear_is_not_human_revocation(
+        self, session, mocker, tmp_path
+    ):
+        """Assert sync content-change clears ``updated_by`` (not a human revocation).
+
+        Pins the writer invariant: automatic removals pass ``user_id=None`` so
+        ``is_human_revoked`` stays false and a later matching sync may re-approve.
+        """
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        old_content = b"#!/bin/bash\necho old\n"
+        new_content = b"#!/bin/bash\necho new\n"
+        snippet = Snippet(
+            filename="builtin.sh",
+            size=len(old_content),
+            md5_digest=hashlib.md5(old_content, usedforsecurity=False).hexdigest(),
+        )
+        snippet.approve("Approved by admin", "admin-1")
+        await SnippetManager.create(session, snippet)
+        # Manifest lists the old digest so the new contents are a mismatch.
+        (tmp_path / "builtin.sh").write_bytes(new_content)
+        (tmp_path / BUILTIN_CHECKSUM_MANIFEST).write_text(
+            f"{_sha256(old_content)}  builtin.sh\n",
+            encoding="utf-8",
+        )
+
+        await sep_celery.update_snippets()
+
+        row = await SnippetManager.first(session, filename="builtin.sh")
+        assert row is not None
+        assert row.is_approved is False
+        assert row.updated_by is None
+        assert row.is_human_revoked is False
+
+    @pytest.mark.asyncio
     async def test_human_revoke_sticky_across_manifest_matching_update(
         self, session, mocker, tmp_path
     ):
