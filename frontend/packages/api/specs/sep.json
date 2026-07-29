@@ -3059,8 +3059,13 @@
         "type": "object"
       },
       "atw__ATWIncidentExecutionResponse": {
-        "description": "Represent one recorded incident execution, hydrated with live task status.\n\nThe hydrated fields are ``None`` when the Tasks API could not be reached for\nthat row; the locally-recorded fields are always present.\n\n:param id: The execution row's UUID primary key.\n:param snippet_filename: The executed snippet's filename.\n:param task_history_id: The tasks-service execution this row references.\n:param created_at: When the execution was recorded.\n:param task_status: The upstream execution status.\n:param started_at: When the upstream execution started.\n:param finished_at: When the upstream execution finished.\n:param has_logs: Whether the upstream execution has readable logs.",
+        "description": "Represent one recorded incident execution, hydrated with live task status.\n\nThe hydrated fields are ``None`` when the Tasks API could not be reached for\nthat row; the locally-recorded fields are always present.\n\n:param id: The execution row's UUID primary key.\n:param snippet_filename: The executed snippet's filename.\n:param task_history_id: The tasks-service execution this row references.\n:param created_at: When the execution was recorded.\n:param task_status: The upstream execution status.\n:param started_at: When the upstream execution started.\n:param finished_at: When the upstream execution finished.\n:param has_logs: Whether the upstream execution has readable logs.\n:param masked_args: The command line the snippet ran with, credential values\n    replaced by a fixed-width mask. ``None`` together with\n    ``args_withheld=False`` means the execution recorded no arguments.\n    Defaults to ``None``.\n:param args_withheld: Whether the arguments were suppressed because they\n    could not be masked safely -- distinguishing that from an execution that\n    genuinely ran with none. Defaults to ``False``.",
         "properties": {
+          "args_withheld": {
+            "default": false,
+            "title": "Args Withheld",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3093,6 +3098,17 @@
             "format": "uuid4",
             "title": "Id",
             "type": "string"
+          },
+          "masked_args": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Masked Args"
           },
           "snippet_filename": {
             "title": "Snippet Filename",
@@ -15259,7 +15275,7 @@
     },
     "/api/apps/atw/incidents/{incident_id}/executions/": {
       "get": {
-        "description": "List one incident's snippet executions, newest first, with live task status.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param pagination: The offset/limit window for the page.\n:param tasks_api: The authenticated Tasks API client.\n:return: A paginated page of executions hydrated from the Tasks API.",
+        "description": "List one incident's snippet executions, newest first, with live task status.\n\nEach row also reports the command line its snippet ran with, credential values\nmasked. A row whose snippet or upstream payload cannot supply what masking\nneeds reports its arguments as withheld; the page still returns.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param pagination: The offset/limit window for the page.\n:param tasks_api: The authenticated Tasks API client.\n:return: A paginated page of executions hydrated from the Tasks API, each with\n    its masked arguments or the reason they are absent.",
         "operationId": "atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get",
         "parameters": [
           {

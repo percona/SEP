@@ -799,11 +799,16 @@ export interface paths {
      * Atw List Incident Executions
      * @description List one incident's snippet executions, newest first, with live task status.
      *
+     *     Each row also reports the command line its snippet ran with, credential values
+     *     masked. A row whose snippet or upstream payload cannot supply what masking
+     *     needs reports its arguments as withheld; the page still returns.
+     *
      *     :param session: The database session.
      *     :param incident: The incident resolved from the ``incident_id`` path parameter.
      *     :param pagination: The offset/limit window for the page.
      *     :param tasks_api: The authenticated Tasks API client.
-     *     :return: A paginated page of executions hydrated from the Tasks API.
+     *     :return: A paginated page of executions hydrated from the Tasks API, each with
+     *         its masked arguments or the reason they are absent.
      */
     get: operations['atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get'];
     put?: never;
@@ -5157,8 +5162,20 @@ export interface components {
      *     :param started_at: When the upstream execution started.
      *     :param finished_at: When the upstream execution finished.
      *     :param has_logs: Whether the upstream execution has readable logs.
+     *     :param masked_args: The command line the snippet ran with, credential values
+     *         replaced by a fixed-width mask. ``None`` together with
+     *         ``args_withheld=False`` means the execution recorded no arguments.
+     *         Defaults to ``None``.
+     *     :param args_withheld: Whether the arguments were suppressed because they
+     *         could not be masked safely -- distinguishing that from an execution that
+     *         genuinely ran with none. Defaults to ``False``.
      */
     atw__ATWIncidentExecutionResponse: {
+      /**
+       * Args Withheld
+       * @default false
+       */
+      args_withheld: boolean;
       /**
        * Created At
        * Format: date-time
@@ -5173,6 +5190,8 @@ export interface components {
        * Format: uuid4
        */
       id: string;
+      /** Masked Args */
+      masked_args?: string | null;
       /** Snippet Filename */
       snippet_filename: string;
       /** Started At */
