@@ -318,6 +318,7 @@ timeout = 120
 timeout_method = "thread"
 markers = [
     "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
+    "mysql: require a real MySQL service (SEP_TEST_MYSQL_DSN)",
 ]
 env = [
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID=test-client-id",

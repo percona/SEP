@@ -37,9 +37,13 @@ from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
+from sqlalchemy.sql import coercions, ColumnExpressionArgument, roles
+from sqlalchemy.sql.compiler import SQLCompiler
 from sqlalchemy.sql.dml import Insert as GenericInsert
 from sqlalchemy.sql.type_api import TypeEngine
+from sqlalchemy.sql.visitors import InternalTraversal
 from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -196,6 +200,73 @@ def idempotent_insert(engine_name: str, table: Any) -> GenericInsert:
     if engine_name == DatabaseDialect.MYSQL:
         return mysql.insert(table).prefix_with("IGNORE")
     raise NotImplementedError(f"idempotent_insert: unsupported dialect {engine_name!r}")
+
+
+class NullsLastOrdering(ColumnElement):
+    """Render an ``ORDER BY`` term that places NULLs last on every supported dialect.
+
+    PostgreSQL and SQLite render the standard ``NULLS LAST`` clause. MySQL has no
+    such syntax, so its hook prepends ``ISNULL(<expr>) ASC`` -- ``ISNULL`` yields
+    ``1`` for NULL and ``0`` otherwise, pinning NULLs last independently of the
+    primary direction.
+
+    Takes the direction as a flag rather than a pre-directed expression: wrapping an
+    already-``desc()``-ed expression would make the MySQL hook emit the invalid
+    ``ISNULL(<expr> DESC)``.
+
+    Participates in SQLAlchemy's compiled-statement cache, with a key that
+    discriminates both column and direction.
+
+    :param column: The direction-free column expression to order by.
+    :param descending: Whether the primary ordering term is descending.
+    """
+
+    _traverse_internals: list[tuple[str, InternalTraversal]] = [
+        ("column", InternalTraversal.dp_clauseelement),
+        ("descending", InternalTraversal.dp_boolean),
+    ]
+
+    def __init__(
+        self,
+        column: ColumnExpressionArgument,
+        *,
+        descending: bool = False,
+    ) -> None:
+        self.column = coercions.expect(roles.ExpressionElementRole, column)
+        self.descending = descending
+
+
+@compiles(NullsLastOrdering)
+def _compile_nulls_last_ordering(
+    element: NullsLastOrdering, compiler: SQLCompiler, **kw: Any
+) -> str:
+    """Render the standard ``<expr> <direction> NULLS LAST`` ordering term.
+
+    :param element: The ordering construct being compiled.
+    :param compiler: The active SQL compiler.
+    :return: The rendered ``ORDER BY`` term.
+    """
+    direction = "DESC" if element.descending else "ASC"
+    return f"{compiler.process(element.column, **kw)} {direction} NULLS LAST"
+
+
+@compiles(NullsLastOrdering, DatabaseDialect.MYSQL)
+def _compile_nulls_last_ordering_mysql(
+    element: NullsLastOrdering, compiler: SQLCompiler, **kw: Any
+) -> str:
+    """Render MySQL's ``ISNULL(<expr>) ASC, <expr> <direction>`` equivalent.
+
+    The interpolated text is the compiler's rendering of an allowlisted column
+    expression, never a client-supplied value; literals inside the expression stay
+    bound parameters.
+
+    :param element: The ordering construct being compiled.
+    :param compiler: The active SQL compiler.
+    :return: The rendered pair of ``ORDER BY`` terms.
+    """
+    rendered = compiler.process(element.column, **kw)
+    direction = "DESC" if element.descending else "ASC"
+    return f"ISNULL({rendered}) ASC, {rendered} {direction}"
 
 
 def prepare_unsafe_value_for_json_comparison(db_engine: str, value: Any) -> Any:

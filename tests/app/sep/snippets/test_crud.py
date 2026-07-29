@@ -18,8 +18,11 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy.dialects import mysql
+from sqlmodel import col, select
 
 from app.core.pagination import Pagination
+from app.core.utils.fields import DatabaseDialect
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.list_query import (
     SNIPPET_SORT_KEYS,
@@ -586,6 +589,32 @@ class TestSnippetManagerServiceTypeNormalizationAgrees:
         assert [s.filename for s in page.items] == ["padded.sh"]
 
 
+class TestSnippetListQueryOrderByRendering:
+    """Cover the dialect-aware NULLs-last rendering of the snippets ORDER BY."""
+
+    @pytest.mark.parametrize(
+        "sort_key",
+        [SnippetSortKey.TITLE, SnippetSortKey.FILENAME],
+        ids=["meta_key", "column"],
+    )
+    @pytest.mark.parametrize(
+        "sort_direction", list(SnippetSortDirection), ids=lambda value: value.value
+    )
+    def test_order_by_renders_mysql_isnull_idiom(self, sort_key, sort_direction):
+        """Emit MySQL's ``ISNULL`` idiom instead of the unparsable ``NULLS LAST``."""
+        order_by = SnippetManager._list_query_order_by(
+            DatabaseDialect.MYSQL,
+            SnippetListQuery(sort_key=sort_key, sort_direction=sort_direction),
+        )
+
+        rendered = str(
+            select(col(Snippet.id)).order_by(*order_by).compile(dialect=mysql.dialect())
+        )
+
+        assert "NULLS LAST" not in rendered
+        assert "ISNULL(" in rendered
+
+
 @pytest.mark.asyncio
 class TestSnippetManagerListQueryOnPostgres:
     """Exercise the dialect-specific JSON, trimming, and ordering SQL on PostgreSQL.
@@ -758,3 +787,86 @@ class TestSnippetManagerListQueryOnPostgres:
         assert "\t" in service_types
         assert has_uncategorized is True
         assert [s.filename for s in uncategorized_page.items] == ["absent.sh"]
+
+
+@pytest.mark.mysql
+@pytest.mark.asyncio
+class TestSnippetManagerListQueryOnMySQL:
+    """Exercise the snippets NULLs-last ordering against a real MySQL bind.
+
+    MySQL has no ``NULLS LAST`` syntax, so this path can only be verified on a real
+    bind (auto-skipped when ``SEP_TEST_MYSQL_DSN`` is unset). The expected filename
+    orders are the same literals the PostgreSQL class asserts.
+    """
+
+    async def test_sort_by_meta_title_places_missing_titles_last(
+        self, mysql_session, seed_snippet
+    ):
+        """Pin rows lacking ``meta.title`` last in both directions on MySQL.
+
+        The sort expression is a JSON extract, so this also covers the extract
+        nesting inside the ``ISNULL`` term rather than being evaluated once.
+        """
+        await seed_snippet(mysql_session, "alpha.sh", title="Alpha")
+        await seed_snippet(mysql_session, "bravo.sh", title="Bravo")
+        await seed_snippet(mysql_session, "no-title-1.sh")
+        await seed_snippet(mysql_session, "no-title-2.sh")
+
+        ascending = await SnippetManager.snippet_list_page(
+            mysql_session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.ASC
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+        descending = await SnippetManager.snippet_list_page(
+            mysql_session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.TITLE, sort_direction=SnippetSortDirection.DESC
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert [s.filename for s in ascending.items] == [
+            "alpha.sh",
+            "bravo.sh",
+            "no-title-1.sh",
+            "no-title-2.sh",
+        ]
+        assert [s.filename for s in descending.items] == [
+            "bravo.sh",
+            "alpha.sh",
+            "no-title-1.sh",
+            "no-title-2.sh",
+        ]
+
+    async def test_sort_by_filename_orders_without_tie_breaker(
+        self, mysql_session, seed_snippet
+    ):
+        """Keep the non-nullable filename ordering correct without a tie-breaker.
+
+        Filename is unique, so this ordering is the construct alone -- the ``ISNULL``
+        term is a constant here and must not disturb the order in either direction.
+        """
+        for name in ("b.sh", "a.sh", "c.sh"):
+            await seed_snippet(mysql_session, name)
+
+        ascending = await SnippetManager.snippet_list_page(
+            mysql_session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.FILENAME,
+                sort_direction=SnippetSortDirection.ASC,
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+        descending = await SnippetManager.snippet_list_page(
+            mysql_session,
+            list_query=SnippetListQuery(
+                sort_key=SnippetSortKey.FILENAME,
+                sort_direction=SnippetSortDirection.DESC,
+            ),
+            pagination=Pagination(offset=0, limit=50),
+        )
+
+        assert [s.filename for s in ascending.items] == ["a.sh", "b.sh", "c.sh"]
+        assert [s.filename for s in descending.items] == ["c.sh", "b.sh", "a.sh"]
