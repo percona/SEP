@@ -18,7 +18,7 @@
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -462,6 +462,24 @@ async def _resolve_page_snippets(
         return {}
 
 
+def _execution_meta(history: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """Return the metadata recorded with an execution, or ``None`` on an odd shape.
+
+    ``history`` is the tasks service's response body, unvalidated on this side, so
+    each nesting level is shape-checked rather than assumed: reading ``args`` off a
+    truthy non-mapping would raise and fail the whole page rather than one row.
+
+    :param history: The upstream task-history payload.
+    :return: The recorded execution metadata, empty when the payload carries none,
+        or ``None`` when either nesting level holds something other than a mapping.
+    """
+    request = history.get("execution_request") or {}
+    if not isinstance(request, Mapping):
+        return None
+    meta = request.get("meta") or {}
+    return meta if isinstance(meta, Mapping) else None
+
+
 def _execution_args(
     history: dict[str, Any], script: SnippetScript | None
 ) -> tuple[str | None, bool]:
@@ -469,7 +487,8 @@ def _execution_args(
 
     An empty ``history`` is what an upstream lookup failure degrades to, so it
     withholds rather than reporting the empty state -- the arguments exist, they
-    just could not be read.
+    just could not be read. A payload whose nesting is not shaped as expected
+    withholds for the same reason (see :func:`_execution_meta`).
 
     Masking derives what is sensitive from the snippet's *current* frontmatter,
     while the arguments were rendered from whatever it said at execution time. The
@@ -495,7 +514,8 @@ def _execution_args(
     """
     if not history:
         return None, True
-    meta = (history.get("execution_request") or {}).get("meta") or {}
+    if (meta := _execution_meta(history)) is None:
+        return None, True
     if not (raw := meta.get("args")):
         return None, False
     if script is None or meta.get("md5_checksum") != script.snippet.md5_digest:

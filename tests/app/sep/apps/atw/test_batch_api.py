@@ -1271,6 +1271,54 @@ class TestAtwIncidentExecutionMaskedArgs:
         assert [row["args_withheld"] for row in rows.values()] == [True, True]
         assert "s3cr3t" not in response.text
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "history",
+        [
+            pytest.param(
+                {"execution_request": "--password s3cr3t"},
+                id="execution-request-is-not-a-mapping",
+            ),
+            pytest.param(
+                {"execution_request": {"meta": ["--password s3cr3t"]}},
+                id="meta-is-not-a-mapping",
+            ),
+        ],
+    )
+    async def test_non_mapping_upstream_payload_withholds_that_row(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+        history: dict[str, Any],
+    ) -> None:
+        """Withhold a row whose payload nests something other than a mapping.
+
+        The tasks service's response body is not validated on this side, so reading
+        ``args`` off a truthy non-mapping would raise past the masking guard and
+        fail the whole page rather than degrading this row.
+        """
+        await create_snippet(
+            "bad-shape.sh",
+            parameters=[{"name": "password", "type": "str", "required": True}],
+        )
+        await seed_execution("bad-shape.sh")
+        tasks_api.get.return_value = {
+            "status": TaskHistoryStatusEnum.SUCCESS.value,
+            "has_logs": True,
+            **history,
+        }
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
+        assert "s3cr3t" not in response.text
+
 
 class TestAtwBatchExecuteOnRealPostgres:
     """Guard the batch loop's shared-session rollback against a real aborted transaction."""

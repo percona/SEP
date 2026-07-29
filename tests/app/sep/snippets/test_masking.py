@@ -19,7 +19,9 @@ import shlex
 from typing import Any
 
 import pytest
+from pydantic import Field
 
+from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.masking import (
     _is_credential_name,
     _MASK_PLACEHOLDER,
@@ -447,6 +449,79 @@ class TestMaskCredentialUrls:
         args = _args(model, **{"mongodb-uri": "mongodb://u:p@[::1"})
 
         assert mask_snippet_args(args, model) == (f"--mongodb-uri {SENSITIVE_ARG_MASK}")
+
+
+class TestNonArgumentFieldsAreSkipped:
+    """Cover which of the model's fields the spec derives a parameter shape from."""
+
+    @staticmethod
+    def _model_with_base_fields() -> type:
+        """Return an execution model carrying every non-argument base field.
+
+        ``extra_args`` and ``sudo`` only exist on the model when the frontmatter
+        opts into them, so both are enabled here alongside the always-present
+        ``executor_host``.
+
+        :return: The snippet's dynamic execution model.
+        """
+        snippet = BaseSnippet(
+            filename="base-fields.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "dest", "type": "str", "required": True},
+                    {"name": "password", "type": "str"},
+                ],
+                "allow_extra_args": True,
+                "sudo": SnippetSudoOption.OPTIONAL.value,
+            },
+        )
+        return snippet.get_execution_model()
+
+    def test_spec_covers_only_the_declared_parameters(self):
+        """Derive a spec for the frontmatter parameters and nothing else.
+
+        ``to_args_string`` renders whatever survives its dump, so the spec has to
+        skip exactly what that drops: the two fields excluded there by name, plus
+        anything the model itself marks ``exclude``.
+        """
+        model = self._model_with_base_fields()
+
+        spec_names = {spec.name for spec in _masking_spec(model)}
+
+        assert spec_names == {"dest", "password"}
+
+    def test_base_fields_are_present_to_be_skipped(self):
+        """Assert the model really carries the fields the skip is meant to drop.
+
+        Without this the sibling test would still pass if the base fields stopped
+        being generated, leaving the skip logic uncovered.
+        """
+        model = self._model_with_base_fields()
+
+        assert {model.extra_args_field, model.sudo_field} <= set(model.model_fields)
+        assert [
+            identifier
+            for identifier, field in model.model_fields.items()
+            if field.exclude
+        ] == ["executor_host"]
+
+    def test_an_excluded_field_is_skipped_by_its_marking_not_its_name(self):
+        """Skip a field marked ``exclude`` even under an unrecognised name."""
+        model = self._model_with_base_fields()
+        renamed = type(
+            "RenamedBaseField",
+            (model,),
+            {
+                "__annotations__": {"target_host": str},
+                "target_host": Field(default="host1", exclude=True),
+            },
+        )
+
+        spec_names = {spec.name for spec in _masking_spec(renamed)}
+
+        assert spec_names == {"dest", "password"}
 
 
 class TestMaskingSpecCache:

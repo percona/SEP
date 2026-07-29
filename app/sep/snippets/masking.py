@@ -133,19 +133,22 @@ def _masking_spec(execution_model: type[BaseSnippetArgs]) -> tuple[_ParamSpec, .
     on the model class is enough: the class is itself memoized upstream, and a
     frontmatter change rebuilds it and so misses here in lockstep.
 
+    Which fields reach the rendered line is read off the model rather than named
+    here, mirroring what ``to_args_string`` excludes: the two fields it drops at
+    dump time, plus anything the model itself marks ``exclude``.
+
     :param execution_model: The snippet's dynamic execution model.
     :return: One spec per rendered parameter, in the order the model renders them.
     :raises ValueError: Propagated from ``format_args`` when a parameter's stored
         ``arg_format`` does not tokenise.
     """
     skipped = {
-        "executor_host",
         execution_model.extra_args_field,
         execution_model.sudo_field,
     }
     specs = []
     for identifier, field in execution_model.model_fields.items():
-        if identifier in skipped:
+        if identifier in skipped or field.exclude:
             continue
         name, metadata = execution_model.get_field_metadata(identifier)
         tokens = tuple(execution_model.format_args(identifier, _SENTINEL))
