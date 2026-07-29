@@ -164,6 +164,17 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
             main_dict[key] = value
 ```
 
+## App development
+
+SEP apps (checksums, backups, snippets, and the rest under `app/sep/apps/`) are
+built on the declarative app framework: you describe an app with a single
+`TaskExecutionApp` object and the framework derives its whole HTTP surface. If
+you are adding an app, start with the
+[App Developer Guide](docs/development/app-developer-guide.md). It is the
+zero-to-working-app path — mental model, the `make startapp` quickstart, the
+form DSL, the escape hatches, and testing — with the examples sourced from real
+apps.
+
 ## Testing
 
 ### Writing Tests

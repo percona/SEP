@@ -32,13 +32,13 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
-from urllib.parse import parse_qsl, urlparse
 
 from weasyprint import CSS, HTML
 
 from app.core.config import settings
 from app.core.exceptions import HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
+from app.sep.bundle_upload.factory import split_endpoint
 from app.sep.bundle_upload.plan import (
     DeliveryPlan,
     DeliveryPlanExecutor,
@@ -969,24 +969,6 @@ async def generate_pdf_report(report: ReportData) -> bytes:
 _MAX_UPLOAD_SIZE_MB = 30
 
 
-def _split_endpoint(endpoint: str) -> tuple[str, str, dict[str, str]]:
-    """Split a configured endpoint into origin, request path, and query pairs.
-
-    The transport client is pooled per origin and derives its own base path, so
-    the path and query travel in the plan instead. Repeated query keys collapse
-    to the last occurrence.
-
-    :param endpoint: The configured upload endpoint URL.
-    :return: The scheme-and-host origin, the request path, and the query pairs.
-    """
-    parsed = urlparse(endpoint)
-    return (
-        f"{parsed.scheme}://{parsed.netloc}",
-        parsed.path or "/",
-        dict(parse_qsl(parsed.query)),
-    )
-
-
 def _health_report_plan(
     upload: HealthReportSettings,
     *,
@@ -1059,7 +1041,7 @@ async def upload_pdf_report(
     if not upload.is_upload_configured:
         raise HTTPServiceUnavailableException(detail="Report upload is not configured")
 
-    origin, path, query = _split_endpoint(upload.endpoint)
+    origin, path, query = split_endpoint(upload.endpoint)
     api = await settings.get_remote_api(RemoteAPI, endpoint=origin)
     result = await DeliveryPlanExecutor(
         _health_report_plan(upload, origin=origin, path=path, query=query), api

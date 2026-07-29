@@ -26,6 +26,7 @@ from sqlmodel import SQLModel
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -36,6 +37,37 @@ from app.sep.deps import (
 from app.sep.main import sep_app
 
 BEARER_HEADERS = {"Authorization": "Bearer test-token"}
+
+
+@pytest.fixture
+def delivery_plan() -> DeliveryPlan:
+    """Provide a ServiceNow-shaped delivery plan with one resolution step."""
+    return DeliveryPlan(
+        endpoint="https://intake.example.com",
+        secrets={"api_key": "real-api-key"},
+        resolution_steps=[
+            {
+                "name": "lookup",
+                "method": "GET",
+                "path": "ticket_details",
+                "headers": {"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+                "query": {"number": {"source": "input", "field": "case_ref"}},
+                "outputs": {"sys_id": "/result/sys_id"},
+            }
+        ],
+        upload={
+            "path": "attachment/upload",
+            "headers": {"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+            "fields": {
+                "table_sys_id": {
+                    "source": "output",
+                    "step": "lookup",
+                    "output": "sys_id",
+                }
+            },
+            "reference_pointer": "/result/sys_id",
+        },
+    )
 
 
 @pytest_asyncio.fixture(name="session")

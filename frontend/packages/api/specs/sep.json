@@ -3386,6 +3386,23 @@
         "title": "ATWSnippetSummary",
         "type": "object"
       },
+      "atw__AtwConfigResponse": {
+        "description": "Report whether the incident send action is available.\n\n:param send_disabled_reasons: Why sending is unavailable; empty when the\n    receiver is configured and the action is offered.",
+        "properties": {
+          "send_disabled_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Send Disabled Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "send_disabled_reasons"
+        ],
+        "title": "AtwConfigResponse",
+        "type": "object"
+      },
       "atw__AtwIncidentResponse": {
         "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.",
         "properties": {
@@ -3489,6 +3506,115 @@
         "title": "AtwIncidentWrite",
         "type": "object"
       },
+      "atw__AtwSendJobWrite": {
+        "description": "Define the payload starting one diagnostics send.\n\n:param case_ref: The support-case reference to attach the bundle to.\n:param execution_ids: The incident executions whose output files to send.",
+        "properties": {
+          "case_ref": {
+            "minLength": 1,
+            "title": "Case Ref",
+            "type": "string"
+          },
+          "execution_ids": {
+            "items": {
+              "format": "uuid4",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Execution Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "case_ref",
+          "execution_ids"
+        ],
+        "title": "AtwSendJobWrite",
+        "type": "object"
+      },
+      "atw__AtwSendLogResponse": {
+        "description": "Represent one recorded diagnostics send attempt.\n\nEvery field is always present on a stored attempt, so -- unlike returning the\n:class:`AtwSendLog` table model directly -- the generated client types them as\nrequired rather than optional.\n\n:param id: The attempt's UUID primary key.\n:param incident_id: The incident the attempt belongs to.\n:param case_ref: The support-case reference the attempt targeted.\n:param requested_by: Username of the support engineer who started it.\n:param status: The attempt's lifecycle status.\n:param started_at: When the worker picked it up, if it did.\n:param finished_at: When it reached a terminal status, if it did.\n:param created_at: When the attempt was requested.\n:param detail: The attempt's recorded evidence.",
+        "properties": {
+          "case_ref": {
+            "minLength": 1,
+            "title": "Case Ref",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "object"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid4",
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid4",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/atw__AtwSendStatusEnum"
+          }
+        },
+        "required": [
+          "id",
+          "incident_id",
+          "case_ref",
+          "requested_by",
+          "status",
+          "started_at",
+          "finished_at",
+          "created_at",
+          "detail"
+        ],
+        "title": "AtwSendLogResponse",
+        "type": "object"
+      },
+      "atw__AtwSendStatusEnum": {
+        "description": "Enumerate the lifecycle of one diagnostics send attempt.\n\nThe column stores member *names* (``PENDING``); the API serializes the\n``StrEnum`` *values* (``pending``).",
+        "enum": [
+          "pending",
+          "running",
+          "success",
+          "failed"
+        ],
+        "title": "AtwSendStatusEnum",
+        "type": "string"
+      },
       "atw__PaginatedResponse_ATWIncidentExecutionResponse_": {
         "properties": {
           "items": {
@@ -3549,6 +3675,37 @@
           "limit"
         ],
         "title": "PaginatedResponse[AtwIncidentResponse]",
+        "type": "object"
+      },
+      "atw__PaginatedResponse_AtwSendLogResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/atw__AtwSendLogResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[AtwSendLogResponse]",
         "type": "object"
       },
       "backup_mongo__BackupDerivedTaskSummary": {
@@ -14800,6 +14957,28 @@
         ]
       }
     },
+    "/api/apps/atw/config/": {
+      "get": {
+        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard -- this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld; empty when it is offered.",
+        "operationId": "atw_atw_config_api_apps_atw_config__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Atw Config",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
     "/api/apps/atw/execution-schema/": {
       "get": {
         "description": "Build one execution form covering several snippets, merging common parameters.\n\nUnknown or unsafe filenames fail the whole request — a form the caller cannot\nfill for every selected snippet is not a partial success.\n\n:param snippet_filename: The selected snippet filenames, repeated per snippet\n    and deduplicated order-preserving.\n:return: The shared section followed by each snippet's remaining fields.\n:raises HTTPBadRequestException: When a filename is unsafe or malformed, failing\n    the whole request before any item is dispatched.\n:raises HTTPNotFoundException: When a filename matches no snippet.",
@@ -15192,6 +15371,179 @@
           }
         },
         "summary": "Atw Batch Execute",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/{incident_id}/send-jobs/": {
+      "get": {
+        "description": "List one incident's diagnostics send attempts, newest first.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of send attempts, newest first.",
+        "operationId": "atw_atw_list_send_jobs_api_apps_atw_incidents__incident_id__send_jobs__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__PaginatedResponse_AtwSendLogResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw List Send Jobs",
+        "tags": [
+          "atw"
+        ]
+      },
+      "post": {
+        "description": "Start delivering the selected executions' output files to the support case.\n\nThe row is created before the task is queued so a broker failure is still\nrecorded as a failed attempt rather than vanishing: the row is the only place\na support engineer can see that a send was ever tried.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param current_user: The authenticated user, stamped as ``requested_by``.\n:param body: The send payload naming the case reference and executions.\n:return: The created send log, pending.\n:raises HTTPUnprocessableEntityException: When an execution id does not belong\n    to this incident.\n:raises HTTPServiceUnavailableException: When the send could not be queued.\n:raises HTTPBadRequestException: Propagated from the manager when the row\n    cannot be written.",
+        "operationId": "atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/atw__AtwSendJobWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwSendLogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Start Send Job",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/{incident_id}/send-jobs/{send_job_id}": {
+      "get": {
+        "description": "Retrieve one diagnostics send attempt, for the dialog to poll.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param send_job_id: The send attempt's UUID.\n:return: The matching send attempt.\n:raises HTTPNotFoundException: If this incident has no such attempt.",
+        "operationId": "atw_atw_get_send_job_api_apps_atw_incidents__incident_id__send_jobs__send_job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "send_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Send Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwSendLogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Get Send Job",
         "tags": [
           "atw"
         ]
