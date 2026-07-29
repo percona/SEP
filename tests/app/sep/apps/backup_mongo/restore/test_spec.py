@@ -15,6 +15,8 @@
 
 """Unit tests for the pure restore spec builders (no API mocks)."""
 
+import yaml
+
 from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.backup_mongo.restore.models import RestoreCreate
 from app.sep.apps.backup_mongo.restore.spec import (
@@ -56,6 +58,36 @@ def test_physical_restore_adds_force_resync_leg():
     assert payloads.force_resync_task.name == f"{PARENT_NAME}-pbm-force-resync"
     assert (
         payloads.restore_task.name == f"{PARENT_NAME}-{BackupType.PBM_PHYSICAL.value}"
+    )
+
+
+def test_logical_restore_threads_namespace_to_execution_leg():
+    """Serialize a namespace filter into the logical restore execution leg."""
+    payloads = build_restore_payloads(
+        _form(restore_namespace_filter="db1.*,db2.collection"),
+        service_name=None,
+    )
+
+    assert yaml.safe_load(payloads.restore_task.data["meta"]["config"]) == {
+        "backupSource": "2025-12-15T19:04:05Z",
+        "backupType": "pbm_logical",
+        "namespace": "db1.*,db2.collection",
+    }
+    assert "namespace" not in yaml.safe_load(
+        payloads.config_task.data["meta"]["config"]
+    )
+
+
+def test_empty_namespace_keeps_execution_leg_config_unchanged():
+    """Keep the bare logical restore execution YAML byte-identical."""
+    payloads = build_restore_payloads(
+        _form(restore_namespace_filter=""),
+        service_name=None,
+    )
+
+    assert (
+        payloads.restore_task.data["meta"]["config"]
+        == "backupSource: '2025-12-15T19:04:05Z'\nbackupType: pbm_logical\n"
     )
 
 

@@ -33,6 +33,8 @@ The signature's annotation is the source of truth for types, so `:type:` / `:rty
 
 Model fields are constructor parameters — document with `:param:`, NOT `:cvar:`. The field annotation supplies the type, so a `:type:` is optional. Applies to every `BaseModel` / `SQLModel` subclass. Only `ClassVar`-annotated fields use `:cvar:`; `:type:` is reserved for `:param:`, and a class variable that documents its type uses `:vartype:`. The same rule applies to `@dataclass` (including `frozen=True` / `slots=True`): annotated fields are constructor parameters — use `:param:`, never `:ivar:` / `:cvar:` (those are reserved for true `ClassVar`s or `__post_init__`-assigned attributes).
 
+**Document the serialized default, not the internal constant.** For API-facing model fields, the documented default is the **wire value** a client sends or receives (`"ANY"`, `"nomad"`), never the internal Python symbol (`ANY_OWNER`, `Backend.NOMAD`) — model fields serialize into the OpenAPI schema and generated client SDKs, where the internal name is unresolvable.
+
 ## `:raises:` reflects what actually propagates
 
 When a function re-raises from inner calls — async HTTP (`aiohttp.ClientError`, `asyncio.TimeoutError`), DB (`sqlalchemy.exc.*`), subprocess — `:raises:` must enumerate the families that propagate. Conversely, a function with `try/except` around an inner call does NOT propagate the caught families — trace the actual control flow: a family caught by a `try/except` lexically inside the body is OUT; anything executing outside those handlers (before the first `try`, in an `else:`, after a re-raise, in an unwrapped helper call) is IN. Omit `:raises:` entirely when the function propagates nothing (no `raise`, no throwing inner call). `:raises Exception:` is acceptable when enumeration is impractical PROVIDED the prose names the propagating families.
@@ -55,6 +57,10 @@ A docstring describes what the function/class *actually* does — neither narrow
 - **Overstated runtime/lifecycle guarantee** — framing concurrency/shutdown behaviour as stronger than the code provides (*drains*, *completes cleanly*, *graceful*, *atomic*, *fail-fast* when the code just tears down). SOFTEN.
 - **Overstated constraint scope** — a field description or help text paraphrasing a validation rule over a broader set than the validator gates. REWRITE with the exact fields; the same correction is owed on every copy surface (Pydantic `Field(description=...)`, React `FormField`, Jinja tooltip).
 - **Misattributed condition** — the docstring ties a value to the wrong cause. REWRITE to name the actual governing condition.
+
+## Don't understate the contract
+
+The reverse of overstating: when a docstring uses applicability language (`Use when…`, `For the case where…`, `Use under…`), it must name **every** supported case — walk from the range the implementation actually accepts back to the prose. An explicit restriction (`only supported with a nested parent; top-level use is undefined`) is a valid, relied-upon contract; silence about a supported case reads identically to an oversight and makes the symbol undiscoverable.
 
 ## Name what the reader can't see
 

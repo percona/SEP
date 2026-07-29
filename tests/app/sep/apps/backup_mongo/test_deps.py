@@ -17,10 +17,13 @@
 
 import pytest
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_mongo.deps import build_backup_task_payload
-from app.sep.apps.backup_mongo.models import BackupCreate
+from app.sep.apps.backup_mongo.deps import (
+    build_backup_task_payload,
+    ensure_backup_group_update_preserves_names,
+)
+from app.sep.apps.backup_mongo.models import BackupCreate, BackupTaskWrite
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import TaskWrite
@@ -73,3 +76,38 @@ async def test_build_backup_task_payload_swallows_404_for_missing_service(
 
     assert isinstance(task_payload, TaskWrite)
     assert "_service_name" not in task_payload.data["meta"]
+
+
+class TestBackupGroupRenameGuard:
+    """Tests for ensure_backup_group_update_preserves_names."""
+
+    def test_allows_matching_name(self) -> None:
+        """Accept a submitted task_name equal to the parent name."""
+        ensure_backup_group_update_preserves_names("parent-backup", "parent-backup")
+
+    def test_rejects_rename(self) -> None:
+        """Raise 409 when the submitted task_name differs from the parent name."""
+        with pytest.raises(HTTPConflictException):
+            ensure_backup_group_update_preserves_names("parent-backup", "renamed")
+
+
+class TestBackupFormRoundTrip:
+    """Guard the create-stamp -> edit-PUT body round-trip."""
+
+    def test_stamped_create_form_revalidates_as_put_body(
+        self, backup_create: BackupCreate
+    ) -> None:
+        """Re-validate the JSON-mode create form as the PUT body model.
+
+        The generic edit page resubmits the stored ``_form`` (a
+        :class:`BackupCreate` dump, carrying ``backup_type``) as the PUT body;
+        :class:`BackupTaskWrite` must accept it, dropping the extra
+        ``backup_type`` rather than rejecting it.
+        """
+        stamped = backup_create.model_dump(mode="json")
+
+        body = BackupTaskWrite.model_validate(stamped)
+
+        assert body.task_name == backup_create.task_name
+        assert body.service_id == backup_create.service_id
+        assert not hasattr(body, "backup_type")

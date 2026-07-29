@@ -27,7 +27,7 @@ import DnsIcon from '@mui/icons-material/Dns';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import CodeIcon from '@mui/icons-material/Code';
 import DeviceHubIcon from '@mui/icons-material/DeviceHub';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
 import { useDashboardStats } from '@sep/api';
 import {

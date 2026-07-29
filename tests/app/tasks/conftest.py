@@ -84,10 +84,10 @@ async def created_task_with_history(session: AsyncSession) -> TaskHistory:
     """Return a task with a related task history record saved in the database."""
     task = await TaskManager.create(
         session,
-        TaskWrite.model_validate(TaskFactory.build(name="history-task")),
+        TaskWrite.model_validate(
+            TaskFactory.build(name="history-task", output_files_path="/output")
+        ),
     )
-    task.output_files_path = "/output"
-    task = await TaskManager.save(session, task)
     saved = await TaskHistoryManager.save(session, build_task_history(task))
     return await TaskHistoryManager.get_or_404(
         session,

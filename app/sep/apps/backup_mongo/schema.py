@@ -18,15 +18,19 @@
 The schema is derived from the model-first
 :class:`~app.sep.apps.backup_mongo.models.BackupForm` plus the
 :data:`~app.sep.apps.backup_mongo.views.backup_mongo_views` presentation
-bundle. :data:`BACKUP_MONGO_DERIVED` carries the three ``DerivedTask`` specs (with
+bundle. :data:`BACKUP_MONGO_DERIVED` carries the four ``DerivedTask`` specs (with
 their two-step ``payload_substitutions``) into the ``derived`` block of
 ``GET /schema``; the cascade create route reuses the same specs to POST the
-logical, physical, and status siblings.
+logical, physical, status, and incremental siblings. The Task-section description
+is built from those specs so the user-facing copy cannot drift from
+``name_suffix``.
 """
+
+from dataclasses import replace
 
 from app.sep.apps.backup_mongo.models import BackupForm, BackupType
 from app.sep.apps.backup_mongo.views import backup_mongo_views
-from app.sep.apps.framework.form_dsl import derive_app_schema
+from app.sep.apps.framework.form_dsl import derive_app_schema, TASK_SECTION_LAYOUT
 from app.sep.apps.framework.schema import DerivedTask, RelatedApp
 
 BACKUP_MONGO_DERIVED = [
@@ -53,16 +57,43 @@ BACKUP_MONGO_DERIVED = [
         },
         data_overrides={"backup_type": BackupType.PBM_STATUS.value},
     ),
+    DerivedTask(
+        name_suffix="-incremental",
+        payload_substitutions={
+            BackupType.PBM_CONFIG.value: BackupType.PBM_LOGICAL.value,
+            BackupType.PBM_LOGICAL.value: BackupType.PBM_INCREMENTAL.value,
+        },
+        data_overrides={"backup_type": BackupType.PBM_INCREMENTAL.value},
+    ),
 ]
+
+#: Task-section note lists derived ``name_suffix`` values so UI copy cannot
+#: drift from :data:`BACKUP_MONGO_DERIVED` (derived-task fan-out only).
+_TASK_SIBLING_DESCRIPTION = (
+    "Creating this backup produces sibling tasks: "
+    + ", ".join(spec.name_suffix.removeprefix("-") for spec in BACKUP_MONGO_DERIVED)
+    + "."
+)
+
+#: Task section description overlays the shared layout.
+_BACKUP_MONGO_LAYOUT = replace(
+    backup_mongo_views.layout,
+    sections=tuple(
+        replace(section, description=_TASK_SIBLING_DESCRIPTION)
+        if section.key == TASK_SECTION_LAYOUT.key
+        else section
+        for section in backup_mongo_views.layout.sections
+    ),
+)
 
 backup_mongo_schema = derive_app_schema(
     BackupForm,
-    backup_mongo_views.layout,
+    _BACKUP_MONGO_LAYOUT,
     name="backup_mongo",
     display_name="MongoDB Backups",
     description=(
         "Configure Percona Backup for MongoDB (PBM) and manage logical, "
-        "physical, and status backup tasks."
+        "physical, status, and incremental backup tasks."
     ),
     capabilities=backup_mongo_views.capabilities,
     list_view=backup_mongo_views.list_view,

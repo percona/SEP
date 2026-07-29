@@ -48,6 +48,7 @@ __all__ = [
     "OneOfBranch",
     "OneOfGroup",
     "RelatedApp",
+    "RemoteChoiceField",
     "SchemaBaseModel",
     "SchemaField",
     "ScriptPreviewField",
@@ -202,6 +203,7 @@ class DetailHighlightLanguage(EnumFieldMixin, StrEnum):
     SQL = auto()
     JSON = auto()
     BASH = auto()
+    YAML = auto()
 
 
 class BaseField(SchemaBaseModel):
@@ -448,13 +450,17 @@ class HostField(BaseField):
 
     The React renderer loads options from ``GET /api/sep/hosts/`` (an SEP
     proxy endpoint that internally calls Tasks ``/hosts/`` and merges
-    Inventory display names server-side). Host selection is not cascaded
-    from another field — every dispatch form lists every available executor
-    target.
+    Inventory display names server-side). When ``depends_on`` is set (typically
+    a ``ServiceField``), the renderer may auto-select an executor from the
+    upstream service; when omitted every available executor is listed and no
+    cascade runs.
 
     :param field_type: The discriminator literal; always ``"host"`` for this
         class. Serialised as the JSON key ``"type"``.
     :type field_type: Literal["host"]
+    :param depends_on: Optional name of the field whose value drives the
+        default executor selection. ``None`` (the default) omits the key from
+        the wire so plugins that do not opt in stay byte-identical.
     :param allow_custom: When ``True``, the selector also accepts a free-typed
         value alongside the inventory options. ``None`` (the default) omits the
         key from the wire so plugins that do not opt in stay byte-identical.
@@ -463,6 +469,7 @@ class HostField(BaseField):
     field_type: Literal["host"] = Field(
         "host", alias="type", serialization_alias="type"
     )
+    depends_on: NonEmptyStr | None = None
     allow_custom: bool | None = None
 
 
@@ -473,8 +480,16 @@ class MultiHostField(BaseField):
     list of executor targets instead of a single one. Derived from a
     ``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
 
+    Cascade auto-select is single-host only (:class:`HostField`). ``depends_on``
+    may still be emitted when ``Ui(depends_on=...)`` is set so derivation stays
+    uniform, but the multi-host renderer does not honour it today.
+
     :param field_type: The discriminator literal; always ``"multi_host"`` for
         this class. Serialised as the JSON key ``"type"``.
+    :param depends_on: Optional upstream field name mirrored from
+        ``Ui(depends_on=...)``. Emitted for wire uniformity with
+        :class:`HostField`; the current multi-host renderer ignores it (no
+        cascade). ``None`` (the default) omits the key from the wire.
     :param allow_custom: When ``True``, the selector also accepts free-typed
         values alongside the inventory options. ``None`` (the default) omits the
         key from the wire so plugins that do not opt in stay byte-identical.
@@ -483,6 +498,7 @@ class MultiHostField(BaseField):
     field_type: Literal["multi_host"] = Field(
         "multi_host", alias="type", serialization_alias="type"
     )
+    depends_on: NonEmptyStr | None = None
     allow_custom: bool | None = None
 
 
@@ -681,6 +697,39 @@ class ScriptPreviewField(BaseField):
     language: NonEmptyStr | None = None
 
 
+class RemoteChoiceField(BaseField):
+    """Represent a field whose options are fetched at render from an app endpoint.
+
+    The renderer fetches ``endpoint_url`` and renders the returned
+    ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
+    / ``disabled_reason``). When ``depends_on`` is set, the fetch is
+    parameterised by the dependency's value (appended as a query parameter named
+    after ``depends_on``) and the field stays disabled/empty until the
+    dependency has a value. When ``allow_custom`` is set, the renderer also
+    accepts a free-typed value. The endpoint response contract is a JSON array
+    of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
+    "disabled"?: bool, "disabled_reason"?: str}``.
+
+    :param field_type: The discriminator literal; always ``"remote_choice"``.
+        Serialised as the JSON key ``"type"``.
+    :param endpoint_url: The fully-resolved URL the renderer fetches options
+        from, relative to the frontend ``apiClient`` base (``/api``).
+    :param depends_on: Optional name of the sibling field whose value drives
+        (and parameterises) the option fetch. ``None`` (the default) omits the
+        key from the wire so plugins that do not cascade stay byte-identical.
+    :param allow_custom: When ``True``, the selector also accepts a free-typed
+        value. ``None`` (the default) omits the key from the wire so plugins
+        that do not opt in stay byte-identical.
+    """
+
+    field_type: Literal["remote_choice"] = Field(
+        "remote_choice", alias="type", serialization_alias="type"
+    )
+    endpoint_url: NonEmptyStr
+    depends_on: NonEmptyStr | None = None
+    allow_custom: bool | None = None
+
+
 LeafField = Annotated[
     BoolField
     | ChoiceField
@@ -694,6 +743,7 @@ LeafField = Annotated[
     | MultiSchemaField
     | MultiServiceField
     | MultiTableField
+    | RemoteChoiceField
     | SchemaField
     | ScriptPreviewField
     | ServiceField

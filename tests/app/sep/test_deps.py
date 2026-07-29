@@ -1907,6 +1907,27 @@ class TestGetDefaultContextPluginFiltering:
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_alert_troubleshooting_hidden_when_snippets_disabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """Drop Alert Troubleshooting from the sidebar when snippets is disabled."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        with patch("app.sep.deps.settings"):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert "alert_troubleshooting" not in keys
+        assert "snippets" not in keys
+        assert "inventory" in keys
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
     async def test_db_failure_degrades_to_showing_all_apps(
         self, session, dummy_request, regular_user
     ) -> None:

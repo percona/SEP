@@ -54,9 +54,13 @@ export function useScheduledTasksForApp(
   // running, so without this a story/test that sets `disablePolling` would
   // still spin up a live task-list refetch. The task-list poll keeps its own
   // default cadence — the schedule `pollingIntervalMs` governs periodic-task
-  // freshness, a separate concern.
-  const tasksQuery = useAppTasks<AppTask>(pluginName, undefined, { disablePolling });
-  const pluginTaskNames = tasksQuery.data?.map((t) => t.name) ?? [];
+  // freshness, a separate concern. `fetchAllPages` walks the paginated task
+  // list so schedule joins see every definition, not just the first page.
+  const tasksQuery = useAppTasks<AppTask>(pluginName, undefined, {
+    fetchAllPages: true,
+    disablePolling,
+  });
+  const pluginTaskNames = tasksQuery.data?.items.map((t) => t.name) ?? [];
 
   const periodicQuery = useQuery<PeriodicTaskResponse[], Error, PeriodicTaskResponse[]>({
     queryKey: PERIODIC_LIST_KEY,
@@ -76,7 +80,7 @@ export function useScheduledTasksForApp(
 
   return {
     periodicTasks: filtered,
-    appTasks: tasksQuery.data ?? [],
+    appTasks: tasksQuery.data?.items ?? [],
     isLoading: tasksQuery.isLoading || periodicQuery.isLoading,
     isError: tasksQuery.isError || periodicQuery.isError,
     error: tasksQuery.error ?? periodicQuery.error,

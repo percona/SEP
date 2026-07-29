@@ -15,8 +15,17 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useQuery } from '@tanstack/react-query';
-import { apiClient, unwrapAppListResponse, useAppSchema, type PaginatedAppList } from '@sep/api';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import {
+  apiClient,
+  DEFAULT_APP_LIST_LIMIT,
+  DEFAULT_APP_LIST_OFFSET,
+  normalizeAppListResponse,
+  useAppSchema,
+  type AppListQueryOptions,
+  type AppListResult,
+  type PaginatedAppList,
+} from '@sep/api';
 import { RUNNING_STATUSES } from '@sep/framework';
 import {
   TASKS_APP_NAME,
@@ -31,16 +40,21 @@ export function useTasksAppSchema() {
 }
 
 /** Fetch task definition rows for the list view. */
-export function useTasksList(options?: { enabled?: boolean }) {
-  return useQuery<TaskListRow[]>({
-    queryKey: ['tasks', 'list'],
+export function useTasksList(options?: AppListQueryOptions) {
+  const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
+  const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
+
+  return useQuery<AppListResult<TaskListRow>>({
+    queryKey: ['tasks', 'list', { offset, limit }],
     enabled: options?.enabled !== false,
     queryFn: async () => {
       const { data } = await apiClient.get<TaskListRow[] | PaginatedAppList<TaskListRow>>(
         `${TASKS_APPS_API_BASE}/`,
+        { params: { offset, limit } },
       );
-      return unwrapAppListResponse(data);
+      return normalizeAppListResponse(data);
     },
+    placeholderData: keepPreviousData,
   });
 }
 

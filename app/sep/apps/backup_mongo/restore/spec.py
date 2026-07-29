@@ -101,6 +101,7 @@ def _build_restore_leg(payload: RestoreLegPayloadModel) -> RestoreTaskLegModel:
         restore=None,
         backup_source=payload.backup_source,
         backup_type=payload.backup_type,
+        namespace=payload.namespace,
         credentials_path=payload.credentials_path,
     )
     return RestoreTaskLegModel(

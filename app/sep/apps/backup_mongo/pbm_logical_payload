@@ -37,15 +37,17 @@ def _creds_path(config_source: str) -> str:
     return f"{envhome}/.mongodb_uri"
 
 
-def _creds_path_from_config(config: dict | None, config_source: str = "restore") -> str:
+def _creds_path_from_config(config: object, config_source: str = "restore") -> str:
     """Resolve the MongoDB URI credentials path from an already-parsed config dict.
 
-    :param config: The parsed restore/backup config dict, or ``None`` when absent.
+    :param config: The parsed restore/backup config value. Anything other than a
+        ``dict`` (``None``, a bare scalar, a list, ...) is treated as missing config,
+        since ``yaml.safe_load`` can legally return a truthy non-dict.
     :param config_source: The config surface named in the error message, either
         ``"backup"`` or ``"restore"``.
     :return: The credentials-file path (from the config or the ``$HOME`` fallback).
     """
-    if config:
+    if isinstance(config, dict):
         path = config.get("credentials_path")
         if path:
             return path
@@ -87,10 +89,10 @@ def pbm_creds(creds_path: str) -> str:
 
 
 def _load_config():
-    """ Return NOMAD_META_CONFIG parsed as a dict, or {} when absent/invalid/non-mapping.
+    """Return NOMAD_META_CONFIG parsed as a dict, or {} when absent.
 
-    A present-but-unparseable or non-mapping config logs to stderr and yields {} so the
-    backup still runs on PBM's default compression rather than aborting.
+    A present-but-unparseable or non-mapping config aborts rather than silently
+    running a full backup (or using stale cluster-wide storage).
     """
     config_yaml = os.environ.get('NOMAD_META_CONFIG')
     if not config_yaml:
@@ -98,12 +100,12 @@ def _load_config():
     try:
         config = yaml.safe_load(config_yaml)
     except yaml.YAMLError as err:
-        print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}. Proceeding without compression flags.', file=sys.stderr)
-        return {}
+        print(f'Failed to parse NOMAD_META_CONFIG as YAML: {err}', file=sys.stderr)
+        sys.exit(1)
     if isinstance(config, dict):
         return config
-    print('NOMAD_META_CONFIG did not parse to a mapping. Proceeding without compression flags.', file=sys.stderr)
-    return {}
+    print('NOMAD_META_CONFIG did not parse to a mapping.', file=sys.stderr)
+    sys.exit(1)
 
 
 def _compression_flags(config):
@@ -125,6 +127,26 @@ def _compression_flags(config):
     return flags
 
 
+def _selective_flags(config):
+    """Build pbm backup --ns / --with-users-and-roles flags from the backup config.
+
+    Selective namespaces apply only to logical backups (PBM rejects ``--ns`` for
+    physical/incremental). Returns [] when namespaces are unset.
+    ``--with-users-and-roles`` is emitted only when explicitly enabled alongside
+    namespaces (create-time validation already requires ``db.*``).
+    """
+    backup = config.get('backup')
+    if not isinstance(backup, dict):
+        return []
+    namespaces = backup.get('namespaces')
+    if not namespaces:
+        return []
+    flags = ['--ns', str(namespaces)]
+    if backup.get('withUsersAndRoles'):
+        flags.append('--with-users-and-roles')
+    return flags
+
+
 # --- BEGIN GENERATED PBM CONFIG APPLY ---
 def _apply_pbm_config(config: dict) -> None:
     """Apply the SEP-managed PBM config to the cluster via ``pbm config --file``.
@@ -143,9 +165,22 @@ def _apply_pbm_config(config: dict) -> None:
         dropped before it is written to the PBM config file.
     """
     sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
-    pbm_config = {
-        k: v for k, v in config.items() if k not in sep_only_keys and v is not None
-    }
+    # Selective --ns flags live under backup for NOMAD_META_CONFIG readers but are
+    # not valid PBM config keys, so strip them before ``pbm config --file``.
+    sep_only_backup_keys = frozenset({"namespaces", "withUsersAndRoles"})
+    pbm_config = {}
+    for key, value in config.items():
+        if key in sep_only_keys or value is None:
+            continue
+        if key == "backup" and isinstance(value, dict):
+            backup_value = {
+                backup_key: nested_value
+                for backup_key, nested_value in value.items()
+                if backup_key not in sep_only_backup_keys
+            }
+            pbm_config[key] = backup_value
+            continue
+        pbm_config[key] = value
     task_dir = os.environ.get("NOMAD_TASK_DIR")
     if not task_dir:
         print(
@@ -182,7 +217,11 @@ def pbm():
     config = _load_config()
     if isinstance(config.get('storage'), dict):
         _apply_pbm_config(config)
-    cmd = ['pbm', 'backup', '--type', 'logical', '--wait'] + _compression_flags(config)
+    cmd = (
+        ['pbm', 'backup', '--type', 'logical', '--wait']
+        + _compression_flags(config)
+        + _selective_flags(config)
+    )
 
     try:
         proc = subprocess.Popen(cmd)

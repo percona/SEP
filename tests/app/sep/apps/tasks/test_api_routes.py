@@ -241,6 +241,7 @@ class TestTasksPluginDetailEndpoint:
                 "next_run_at": "2026-05-20T00:00:00+00:00",
                 "last_run_at": None,
                 "total_run_count": 3,
+                "last_run_status": TaskHistoryStatusEnum.SUCCESS.value,
                 "execute_request": {"chain_task_names": ["follow-up-task"]},
             }
         ]
@@ -280,6 +281,7 @@ class TestTasksPluginDetailEndpoint:
                 "next_run_at": "2026-05-20T00:00:00Z",
                 "last_run_at": None,
                 "total_run_count": 3,
+                "last_run_status": "success",
                 "chain_task_names": ["follow-up-task"],
             }
         ]

@@ -501,6 +501,46 @@ class TestExceptionHandlers:
         ("exc", "expected_status"),
         [
             pytest.param(
+                HTTPBadGatewayException("PMM is unreachable"),
+                status.HTTP_502_BAD_GATEWAY,
+                id="bad_gateway",
+            ),
+            pytest.param(
+                HTTPServiceUnavailableException("PMM is unavailable"),
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                id="service_unavailable",
+            ),
+        ],
+    )
+    def test_gateway_error_handler_returns_json_on_browser_path(
+        self, mocker, dummy_context, test_client, exc, expected_status
+    ):
+        """Answer a gateway error with JSON even on a browser/session path.
+
+        ``json_exception_handler`` is registered for the gateway exceptions, so a
+        502/503 answers in JSON regardless of path or auth mode -- it does not fall
+        through to ``default_exception_handler``'s flash-and-redirect. This pins the
+        behaviour after the upstream-error mapping was widened so a header-bearing
+        gateway error resolves to its mapped class instead of a bare HTTPException.
+        """
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=exc,
+        )
+        messages_error_mock = mocker.patch("app.sep.main.messages.error")
+
+        response = test_client.get(
+            "/", headers={"Referer": "/fake-page"}, follow_redirects=False
+        )
+
+        assert response.status_code == expected_status
+        assert response.json()["detail"] == exc.detail
+        messages_error_mock.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("exc", "expected_status"),
+        [
+            pytest.param(
                 HTTPUnauthorizedException(),
                 status.HTTP_401_UNAUTHORIZED,
                 id="bearer_unauthorized",
@@ -914,6 +954,45 @@ class TestAppStateGuards:
         response = guarded_client.get("/api/apps/atw/")
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
+
+    @pytest.mark.parametrize(
+        "route",
+        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
+    )
+    @pytest.mark.asyncio
+    async def test_alert_troubleshooting_routes_503_when_snippets_disabled(
+        self, guarded_client: TestClient, session, route: str
+    ) -> None:
+        """Return 503 from Alert Troubleshooting routes when snippets is disabled.
+
+        The gate names ``alert_troubleshooting`` itself so callers never see the
+        raw ``App 'snippets' is currently disabled`` leak from the snippets path.
+        """
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get(route)
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert (
+            response.json()["detail"]
+            == "App 'alert_troubleshooting' is currently disabled."
+        )
+
+    @pytest.mark.parametrize(
+        "route",
+        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
+    )
+    @pytest.mark.asyncio
+    async def test_alert_troubleshooting_routes_reachable_when_snippets_enabled(
+        self, guarded_client: TestClient, session, route: str
+    ) -> None:
+        """Keep Alert Troubleshooting routes reachable when snippets is enabled."""
+        response = guarded_client.get(route)
+
+        assert response.status_code == status.HTTP_200_OK
 
     def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
         """Every non-protected UI plugin route carries the app-state guard."""

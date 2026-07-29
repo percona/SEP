@@ -31,13 +31,15 @@ import pymysql
 import pymysql.cursors
 import yaml
 from botocore.exceptions import ClientError
-from packaging.version import Version
 from pymysql import Error, InternalError, OperationalError, ProgrammingError
 from filelock import FileLock, Timeout
 
 BYTES_PER_MB = 1024**2
 ST_BLOCKS_SIZE = 512
 BACKUP_DIR_REGEX = r"^2[0-9]{7}$"
+# Restated inline from app.tasks.run_result.RUN_RESULT_FILENAME — this payload is
+# shipped standalone and cannot import project code; a CI test binds the two.
+RUN_RESULT_FILENAME = ".sep-run-result.json"
 CURRENT_USER = os.getenv("PERCONA_BACKUP_USER") or os.getenv("SUDO_USER") or getuser()
 CURRENT_USER_HOME_DIR = Path(pwd.getpwnam(CURRENT_USER).pw_dir)
 BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
@@ -402,6 +404,32 @@ def get_dir_size(start_path: Path) -> int:
             "Error traversing directory %s: %s", start_path, e, exc_info=True
         )
     return total_size
+
+
+def _write_run_result(
+    backup_dir: str, size_bytes: int, upload_destination: str | None
+) -> None:
+    """Write the run-result JSON file for a produced backup.
+
+    The path is relative to the run's working directory, which the ``run-python``
+    job spec pins to the task's output-files directory — the location SEP reads
+    results back from.  Written to a sibling temp file and renamed so a reader
+    never observes a partial write.
+
+    :param backup_dir: The resolved backup directory on the remote host.
+    :param size_bytes: The backup size in bytes.
+    :param upload_destination: The remote upload path, or ``None`` when the
+        backup was not uploaded.
+    """
+    payload = {
+        "backup_dir": backup_dir,
+        "size_bytes": size_bytes,
+        "upload_destination": upload_destination,
+    }
+    tmp_path = RUN_RESULT_FILENAME + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as result_file:
+        json.dump(payload, result_file, separators=(",", ":"))
+    os.replace(tmp_path, RUN_RESULT_FILENAME)
 
 
 def humanize_bytes(size: int) -> str:
@@ -2002,37 +2030,43 @@ class MyDumper(Backup):
             self._save_disk_space()
 
         # Upload if needed
-        for upload_type in self.upload_type:
+        upload_providers = {
+            "rsync": RsyncUploadProvider,
+            "s3": S3UploadProvider,
+            "gsutil": GSUploadProvider,
+        }
+        upload_destination = None
+        for upload_type in sorted(self.upload_type):
             self.enable_upload(self.backup_dir)
-            if upload_type == "rsync":
-                MyDumperUpload(
-                    upload_type=upload_type,
-                    upload_provider=RsyncUploadProvider,
-                    settings=self.server_setting,
-                    logger=self.logger,
-                ).run()
-            elif upload_type == "s3":
-                MyDumperUpload(
-                    upload_type=upload_type,
-                    upload_provider=S3UploadProvider,
-                    settings=self.server_setting,
-                    logger=self.logger,
-                ).run()
-            elif upload_type == "gsutil":
-                MyDumperUpload(
-                    upload_type=upload_type,
-                    upload_provider=GSUploadProvider,
-                    settings=self.server_setting,
-                    logger=self.logger,
-                ).run()
-            else:
+            provider = upload_providers.get(upload_type)
+            if provider is None:
                 self.logger.warning("Unsupported upload type: %r", upload_type)
+                continue
+            uploader = MyDumperUpload(
+                upload_type=upload_type,
+                upload_provider=provider,
+                settings=self.server_setting,
+                logger=self.logger,
+            )
+            uploader.run()
+            remote_path = uploader.report_options.get("options", {}).get("remote_path")
+            if remote_path:
+                upload_destination = remote_path
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
-        size_text = humanize_bytes(get_dir_size(self.backup_dir))
+        size_bytes = get_dir_size(self.backup_dir)
+        size_text = humanize_bytes(size_bytes)
         msg = f"OK Backup complete. Duration: {time_spent}. Size: {size_text}."
         self.logger.info(msg)
         self.notify(BackupNotifyStatus.OK, msg)
+
+        if self.last_backup_dir and Path(self.last_backup_dir).is_dir():
+            try:
+                _write_run_result(
+                    str(self.last_backup_dir), size_bytes, upload_destination
+                )
+            except Exception:
+                self.logger.exception("Failed to write the run-result file.")
 
     def _save_disk_space(self) -> None:
         """Hardlink backups to save disk space if conditions allow."""

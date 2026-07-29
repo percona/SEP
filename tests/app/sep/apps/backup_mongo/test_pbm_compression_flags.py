@@ -24,7 +24,6 @@ this round-trips the actual command-assembly logic.
 """
 
 import ast
-import os
 import pathlib
 import subprocess
 from collections.abc import Callable
@@ -37,6 +36,7 @@ from app.sep.apps.backup_mongo.spec import (
     BackupMongoResolved,
     build_backup_mongo_spec,
 )
+from tests.app.sep.apps.backup_mongo.pbm_payload_exec import FakePopen, run_payload
 
 _APP_DIR = pathlib.Path(__file__).parents[5] / "app/sep/apps/backup_mongo"
 _PAYLOADS = {
@@ -45,32 +45,55 @@ _PAYLOADS = {
 }
 
 
-def _extract_compression_flags(payload_path: pathlib.Path) -> Callable:
-    """Extract and compile ``_compression_flags`` from a payload via AST.
+def _extract_function(payload_path: pathlib.Path, func_name: str) -> Callable:
+    """Extract and compile a top-level function from a payload via AST.
 
-    Parse the payload source, isolate the ``_compression_flags`` function
-    definition, and compile only that node so no module-level side effects
-    run. Fail loudly if the function is missing (renamed or removed).
+    Parse the payload source, isolate the named function definition, and
+    compile only that node so no module-level side effects run. Fail loudly
+    if the function is missing (renamed or removed).
 
     :param payload_path: Path to the payload script to extract from.
-    :return: The compiled ``_compression_flags`` callable.
+    :param func_name: The name of the top-level function to extract.
+    :return: The compiled callable.
     """
     source = payload_path.read_text()
     tree = ast.parse(source)
     for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == "_compression_flags":
+        if isinstance(node, ast.FunctionDef) and node.name == func_name:
             module = ast.Module(body=[node], type_ignores=[])
             namespace: dict[str, object] = {}
             exec(compile(module, str(payload_path), "exec"), namespace)
-            return namespace["_compression_flags"]
+            return namespace[func_name]
     raise RuntimeError(
-        f"_compression_flags not found in {payload_path}. "
+        f"{func_name} not found in {payload_path}. "
         "Has the function been renamed or removed?"
     )
 
 
+def _extract_compression_flags(payload_path: pathlib.Path) -> Callable:
+    """Extract and compile ``_compression_flags`` from a payload via AST.
+
+    :param payload_path: Path to the payload script to extract from.
+    :return: The compiled ``_compression_flags`` callable.
+    """
+    return _extract_function(payload_path, "_compression_flags")
+
+
+def _extract_selective_flags(payload_path: pathlib.Path) -> Callable:
+    """Extract and compile ``_selective_flags`` from a payload via AST.
+
+    :param payload_path: Path to the payload script to extract from.
+    :return: The compiled ``_selective_flags`` callable.
+    """
+    return _extract_function(payload_path, "_selective_flags")
+
+
 _FLAG_BUILDERS = {name: _extract_compression_flags(p) for name, p in _PAYLOADS.items()}
+_SELECTIVE_FLAG_BUILDERS = {
+    "logical": _extract_selective_flags(_PAYLOADS["logical"]),
+}
 _PARAMETRIZE_PAYLOADS = pytest.mark.parametrize("payload", ["logical", "physical"])
+_PARAMETRIZE_LOGICAL = pytest.mark.parametrize("payload", ["logical"])
 
 
 class TestCompressionFlags:
@@ -137,23 +160,91 @@ class TestFlagsWiredIntoCommand:
         assert "def _compression_flags(" in _PAYLOADS[payload].read_text()
 
     @_PARAMETRIZE_PAYLOADS
-    def test_flags_spliced_into_cmd(self, payload: str):
-        """Require the ``pbm backup`` command to extend itself with ``_compression_flags(...)``.
-
-        Anchors on the ``cmd = [...]`` assignment specifically — not on the mere
-        presence of the helper name (which its own ``def`` line would satisfy) —
-        so deleting the wiring while leaving the helper defined turns this RED.
-        """
+    def test_compression_flags_spliced_into_cmd(self, payload: str):
+        """Require the ``pbm backup`` command to extend itself with compression flags."""
         source = _PAYLOADS[payload].read_text()
-        cmd_lines = [
-            line
-            for line in source.splitlines()
-            if line.lstrip().startswith("cmd =") and "'pbm', 'backup'" in line
-        ]
-        assert cmd_lines, "no `cmd = ['pbm', 'backup', ...]` assignment found"
-        assert all("_compression_flags(" in line for line in cmd_lines), (
+        # Locate the backup command builder (not the ``pbm config`` apply cmd).
+        marker = "['pbm', 'backup'"
+        assert marker in source, "no pbm backup command list found"
+        # Take from the nearest preceding ``cmd =`` through a short window that
+        # includes the spliced helpers on following lines.
+        idx = source.index(marker)
+        window_start = source.rfind("cmd =", 0, idx)
+        assert window_start != -1, "no `cmd =` preceding the pbm backup list"
+        window = source[window_start : idx + 400]
+        assert "_compression_flags(" in window, (
             "the pbm backup command does not splice in _compression_flags(...)"
         )
+
+    def test_selective_flags_spliced_into_logical_only(self):
+        """Require ``_selective_flags`` only on the logical backup command.
+
+        PBM rejects ``--ns`` for physical backups, so the physical runner must
+        never splice selective flags into the command. Anchor on the ``cmd =``
+        window preceding ``['pbm', 'backup'`` — not the mere presence of the
+        helper ``def`` line.
+        """
+        for payload, expect_selective in (("logical", True), ("physical", False)):
+            source = _PAYLOADS[payload].read_text()
+            marker = "['pbm', 'backup'"
+            assert marker in source, f"no pbm backup command list in {payload}"
+            idx = source.index(marker)
+            window_start = source.rfind("cmd =", 0, idx)
+            assert window_start != -1, f"no `cmd =` preceding backup list in {payload}"
+            window = source[window_start : idx + 400]
+            if expect_selective:
+                assert "_selective_flags(" in window, (
+                    "logical pbm backup command does not splice _selective_flags(...)"
+                )
+            else:
+                assert "_selective_flags(" not in window, (
+                    "physical pbm backup command must not splice _selective_flags(...)"
+                )
+            assert ("def _selective_flags(" in source) is expect_selective
+
+
+class TestSelectiveFlags:
+    """Exercise the extracted ``_selective_flags`` helper (logical only)."""
+
+    @_PARAMETRIZE_LOGICAL
+    def test_namespaces_only(self, payload: str):
+        """Emit ``--ns <namespaces>`` when only namespaces are configured."""
+        flags = _SELECTIVE_FLAG_BUILDERS[payload](
+            {"backup": {"namespaces": "db1.*,db2.coll"}}
+        )
+        assert flags == ["--ns", "db1.*,db2.coll"]
+
+    @_PARAMETRIZE_LOGICAL
+    def test_namespaces_with_users_and_roles(self, payload: str):
+        """Append ``--with-users-and-roles`` when both fields are configured."""
+        flags = _SELECTIVE_FLAG_BUILDERS[payload](
+            {"backup": {"namespaces": "db1.*", "withUsersAndRoles": True}}
+        )
+        assert flags == ["--ns", "db1.*", "--with-users-and-roles"]
+
+    @_PARAMETRIZE_LOGICAL
+    def test_with_users_and_roles_without_namespaces_omits_flag(self, payload: str):
+        """Omit ``--with-users-and-roles`` when namespaces are unset."""
+        flags = _SELECTIVE_FLAG_BUILDERS[payload](
+            {"backup": {"withUsersAndRoles": True}}
+        )
+        assert flags == []
+
+    @_PARAMETRIZE_LOGICAL
+    @pytest.mark.parametrize(
+        "config",
+        [
+            {},
+            {"backup": {}},
+            {"backup": None},
+            {"backup": {"namespaces": ""}},
+            {"backup": {"namespaces": None}},
+            {"other": {"namespaces": "db.*"}},
+        ],
+    )
+    def test_empty_or_missing_omits_flags(self, payload: str, config: dict):
+        """Emit no selective flags when namespaces are empty/missing/non-mapping."""
+        assert _SELECTIVE_FLAG_BUILDERS[payload](config) == []
 
 
 _BACKUP_TYPE = {"logical": "logical", "physical": "physical"}
@@ -188,27 +279,15 @@ def _exec_payload_capture_cmd(
     else:
         monkeypatch.setenv("NOMAD_META_CONFIG", nomad_meta_config)
 
-    captured: dict[str, list[str]] = {}
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda cmd, *a, **kw: FakePopen(cmd, *a, captured=captured, **kw),
+    )
 
-    class _FakePopen:
-        def __init__(self, cmd: list[str], *args: object, **kwargs: object):
-            captured["cmd"] = cmd
-
-        def wait(self) -> None:
-            return None
-
-        def poll(self) -> int:
-            return 0
-
-    monkeypatch.setattr(subprocess, "Popen", _FakePopen)
-
-    namespace: dict[str, object] = {}
-    path = _PAYLOADS[payload]
-    exec(compile(path.read_text(), str(path), "exec"), namespace)
-    os.environ.pop(
-        "PBM_MONGODB_URI", None
-    )  # payload sets this directly, outside monkeypatch
-    return captured["cmd"]
+    run_payload(_PAYLOADS[payload])
+    return captured[-1]
 
 
 def _run_pbm_capture_cmd(
@@ -289,9 +368,64 @@ class TestPbmCommandEndToEnd:
         cmd = _run_pbm_capture_cmd(payload, None, monkeypatch, tmp_path)
         assert cmd == ["pbm", "backup", "--type", _BACKUP_TYPE[payload], "--wait"]
 
+    def test_namespaces_reach_logical_command(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Thread configured namespaces onto logical ``pbm backup`` only."""
+        cmd = _run_pbm_capture_cmd(
+            "logical",
+            {"backup": {"namespaces": "db1.*,db2.coll"}},
+            monkeypatch,
+            tmp_path,
+        )
+        assert cmd == [
+            "pbm",
+            "backup",
+            "--type",
+            "logical",
+            "--wait",
+            "--ns",
+            "db1.*,db2.coll",
+        ]
 
-class TestPbmCommandResilientToBadConfig:
-    """Ensure a malformed / non-mapping NOMAD_META_CONFIG never aborts the backup."""
+    def test_namespaces_ignored_on_physical_command(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Ignore namespaces on physical backups (PBM rejects ``--ns``)."""
+        cmd = _run_pbm_capture_cmd(
+            "physical",
+            {"backup": {"namespaces": "db1.*,db2.coll", "withUsersAndRoles": True}},
+            monkeypatch,
+            tmp_path,
+        )
+        assert cmd == ["pbm", "backup", "--type", "physical", "--wait"]
+        assert "--ns" not in cmd
+        assert "--with-users-and-roles" not in cmd
+
+    def test_with_users_and_roles_appended_to_logical_command(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Append --with-users-and-roles onto logical pbm backup alongside --ns."""
+        cmd = _run_pbm_capture_cmd(
+            "logical",
+            {"backup": {"namespaces": "db1.*", "withUsersAndRoles": True}},
+            monkeypatch,
+            tmp_path,
+        )
+        assert cmd == [
+            "pbm",
+            "backup",
+            "--type",
+            "logical",
+            "--wait",
+            "--ns",
+            "db1.*",
+            "--with-users-and-roles",
+        ]
+
+
+class TestPbmCommandRejectsBadConfig:
+    """Ensure a malformed / non-mapping NOMAD_META_CONFIG aborts the backup."""
 
     @_PARAMETRIZE_PAYLOADS
     @pytest.mark.parametrize(
@@ -300,20 +434,25 @@ class TestPbmCommandResilientToBadConfig:
             "{unterminated: [",  # malformed YAML -> YAMLError
             "- a\n- b\n",  # valid YAML, but a list (non-mapping)
             "just a scalar",  # valid YAML, but a scalar (non-mapping)
-            "",  # empty env value
+            "",  # empty env value — treated as absent, so still runs
         ],
         ids=["malformed", "list", "scalar", "empty"],
     )
-    def test_bad_config_runs_backup_without_flags(
+    def test_bad_config_aborts_except_empty(
         self,
         payload: str,
         bad_config: str,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ):
-        """Degrade to {} on unusable config so the backup still runs."""
-        cmd = _exec_payload_capture_cmd(payload, bad_config, monkeypatch, tmp_path)
-        assert cmd == ["pbm", "backup", "--type", _BACKUP_TYPE[payload], "--wait"]
+        """Abort on unusable present config; empty env still runs a bare backup."""
+        if bad_config == "":
+            cmd = _exec_payload_capture_cmd(payload, bad_config, monkeypatch, tmp_path)
+            assert cmd == ["pbm", "backup", "--type", _BACKUP_TYPE[payload], "--wait"]
+            return
+        with pytest.raises(SystemExit) as exc_info:
+            _exec_payload_capture_cmd(payload, bad_config, monkeypatch, tmp_path)
+        assert exc_info.value.code == 1
 
 
 def _spec_config_yaml(**overrides: object) -> str:

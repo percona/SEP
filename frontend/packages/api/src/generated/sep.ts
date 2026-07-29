@@ -678,7 +678,8 @@ export interface paths {
      *     :param snippet_filename: The selected snippet filenames, repeated per snippet
      *         and deduplicated order-preserving.
      *     :return: The shared section followed by each snippet's remaining fields.
-     *     :raises HTTPBadRequestException: When a filename attempts directory traversal.
+     *     :raises HTTPBadRequestException: When a filename is unsafe or malformed, failing
+     *         the whole request before any item is dispatched.
      *     :raises HTTPNotFoundException: When a filename matches no snippet.
      */
     get: operations['atw_atw_execution_schema_api_apps_atw_execution_schema__get'];
@@ -785,10 +786,13 @@ export interface paths {
      * Atw Batch Execute
      * @description Execute several snippets against one incident, reporting each item separately.
      *
-     *     One failing item never blocks the rest: each is dispatched and recorded inside
-     *     its own guard, and the response always carries an entry per requested item. A
-     *     failed attempt produces no task-history row to reference, so it is reported
-     *     here rather than persisted.
+     *     A malformed selection fails the whole request up front: ``resolve_snippets``
+     *     runs the traversal guard over every filename before dispatch, so an unsafe
+     *     filename raises before any item runs. Past that guard, one failing item never
+     *     blocks the rest: each is dispatched and recorded inside its own guard, and the
+     *     response always carries an entry per requested item — an unresolved filename
+     *     becomes that item's error. A failed attempt produces no task-history row to
+     *     reference, so it is reported here rather than persisted.
      *
      *     The row-write guard rolls the shared session back before the loop continues,
      *     or one failed write would leave the transaction aborted and doom every later
@@ -801,6 +805,8 @@ export interface paths {
      *     :param body: The batch payload.
      *     :param tasks_api: The authenticated Tasks API client.
      *     :return: One outcome entry per requested item, in request order.
+     *     :raises HTTPBadRequestException: When any filename is unsafe or malformed,
+     *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
     delete?: never;
@@ -915,7 +921,9 @@ export interface paths {
      * @description Update a restore task from a JSON payload request body.
      *
      *     PUTs the parent config payload to the config task name and refreshes each
-     *     child leg (restore, pbm-list, optional force-resync) in place.
+     *     child leg (restore, pbm-list, optional force-resync) in place. The
+     *     ``EditableRestoreParent`` dependency resolves a satellite URL to the parent
+     *     and blocks protected or in-flight groups before any write.
      */
     put: operations['backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put'];
     post?: never;
@@ -983,7 +991,18 @@ export interface paths {
      * @description Retrieve a single parent backup task with derived sibling status.
      */
     get: operations['backup_mongo_backup_mongo_api_detail_api_apps_backup_mongo__task_name__get'];
-    put?: never;
+    /**
+     * Backup Mongo Api Update
+     * @description Update a backup task group from a JSON payload request body.
+     *
+     *     Cascade-updates the parent ``pbm_config`` task and its derived logical,
+     *     physical, status, and incremental siblings, re-stamping ``_form`` so the edit page keeps
+     *     prefilling. The ``EditableBackupParent`` dependency resolves a satellite URL
+     *     to the parent and blocks protected or in-flight groups before any write.
+     *     Rejects a parent rename with a conflict and surfaces a partial cascade
+     *     failure as an HTTP 500 naming the failed legs.
+     */
+    put: operations['backup_mongo_backup_mongo_api_update_api_apps_backup_mongo__task_name__put'];
     post?: never;
     /**
      * Backup Mongo Api Delete
@@ -1921,7 +1940,7 @@ export interface paths {
     };
     /**
      * List
-     * @description List discovered scripts as a paginated projection.
+     * @description List scripts as a server-filtered, sorted, paginated projection.
      */
     get: operations['snippets_snippets_api_list_api_apps_snippets__get'];
     put?: never;
@@ -2039,6 +2058,33 @@ export interface paths {
      *     :return: The plugin schema instance.
      */
     get: operations['snippets_get_schema_api_apps_snippets_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/snippets/service_types': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api Service Types
+     * @description List the distinct service types across the whole snippets dataset.
+     *
+     *     Backs the list page's service-type filter so its options reflect every value
+     *     in the dataset rather than only the loaded page.
+     *
+     *     :param session: The SEP database session.
+     *     :return: The sorted distinct service types and whether any snippet is
+     *         uncategorized (absent or blank service type).
+     */
+    get: operations['snippets_snippets_api_service_types_api_apps_snippets_service_types_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3815,6 +3861,40 @@ export interface components {
       [key: string]: components['schemas']['JsonValue'];
     };
     /**
+     * SnippetApprovalFilter
+     * @description Enumerate the approval-status filter selections.
+     *
+     *     :cvar ALL: Do not filter on approval status.
+     *     :cvar APPROVED: Keep only approved snippets (``approved_at IS NOT NULL``).
+     *     :cvar NOT_APPROVED: Keep only unapproved snippets (``approved_at IS NULL``).
+     * @enum {string}
+     */
+    SnippetApprovalFilter: 'all' | 'approved' | 'not_approved';
+    /**
+     * SnippetSortDirection
+     * @description Enumerate the sort direction.
+     *
+     *     :cvar ASC: Ascending order.
+     *     :cvar DESC: Descending order.
+     * @enum {string}
+     */
+    SnippetSortDirection: 'asc' | 'desc';
+    /**
+     * SnippetSortKey
+     * @description Enumerate the allowlisted public sort keys.
+     *
+     *     Membership is the type: an out-of-allowlist key fails to coerce at the
+     *     request boundary, so no raw client-supplied column name can reach a query.
+     *
+     *     :cvar CREATED_AT: Sort by the ``created_at`` column.
+     *     :cvar FILENAME: Sort by the ``filename`` column.
+     *     :cvar APPROVED_AT: Sort by the ``approved_at`` column.
+     *     :cvar TITLE: Sort by the ``meta.title`` JSON value.
+     *     :cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.
+     * @enum {string}
+     */
+    SnippetSortKey: 'created_at' | 'filename' | 'approved_at' | 'title' | 'service_type';
+    /**
      * SourceEnum
      * @description Enumeration of possible data sources for a node.
      *
@@ -3997,6 +4077,11 @@ export interface components {
      *         auto-resolve it on subsequent success. Defaults to False.
      *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
      *         callable that enriches this task's failure alert, or None.
+     *     :param run_result_recorder: The ``"module:function"`` path of a plugin
+     *         callable that records this task's structured run result at terminal
+     *         status, or None.
+     *     :param output_files_path: The allocation-relative path where output files
+     *         generated by the task are expected, or None.
      *     :param deleted_at: The deletion timestamp, if applicable.
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the task. Defaults to 0 (no anonymization).
@@ -4046,6 +4131,8 @@ export interface components {
       last_updated_by: string | null;
       /** Name */
       name: string;
+      /** Output Files Path */
+      output_files_path?: string | null;
       /**
        * Owner
        * @default ANY
@@ -4056,6 +4143,8 @@ export interface components {
        * @default false
        */
       protected: boolean;
+      /** Run Result Recorder */
+      run_result_recorder?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -5027,6 +5116,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -5060,6 +5150,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -5198,8 +5289,8 @@ export interface components {
      * BackupTaskDetailResponse
      * @description Represent a backup task detail API response.
      *
-     *     :param derived_tasks: Latest status for each derived logical, physical, and
-     *         status sibling.
+     *     :param derived_tasks: Latest status for each derived logical, physical,
+     *         status, and incremental sibling.
      *     :type derived_tasks: list[BackupDerivedTaskSummary]
      *     :param latest_pbm_status: Tail of the latest PBM status task stdout, if
      *         available.
@@ -5299,7 +5390,7 @@ export interface components {
      *
      *     Mirrors :class:`BackupCreate` except ``backup_type``, which is always
      *     ``pbm_config`` on create. POST creates the parent config task plus derived
-     *     logical, physical, and status siblings.
+     *     logical, physical, status, and incremental siblings.
      *
      *     :param task_name: The name of the task to be created.
      *     :type task_name: NonEmptyStr
@@ -5340,6 +5431,10 @@ export interface components {
      *     :type backup_oplog_span_min: float | None
      *     :param backup_num_parallel_collections: Parallel collections for logical backup.
      *     :type backup_num_parallel_collections: int | None
+     *     :param backup_namespaces: Selective ``--ns`` namespaces for logical backups.
+     *     :type backup_namespaces: str | None
+     *     :param backup_with_users_and_roles: Opt-in ``--with-users-and-roles`` for ``db.*``.
+     *     :type backup_with_users_and_roles: bool
      *     :param credentials_path: Path to MongoDB URI credentials on the Nomad node.
      *     :type credentials_path: str | None
      */
@@ -5352,6 +5447,8 @@ export interface components {
       backup_compression?: components['schemas']['backup_mongo__CompressionAlgorithm'] | null;
       /** Backup Compression Level */
       backup_compression_level?: number | null;
+      /** Backup Namespaces */
+      backup_namespaces?: string | null;
       /** Backup Num Parallel Collections */
       backup_num_parallel_collections?: number | null;
       /** Backup Oplog Span Min */
@@ -5360,6 +5457,11 @@ export interface components {
       backup_priority?: string | null;
       /** Backup Timeouts Starting Status */
       backup_timeouts_starting_status?: number | null;
+      /**
+       * Backup With Users And Roles
+       * @default false
+       */
+      backup_with_users_and_roles: boolean;
       /** Credentials Path */
       credentials_path?: string | null;
       /** Hostname */
@@ -5398,6 +5500,7 @@ export interface components {
     backup_mongo__BackupType:
       | 'pbm_logical'
       | 'pbm_physical'
+      | 'pbm_incremental'
       | 'pbm_snapshot'
       | 'pbm_config'
       | 'pbm_status';
@@ -5570,6 +5673,9 @@ export interface components {
      *     :type backup_type: BackupType
      *     :param backup_source: Backup name or timestamp to restore from.
      *     :type backup_source: NonEmptyStr
+     *     :param restore_namespace_filter: Optional database or collection namespace
+     *         filter for a logical restore.
+     *     :type restore_namespace_filter: str | None
      *     :param restore_batch_size: Number of documents to buffer.
      *     :type restore_batch_size: int | None
      *     :param restore_num_insertion_workers: Insertion workers per collection.
@@ -5607,6 +5713,8 @@ export interface components {
       restore_mongod_location?: string | null;
       /** Restore Mongod Location Map */
       restore_mongod_location_map?: string | null;
+      /** Restore Namespace Filter */
+      restore_namespace_filter?: string | null;
       /** Restore Num Download Workers */
       restore_num_download_workers?: number | null;
       /** Restore Num Insertion Workers */
@@ -6713,7 +6821,7 @@ export interface components {
      * @description Enumerate supported syntax highlighters for detail fields.
      * @enum {string}
      */
-    framework__DetailHighlightLanguage: 'sql' | 'json' | 'bash';
+    framework__DetailHighlightLanguage: 'sql' | 'json' | 'bash' | 'yaml';
     /**
      * DetailSection
      * @description Declare one titled section inside a :class:`DetailView`.
@@ -6958,6 +7066,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -6983,13 +7092,17 @@ export interface components {
      *
      *     The React renderer loads options from ``GET /api/sep/hosts/`` (an SEP
      *     proxy endpoint that internally calls Tasks ``/hosts/`` and merges
-     *     Inventory display names server-side). Host selection is not cascaded
-     *     from another field — every dispatch form lists every available executor
-     *     target.
+     *     Inventory display names server-side). When ``depends_on`` is set (typically
+     *     a ``ServiceField``), the renderer may auto-select an executor from the
+     *     upstream service; when omitted every available executor is listed and no
+     *     cascade runs.
      *
      *     :param field_type: The discriminator literal; always ``"host"`` for this
      *         class. Serialised as the JSON key ``"type"``.
      *     :type field_type: Literal["host"]
+     *     :param depends_on: Optional name of the field whose value drives the
+     *         default executor selection. ``None`` (the default) omits the key from
+     *         the wire so plugins that do not opt in stay byte-identical.
      *     :param allow_custom: When ``True``, the selector also accepts a free-typed
      *         value alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -6999,6 +7112,8 @@ export interface components {
       allow_custom?: boolean | null;
       /** Default */
       default?: unknown | null;
+      /** Depends On */
+      depends_on?: string | null;
       /** Description */
       description?: string | null;
       /** Forbidden */
@@ -7138,8 +7253,16 @@ export interface components {
      *     list of executor targets instead of a single one. Derived from a
      *     ``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
      *
+     *     Cascade auto-select is single-host only (:class:`HostField`). ``depends_on``
+     *     may still be emitted when ``Ui(depends_on=...)`` is set so derivation stays
+     *     uniform, but the multi-host renderer does not honour it today.
+     *
      *     :param field_type: The discriminator literal; always ``"multi_host"`` for
      *         this class. Serialised as the JSON key ``"type"``.
+     *     :param depends_on: Optional upstream field name mirrored from
+     *         ``Ui(depends_on=...)``. Emitted for wire uniformity with
+     *         :class:`HostField`; the current multi-host renderer ignores it (no
+     *         cascade). ``None`` (the default) omits the key from the wire.
      *     :param allow_custom: When ``True``, the selector also accepts free-typed
      *         values alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -7149,6 +7272,8 @@ export interface components {
       allow_custom?: boolean | null;
       /** Default */
       default?: unknown | null;
+      /** Depends On */
+      depends_on?: string | null;
       /** Description */
       description?: string | null;
       /** Forbidden */
@@ -7364,6 +7489,7 @@ export interface components {
         | components['schemas']['framework__MultiSchemaField']
         | components['schemas']['framework__MultiServiceField']
         | components['schemas']['framework__MultiTableField']
+        | components['schemas']['framework__RemoteChoiceField']
         | components['schemas']['framework__SchemaField']
         | components['schemas']['framework__ScriptPreviewField']
         | components['schemas']['framework__ServiceField']
@@ -7456,6 +7582,61 @@ export interface components {
       label: string;
       /** Route Segment */
       route_segment: string;
+    };
+    /**
+     * RemoteChoiceField
+     * @description Represent a field whose options are fetched at render from an app endpoint.
+     *
+     *     The renderer fetches ``endpoint_url`` and renders the returned
+     *     ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
+     *     / ``disabled_reason``). When ``depends_on`` is set, the fetch is
+     *     parameterised by the dependency's value (appended as a query parameter named
+     *     after ``depends_on``) and the field stays disabled/empty until the
+     *     dependency has a value. When ``allow_custom`` is set, the renderer also
+     *     accepts a free-typed value. The endpoint response contract is a JSON array
+     *     of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
+     *     "disabled"?: bool, "disabled_reason"?: str}``.
+     *
+     *     :param field_type: The discriminator literal; always ``"remote_choice"``.
+     *         Serialised as the JSON key ``"type"``.
+     *     :param endpoint_url: The fully-resolved URL the renderer fetches options
+     *         from, relative to the frontend ``apiClient`` base (``/api``).
+     *     :param depends_on: Optional name of the sibling field whose value drives
+     *         (and parameterises) the option fetch. ``None`` (the default) omits the
+     *         key from the wire so plugins that do not cascade stay byte-identical.
+     *     :param allow_custom: When ``True``, the selector also accepts a free-typed
+     *         value. ``None`` (the default) omits the key from the wire so plugins
+     *         that do not opt in stay byte-identical.
+     */
+    framework__RemoteChoiceField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on?: string | null;
+      /** Description */
+      description?: string | null;
+      /** Endpoint Url */
+      endpoint_url: string;
+      /** Forbidden */
+      forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['framework__FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'remote_choice';
     };
     /**
      * SchemaField
@@ -9267,6 +9448,23 @@ export interface components {
       updated_by?: string | null;
     };
     /**
+     * SnippetServiceTypesResponse
+     * @description Carry the whole-dataset service-type facet for the list filter.
+     *
+     *     Sourced across every snippet (not the loaded page) so the list page's
+     *     service-type dropdown can offer every value the dataset contains.
+     *
+     *     :param service_types: The sorted distinct non-blank service types.
+     *     :param has_uncategorized: Whether any snippet has an absent or blank service
+     *         type (surfaced as the "Uncategorized" filter option).
+     */
+    snippets__SnippetServiceTypesResponse: {
+      /** Has Uncategorized */
+      has_uncategorized: boolean;
+      /** Service Types */
+      service_types: string[];
+    };
+    /**
      * SnippetsCapabilitiesResponse
      * @description Represent per-deployment capability flags for the Snippets plugin.
      *
@@ -9338,6 +9536,8 @@ export interface components {
      *     :param total_run_count: The total number of times the schedule has run,
      *         or ``None`` when unavailable.
      *     :type total_run_count: int | None
+     *     :param last_run_status: The result of this schedule's own most recent run,
+     *         or ``None`` when the schedule has never run.
      *     :param chain_task_names: Ordered task names in the periodic execution
      *         chain, if any.
      *     :type chain_task_names: list[str]
@@ -9351,6 +9551,7 @@ export interface components {
       id: number;
       /** Last Run At */
       last_run_at?: string | null;
+      last_run_status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Name */
       name: string;
       /** Next Run At */
@@ -11207,6 +11408,41 @@ export interface operations {
       };
     };
   };
+  backup_mongo_backup_mongo_api_update_api_apps_backup_mongo__task_name__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['backup_mongo__BackupTaskWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['backup_mongo__BackupTaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   backup_mongo_backup_mongo_api_delete_api_apps_backup_mongo__task_name__delete: {
     parameters: {
       query?: never;
@@ -12850,6 +13086,18 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
+        /** @description Case-insensitive search over filename, title, description. */
+        search?: string | null;
+        /** @description Sort key; one of the allowlisted public sort keys. */
+        sort?: components['schemas']['SnippetSortKey'];
+        /** @description Sort direction. */
+        order?: components['schemas']['SnippetSortDirection'];
+        /** @description Approval-status filter. */
+        approval?: components['schemas']['SnippetApprovalFilter'];
+        /** @description Service-type equality filter, or omitted for no filter. */
+        service_type?: string | null;
+        /** @description When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'. */
+        uncategorized?: boolean;
       };
       header?: never;
       path?: never;
@@ -12966,6 +13214,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_service_types_api_apps_snippets_service_types_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['snippets__SnippetServiceTypesResponse'];
         };
       };
     };

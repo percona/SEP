@@ -15,8 +15,25 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, ApiError, type AppSchema } from '@sep/api';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  keepPreviousData,
+  type QueryClient,
+  type QueryKey,
+} from '@tanstack/react-query';
+import {
+  apiClient,
+  ApiError,
+  DEFAULT_APP_LIST_LIMIT,
+  DEFAULT_APP_LIST_OFFSET,
+  normalizeAppListResponse,
+  type AppListQueryOptions,
+  type AppListResult,
+  type AppSchema,
+  type PaginatedAppList,
+} from '@sep/api';
 import {
   downloadBlob,
   SNIPPETS_APPS_API_BASE,
@@ -31,14 +48,99 @@ import type {
   BatchApprovalErrorResponse,
   BatchApprovalResponse,
   RefreshResponse,
+  SnippetApprovalFilter,
   SnippetBatchApproveRequest,
   SnippetExecutionRequest,
   SnippetExecutionResponse,
   SnippetResponse,
+  SnippetServiceTypesResponse,
   SnippetsCapabilitiesResponse,
 } from './types';
 
 const SNIPPETS_BASE = SNIPPETS_APPS_API_BASE;
+
+const SNIPPETS_LIST_QUERY_KEY = ['snippets', 'list'] as const;
+
+type SnippetsListCache = AppListResult<SnippetResponse>;
+type SnippetsListSnapshots = [QueryKey, SnippetsListCache | undefined][];
+
+/**
+ * Optimistically apply a single snippet's new approval state to one cached list
+ * page, respecting that page's own approval filter (read from its query key).
+ *
+ * Under an active approval filter the mutated row may no longer belong on the
+ * page: approving under "not approved" (or un-approving under "approved") drops
+ * the row and decrements the filtered `total` so the count stays honest; every
+ * other case (notably the "all" filter) flips `is_approved` in place, preserving
+ * instant feedback. Keeping the total in step also avoids stranding the user on
+ * an out-of-range page once the trailing page empties.
+ */
+function applyApprovalToList(
+  current: SnippetsListCache | undefined,
+  queryKey: QueryKey,
+  filename: string,
+  isApproved: boolean,
+): SnippetsListCache | undefined {
+  if (!current) {
+    return current;
+  }
+  const approval = (queryKey[2] as { approval?: SnippetApprovalFilter } | undefined)?.approval;
+  const excluded =
+    (approval === 'approved' && !isApproved) || (approval === 'not_approved' && isApproved);
+  if (excluded) {
+    const present = current.items.some((snippet) => snippet.filename === filename);
+    return {
+      ...current,
+      items: current.items.filter((snippet) => snippet.filename !== filename),
+      pagination:
+        present && current.pagination
+          ? { ...current.pagination, total: Math.max(0, current.pagination.total - 1) }
+          : current.pagination,
+    };
+  }
+  return {
+    ...current,
+    items: current.items.map((snippet) =>
+      snippet.filename === filename ? { ...snippet, is_approved: isApproved } : snippet,
+    ),
+  };
+}
+
+/**
+ * Optimistically apply an approval change across every cached snippets-list
+ * page. Each page is updated through its own query key so {@link applyApprovalToList}
+ * can honour that page's approval filter. Returns the pre-mutation snapshot for
+ * rollback.
+ */
+function optimisticallyApplyApproval(
+  queryClient: QueryClient,
+  filename: string,
+  isApproved: boolean,
+): SnippetsListSnapshots {
+  const previous = snapshotSnippetsLists(queryClient);
+  for (const [queryKey] of previous) {
+    queryClient.setQueryData<SnippetsListCache>(queryKey, (current) =>
+      applyApprovalToList(current, queryKey, filename, isApproved),
+    );
+  }
+  return previous;
+}
+
+function snapshotSnippetsLists(queryClient: QueryClient): SnippetsListSnapshots {
+  return queryClient.getQueriesData<SnippetsListCache>({ queryKey: SNIPPETS_LIST_QUERY_KEY });
+}
+
+function restoreSnippetsLists(
+  queryClient: QueryClient,
+  previous: SnippetsListSnapshots | undefined,
+) {
+  if (!previous) {
+    return;
+  }
+  for (const [queryKey, data] of previous) {
+    queryClient.setQueryData(queryKey, data);
+  }
+}
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -69,17 +171,68 @@ function extractBatchApprovalError(data: unknown): BatchApprovalErrorResponse | 
 }
 
 /**
- * Fetch the list of snippet entities discovered by the backend.
+ * Server-side sort/search/filter selections for the snippets list.
+ *
+ * These map to the backend's opt-in list-query params. The caller (page) is
+ * responsible for mapping its UI sentinels onto server values — the hook forwards
+ * every *defined* value verbatim and only drops empty/undefined, so a real
+ * service type such as `"all"` is never mistaken for "no filter". ``uncategorized``
+ * is a distinct flag for "no service type" (absent or blank).
  */
-export function useSnippets() {
-  return useQuery<SnippetResponse[]>({
-    queryKey: ['snippets', 'list'],
+export type SnippetsListFilters = {
+  search?: string;
+  approval?: SnippetApprovalFilter;
+  serviceType?: string;
+  uncategorized?: boolean;
+};
+
+/**
+ * Fetch a page of snippet entities discovered by the backend.
+ */
+export function useSnippets(options?: AppListQueryOptions & SnippetsListFilters) {
+  const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
+  const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
+  const search = options?.search?.trim() || undefined;
+  const approval = options?.approval || undefined;
+  const serviceType = options?.serviceType || undefined;
+  const uncategorized = options?.uncategorized || undefined;
+
+  return useQuery<AppListResult<SnippetResponse>>({
+    queryKey: [
+      ...SNIPPETS_LIST_QUERY_KEY,
+      { offset, limit, search, approval, serviceType, uncategorized },
+    ],
+    enabled: options?.enabled !== false,
     queryFn: async () => {
-      const { data } = await apiClient.get<SnippetResponse[] | { items: SnippetResponse[] }>(
+      const { data } = await apiClient.get<SnippetResponse[] | PaginatedAppList<SnippetResponse>>(
         `${SNIPPETS_BASE}/`,
+        {
+          params: { offset, limit, search, approval, service_type: serviceType, uncategorized },
+        },
       );
-      return Array.isArray(data) ? data : data.items;
+      return normalizeAppListResponse(data);
     },
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Fetch the whole-dataset service-type facet for the list filter.
+ *
+ * Sourced across every snippet (not the loaded page) so the service-type
+ * dropdown can offer every value the dataset contains. Shares the ``['snippets']``
+ * key prefix, so {@link useRefreshSnippets} invalidates it after a refresh.
+ */
+export function useSnippetServiceTypes() {
+  return useQuery<SnippetServiceTypesResponse>({
+    queryKey: ['snippets', 'service_types'],
+    queryFn: async () => {
+      const { data } = await apiClient.get<SnippetServiceTypesResponse>(
+        `${SNIPPETS_BASE}/service_types`,
+      );
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -188,29 +341,21 @@ export function useSnippetExecution(filename: string | undefined) {
  */
 export function useApproveSnippet(filename: string) {
   const queryClient = useQueryClient();
-  return useMutation<SnippetResponse, Error, void, { previous?: SnippetResponse[] }>({
+  return useMutation<SnippetResponse, Error, void, { previous?: SnippetsListSnapshots }>({
     mutationFn: async () => {
       const { data } = await apiClient.put<SnippetResponse>(snippetAppApprovalPath(filename));
       return data;
     },
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ['snippets', 'list'] });
-      const previous = queryClient.getQueryData<SnippetResponse[]>(['snippets', 'list']);
-      if (previous) {
-        queryClient.setQueryData<SnippetResponse[]>(
-          ['snippets', 'list'],
-          previous.map((s) => (s.filename === filename ? { ...s, is_approved: true } : s)),
-        );
-      }
+      await queryClient.cancelQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
+      const previous = optimisticallyApplyApproval(queryClient, filename, true);
       return { previous };
     },
     onError: (_err, _vars, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(['snippets', 'list'], context.previous);
-      }
+      restoreSnippetsLists(queryClient, context?.previous);
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
+      queryClient.invalidateQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
     },
   });
 }
@@ -222,28 +367,20 @@ export function useApproveSnippet(filename: string) {
  */
 export function useRemoveSnippetApproval(filename: string) {
   const queryClient = useQueryClient();
-  return useMutation<void, Error, void, { previous?: SnippetResponse[] }>({
+  return useMutation<void, Error, void, { previous?: SnippetsListSnapshots }>({
     mutationFn: async () => {
       await apiClient.delete(snippetAppApprovalPath(filename));
     },
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ['snippets', 'list'] });
-      const previous = queryClient.getQueryData<SnippetResponse[]>(['snippets', 'list']);
-      if (previous) {
-        queryClient.setQueryData<SnippetResponse[]>(
-          ['snippets', 'list'],
-          previous.map((s) => (s.filename === filename ? { ...s, is_approved: false } : s)),
-        );
-      }
+      await queryClient.cancelQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
+      const previous = optimisticallyApplyApproval(queryClient, filename, false);
       return { previous };
     },
     onError: (_err, _vars, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(['snippets', 'list'], context.previous);
-      }
+      restoreSnippetsLists(queryClient, context?.previous);
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
+      queryClient.invalidateQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
     },
   });
 }
@@ -297,7 +434,7 @@ export function useBatchApproveSnippets() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['snippets', 'list'] });
+      queryClient.invalidateQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
     },
   });
 }

@@ -38,6 +38,7 @@ from app.tasks.db.engine import engine
 from app.tasks.models import (
     CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
     INVENTORY_SYNC_TASK_NAME,
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
     SYNC_RUNNING_TASKS_TASK_NAME,
     SYSTEM_USER,
     Task,
@@ -432,7 +433,7 @@ SYSTEM_TASKS = [
         data=NOMAD_RUN_PYTHON,
         protected=True,
         anonymize_mask=None,
-        output_files_path="run-script/local/output_files",
+        output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
         created_by=SYSTEM_USER,
     ),
     Task(
@@ -440,7 +441,7 @@ SYSTEM_TASKS = [
         data=NOMAD_EXEC_ARTIFACT,
         protected=True,
         anonymize_mask=None,
-        output_files_path="run-script/local/output_files",
+        output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
         created_by=SYSTEM_USER,
     ),
     Task(
@@ -448,7 +449,7 @@ SYSTEM_TASKS = [
         data=NOMAD_EXEC_PYTHON_ARTIFACT,
         protected=True,
         anonymize_mask=None,
-        output_files_path="run-script/local/output_files",
+        output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
         created_by=SYSTEM_USER,
     ),
     Task(

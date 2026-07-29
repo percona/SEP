@@ -15,8 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
 import {
   Alert,
   Box,
@@ -37,6 +37,7 @@ import {
   TableBody,
   TableCell,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Tooltip,
@@ -47,13 +48,14 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
-import { ApiError } from '@sep/api';
+import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import {
   useSnippets,
   useApproveSnippet,
   useRemoveSnippetApproval,
   useBatchApproveSnippets,
   useSnippetsCapabilities,
+  useSnippetServiceTypes,
   useRefreshSnippets,
   type BatchApproveError,
 } from './hooks';
@@ -61,6 +63,7 @@ import type {
   BatchApprovalErrorResponse,
   BatchApprovalResponse,
   RefreshResponse,
+  SnippetApprovalFilter,
   SnippetResponse,
 } from './types';
 
@@ -68,7 +71,7 @@ interface SnippetsListPageProps {
   isAdmin?: boolean;
 }
 
-type ApprovalFilter = 'all' | 'approved' | 'not_approved';
+type ApprovalFilter = SnippetApprovalFilter;
 
 /** Sentinel service-type filter value meaning "no service-type restriction". */
 const ALL_SERVICES = 'all';
@@ -90,15 +93,29 @@ function encodeServiceType(type: string): string {
   return `${SERVICE_TYPE_PREFIX}${type}`;
 }
 
+/** Decode a `MenuItem` filter value back into its real service-type string. */
+function decodeServiceType(value: string): string {
+  return value.slice(SERVICE_TYPE_PREFIX.length);
+}
+
+/** Debounce window (ms) before a search keystroke drives a server refetch. */
+const SEARCH_DEBOUNCE_MS = 300;
+
 /** Label shown for snippets that declare no `service_type`. */
 const UNCATEGORIZED_LABEL = 'Uncategorized';
 
 /**
- * Normalize a snippet's free-form `service_type` to a trimmed value, or
+ * Normalize a snippet's free-form `service_type` to a space-trimmed value, or
  * `null` when unset/blank (those snippets are grouped as "Uncategorized").
+ *
+ * Strips only U+0020 to mirror the backend facet/filter (SQL `TRIM`, which folds
+ * spaces only): a spaces-padded value reads as its trimmed self, an all-spaces
+ * value reads as "Uncategorized", and a tab/newline value survives verbatim —
+ * exactly as the server groups it — so the row label never disagrees with the
+ * Service filter.
  */
 function normalizeServiceType(snippet: SnippetResponse): string | null {
-  const value = snippet.service_type?.trim();
+  const value = snippet.service_type?.replace(/^\x20+|\x20+$/g, '');
   return value ? value : null;
 }
 
@@ -192,7 +209,75 @@ function ApproveButton({
  */
 export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const navigate = useNavigate();
-  const { data: snippets = [], isLoading, error } = useSnippets();
+  const [listPage, setListPage] = useState({
+    offset: DEFAULT_APP_LIST_OFFSET,
+    limit: DEFAULT_APP_LIST_LIMIT,
+  });
+
+  const [search, setSearch] = useState('');
+  const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>('all');
+  const [serviceTypeFilter, setServiceTypeFilter] = useState<string>(ALL_SERVICES);
+
+  // Debounce the search box so typing drives one refetch per pause, not per key.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(search.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  // Map the service-type UI selection onto the server equality param: no filter,
+  // "uncategorized" (carried by a separate flag below), or the decoded free-form
+  // value. Only the UI sentinels map to undefined — a real service type is sent
+  // verbatim, so a value equal to a sentinel is never mistaken for "no filter".
+  const serviceTypeParam = useMemo(() => {
+    if (serviceTypeFilter === ALL_SERVICES || serviceTypeFilter === UNCATEGORIZED) {
+      return undefined;
+    }
+    return decodeServiceType(serviceTypeFilter);
+  }, [serviceTypeFilter]);
+
+  const uncategorizedParam = serviceTypeFilter === UNCATEGORIZED;
+
+  // Any filter change resets to the first page so the server total and the
+  // visible rows stay in agreement.
+  useEffect(() => {
+    setListPage((prev) => ({ ...prev, offset: DEFAULT_APP_LIST_OFFSET }));
+  }, [debouncedSearch, approvalFilter, serviceTypeFilter]);
+
+  const {
+    data: listResult,
+    isLoading,
+    error,
+  } = useSnippets({
+    offset: listPage.offset,
+    limit: listPage.limit,
+    search: debouncedSearch || undefined,
+    approval: approvalFilter === 'all' ? undefined : approvalFilter,
+    serviceType: serviceTypeParam,
+    uncategorized: uncategorizedParam,
+  });
+  const snippets = listResult?.items ?? [];
+  const listPagination = listResult?.pagination ?? null;
+
+  const step = listPagination ? Math.max(listPagination.limit, 1) : 1;
+  const lastPageIndex = listPagination
+    ? Math.max(0, Math.ceil(listPagination.total / step) - 1)
+    : 0;
+  const currentPageIndex = listPagination ? Math.floor(listPagination.offset / step) : 0;
+
+  // Snap back to the last populated page when a mutation (approve / remove /
+  // batch) shrinks the filtered total below the current offset, so the user is
+  // never stranded on an out-of-range empty page. Filter-change resets are
+  // handled separately above; this covers total shrink at a fixed filter.
+  useEffect(() => {
+    if (!listPagination) {
+      return;
+    }
+    const lastOffset = lastPageIndex * step;
+    if (listPagination.offset > lastOffset) {
+      setListPage((prev) => ({ ...prev, offset: lastOffset }));
+    }
+  }, [listPagination, lastPageIndex, step]);
   const batchApprove = useBatchApproveSnippets();
   const { data: capabilities } = useSnippetsCapabilities();
   const refresh = useRefreshSnippets();
@@ -205,67 +290,35 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshSuccess, setRefreshSuccess] = useState<RefreshResponse | null>(null);
 
-  const [search, setSearch] = useState('');
-  const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>('all');
-  const [serviceTypeFilter, setServiceTypeFilter] = useState<string>(ALL_SERVICES);
-
   const showRefresh = isAdmin && capabilities?.manual_sync_enabled;
 
-  // Service-type options derived from the loaded snippets. Snippets with no
-  // service_type contribute the "Uncategorized" bucket instead of being dropped.
+  // Service-type options come from the whole-dataset facet, not the loaded page, so
+  // a type unique to a later page is still selectable. The active selection is kept
+  // selectable even if the facet momentarily lacks it (e.g. between refreshes).
+  const { data: serviceTypeFacet } = useSnippetServiceTypes();
   const { serviceTypes, hasUncategorized } = useMemo(() => {
-    const types = new Set<string>();
-    let uncategorized = false;
-    for (const snippet of snippets) {
-      const type = normalizeServiceType(snippet);
-      if (type) {
-        types.add(type);
-      } else {
-        uncategorized = true;
-      }
+    const types = new Set(serviceTypeFacet?.service_types ?? []);
+    let uncategorized = serviceTypeFacet?.has_uncategorized ?? false;
+    if (serviceTypeFilter === UNCATEGORIZED) {
+      uncategorized = true;
+    } else if (serviceTypeFilter !== ALL_SERVICES) {
+      types.add(decodeServiceType(serviceTypeFilter));
     }
     return {
       serviceTypes: Array.from(types).sort((a, b) => a.localeCompare(b)),
       hasUncategorized: uncategorized,
     };
-  }, [snippets]);
+  }, [serviceTypeFacet, serviceTypeFilter]);
 
-  // Client-side filtering over the already-loaded list (AND semantics across
-  // free-text search, approval status, and service type). No server round-trip.
-  const filteredSnippets = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return snippets.filter((snippet) => {
-      if (query) {
-        const haystack =
-          `${snippet.filename} ${snippet.title} ${snippet.description}`.toLowerCase();
-        if (!haystack.includes(query)) {
-          return false;
-        }
-      }
-      if (approvalFilter === 'approved' && !snippet.is_approved) {
-        return false;
-      }
-      if (approvalFilter === 'not_approved' && snippet.is_approved) {
-        return false;
-      }
-      if (serviceTypeFilter !== ALL_SERVICES) {
-        const type = normalizeServiceType(snippet);
-        if (serviceTypeFilter === UNCATEGORIZED) {
-          if (type !== null) {
-            return false;
-          }
-        } else if (type === null || encodeServiceType(type) !== serviceTypeFilter) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [snippets, search, approvalFilter, serviceTypeFilter]);
+  // Whether any server-side filter is active — used so the filter controls stay
+  // visible (and clearable) even when the filtered page comes back empty.
+  const hasActiveFilters =
+    debouncedSearch !== '' || approvalFilter !== 'all' || serviceTypeFilter !== ALL_SERVICES;
 
-  // Selection is scoped to the currently visible (filtered) rows so batch
-  // approval never touches snippets hidden by the active filters. Stale entries
-  // in `selected` for now-hidden rows are ignored here rather than submitted.
-  const selectableSnippets = filteredSnippets.filter((snippet) => !snippet.is_approved);
+  // Selection is scoped to the currently visible rows so batch approval never
+  // touches snippets hidden by the active filters. Stale entries in `selected`
+  // for now-hidden rows are ignored here rather than submitted.
+  const selectableSnippets = snippets.filter((snippet) => !snippet.is_approved);
   const selectedFilenames = selectableSnippets
     .filter((snippet) => selected.has(snippet.filename))
     .map((snippet) => snippet.filename);
@@ -498,7 +551,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         </DialogActions>
       </Dialog>
 
-      {snippets.length === 0 ? (
+      {snippets.length === 0 && !hasActiveFilters ? (
         <Typography color="text.secondary">No snippets available.</Typography>
       ) : (
         <>
@@ -560,7 +613,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
             </TextField>
           </Stack>
 
-          {filteredSnippets.length === 0 ? (
+          {snippets.length === 0 ? (
             <Box sx={{ py: 6, textAlign: 'center' }}>
               <Typography color="text.secondary">No snippets match the current filters.</Typography>
             </Box>
@@ -589,7 +642,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredSnippets.map((snippet) => (
+                {snippets.map((snippet) => (
                   <TableRow
                     key={snippet.filename}
                     hover
@@ -656,6 +709,22 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                 ))}
               </TableBody>
             </Table>
+          )}
+
+          {listPagination && (
+            <TablePagination
+              component="div"
+              count={listPagination.total}
+              page={Math.min(currentPageIndex, lastPageIndex)}
+              rowsPerPage={listPagination.limit}
+              onPageChange={(_event, newPage) => {
+                setListPage((prev) => ({
+                  offset: newPage * prev.limit,
+                  limit: prev.limit,
+                }));
+              }}
+              rowsPerPageOptions={[DEFAULT_APP_LIST_LIMIT]}
+            />
           )}
         </>
       )}

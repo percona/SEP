@@ -93,8 +93,9 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
 
     :param form: The form data containing backup configuration fields.
     :return: A dictionary containing backup configuration settings such as priority,
-        compression, compression level, timeouts, oplog span, and parallel collections.
-        Returns an empty dictionary if no backup configuration fields are provided.
+        compression, compression level, timeouts, oplog span, parallel collections,
+        and selective namespace flags. Returns an empty dictionary if no backup
+        configuration fields are provided.
     """
     has_backup_config = any(
         (
@@ -104,6 +105,8 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
             form.backup_timeouts_starting_status is not None,
             form.backup_oplog_span_min is not None,
             form.backup_num_parallel_collections is not None,
+            form.backup_namespaces,
+            form.backup_with_users_and_roles,
         )
     )
 
@@ -135,6 +138,12 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
             form.backup_num_parallel_collections
         )
 
+    if form.backup_namespaces:
+        backup_config_dict["namespaces"] = form.backup_namespaces
+
+    if form.backup_with_users_and_roles:
+        backup_config_dict["withUsersAndRoles"] = True
+
     return backup_config_dict
 
 
@@ -147,7 +156,7 @@ def build_backup_mongo_spec(
     ``BackupConfig`` YAML, select the ``file://`` payload by ``backup_type``, and
     stamp ``_service_name`` when a service resolved. ``backup_type`` is kept at the
     ``data`` top level — the substitution token the cascade ``DerivedTask`` payloads
-    rewrite into the logical/physical/status siblings.
+    rewrite into the logical/physical/status/incremental siblings.
 
     :param form: The validated create form (a :class:`BackupCreate`).
     :param resolved: The inventory facts resolved for this backup.

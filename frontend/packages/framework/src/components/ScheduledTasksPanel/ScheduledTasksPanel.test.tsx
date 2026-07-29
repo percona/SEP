@@ -79,7 +79,10 @@ beforeEach(() => {
 
 function setup(periodic: PeriodicTaskResponse[]) {
   useAppTasksMock.mockReturnValue({
-    data: [{ name: 'plugin-task' }, { name: 'other-plugin-task' }],
+    data: {
+      items: [{ name: 'plugin-task' }, { name: 'other-plugin-task' }],
+      pagination: null,
+    },
     isLoading: false,
     isError: false,
   });
@@ -87,6 +90,19 @@ function setup(periodic: PeriodicTaskResponse[]) {
 }
 
 describe('ScheduledTasksPanel', () => {
+  it('loads plugin tasks with fetchAllPages so schedule joins are not capped', async () => {
+    setup([]);
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+
+    await waitFor(() => {
+      expect(useAppTasksMock).toHaveBeenCalledWith(
+        'myplugin',
+        undefined,
+        expect.objectContaining({ fetchAllPages: true }),
+      );
+    });
+  });
+
   it('shows empty state when there are no scheduled tasks for the plugin', async () => {
     setup([]);
     renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
@@ -110,6 +126,56 @@ describe('ScheduledTasksPanel', () => {
     expect(screen.queryByTestId('scheduled-task-row-2')).not.toBeInTheDocument();
     expect(screen.getByText('every 1 hours')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('shows the last-run outcome badge alongside the timestamp in the Last Run cell', async () => {
+    setup([
+      makePeriodic({
+        id: 1,
+        task: 'plugin-task',
+        last_run_status: 'success',
+        last_run_at: '2026-06-18T10:00:00Z',
+      }),
+    ]);
+
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+
+    const row = await screen.findByTestId('scheduled-task-row-1');
+    const badge = row.querySelector('[data-status="success"]');
+    expect(badge).not.toBeNull();
+    expect(badge).toHaveTextContent('Done');
+    // The existing absolute timestamp is kept, not replaced by the badge.
+    expect(within(row).queryByTestId('last-run-never')).not.toBeInTheDocument();
+  });
+
+  it('shows an explicit "Not yet run" state in the Last Run cell when never run', async () => {
+    setup([makePeriodic({ id: 1, task: 'plugin-task', last_run_status: null, last_run_at: null })]);
+
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+
+    const row = await screen.findByTestId('scheduled-task-row-1');
+    expect(within(row).getByTestId('last-run-never')).toHaveTextContent('Not yet run');
+    expect(row.querySelector('[data-status]')).toBeNull();
+  });
+
+  it('shows an "Unknown" state, not "Not yet run", when the task ran but no result resolved', async () => {
+    // The backend leaves last_run_status null both for never-run tasks and for
+    // tasks that ran without a resolvable history point. A present last_run_at
+    // means the latter, so it must not be labelled "Not yet run".
+    setup([
+      makePeriodic({
+        id: 1,
+        task: 'plugin-task',
+        last_run_status: null,
+        last_run_at: '2026-06-18T10:00:00Z',
+      }),
+    ]);
+
+    renderPanel(<ScheduledTasksPanel pluginName="myplugin" />);
+
+    const row = await screen.findByTestId('scheduled-task-row-1');
+    expect(within(row).getByTestId('last-run-unknown')).toHaveTextContent('Unknown');
+    expect(within(row).queryByTestId('last-run-never')).not.toBeInTheDocument();
   });
 
   it('toggles enabled via PUT when the switch is clicked', async () => {

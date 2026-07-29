@@ -31,6 +31,6 @@
     "@tanstack/react-query": "^5.75.0",
     "react": "^19.0.0",
     "react-hook-form": "^7.72.1",
-    "react-router-dom": "^7.6.0"
+    "react-router": "^8.3.0"
   }
 }
