@@ -302,6 +302,28 @@ describe('ResultsPane diagnostics send', () => {
     expect(screen.getByRole('button', { name: 'Re-send' })).toBeTruthy();
   });
 
+  it('keeps Re-send disabled while delivery is unconfigured', async () => {
+    routeGet({
+      executions: { items: [FINISHED_EXECUTION], total: 1, offset: 0, limit: 20 },
+      sendJobs: {
+        items: [failedJob({ error: 'upstream exploded', executions: [FINISHED_EXECUTION] })],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      },
+      config: { send_disabled_reasons: ['Diagnostics delivery is not configured'] },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Re-send' })).toBeTruthy();
+    });
+    expect((screen.getByRole('button', { name: 'Re-send' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
   it('renders pagination controls once the list exceeds one page', async () => {
     routeGet({
       executions: { items: [FINISHED_EXECUTION], total: 40, offset: 0, limit: 20 },

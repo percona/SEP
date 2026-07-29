@@ -253,6 +253,7 @@ export function ResultsPane({ incidentId }: ResultsPaneProps) {
         total={sendJobs?.total}
         error={sendJobsError}
         onResend={openSend}
+        disabledReasons={disabledReasons}
       />
 
       <TaskFilesDialog
@@ -286,12 +287,17 @@ function SendHistory({
   total,
   error,
   onResend,
+  disabledReasons,
 }: {
   jobs: AtwSendLog[] | undefined;
   total: number | undefined;
   error: Error | null;
   onResend: (context: ResendContext) => void;
+  disabledReasons: string[];
 }) {
+  const resendDisabled = disabledReasons.length > 0;
+  const resendTooltip = disabledReasons.join('; ');
+
   if (error) {
     return (
       <Alert severity="error" sx={{ mt: 3 }}>
@@ -326,17 +332,22 @@ function SendHistory({
                 {job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ''}
               </Typography>
               {job.status === 'failed' && (
-                <Button
-                  size="small"
-                  onClick={() =>
-                    onResend({
-                      executions: detail.executions ?? [],
-                      caseRef: job.case_ref,
-                    })
-                  }
-                >
-                  Re-send
-                </Button>
+                <Tooltip title={resendTooltip}>
+                  <span>
+                    <Button
+                      size="small"
+                      disabled={resendDisabled}
+                      onClick={() =>
+                        onResend({
+                          executions: detail.executions ?? [],
+                          caseRef: job.case_ref,
+                        })
+                      }
+                    >
+                      Re-send
+                    </Button>
+                  </span>
+                </Tooltip>
               )}
               {job.status === 'failed' && detail.error && (
                 <Typography variant="body2" color="error" sx={{ width: '100%' }}>
