@@ -173,6 +173,15 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
+    // Send-job history (GET) for the incident.
+    if (pathname.endsWith(`/incidents/${INCIDENT_ID}/send-jobs/`) && req.method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(paginated([])),
+      });
+    }
+
     // Single incident (workspace header).
     if (pathname.endsWith(`/incidents/${INCIDENT_ID}`) && req.method() === 'GET') {
       return route.fulfill({
@@ -206,6 +215,15 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(MOCK_ATW_LIST),
+      });
+    }
+
+    // Diagnostics-send availability probe.
+    if (pathname.endsWith('/atw/config/') && req.method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ send_disabled_reasons: [] }),
       });
     }
 

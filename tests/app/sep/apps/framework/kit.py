@@ -290,7 +290,7 @@ class MockTaskAPI:
             if item.get("status") is not None
             and (f := item.get("finished_at")) is not None
         ]
-        return {"status": status, "finished_at": max(finishes) if finishes else None}
+        return {"status": status, "finished_at": max(finishes, default=None)}
 
     def _create(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.create_count += 1

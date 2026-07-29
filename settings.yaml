@@ -172,6 +172,17 @@ default:
     #         table_name: {source: literal, value: sn_customerservice_case}
     #         table_sys_id: {source: output, step: lookup, output: sys_id}
     #       reference_pointer: /result/sys_id
+    #
+    # Staging and housekeeping for the diagnostics sends that use the plan above.
+    # Read from YAML/env only (env prefix `SEP__ATW__`); defaults shown.
+    #   ATW:
+    #     bundle_dir: data/atw-bundles     # where a bundle is staged while it uploads
+    #     bundle_ttl: 3600                 # seconds before an abandoned bundle is reaped
+    #     cleanup_interval:                # `null` unregisters the sweep entirely
+    #       every: 15
+    #       period: minutes
+    #     stale_send_after: 3600           # seconds a send may stall before it is failed;
+    #                                      # must exceed the slowest legitimate send
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
