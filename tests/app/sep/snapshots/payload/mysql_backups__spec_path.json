@@ -19,8 +19,10 @@
     },
     "is_template": false,
     "name": "backups-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "binlog_rsync_no_alt": {
     "alert_detail_builder": null,
@@ -42,8 +44,10 @@
     },
     "is_template": false,
     "name": "backups-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "mydumper_rsync": {
     "alert_detail_builder": null,
@@ -65,8 +69,10 @@
     },
     "is_template": false,
     "name": "backups-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "mydumper_s3_encrypt_post_run": {
     "alert_detail_builder": null,
@@ -134,7 +140,9 @@
     },
     "is_template": false,
     "name": "backups-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   }
 }

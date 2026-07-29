@@ -183,6 +183,15 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
         <br>
         <br>
     {% endif %}
+    {% if history_incremental %}
+        <section>
+            <h2>Incremental Backup Runs</h2>
+            {% set history_tasks = history_incremental %}
+            {% include "tasks/partials/completed-tasks.html.j2" %}
+        </section>
+        <br>
+        <br>
+    {% endif %}
     <section>
         <h2>Config Sync</h2>
         {% set history_tasks = history %}
