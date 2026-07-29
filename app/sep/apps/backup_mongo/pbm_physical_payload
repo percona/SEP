@@ -4,6 +4,7 @@ import subprocess
 import os
 import sys
 import time
+import traceback
 import yaml
 
 PBM_METRIC_TYPE = "PBM Physical"
@@ -147,9 +148,7 @@ def _apply_pbm_config(config: dict) -> None:
     :param config: The parsed task config; SEP-only and ``None``-valued keys are
         dropped before it is written to the PBM config file.
     """
-    sep_only_keys = frozenset(
-        {"credentials_path", "credentialsPath", "alias", "ALIAS"}
-    )
+    sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
     # Selective --ns flags live under backup for NOMAD_META_CONFIG readers but are
     # not valid PBM config keys, so strip them before ``pbm config --file``.
     sep_only_backup_keys = frozenset({"namespaces", "withUsersAndRoles"})
@@ -227,24 +226,13 @@ def _textfile_collector_dir() -> str:
 def _metric_alias() -> str:
     """Return the host alias for metric labels.
 
-    Prefer the ``alias`` the SEP spec builder stamps into ``NOMAD_META_CONFIG``;
-    the metrics reuse it so the PMM ``StaleBackup`` rules can join the enable and
-    last-report series ``on(type, alias)``. Tasks created before the alias was
-    stamped carry no ``alias`` key in their stored config, so fall back to
-    ``NOMAD_META_TARGET`` -- the same host identity Nomad always sets as the task
-    target -- rather than emit an unidentifiable empty label. Returns ``""`` only
-    when neither is resolvable, so a missing label never aborts the backup.
+    Use ``NOMAD_META_TARGET`` -- the host identity Nomad always sets from the
+    task target -- so the PMM ``StaleBackup`` rules can join the enable and
+    last-report series ``on(type, alias)``. Returns ``""`` when it is unset, so a
+    missing label never aborts the backup.
 
-    :return: The alias string, or ``""`` when it cannot be resolved.
+    :return: The alias string, or ``""`` when the target is unset.
     """
-    raw = os.environ.get("NOMAD_META_CONFIG")
-    if raw:
-        try:
-            config = yaml.safe_load(raw)
-        except yaml.YAMLError:
-            config = None
-        if isinstance(config, dict) and config.get("alias"):
-            return str(config["alias"])
     return os.environ.get("NOMAD_META_TARGET", "")
 
 
@@ -281,8 +269,7 @@ def _write_textfile_metric(filename: str, body: str) -> None:
     """Write a ``.prom`` file into the collector directory, best-effort.
 
     Skip silently when the collector directory is absent (mirroring the
-    MySQL/PG ``check_textcollector_dir`` guard) and swallow any write error --
-    including a ``ValueError`` from a NUL byte that slipped into the path -- so
+    MySQL/PG ``check_textcollector_dir`` guard) and swallow any write error so
     metric emission never changes the backup's exit status or aborts the run.
 
     :param filename: The ``.prom`` file name to write under the collector dir.
@@ -294,7 +281,7 @@ def _write_textfile_metric(filename: str, body: str) -> None:
     try:
         with open(os.path.join(collector_dir, filename), "w", encoding="utf-8") as out:
             out.write(body)
-    except (OSError, ValueError) as err:
+    except OSError as err:
         print(
             f"Failed to write textfile-collector metric {filename}: {err}",
             file=sys.stderr,
@@ -371,6 +358,9 @@ def pbm():
         raise
     except Exception as err:
         write_backup_status(PBM_METRIC_TYPE, 1)
+        # These payloads run unattended and the task log is the only diagnostic
+        # surface, so dump the full traceback before the one-line summary.
+        traceback.print_exc()
         print(f'Failed to run pbm: {err}', file=sys.stderr)
         sys.exit(1)
     if ret_code != 0:
