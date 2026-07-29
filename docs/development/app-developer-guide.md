@@ -20,8 +20,8 @@ The code examples are lifted from real, CI-exercised code in the SEP tree; each
 carries an HTML comment naming its source file and symbol (e.g.
 `<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->`) so you can
 diff it against the source as the framework evolves. Long docstrings are
-shortened to their summary line, and larger trims are noted inline. The two
-examples labelled `constructed` illustrate features no current app uses.
+shortened to their summary line, and larger trims are noted inline. Examples
+labelled `constructed` illustrate features no current app uses.
 
 ---
 
@@ -46,11 +46,43 @@ A few terms this guide uses throughout:
 ## Table of contents
 
 1. [Mental model](#1-mental-model)
+   - [You describe the app; the framework builds it](#you-describe-the-app-the-framework-builds-it)
+   - [`BaseApp` vs `TaskExecutionApp`](#baseapp-vs-taskexecutionapp)
+   - [How the registry discovers and activates apps](#how-the-registry-discovers-and-activates-apps)
+   - [What "derived router" means](#what-derived-router-means)
+   - [The copy hazard](#the-copy-hazard--scaffold-never-copy-a-whole-app)
 2. [Snippet or framework app?](#2-snippet-or-framework-app)
+   - [The routing rule](#the-routing-rule)
+   - [Mapping the three scaffolder flavors](#mapping-the-three-scaffolder-flavors)
 3. [Quickstart](#3-quickstart)
+   - [What the scaffolder generates](#what-the-scaffolder-generates)
+   - [What the scaffolder writes automatically](#what-the-scaffolder-writes-automatically)
+   - [The manual steps that remain](#the-manual-steps-that-remain) — including
+     [no database migration](#no-database-migration)
+   - [Verify it end to end](#verify-it-end-to-end)
 4. [Form DSL reference](#4-form-dsl-reference)
+   - [`AppFormModel` / `TaskFormModel` and `Ui()`](#appformmodel--taskformmodel-and-ui)
+   - [`ArgFormat`](#argformat)
+   - [`Choices` and `Option`](#choices-and-option)
+   - [`FieldWidget`](#fieldwidget)
+   - [The four reference markers](#the-four-reference-markers)
+   - [`FormLayout` and `SectionLayout`](#formlayout-and-sectionlayout)
+   - [The predicate DSL (`rules.py`)](#the-predicate-dsl-rulespy)
+   - [`Requires` / `Forbidden` — per-field gates](#requires--forbidden--per-field-gates)
 5. [Escape-hatch ladder](#5-escape-hatch-ladder)
+   - [Rung 1 — `AppCapabilities` flags](#rung-1--appcapabilities-flags) — which
+     derived routes exist, and which are on by default
+   - [Rung 2 — `extra_routes`](#rung-2--extra_routes)
+   - [Rung 3 — handler overrides](#rung-3--handler-overrides)
+   - [Rung 4 — `response_context_provider` and cascade hooks](#rung-4--response_context_provider-and-cascade-hooks)
+   - [Rung 5 — fall back to `BaseApp`](#rung-5--fall-back-to-baseapp)
+   - [Script-backed apps: `ScriptSource`](#script-backed-apps-scriptsource)
 6. [Testing](#6-testing)
+   - [The derived-router contract suite](#the-derived-router-contract-suite)
+   - [The shared fixtures](#the-shared-fixtures)
+   - [Testing a form rule](#testing-a-form-rule)
+   - [Factory conventions](#factory-conventions)
+   - [How conformance runs in CI](#how-conformance-runs-in-ci)
 
 ---
 
@@ -112,6 +144,18 @@ Four knobs carry the weight: `create_model` (the form/body model, [§4](#4-form-
 and the builder that turns a validated form into a task payload — `task_spec_builder`
 or `payload_builder`, covered in [§3](#3-quickstart) below.
 
+`capabilities` toggles six of the derived routes: **`create`, `list`, `detail`,
+and `execute` default on; `update` and `delete` default off** — which is why a
+fresh app has no PUT or DELETE until you ask for one. The seventh derived
+route, `GET /schema`, is always on and not switchable.
+[Rung 1](#rung-1--appcapabilities-flags) covers changing these.
+
+The remaining knobs above carry identity and navigation — `uri_path`,
+`css_class`, `nav_order`, `nav_icon`, `owner`, `service_type`, `list_filter`.
+The scaffolded `app.py`'s docstring documents each one at the point you would
+edit it; its defaults are fine until you care about sidebar placement and list
+filtering.
+
 ### How the registry discovers and activates apps
 
 Apps are **not** wired by hand into a router file. Activation is data, in
@@ -142,40 +186,19 @@ def get_app_registry() -> AppRegistry:
 ```
 
 The registry is a lazy `@lru_cache` accessor, built once per process from
-`sep_settings.APPS`. `build_apps_router` then iterates that registry and mounts each
-app's derived router under `/api/apps/{key}`:
+`sep_settings.APPS`. `build_apps_router` (`app/sep/api/router.py`) then iterates
+that registry and mounts each app's derived router under `/api/apps/{key}`:
 
 <!-- src: app/sep/api/router.py :: build_apps_router -->
 ```python
-def build_apps_router(registry: AppRegistry) -> APIRouter:
-    """Build the ``/apps`` sub-router by iterating the app registry."""
-    apps_router = APIRouter(
-        prefix="/apps", dependencies=[RequireBearerForUnsafeMethods]
-    )
     for app in registry:
         if app.api_router is None:
             continue
-        plugin_deps = (
-            []
-            if app.state_key in PROTECTED_APP_KEYS
-            else [Depends(require_app_enabled(app.key))]
-        )
-        apps_router.include_router(
-            app.api_router,
-            prefix=f"/{app.key}",
-            tags=[] if app.api_router.tags else [app.key],
-            dependencies=plugin_deps,
-        )
-    return apps_router
+        apps_router.include_router(app.api_router, prefix=f"/{app.key}", ...)
 ```
 
-> **Location note:** `build_apps_router` lives in `app/sep/api/router.py`, **not** in
-> `framework/registry.py`. `get_app_registry()` / `build_app_registry()` live in
-> `framework/registry.py`; the router that consumes the registry lives with the
-> other SEP API routers.
-
 An app registered with `ENABLED: false` is discovered but its routes are guarded by
-a per-app enable check (the `require_app_enabled` dependency in the loop above) —
+a per-app enable check (a `require_app_enabled` dependency added in that loop) —
 an admin turns it on from the sidebar's top-level **Apps** page (`/admin/apps`)
 without a redeploy.
 
@@ -187,9 +210,12 @@ the app object and the framework **derives** those routes from it. The
 `GET /schema` form comes from the `create_model` and `views`; `POST /` validates the
 body against `create_model` and turns it into a task through the app's
 `task_spec_builder` or `payload_builder` ([§3](#3-quickstart) covers the two);
-`PUT`/`DELETE` are switched on by `capabilities` and carry the framework's default
-protected-task and running-conflict guards. You do not see the route functions —
-they are built for you from the knobs.
+`PUT`/`DELETE` are switched on by `capabilities` and carry two default guards,
+both answering HTTP 409: the **protected-task** guard refuses to mutate a task
+whose `protected` flag is set (system-owned tasks set it so they cannot be
+edited or deleted through the API), and the **running-conflict** guard refuses
+to mutate a task that currently has a running or pending run. You do not see
+the route functions — they are built for you from the knobs.
 
 ### The copy hazard — scaffold, never copy a whole app
 
@@ -215,9 +241,14 @@ ways to ship a runnable tool, and the scaffolder's three flavors map onto them.
 - **A flat, parameterized script** belongs in an **in-script YAML snippet** —
   the Snippet Manager runs it, and the form is described in a YAML header
   alongside the script. This needs no `make startapp` at all: drop the
-  script, frontmatter included, into the existing Snippet Manager catalog.
-  Choose this when the check is a single command whose only inputs are
-  simple parameters.
+  script, frontmatter included, into the existing Snippet Manager catalog at
+  `snippets/` in the repo root. The frontmatter is a commented YAML block
+  (each line prefixed `# `) opening and closing on `# ---`, carrying `title`,
+  `description`, `sudo`, `allow_extra_args`, and a `parameters` list whose
+  entries give each form field's `name`, `type`, `label`, and `description`;
+  the ~90 scripts already in that directory are the working reference —
+  `snippets/disk_usage.sh` is a short one to copy the shape from. Choose this
+  when the check is a single command whose only inputs are simple parameters.
 - **Anything that needs inventory or rules between fields** belongs in a
   **framework app**. Choose this when the form must offer values resolved from
   inventory (service / schema / table / host), enforce cross-field rules ("this
@@ -245,23 +276,58 @@ step down to `base` later if the derived router genuinely cannot express your ap
 
 ## 3. Quickstart
 
-`make startapp` scaffolds a new app end to end. It runs an interactive wizard
-whenever standard input is a TTY — with or without variables on the command
-line, since a supplied variable only pre-fills and skips that one prompt, and a
-final confirmation still gates the write. Pass `NO_INPUT=1` (or pipe/redirect
-stdin) to skip the wizard entirely; every other unset field then resolves to
-its default, but `NAME` has no default outside the wizard and must still be
-supplied:
+`make startapp` scaffolds a new app end to end. Three rules govern how it asks
+you for things:
+
+- **The wizard runs whenever standard input is a TTY** — with or without
+  variables on the command line.
+- **A variable you supply pre-fills and skips its own prompt**, and nothing
+  else. Supplying variables does not turn the wizard off.
+- **`NO_INPUT=1` (or piped/redirected stdin) skips the wizard entirely.** Every
+  unset field then takes its default — except `NAME`, which has no default
+  outside the wizard and must be supplied.
+
+Either way a final confirmation gates the write.
 
 ```bash
 make startapp NAME=myapp TYPE=task DISPLAY_NAME="My App" \
     DESCRIPTION="Run my check." NAV_ICON=CHECK_CIRCLE
 ```
 
-Recognised variables: `NAME`, `TYPE` (`task` / `script` / `base`), `DISPLAY_NAME`,
-`DESCRIPTION`, `GROUP`, `SERVICE_TYPE`, `NAV_ICON`, `RUN_MODE` (`run-command` /
-`run-python`, task flavor only), `COMMAND`, `PAYLOAD`, `SCRIPT`, `NO_INPUT`,
-`ENABLE`, `DERIVE_UPDATE`, `DERIVE_DELETE`.
+Recognised variables:
+
+| Variable | Meaning |
+|---|---|
+| `NAME` | The app's module name under `app/sep/apps/`. No default — always required. |
+| `TYPE` | Scaffolder flavor: `task` / `script` / `base` ([§2](#mapping-the-three-scaffolder-flavors)). Defaults to `task`. |
+| `DISPLAY_NAME` | The name shown in the sidebar and page headings. |
+| `DESCRIPTION` | One-line blurb for the app's landing card and `description` knob. |
+| `GROUP` | Which sidebar group the app is listed under. |
+| `SERVICE_TYPE` | The `ServiceTypeEnum` member the generated `ServiceRef` field filters inventory by (`MYSQL`, `MONGODB`, …). Defaults to `MYSQL`. |
+| `NAV_ICON` | The `NavIcon` member for the sidebar entry. |
+| `RUN_MODE` | `run-command` or `run-python`, task flavor only. See below. Defaults to `run-command`. |
+| `COMMAND` | For `run-command`: the executable the generated spec builder invokes. |
+| `PAYLOAD` | For `run-python`: a Python payload file to copy into the app. |
+| `SCRIPT` | For the `script` flavor: a script file to seed the catalog with, replacing `snippets/sample.sh`. |
+| `NO_INPUT` | Skip the wizard (see above). Triggered by *any* non-empty value — `NO_INPUT=0` still skips it; leave the variable unset to keep the wizard. |
+| `ENABLE` | Register the app **enabled** in `settings.yaml` instead of disabled. Presence-triggered like `NO_INPUT`. |
+| `DERIVE_UPDATE` / `DERIVE_DELETE` | Whether the generated `app.py` switches on the derived `update` / `delete` routes. Both default **true** here — note this is the opposite of `AppCapabilities`' own defaults ([Rung 1](#rung-1--appcapabilities-flags)), so a scaffolded app ships with PUT and DELETE derived; pass `0`, `false`, or `no` to leave them off. |
+
+**`RUN_MODE` — the one choice the wizard makes you take early.** It selects
+which kind of task envelope the generated `spec.py` builds:
+
+- **`run-command`** (the default) runs an **executable on the target host**. The
+  generated spec builder returns a `RunCommandSpec` — a command name plus an
+  argument string assembled from your form's `ArgFormat` fields. Choose it when
+  your app shells out to a binary (`pt-table-checksum`, `mysqldump`, a script
+  on the host).
+- **`run-python`** runs a **Python payload** shipped with the task. The spec
+  builder returns a `RunPythonSpec` — a serialized config, a pip requirements
+  string, and a `file://` payload URI. Choose it when the work is Python code
+  you write rather than a command you invoke.
+
+Keep `run-command` unless you are shipping a Python payload; it is the path the
+rest of this guide's examples follow.
 
 ### What the scaffolder generates
 
@@ -302,7 +368,9 @@ the sidebar (/admin/apps) once you have filled in the skeleton.
 ```
 
 The scaffolder prints absolute paths (shown above with a `<repo-root>`
-placeholder).
+placeholder). In a dev venv that has `ruff` installed, a few auto-fix lines
+(`Fixed 4 errors: ... I001 unsorted-imports`) precede this output — that is the
+scaffolder tidying its own render, not errors in your app.
 
 The resulting `settings.yaml` entry:
 
@@ -325,20 +393,32 @@ The scaffolder does **not** finish the app for you. After scaffolding:
    sidebar's top-level **Apps** page (`/admin/apps`), or scaffold with `ENABLE`
    for a dev box.
 
-The generated `spec.py` implements a `task_spec_builder`: a pure
-`(form, resolved) -> EnvelopeSpec` function the three-phase create path calls
-after resolving the form's reference fields — it is what the `task` flavor's
-`app.py` wires (`task_spec_builder=build_<name>_spec`), and its stub docstring
-is the authoritative walk-through of the `RunCommandSpec` / `build_command_args`
-contract. `payload_builder` is a different knob: a `(form, inventory_api) ->
-TaskWrite` dependency used directly as the create payload, bypassing the
-three-phase path entirely. The two are mutually exclusive. Checksums uses
-`payload_builder` rather than the scaffolded default because two of its fields
-(`databases`, `tables`) are multi-value `SchemaRef`/`TableRef` selections, and
-the three-phase path's standard resolution only resolves single-id reference
-fields — a list value comes back unresolved. `build_checksums_payload` runs its
-own multi-value resolution before assembling the task, which `task_spec_builder`'s
-fixed signature has no room for.
+**The scaffolded `spec.py` is right for almost every app — fill it in and move
+on.** `payload_builder` is the exception, and only for multi-value reference
+fields; the rest of this paragraph is why.
+
+The derived `POST /` runs a **three-phase create path**: *resolve* the form's
+reference fields against inventory (`resolve_refs`, the only step that touches
+the inventory API), *build a spec* from the form plus those resolved entities
+(your pure spec builder), then *assemble the envelope* into the `TaskWrite`
+that gets submitted (`assemble_envelope`). The generated `spec.py` implements
+the middle phase as a `task_spec_builder`: a pure
+`(form, resolved) -> RunCommandSpec | RunPythonSpec` function, wired by the
+`task` flavor's `app.py` as `task_spec_builder=build_<name>_spec`. Its stub
+docstring documents that contract's default path — the `RunCommandSpec` /
+`build_command_args` shape you fill in.
+
+`payload_builder` is a different knob: a `(form, inventory_api) -> TaskWrite`
+dependency used directly as the create payload, bypassing the three-phase path
+entirely. The two are mutually exclusive.
+
+> Checksums uses `payload_builder` rather than the scaffolded default because
+> two of its fields (`databases`, `tables`) are multi-value `SchemaRef` /
+> `TableRef` selections, and the resolve phase only resolves single-id
+> reference fields — a list value comes back unresolved.
+> `build_checksums_payload` runs its own multi-value resolution before
+> assembling the task, which `task_spec_builder`'s fixed signature has no room
+> for.
 
 For the schema-driven `task` and `script` flavors, no frontend work is
 needed: once enabled, the app appears in the sidebar and its pages render
@@ -348,7 +428,10 @@ it scaffolds with `custom_ui=True`, so it must register a component in
 `frontend/packages/shell/src/appRegistry.tsx` and route metadata in
 `appNavConfig.ts`; the schema-driven flavors need no such entry.
 
-Task apps need **no database migration** — tasks are stored generically.
+#### No database migration
+
+Task apps need **no database migration** — tasks are stored generically, so
+there is no per-app table to create and no Alembic revision to write.
 
 ### Verify it end to end
 
@@ -359,8 +442,16 @@ against your definition:
 pytest tests/app/sep/apps/myapp/test_contract.py -v
 ```
 
-Then run SEP locally and open the app from the sidebar — the form you declared
-in `models.py` is what renders.
+Expect a green run with a substantial number of **skips** — that is normal, not
+a misconfiguration. The suite is capability-gated: every case whose knob your
+app does not switch on (an undeclared list filter, a disabled capability, a
+form with no `HostRef`) skips with a reason rather than failing.
+
+Then run SEP locally — see
+[Setting Up Your Development Environment](../../CONTRIBUTING.md#setting-up-your-development-environment)
+for the commands — and open the app from the sidebar. Remember it is registered
+**disabled**, so enable it on the Apps page (`/admin/apps`) first. The form you
+declared in `models.py` is what renders.
 
 The CI `startapp-check` gate (`make startapp-check`, wired into
 `.github/workflows/python.yaml`) scaffolds all three flavors non-interactively
@@ -375,17 +466,33 @@ The form DSL is **model-first**: one model class is *both* the request body the
 server validates *and* the source of the derived `GET /schema` form. You annotate
 each field with markers — `Ui(...)` for presentation, reference markers for
 inventory, `Choices(...)`/`ArgFormat(...)` for behaviour — and the framework derives
-the form and the command from them. The markers and models (`Ui`, the reference
-markers, `Choices`, `AppFormModel`, ...) are exported from
-`app/sep/apps/framework/form_dsl/__init__.py`; the predicate/rules DSL covered
-later in this section (`F`, `FailRule`, `FieldGate`, `CardinalityRule`, the
-truthiness predicates) lives in and is exported from
-`app/sep/apps/framework/rules.py`.
+the form and the command from them.
+
+**Where each name is imported from.** The split runs between *markers* (things
+you attach to a field) and *rules* (things you build predicates out of):
+
+| Import from | Names |
+|---|---|
+| `app/sep/apps/framework/form_dsl` | `AppFormModel`, `TaskFormModel`, `Ui`, `Hidden`, `ArgFormat`, `Choices`, `Option`, `RemoteChoices`, `FieldWidget`, the four reference markers, `FormLayout` / `SectionLayout`, the rule **containers** `FormRules` / `SectionRules`, **and the per-field gate markers `Requires` / `Forbidden`** |
+| `app/sep/apps/framework/rules.py` | `F`, the truthiness predicates, the combinators, and the rule envelopes `FailRule` / `FieldGate` / `CardinalityRule` |
+| `app/core/utils/fields.py` | The helper field types the examples below use: `NonEmptyStr`, `StrippedNonEmptyStr`, `EmptyStrToNone` |
+
+`Requires` / `Forbidden` are the trap: this guide introduces them alongside the
+predicate DSL because they take predicates, but they are form-DSL **markers**
+— import them from `form_dsl` beside `Ui`, not from `rules.py`.
 
 **How to read the examples.** Every field has the shape
 `name: Annotated[type, markers…] = default`. `Annotated` is Python's way of
 attaching extra information to a type: the first element is the field's real
 type; everything after it is a marker the framework reads.
+
+**How a field becomes required.** A field with **no default** — no `= ...` after
+the annotation — is required, and the server rejects a body that omits it. A
+field **with** a default is optional. That is plain Pydantic, and it is the
+mechanism to reach for. `Ui(required=...)` is a *presentation* override: it
+changes only the `required` flag the derived schema puts on the wire, for the
+case where a field carries a default yet must still render as required. It
+never changes what the server accepts — nothing on `Ui` does.
 
 ### `AppFormModel` / `TaskFormModel` and `Ui()`
 
@@ -393,7 +500,11 @@ type; everything after it is a marker the framework reads.
 capability control (a field marked `Hidden()` stays on the model but is omitted
 from the form). `TaskFormModel` extends it for task apps, supplying the shared
 `task_name` / `hostname` Task-section fields, so your model declares only its
-own fields.
+own fields. **The `task` scaffold generates a `TaskFormModel` subclass**, so a
+freshly scaffolded `models.py` already has those two fields and you add yours
+below them. Subclass `AppFormModel` directly only for a form that needs no Task
+section at all — a `TaskFormModel` subclass's layout must include one.
+
 `Ui(...)` carries the per-field presentation the type cannot express — label,
 section, description, display order, dependency:
 
@@ -415,9 +526,30 @@ from their declaration order (see the model's docstring).
 
 ### `ArgFormat`
 
-`ArgFormat` marks a field as a command-line argument and controls how it is rendered
-into the command. A bare `ArgFormat()` derives the flag name from the field name;
-`ArgFormat("--explain")` pins an explicit flag:
+`ArgFormat` marks a field as a command-line argument and controls how it is
+rendered into the command. It renders **two different kinds** of argument, and
+the field's type picks which:
+
+- A **`bool`** field is a **flag**: the template is emitted verbatim, and only
+  when the value is `True`.
+- **Any other** field is a **value arg**: the template must contain a
+  `${value}` placeholder, and is emitted with the field's value shlex-quoted
+  and substituted in — only when the value is truthy.
+
+A bare `ArgFormat()` derives the template from the field's name and type:
+`--kebab-field-name` for a `bool`, `--kebab-field-name=${value}` for anything
+else. Pin an explicit template only when the CLI spelling diverges from the
+field name — `ArgFormat("--explain")` for a flag on a field named
+`explain_arg`, `ArgFormat("--databases=${value}")` for a value arg.
+
+> **⚠ These rules are enforced when your app is imported, not at runtime.** A
+> template with no `${value}` on a non-`bool` field is rejected ("a flag arg
+> requires a bool field"), as is a `${value}` anywhere but the terminal
+> `=${value}` position — the reverse parser splits a value arg on its first
+> `=`. Writing `ArgFormat("--reason")` on a `str` field is the easy mistake:
+> that spells a *flag*, and the app will not import.
+
+The bool/flag case, from Checksums:
 
 <!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->
 ```python
@@ -431,6 +563,22 @@ explain_arg: Annotated[
     ),
 ] = False
 ```
+
+No app in the tree pins an explicit **value-arg** template today, so this
+counterpart is **constructed**:
+
+<!-- constructed -->
+```python
+databases: Annotated[
+    str,
+    ArgFormat("--databases=${value}"),
+    Ui(label="Databases", section="Task"),
+] = ""
+```
+
+With both fields set, `build_command_args` yields
+`['--databases=sales,orders', '--explain']`; with `explain_arg=False` and
+`databases="sales"`, just `['--databases=sales']`; with both left empty, `[]`.
 
 ### `Choices` and `Option`
 
@@ -555,12 +703,24 @@ db_table: Annotated[
 `depends_on` chains the dropdowns: choosing a service scopes the schema options,
 choosing a schema scopes the table options.
 
+The `int | StrippedNonEmptyStr` union on the two `allow_custom=True` fields is
+doing real work: the field accepts **either** an inventory id (the `int`, when
+the user picks from the dropdown) **or** a typed-in name (the string). A field
+without `allow_custom` is typed plain `int` — inventory selections only.
+
 ### `FormLayout` and `SectionLayout`
 
 Field **membership** and **order** in sections are declared on the model (via
 `Ui(section=...)` and declaration order). The section **titles and metadata** — what
 the model cannot express — live in `FormLayout` / `SectionLayout` inside the app's
-`Views`:
+`Views`.
+
+A section **key** is an opaque string, matched **exactly**: every
+`Ui(section="X")` must have a `SectionLayout(key="X")` in the layout, case
+included, or the derivation rejects the model. Apps differ in convention —
+Checksums capitalises (`section="Recursion"` / `key="Recursion"`), Alters does
+not (`section="data"` / `key="data"`) — which is why the examples here and just
+above disagree. Pick one convention per app and hold it.
 
 <!-- src: app/sep/apps/checksums/views.py :: checksums_views -->
 ```python
@@ -590,24 +750,70 @@ checksums_views = Views(
 )
 ```
 
+> **Not to be confused with `AppCapabilities`**
+> ([Rung 1](#rung-1--appcapabilities-flags)). Two different classes share the
+> `capabilities` knob name: `AppCapabilities`, on the **app**, switches derived
+> **routes** on and off; `Capabilities`, here inside `Views`, switches **UI
+> features** of the rendered pages. Their flags do not overlap.
+
+The five `Capabilities` flags, all defaulting to `False`:
+
+| Flag | Effect when `True` |
+|---|---|
+| `chaining` | The app supports chaining tasks together. |
+| `alert_on_fail` | The app supports configuring a PMM alert when a task fails, and renders the control (this is what the inherited hidden `alert_on_fail` field backs). |
+| `scheduling` | The app supports scheduling tasks on a periodic interval. |
+| `stats` | The detail page renders the aggregated execution-statistics card. |
+| `pii_anonymization` | The detail view renders the "PII Anonymization" section. Purely a rendering gate — anonymization itself always happens when `anonymize_mask` is configured. |
+
 `SectionLayout` also carries `collapsible` / `collapsed_by_default` and the
 section-level `forbidden` gates shown in the predicate DSL below.
 
 ### The predicate DSL (`rules.py`)
 
 For rules that span more than one field, the framework has a small predicate
-DSL: the field reference `F(...)`, the truthiness predicates (`truthy`, `present`,
-`falsy`, `absent`, and multi-field siblings named on the same pattern —
-`any_truthy`/`all_truthy`, `any_present`/`all_present`, `any_falsy`/`all_falsy` —
-except `absent`, whose multi-field counterpart is `none_present`; the full set
-lives in `app/sep/apps/framework/rules.py`), boolean combinators (`&`, `|`, `^`,
-`~`, or their `all_`/`any_`/`xor_`/`not_` function-call forms), the
-per-field gate markers `Requires` / `Forbidden`, and three rule envelopes —
-`FailRule` (reject a form when a predicate holds), `FieldGate` (gate a field or
-section), and `CardinalityRule` (bound the count of present fields). App-scoped
-rules live in a `FormRules` object on `__form_rules__`.
+DSL, in five parts:
 
-**`FailRule` + `F`** — MySQL Backups fails validation when a mode-owned boolean is
+- **Field reference** — `F("field_name")`, the handle on a field's submitted
+  value. The comparison operators `==`, `!=`, `>`, `>=`, `<`, `<=` each turn it
+  into a predicate: `F("severity") == "critical"`. (The boolean operators
+  `&` `|` `^` `~` do *not* work on a bare `F` — they raise `TypeError`, since
+  an `F` is a field reference, not yet a predicate.)
+- **Truthiness predicates** — `truthy`, `present`, `falsy`, `absent`, plus
+  multi-field siblings on the same pattern: `any_truthy` / `all_truthy`,
+  `any_present` / `all_present`, `any_falsy` / `all_falsy`. The one irregular
+  name is `absent`, whose multi-field counterpart is **`none_present`**.
+- **Combinators** — `&`, `|`, `^`, `~`, or their `all_` / `any_` / `xor_` /
+  `not_` function-call forms.
+- **Per-field gate markers** — `Requires` / `Forbidden`, attached to a single
+  field ([below](#requires--forbidden--per-field-gates)). Imported from
+  `form_dsl`, not `rules.py`.
+- **Rule envelopes** — `FailRule` (reject a form when a predicate holds),
+  `FieldGate` (gate a field or section), `CardinalityRule` (bound the count of
+  present fields). App-scoped rules collect in a `FormRules` object assigned to
+  `__form_rules__` on the model.
+
+The full set lives in `app/sep/apps/framework/rules.py`.
+
+**`FailRule` + `F`** — one rule rejects a form when its predicate holds. The
+shape is a `fail_when` predicate, the `error_fields` the message attaches to,
+and the `message` itself:
+
+<!-- constructed -->
+```python
+__form_rules__: ClassVar[FormRules] = FormRules(
+    fail_when=(
+        FailRule(
+            fail_when=truthy("compress") & (F("backup_type") != "M"),
+            error_fields=["compress"],
+            message="'compress' is only available for Mydumper backups.",
+        ),
+    )
+)
+```
+
+Rules are often *generated* rather than written one by one. MySQL Backups
+stamps out the same rule per mode-owned boolean, failing validation when one is
 set outside its mode:
 
 <!-- src: app/sep/apps/mysql_backups/models.py :: BackupCreate -->
@@ -627,10 +833,13 @@ __form_rules__: ClassVar[FormRules] = FormRules(
 )
 ```
 
-**`Requires` / `Forbidden`** — the same predicates gate a single field directly,
-as markers on the field itself: `Requires` makes the field mandatory when its
-predicate holds, `Forbidden` rejects it. MySQL Backups' encryption recipient is
-required exactly when encryption is on, and rejected when it is off:
+### `Requires` / `Forbidden` — per-field gates
+
+The same predicates gate a single field directly, as markers on the field
+itself: `Requires` makes the field mandatory when its predicate holds,
+`Forbidden` rejects it. Import both from `form_dsl` alongside `Ui`. MySQL
+Backups' encryption recipient is required exactly when encryption is on, and
+rejected when it is off:
 
 <!-- src: app/sep/apps/mysql_backups/models.py :: BackupCreate -->
 ```python
@@ -698,9 +907,10 @@ covers your case, and prefer a knob over a custom route.
 ### Rung 1 — `AppCapabilities` flags
 
 The cheapest step: switch derived routes on or off. `AppCapabilities` toggles which
-of the six derived routes (create, list, detail, execute, update, delete) the
+of the six switchable derived routes (create, list, detail, execute, update, delete) the
 spine builds — `create`, `list`, `detail`, and `execute` default on; `update` and
-`delete` default off. Checksums turns on the derived update and delete:
+`delete` default off. (The seventh derived route, `GET /schema`, is always on
+and has no flag.) Checksums turns on the derived update and delete:
 
 <!-- src: app/sep/apps/checksums/app.py :: app -->
 ```python
@@ -714,13 +924,25 @@ app = TaskExecutionApp(
 Turning a capability **off** suppresses the derived route so a custom one can take
 its place (Alters sets `create`, `detail`, `execute`, `update`, and `delete` all
 to `False` — every mutation and its satellite-resolving detail route ride
-`extra_routes` instead; only the derived `list` and schema routes remain).
+`extra_routes` instead; only the derived `list` and schema routes remain). A
+**satellite** here is a task the framework creates alongside a parent task as
+part of one logical operation — see [Rung 4](#rung-4--response_context_provider-and-cascade-hooks).
 
 ### Rung 2 — `extra_routes`
 
 When you need a route the spine does not derive (an approval endpoint, a manual
-refresh, a download), hand the app a router via `extra_routes`. Snippets carries
-three:
+refresh, a download), hand the app a router via `extra_routes`.
+
+> **This rung means writing FastAPI directly.** Everything above it is
+> declarative — knobs and markers. From here down you are writing route
+> handlers, with FastAPI's dependency injection (the `dependencies=[...]`
+> list, the `user: ApiAdminUser` / `session: SessionDep` parameter aliases SEP
+> defines in `app/sep/deps.py`) and `async` request handling. If that is
+> unfamiliar, FastAPI's own
+> [dependency-injection tutorial](https://fastapi.tiangolo.com/tutorial/dependencies/)
+> is the prerequisite; the example below assumes it.
+
+Snippets carries three:
 
 <!-- src: app/sep/apps/snippets/app.py :: app -->
 ```python
@@ -809,9 +1031,12 @@ the fetch in error handling that logs and returns an empty mapping when the auth
 provider is unreachable.
 
 **Cascade hooks** are the heaviest rung short of leaving the spine: when a single
-create must fan out into a group of related tasks (a parent plus derived satellites
-and predecessors), build a `CascadeCreatePlan`. Alters assembles a parent execute
-task, an imperative pre-checks predecessor, and a cascade closure:
+create must fan out into a group of related tasks, build a `CascadeCreatePlan`.
+The group has a shape and two names for it: the **parent** is the task the user
+actually asked for; a **satellite** is a task created alongside it as part of
+the same logical operation; a **predecessor** is a task that must run *before*
+the parent (a pre-flight check, say). Alters assembles a parent execute task, an
+imperative pre-checks predecessor, and a cascade closure:
 
 <!-- src: app/sep/apps/alters/deps.py :: build_alters_cascade_plan -->
 ```python
@@ -909,10 +1134,16 @@ class TestChecksumsContract(DerivedRouterContractTests):
     remapped_username = None
 ```
 
+`remapped_username` names the username the app's `response_context_provider`
+remaps the seeded `created_by` to, so the suite can assert it. Checksums sets it
+to `None` because its provider does a real user lookup that is not deterministic
+under test; `None` tells the suite to skip that assertion. The scaffolder emits
+the right value for a fresh app — leave it alone until you add a provider.
+
 The suite reads the contract from the app's own knobs, so switching a capability on
 or changing a response model is covered automatically — no per-route test to write.
 App-specific behaviour the generic suite does not seed (a custom guard, a bespoke
-route) gets a standalone test beside the contract subclass.
+route, **a form rule**) gets a standalone test beside the contract subclass.
 
 ### The shared fixtures
 
@@ -938,6 +1169,33 @@ def contract_client(
     )
 ```
 
+### Testing a form rule
+
+The contract suite exercises the derived HTTP surface, not your app's specific
+rules — a form with a `Requires` gate or a `FailRule` will pass the whole suite
+without that rule ever firing. Write a standalone test for it.
+
+**`FailRule`, `Requires`, and `Forbidden` all enforce during model validation**,
+so the test needs no HTTP client and no fixtures: construct the model directly
+and assert `pydantic.ValidationError`.
+
+<!-- constructed -->
+```python
+def test_reason_required_when_severity_critical() -> None:
+    """Assert the Requires gate fires when severity is critical."""
+    with pytest.raises(pydantic.ValidationError):
+        LagcheckForm(task_name="t", hostname="h", severity="critical")
+
+    LagcheckForm(
+        task_name="t", hostname="h", severity="critical", reason="replica lag"
+    )
+```
+
+The second construction is the other half of the assertion: the gate must *not*
+fire once the required field is supplied. Match on the message
+(`pytest.raises(ValidationError, match="is required")`) when a model has several
+rules and you need to pin which one tripped.
+
 ### Factory conventions
 
 Test data comes from `polyfactory` factories in `tests/app/factories.py` — build with
@@ -953,6 +1211,10 @@ Two CI gates keep apps honest beyond their own contract test:
 - **Conformance** — `app/sep/apps/framework/conformance.py` defines structural
   rules every app must satisfy (the required knobs wired, disallowed shapes
   absent), run per-app by `tests/app/sep/apps/framework/test_conformance.py`.
+  It is driven off the live registry and parametrized per app key, so **your app
+  is picked up automatically the moment it is in `settings.yaml` — including
+  while it is still `ENABLED: false`**. A half-finished scaffold is already
+  covered; you do not wire anything up.
 - **Scaffold check** — `make startapp-check` (`scripts/startapp_check.py`, wired into
   `.github/workflows/python.yaml`) scaffolds all three flavors
   non-interactively and runs their generated test suites on every PR,
