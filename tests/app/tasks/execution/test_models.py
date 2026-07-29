@@ -71,7 +71,12 @@ class ConcreteExecutor(BaseExecutor):
         yield
 
     async def stream_file(
-        self, queue_item: TaskHistory, path: str, chunk_size: int = 1024 * 1024
+        self,
+        queue_item: TaskHistory,
+        path: str,
+        chunk_size: int = 1024 * 1024,
+        *,
+        anonymize: bool = True,
     ) -> AsyncGenerator[bytes, None]:
         """Yield nothing."""
         return
@@ -186,7 +191,7 @@ class TestStopTask:
     """Test BaseExecutor.stop_task against the real async session.
 
     Exercises the real ``TaskHistoryManager.save`` / ``session.refresh``
-    lifecycle (the SEP-1017 ``MissingGreenlet`` regression class). Patches only
+    lifecycle (the ``MissingGreenlet`` regression class). Patches only
     boundaries: ``_stop_task``, ``_sync_task_history``, ``schedule_annotation``.
     """
 
@@ -520,7 +525,7 @@ class TestSyncTaskHistory:
     async def test_awaits_terminal_transition_when_await_annotations_true(
         self, executor: ConcreteExecutor
     ):
-        """Assert await_annotation is awaited when ``await_annotations=True`` (SEP-1204)."""
+        """Assert await_annotation is awaited when ``await_annotations=True``."""
         queue_item = MagicMock(spec=TaskHistory)
         queue_item.status = TaskHistoryStatusEnum.RUNNING
         queue_item.task = MagicMock()
@@ -645,11 +650,11 @@ class TestPreflightStreamLogs:
 
 
 class TestStopTaskRegression:
-    """Regression suite for SEP-1017 — real-session ``stop_task``.
+    """Guard the real-session ``stop_task`` regression.
 
     ``TaskHistoryManager.save(session, queue_item)`` inside
     ``BaseExecutor.stop_task`` re-defers ``execution_request`` via its
-    internal ``session.refresh(instance)``. Before SEP-1017, the
+    internal ``session.refresh(instance)``. Before the fix, the
     subsequent ``schedule_annotation(saved, "STOPPED")`` in the
     ``sync_emitted_stopped=False`` branch then touched that deferred
     attribute synchronously and crashed with ``MissingGreenlet`` on

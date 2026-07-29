@@ -284,6 +284,31 @@ class TestListAppsForNavigation:
         assert entries["atw"]["enabled"] is True
         assert entries["atw"]["blocking_dependencies"] == []
 
+    async def test_alert_troubleshooting_reported_disabled_when_snippets_disabled(
+        self, api_user_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Report Alert Troubleshooting disabled with snippets as its blocker."""
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+
+        assert entries["alert_troubleshooting"]["enabled"] is False
+        assert entries["alert_troubleshooting"]["blocking_dependencies"] == ["snippets"]
+
+    async def test_alert_troubleshooting_reported_enabled_when_snippets_enabled(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Report Alert Troubleshooting enabled when snippets is enabled."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+
+        assert entries["alert_troubleshooting"]["enabled"] is True
+        assert entries["alert_troubleshooting"]["blocking_dependencies"] == []
+
     async def test_self_disabled_app_reports_no_blocking_dependency(
         self, api_user_client: TestClient, override_session: AsyncSession
     ) -> None:

@@ -96,7 +96,7 @@ async def backup_mongo_api_update(
     """Update a backup task group from a JSON payload request body.
 
     Cascade-updates the parent ``pbm_config`` task and its derived logical,
-    physical, and status siblings, re-stamping ``_form`` so the edit page keeps
+    physical, status, and incremental siblings, re-stamping ``_form`` so the edit page keeps
     prefilling. The ``EditableBackupParent`` dependency resolves a satellite URL
     to the parent and blocks protected or in-flight groups before any write.
     Rejects a parent rename with a conflict and surfaces a partial cascade

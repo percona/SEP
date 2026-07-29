@@ -454,16 +454,17 @@ def render_app(config: ScaffoldConfig) -> list[Path]:
 def _ruff_fix(paths: list[Path]) -> None:
     """Run ruff lint-autofix and format on ``paths``.
 
-    Silently skips the step when ``ruff`` is not on ``$PATH`` so the
-    scaffolder stays usable in minimal environments.
+    Resolve ``ruff`` beside the running Python interpreter so generated files use
+    the project's pinned version. Silently skip the step when it is not present
+    there as an executable file.
 
     :param paths: The rendered files to lint-fix and format.
     """
     py_files = [str(p) for p in paths if p.suffix == ".py"]
     if not py_files:
         return
-    ruff = shutil.which("ruff")
-    if ruff is None:
+    ruff = Path(sys.executable).parent / "ruff"
+    if not ruff.is_file() or not os.access(ruff, os.X_OK):
         return
     subprocess.run(  # noqa: S603 # nosec B603
         [ruff, "check", "--fix", "--quiet", *py_files],

@@ -230,19 +230,24 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
 
     @abstractmethod
     async def stream_file(
-        self, queue_item: TaskHistory, path: str, chunk_size: int = _ONE_MEBIBYTE
+        self,
+        queue_item: TaskHistory,
+        path: str,
+        chunk_size: int = _ONE_MEBIBYTE,
+        *,
+        anonymize: bool = True,
     ) -> AsyncGenerator[bytes, None]:
         """Stream a file from a task history record.
 
         :param queue_item: The task history record for tracking the file.
-        :type queue_item: TaskHistory
         :param path: The path to the file to be streamed.
-        :type path: str
         :param chunk_size: The size of each chunk to be read from the file, in bytes.
             Defaults to 1 MiB.
-        :type chunk_size: int
+        :param anonymize: Whether to redact the task's configured entities from the
+            streamed content. Defaults to ``True``, as every read served to a user
+            must be redacted; internal reads of content SEP itself produced may opt
+            out to get the bytes back verbatim.
         :return: An async generator yielding chunks of the file as bytes.
-        :rtype: AsyncGenerator[bytes, None]
         """
 
     @abstractmethod
@@ -270,21 +275,17 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         """Sync the task history with the backend and trigger the configured alerts.
 
         :param queue_item: The task history record for tracking this execution.
-        :type queue_item: TaskHistory
         :param writer_session: Optional dedicated session the executor may use
             for side-effect writes such as append-only log persistence. When
             ``None``, the executor falls back to whatever session management it
             has available.
-        :type writer_session: AsyncSession | None
         :param await_annotations: When True, await the terminal PMM annotation
             inline instead of scheduling it as a fire-and-forget background
             task. Required from Celery contexts that drive the event loop via
             discrete ``celery.loop.run_until_complete(...)`` calls; the FastAPI
             default (``False``) keeps user-facing request paths (manual sync
-            route, connectivity polling, stop-task) non-blocking. See SEP-1204.
-        :type await_annotations: bool
+            route, connectivity polling, stop-task) non-blocking.
         :return: The updated task history with execution details.
-        :rtype: TaskHistory
         """
         was_running = queue_item.status == TaskHistoryStatusEnum.RUNNING
         queue_item = await self._sync_task_history(
