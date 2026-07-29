@@ -16,18 +16,20 @@
 """Cover the snippets ``ScriptSource`` hooks directly against a real session.
 
 The hooks are exercised through the public :data:`snippet_source` surface
-(``load_script`` / ``list_scripts`` / ``build_form_schema`` / ``build_execution_meta``
-/ ``list_response``) rather than the private module functions, mirroring the
-framework's own ``test_script_source.py``. ``load_script`` / ``list_scripts`` open
-their own request-less session, so the suite points
-``script_source.get_async_session_maker`` at the in-memory test session (the same
-pattern ``tests/app/sep/apps/snippets/test_celery.py`` uses for the Celery sync task) — the real
-session is exercised, never a mocked ``AsyncSession``.
+(``load_script`` / ``list_scripts`` / ``load_scripts`` / ``build_form_schema`` /
+``build_execution_meta`` / ``list_response``) rather than the private module
+functions, mirroring the framework's own ``test_script_source.py``. ``load_script``
+/ ``list_scripts`` / ``load_scripts`` open their own request-less session, so the
+suite points ``script_source.get_async_session_maker`` at the in-memory test
+session (the same pattern ``tests/app/sep/apps/snippets/test_celery.py`` uses for
+the Celery sync task) — the real session is exercised, never a mocked
+``AsyncSession``.
 """
 
 from collections.abc import Awaitable, Callable
 
 import pytest
+from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.datastructures import URL
 
@@ -124,6 +126,127 @@ class TestLoadAndListScripts:
         await create_snippet("b.sh")
         scripts = await snippet_source.list_scripts()
         assert sorted(script.filename for script in scripts) == ["a.sh", "b.sh"]
+
+
+class TestLoadScriptsBatch:
+    """Cover the batch ``load_scripts`` hook (one query, detached rows, filtering)."""
+
+    async def test_resolves_selection_in_one_query(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Resolve several filenames with a single ``SnippetManager.list`` call."""
+        await create_snippet("a.sh")
+        await create_snippet("b.sh")
+        spy = mocker.spy(SnippetManager, "list")
+
+        resolved = await snippet_source.load_scripts(["a.sh", "b.sh"])
+
+        assert set(resolved) == {"a.sh", "b.sh"}
+        assert spy.call_count == 1
+
+    async def test_returns_detached_usable_scripts(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Return scripts usable after the request-less session closes."""
+        await create_snippet("a.sh", approved=True)
+        resolved = await snippet_source.load_scripts(["a.sh"])
+        assert isinstance(resolved["a.sh"], SnippetScript)
+        assert resolved["a.sh"].filename == "a.sh"
+        assert resolved["a.sh"].execution_task_name
+
+    async def test_missing_db_row_is_omitted(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Leave a filename with no matching row out of the result."""
+        await create_snippet("a.sh")
+        resolved = await snippet_source.load_scripts(["a.sh", "missing.sh"])
+        assert set(resolved) == {"a.sh"}
+
+    async def test_missing_file_on_disk_is_omitted(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Leave a filename whose row exists but file is gone out of the result."""
+        await create_snippet("a.sh")
+        await create_snippet("gone.sh", create_file=False)
+        resolved = await snippet_source.load_scripts(["a.sh", "gone.sh"])
+        assert set(resolved) == {"a.sh"}
+
+    async def test_duplicate_filename_is_queried_once(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Resolve a repeated filename to one row with a single query."""
+        await create_snippet("a.sh")
+        spy = mocker.spy(SnippetManager, "list")
+
+        resolved = await snippet_source.load_scripts(["a.sh", "a.sh"])
+
+        assert set(resolved) == {"a.sh"}
+        assert spy.call_count == 1
+
+    async def test_unsafe_filename_is_rejected(
+        self, request_less_session: AsyncSession
+    ) -> None:
+        """Reject an unsafe filename before any lookup runs."""
+        with pytest.raises(HTTPBadRequestException):
+            await snippet_source.load_scripts(["../secret.sh"])
+
+    async def test_case_insensitive_match_keyed_by_requested_spelling(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Key a case-folded row match by the requested spelling, not the row's.
+
+        A case-insensitive collation matches ``Check.sh`` to row ``check.sh``;
+        callers look the result up by the string they sent, so the hook must key
+        that row by ``Check.sh``. SQLite's ``IN`` is case-sensitive, so the
+        collation match is simulated by returning the seeded lowercase row.
+        """
+        snippet = await create_snippet("check.sh")
+        mocker.patch.object(
+            SnippetManager, "list", mocker.AsyncMock(return_value=[snippet])
+        )
+
+        resolved = await snippet_source.load_scripts(["Check.sh"])
+
+        assert set(resolved) == {"Check.sh"}
+        assert resolved["Check.sh"].filename == "check.sh"
+
+    async def test_two_case_variants_of_one_file_both_resolve(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Key one collation-matched row by every requested spelling of it.
+
+        A selection carrying both ``Check.sh`` and ``check.sh`` folds to one
+        row on a case-insensitive collation; the many-to-one map keeps both
+        spellings as keys so neither caller lookup drops to ``None``.
+        """
+        snippet = await create_snippet("check.sh")
+        mocker.patch.object(
+            SnippetManager, "list", mocker.AsyncMock(return_value=[snippet])
+        )
+
+        resolved = await snippet_source.load_scripts(["Check.sh", "check.sh"])
+
+        assert set(resolved) == {"Check.sh", "check.sh"}
+        assert resolved["Check.sh"].snippet is resolved["check.sh"].snippet
+        assert resolved["Check.sh"].filename == "check.sh"
 
 
 class TestArgsOnlyModel:

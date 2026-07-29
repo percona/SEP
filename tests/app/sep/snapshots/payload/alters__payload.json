@@ -24,8 +24,10 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "all_value_args": {
     "alert_detail_builder": null,
@@ -52,8 +54,10 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "defaults_file_custom": {
     "alert_detail_builder": null,
@@ -80,8 +84,10 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "dsn_recursion_custom_table": {
     "alert_detail_builder": null,
@@ -108,8 +114,10 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "dsn_recursion_default_table": {
     "alert_detail_builder": null,
@@ -136,8 +144,10 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "extra_args_tokens": {
     "alert_detail_builder": null,
@@ -164,8 +174,10 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "local_portless_dsn_elision": {
     "alert_detail_builder": null,
@@ -192,8 +204,10 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "progress_after_flags": {
     "alert_detail_builder": null,
@@ -220,8 +234,10 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "required_minimal": {
     "alert_detail_builder": null,
@@ -248,8 +264,10 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "value_with_space_quoting": {
     "alert_detail_builder": null,
@@ -276,7 +294,9 @@
     },
     "is_template": false,
     "name": "alters-golden",
+    "output_files_path": null,
     "owner": "ALTERS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   }
 }

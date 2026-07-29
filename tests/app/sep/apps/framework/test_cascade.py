@@ -16,14 +16,14 @@
 """Unit tests for the cascade POST/PUT/DELETE helpers."""
 
 import copy
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import AsyncMock, call
 
 import pytest
 from fastapi import HTTPException, status
 from pytest_mock import MockerFixture
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPInternalServerErrorException, HTTPNotFoundException
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.framework.cascade import (
     build_derived_payload,
@@ -727,6 +727,55 @@ class TestCascadeResult:
         )
 
         assert result.success is False
+
+    def test_raise_if_failed_does_not_raise_on_success(self) -> None:
+        """Return without raising when the cascade has no failures."""
+        CascadeResult().raise_if_failed(op="update")
+        CascadeResult(successes=["t1", "t1-a"]).raise_if_failed(op="delete")
+
+    @pytest.mark.parametrize(
+        ("op", "message"),
+        [
+            ("create", "Partial create failure; incomplete task group"),
+            ("update", "Partial update failure; inconsistent task group"),
+            ("delete", "Partial delete failure; orphaned tasks"),
+        ],
+    )
+    def test_raise_if_failed_raises_with_structured_detail(
+        self, op: Literal["create", "update", "delete"], message: str
+    ) -> None:
+        """Raise HTTP 500 with a structured task-name-to-error detail mapping."""
+        result = CascadeResult(
+            failures=[
+                CascadeFailure("t1-a", RuntimeError("boom")),
+                CascadeFailure("t1-b", ConnectionError("timeout")),
+            ],
+        )
+
+        with pytest.raises(HTTPInternalServerErrorException) as exc_info:
+            result.raise_if_failed(op=op)
+
+        assert exc_info.value.detail == {
+            "message": message,
+            "errors": {
+                "t1-a": "boom",
+                "t1-b": "timeout",
+            },
+        }
+
+    def test_raise_if_failed_nests_failures_when_task_name_is_message(self) -> None:
+        """Keep the human-readable message when a failing task is named ``message``."""
+        result = CascadeResult(
+            failures=[CascadeFailure("message", RuntimeError("boom"))],
+        )
+
+        with pytest.raises(HTTPInternalServerErrorException) as exc_info:
+            result.raise_if_failed(op="delete")
+
+        assert exc_info.value.detail == {
+            "message": "Partial delete failure; orphaned tasks",
+            "errors": {"message": "boom"},
+        }
 
 
 # ── build_predecessor_payload (SEP-1123) ─────────────────────────────────

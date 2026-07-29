@@ -25,6 +25,7 @@ from kombu.exceptions import KombuError
 from pydantic import BaseModel, UUID4
 
 from app.core.exceptions import (
+    HTTPNotFoundException,
     HTTPServiceUnavailableException,
     HTTPUnprocessableEntityException,
 )
@@ -44,7 +45,7 @@ from app.sep.apps.atw.batch import (
     fetch_task_history,
     MAX_BATCH_SNIPPETS,
     parameter_fields,
-    resolve_snippet,
+    resolve_snippets,
     shared_field_names,
 )
 from app.sep.apps.atw.categories import (
@@ -77,6 +78,7 @@ from app.sep.apps.atw.models import (
 )
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
+from app.sep.apps.snippets.script_source import snippet_not_found_detail
 from app.sep.deps import ApiCurrentUser, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
@@ -287,13 +289,16 @@ async def atw_execution_schema(
     :param snippet_filename: The selected snippet filenames, repeated per snippet
         and deduplicated order-preserving.
     :return: The shared section followed by each snippet's remaining fields.
-    :raises HTTPBadRequestException: When a filename attempts directory traversal.
+    :raises HTTPBadRequestException: When a filename is unsafe or malformed, failing
+        the whole request before any item is dispatched.
     :raises HTTPNotFoundException: When a filename matches no snippet.
     """
-    scripts = [
-        await resolve_snippet(filename)
-        for filename in unique_everseen(snippet_filename)
-    ]
+    unique = list(unique_everseen(snippet_filename))
+    resolved = await resolve_snippets(unique)
+    missing = next((filename for filename in unique if filename not in resolved), None)
+    if missing is not None:
+        raise HTTPNotFoundException(detail=snippet_not_found_detail(missing))
+    scripts = [resolved[filename] for filename in unique]
     fields_per_script = [parameter_fields(script) for script in scripts]
 
     declarations = defaultdict(list)
@@ -341,10 +346,13 @@ async def atw_batch_execute(
 ) -> ATWBatchExecuteResponse:
     """Execute several snippets against one incident, reporting each item separately.
 
-    One failing item never blocks the rest: each is dispatched and recorded inside
-    its own guard, and the response always carries an entry per requested item. A
-    failed attempt produces no task-history row to reference, so it is reported
-    here rather than persisted.
+    A malformed selection fails the whole request up front: ``resolve_snippets``
+    runs the traversal guard over every filename before dispatch, so an unsafe
+    filename raises before any item runs. Past that guard, one failing item never
+    blocks the rest: each is dispatched and recorded inside its own guard, and the
+    response always carries an entry per requested item — an unresolved filename
+    becomes that item's error. A failed attempt produces no task-history row to
+    reference, so it is reported here rather than persisted.
 
     The row-write guard rolls the shared session back before the loop continues,
     or one failed write would leave the transaction aborted and doom every later
@@ -357,12 +365,24 @@ async def atw_batch_execute(
     :param body: The batch payload.
     :param tasks_api: The authenticated Tasks API client.
     :return: One outcome entry per requested item, in request order.
+    :raises HTTPBadRequestException: When any filename is unsafe or malformed,
+        failing the whole request before any item is dispatched.
     """
     incident_id = incident.id
+    resolved = await resolve_snippets([item.snippet_filename for item in body.items])
     items = []
     for item in body.items:
+        script = resolved.get(item.snippet_filename)
+        if script is None:
+            items.append(
+                ATWBatchExecuteItemResponse(
+                    snippet_filename=item.snippet_filename,
+                    error=snippet_not_found_detail(item.snippet_filename),
+                )
+            )
+            continue
         try:
-            dispatched = await dispatch_batch_item(body, item, tasks_api)
+            dispatched = await dispatch_batch_item(body, item, script, tasks_api)
         except (HTTPException, OSError) as exc:
             await session.rollback()
             items.append(

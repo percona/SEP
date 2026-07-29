@@ -51,6 +51,8 @@ function derivedTaskLabel(backupType: string): string {
       return 'Logical backup';
     case 'pbm_physical':
       return 'Physical backup';
+    case 'pbm_incremental':
+      return 'Incremental backup';
     case 'pbm_status':
       return 'PBM status';
     default:
@@ -76,6 +78,7 @@ export function getBackupMongoExecuteActions(task: Record<string, unknown>): Tas
   const derived = readDerivedTasks(task);
   const logical = derived.find((entry) => entry.backup_type === 'pbm_logical');
   const physical = derived.find((entry) => entry.backup_type === 'pbm_physical');
+  const incremental = derived.find((entry) => entry.backup_type === 'pbm_incremental');
 
   const actions: TaskExecuteAction[] = [
     {
@@ -101,6 +104,15 @@ export function getBackupMongoExecuteActions(task: Record<string, unknown>): Tas
       taskName: physical.name,
       testId: 'backup-mongo-physical-backup',
       confirmMessage: `Are you sure you want to run a physical backup for "${parentName}"?`,
+    });
+  }
+
+  if (incremental?.name) {
+    actions.push({
+      label: 'Run Incremental Backup',
+      taskName: incremental.name,
+      testId: 'backup-mongo-incremental-backup',
+      confirmMessage: `Are you sure you want to run an incremental backup for "${parentName}"?`,
     });
   }
 
