@@ -266,6 +266,7 @@ def render_graphs(graphs: list[str], dashboard_params: dict[str, str], path_to_g
   time_from_ts = int(dashboard_params["time_from"].timestamp()) * 1000
   time_to_ts   = int(dashboard_params["time_to"].timestamp()) * 1000
 
+  p = None
   try:
 
     panels = dashboard_params["panels"]
