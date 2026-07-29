@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Load the built-in snippets SHA-256 checksum manifest and match digests."""
+"""Hash snippet files, derive checksum-manifest keys, load the manifest, and match digests."""
 
 from __future__ import annotations
 
@@ -52,6 +52,7 @@ def manifest_relative_path(path: Path, snippets_dir: Path) -> str:
     :param path: A file path under ``snippets_dir``.
     :param snippets_dir: The snippets directory root.
     :return: ``path`` relative to ``snippets_dir`` with POSIX separators.
+    :raises ValueError: If ``path`` is not located under ``snippets_dir``.
     """
     return path.relative_to(snippets_dir).as_posix()
 
