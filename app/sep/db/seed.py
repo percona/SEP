@@ -97,6 +97,23 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     if report_celery := app_celery_module_for("report"):
         system_tasks.extend(_report_periodic_tasks(report_celery))
 
+    if atw_celery := app_celery_module_for("atw"):
+        from app.sep.apps.atw.config import atw_settings
+
+        if atw_settings.cleanup_interval is not None:
+            system_tasks.append(
+                SystemPeriodicTaskSchedule(
+                    schedule=atw_settings.cleanup_interval,
+                    tasks=[
+                        SystemPeriodicTaskData(
+                            name="sep__purge_atw_bundles",
+                            task_name=f"{atw_celery}.purge_atw_bundles",
+                            owner_app_key="atw",
+                        ),
+                    ],
+                ),
+            )
+
     return system_tasks
 
 

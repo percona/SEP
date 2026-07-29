@@ -31,6 +31,7 @@ from app.sep.bundle_upload.plan import (
     DeliveryPlan,
     DeliveryPlanError,
     DeliveryPlanExecutor,
+    StepRecord,
 )
 from app.sep.bundle_upload.seam import BundleSource, BundleUploader
 
@@ -1030,3 +1031,118 @@ class TestDeliveryPlanSecretRedaction:
 
         assert api._extra_sensitive_headers.get() == frozenset()
         assert api._extra_sensitive_body_fields.get() == frozenset()
+
+
+@pytest.mark.asyncio
+class TestDeliveryPlanExecutorStepObserver:
+    """Cover the optional per-step observer the send log records progress through."""
+
+    async def test_observer_sees_running_then_success_with_outputs(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Report each resolution step twice: once entering, once with its outputs."""
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_one_step_plan()), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"sys_id": "case-77", "notes": "customer data"}},
+            )
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-2"}},
+            )
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref="CS0001",
+                    manifest=_MANIFEST,
+                )
+
+        assert [(record.name, record.status) for record in records] == [
+            ("lookup", "running"),
+            ("lookup", "success"),
+        ]
+        assert records[0].outputs is None
+        assert records[1].outputs == {"sys_id": "case-77"}
+
+    async def test_observer_never_receives_a_response_body(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Hand the observer declared outputs only, never the raw step response."""
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_one_step_plan()), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"sys_id": "case-77", "notes": "customer data"}},
+            )
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-2"}},
+            )
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref="CS0001",
+                    manifest=_MANIFEST,
+                )
+
+        assert all("customer data" not in str(record.outputs) for record in records)
+
+    async def test_a_failed_step_leaves_its_running_record_as_the_last_one(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Leave the failing step recorded as still running so the log names it."""
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_one_step_plan()), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(_TICKET_URL, status=status.HTTP_409_CONFLICT)
+            async with api:
+                with pytest.raises(HTTPConflictException):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+
+        assert [(record.name, record.status) for record in records] == [
+            ("lookup", "running")
+        ]
+
+    async def test_the_upload_step_is_not_observed(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Leave the terminal upload out of the step records; its result stands alone."""
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_upload_only_plan()), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-2"}},
+            )
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref="CS0001",
+                    manifest=_MANIFEST,
+                )
+
+        assert records == []
