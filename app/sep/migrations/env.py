@@ -25,7 +25,10 @@ from alembic import context
 
 from app.core.db.utils import compare_type
 from app.sep.config import sep_settings
-from app.sep.migrations._discovery import discover_plugin_migrations_and_models
+from app.sep.migrations._discovery import (
+    discover_plugin_migrations_and_models,
+    load_catalog_models,
+)
 from app.core.settings_override.models import *
 from app.sep.models import *
 from app.sep.snippets.models import *
@@ -40,6 +43,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 discover_plugin_migrations_and_models()
+load_catalog_models()
 
 # add your model's MetaData object here
 # for 'autogenerate' support
