@@ -20,8 +20,10 @@ from typing import Annotated
 from fastapi import Depends
 from pydantic import UUID4
 
+from app.core.exceptions import HTTPServiceUnavailableException
 from app.sep.apps.atw.crud import AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident
+from app.sep.config import sep_settings
 from app.sep.deps import SessionDep
 
 
@@ -37,3 +39,29 @@ async def get_atw_incident(session: SessionDep, incident_id: UUID4) -> AtwIncide
 
 
 AtwIncidentDep = Annotated[AtwIncident, Depends(get_atw_incident)]
+
+
+def diagnostics_send_disabled_reasons() -> list[str]:
+    """Return why the incident send action is unavailable, empty when it is not.
+
+    ``DIAGNOSTICS_DELIVERY`` is validated as a whole at settings load, so a
+    partially-configured receiver cannot exist at run time and the list carries
+    at most this one reason.
+
+    :return: The reasons to withhold the send action from the UI.
+    """
+    if sep_settings.DIAGNOSTICS_DELIVERY is None:
+        return ["Diagnostics delivery is not configured"]
+    return []
+
+
+async def require_diagnostics_send_configured() -> None:
+    """Raise if diagnostics delivery is not configured.
+
+    :raises HTTPServiceUnavailableException: If no receiver is configured.
+    """
+    if reasons := diagnostics_send_disabled_reasons():
+        raise HTTPServiceUnavailableException(detail="; ".join(reasons))
+
+
+IsDiagnosticsSendConfigured = Depends(require_diagnostics_send_configured)

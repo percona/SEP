@@ -661,6 +661,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/atw/config/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Config
+     * @description Report whether the incident send action is available.
+     *
+     *     Not gated by the send guard -- this endpoint is what reports that guard, so
+     *     it must answer whether or not a receiver is configured.
+     *
+     *     :return: The reasons the send action is withheld; empty when it is offered.
+     */
+    get: operations['atw_atw_config_api_apps_atw_config__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/atw/execution-schema/': {
     parameters: {
       query?: never;
@@ -809,6 +834,76 @@ export interface paths {
      *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/send-jobs/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw List Send Jobs
+     * @description List one incident's diagnostics send attempts, newest first.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param pagination: The offset/limit window for the page.
+     *     :return: A paginated page of send attempts, newest first.
+     */
+    get: operations['atw_atw_list_send_jobs_api_apps_atw_incidents__incident_id__send_jobs__get'];
+    put?: never;
+    /**
+     * Atw Start Send Job
+     * @description Start delivering the selected executions' output files to the support case.
+     *
+     *     The row is created before the task is queued so a broker failure is still
+     *     recorded as a failed attempt rather than vanishing: the row is the only place
+     *     a support engineer can see that a send was ever tried.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param current_user: The authenticated user, stamped as ``requested_by``.
+     *     :param body: The send payload naming the case reference and executions.
+     *     :return: The created send log, pending.
+     *     :raises HTTPUnprocessableEntityException: When an execution id does not belong
+     *         to this incident.
+     *     :raises HTTPServiceUnavailableException: When the send could not be queued.
+     *     :raises HTTPBadRequestException: Propagated from the manager when the row
+     *         cannot be written.
+     */
+    post: operations['atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/send-jobs/{send_job_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Get Send Job
+     * @description Retrieve one diagnostics send attempt, for the dialog to poll.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param send_job_id: The send attempt's UUID.
+     *     :return: The matching send attempt.
+     *     :raises HTTPNotFoundException: If this incident has no such attempt.
+     */
+    get: operations['atw_atw_get_send_job_api_apps_atw_incidents__incident_id__send_jobs__send_job_id__get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -5215,6 +5310,17 @@ export interface components {
       title: string;
     };
     /**
+     * AtwConfigResponse
+     * @description Report whether the incident send action is available.
+     *
+     *     :param send_disabled_reasons: Why sending is unavailable; empty when the
+     *         receiver is configured and the action is offered.
+     */
+    atw__AtwConfigResponse: {
+      /** Send Disabled Reasons */
+      send_disabled_reasons: string[];
+    };
+    /**
      * AtwIncidentResponse
      * @description Represent a persisted diagnostic incident.
      *
@@ -5277,6 +5383,74 @@ export interface components {
       /** Name */
       name?: string;
     };
+    /**
+     * AtwSendJobWrite
+     * @description Define the payload starting one diagnostics send.
+     *
+     *     :param case_ref: The support-case reference to attach the bundle to.
+     *     :param execution_ids: The incident executions whose output files to send.
+     */
+    atw__AtwSendJobWrite: {
+      /** Case Ref */
+      case_ref: string;
+      /** Execution Ids */
+      execution_ids: string[];
+    };
+    /**
+     * AtwSendLogResponse
+     * @description Represent one recorded diagnostics send attempt.
+     *
+     *     Every field is always present on a stored attempt, so -- unlike returning the
+     *     :class:`AtwSendLog` table model directly -- the generated client types them as
+     *     required rather than optional.
+     *
+     *     :param id: The attempt's UUID primary key.
+     *     :param incident_id: The incident the attempt belongs to.
+     *     :param case_ref: The support-case reference the attempt targeted.
+     *     :param requested_by: Username of the support engineer who started it.
+     *     :param status: The attempt's lifecycle status.
+     *     :param started_at: When the worker picked it up, if it did.
+     *     :param finished_at: When it reached a terminal status, if it did.
+     *     :param created_at: When the attempt was requested.
+     *     :param detail: The attempt's recorded evidence.
+     */
+    atw__AtwSendLogResponse: {
+      /** Case Ref */
+      case_ref: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Detail */
+      detail: Record<string, never>;
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Id
+       * Format: uuid4
+       */
+      id: string;
+      /**
+       * Incident Id
+       * Format: uuid4
+       */
+      incident_id: string;
+      /** Requested By */
+      requested_by: string;
+      /** Started At */
+      started_at: string | null;
+      status: components['schemas']['atw__AtwSendStatusEnum'];
+    };
+    /**
+     * AtwSendStatusEnum
+     * @description Enumerate the lifecycle of one diagnostics send attempt.
+     *
+     *     The column stores member *names* (``PENDING``); the API serializes the
+     *     ``StrEnum`` *values* (``pending``).
+     * @enum {string}
+     */
+    atw__AtwSendStatusEnum: 'pending' | 'running' | 'success' | 'failed';
     /** PaginatedResponse[ATWIncidentExecutionResponse] */
     atw__PaginatedResponse_ATWIncidentExecutionResponse_: {
       /** Items */
@@ -5292,6 +5466,17 @@ export interface components {
     atw__PaginatedResponse_AtwIncidentResponse_: {
       /** Items */
       items: components['schemas']['atw__AtwIncidentResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[AtwSendLogResponse] */
+    atw__PaginatedResponse_AtwSendLogResponse_: {
+      /** Items */
+      items: components['schemas']['atw__AtwSendLogResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -10863,6 +11048,26 @@ export interface operations {
       };
     };
   };
+  atw_atw_config_api_apps_atw_config__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwConfigResponse'];
+        };
+      };
+    };
+  };
   atw_atw_execution_schema_api_apps_atw_execution_schema__get: {
     parameters: {
       query: {
@@ -11111,6 +11316,107 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['atw__ATWBatchExecuteResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_list_send_jobs_api_apps_atw_incidents__incident_id__send_jobs__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_AtwSendLogResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__AtwSendJobWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwSendLogResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_get_send_job_api_apps_atw_incidents__incident_id__send_jobs__send_job_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        send_job_id: string;
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwSendLogResponse'];
         };
       };
       /** @description Validation Error */
