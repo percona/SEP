@@ -17,6 +17,7 @@
 
 from contextvars import ContextVar
 from logging import Filter, LogRecord
+from logging import Formatter as _Formatter
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="-")
@@ -53,6 +54,43 @@ class ContextFilter(Filter):
         for attr, var in _CONTEXT_VARS.items():
             setattr(record, attr, var.get())
         return True
+
+
+class ContextFormatter(_Formatter):
+    """Format logs with all populated context fields appended.
+
+    ``ContextFilter`` injects attributes on every ``LogRecord``. The configured
+    base formatter is expected to already render the ``correlation_id`` in its
+    human-oriented position; this formatter only appends the other context
+    fields whose value differs from the default ``"-"``.
+    """
+
+    _DEFAULT_SENTINEL = "-"
+
+    def format(self, record: LogRecord) -> str:
+        """Format a log record and append non-default context fields.
+
+        :param record: The log record to format.
+        :type record: LogRecord
+        :return: Base formatted line plus appended context ``key=value`` pairs.
+        :rtype: str
+        """
+        base = super().format(record)
+        parts: list[str] = []
+
+        # Stable order: follow insertion order from `_CONTEXT_VARS`, but never
+        # duplicate the correlation_id because it's rendered in the base format.
+        for key in _CONTEXT_VARS:
+            if key == "correlation_id":
+                continue
+            value = getattr(record, key, self._DEFAULT_SENTINEL)
+            if value != self._DEFAULT_SENTINEL:
+                parts.append(f"{key}={value}")
+
+        if not parts:
+            return base
+
+        return f"{base} " + " ".join(parts)
 
 
 def set_log_context(**kwargs: str) -> None:
