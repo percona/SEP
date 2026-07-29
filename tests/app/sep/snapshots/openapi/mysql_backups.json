@@ -4151,6 +4151,111 @@
         "title": "BackupCreate",
         "type": "object"
       },
+      "mysql_backups__BackupRunResponse": {
+        "description": "Expose one catalog record over the per-service query path.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.",
+        "properties": {
+          "backup_type": {
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "upload_destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Destination"
+          }
+        },
+        "required": [
+          "id",
+          "service_name",
+          "hostname",
+          "backup_type",
+          "location",
+          "upload_destination",
+          "size_bytes",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "BackupRunResponse",
+        "type": "object"
+      },
       "mysql_backups__BackupTaskResponse": {
         "description": "Represent a backup task API response.\n\n:param backup_type: The backup type recorded in task config.",
         "properties": {
@@ -4535,6 +4640,53 @@
           }
         },
         "summary": "Get Schema",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
+    "/api/apps/mysql_backups/services/{service_id}/backups": {
+      "get": {
+        "description": "Return a MySQL service's completed backup runs, newest run first.\n\nThe ``service_id`` path parameter is resolved by\n:data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an\nunknown service surface as a ``404``. A resolvable service with no recorded\nruns yields an empty list, so a caller building a restore selector is never\nblocked by an empty catalog but is still told when the service itself is\nunknown.\n\n:param service: The inventory service resolved from the ``service_id`` path\n    parameter.\n:param session: The database session the catalog is queried on.\n:return: The service's recorded backup runs, newest run first.",
+        "operationId": "mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/mysql_backups__BackupRunResponse"
+                  },
+                  "title": "Response Mysql Backups List Service Backups Api Apps Mysql Backups Services  Service Id  Backups Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Service Backups",
         "tags": [
           "mysql_backups"
         ]
