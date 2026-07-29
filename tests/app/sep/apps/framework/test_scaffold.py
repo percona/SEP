@@ -92,6 +92,16 @@ def _cleanup(name: str) -> None:
     importlib.invalidate_caches()
 
 
+def _venv_root() -> Path:
+    """Return the active virtualenv root for Makefile ``VIRTUAL_ENV`` forwarding.
+
+    Use ``sys.prefix`` rather than resolving ``sys.executable``: following the
+    interpreter symlink lands in the base install and breaks
+    ``VIRTUAL_ENV/bin/python``.
+    """
+    return Path(sys.prefix)
+
+
 @contextmanager
 def _scaffolded_config(
     config: scaffold.ScaffoldConfig,
@@ -1088,9 +1098,7 @@ def test_makefile_forwards_quoted_values() -> None:
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    # Use sys.prefix (venv root). Resolving sys.executable follows the
-    # interpreter symlink into the base install and breaks VIRTUAL_ENV/bin/python.
-    venv_root = Path(sys.prefix)
+    venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
             [
@@ -1135,9 +1143,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    # Use sys.prefix (venv root). Resolving sys.executable follows the
-    # interpreter symlink into the base install and breaks VIRTUAL_ENV/bin/python.
-    venv_root = Path(sys.prefix)
+    venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
             [

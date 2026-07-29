@@ -391,7 +391,6 @@ class SnippetsSettings(BaseYamlSettings):
     :param AUTO_APPROVE_BUILTIN_SNIPPETS: Whether sync may auto-approve snippets
         whose filename and SHA-256 digest match the built-in checksum manifest.
         Defaults to ``True``. When ``False``, sync never auto-approves any snippet.
-    :type AUTO_APPROVE_BUILTIN_SNIPPETS: bool
     :param SYNC_ON_STARTUP: Whether to synchronize snippets on application startup.
         Defaults to `True`.
     :type SYNC_ON_STARTUP: bool

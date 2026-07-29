@@ -32,46 +32,50 @@ MODULE = "app.sep.apps.snippets.builtin_manifest"
 class TestLoadBuiltinChecksumManifest:
     """Test load_builtin_checksum_manifest parser branches."""
 
-    def test_missing_manifest_returns_empty(self, tmp_path, caplog):
+    @pytest.mark.asyncio
+    async def test_missing_manifest_returns_empty(self, tmp_path, caplog):
         """Assert a missing manifest file yields an empty mapping."""
         with caplog.at_level("WARNING", logger=MODULE):
-            result = load_builtin_checksum_manifest(tmp_path)
+            result = await load_builtin_checksum_manifest(tmp_path)
 
         assert result == {}
         assert "unavailable" in caplog.text
         assert BUILTIN_CHECKSUM_MANIFEST in caplog.text
 
-    def test_unreadable_manifest_returns_empty(self, tmp_path, caplog):
+    @pytest.mark.asyncio
+    async def test_unreadable_manifest_returns_empty(self, tmp_path, caplog):
         """Assert an unreadable manifest path yields an empty mapping."""
-        # A directory at the manifest path makes read_text raise IsADirectoryError.
+        # A directory at the manifest path makes open raise IsADirectoryError.
         (tmp_path / BUILTIN_CHECKSUM_MANIFEST).mkdir()
 
         with caplog.at_level("WARNING", logger=MODULE):
-            result = load_builtin_checksum_manifest(tmp_path)
+            result = await load_builtin_checksum_manifest(tmp_path)
 
         assert result == {}
         assert "unavailable" in caplog.text
 
-    def test_parses_valid_two_space_lines(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_parses_valid_two_space_lines(self, tmp_path):
         """Assert well-formed sha256sum lines become filename-to-digest entries."""
         (tmp_path / BUILTIN_CHECKSUM_MANIFEST).write_text(
             "abc123  foo.sh\ndef456  nested/bar.py\n",
             encoding="utf-8",
         )
 
-        assert load_builtin_checksum_manifest(tmp_path) == {
+        assert await load_builtin_checksum_manifest(tmp_path) == {
             "foo.sh": "abc123",
             "nested/bar.py": "def456",
         }
 
-    def test_skips_blank_and_comment_lines(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_skips_blank_and_comment_lines(self, tmp_path):
         """Assert blank lines and ``#`` comments are ignored."""
         (tmp_path / BUILTIN_CHECKSUM_MANIFEST).write_text(
             "\n# header comment\n  \nabc123  keep.sh\n# trailing comment\n\n",
             encoding="utf-8",
         )
 
-        assert load_builtin_checksum_manifest(tmp_path) == {"keep.sh": "abc123"}
+        assert await load_builtin_checksum_manifest(tmp_path) == {"keep.sh": "abc123"}
 
     @pytest.mark.parametrize(
         "bad_line",
@@ -83,7 +87,8 @@ class TestLoadBuiltinChecksumManifest:
         ],
         ids=["single-space", "empty-digest", "empty-filename", "no-separator"],
     )
-    def test_skips_malformed_lines(self, tmp_path, caplog, bad_line):
+    @pytest.mark.asyncio
+    async def test_skips_malformed_lines(self, tmp_path, caplog, bad_line):
         """Assert malformed lines are skipped and logged, valid peers kept."""
         (tmp_path / BUILTIN_CHECKSUM_MANIFEST).write_text(
             f"{bad_line}\nabc123  good.sh\n",
@@ -91,19 +96,20 @@ class TestLoadBuiltinChecksumManifest:
         )
 
         with caplog.at_level("WARNING", logger=MODULE):
-            result = load_builtin_checksum_manifest(tmp_path)
+            result = await load_builtin_checksum_manifest(tmp_path)
 
         assert result == {"good.sh": "abc123"}
         assert "Ignoring malformed checksum manifest line 1" in caplog.text
 
-    def test_empty_manifest_returns_empty(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_empty_manifest_returns_empty(self, tmp_path):
         """Assert an empty or comment-only manifest yields an empty mapping."""
         (tmp_path / BUILTIN_CHECKSUM_MANIFEST).write_text(
             "# nothing here\n\n",
             encoding="utf-8",
         )
 
-        assert load_builtin_checksum_manifest(tmp_path) == {}
+        assert await load_builtin_checksum_manifest(tmp_path) == {}
 
 
 class TestMatchesBuiltinManifest:
