@@ -137,7 +137,8 @@ describe('SchemaFormRenderer field errors', () => {
 
     // Empty the required title field, then resubmit: the client-side gate blocks
     // the submit, so the eager clear must not drop `limit`'s inline highlight.
-    await user.clear(screen.getByLabelText(/Title/));
+    // Prefer role+name: getByLabelText(/Title/) also matches "Help for Title".
+    await user.clear(screen.getByRole('textbox', { name: /Title/ }));
     await user.click(screen.getByRole('button', { name: 'Run' }));
 
     await waitFor(() => expect(screen.getByText('Title is required')).toBeInTheDocument());

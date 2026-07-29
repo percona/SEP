@@ -24,15 +24,16 @@ export interface FieldHelpIconProps {
   /** Tooltip body shown on hover/focus; also the accessible description. */
   description: string;
   /**
-   * Field label for `data-help-for` only — kept out of aria-label so label
-   * queries do not also match the icon.
+   * Field label for the accessible name (`Help for ${label}`) and for
+   * `data-help-for` (preferred for per-field test queries so label matchers
+   * do not also hit the icon).
    */
   label: string;
 }
 
 /**
  * Info-icon tooltip for schema form field help. Non-button span so it can sit
- * inside MUI floating labels; focusable, with a constant accessible name and
+ * inside MUI floating labels; focusable, with a per-field accessible name and
  * the description exposed via Tooltip describeChild. Omit when there is no
  * description to show.
  */
@@ -43,7 +44,7 @@ export function FieldHelpIcon({ description, label }: FieldHelpIconProps) {
         component="span"
         role="img"
         tabIndex={0}
-        aria-label="Help"
+        aria-label={`Help for ${label}`}
         data-help-for={label}
         sx={{
           display: 'inline-flex',

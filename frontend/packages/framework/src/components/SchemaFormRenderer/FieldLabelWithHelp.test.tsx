@@ -25,7 +25,7 @@ describe('FieldLabelWithHelp', () => {
     const { container } = render(<FieldLabelWithHelp label="Title" />);
 
     expect(screen.getByText('Title')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Help')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Help for Title')).not.toBeInTheDocument();
     // Plain string path — no wrapper span around the label alone.
     expect(container.querySelector('span')).toBeNull();
   });
@@ -35,19 +35,11 @@ describe('FieldLabelWithHelp', () => {
     render(<FieldLabelWithHelp label="Title" description="A title" />);
 
     expect(screen.getByText('Title')).toBeInTheDocument();
-    const help = screen.getByLabelText('Help');
+    const help = screen.getByLabelText('Help for Title');
     expect(help).toHaveAttribute('data-help-for', 'Title');
 
     await user.hover(help);
     expect(await screen.findByRole('tooltip')).toHaveTextContent('A title');
-  });
-
-  it('does not put the field label in the help icon accessible name', () => {
-    render(<FieldLabelWithHelp label="Title" description="A title" />);
-
-    const help = screen.getByLabelText('Help');
-    expect(help).toHaveAttribute('aria-label', 'Help');
-    expect(help.getAttribute('aria-label')).not.toMatch(/Title/);
   });
 });
 
@@ -56,17 +48,18 @@ describe('FieldHelpIcon', () => {
     const user = userEvent.setup();
     render(<FieldHelpIcon label="Enabled" description="Turn this on" />);
 
-    await user.hover(screen.getByLabelText('Help'));
+    await user.hover(screen.getByLabelText('Help for Enabled'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Turn this on');
   });
 
   it('is keyboard-focusable and describes the child with the tooltip title', () => {
     render(<FieldHelpIcon label="Enabled" description="Turn this on" />);
 
-    const help = screen.getByLabelText('Help');
+    const help = screen.getByLabelText('Help for Enabled');
     expect(help).toHaveAttribute('tabindex', '0');
     expect(help).toHaveAttribute('data-help-for', 'Enabled');
-    // describeChild keeps name "Help"; description via title / aria-describedby.
+    // describeChild keeps aria-label as the name; description via title /
+    // aria-describedby.
     expect(help).toHaveAccessibleDescription('Turn this on');
   });
 });

@@ -107,7 +107,7 @@ describe('SchemaSelectShell', () => {
     const user = userEvent.setup();
     renderShell({ description: 'Pick one' });
 
-    const help = screen.getByLabelText('Help');
+    const help = screen.getByLabelText('Help for Fruit');
     expect(help).toHaveAttribute('data-help-for', 'Fruit');
     await user.hover(help);
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Pick one');
@@ -116,7 +116,7 @@ describe('SchemaSelectShell', () => {
   it('omits the info icon when description is missing', () => {
     renderShell();
 
-    expect(screen.queryByLabelText('Help')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Help for Fruit')).not.toBeInTheDocument();
   });
 
   it('keeps the info icon when an error replaces the helper text', () => {
@@ -126,7 +126,7 @@ describe('SchemaSelectShell', () => {
     });
 
     expect(screen.getByText('Fruit is required')).toBeInTheDocument();
-    expect(screen.getByLabelText('Help')).toHaveAttribute('data-help-for', 'Fruit');
+    expect(screen.getByLabelText('Help for Fruit')).toHaveAttribute('data-help-for', 'Fruit');
   });
 
   it('renders a required asterisk in the label', () => {
