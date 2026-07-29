@@ -127,10 +127,11 @@ class TestMatchesBuiltinManifest:
 class TestSha256File:
     """Test sha256_file against known content."""
 
-    def test_hashes_file_contents(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_hashes_file_contents(self, tmp_path):
         """Assert the digest matches hashlib over the same bytes."""
         path = tmp_path / "snippet.sh"
         content = b"echo hello\n"
         path.write_bytes(content)
 
-        assert sha256_file(path) == hashlib.sha256(content).hexdigest()
+        assert await sha256_file(path) == hashlib.sha256(content).hexdigest()

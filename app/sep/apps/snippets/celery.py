@@ -132,7 +132,7 @@ async def _sync_snippet_file(
     logger.debug("Processing file %s: %s", snippet_path, snippet.model_dump())
     manifest_match = auto_approve_enabled and matches_builtin_manifest(
         snippet_name,
-        sha256_file(snippet_path),
+        await sha256_file(snippet_path),
         manifest,
     )
     created_snippet, created = await SnippetManager.get_or_create(

@@ -22,11 +22,38 @@ Walk ``snippets/``, hash every file except the manifest itself, and write
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SNIPPETS_DIR = REPO_ROOT / "snippets"
+
+
+async def _hash_snippet_entries(
+    snippets_dir: Path,
+    manifest_name: str,
+) -> list[tuple[str, str]]:
+    """Hash every file under ``snippets_dir`` except the manifest itself.
+
+    :param snippets_dir: The snippets directory to walk.
+    :param manifest_name: The checksum-manifest filename to skip.
+    :return: Sorted ``(digest, relative_path)`` pairs for each snippet file.
+    """
+    from app.sep.apps.snippets.builtin_manifest import (
+        manifest_relative_path,
+        sha256_file,
+    )
+
+    entries: list[tuple[str, str]] = []
+    for path in sorted(snippets_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = manifest_relative_path(path, snippets_dir)
+        if relative == manifest_name:
+            continue
+        entries.append((await sha256_file(path), relative))
+    return entries
 
 
 def generate_manifest() -> tuple[int, Path]:
@@ -40,24 +67,15 @@ def generate_manifest() -> tuple[int, Path]:
     :raises OSError: If a snippet file or the manifest cannot be read or written.
     """
     sys.path.insert(0, str(REPO_ROOT))
-    from app.sep.apps.snippets.builtin_manifest import (
-        manifest_relative_path,
-        sha256_file,
-    )
     from app.sep.apps.snippets.constants import BUILTIN_CHECKSUM_MANIFEST
 
     if not SNIPPETS_DIR.is_dir():
         raise SystemExit(f"Snippets directory not found: {SNIPPETS_DIR}")
 
     manifest_path = SNIPPETS_DIR / BUILTIN_CHECKSUM_MANIFEST
-    entries: list[tuple[str, str]] = []
-    for path in sorted(SNIPPETS_DIR.rglob("*")):
-        if not path.is_file():
-            continue
-        relative = manifest_relative_path(path, SNIPPETS_DIR)
-        if relative == BUILTIN_CHECKSUM_MANIFEST:
-            continue
-        entries.append((sha256_file(path), relative))
+    entries = asyncio.run(
+        _hash_snippet_entries(SNIPPETS_DIR, BUILTIN_CHECKSUM_MANIFEST)
+    )
 
     lines = [f"{digest}  {filename}\n" for digest, filename in entries]
     manifest_path.write_text("".join(lines), encoding="utf-8")

@@ -21,6 +21,8 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING
 
+import aiofiles
+
 from app.sep.apps.snippets.constants import BUILTIN_CHECKSUM_MANIFEST
 
 if TYPE_CHECKING:
@@ -31,15 +33,15 @@ logger = logging.getLogger(__name__)
 _CHUNK_SIZE = 8192
 
 
-def sha256_file(path: Path) -> str:
+async def sha256_file(path: Path) -> str:
     """Return the SHA-256 hex digest of a file.
 
     :param path: The file to hash.
     :return: The hex-encoded SHA-256 digest of the file contents.
     """
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(_CHUNK_SIZE):
+    async with aiofiles.open(path, "rb") as handle:
+        while chunk := await handle.read(_CHUNK_SIZE):
             digest.update(chunk)
     return digest.hexdigest()
 
