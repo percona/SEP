@@ -34,6 +34,7 @@ from app.sep.apps.mysql_backups.models import (
     BackupType,
     OWNER,
 )
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 from app.sep.deps import (
@@ -43,6 +44,7 @@ from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
+from app.sep.inventory import CreatedService
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,7 @@ async def build_backup_task_payload(
         name=form.task_name,
         owner=OWNER,
         alert_on_fail=form.alert_on_fail,
+        run_result_recorder=RUN_RESULT_RECORDER,
     )
 
 
@@ -116,6 +119,27 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
 
 
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
+
+
+async def resolve_mysql_service(
+    service_id: int, inventory_api: InventoryAPI
+) -> CreatedService:
+    """Resolve an inventory service by id for the backup-catalog query route.
+
+    Lets the Inventory API's ``404`` propagate unchanged: an unknown ``service_id``
+    is a real client error, not an empty catalog. The catalog query distinguishes
+    the two — this raises for a service that does not exist, while a service that
+    exists but has no recorded runs yields an empty list.
+
+    :param service_id: The inventory id of the service to resolve.
+    :param inventory_api: The Inventory API client used to resolve the service.
+    :return: The resolved service.
+    """
+    service_data = await inventory_api.get(f"/services/{service_id}")
+    return CreatedService.model_validate(service_data)
+
+
+ResolvedMysqlService = Annotated[CreatedService, Depends(resolve_mysql_service)]
 
 
 get_backups_task = make_task_dep(OWNER)

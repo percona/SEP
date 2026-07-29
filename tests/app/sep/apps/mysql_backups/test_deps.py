@@ -33,6 +33,7 @@ from app.sep.apps.mysql_backups.models import (
     BackupType,
     UploadProvider,
 )
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.inventory import CreatedNode, CreatedService
 from app.tasks.models import (
     Task,
@@ -116,6 +117,9 @@ async def test_build_backup_task_payload(
     assert task_payload.name == form_data["task_name"]
     assert task_payload.backend == TaskBackendEnum.PROXY
     assert task_payload.owner == "BACKUPS"
+    # A form-built task must carry the recorder so its completed runs are
+    # catalogued, exactly as the model-first JSON create path does.
+    assert task_payload.run_result_recorder == RUN_RESULT_RECORDER
 
     data = task_payload.data
     assert data["task"] == "run-python"
