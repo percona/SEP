@@ -562,9 +562,6 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
     :param pbm_config_yaml_payload: The PBM yaml payload to parse from CLI.
     :type pbm_config_yaml_payload: NonEmptyStr | EmptyStrToNone
-    :param alias: The target host alias stamped into the config so the backup
-        payload can label its textfile-collector metrics; stripped before the
-        config is applied via ``pbm config``.
     """
 
     model_config = ConfigDict(alias_generator=None)
@@ -588,10 +585,6 @@ class BackupConfig(BaseCaseInsensitiveModel):
     credentials_path: NonEmptyStr | EmptyStrToNone = Field(
         None,
         validation_alias=AliasChoices("credentials_path", "CREDENTIALS_PATH"),
-    )
-    alias: NonEmptyStr | EmptyStrToNone = Field(
-        None,
-        validation_alias=AliasChoices("alias", "ALIAS"),
     )
 
 

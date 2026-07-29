@@ -105,9 +105,7 @@ def _apply_pbm_config(config: dict) -> None:
     :param config: The parsed task config; SEP-only and ``None``-valued keys are
         dropped before it is written to the PBM config file.
     """
-    sep_only_keys = frozenset(
-        {"credentials_path", "credentialsPath", "alias", "ALIAS"}
-    )
+    sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
     # Selective --ns flags live under backup for NOMAD_META_CONFIG readers but are
     # not valid PBM config keys, so strip them before ``pbm config --file``.
     sep_only_backup_keys = frozenset({"namespaces", "withUsersAndRoles"})

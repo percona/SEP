@@ -92,13 +92,6 @@ def test_build_spec_stamps_service_name_when_resolved(backup_create: BackupCreat
     ]
 
 
-def test_build_spec_serializes_alias_from_hostname(backup_create: BackupCreate):
-    """Stamp the target hostname into the config as ``alias`` for the metric labels."""
-    config = _config(build_backup_mongo_spec(backup_create, BackupMongoResolved()))
-
-    assert config["alias"] == backup_create.hostname
-
-
 def test_build_spec_filesystem_storage(backup_create: BackupCreate):
     """Serialize the filesystem path and omit the s3 block for filesystem storage."""
     config = _config(build_backup_mongo_spec(backup_create, BackupMongoResolved()))

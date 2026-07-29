@@ -173,7 +173,6 @@ def build_backup_mongo_spec(
         if backup_config_dict
         else None,
         credentials_path=form.credentials_path or None,
-        alias=form.hostname,
     )
 
     requirements = _BASE_REQUIREMENTS
