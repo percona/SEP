@@ -295,15 +295,12 @@ Scaffolded 'task' app 'myapp':
   app:   <repo-root>/app/sep/apps/myapp
   tests: <repo-root>/tests/app/sep/apps/myapp
 
-Registered 'myapp' DISABLED in settings.yaml. Manage it from the Admin App
-Manager (Settings -> Apps) once you have filled in the skeleton.
+Registered 'myapp' DISABLED in settings.yaml. Manage it from the Apps page in
+the sidebar (/admin/apps) once you have filled in the skeleton.
 ```
 
 The scaffolder prints absolute paths (shown above with a `<repo-root>`
-placeholder); it also calls the app-management page the "Admin App Manager
-(Settings -> Apps)" — in the running app that is the sidebar's top-level
-**Apps** entry (`/admin/apps`), a sibling of **Settings** rather than a page
-under it.
+placeholder).
 
 The resulting `settings.yaml` entry:
 
