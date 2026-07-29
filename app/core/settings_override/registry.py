@@ -20,6 +20,7 @@ from __future__ import annotations
 __all__ = [
     "NESTED_VALUE_MISSING",
     "REMOTE_API_TLS_MARKERS",
+    "SECRET_STR_MASK",
     "FieldMarkerKey",
     "FieldMarkers",
     "FieldMetadata",
@@ -51,7 +52,6 @@ __all__ = [
     "not_overridable_field",
     "override_keys_for_rows",
     "preserve_patch_credential_url_value",
-    "preserve_patch_secret_value",
     "resolve_nested_field",
     "resolve_nested_field_metadata",
     "resolve_nested_value",

@@ -37,7 +37,7 @@ from app.core.settings_override.api import routes as settings_routes
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
-from app.core.settings_override.registry import ReloadClassification
+from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import sep_settings, SEPSettings
@@ -1175,7 +1175,7 @@ class TestSepSettingsAlertSettings:
                     "PROVIDERS": [
                         {
                             "PROVIDER": "pagerduty",
-                            "routing_key": "**********",
+                            "routing_key": SECRET_STR_MASK,
                             "api_endpoint": "https://events.pagerduty.com/v2/",
                         }
                     ]
@@ -1397,7 +1397,7 @@ class TestGlobalSettingsClass:
             )
             response = api_admin_client.patch(
                 "/api/sep/admin/settings/Settings",
-                json={"PMM__api_key": "**********"},
+                json={"PMM__api_key": SECRET_STR_MASK},
             )
             assert response.status_code == status.HTTP_200_OK
             assert response.json()[0]["value"] == "**********"

@@ -177,7 +177,7 @@ def test_preserve_patch_secret_value_for_top_level_field() -> None:
 
 
 def test_preserve_patch_secret_value_for_nested_leaf() -> None:
-    """Assert a masked nested ``__``-leaf SecretStr PATCH restores the stored secret."""
+    """Assert a masked SecretStr on a nested model's leaf FieldInfo restores the stored secret."""
     field = _SecretLeafModel.model_fields["api_key"]
     current = SecretStr("stored-nested-secret")
     assert (
