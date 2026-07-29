@@ -16,7 +16,7 @@
 """Define database operations for ATW incidents and their executions."""
 
 from app.core.db.crud import BaseSQLModelChildManager, BaseSQLModelManager
-from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
+from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution, AtwSendLog
 
 
 class AtwIncidentManager(BaseSQLModelManager):
@@ -37,5 +37,18 @@ class AtwIncidentExecutionManager(BaseSQLModelChildManager):
     """
 
     Model = AtwIncidentExecution
+    ParentManager = AtwIncidentManager
+    connected_by = "incident_id"
+
+
+class AtwSendLogManager(BaseSQLModelChildManager):
+    """Manage AtwSendLog CRUD operations, scoped to a parent incident.
+
+    :cvar Model: The SQLModel class this manager handles (``AtwSendLog``).
+    :cvar ParentManager: The manager for the parent incident (``AtwIncidentManager``).
+    :cvar connected_by: The foreign-key field linking a send log to its incident.
+    """
+
+    Model = AtwSendLog
     ParentManager = AtwIncidentManager
     connected_by = "incident_id"

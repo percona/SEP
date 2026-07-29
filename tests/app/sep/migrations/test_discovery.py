@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the ``app.sep.migrations._discovery`` helpers."""
+"""Define tests for SEP migration discovery helpers."""
 
 import sys
 from pathlib import Path
@@ -26,6 +26,7 @@ from app.sep.config import sep_settings
 from app.sep.migrations._discovery import (
     _load_models_module,
     discover_plugin_migrations_and_models,
+    discover_plugin_version_dirs,
 )
 
 
@@ -196,3 +197,38 @@ def test_all_migration_owning_plugins_have_loadable_models():
         full_name = f"{plugins_pkg.__name__}.{plugin_dir.name}.models"
         _load_models_module(full_name, models_path)
         assert full_name in sys.modules
+
+
+def test_discover_plugin_version_dirs_sorted_without_loading_models(tmp_path):
+    """Return sorted version dirs without loading ``models.py``."""
+    _build_plugin(tmp_path, "zebra", with_migrations=True, models_source=_MARKER_SRC)
+    _build_plugin(tmp_path, "alpha", with_migrations=True, models_source=_MARKER_SRC)
+    _build_plugin(tmp_path, "no_mig", with_migrations=False, models_source=_MARKER_SRC)
+    version_dirs = discover_plugin_version_dirs(tmp_path)
+    assert version_dirs == [
+        str(tmp_path / "alpha" / "migrations" / "versions"),
+        str(tmp_path / "zebra" / "migrations" / "versions"),
+    ]
+    assert "app.sep.apps.alpha.models" not in sys.modules
+    assert "app.sep.apps.zebra.models" not in sys.modules
+
+
+def test_discover_skips_namespace_package_without_init(tmp_path):
+    """Skip dirs without ``__init__.py`` as migration-owning plugins."""
+    _build_plugin(
+        tmp_path,
+        "namespace_only",
+        with_migrations=True,
+        models_source=_MARKER_SRC,
+        init_source=None,
+    )
+    _build_plugin(
+        tmp_path,
+        "real_pkg",
+        with_migrations=True,
+        models_source=_MARKER_SRC,
+    )
+    version_dirs = discover_plugin_version_dirs(tmp_path)
+    assert version_dirs == [
+        str(tmp_path / "real_pkg" / "migrations" / "versions"),
+    ]

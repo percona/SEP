@@ -21,11 +21,17 @@ from collections import defaultdict
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
+from kombu.exceptions import KombuError
+from pydantic import BaseModel, UUID4
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPNotFoundException,
+    HTTPServiceUnavailableException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
+from app.core.utils.date_time import utc_now
 from app.core.utils.iterators import unique_everseen
 from app.sep.apps.atw.batch import (
     ATWBatchExecuteItemResponse,
@@ -47,14 +53,28 @@ from app.sep.apps.atw.categories import (
     CATEGORY_ROOT_LABELS,
     derive_category_root,
 )
-from app.sep.apps.atw.crud import AtwIncidentExecutionManager, AtwIncidentManager
-from app.sep.apps.atw.deps import AtwIncidentDep
+from app.sep.apps.atw.celery import send_incident_diagnostics
+from app.sep.apps.atw.crud import (
+    AtwIncidentExecutionManager,
+    AtwIncidentManager,
+    AtwSendLogManager,
+)
+from app.sep.apps.atw.deps import (
+    AtwIncidentDep,
+    diagnostics_send_disabled_reasons,
+    IsDiagnosticsSendConfigured,
+)
 from app.sep.apps.atw.models import (
+    AtwConfigResponse,
     AtwIncident,
     AtwIncidentExecution,
     AtwIncidentResponse,
     AtwIncidentUpdate,
     AtwIncidentWrite,
+    AtwSendJobWrite,
+    AtwSendLog,
+    AtwSendLogResponse,
+    AtwSendStatusEnum,
 )
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
@@ -430,6 +450,143 @@ def _build_execution_response(
         finished_at=history.get("finished_at"),
         has_logs=history.get("has_logs"),
     )
+
+
+@router.get("/config/")
+async def atw_config() -> AtwConfigResponse:
+    """Report whether the incident send action is available.
+
+    Not gated by the send guard -- this endpoint is what reports that guard, so
+    it must answer whether or not a receiver is configured.
+
+    :return: The reasons the send action is withheld; empty when it is offered.
+    """
+    return AtwConfigResponse(send_disabled_reasons=diagnostics_send_disabled_reasons())
+
+
+async def _resolve_selected_executions(
+    session: SessionDep, incident: AtwIncident, execution_ids: list[UUID4]
+) -> list[AtwIncidentExecution]:
+    """Resolve the requested execution ids against the incident that owns them.
+
+    :param session: The database session.
+    :param incident: The incident the send belongs to.
+    :param execution_ids: The requested execution ids, in request order.
+    :return: The matching execution rows, in request order.
+    :raises HTTPUnprocessableEntityException: When an id names an execution this
+        incident does not own.
+    """
+    rows = await AtwIncidentExecutionManager.list(
+        session,
+        AtwIncidentExecution.id.in_(execution_ids),
+        incident_id=incident.id,
+    )
+    by_id = {row.id: row for row in rows}
+    if unknown := [str(key) for key in execution_ids if key not in by_id]:
+        raise HTTPUnprocessableEntityException(
+            detail=(
+                f"Execution(s) {', '.join(unknown)} do not belong to incident "
+                f"{incident.id}."
+            )
+        )
+    return [by_id[key] for key in execution_ids]
+
+
+@router.post(
+    "/incidents/{incident_id}/send-jobs/",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[IsDiagnosticsSendConfigured],
+)
+async def atw_start_send_job(
+    session: SessionDep,
+    incident: AtwIncidentDep,
+    current_user: ApiCurrentUser,
+    body: AtwSendJobWrite,
+) -> AtwSendLogResponse:
+    """Start delivering the selected executions' output files to the support case.
+
+    The row is created before the task is queued so a broker failure is still
+    recorded as a failed attempt rather than vanishing: the row is the only place
+    a support engineer can see that a send was ever tried.
+
+    :param session: The database session.
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :param current_user: The authenticated user, stamped as ``requested_by``.
+    :param body: The send payload naming the case reference and executions.
+    :return: The created send log, pending.
+    :raises HTTPUnprocessableEntityException: When an execution id does not belong
+        to this incident.
+    :raises HTTPServiceUnavailableException: When the send could not be queued.
+    :raises HTTPBadRequestException: Propagated from the manager when the row
+        cannot be written.
+    """
+    selected = await _resolve_selected_executions(session, incident, body.execution_ids)
+    row = await AtwSendLogManager.save(
+        session,
+        AtwSendLog(
+            incident_id=incident.id,
+            case_ref=body.case_ref,
+            requested_by=current_user.username,
+            detail={
+                "executions": [
+                    {
+                        "id": str(execution.id),
+                        "task_history_id": execution.task_history_id,
+                        "snippet_filename": execution.snippet_filename,
+                    }
+                    for execution in selected
+                ]
+            },
+        ),
+    )
+    try:
+        send_incident_diagnostics.delay(str(row.id))
+    except (OSError, KombuError) as exc:
+        logger.exception("Could not queue diagnostics send %s", row.id)
+        row.status = AtwSendStatusEnum.FAILED
+        row.finished_at = utc_now()
+        row.detail = {**row.detail, "error": f"Could not queue the send: {exc}"}
+        await AtwSendLogManager.save(session, row, flag_modified_fields=["detail"])
+        raise HTTPServiceUnavailableException(
+            detail=f"Could not queue the send: {exc}"
+        ) from exc
+    return AtwSendLogResponse.model_validate(row)
+
+
+@router.get("/incidents/{incident_id}/send-jobs/")
+async def atw_list_send_jobs(
+    session: SessionDep, incident: AtwIncidentDep, pagination: PaginationDep
+) -> PaginatedResponse[AtwSendLogResponse]:
+    """List one incident's diagnostics send attempts, newest first.
+
+    :param session: The database session.
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :param pagination: The offset/limit window for the page.
+    :return: A paginated page of send attempts, newest first.
+    """
+    page = await AtwSendLogManager.list_paginated(
+        session, pagination=pagination, incident_id=incident.id
+    )
+    items = [AtwSendLogResponse.model_validate(row) for row in page.items]
+    return PaginatedResponse.from_pagination(items, page.total, pagination)
+
+
+@router.get("/incidents/{incident_id}/send-jobs/{send_job_id}")
+async def atw_get_send_job(
+    session: SessionDep, incident: AtwIncidentDep, send_job_id: UUID4
+) -> AtwSendLogResponse:
+    """Retrieve one diagnostics send attempt, for the dialog to poll.
+
+    :param session: The database session.
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :param send_job_id: The send attempt's UUID.
+    :return: The matching send attempt.
+    :raises HTTPNotFoundException: If this incident has no such attempt.
+    """
+    row = await AtwSendLogManager.get_or_404(
+        session, id=send_job_id, incident_id=incident.id
+    )
+    return AtwSendLogResponse.model_validate(row)
 
 
 @router.get("/incidents/{incident_id}/executions/")

@@ -547,6 +547,11 @@ class TestBespokeBaseAppDefinitions:
         """Register the schemaless bespoke definitions without an ``app_schema``."""
         assert get_app_registry().get(plugin).app_schema is None
 
+    def test_alert_troubleshooting_requires_snippets(self) -> None:
+        """Declare snippets as a required app for Alert Troubleshooting."""
+        app = get_app_registry().get("alert_troubleshooting")
+        assert app.requires_apps == ("snippets",)
+
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
     def test_legacy_router_reexport_preserved(self, plugin: str) -> None:
         """Preserve the legacy Jinja ``router`` re-export on each package."""

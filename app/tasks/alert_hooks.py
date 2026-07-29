@@ -20,8 +20,9 @@ static ``app.sep`` import: plugin domain knowledge (e.g. the archiver
 ``PURGE_LIST`` schema) lives in the plugin package, not here. Rather than the
 core enumerating plugins by owner, each task *carries* its enrichment builder:
 the owning plugin stamps a ``"module:function"`` string onto
-``Task.alert_detail_builder`` at creation, and this resolver imports it lazily
-with :func:`importlib.import_module` the first time the task's alert fires. The
+``Task.alert_detail_builder`` at creation, and this task resolves it lazily via
+the shared :func:`app.tasks.hook_resolver.resolve_hook` the first time the
+task's alert fires. The
 dependency points the right way — core discovers, the plugin declares — so a new
 plugin needs no edit here. This mirrors how the Celery executor resolves a task
 ``callable`` by path.
@@ -34,11 +35,12 @@ happened to import the plugin; a path carried on the task resolves identically
 in all three.
 """
 
-import importlib
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
+
+from app.tasks.hook_resolver import resolve_hook
 
 if TYPE_CHECKING:
     from app.tasks.models import TaskHistory
@@ -64,20 +66,6 @@ class OwnerAlertDetails:
 #: owner-specific alert additions (or ``None`` when nothing should be attached).
 AlertDetailBuilder = Callable[["TaskHistory"], Awaitable[OwnerAlertDetails | None]]
 
-#: Cache of resolved builders, keyed by ``"module:function"`` path.
-_RESOLVED: dict[str, AlertDetailBuilder] = {}
-
-
-def _resolve(path: str) -> AlertDetailBuilder:
-    """Import and return the builder named by a ``"module:function"`` path.
-
-    :param path: The builder path in ``"module:function"`` form.
-    :return: The resolved builder callable.
-    """
-    module_path, func_name = path.split(":", 1)
-    module = importlib.import_module(module_path)
-    return getattr(module, func_name)
-
 
 async def build_owner_alert_details(
     history: "TaskHistory",
@@ -98,14 +86,11 @@ async def build_owner_alert_details(
     path = history.task.alert_detail_builder
     if not path:
         return None
-    builder = _RESOLVED.get(path)
-    if builder is None:
-        try:
-            builder = _resolve(path)
-        except (ImportError, AttributeError, ValueError):
-            logger.exception("Failed to resolve alert detail builder %r.", path)
-            return None
-        _RESOLVED[path] = builder
+    try:
+        builder: AlertDetailBuilder = resolve_hook(path)
+    except (ImportError, AttributeError, ValueError):
+        logger.exception("Failed to resolve alert detail builder %r.", path)
+        return None
     try:
         return await builder(history)
     except Exception:

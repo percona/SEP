@@ -45,6 +45,16 @@ from app.core.utils.iterators import unique_everseen
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
+__all__ = [
+    "ScriptExecuteWrite",
+    "ScriptExecutionResponse",
+    "ScriptPreviewResponse",
+    "ScriptProtocol",
+    "ScriptSource",
+    "make_script_dep",
+    "resolve_scripts",
+]
+
 ARBITRARY_ARGS_SCHEMA = {"additionalProperties": True}
 """Advertise a free-form argument map.
 
@@ -285,14 +295,3 @@ async def resolve_scripts(
         except HTTPNotFoundException:
             continue
     return resolved
-
-
-__all__ = [
-    "ScriptExecuteWrite",
-    "ScriptExecutionResponse",
-    "ScriptPreviewResponse",
-    "ScriptProtocol",
-    "ScriptSource",
-    "make_script_dep",
-    "resolve_scripts",
-]

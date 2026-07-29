@@ -305,6 +305,10 @@ class TaskExecutionApp(BaseApp):
     :param alert_detail_builder: The ``"module:function"`` path of a plugin
         callable that enriches the created task's failure alert, stamped onto the
         ``TaskWrite`` by the three-phase create path. Defaults to ``None``.
+    :param run_result_recorder: The ``"module:function"`` path of a plugin
+        callable that records the created task's structured run result at
+        terminal status, stamped onto the ``TaskWrite`` by the three-phase
+        create path. Defaults to ``None``.
     :param payload_builder: A ``(form, inventory_api) -> TaskWrite`` dependency
         used directly as the create payload, bypassing the three-phase path.
         Required for a ``schema=`` app (no ``AppFormModel`` to introspect refs).
@@ -429,6 +433,7 @@ class TaskExecutionApp(BaseApp):
     views: SkipValidation[Views] = Views()
     task_spec_builder: TaskSpecBuilder | None = None
     alert_detail_builder: str | None = None
+    run_result_recorder: str | None = None
     payload_builder: Callable[..., Awaitable[TaskWrite]] | None = None
     script_source: SkipValidation[ScriptSource | None] = None
     get_task: Callable[..., Awaitable[Task]] | None = None
@@ -1270,7 +1275,8 @@ class TaskExecutionApp(BaseApp):
         otherwise build the three-phase (Resolve → Assemble → Envelope)
         dependency over the ``create_model``, reading the envelope's ``name`` and
         ``alert_on_fail`` from the parsed form and stamping the app's
-        ``alert_detail_builder``. The body parameter is encoded as JSON (``Body()``)
+        ``alert_detail_builder`` and ``run_result_recorder``. The body parameter
+        is encoded as JSON (``Body()``)
         by default, or form-urlencoded (``Form()``) when ``create_form_encoded`` is
         set.
 
@@ -1282,6 +1288,7 @@ class TaskExecutionApp(BaseApp):
         spec_builder = self.task_spec_builder
         owner = self.owner
         alert_detail_builder = self.alert_detail_builder
+        run_result_recorder = self.run_result_recorder
         body_marker = Form() if self.create_form_encoded else Body()
         form_param = Annotated[self.create_model, body_marker]
 
@@ -1297,6 +1304,7 @@ class TaskExecutionApp(BaseApp):
                 owner=owner,
                 alert_on_fail=getattr(form, "alert_on_fail", False),
                 alert_detail_builder=alert_detail_builder,
+                run_result_recorder=run_result_recorder,
             )
             stamp_form_input(write, form)
             return write
