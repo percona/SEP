@@ -106,14 +106,18 @@ app = TaskExecutionApp(
 )
 ```
 
-Three knobs carry the weight: `create_model` (the form/body model, [§4](#4-form-dsl-reference)),
-`views` (section titles, list columns, detail layout, and UI capability flags), and
-`capabilities` (which derived mutation routes to switch on, [§5](#5-escape-hatch-ladder)).
+Four knobs carry the weight: `create_model` (the form/body model, [§4](#4-form-dsl-reference)),
+`views` (section titles, list columns, detail layout, and UI capability flags),
+`capabilities` (which derived mutation routes to switch on, [§5](#5-escape-hatch-ladder)),
+and the builder that turns a validated form into a task payload — `task_spec_builder`
+or `payload_builder`, covered in [§3](#3-quickstart) below.
 
 ### How the registry discovers and activates apps
 
 Apps are **not** wired by hand into a router file. Activation is data, in
-`settings.yaml`:
+`settings.yaml`: one `MODULE_NAME` entry per app under `SEP.APPS`. `ENABLED`
+defaults to `true` and is normally omitted; an app opts out of shipping enabled
+by setting it to `false`, as `topology` does:
 
 <!-- src: settings.yaml -->
 ```yaml
@@ -121,7 +125,9 @@ default:
   SEP:
     APPS:
       - MODULE_NAME: checksums
-        ENABLED: true
+      ...
+      - MODULE_NAME: topology
+        ENABLED: false
 ```
 
 At startup, `build_app_registry` walks the `SEP.APPS` list in order, imports each
@@ -170,7 +176,8 @@ def build_apps_router(registry: AppRegistry) -> APIRouter:
 
 An app registered with `ENABLED: false` is discovered but its routes are guarded by
 a per-app enable check (the `require_app_enabled` dependency in the loop above) —
-an admin turns it on from the App Manager without a redeploy.
+an admin turns it on from the sidebar's top-level **Apps** page (`/admin/apps`)
+without a redeploy.
 
 ### What "derived router" means
 
@@ -178,10 +185,11 @@ an admin turns it on from the App Manager without a redeploy.
 `@router.post("/")`, `@router.put("/{task_name}")`, and so on by hand, you declare
 the app object and the framework **derives** those routes from it. The
 `GET /schema` form comes from the `create_model` and `views`; `POST /` validates the
-body against `create_model` and runs the spec/payload builder; `PUT`/`DELETE` are
-switched on by `capabilities` and carry the framework's default protected-task and
-running-conflict guards. You do not see the route functions — they are built for you
-from the knobs.
+body against `create_model` and turns it into a task through the app's
+`task_spec_builder` or `payload_builder` ([§3](#3-quickstart) covers the two);
+`PUT`/`DELETE` are switched on by `capabilities` and carry the framework's default
+protected-task and running-conflict guards. You do not see the route functions —
+they are built for you from the knobs.
 
 ### The copy hazard — scaffold, never copy a whole app
 
@@ -235,8 +243,12 @@ step down to `base` later if the derived router genuinely cannot express your ap
 
 ## 3. Quickstart
 
-`make startapp` scaffolds a new app end to end. Run it with no `NAME` to enter an
-interactive wizard, or pass variables on the command line:
+`make startapp` scaffolds a new app end to end. It runs an interactive wizard
+whenever standard input is a TTY — with or without variables on the command
+line, since a supplied variable only pre-fills and skips that one prompt, and a
+final confirmation still gates the write. Pass `NO_INPUT=1` (or pipe/redirect
+stdin) to skip the wizard entirely and resolve every unset field to its
+default:
 
 ```bash
 make startapp NAME=myapp TYPE=task DISPLAY_NAME="My App" \
@@ -279,12 +291,18 @@ It inserts a `SEP.APPS` entry, **disabled** unless you pass `ENABLE`:
 
 ```text
 Scaffolded 'task' app 'myapp':
-  app:   app/sep/apps/myapp
-  tests: tests/app/sep/apps/myapp
+  app:   <repo-root>/app/sep/apps/myapp
+  tests: <repo-root>/tests/app/sep/apps/myapp
 
 Registered 'myapp' DISABLED in settings.yaml. Manage it from the Admin App
 Manager (Settings -> Apps) once you have filled in the skeleton.
 ```
+
+The scaffolder prints absolute paths (shown above with a `<repo-root>`
+placeholder); it also calls the app-management page the "Admin App Manager
+(Settings -> Apps)" — in the running app that is the sidebar's top-level
+**Apps** entry (`/admin/apps`), a sibling of **Settings** rather than a page
+under it.
 
 The resulting `settings.yaml` entry:
 
@@ -299,8 +317,24 @@ The scaffolder does **not** finish the app for you. After scaffolding:
 
 1. **Fill in the skeleton** — the generated `models.py`, `spec.py`, and `views.py`
    are stubs; write your fields, spec builder, and views.
-2. **Enable the app** — it is registered **disabled**. Turn it on from the Admin App
-   Manager (Settings → Apps), or scaffold with `ENABLE` for a dev box.
+2. **Enable the app** — it is registered **disabled**. Turn it on from the
+   sidebar's top-level **Apps** page (`/admin/apps`), or scaffold with `ENABLE`
+   for a dev box.
+
+The generated `spec.py` implements a `task_spec_builder`: a pure
+`(form, resolved) -> EnvelopeSpec` function the three-phase create path calls
+after resolving the form's reference fields — it is what the `task` flavor's
+`app.py` wires (`task_spec_builder=build_<name>_spec`), and its stub docstring
+is the authoritative walk-through of the `RunCommandSpec` / `build_command_args`
+contract. `payload_builder` is a different knob: a `(form, inventory_api) ->
+TaskWrite` dependency used directly as the create payload, bypassing the
+three-phase path entirely. The two are mutually exclusive. Checksums uses
+`payload_builder` rather than the scaffolded default because two of its fields
+(`databases`, `tables`) are multi-value `SchemaRef`/`TableRef` selections, and
+the three-phase path's standard resolution only resolves single-id reference
+fields — a list value comes back unresolved. `build_checksums_payload` runs its
+own multi-value resolution before assembling the task, which `task_spec_builder`'s
+fixed signature has no room for.
 
 No frontend work is needed: once enabled, the app appears in the sidebar and its
 pages render from the derived schema — `GET /api/apps/` carries the route,
@@ -335,8 +369,12 @@ The form DSL is **model-first**: one model class is *both* the request body the
 server validates *and* the source of the derived `GET /schema` form. You annotate
 each field with markers — `Ui(...)` for presentation, reference markers for
 inventory, `Choices(...)`/`ArgFormat(...)` for behaviour — and the framework derives
-the form and the command from them. The public surface is exported from
-`app/sep/apps/framework/form_dsl/__init__.py`.
+the form and the command from them. The markers and models (`Ui`, the reference
+markers, `Choices`, `AppFormModel`, ...) are exported from
+`app/sep/apps/framework/form_dsl/__init__.py`; the predicate/rules DSL covered
+later in this section (`F`, `FailRule`, `FieldGate`, `CardinalityRule`, the
+truthiness predicates) lives in and is exported from
+`app/sep/apps/framework/rules.py`.
 
 **How to read the examples.** Every field has the shape
 `name: Annotated[type, markers…] = default`. `Annotated` is Python's way of
@@ -363,7 +401,11 @@ service_id: Annotated[
 ```
 
 Field **declaration order matters**: sections appear in the order of each
-section's first field, and within a section fields render in declaration order.
+section's first field, and within a section fields sort by `Ui(order=...)`
+first, with declaration order as the tiebreaker — `order` defaults to `0`, so
+declaration order governs a section until a field pins an explicit `order`.
+Checksums' Advanced section uses `Ui(order=...)` to reorder a few fields away
+from their declaration order (see the model's docstring).
 
 ### `ArgFormat`
 
@@ -546,8 +588,11 @@ section-level `forbidden` gates shown in the predicate DSL below.
 
 For rules that span more than one field, the framework has a small predicate
 DSL: the field reference `F(...)`, the truthiness predicates (`truthy`, `present`,
-`falsy`, `absent`, and their `any_`/`all_` siblings — the full set lives in
-`app/sep/apps/framework/rules.py`), boolean combinators (`&`, `|`, `not_`), the
+`falsy`, `absent`, and multi-field siblings named on the same pattern —
+`any_truthy`/`all_truthy`, `any_present`/`all_present`, `any_falsy`/`all_falsy` —
+except `absent`, whose multi-field counterpart is `none_present`; the full set
+lives in `app/sep/apps/framework/rules.py`), boolean combinators (`&`, `|`, `^`,
+`~`, or their `all_`/`any_`/`xor_`/`not_` function-call forms), the
 per-field gate markers `Requires` / `Forbidden`, and three rule envelopes —
 `FailRule` (reject a form when a predicate holds), `FieldGate` (gate a field or
 section), and `CardinalityRule` (bound the count of present fields). App-scoped
@@ -588,9 +633,18 @@ encryption_recipient: Annotated[
 ] = None
 ```
 
-A marker bound to a name can gate a whole family of fields — the same model
-attaches `_MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")` to every
-Mydumper-only field.
+A marker bound to a name can gate a whole family of fields at once — the same
+model attaches `_MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")` to
+each of its non-boolean Mydumper-only fields.
+
+> **⚠ `Forbidden`/`Requires` cannot gate a bool field on its default.** The
+> predicate engine treats a field's zero value as absent, and a bare `bool`
+> field's default (`False`) *is* its zero value — so a `Forbidden(when=...)`
+> marker on such a field would never see it as "present" and would never fire.
+> MySQL Backups' mode-owned bool fields (`mydumper_dump_triggers` and its
+> siblings) are therefore gated by a generated `FailRule` instead — the
+> `truthy(name) & (F("backup_type") != owner_mode)` rule shown above — which
+> checks the field's actual value rather than its presence.
 
 **`FieldGate`** — the same predicate DSL gates a whole section. Here the Mydumper
 section is forbidden unless `backup_type == "M"`:
@@ -633,8 +687,9 @@ covers your case, and prefer a knob over a custom route.
 ### Rung 1 — `AppCapabilities` flags
 
 The cheapest step: switch derived routes on or off. `AppCapabilities` toggles which
-of the derived mutation routes (create, update, delete, execute, detail) the spine
-builds. Checksums turns on the derived update and delete:
+of the six derived routes (create, list, detail, execute, update, delete) the
+spine builds — `create`, `list`, `detail`, and `execute` default on; `update` and
+`delete` default off. Checksums turns on the derived update and delete:
 
 <!-- src: app/sep/apps/checksums/app.py :: app -->
 ```python
@@ -646,7 +701,9 @@ app = TaskExecutionApp(
 ```
 
 Turning a capability **off** suppresses the derived route so a custom one can take
-its place (Alters sets `detail=False` so its satellite-resolving detail route wins).
+its place (Alters sets `create`, `detail`, `execute`, `update`, and `delete` all
+to `False` — every mutation and its satellite-resolving detail route ride
+`extra_routes` instead; only the derived `list` and schema routes remain).
 
 ### Rung 2 — `extra_routes`
 
@@ -768,8 +825,9 @@ async def build_alters_cascade_plan(
 
 The `cascade_create_*` / `cascade_update_*` / `cascade_delete_*` helpers in
 `app/sep/apps/framework/cascade.py` are the toolbox the closure calls. They
-return a `CascadeResult`; call its `raise_if_failed()` to turn a partial cascade
-failure into an HTTP 500 instead of hand-rolling the error block.
+return a `CascadeResult`; call its `raise_if_failed(op="create")` (`op` is
+keyword-only, one of `"create"` / `"update"` / `"delete"`) to turn a partial
+cascade failure into an HTTP 500 instead of hand-rolling the error block.
 
 ### Rung 5 — fall back to `BaseApp`
 
@@ -822,7 +880,10 @@ generically. `DerivedRouterContractTests`
 create, update, execute, delete, auth, 404, the protected-task and
 running-conflict guards, connectivity, and injected extras against the **real**
 app definition. Your app's contract test is a subclass
-that binds the definition to `app_def` — the scaffolder emits exactly this:
+that binds the definition to `app_def` — the scaffolder's `task` flavor emits
+exactly this (the `script` and `base` flavors derive no model-first CRUD
+contract to subclass, so their generated tests hand-write smoke tests against
+`build_contract_client` instead):
 
 <!-- src: tests/app/sep/apps/checksums/test_contract.py :: TestChecksumsContract -->
 ```python
@@ -846,6 +907,7 @@ and `mock_inventory_api` (the two boundary APIs, seeded per test):
 
 <!-- src: tests/app/sep/apps/conftest.py :: contract_client -->
 ```python
+@pytest.fixture
 def contract_client(
     request: pytest.FixtureRequest,
     regular_user: CasdoorUser,
@@ -880,7 +942,10 @@ Two CI gates keep apps honest beyond their own contract test:
   `.github/workflows/python.yaml`) scaffolds all three flavors and runs their contract
   suites on every PR, so the Quickstart above cannot silently rot.
 
-Both run under the ordinary `make test` / CI `pytest` invocation.
+Conformance runs as part of the ordinary `make test` / CI `pytest` invocation,
+alongside every other test; the scaffold check does not — `make startapp-check`
+is its own separate CI step (`.github/workflows/python.yaml`), never invoked by
+`make test`.
 
 ---
 
