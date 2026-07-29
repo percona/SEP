@@ -21,6 +21,7 @@ from app.core.log import (
     _CONTEXT_VARS,
     clear_log_context,
     ContextFilter,
+    ContextFormatter,
     correlation_id_var,
     request_id_var,
     set_log_context,
@@ -124,3 +125,99 @@ class TestClearLogContext:
 
         for var in _CONTEXT_VARS.values():
             assert var.get() == "-"
+
+
+class TestContextFormatter:
+    """Test the ContextFormatter that appends non-default log context fields."""
+
+    def setup_method(self) -> None:
+        """Reset context vars before each test."""
+        clear_log_context()
+
+    def teardown_method(self) -> None:
+        """Reset context vars after each test."""
+        clear_log_context()
+
+    def test_defaults_render_base_only(self) -> None:
+        """Assert all ``"-"`` defaults are omitted from the appended context."""
+        correlation_id_var.set("corr-456")
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        formatter = ContextFormatter(
+            fmt="%(name)s: [%(correlation_id)s] %(message)s <%(process)d>",
+        )
+        result = formatter.format(record)
+
+        expected = (
+            f"{record.name}: [{record.correlation_id}] "
+            f"{record.getMessage()} <{record.process}>"
+        )
+        assert result == expected
+
+    def test_request_context_appends_fields(self) -> None:
+        """Assert request-context fields are appended in stable order."""
+        set_log_context(
+            request_id="req-123",
+            correlation_id="corr-456",
+            user="alice",
+            endpoint="/api/test",
+        )
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        formatter = ContextFormatter(
+            fmt="%(name)s: [%(correlation_id)s] %(message)s <%(process)d>",
+        )
+        result = formatter.format(record)
+
+        expected_base = (
+            f"{record.name}: [{record.correlation_id}] "
+            f"{record.getMessage()} <{record.process}>"
+        )
+        assert result == (
+            expected_base + " request_id=req-123 user=alice endpoint=/api/test"
+        )
+        assert "correlation_id=" not in result
+
+    def test_task_context_appends_fields(self) -> None:
+        """Assert task-context fields are appended for Celery-like logs."""
+        set_log_context(
+            correlation_id="corr-456",
+            task_id="task-1",
+            task_name="my_task",
+        )
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        formatter = ContextFormatter(
+            fmt="%(name)s: [%(correlation_id)s] %(message)s <%(process)d>",
+        )
+        result = formatter.format(record)
+
+        expected_base = (
+            f"{record.name}: [{record.correlation_id}] "
+            f"{record.getMessage()} <{record.process}>"
+        )
+        assert result == expected_base + " task_id=task-1 task_name=my_task"
+        assert "request_id=" not in result
+        assert "endpoint=" not in result
+        assert "user=" not in result
+
+    def test_uvicorn_layout_preserved(self) -> None:
+        """Assert the uvicorn base layout remains intact."""
+        set_log_context(correlation_id="corr-999", user="alice")
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        formatter = ContextFormatter(
+            fmt="uvicorn: [%(correlation_id)s] %(message)s <%(process)d>",
+        )
+        result = formatter.format(record)
+
+        expected_base = f"uvicorn: [{record.correlation_id}] {record.getMessage()} <{record.process}>"
+        assert result == expected_base + " user=alice"
