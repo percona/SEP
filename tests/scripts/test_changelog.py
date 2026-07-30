@@ -101,11 +101,8 @@ def test_add_normalizes_terminal_punctuation(repo, message, expected):
     """``add`` appends a terminal period only when the message lacks one.
 
     :param repo: Test repo fixture.
-    :type repo: pathlib.Path
     :param message: The description passed to ``add``.
-    :type message: str
     :param expected: The description as written to the fragment.
-    :type expected: str
     """
     exit_code = changelog.main(
         ["add", "--ticket", "SEP-503", "--section", "added", "--message", message],
