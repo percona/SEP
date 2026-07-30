@@ -43,10 +43,9 @@ logger = logging.getLogger(__name__)
 
 _CONTENT_CHANGED_REASON = "File contents have changed"
 
-# Audit trail for automatic approvals of manifest-verified built-in snippets.
-# Kept next to the sync approval transition: the ``system`` sentinel lands in
-# ``Snippet.updated_by`` alongside real user ids, and ``is_human_revoked``
-# treats a non-null ``updated_by`` on an unapproved row as sticky revocation.
+# The ``system`` sentinel lands in ``Snippet.updated_by`` alongside real user
+# ids, where ``is_human_revoked`` reads a non-null ``updated_by`` on an
+# unapproved row as a sticky administrator revocation.
 BUILTIN_APPROVAL_USER_ID = "system"
 BUILTIN_APPROVAL_REASON = "Auto-approved: matches built-in checksum manifest"
 
