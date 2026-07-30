@@ -38,4 +38,5 @@ app = BaseApp(
     api_router=api_router,
     jinja_router=jinja_router,
     schema=TASKS_PLUGIN_SCHEMA,
+    uses_task_data=True,
 )
