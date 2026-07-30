@@ -1008,6 +1008,7 @@ class TestSnippetsApiDeleteApproval:
         await session.refresh(snippet)
         assert snippet.is_approved is False
         assert snippet.updated_by == str(admin_user.id)
+        assert snippet.is_human_revoked is True
         assert f"Approval removed by {admin_user.username}" in snippet.reason
 
     async def test_idempotent_when_never_approved(
