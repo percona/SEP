@@ -22,6 +22,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import app.sep.apps.snippets.celery as sep_celery
+from app.sep.apps.snippets.builtin_manifest import BUILTIN_CHECKSUM_MANIFEST
+from app.sep.apps.snippets.celery import (
+    BUILTIN_APPROVAL_REASON,
+    BUILTIN_APPROVAL_USER_ID,
+)
 from app.sep.snippets.config import SnippetFilter, SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
@@ -35,6 +40,24 @@ def _patch_session(mocker, session):
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=session)
     mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
     mocker.patch(f"{MODULE}.get_async_session_maker", return_value=mock_session_maker)
+
+
+def _sha256(content: bytes) -> str:
+    """Return the SHA-256 hex digest of ``content``."""
+    return hashlib.sha256(content).hexdigest()
+
+
+def _write_manifest(tmp_path: Path, entries: dict[str, bytes]) -> None:
+    """Write snippet files and a matching built-in checksum manifest.
+
+    :param tmp_path: The temporary snippets directory.
+    :param entries: Mapping of relative filename to file contents.
+    """
+    lines: list[str] = []
+    for filename, content in entries.items():
+        (tmp_path / filename).write_bytes(content)
+        lines.append(f"{_sha256(content)}  {filename}\n")
+    (tmp_path / BUILTIN_CHECKSUM_MANIFEST).write_text("".join(lines), encoding="utf-8")
 
 
 class TestShouldSkipSnippet:
@@ -256,6 +279,284 @@ class TestUpdateSnippets:
             b_row.md5_digest
             == hashlib.md5(b_content, usedforsecurity=False).hexdigest()
         )
+
+
+class TestBuiltinAutoApproval:
+    """Cover built-in checksum auto-approval during ``update_snippets``."""
+
+    @staticmethod
+    def _patch_snippets_dir(mocker, tmp_path, *, auto_approve: bool = True):
+        """Point the snippets dir at ``tmp_path`` and set the auto-approve toggle."""
+        mocker.patch.object(snippets_settings, "SNIPPETS_DIR", tmp_path)
+        mocker.patch.object(Snippet, "BASE_DIR", tmp_path)
+        mocker.patch.object(
+            snippets_settings, "AUTO_APPROVE_BUILTIN_SNIPPETS", auto_approve
+        )
+
+    @pytest.mark.asyncio
+    async def test_creates_and_auto_approves_manifest_match(
+        self, session, mocker, tmp_path
+    ):
+        """Assert a new manifest-matching file is created already approved."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        content = b"#!/bin/bash\necho builtin\n"
+        _write_manifest(tmp_path, {"builtin.sh": content})
+
+        await sep_celery.update_snippets()
+
+        row = await SnippetManager.first(session, filename="builtin.sh")
+        assert row is not None
+        assert row.is_approved is True
+        assert row.updated_by == BUILTIN_APPROVAL_USER_ID
+        assert row.reason == BUILTIN_APPROVAL_REASON
+
+    @pytest.mark.asyncio
+    async def test_verified_content_change_auto_approves(
+        self, session, mocker, tmp_path
+    ):
+        """Assert a content change that still matches the manifest stays approved."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        old_content = b"#!/bin/bash\necho old\n"
+        new_content = b"#!/bin/bash\necho new\n"
+        await SnippetManager.create(
+            session,
+            Snippet(
+                filename="builtin.sh",
+                size=len(old_content),
+                md5_digest=hashlib.md5(old_content, usedforsecurity=False).hexdigest(),
+            ),
+        )
+        _write_manifest(tmp_path, {"builtin.sh": new_content})
+
+        await sep_celery.update_snippets()
+
+        row = await SnippetManager.first(session, filename="builtin.sh")
+        assert row is not None
+        assert row.is_approved is True
+        assert row.updated_by == BUILTIN_APPROVAL_USER_ID
+        assert row.reason == BUILTIN_APPROVAL_REASON
+        assert (
+            row.md5_digest
+            == hashlib.md5(new_content, usedforsecurity=False).hexdigest()
+        )
+
+    @pytest.mark.asyncio
+    async def test_digest_mismatch_keeps_manual_gate(self, session, mocker, tmp_path):
+        """Assert a file whose digest differs from the manifest stays unapproved."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        content = b"#!/bin/bash\necho local\n"
+        (tmp_path / "builtin.sh").write_bytes(content)
+        (tmp_path / BUILTIN_CHECKSUM_MANIFEST).write_text(
+            f"{'0' * 64}  builtin.sh\n", encoding="utf-8"
+        )
+
+        await sep_celery.update_snippets()
+
+        row = await SnippetManager.first(session, filename="builtin.sh")
+        assert row is not None
+        assert row.is_approved is False
+
+    @pytest.mark.asyncio
+    async def test_absent_from_manifest_keeps_manual_gate(
+        self, session, mocker, tmp_path
+    ):
+        """Assert a file missing from the manifest stays unapproved."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        (tmp_path / "custom.sh").write_bytes(b"#!/bin/bash\necho custom\n")
+        (tmp_path / BUILTIN_CHECKSUM_MANIFEST).write_text("", encoding="utf-8")
+
+        await sep_celery.update_snippets()
+
+        row = await SnippetManager.first(session, filename="custom.sh")
+        assert row is not None
+        assert row.is_approved is False
+
+    @pytest.mark.asyncio
+    async def test_absent_from_manifest_skips_hashing(self, session, mocker, tmp_path):
+        """Assert sync only hashes files the manifest has an entry for.
+
+        A digest for an unlisted file can never match, so computing one costs a
+        full read per user-supplied snippet on every sync.
+        """
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        _write_manifest(tmp_path, {"builtin.sh": b"#!/bin/bash\necho builtin\n"})
+        (tmp_path / "custom.sh").write_bytes(b"#!/bin/bash\necho custom\n")
+        spy = mocker.spy(sep_celery, "sha256_file")
+
+        await sep_celery.update_snippets()
+
+        assert {call.args[0].name for call in spy.call_args_list} == {"builtin.sh"}
+
+    @pytest.mark.asyncio
+    async def test_auto_approve_disabled_skips_hashing(self, session, mocker, tmp_path):
+        """Assert sync hashes nothing when built-in auto-approval is disabled."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path, auto_approve=False)
+        _write_manifest(tmp_path, {"builtin.sh": b"#!/bin/bash\necho builtin\n"})
+        spy = mocker.spy(sep_celery, "sha256_file")
+
+        await sep_celery.update_snippets()
+
+        assert spy.call_args_list == []
+
+    @pytest.mark.asyncio
+    async def test_content_change_auto_clear_is_not_human_revocation(
+        self, session, mocker, tmp_path
+    ):
+        """Assert sync content-change clears ``updated_by`` (not a human revocation).
+
+        Pins the writer invariant: automatic removals pass ``user_id=None`` so
+        ``is_human_revoked`` stays false and a later matching sync may re-approve.
+        """
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        old_content = b"#!/bin/bash\necho old\n"
+        new_content = b"#!/bin/bash\necho new\n"
+        snippet = Snippet(
+            filename="builtin.sh",
+            size=len(old_content),
+            md5_digest=hashlib.md5(old_content, usedforsecurity=False).hexdigest(),
+        )
+        snippet.approve("Approved by admin", "admin-1")
+        await SnippetManager.create(session, snippet)
+        # Manifest lists the old digest so the new contents are a mismatch.
+        (tmp_path / "builtin.sh").write_bytes(new_content)
+        (tmp_path / BUILTIN_CHECKSUM_MANIFEST).write_text(
+            f"{_sha256(old_content)}  builtin.sh\n",
+            encoding="utf-8",
+        )
+
+        await sep_celery.update_snippets()
+
+        row = await SnippetManager.first(session, filename="builtin.sh")
+        assert row is not None
+        assert row.is_approved is False
+        assert row.updated_by is None
+        assert row.is_human_revoked is False
+
+    @pytest.mark.asyncio
+    async def test_human_revoke_sticky_across_manifest_matching_update(
+        self, session, mocker, tmp_path
+    ):
+        """Assert an administrator revocation survives a later matching content update."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        old_content = b"#!/bin/bash\necho old\n"
+        new_content = b"#!/bin/bash\necho new\n"
+        snippet = Snippet(
+            filename="builtin.sh",
+            size=len(old_content),
+            md5_digest=hashlib.md5(old_content, usedforsecurity=False).hexdigest(),
+        )
+        snippet.approve("Approved by admin", "admin-1")
+        snippet.remove_approval("Approval removed by admin", "admin-1")
+        await SnippetManager.create(session, snippet)
+        _write_manifest(tmp_path, {"builtin.sh": new_content})
+
+        await sep_celery.update_snippets()
+
+        row = await SnippetManager.first(session, filename="builtin.sh")
+        assert row is not None
+        assert row.is_approved is False
+        assert row.is_human_revoked is True
+        assert row.updated_by == "admin-1"
+        assert row.reason == "Approval removed by admin"
+
+    @pytest.mark.asyncio
+    async def test_manifest_file_excluded_from_sync(self, session, mocker, tmp_path):
+        """Assert the checksum manifest never becomes a snippet row."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        content = b"#!/bin/bash\necho builtin\n"
+        _write_manifest(tmp_path, {"builtin.sh": content})
+
+        await sep_celery.update_snippets()
+
+        filenames = {s.filename for s in await SnippetManager.list(session)}
+        assert BUILTIN_CHECKSUM_MANIFEST not in filenames
+        assert filenames == {"builtin.sh"}
+
+    @pytest.mark.asyncio
+    async def test_toggle_disabled_skips_auto_approval(self, session, mocker, tmp_path):
+        """Assert disabling the setting skips manifest load and leaves matches unapproved."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path, auto_approve=False)
+        content = b"#!/bin/bash\necho builtin\n"
+        _write_manifest(tmp_path, {"builtin.sh": content})
+        load_manifest = mocker.spy(sep_celery, "load_builtin_checksum_manifest")
+
+        await sep_celery.update_snippets()
+
+        load_manifest.assert_not_called()
+        row = await SnippetManager.first(session, filename="builtin.sh")
+        assert row is not None
+        assert row.is_approved is False
+
+    @pytest.mark.asyncio
+    async def test_unchanged_unapproved_row_auto_approved_on_upgrade(
+        self, session, mocker, tmp_path
+    ):
+        """Assert an existing unapproved matching row is approved without a content change."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        content = b"#!/bin/bash\necho builtin\n"
+        await SnippetManager.create(
+            session,
+            Snippet(
+                filename="builtin.sh",
+                size=len(content),
+                md5_digest=hashlib.md5(content, usedforsecurity=False).hexdigest(),
+            ),
+        )
+        _write_manifest(tmp_path, {"builtin.sh": content})
+
+        await sep_celery.update_snippets()
+
+        row = await SnippetManager.first(session, filename="builtin.sh")
+        assert row is not None
+        assert row.is_approved is True
+        assert row.updated_by == BUILTIN_APPROVAL_USER_ID
+        assert row.reason == BUILTIN_APPROVAL_REASON
+
+    @pytest.mark.asyncio
+    async def test_approvals_and_content_changes_use_split_batches(
+        self, session, mocker, tmp_path
+    ):
+        """Assert approval-only and content-change rows use separate save batches."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        create_content = b"#!/bin/bash\necho create\n"
+        old_content = b"#!/bin/bash\necho old\n"
+        new_content = b"#!/bin/bash\necho new\n"
+        await SnippetManager.create(
+            session,
+            Snippet(
+                filename="changed.sh",
+                size=len(old_content),
+                md5_digest=hashlib.md5(old_content, usedforsecurity=False).hexdigest(),
+            ),
+        )
+        _write_manifest(
+            tmp_path,
+            {"create.sh": create_content, "changed.sh": new_content},
+        )
+        save_batch = mocker.spy(SnippetManager, "save_batch")
+
+        await sep_celery.update_snippets()
+
+        meta_batch, approval_batch = save_batch.call_args_list
+        assert meta_batch.kwargs.get("flag_modified_fields") == ["meta"]
+        assert {s.filename for s in meta_batch.args[1:]} == {"changed.sh"}
+        assert approval_batch.kwargs.get("flag_modified_fields", ()) == ()
+        assert {s.filename for s in approval_batch.args[1:]} == {"create.sh"}
+        create_row = await SnippetManager.first(session, filename="create.sh")
+        assert create_row is not None
+        assert create_row.is_approved is True
 
 
 class TestSyncSnippets:
