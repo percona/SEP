@@ -1,4 +1,4 @@
-"""Tests for the pgBackRest payload script (SEP-1674)."""
+"""Tests for the pgBackRest payload script."""
 
 import importlib.util
 from importlib.machinery import SourceFileLoader
