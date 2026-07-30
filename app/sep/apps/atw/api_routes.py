@@ -525,7 +525,7 @@ def _execution_args(
     except (TypeError, ValueError, KeyError, AttributeError):
         logger.warning(ATW_ARG_MASKING_WARNING, script.filename, exc_info=True)
         return None, True
-    return (masked, False) if masked is not None else (None, True)
+    return masked, masked is None
 
 
 def _build_execution_response(
