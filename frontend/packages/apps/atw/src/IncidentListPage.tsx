@@ -66,6 +66,16 @@ export function IncidentListPage() {
   const deleteMutation = useDeleteAtwIncident();
   const closeMutation = useCloseAtwIncident();
   const reopenMutation = useReopenAtwIncident();
+  const lifecycleError = closeMutation.isError
+    ? (closeMutation.error?.message ?? 'Failed to close incident')
+    : reopenMutation.isError
+      ? (reopenMutation.error?.message ?? 'Failed to reopen incident')
+      : null;
+  const pendingLifecycleId = closeMutation.isPending
+    ? closeMutation.variables
+    : reopenMutation.isPending
+      ? reopenMutation.variables
+      : null;
 
   useEffect(() => {
     if (data && data.total > 0 && data.offset >= data.total) {
@@ -141,6 +151,19 @@ export function IncidentListPage() {
 
       {error && <Alert severity="error">Failed to load incidents: {error.message}</Alert>}
 
+      {lifecycleError && (
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => {
+            closeMutation.reset();
+            reopenMutation.reset();
+          }}
+        >
+          {lifecycleError}
+        </Alert>
+      )}
+
       {!isLoading && !error && (!incidents || incidents.length === 0) && (
         <Alert severity="info">No incidents yet. Create one to get started.</Alert>
       )}
@@ -178,8 +201,9 @@ export function IncidentListPage() {
                 <Tooltip title="Reopen">
                   <IconButton
                     aria-label={`Reopen ${incident.name}`}
-                    disabled={reopenMutation.isPending}
+                    disabled={pendingLifecycleId === incident.id}
                     onClick={() => {
+                      closeMutation.reset();
                       reopenMutation.reset();
                       reopenMutation.mutate(incident.id);
                     }}
@@ -191,9 +215,10 @@ export function IncidentListPage() {
                 <Tooltip title="Close">
                   <IconButton
                     aria-label={`Close ${incident.name}`}
-                    disabled={closeMutation.isPending}
+                    disabled={pendingLifecycleId === incident.id}
                     onClick={() => {
                       closeMutation.reset();
+                      reopenMutation.reset();
                       closeMutation.mutate(incident.id);
                     }}
                   >

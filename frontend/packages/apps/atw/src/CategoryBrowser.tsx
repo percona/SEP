@@ -37,6 +37,8 @@ export interface CategoryBrowserProps {
    * callback so it does not re-fire the reporting effect on every render.
    */
   onSnippetsChange: (snippets: AtwSnippetSummary[]) => void;
+  /** When true, all category selects are non-interactive. */
+  disabled?: boolean;
 }
 
 /**
@@ -45,7 +47,7 @@ export interface CategoryBrowserProps {
  * hides the top-level Category control; the selected leaf category's snippets
  * are reported through `onSnippetsChange` for a caller-owned snippet picker.
  */
-export function CategoryBrowser({ onSnippetsChange }: CategoryBrowserProps) {
+export function CategoryBrowser({ onSnippetsChange, disabled = false }: CategoryBrowserProps) {
   const [selectedRoot, setSelectedRoot] = useState<string>('');
   const [selectedParent, setSelectedParent] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -126,7 +128,7 @@ export function CategoryBrowser({ onSnippetsChange }: CategoryBrowserProps) {
   return (
     <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
       {rootOptions.length > 1 ? (
-        <FormControl fullWidth>
+        <FormControl fullWidth disabled={disabled}>
           <InputLabel id="atw-root-label">Category</InputLabel>
           <Select
             labelId="atw-root-label"
@@ -147,13 +149,12 @@ export function CategoryBrowser({ onSnippetsChange }: CategoryBrowserProps) {
         </FormControl>
       ) : null}
 
-      <FormControl fullWidth>
+      <FormControl fullWidth disabled={disabled || !selectedRoot}>
         <InputLabel id="atw-parent-label">Subcategory 1</InputLabel>
         <Select
           labelId="atw-parent-label"
           value={selectedParent}
           label="Subcategory 1"
-          disabled={!selectedRoot}
           onChange={(event: SelectChangeEvent) => {
             setSelectedParent(event.target.value);
             setSelectedCategory('');
@@ -167,7 +168,7 @@ export function CategoryBrowser({ onSnippetsChange }: CategoryBrowserProps) {
         </Select>
       </FormControl>
 
-      <FormControl fullWidth disabled={!selectedRoot || !selectedParent}>
+      <FormControl fullWidth disabled={disabled || !selectedRoot || !selectedParent}>
         <InputLabel id="atw-category-label">Subcategory 2</InputLabel>
         <Select
           labelId="atw-category-label"

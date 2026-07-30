@@ -130,4 +130,20 @@ describe('IncidentWorkspacePage', () => {
       expect(mockedApi.post).toHaveBeenCalledWith(`/apps/atw/incidents/${incidentId}/close/`);
     });
   });
+
+  it('shows an error when closing the incident fails', async () => {
+    mockedApi.post.mockRejectedValue(new Error('Incident is already closed.'));
+    const user = userEvent.setup();
+
+    renderWorkspace();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Close incident/i })).toBeTruthy(),
+    );
+    await user.click(screen.getByRole('button', { name: /Close incident/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Incident is already closed.')).toBeTruthy();
+    });
+  });
 });

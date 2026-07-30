@@ -218,7 +218,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
         </Alert>
       )}
 
-      <CategoryBrowser onSnippetsChange={handleSnippetsChange} />
+      <CategoryBrowser onSnippetsChange={handleSnippetsChange} disabled={isClosed} />
 
       <Autocomplete
         multiple

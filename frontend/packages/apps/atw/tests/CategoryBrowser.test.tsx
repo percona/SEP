@@ -97,4 +97,21 @@ describe('CategoryBrowser', () => {
       expect(screen.getByText(/Failed to load ATW categories/i)).toBeTruthy();
     });
   });
+
+  it('disables category selects when disabled', async () => {
+    mockedApi.get.mockResolvedValue({ data: singleRoot });
+
+    renderBrowser(<CategoryBrowser onSnippetsChange={vi.fn()} disabled />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: 'Subcategory 1' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+    });
+    expect(screen.getByRole('combobox', { name: 'Subcategory 2' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
 });

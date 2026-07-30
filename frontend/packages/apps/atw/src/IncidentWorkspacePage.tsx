@@ -44,6 +44,11 @@ export function IncidentWorkspacePage() {
   const closeMutation = useCloseAtwIncident();
   const reopenMutation = useReopenAtwIncident();
   const isClosed = incident?.closed_at !== null && incident?.closed_at !== undefined;
+  const lifecycleError = closeMutation.isError
+    ? (closeMutation.error?.message ?? 'Failed to close incident')
+    : reopenMutation.isError
+      ? (reopenMutation.error?.message ?? 'Failed to reopen incident')
+      : null;
 
   if (!incidentId) {
     return null;
@@ -72,6 +77,19 @@ export function IncidentWorkspacePage() {
         </Alert>
       )}
 
+      {lifecycleError && (
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => {
+            closeMutation.reset();
+            reopenMutation.reset();
+          }}
+        >
+          {lifecycleError}
+        </Alert>
+      )}
+
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         alignItems={{ xs: 'flex-start', sm: 'center' }}
@@ -88,7 +106,11 @@ export function IncidentWorkspacePage() {
                 size="small"
                 startIcon={<LockOpenOutlinedIcon />}
                 disabled={reopenMutation.isPending}
-                onClick={() => reopenMutation.mutate(incident.id)}
+                onClick={() => {
+                  closeMutation.reset();
+                  reopenMutation.reset();
+                  reopenMutation.mutate(incident.id);
+                }}
               >
                 Reopen incident
               </Button>
@@ -98,7 +120,11 @@ export function IncidentWorkspacePage() {
                 size="small"
                 startIcon={<LockOutlinedIcon />}
                 disabled={closeMutation.isPending}
-                onClick={() => closeMutation.mutate(incident.id)}
+                onClick={() => {
+                  closeMutation.reset();
+                  reopenMutation.reset();
+                  closeMutation.mutate(incident.id);
+                }}
               >
                 Close incident
               </Button>

@@ -177,4 +177,19 @@ describe('IncidentListPage', () => {
       expect(mockedApi.post).toHaveBeenCalledWith(`/apps/atw/incidents/${incident.id}/reopen/`);
     });
   });
+
+  it('shows an error when closing an incident fails', async () => {
+    mockedApi.get.mockResolvedValue(paginated([incident]));
+    mockedApi.post.mockRejectedValue(new Error('Incident is already closed.'));
+    const user = userEvent.setup();
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => expect(screen.getByText('DB slowness')).toBeTruthy());
+    await user.click(screen.getByRole('button', { name: /Close DB slowness/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Incident is already closed.')).toBeTruthy();
+    });
+  });
 });
