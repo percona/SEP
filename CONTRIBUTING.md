@@ -175,6 +175,10 @@ zero-to-working-app path — mental model, the `make startapp` quickstart, the
 form DSL, the escape hatches, and testing — with the examples sourced from real
 apps.
 
+To sequence several tasks into one gated operation — including rolling
+operations that step across executor hosts one at a time — see the
+[Task Chaining Guide](docs/development/task-chaining-guide.md).
+
 ## Testing
 
 ### Writing Tests
