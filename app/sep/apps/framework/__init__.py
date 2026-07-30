@@ -69,6 +69,7 @@ from app.sep.apps.framework.responses import (
     build_default_task_response,
     build_task_list_responses,
     derive_create_response_model,
+    dump_with_excluded_fields,
     TaskExecuteWrite,
     TaskExecutionResponse,
 )
@@ -188,6 +189,7 @@ __all__ = [
     "derive_app_schema",
     "derive_create_response_model",
     "derive_form_sections",
+    "dump_with_excluded_fields",
     "evaluate_conditional_rules",
     "extract_latest_history",
     "extract_latest_task_status",

@@ -694,7 +694,7 @@ class DerivedRouterContractTests:
     def test_list_injects_extras_and_resolves_username(
         self, contract_client: TestClient
     ) -> None:
-        """Assert list rows carry the injected extras and the resolved username."""
+        """Assert list rows omit internal fields and carry the resolved username."""
         if self.app_def.response_context_provider is None:
             pytest.skip("no response context provider")
         base = app_base_url(self.app_def)
@@ -707,12 +707,14 @@ class DerivedRouterContractTests:
             for row in _list_rows(response.json())
             if row["name"] == SEEDED_TASK_NAME
         )
-        assert row["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert row["name"] == SEEDED_TASK_NAME
+        assert "service_type" not in row
+        assert "owner" not in row
         if self.remapped_username is not None:
             assert row["created_by"] == self.remapped_username
 
     def test_detail_injects_extras(self, contract_client: TestClient) -> None:
-        """Assert ``GET /{name}`` carries the injected extras and resolved username."""
+        """Assert ``GET /{name}`` carries the remapped username without internal fields."""
         if self.app_def.response_context_provider is None:
             pytest.skip("no response context provider")
         base = app_base_url(self.app_def)
@@ -721,7 +723,8 @@ class DerivedRouterContractTests:
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in body
+        assert "owner" not in body
         if self.remapped_username is not None:
             assert body["created_by"] == self.remapped_username
 
@@ -771,7 +774,7 @@ class DerivedRouterContractTests:
         assert "detail_only" in response.json()
 
     def test_create_injects_extras(self, contract_client: TestClient) -> None:
-        """Assert the create response binds context: injected extras + resolved name."""
+        """Assert the create response binds context without internal classification fields."""
         if not self.app_def.capabilities.create:
             pytest.skip("create capability disabled")
         if self.app_def.response_context_provider is None:
@@ -787,7 +790,8 @@ class DerivedRouterContractTests:
 
         assert response.status_code == status.HTTP_201_CREATED
         payload = response.json()
-        assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in payload
+        assert "owner" not in payload
         if self.remapped_username is not None:
             assert payload["created_by"] == self.remapped_username
 
@@ -967,7 +971,8 @@ class DerivedRouterContractTests:
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
-        assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in payload
+        assert "owner" not in payload
         if self.remapped_username is not None:
             assert payload["created_by"] == self.remapped_username
 

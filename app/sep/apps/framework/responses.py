@@ -20,7 +20,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Any, cast, overload, Protocol, TypeVar
 
-from pydantic import BaseModel, computed_field, create_model, FutureDatetime
+from pydantic import BaseModel, computed_field, create_model, Field, FutureDatetime
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
@@ -37,20 +37,55 @@ from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum
 R = TypeVar("R", bound=BaseModel)
 
 
+def dump_with_excluded_fields(
+    model: BaseModel, *, exclude: set[str] | None = None
+) -> dict[str, Any]:
+    """Dump ``model`` including serialization-excluded fields for rebuilds.
+
+    ``model_dump`` omits fields marked ``Field(exclude=True)``. Detail/create
+    builders that rebuild via ``Subclass(**base.model_dump(), ...)`` need those
+    attributes restored. Reinjection uses the live attribute values (not copies),
+    which is safe for the current scalar ``exclude=True`` fields; callers that
+    later mark a mutable container as ``exclude=True`` must treat the rebuilt
+    dump as aliased to the source. Computed fields are always omitted so the
+    dump is safe to splat into a subclass constructor. An explicit ``exclude``
+    entry still wins over reinjection.
+
+    :param model: The response model instance to dump.
+    :param exclude: Extra field names omitted from the dump (in addition to
+        computed fields). Wins over ``Field(exclude=True)`` reinjection.
+    :return: A dump including ``exclude=True`` fields not named in ``exclude``.
+    """
+    excluded_names = exclude or set()
+    data = model.model_dump(
+        exclude=excluded_names | set(type(model).model_computed_fields)
+    )
+    data |= {
+        name: getattr(model, name)
+        for name, field in type(model).model_fields.items()
+        if field.exclude and name not in excluded_names
+    }
+    return data
+
+
 class BaseTaskResponse(BaseModel):
     """Represent the universal task-response surface for standard task apps.
 
     Carry the fields shared by every standard ``TaskExecutionApp`` response:
-    the task identity and ownership, the resolved execution status, the stored
-    configuration, and the audit/anonymization metadata. A standard app whose
-    response has no app-specific fields uses this model directly; an app with
-    extras subclasses it. The model is parametrized by the task ``owner``, which
-    drives the ``anonymized_entities`` default-entity lookup.
+    the task identity, the resolved execution status, the stored configuration,
+    and the audit/anonymization metadata. A standard app whose response has no
+    app-specific fields uses this model directly; an app with extras subclasses
+    it. The model is parametrized by the task ``owner``, which drives the
+    ``anonymized_entities`` default-entity lookup but is excluded from the
+    serialized detail/list payload (as is ``service_type``).
 
     :param name: The task name.
-    :param owner: The entity or user that owns the task.
+    :param owner: The task-category owner (for example ``BACKUPS``). Kept
+        as a model attribute for ``anonymized_entities`` and server-side
+        filtering; excluded from the serialized detail/list payload.
     :param service_type: The database service type, stamped by the builder;
-        ``None`` for an app without a fixed service type.
+        ``None`` for an app without a fixed service type. Excluded from the
+        serialized detail/list payload.
     :param status: The latest known execution status; ``None`` until the task
         runs.
     :param last_executed_at: The most recent time the task finished executing
@@ -83,8 +118,8 @@ class BaseTaskResponse(BaseModel):
     """
 
     name: str
-    owner: str
-    service_type: ServiceTypeEnum | None = None
+    owner: str = Field(exclude=True)
+    service_type: ServiceTypeEnum | None = Field(default=None, exclude=True)
     status: TaskHistoryStatusEnum | None = None
     last_executed_at: datetime | None = None
     id: int | None = None
@@ -109,6 +144,20 @@ class BaseTaskResponse(BaseModel):
             else anonymizer_settings.DEFAULT_ENTITIES[self.owner]
         )
         return sorted(entity.name for entity in entities)
+
+    def model_dump_with_excluded_fields(
+        self, *, exclude: set[str] | None = None
+    ) -> dict[str, Any]:
+        """Dump fields for reconstructing this response or a subclass.
+
+        Convenience wrapper around :func:`dump_with_excluded_fields` for
+        ``BaseTaskResponse`` subclasses.
+
+        :param exclude: Extra field names omitted from the dump; wins over
+            ``Field(exclude=True)`` reinjection.
+        :return: A dump including serialization-excluded fields.
+        """
+        return dump_with_excluded_fields(self, exclude=exclude)
 
 
 class TaskExecuteWrite(BaseModel):

@@ -37,7 +37,7 @@ from app.core.settings_override.api import routes as settings_routes
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
-from app.core.settings_override.registry import ReloadClassification
+from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import sep_settings, SEPSettings
@@ -620,8 +620,7 @@ class TestSepSettingsPatch:
         """Reject whole-plan and per-leaf overrides of the delivery plan alike.
 
         A per-leaf override would merge without re-running the plan's
-        cross-reference validator, and a whole-object write stores every secret
-        as its mask literal, so no row may be written for this block.
+        cross-reference validator, so no row may be written for this block.
         """
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
@@ -1153,6 +1152,108 @@ class TestSepSettingsAlertSettings:
         finally:
             alert_settings._set_snapshot({})
 
+    async def test_providers_masked_patch_preserves_routing_key(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep a stored PagerDuty routing key when PROVIDERS is resubmitted masked."""
+        secret = "sep-1615-pagerduty-routing-key"
+        try:
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/AlertSettings",
+                    json={
+                        "PROVIDERS": [
+                            {"PROVIDER": "pagerduty", "routing_key": secret},
+                        ]
+                    },
+                ).status_code
+                == status.HTTP_200_OK
+            )
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/AlertSettings",
+                json={
+                    "PROVIDERS": [
+                        {
+                            "PROVIDER": "pagerduty",
+                            "routing_key": SECRET_STR_MASK,
+                            "api_endpoint": "https://events.pagerduty.com/v2/",
+                        }
+                    ]
+                },
+            )
+            assert response.status_code == status.HTTP_200_OK
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.ALERT_SETTINGS
+            )
+            providers_row = next(row for row in rows if row.key == "PROVIDERS")
+            assert providers_row.value[0]["routing_key"] == secret
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
+            alert_settings._set_snapshot({})
+
+    async def test_providers_masked_patch_preserves_two_routing_keys(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep each PagerDuty routing key when two PROVIDERS are resubmitted masked."""
+        secret_a = "sep-1615-pagerduty-routing-key-a"
+        secret_b = "sep-1615-pagerduty-routing-key-b"
+        endpoint_a = "https://events-a.example/v2/"
+        endpoint_b = "https://events-b.example/v2/"
+        try:
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/AlertSettings",
+                    json={
+                        "PROVIDERS": [
+                            {
+                                "PROVIDER": "pagerduty",
+                                "routing_key": secret_a,
+                                "api_endpoint": endpoint_a,
+                            },
+                            {
+                                "PROVIDER": "pagerduty",
+                                "routing_key": secret_b,
+                                "api_endpoint": endpoint_b,
+                            },
+                        ]
+                    },
+                ).status_code
+                == status.HTTP_200_OK
+            )
+            # Resubmit in reverse endpoint order so positional pairing against
+            # an unstable set iteration would swap the routing keys.
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/AlertSettings",
+                json={
+                    "PROVIDERS": [
+                        {
+                            "PROVIDER": "pagerduty",
+                            "routing_key": SECRET_STR_MASK,
+                            "api_endpoint": endpoint_b,
+                        },
+                        {
+                            "PROVIDER": "pagerduty",
+                            "routing_key": SECRET_STR_MASK,
+                            "api_endpoint": endpoint_a,
+                        },
+                    ]
+                },
+            )
+            assert response.status_code == status.HTTP_200_OK
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.ALERT_SETTINGS
+            )
+            providers_row = next(row for row in rows if row.key == "PROVIDERS")
+            by_endpoint = {
+                entry["api_endpoint"]: entry["routing_key"]
+                for entry in providers_row.value
+            }
+            assert by_endpoint[endpoint_a] == secret_a
+            assert by_endpoint[endpoint_b] == secret_b
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
+            alert_settings._set_snapshot({})
+
 
 @pytest.mark.asyncio
 class TestSepSettingsCredentialUrlRedaction:
@@ -1322,6 +1423,54 @@ class TestGlobalSettingsClass:
             override_session, setting_class=SettingClassEnum.SETTINGS
         )
         assert [r.key for r in rows] == ["PMM__verify_ssl"]
+
+    async def test_pmm_api_key_patch_persists_plaintext(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Persist the real secret string, not Pydantic's ``**********`` JSON mask."""
+        secret = "sep-1615-persist-plaintext"
+        try:
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__api_key": secret},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json()[0]["value"] == "**********"
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.SETTINGS
+            )
+            assert len(rows) == 1
+            assert rows[0].key == "PMM__api_key"
+            assert rows[0].value == secret
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
+
+    async def test_pmm_api_key_masked_patch_preserves_stored_secret(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep the stored secret when the client resubmits the redacted mask."""
+        secret = "sep-1615-mask-roundtrip"
+        try:
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/Settings",
+                    json={"PMM__api_key": secret},
+                ).status_code
+                == status.HTTP_200_OK
+            )
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__api_key": SECRET_STR_MASK},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json()[0]["value"] == "**********"
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.SETTINGS
+            )
+            assert len(rows) == 1
+            assert rows[0].value == secret
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
 
     async def test_logging_hot_patch_persists(
         self, api_admin_client: TestClient, override_session: AsyncSession
