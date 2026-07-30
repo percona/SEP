@@ -384,7 +384,10 @@ function ExecutionRow({
 
   return (
     <Accordion disableGutters sx={{ mb: 1 }} slotProps={{ transition: { unmountOnExit: true } }}>
-      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+      <AccordionSummary
+        expandIcon={<ExpandMoreIcon />}
+        sx={{ '& .MuiAccordionSummary-content': { minWidth: 0 } }}
+      >
         <Stack
           direction="row"
           spacing={1}
