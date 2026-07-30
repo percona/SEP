@@ -26,6 +26,7 @@ from app.core.alerts.models import BaseAlertProvider
 from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
 from app.core.settings_override.registry import (
     chain_has_advanced,
+    dump_field_value,
     field_materializer,
     field_reload_classification,
     hot_field,
@@ -235,6 +236,72 @@ def test_preserve_patch_secret_value_for_polymorphic_provider_set() -> None:
     assert preserved[0]["PROVIDER"] == "pagerduty"
 
 
+def test_preserve_patch_secret_value_for_two_pagerduty_providers() -> None:
+    """Assert two same-type PROVIDERS restore by identity, not hash set order.
+
+    Distinct ``api_endpoint`` values identify each entry when both routing keys
+    are masked. Incoming order deliberately disagrees with sorted set order so
+    positional pairing alone would swap secrets.
+    """
+    field = AlertSettings.model_fields["PROVIDERS"]
+    first = PagerDutyEventsAlertProvider(
+        routing_key=SecretStr("routing-key-a"),
+        api_endpoint="https://events-a.example/v2/",
+    )
+    second = PagerDutyEventsAlertProvider(
+        routing_key=SecretStr("routing-key-b"),
+        api_endpoint="https://events-b.example/v2/",
+    )
+    incoming = [
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": "https://events-b.example/v2/",
+        },
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": "https://events-a.example/v2/",
+        },
+    ]
+    preserved = preserve_patch_credential_url_value(field, {first, second}, incoming)
+    assert preserved[0]["routing_key"] == "routing-key-b"
+    assert preserved[0]["api_endpoint"] == "https://events-b.example/v2/"
+    assert preserved[1]["routing_key"] == "routing-key-a"
+    assert preserved[1]["api_endpoint"] == "https://events-a.example/v2/"
+
+
+def test_preserve_patch_secret_value_for_two_pagerduty_providers_same_endpoint() -> (
+    None
+):
+    """Assert identical non-secret fields still restore via stable set order.
+
+    When both entries share ``api_endpoint`` and both secrets are masked, GET
+    dump order (stable sort by routing key) is the only identity signal.
+    """
+    field = AlertSettings.model_fields["PROVIDERS"]
+    first = PagerDutyEventsAlertProvider(routing_key=SecretStr("routing-key-a"))
+    second = PagerDutyEventsAlertProvider(routing_key=SecretStr("routing-key-b"))
+    dumped = dump_field_value(field, {second, first})
+    assert dumped[0]["routing_key"] == SECRET_STR_MASK
+    assert dumped[1]["routing_key"] == SECRET_STR_MASK
+    incoming = [
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": dumped[0]["api_endpoint"],
+        },
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": dumped[1]["api_endpoint"],
+        },
+    ]
+    preserved = preserve_patch_credential_url_value(field, {second, first}, incoming)
+    assert preserved[0]["routing_key"] == "routing-key-a"
+    assert preserved[1]["routing_key"] == "routing-key-b"
+
+
 def test_preserve_patch_secret_value_for_list_of_models() -> None:
     """Assert masked secrets inside ``list[Model]`` whole-object PATCHes are restored."""
 
@@ -264,6 +331,24 @@ def test_preserve_patch_secret_value_for_list_of_secrets() -> None:
     incoming = [SECRET_STR_MASK, "brand-new-second"]
     preserved = preserve_patch_credential_url_value(field, current, incoming)
     assert preserved == ["keep-first", "brand-new-second"]
+
+
+def test_preserve_patch_secret_value_for_set_of_secrets() -> None:
+    """Assert masked elements inside ``set[SecretStr]`` restore via stable order."""
+
+    class _SetOfSecretsSettings(BaseModel):
+        tokens: set[SecretStr] = hot_field(set())
+
+    field = _SetOfSecretsSettings.model_fields["tokens"]
+    current = {SecretStr("keep-a"), SecretStr("keep-b")}
+    dumped = dump_field_value(field, current)
+    assert dumped == [SECRET_STR_MASK, SECRET_STR_MASK]
+    preserved = preserve_patch_credential_url_value(field, current, dumped)
+    assert preserved == ["keep-a", "keep-b"]
+    preserved_partial = preserve_patch_credential_url_value(
+        field, current, [SECRET_STR_MASK, "brand-new-b"]
+    )
+    assert preserved_partial == ["keep-a", "brand-new-b"]
 
 
 def test_providers_field_reports_is_secret() -> None:

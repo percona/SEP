@@ -1191,6 +1191,69 @@ class TestSepSettingsAlertSettings:
             api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
             alert_settings._set_snapshot({})
 
+    async def test_providers_masked_patch_preserves_two_routing_keys(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep each PagerDuty routing key when two PROVIDERS are resubmitted masked."""
+        secret_a = "sep-1615-pagerduty-routing-key-a"
+        secret_b = "sep-1615-pagerduty-routing-key-b"
+        endpoint_a = "https://events-a.example/v2/"
+        endpoint_b = "https://events-b.example/v2/"
+        try:
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/AlertSettings",
+                    json={
+                        "PROVIDERS": [
+                            {
+                                "PROVIDER": "pagerduty",
+                                "routing_key": secret_a,
+                                "api_endpoint": endpoint_a,
+                            },
+                            {
+                                "PROVIDER": "pagerduty",
+                                "routing_key": secret_b,
+                                "api_endpoint": endpoint_b,
+                            },
+                        ]
+                    },
+                ).status_code
+                == status.HTTP_200_OK
+            )
+            # Resubmit in reverse endpoint order so positional pairing against
+            # an unstable set iteration would swap the routing keys.
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/AlertSettings",
+                json={
+                    "PROVIDERS": [
+                        {
+                            "PROVIDER": "pagerduty",
+                            "routing_key": SECRET_STR_MASK,
+                            "api_endpoint": endpoint_b,
+                        },
+                        {
+                            "PROVIDER": "pagerduty",
+                            "routing_key": SECRET_STR_MASK,
+                            "api_endpoint": endpoint_a,
+                        },
+                    ]
+                },
+            )
+            assert response.status_code == status.HTTP_200_OK
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.ALERT_SETTINGS
+            )
+            providers_row = next(row for row in rows if row.key == "PROVIDERS")
+            by_endpoint = {
+                entry["api_endpoint"]: entry["routing_key"]
+                for entry in providers_row.value
+            }
+            assert by_endpoint[endpoint_a] == secret_a
+            assert by_endpoint[endpoint_b] == secret_b
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
+            alert_settings._set_snapshot({})
+
 
 @pytest.mark.asyncio
 class TestSepSettingsCredentialUrlRedaction:

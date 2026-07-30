@@ -1300,19 +1300,20 @@ def _annotation_is_secret_valued_dict(annotation: Any) -> bool:
 
 
 def _annotation_is_secret_valued_sequence(annotation: Any) -> bool:
-    """Return whether ``annotation`` is a sequence whose elements are secrets.
+    """Return whether ``annotation`` is a collection whose elements are secrets.
 
-    Matches ``list[SecretStr]`` / ``tuple[SecretBytes, ...]``-style shapes
-    (optional/union wrappers unwrapped at the top level only).
+    Matches ``list[SecretStr]`` / ``set[SecretStr]`` /
+    ``tuple[SecretBytes, ...]``-style shapes (optional/union wrappers
+    unwrapped at the top level only).
 
     :param annotation: The field annotation to inspect.
-    :return: ``True`` when the annotation is a secret-element sequence type.
+    :return: ``True`` when the annotation is a secret-element collection type.
     """
     candidates: list[Any] = [annotation]
     origin = typing.get_origin(annotation)
     if origin in {Union, UnionType}:
         candidates = list(typing.get_args(annotation))
-    collection_origins = {list, tuple, Sequence}
+    collection_origins = {list, set, tuple, frozenset, Sequence}
     for candidate in candidates:
         if candidate is None or candidate is type(None):
             continue
@@ -1333,6 +1334,96 @@ def _annotation_is_secret_valued_sequence(annotation: Any) -> bool:
             ):
                 return True
     return False
+
+
+def _stable_collection_sort_key(item: Any) -> tuple[Any, ...]:
+    """Return a deterministic sort key for collection pairing and JSON dumps.
+
+    Unordered collections (``set``/``frozenset``) must serialize and match in
+    the same order across workers; plaintext secret values are included so two
+    otherwise identical models remain distinguishable before masking.
+
+    :param item: A stored collection element (model, secret wrapper, or scalar).
+    :return: A comparable tuple suitable for :func:`sorted`.
+    """
+    if isinstance(item, BaseModel):
+        field_parts: list[tuple[str, str]] = []
+        for name in sorted(item.model_fields):
+            value = getattr(item, name, None)
+            unwrapped = _unwrap_secret_value(value)
+            if unwrapped is not None:
+                rendered = unwrapped if isinstance(unwrapped, str) else repr(unwrapped)
+            else:
+                rendered = repr(value)
+            field_parts.append((name, rendered))
+        return (item.__class__.__qualname__, tuple(field_parts))
+    unwrapped = _unwrap_secret_value(item)
+    if unwrapped is not None:
+        return (
+            type(item).__qualname__,
+            unwrapped if isinstance(unwrapped, str | bytes) else repr(unwrapped),
+        )
+    if isinstance(item, Mapping):
+        return (
+            "mapping",
+            tuple(
+                (
+                    str(key),
+                    repr(
+                        stored
+                        if (stored := _unwrap_secret_value(value)) is not None
+                        else value
+                    ),
+                )
+                for key, value in sorted(item.items(), key=lambda kv: str(kv[0]))
+            ),
+        )
+    return (type(item).__qualname__, repr(item))
+
+
+def _stable_collection_items(current: Any) -> list[Any]:
+    """Return ``current`` as a list, sorting when the source is unordered.
+
+    :param current: A stored ``list``/``set``/``tuple``/``frozenset``, or
+        ``None``.
+    :return: A list of items; ``set``/``frozenset`` inputs are sorted by
+        :func:`_stable_collection_sort_key`.
+    """
+    if isinstance(current, set | frozenset):
+        return sorted(current, key=_stable_collection_sort_key)
+    if isinstance(current, list | tuple):
+        return list(current)
+    return []
+
+
+def _collection_item_value_score(
+    incoming: Mapping[str, Any], current: BaseModel
+) -> int:
+    """Score how well ``incoming`` identifies the stored model ``current``.
+
+    Masked secret fields are ignored so a round-tripped GET payload can still
+    match on stable non-secret identity (e.g. ``api_endpoint``). Equal
+    non-masked values raise the score; mismatches lower it.
+
+    :param incoming: One element of the PATCH collection payload.
+    :param current: A live stored model candidate.
+    :return: A higher score means a better identity match.
+    """
+    score = 0
+    for name in current.model_fields:
+        if name not in incoming:
+            continue
+        incoming_val = incoming[name]
+        if incoming_val == SECRET_STR_MASK:
+            continue
+        current_val = getattr(current, name, None)
+        unwrapped = _unwrap_secret_value(current_val)
+        compare: Any = unwrapped if unwrapped is not None else current_val
+        if incoming_val == compare or str(incoming_val) == str(compare):
+            score += 2
+        else:
+            score -= 10
+    return score
 
 
 def _preserve_masked_secret_scalar(current: Any, incoming: Any) -> Any:
@@ -1374,19 +1465,18 @@ def _preserve_secrets_in_secret_sequence_payload(
     current: Any,
     incoming: Sequence[Any],
 ) -> list[Any]:
-    """Restore masked secrets inside a ``list[SecretStr|SecretBytes]`` payload.
+    """Restore masked secrets inside a secret-element collection payload.
 
-    Pairing is positional: index ``i`` of ``incoming`` is restored from index
-    ``i`` of ``current`` when the submitted value equals :data:`SECRET_STR_MASK`.
+    Pairing is positional against :func:`_stable_collection_items`: index ``i``
+    of ``incoming`` is restored from index ``i`` of the stabilized ``current``
+    when the submitted value equals :data:`SECRET_STR_MASK`. Unordered stored
+    collections (``set``/``frozenset``) are sorted so GET/PATCH workers agree.
 
-    :param current: The stored sequence of secret wrappers (or ``None``).
+    :param current: The stored collection of secret wrappers (or ``None``).
     :param incoming: The PATCH sequence that may contain mask literals.
     :return: A list copy of ``incoming`` with masked elements restored.
     """
-    if isinstance(current, list | tuple):
-        current_items: list[Any] = list(current)
-    else:
-        current_items = []
+    current_items = _stable_collection_items(current)
     result: list[Any] = []
     for index, value in enumerate(incoming):
         if value != SECRET_STR_MASK:
@@ -1433,6 +1523,86 @@ def _annotation_collection_element_model(annotation: Any) -> type[BaseModel] | N
     return None
 
 
+def _collection_discriminator_candidates(
+    incoming: Mapping[str, Any],
+    current_items: Sequence[Any],
+    used: set[int],
+) -> list[int]:
+    """Return unused model indexes matching an optional type discriminator.
+
+    :param incoming: One element of the PATCH collection payload.
+    :param current_items: The live stored collection as a sequence.
+    :param used: Indexes already paired with an earlier incoming element.
+    :return: Candidate indexes; empty when none match the discriminator filter.
+    """
+    provider = incoming.get("PROVIDER") or incoming.get("provider")
+    needle = str(provider).upper() if provider is not None else None
+    candidates: list[int] = []
+    for index, current in enumerate(current_items):
+        if index in used or not isinstance(current, BaseModel):
+            continue
+        if needle is not None and needle not in current.__class__.__name__.upper():
+            continue
+        candidates.append(index)
+    return candidates
+
+
+def _pick_best_scored_index(
+    incoming: Mapping[str, Any],
+    current_items: Sequence[Any],
+    candidates: Sequence[int],
+    preferred_index: int,
+) -> int:
+    """Pick the candidate with the best value-identity score.
+
+    Ties break on ``preferred_index`` when that slot is among the top scorers.
+
+    :param incoming: One element of the PATCH collection payload.
+    :param current_items: The live stored collection as a sequence.
+    :param candidates: Unused model indexes to score.
+    :param preferred_index: The incoming element's position (list order).
+    :return: The winning index into ``current_items``.
+    """
+    best_score = _collection_item_value_score(incoming, current_items[candidates[0]])
+    best_indices = [candidates[0]]
+    for index in candidates[1:]:
+        score = _collection_item_value_score(incoming, current_items[index])
+        if score > best_score:
+            best_score = score
+            best_indices = [index]
+        elif score == best_score:
+            best_indices.append(index)
+    if preferred_index in best_indices:
+        return preferred_index
+    return best_indices[0]
+
+
+def _match_by_field_name_overlap(
+    incoming: Mapping[str, Any],
+    current_items: Sequence[Any],
+    unused: Sequence[int],
+) -> int | None:
+    """Return the unused model with the largest field-name overlap, if any.
+
+    :param incoming: One element of the PATCH collection payload.
+    :param current_items: The live stored collection as a sequence.
+    :param unused: Indexes not yet paired.
+    :return: The best-overlap index, or ``None``.
+    """
+    best_index: int | None = None
+    best_overlap = 0
+    incoming_keys = set(incoming)
+    for index in unused:
+        current = current_items[index]
+        if not isinstance(current, BaseModel):
+            continue
+        overlap = len(set(current.model_fields) & incoming_keys)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_index = index
+    return best_index if best_overlap > 0 else None
+
+
 def _match_collection_item_index(
     incoming: Mapping[str, Any],
     current_items: Sequence[Any],
@@ -1441,11 +1611,12 @@ def _match_collection_item_index(
 ) -> int | None:
     """Return the index of the stored collection item that ``incoming`` updates.
 
-    Matching order: an optional type-discriminator string in the payload
-    (case-insensitive substring of the concrete class name); else the
-    positional ``preferred_index`` when still free; else the sole remaining
-    unused item; else the unused ``BaseModel`` with the largest field-name
-    overlap.
+    Matching order: optional type-discriminator (case-insensitive substring of
+    the concrete class name) narrows candidates; among those, non-masked field
+    value identity (:func:`_collection_item_value_score`) picks a winner;
+    ties break on ``preferred_index`` when that slot is still a candidate
+    (stable against :func:`_stable_collection_items` order); else the sole
+    remaining unused item; else largest field-name overlap.
 
     :param incoming: One element of the PATCH collection payload.
     :param current_items: The live stored collection as a sequence.
@@ -1453,30 +1624,17 @@ def _match_collection_item_index(
     :param preferred_index: The incoming element's position (list order).
     :return: The matched index into ``current_items``, or ``None``.
     """
-    provider = incoming.get("PROVIDER") or incoming.get("provider")
-    if provider is not None:
-        needle = str(provider).upper()
-        for index, current in enumerate(current_items):
-            if index in used or not isinstance(current, BaseModel):
-                continue
-            if needle in current.__class__.__name__.upper():
-                return index
+    candidates = _collection_discriminator_candidates(incoming, current_items, used)
+    if candidates:
+        return _pick_best_scored_index(
+            incoming, current_items, candidates, preferred_index
+        )
     if preferred_index < len(current_items) and preferred_index not in used:
         return preferred_index
     unused = [index for index in range(len(current_items)) if index not in used]
     if len(unused) == 1:
         return unused[0]
-    best_index: int | None = None
-    best_score = 0
-    for index in unused:
-        current = current_items[index]
-        if not isinstance(current, BaseModel):
-            continue
-        score = len(set(current.model_fields) & set(incoming))
-        if score > best_score:
-            best_score = score
-            best_index = index
-    return best_index if best_score > 0 else None
+    return _match_by_field_name_overlap(incoming, current_items, unused)
 
 
 def _preserve_secrets_in_sequence_payload(
@@ -1486,7 +1644,8 @@ def _preserve_secrets_in_sequence_payload(
     """Restore masked secrets inside a list/set-of-models PATCH payload.
 
     Pairs each mapping element with a live stored item via
-    :func:`_match_collection_item_index`, then restores masks through
+    :func:`_match_collection_item_index` against
+    :func:`_stable_collection_items`, then restores masks through
     :func:`preserve_secrets_in_model_payload` using the item's concrete
     runtime class (polymorphic bases often declare no secret fields of their
     own). Fingerprint mappings restore masked keys shallowly.
@@ -1496,10 +1655,7 @@ def _preserve_secrets_in_sequence_payload(
     :param incoming: The PATCH sequence that may contain mask literals.
     :return: A list copy of ``incoming`` with masked secrets restored.
     """
-    if isinstance(current, list | set | tuple | frozenset):
-        current_items: list[Any] = list(current)
-    else:
-        current_items = []
+    current_items = _stable_collection_items(current)
     result: list[Any] = []
     used: set[int] = set()
     for index, item in enumerate(incoming):
@@ -1595,9 +1751,9 @@ def preserve_patch_secret_value(
     (:data:`SECRET_STR_MASK`), replace it with the stored secret's plain value.
     Non-mask submissions are left unchanged. Recurses into nested Pydantic
     models, ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` payloads,
-    ``list[SecretStr]``-style sequences, and homogeneous ``list``/``set``
-    collections of models (including polymorphic bases whose secrets live only
-    on concrete subclasses).
+    ``list[SecretStr]`` / ``set[SecretStr]``-style collections, and homogeneous
+    ``list``/``set`` collections of models (including polymorphic bases whose
+    secrets live only on concrete subclasses).
 
     :param field_info: The Pydantic field metadata for the target attribute.
     :param current: The effective stored value (model, mapping, or secret wrapper).
@@ -1814,6 +1970,10 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     :class:`pydantic.SecretBytes` instances inside the value are automatically
     redacted to ``"**********"`` by Pydantic's secret-aware JSON dump.
 
+    Unordered collections (``set``/``frozenset``) are dumped as a list sorted by
+    :func:`_stable_collection_sort_key` so GET order matches the PATCH restore
+    path in :func:`_stable_collection_items` across workers.
+
     When ``field_info.annotation`` is a non-Pydantic-compatible type (e.g.
     ``string.Template``) for which Pydantic cannot build a TypeAdapter, the
     helper returns ``None`` rather than ``str(value)``: a default object
@@ -1834,6 +1994,14 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     if value is PydanticUndefined:
         return None
     try:
+        if isinstance(value, set | frozenset):
+            # Dump each element with its concrete runtime type so polymorphic
+            # set members (e.g. PagerDuty under BaseAlertProvider) keep their
+            # fields; a list[Base...] adapter would strip subclass attributes.
+            return [
+                TypeAdapter(type(item)).dump_python(item, mode="json")
+                for item in sorted(value, key=_stable_collection_sort_key)
+            ]
         return TypeAdapter(_annotated_type(field_info)).dump_python(value, mode="json")
     except PydanticSchemaGenerationError:
         return None
