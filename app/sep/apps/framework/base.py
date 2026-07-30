@@ -31,12 +31,12 @@ from app.sep.apps.nav_icons import NavIcon
 class AppPeriodicTask(NamedTuple):
     """App-authored beat schedule contribution.
 
-    Carries only what an app knows about its own periodic work. The seed path
-    (:func:`~app.sep.db.seed.get_system_periodic_tasks`) stamps ``owner_app_key``
-    from the registry entry's ``key`` and prefixes ``task`` with the app's Celery
-    module path. ``schedule`` is a thunk so hot interval overrides
-    (``BACKUP_INTERVAL``, ``SYNC_INTERVAL``, …) are re-read on each seed rather
-    than frozen at ``BaseApp(...)`` construction.
+    Carries only what an app knows about its own periodic work. The system
+    periodic-task rebuild stamps ``owner_app_key`` from the registry entry's
+    ``key`` and prefixes ``task`` with the app's Celery module path.
+    ``schedule`` is a thunk so hot interval overrides (``BACKUP_INTERVAL``,
+    ``SYNC_INTERVAL``, …) are re-read on each seed rather than frozen at
+    ``BaseApp(...)`` construction.
 
     :param name: Beat periodic-task name (e.g. ``sep__sync_snippets``).
     :param task: Unqualified Celery task attribute on the app's celery module
@@ -108,9 +108,9 @@ class BaseApp(BaseModel):
     :param periodic_task_schedules: This app's beat contributions as a plain
         list of :class:`AppPeriodicTask`, a zero-arg callable returning such a
         list (for variable-length expansion), or ``None`` when the app owns
-        none. :func:`~app.sep.db.seed.get_system_periodic_tasks` resolves a
-        callable on every call; each entry's ``schedule`` thunk is invoked then
-        so hot intervals are re-read. Defaults to ``None``.
+        none. Resolved on every system periodic-task rebuild; each entry's
+        ``schedule`` thunk is invoked then so hot intervals are re-read.
+        Defaults to ``None``.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
