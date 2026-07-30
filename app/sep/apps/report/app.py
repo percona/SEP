@@ -23,27 +23,24 @@ and artifact-purge beat schedules via ``periodic_task_schedules``.
 
 import json
 
-from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
-from app.sep.apps.framework.base import BaseApp
-from app.sep.apps.framework.registry import app_celery_module_for
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.report.api_routes import router as api_router
 from app.sep.apps.report.routes import router as jinja_router
 from app.sep.config import sep_settings
 
 
-def _report_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
-    """Build the health-report generation and artifact-purge schedules.
+def _report_periodic_tasks() -> list[AppPeriodicTask]:
+    """Expand one generation task per configured health-report schedule entry.
 
-    :return: One generation schedule per configured health-report entry, followed
-        by the artifact-purge schedule, or an empty list when report owns no
-        Celery module.
+    Kept as a callable because ``HEALTH_REPORT.schedules`` is variable-length;
+    each entry's interval is deferred via the ``schedule`` thunk so a hot
+    override is visible on the next seed.
+
+    :return: One generation contrib per schedule entry, plus the artifact-purge
+        contrib.
     """
-    report_celery = app_celery_module_for("report")
-    if not report_celery:
-        return []
-
-    schedules = []
+    tasks: list[AppPeriodicTask] = []
     for idx, entry in enumerate(sep_settings.HEALTH_REPORT.schedules):
         suffix = f"_{idx}" if idx else ""
         task_kwargs = {}
@@ -59,35 +56,25 @@ def _report_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
             task_kwargs["sections"] = entry.sections
         if entry.upload:
             task_kwargs["upload"] = entry.upload
-        schedules.append(
-            SystemPeriodicTaskSchedule(
-                schedule=entry.schedule,
-                tasks=[
-                    SystemPeriodicTaskData(
-                        name=f"sep__generate_health_report{suffix}",
-                        task_name=f"{report_celery}.generate_health_report",
-                        extra_kwargs={"kwargs": json.dumps(task_kwargs)}
-                        if task_kwargs
-                        else None,
-                        owner_app_key="report",
-                    ),
-                ],
+        tasks.append(
+            AppPeriodicTask(
+                name=f"sep__generate_health_report{suffix}",
+                task="generate_health_report",
+                schedule=lambda e=entry: e.schedule,
+                extra_kwargs={"kwargs": json.dumps(task_kwargs)}
+                if task_kwargs
+                else None,
             ),
         )
 
-    schedules.append(
-        SystemPeriodicTaskSchedule(
-            schedule=sep_settings.HEALTH_REPORT.cleanup_interval,
-            tasks=[
-                SystemPeriodicTaskData(
-                    name="sep__purge_report_artifacts",
-                    task_name=f"{report_celery}.purge_report_artifacts",
-                    owner_app_key="report",
-                ),
-            ],
+    tasks.append(
+        AppPeriodicTask(
+            name="sep__purge_report_artifacts",
+            task="purge_report_artifacts",
+            schedule=lambda: sep_settings.HEALTH_REPORT.cleanup_interval,
         ),
     )
-    return schedules
+    return tasks
 
 
 app = BaseApp(

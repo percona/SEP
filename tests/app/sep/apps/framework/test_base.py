@@ -21,8 +21,7 @@ from fastapi import APIRouter
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import IntervalSchedule
-from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
-from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 
 
 class TestBaseAppDisplayName:
@@ -119,21 +118,38 @@ class TestBaseAppPeriodicTaskSchedules:
         app = BaseApp(name="Inventory", uri_path="/inventory")
         assert app.periodic_task_schedules is None
 
-    def test_periodic_task_schedules_carries_callable_declaration(self) -> None:
-        """Carry a declared factory that returns schedules when called."""
-        schedule = SystemPeriodicTaskSchedule(
-            schedule=IntervalSchedule(every=10, period=Period.MINUTES),
-            tasks=[
-                SystemPeriodicTaskData(
-                    name="sep__example",
-                    task_name="app.sep.apps.example.celery.example_task",
-                    owner_app_key="example",
-                ),
-            ],
+    def test_periodic_task_schedules_carries_list_declaration(self) -> None:
+        """Carry a plain list of app-owned schedule specs."""
+        interval = IntervalSchedule(every=10, period=Period.MINUTES)
+        specs = [
+            AppPeriodicTask(
+                name="sep__example",
+                task="example_task",
+                schedule=lambda: interval,
+            ),
+        ]
+        app = BaseApp(
+            name="Example",
+            uri_path="/example",
+            periodic_task_schedules=specs,
         )
+        assert app.periodic_task_schedules is specs
+        assert app.periodic_task_schedules[0].name == "sep__example"
+        assert app.periodic_task_schedules[0].schedule() == interval
 
-        def _factory() -> list[SystemPeriodicTaskSchedule]:
-            return [schedule]
+    def test_periodic_task_schedules_carries_callable_declaration(self) -> None:
+        """Carry a declared factory that returns specs when called."""
+        interval = IntervalSchedule(every=10, period=Period.MINUTES)
+        specs = [
+            AppPeriodicTask(
+                name="sep__example",
+                task="example_task",
+                schedule=lambda: interval,
+            ),
+        ]
+
+        def _factory() -> list[AppPeriodicTask]:
+            return specs
 
         app = BaseApp(
             name="Example",
@@ -141,4 +157,4 @@ class TestBaseAppPeriodicTaskSchedules:
             periodic_task_schedules=_factory,
         )
         assert app.periodic_task_schedules is _factory
-        assert app.periodic_task_schedules() == [schedule]
+        assert app.periodic_task_schedules() == specs

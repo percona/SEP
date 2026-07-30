@@ -37,14 +37,18 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     Computed on demand rather than baked into a module-level constant at import
     so a HOT settings override is reflected the next time the set is rebuilt (e.g. when
     the override refresh callback re-seeds the beat schedule), without an application
-    restart. App-owned schedules come from each registry entry that declares a
-    ``periodic_task_schedules`` factory; the factory is invoked on every call.
+    restart. App-owned schedules come from each registry entry that declares
+    ``periodic_task_schedules`` (a plain list or a factory returning one); a
+    factory is invoked on every call, and each entry's ``schedule`` thunk is
+    evaluated then so hot intervals are re-read.
 
     An app-owned schedule is emitted only when the owning app contributes a Celery
     module path (``App.celery_module_path``). An app absent from the activation
     list or opted out of the Celery ``include`` owns no registered task, so its
     schedule is skipped rather than seeded with a ``None``-prefixed ``task_name``
-    that would point at nothing the worker imports.
+    that would point at nothing the worker imports. The seed path stamps
+    ``owner_app_key`` from ``app.key`` and prefixes each entry's ``task`` with
+    the resolved Celery module.
 
     :return: The schedule/task pairs to seed into the Celery beat database.
     """
@@ -63,9 +67,28 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     for app in get_app_registry():
         if app.periodic_task_schedules is None:
             continue
-        if not app_celery_module_for(app.key):
+        celery_module = app_celery_module_for(app.key)
+        if not celery_module:
             continue
-        system_tasks.extend(app.periodic_task_schedules())
+        specs = (
+            app.periodic_task_schedules()
+            if callable(app.periodic_task_schedules)
+            else app.periodic_task_schedules
+        )
+        system_tasks.extend(
+            SystemPeriodicTaskSchedule(
+                schedule=spec.schedule(),
+                tasks=[
+                    SystemPeriodicTaskData(
+                        name=spec.name,
+                        task_name=f"{celery_module}.{spec.task}",
+                        extra_kwargs=spec.extra_kwargs,
+                        owner_app_key=app.key,
+                    ),
+                ],
+            )
+            for spec in specs
+        )
 
     return system_tasks
 

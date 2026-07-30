@@ -305,7 +305,7 @@ class TestAppOwnedScheduleGating:
 
 
 class TestAppScheduleContribution:
-    """Cover per-app ``periodic_task_schedules`` factories folded by seed."""
+    """Cover per-app ``periodic_task_schedules`` specs folded by seed."""
 
     @staticmethod
     def _tasks_by_name(
@@ -422,17 +422,19 @@ class TestAppScheduleContribution:
         }
         assert REPORT_PURGE_TASK in tasks
 
-    def test_registry_entry_exposes_schedule_factory(self, mocker) -> None:
-        """Carry an invocable schedule factory on a contributing registry entry."""
+    def test_registry_entry_exposes_schedule_specs(self, mocker) -> None:
+        """Carry app-owned schedule specs on a contributing registry entry."""
         mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("snippets")])
 
         app = get_app_registry().get("snippets")
         assert app is not None
         assert app.periodic_task_schedules is not None
-        contributed = app.periodic_task_schedules()
-        assert SNIPPETS_TASK in {
-            task.name for schedule in contributed for task in schedule.tasks
-        }
+        contributed = (
+            app.periodic_task_schedules()
+            if callable(app.periodic_task_schedules)
+            else app.periodic_task_schedules
+        )
+        assert SNIPPETS_TASK in {spec.name for spec in contributed}
 
 
 def test_celery_result_expires_configured() -> None:
