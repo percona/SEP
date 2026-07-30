@@ -403,6 +403,13 @@ class TestSnapshotPayloadStatus:
 
         return _Result()
 
+    @staticmethod
+    def _fake_run_failure(*_args, **_kwargs):
+        """Raise ``CalledProcessError`` to stand in for a failed snapshot run."""
+        raise subprocess.CalledProcessError(
+            1, ["bash", "/usr/local/bin/pbm_create_snapshot"]
+        )
+
     def test_success_writes_status_zero(self, monkeypatch, tmp_path) -> None:
         """Write status ``0`` when the snapshot script exits cleanly."""
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
@@ -420,6 +427,19 @@ class TestSnapshotPayloadStatus:
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
         monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
         monkeypatch.delenv("PBM_CREATE_SNAPSHOT", raising=False)
+        # Must not raise -- the snapshot payload records failure and returns.
+        run_payload(_payload_path("pbm_snapshot_payload"))
+        body = _read_prom(tmp_path, "backup.PBM Snapshot.host-1.prom")
+        assert 'msp_backup_status{type="PBM Snapshot", alias="host-1"} 1' in body
+
+    def test_script_failure_writes_status_one_without_aborting(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Record status ``1`` without aborting when the snapshot script exits non-zero."""
+        monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
+        monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
+        monkeypatch.setenv("PBM_CREATE_SNAPSHOT", "/usr/local/bin/pbm_create_snapshot")
+        monkeypatch.setattr(subprocess, "run", self._fake_run_failure)
         # Must not raise -- the snapshot payload records failure and returns.
         run_payload(_payload_path("pbm_snapshot_payload"))
         body = _read_prom(tmp_path, "backup.PBM Snapshot.host-1.prom")
