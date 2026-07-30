@@ -23,7 +23,6 @@ from fastapi import HTTPException, status
 from pytest_mock import MockerFixture
 
 from app.core.exceptions import HTTPNotFoundException
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.sep.connectivity import clear_connectivity_caches
 from app.sep.inventory import CreatedService
@@ -248,7 +247,8 @@ class TestAltersApiList:
         assert body["total"] == 1
         [row] = body["items"]
         assert row["name"] == DEFAULT_PARENT_NAME
-        assert row["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in row
+        assert "owner" not in row
         assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
         assert row["last_executed_at"] == "2026-07-07T09:00:00"
         assert "anonymize_mask" in row
@@ -286,7 +286,8 @@ class TestAltersApiDetail:
         body = response.json()
         assert body["name"] == DEFAULT_PARENT_NAME
         assert body["status"] == TaskHistoryStatusEnum.RUNNING.value
-        assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in body
+        assert "owner" not in body
         assert "anonymize_mask" in body
         assert isinstance(body["anonymized_entities"], list)
         assert "connectivity_warning" in body
@@ -339,7 +340,8 @@ class TestAltersApiCreate:
 
         assert response.status_code == status.HTTP_201_CREATED
         create_body = response.json()
-        assert create_body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in create_body
+        assert "owner" not in create_body
         assert "anonymize_mask" in create_body
         assert "anonymized_entities" in create_body
         assert "connectivity_warning" in create_body
@@ -446,7 +448,8 @@ class TestAltersApiUpdate:
 
         assert response.status_code == status.HTTP_200_OK
         update_body = response.json()
-        assert update_body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in update_body
+        assert "owner" not in update_body
         assert "anonymize_mask" in update_body
         assert "anonymized_entities" in update_body
         assert "connectivity_warning" in update_body
