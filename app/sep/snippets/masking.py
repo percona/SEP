@@ -43,9 +43,10 @@ from app.core.utils.cache import ttl_cache
 from app.core.utils.fields import redact_credential_url
 from app.sep.snippets.models.snippet import BaseSnippetArgs
 
+#: Fixed-width replacement for a credential value, whatever its real length
 SENSITIVE_ARG_MASK = "***"
-"""Fixed-width replacement for a credential value, whatever its real length."""
 
+#: Name segments that mark a parameter as credential-bearing on their own
 CREDENTIAL_NAME_SEGMENTS = frozenset(
     {
         "password",
@@ -61,21 +62,18 @@ CREDENTIAL_NAME_SEGMENTS = frozenset(
         "credentials",
     }
 )
-"""Name segments that mark a parameter as credential-bearing on their own."""
 
 _ONE_HOUR = 60 * 60
 
 _SENTINEL = "sepArgMaskSentinel0"
 
+#: Stand-in the mask is substituted for only after the tokens are re-joined.
+#: Every character is one ``shlex.quote`` leaves bare, so a masked token is not
+#: wrapped in quotes the way the ``*`` of the real mask would force. Because the
+#: substitution runs over the joined string, a recorded value already containing
+#: this literal would be indistinguishable from a token this module masked --
+#: ``mask_snippet_args`` withholds such a string rather than rewrite it.
 _MASK_PLACEHOLDER = "__sepMaskedArgPlaceholder0__"
-"""Stand-in the mask is substituted for only after the tokens are re-joined.
-
-Every character is one ``shlex.quote`` leaves bare, so a masked token is not
-wrapped in quotes the way the ``*`` of the real mask would force. Because the
-substitution runs over the joined string, a recorded value already containing
-this literal would be indistinguishable from a token this module masked --
-``mask_snippet_args`` withholds such a string rather than rewrite it.
-"""
 
 _NAME_SEGMENT_RE = re.compile(r"[-_]")
 _FLAG_RE = re.compile(r"^--(?P<name>[^\s=]+)$")
