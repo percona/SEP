@@ -224,6 +224,13 @@ class ATWIncidentExecutionResponse(BaseModel):
     :param started_at: When the upstream execution started.
     :param finished_at: When the upstream execution finished.
     :param has_logs: Whether the upstream execution has readable logs.
+    :param masked_args: The command line the snippet ran with, credential values
+        replaced by a fixed-width mask. ``None`` together with
+        ``args_withheld=False`` means the execution recorded no arguments.
+        Defaults to ``None``.
+    :param args_withheld: Whether the arguments were suppressed because they
+        could not be masked safely -- distinguishing that from an execution that
+        genuinely ran with none. Defaults to ``False``.
     """
 
     id: UUID4
@@ -234,6 +241,8 @@ class ATWIncidentExecutionResponse(BaseModel):
     started_at: UTCDatetime | None = None
     finished_at: UTCDatetime | None = None
     has_logs: bool | None = None
+    masked_args: str | None = None
+    args_withheld: bool = False
 
 
 def parameter_fields(script: SnippetScript) -> list[AnyField]:

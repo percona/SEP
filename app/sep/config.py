@@ -644,8 +644,7 @@ class SEPSettings(BaseYamlAppSettings):
         means no receiver is configured. Set through env or YAML only, so every
         write runs the plan's cross-reference validation as a whole; DB
         overrides are rejected because a per-leaf override would merge without
-        re-validating the plan, and a secret sent through the override API is
-        stored as its mask literal.
+        re-validating the plan.
     :param APP_DRAIN: Operator-tunable settings for the cooperative app-drain
         reconciler (reconcile cadence and stale running-task TTL).
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting

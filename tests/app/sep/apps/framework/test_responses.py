@@ -20,10 +20,11 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.requests import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import (
     BaseTaskResponse,
     build_default_task_response,
@@ -31,6 +32,7 @@ from app.sep.apps.framework import (
     ConnectivityWarning,
     derive_create_response_model,
 )
+from app.sep.apps.framework.responses import dump_with_excluded_fields
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import Task, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
@@ -563,6 +565,74 @@ class TestBaseTaskResponse:
             result = response.anonymized_entities
 
         assert result == ["EMAIL_ADDRESS"]
+
+    def test_serialized_payload_omits_owner_and_service_type(self) -> None:
+        """Drop ``owner`` and ``service_type`` from the serialized detail/list payload."""
+        response = BaseTaskResponse.model_validate(
+            {**self.BASE_FIELDS, "service_type": ServiceTypeEnum.MYSQL.value}
+        )
+
+        dumped = response.model_dump(mode="json")
+
+        assert response.owner == "CHECKSUMS"
+        assert response.service_type is not None
+        assert "owner" not in dumped
+        assert "service_type" not in dumped
+
+    def test_model_dump_with_excluded_fields_restores_excluded_fields(self) -> None:
+        """Include ``owner`` and ``service_type`` in rebuild dumps used by detail builders."""
+        response = BaseTaskResponse.model_validate(
+            {**self.BASE_FIELDS, "service_type": ServiceTypeEnum.MYSQL.value}
+        )
+
+        dumped = response.model_dump_with_excluded_fields()
+
+        assert dumped["owner"] == "CHECKSUMS"
+        assert dumped["service_type"] == ServiceTypeEnum.MYSQL
+        assert "anonymized_entities" not in dumped
+        assert BaseTaskResponse.model_validate(dumped).owner == "CHECKSUMS"
+
+    def test_dump_with_excluded_fields_honours_explicit_exclude(self) -> None:
+        """Let an explicit ``exclude`` entry win over excluded-field reinjection."""
+        response = BaseTaskResponse.model_validate(self.BASE_FIELDS)
+
+        dumped = response.model_dump_with_excluded_fields(exclude={"owner"})
+
+        assert "owner" not in dumped
+        assert "service_type" in dumped
+
+    def test_dump_with_excluded_fields_restores_exclude_true_fields_on_any_model(
+        self,
+    ) -> None:
+        """Restore every ``Field(exclude=True)`` attribute for non-BaseTaskResponse models."""
+
+        class _ExcludedResponse(BaseModel):
+            name: str
+            service_type: ServiceTypeEnum | None = Field(default=None, exclude=True)
+
+        response = _ExcludedResponse(name="task-a", service_type=ServiceTypeEnum.MYSQL)
+
+        dumped = dump_with_excluded_fields(response)
+
+        assert dumped["name"] == "task-a"
+        assert dumped["service_type"] == ServiceTypeEnum.MYSQL
+        assert "service_type" not in response.model_dump()
+
+    def test_anonymized_entities_still_resolves_when_owner_excluded(self) -> None:
+        """Keep ``owner`` available to ``anonymized_entities`` despite serialization exclude."""
+        default_entities = {PIIEntity.EMAIL_ADDRESS}
+        mock_defaults = defaultdict(lambda: default_entities)
+        fields = {**self.BASE_FIELDS, "anonymize_mask": None}
+
+        with patch(
+            "app.sep.apps.framework.responses.anonymizer_settings"
+        ) as mock_settings:
+            mock_settings.DEFAULT_ENTITIES = mock_defaults
+            response = BaseTaskResponse.model_validate(fields)
+            dumped = response.model_dump(mode="json")
+
+        assert "owner" not in dumped
+        assert dumped["anonymized_entities"] == ["EMAIL_ADDRESS"]
 
     def test_round_trips_task_dump_with_connectivity_warning_default_none(self) -> None:
         """Build from a task dump, defaulting ``connectivity_warning`` to ``None``."""

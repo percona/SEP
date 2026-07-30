@@ -18,6 +18,7 @@
 import asyncio
 import logging
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -78,9 +79,10 @@ from app.sep.apps.atw.models import (
 )
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.apps.snippets.script_source import snippet_not_found_detail
+from app.sep.apps.snippets.script_source import snippet_not_found_detail, SnippetScript
 from app.sep.deps import ApiCurrentUser, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
 
 logger = logging.getLogger(__name__)
@@ -88,6 +90,13 @@ logger = logging.getLogger(__name__)
 ATW_META_KEY = "atw"
 ATW_META_WARNING = (
     f"Ignoring meta[{ATW_META_KEY!r}] for snippet %s: expected list, got %s"
+)
+ATW_ARG_MASKING_WARNING = (
+    "Withholding recorded arguments for snippet %s: masking them failed"
+)
+ATW_SNIPPET_RESOLUTION_WARNING = (
+    "Snippets could not be resolved for the ATW incident page; "
+    "every row withholds its arguments"
 )
 NO_TASK_ID_ERROR = "Dispatched, but the Tasks API returned no task id; not recorded."
 UNRECORDED_EXECUTION_ERROR = "Dispatched, but the execution row could not be recorded"
@@ -431,15 +440,108 @@ async def atw_batch_execute(
     return ATWBatchExecuteResponse(items=items)
 
 
+async def _resolve_page_snippets(
+    executions: Sequence[AtwIncidentExecution],
+) -> dict[str, SnippetScript]:
+    """Resolve the page's snippets in one query, degrading a failure to no metadata.
+
+    Mirrors :func:`fetch_task_history`'s policy for the same route: a lookup that
+    cannot answer blanks the affected rows' arguments rather than failing the
+    listing.
+
+    :param executions: The page's recorded execution rows.
+    :return: A mapping of each resolved filename to its snippet; filenames that
+        no longer resolve are absent, and an empty mapping means none did.
+    """
+    try:
+        return await resolve_snippets(
+            [execution.snippet_filename for execution in executions]
+        )
+    except (HTTPException, OSError):
+        logger.warning(ATW_SNIPPET_RESOLUTION_WARNING, exc_info=True)
+        return {}
+
+
+def _execution_meta(history: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """Return the metadata recorded with an execution, or ``None`` on an odd shape.
+
+    ``history`` is the tasks service's response body, unvalidated on this side, so
+    each nesting level is shape-checked rather than assumed: reading ``args`` off a
+    truthy non-mapping would raise and fail the whole page rather than one row.
+
+    :param history: The upstream task-history payload.
+    :return: The recorded execution metadata, empty when the payload carries none,
+        or ``None`` when either nesting level holds something other than a mapping.
+    """
+    request = history.get("execution_request") or {}
+    if not isinstance(request, Mapping):
+        return None
+    meta = request.get("meta") or {}
+    return meta if isinstance(meta, Mapping) else None
+
+
+def _execution_args(
+    history: dict[str, Any], script: SnippetScript | None
+) -> tuple[str | None, bool]:
+    """Return an execution's masked argument string and whether it was withheld.
+
+    An empty ``history`` is what an upstream lookup failure degrades to, so it
+    withholds rather than reporting the empty state -- the arguments exist, they
+    just could not be read. A payload whose nesting is not shaped as expected
+    withholds for the same reason (see :func:`_execution_meta`).
+
+    Masking derives what is sensitive from the snippet's *current* frontmatter,
+    while the arguments were rendered from whatever it said at execution time. The
+    two only coincide while the file is unchanged, so the digest recorded alongside
+    the arguments is compared against the snippet's current one first: an edit that
+    dropped, renamed, or de-sensitised a parameter would otherwise leave its value
+    unrecognised and rendered in the clear. A digest mismatch withholds, which also
+    means a snippet edit blanks the arguments of executions recorded before it --
+    the price of not persisting the metadata each run was masked against.
+
+    Deriving that metadata can also fail outright on a malformed or stale ``meta``
+    column -- an ``arg_format`` that does not tokenise, a parameter definition the
+    model rejects, a value that will not serialise. Any of those withholds this row
+    alone, never the page. ``ValidationError`` and ``PydanticUserError`` need no
+    separate arm: they arrive as the ``ValueError`` and ``TypeError`` they
+    respectively subclass.
+
+    :param history: The upstream task-history payload, empty when unavailable.
+    :param script: The resolved snippet, or ``None`` when its filename no longer
+        resolves and the parameter metadata masking needs is unavailable.
+    :return: The masked argument string paired with the withheld flag; a ``None``
+        string and a false flag mean the execution recorded no arguments.
+    """
+    if not history:
+        return None, True
+    if (meta := _execution_meta(history)) is None:
+        return None, True
+    if not (raw := meta.get("args")):
+        return None, False
+    if script is None or meta.get("md5_checksum") != script.snippet.md5_digest:
+        return None, True
+    try:
+        masked = mask_snippet_args(raw, script.get_execution_model())
+    except (TypeError, ValueError, KeyError, AttributeError):
+        logger.warning(ATW_ARG_MASKING_WARNING, script.filename, exc_info=True)
+        return None, True
+    return masked, masked is None
+
+
 def _build_execution_response(
-    execution: AtwIncidentExecution, history: dict[str, Any]
+    execution: AtwIncidentExecution,
+    history: dict[str, Any],
+    script: SnippetScript | None,
 ) -> ATWIncidentExecutionResponse:
     """Merge a recorded execution row with its upstream task-history payload.
 
     :param execution: The locally-recorded execution row.
     :param history: The upstream task-history payload, empty when unavailable.
+    :param script: The resolved snippet whose parameter metadata drives argument
+        masking, or ``None`` when its filename no longer resolves.
     :return: The combined execution response.
     """
+    masked_args, args_withheld = _execution_args(history, script)
     return ATWIncidentExecutionResponse(
         id=execution.id,
         snippet_filename=execution.snippet_filename,
@@ -449,6 +551,8 @@ def _build_execution_response(
         started_at=history.get("started_at"),
         finished_at=history.get("finished_at"),
         has_logs=history.get("has_logs"),
+        masked_args=masked_args,
+        args_withheld=args_withheld,
     )
 
 
@@ -503,7 +607,7 @@ async def atw_start_send_job(
     current_user: ApiCurrentUser,
     body: AtwSendJobWrite,
 ) -> AtwSendLogResponse:
-    """Start delivering the selected executions' output files to the support case.
+    """Start delivering the selected executions' output files and logs to the support case.
 
     The row is created before the task is queued so a broker failure is still
     recorded as a failed attempt rather than vanishing: the row is the only place
@@ -598,11 +702,16 @@ async def atw_list_incident_executions(
 ) -> PaginatedResponse[ATWIncidentExecutionResponse]:
     """List one incident's snippet executions, newest first, with live task status.
 
+    Each row also reports the command line its snippet ran with, credential values
+    masked. A row whose snippet or upstream payload cannot supply what masking
+    needs reports its arguments as withheld; the page still returns.
+
     :param session: The database session.
     :param incident: The incident resolved from the ``incident_id`` path parameter.
     :param pagination: The offset/limit window for the page.
     :param tasks_api: The authenticated Tasks API client.
-    :return: A paginated page of executions hydrated from the Tasks API.
+    :return: A paginated page of executions hydrated from the Tasks API, each with
+        its masked arguments or the reason they are absent.
     """
     page = await AtwIncidentExecutionManager.list_paginated(
         session, pagination=pagination, incident_id=incident.id
@@ -613,8 +722,11 @@ async def atw_list_incident_executions(
             for execution in page.items
         )
     )
+    scripts = await _resolve_page_snippets(page.items)
     items = [
-        _build_execution_response(execution, history)
+        _build_execution_response(
+            execution, history, scripts.get(execution.snippet_filename)
+        )
         for execution, history in zip(page.items, histories, strict=True)
     ]
     return PaginatedResponse.from_pagination(items, page.total, pagination)

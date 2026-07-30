@@ -134,7 +134,8 @@ class TestBackupTaskResponseModel:
         assert isinstance(response, BaseTaskResponse)
         assert dumped["backup_type"] == BackupType.MYDUMPER.value
         assert dumped["hostname"] == "db-host"
-        assert dumped["service_type"] is None
+        assert "service_type" not in dumped
+        assert "owner" not in dumped
         assert "anonymize_mask" in dumped
         assert "anonymized_entities" in dumped
         assert "connectivity_warning" in dumped
