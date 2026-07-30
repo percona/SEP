@@ -246,6 +246,21 @@ class TestNoRecordCases:
 
         assert await MysqlBackupRunManager.list(session) == []
 
+    @pytest.mark.asyncio
+    async def test_orphan_history_with_no_task_records_nothing(self, session) -> None:
+        """Skip recording, without raising, when the history's task is unset.
+
+        ``record_backup_run`` reads the backup type off ``history.task.data``;
+        a history whose ``task`` relation is unset must fall back to "no known
+        backup type" rather than raising on the missing attribute.
+        """
+        history = _history(backup_type="M")
+        history.task = None
+
+        await record_backup_run(session, history, {"backup_dir": "/data/x"})
+
+        assert await MysqlBackupRunManager.list(session) == []
+
 
 @pytest.mark.usefixtures("_recorder_uses_test_session")
 class TestIdempotency:
