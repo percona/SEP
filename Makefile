@@ -70,9 +70,13 @@ builder:
 	@podman image exists "sep:builder" && podman image rm "sep:builder"
 	@buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
 
+# On this branch (`pmm`, the PMM feature-build branch) `image` builds the
+# app-restricted consolidated side-car, NOT the standalone image: the Jenkins
+# Build job only runs `make image`, so this is what publishes the feature-build
+# artifact under the plain tag. Docker format for the HEALTHCHECK (see below).
 image: pack
 	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
-	@buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
+	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
 
 # docker format, not oci: OCI silently discards the HEALTHCHECK instruction
 image-sidecar: pack

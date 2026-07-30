@@ -39,7 +39,7 @@ services:
         ipv4_address: 172.28.9.2
 
   sep-sidecar:
-    image: docker.io/percona/percona-sep:pmm-c412a7c-sidecar
+    image: docker.io/percona/percona-sep:pmm-c412a7c
     depends_on: [pmm-server]
     volumes:
       - ./settings.yaml:/home/sep/app/settings.yaml:ro

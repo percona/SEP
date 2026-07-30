@@ -3,7 +3,7 @@
 Compose topology pairing the PMM feature build (SEP frontend + PostgreSQL
 exposure, [Percona-Lab/pmm-submodules#4500] = percona/pmm branch `PMM-15216`,
 PRs [percona/pmm#5653] + [percona/pmm#5700]) with the app-restricted SEP
-side-car built from this branch (`percona/percona-sep:pmm-c412a7c-sidecar`:
+side-car built from this branch (`percona/percona-sep:pmm-c412a7c`:
 supervisord running the three APIs + Celery worker/beat + bundled Valkey,
 shipping only the `inventory`, `mysql_backups`, `atw` and `snippets` apps).
 
