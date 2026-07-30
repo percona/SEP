@@ -15,7 +15,7 @@
 
 """add atw incident closed_at
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 447ee0172734
 Revises: c93998e0fa14
 Create Date: 2026-07-30 12:00:00.000000
 
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "a1b2c3d4e5f6"
+revision: str = "447ee0172734"
 down_revision: Union[str, None] = "c93998e0fa14"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
