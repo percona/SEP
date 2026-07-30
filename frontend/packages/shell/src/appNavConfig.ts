@@ -43,6 +43,7 @@ import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import ScienceIcon from '@mui/icons-material/Science';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import GroupIcon from '@mui/icons-material/Group';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
 import { ROUTES } from '@sep/shared';
 import type { SvgIconComponent } from '@mui/icons-material';
@@ -97,6 +98,7 @@ export const APP_ROUTE_BY_KEY: Record<string, AppRouteMeta> = {
   dipper: defineAppRoute('dipper', ROUTES.dipper, ROUTES.dipper),
   report: defineAppRoute('report', ROUTES.reports, ROUTES.reports),
   mum: defineAppRoute('mum', '/mum'),
+  mongo_upgrade: defineAppRoute('mongo_upgrade', ROUTES.mongoUpgrade),
 };
 
 /** Return routing metadata for a registered ``app_key``, if any. */
@@ -130,6 +132,7 @@ const APP_NAV_ICONS: Record<string, NavIcon> = {
   dipper: ScienceIcon,
   report: BarChartIcon,
   mum: GroupIcon,
+  mongo_upgrade: SystemUpdateAltIcon,
 };
 
 /** Always-on non-app destinations, prepended ahead of the derived app tree. */

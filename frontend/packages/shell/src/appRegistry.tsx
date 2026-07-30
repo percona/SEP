@@ -78,6 +78,9 @@ const BackupMongoPlugin = lazy(() =>
 const MumPlugin = lazy(() =>
   import('@sep/plugin-mum').then((m) => ({ default: m.MumPlugin })),
 );
+const MongoUpgradePlugin = lazy(() =>
+  import('@sep/plugin-mongo-upgrade').then((m) => ({ default: m.MongoUpgradePlugin })),
+);
 const ReportPlugin = lazy(() =>
   import('@sep/plugin-report').then((m) => ({ default: m.ReportPlugin })),
 );
@@ -111,6 +114,7 @@ export const CUSTOM_APP_REGISTRY: Record<string, CustomAppRegistryEntry> = {
   alters: customEntry('alters', AltersPlugin),
   backup_mongo: customEntry('backup_mongo', BackupMongoPlugin),
   mum: customEntry('mum', MumPlugin),
+  mongo_upgrade: customEntry('mongo_upgrade', MongoUpgradePlugin),
   report: customEntry('report', ReportPlugin),
 };
 

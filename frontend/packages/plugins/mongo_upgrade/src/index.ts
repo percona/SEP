@@ -1,0 +1,1 @@
+export { MongoUpgradePlugin } from './MongoUpgradePlugin';

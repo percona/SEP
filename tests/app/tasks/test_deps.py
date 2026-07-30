@@ -590,6 +590,100 @@ class TestPrepareTaskHistory:
             "override-task"
         ]
 
+    @pytest.mark.asyncio
+    async def test_chain_targets_injected_in_meta(self) -> None:
+        """Assert prepare_task_history stores chain_targets in meta when set."""
+        task = TaskFactory.build(
+            name="test-task",
+            owner="ANSIBLE",
+            backend=TaskBackendEnum.PROXY,
+            data={"meta": {"target": "host1"}, "payload": None},
+        )
+        chain_task = TaskFactory.build(
+            name="other-task", owner="ANSIBLE", data=task.data
+        )
+        execution_data = TaskExecuteRequest(
+            chain_task_names=["other-task"], chain_targets=["host2"]
+        )
+        with patch(
+            "app.tasks.deps.TaskManager.first",
+            new_callable=AsyncMock,
+            return_value=chain_task,
+        ):
+            history = await prepare_task_history(
+                task, "test-user", AsyncMock(), execution_data
+            )
+        assert history.execution_request.meta.get("_chain_targets") == ["host2"]
+
+    @pytest.mark.asyncio
+    async def test_chain_targets_length_mismatch_raises_400(self) -> None:
+        """Assert prepare_task_history raises 400 when chain_targets length differs."""
+        task = TaskFactory.build(
+            name="test-task",
+            owner="ANSIBLE",
+            backend=TaskBackendEnum.PROXY,
+            data={"meta": {"target": "host1"}, "payload": None},
+        )
+        execution_data = TaskExecuteRequest(
+            chain_task_names=["task-a", "task-b"],
+            chain_targets=["host2"],
+        )
+        with pytest.raises(HTTPBadRequestException, match="chain_targets length"):
+            await prepare_task_history(task, "test-user", AsyncMock(), execution_data)
+
+    @pytest.mark.asyncio
+    async def test_chain_targets_bypasses_static_target_check(self) -> None:
+        """Assert chain_targets suppresses the static RTarget mismatch check."""
+        task = TaskFactory.build(
+            name="test-task",
+            owner="ANSIBLE",
+            backend=TaskBackendEnum.PROXY,
+            data={
+                "meta": {"target": "host1"},
+                "payload": None,
+                "Constraints": [{"RTarget": "node-a"}],
+            },
+        )
+        chain_task = TaskFactory.build(
+            name="other-task",
+            owner="ANSIBLE",
+            data={"Constraints": [{"RTarget": "node-b"}]},
+        )
+        execution_data = TaskExecuteRequest(
+            chain_task_names=["other-task"], chain_targets=["host2"]
+        )
+        with patch(
+            "app.tasks.deps.TaskManager.first",
+            new_callable=AsyncMock,
+            return_value=chain_task,
+        ):
+            history = await prepare_task_history(
+                task, "test-user", AsyncMock(), execution_data
+            )
+        assert history.execution_request.meta.get("_chain_targets") == ["host2"]
+
+    @pytest.mark.asyncio
+    async def test_chain_targets_not_in_meta_when_absent(self) -> None:
+        """Assert _chain_targets is absent from meta when chain_targets is not set."""
+        task = TaskFactory.build(
+            name="test-task",
+            backend=TaskBackendEnum.PROXY,
+            data={"meta": {"target": "host1"}, "payload": None},
+        )
+        chain_task = TaskFactory.build(
+            name="other-task", owner=task.owner, data=task.data
+        )
+        execution_data = TaskExecuteRequest(chain_task_names=["other-task"])
+        with patch(
+            "app.tasks.deps.TaskManager.first",
+            new_callable=AsyncMock,
+            return_value=chain_task,
+        ):
+            history = await prepare_task_history(
+                task, "test-user", AsyncMock(), execution_data
+            )
+        assert "_chain_targets" not in history.execution_request.meta
+
 
 @pytest_asyncio.fixture
 async def task_history(session, nomad_task) -> TaskHistory:

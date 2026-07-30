@@ -35,7 +35,7 @@ from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.db.engine import engine
-from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum
+from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum, TaskOwner
 
 logger = logging.getLogger(__name__)
 
@@ -412,6 +412,430 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
     ],
 }
 
+# Nomad's Consul Template engine processes EmbeddedTmpl with {{ }} as directives.
+# Ansible playbooks also use {{ }} for Jinja2 expressions. Use these sentinels to
+# embed literal Jinja2 braces that survive Nomad rendering unchanged.
+_NTL_OPEN = '{{ "{{" }}'   # rendered by Nomad → {{
+_NTL_CLOSE = '{{ "}}" }}'  # rendered by Nomad → }}
+
+# Ansible playbook for upgrading OS packages on a Debian executor host.
+# Embedded directly in the Nomad job spec via EmbeddedTmpl so no out-of-band
+# playbook deployment to executor nodes is required.
+#
+# Meta inputs (all optional):
+#   packages        — space-separated list of package names; omit for full dist-upgrade
+#   restart_service — systemd unit to restart after upgrade (e.g. "mysql" or "mongod")
+_APT_UPGRADE_PLAYBOOK_TMPL = (
+    "---\n"
+    "- name: Upgrade Debian executor host\n"
+    "  hosts: localhost\n"
+    "  connection: local\n"
+    "  become: true\n"
+    "  gather_facts: false\n"
+    "  vars:\n"
+    '    packages: ""\n'
+    '    restart_service: ""\n'
+    "  tasks:\n"
+    "    - name: Update apt cache\n"
+    "      ansible.builtin.apt:\n"
+    "        update_cache: true\n"
+    "        cache_valid_time: 0\n"
+    "\n"
+    "    - name: Full dist-upgrade\n"
+    "      ansible.builtin.apt:\n"
+    "        upgrade: dist\n"
+    "        autoremove: true\n"
+    "        autoclean: true\n"
+    "      when: not packages\n"
+    "\n"
+    "    - name: Upgrade specific packages\n"
+    "      ansible.builtin.apt:\n"
+    # packages.split() converts the space-separated meta value into a list.
+    # Nomad expands ${NOMAD_META_packages} before sh runs; single-quoting in
+    # the command preserves spaces so the whole value reaches Ansible as one arg.
+    f'        name: "{_NTL_OPEN} packages.split() {_NTL_CLOSE}"\n'
+    "        state: latest\n"
+    "        update_cache: false\n"
+    "      when: packages\n"
+    "\n"
+    "    - name: Restart service after upgrade\n"
+    "      ansible.builtin.systemd:\n"
+    f'        name: "{_NTL_OPEN} restart_service {_NTL_CLOSE}"\n'
+    "        state: restarted\n"
+    "        daemon_reload: true\n"
+    "      when: restart_service\n"
+)
+
+NOMAD_APT_UPGRADE = {
+    "ID": "apt-upgrade",
+    "Name": "apt-upgrade",
+    "Type": "batch",
+    "Datacenters": ["*"],
+    "Constraints": [
+        {
+            "LTarget": "${node.unique.name}",
+            "RTarget": "${NOMAD_META_target}",
+            "Operand": "=",
+        },
+    ],
+    "ParameterizedJob": {
+        "Payload": "forbidden",
+        "MetaRequired": ["target"],
+        "MetaOptional": ["packages", "restart_service", *_STALENESS_META_OPTIONAL],
+    },
+    "TaskGroups": [
+        {
+            "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
+            "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
+                {
+                    "Name": "run-playbook",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "sh",
+                        "args": [
+                            "-c",
+                            # ${NOMAD_META_packages} and ${NOMAD_META_restart_service} are
+                            # expanded by Nomad before sh runs. Single-quoting each value
+                            # preserves spaces (e.g. "pkg-a pkg-b") as one -e argument.
+                            # Empty optional meta expands to "" which Ansible treats as falsy.
+                            (
+                                "ANSIBLE_CONNECTION=local"
+                                " ANSIBLE_CONFIG=${NOMAD_TASK_DIR}/ansible.cfg"
+                                " ansible-playbook"
+                                " -c local"
+                                " -i localhost,"
+                                " -e packages='${NOMAD_META_packages}'"
+                                " -e restart_service='${NOMAD_META_restart_service}'"
+                                " ${NOMAD_TASK_DIR}/apt_upgrade.yml"
+                            ),
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": (
+                                "[defaults]\n"
+                                "connection = local\n"
+                                "gathering = explicit\n"
+                                "stdout_callback = yaml\n"
+                            ),
+                            "DestPath": "local/ansible.cfg",
+                        },
+                        {
+                            "EmbeddedTmpl": _APT_UPGRADE_PLAYBOOK_TMPL,
+                            "DestPath": "local/apt_upgrade.yml",
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
+
+_DISCOVER_MONGO_PARSER_PY = (
+    "import json, sys\n"
+    "try:\n"
+    "    d = json.load(sys.stdin)\n"
+    "except Exception as e:\n"
+    "    print(json.dumps({'role': 'unreachable', 'error': str(e)}))\n"
+    "    sys.exit(0)\n"
+    "if d.get('arbiterOnly'):\n"
+    "    role = 'arbiter'\n"
+    "elif d.get('isWritablePrimary'):\n"
+    "    role = 'primary'\n"
+    "elif d.get('secondary'):\n"
+    "    role = 'secondary'\n"
+    "elif 'setName' in d:\n"
+    "    role = 'secondary'\n"
+    "else:\n"
+    "    role = 'standalone'\n"
+    "out = {'role': role}\n"
+    "if 'setName' in d:\n"
+    "    out['setName'] = d['setName']\n"
+    "if 'me' in d:\n"
+    "    out['me'] = d['me']\n"
+    "if 'hosts' in d:\n"
+    "    out['hosts'] = d['hosts']\n"
+    "if 'mongodVersion' in d:\n"
+    "    out['mongodVersion'] = d['mongodVersion']\n"
+    "print(json.dumps(out))\n"
+)
+
+NOMAD_DISCOVER_MONGO = {
+    "ID": "discover-mongo",
+    "Name": "discover-mongo",
+    "Type": "batch",
+    "Datacenters": ["*"],
+    "Constraints": [
+        {
+            "LTarget": "${node.unique.name}",
+            "RTarget": "${NOMAD_META_target}",
+            "Operand": "=",
+        },
+    ],
+    "ParameterizedJob": {
+        "Payload": "forbidden",
+        "MetaRequired": ["target"],
+        "MetaOptional": [*_STALENESS_META_OPTIONAL],
+    },
+    "TaskGroups": [
+        {
+            "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
+            "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
+                {
+                    "Name": "discover",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "sh",
+                        "args": [
+                            "-c",
+                            # Credentials from mongo_terraform_ansible group_vars/all.yml.
+                            # On failure emit unreachable JSON and exit 0 so SEP records
+                            # SUCCESS with the error payload rather than FAILED.
+                            # Bareword $VAR avoids Nomad ${} interpolation on shell-local vars.
+                            # Merge db.version() into db.hello() so the parser gets
+                            # both role info and the running mongod version in one call.
+                            (
+                                "OUTPUT=$(mongosh admin"
+                                " -u root -p percona"
+                                " --port 27017 --host 127.0.0.1"
+                                " --quiet --eval"
+                                " 'JSON.stringify(Object.assign(db.hello(),{mongodVersion:db.version()}))'"
+                                " 2>/dev/null);"
+                                " if [ $? -ne 0 ] || [ -z \"$OUTPUT\" ]; then"
+                                " printf '{\"role\":\"unreachable\",\"error\":\"mongosh failed\"}\\n';"
+                                " exit 0;"
+                                " fi;"
+                                " echo \"$OUTPUT\" | python3 ${NOMAD_TASK_DIR}/parse_role.py"
+                            ),
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": _DISCOVER_MONGO_PARSER_PY,
+                            "DestPath": "local/parse_role.py",
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
+
+# MongoDB rolling upgrade playbook — mirrors mongo_terraform_ansible/ansible/mongod_install.yml.
+# Meta inputs:
+#   mongo_release   — Percona release channel, e.g. "psmdb-80" (required)
+#   mongo_version   — exact package version prefix, e.g. "8.0.12-7" (optional; omit for latest)
+#   restart_service — systemd unit to restart (default: mongod)
+#
+# No Ansible Jinja2 {{ }} in this template — all values come from Nomad meta
+# expanded on the CLI via -e flags, so no Nomad template escaping is needed.
+_UPGRADE_MONGO_PLAYBOOK_TMPL = (
+    "---\n"
+    "- name: Upgrade MongoDB on executor host\n"
+    "  hosts: localhost\n"
+    "  connection: local\n"
+    "  become: true\n"
+    "  gather_facts: false\n"
+    "  vars:\n"
+    '    mongo_release: "psmdb-80"\n'
+    '    mongo_version: ""\n'
+    '    restart_service: "mongod"\n'
+    "  tasks:\n"
+    "    - name: Enable Percona release channel\n"
+    "      ansible.builtin.command:\n"
+    f"        cmd: percona-release enable {_NTL_OPEN} mongo_release {_NTL_CLOSE}\n"
+    "\n"
+    "    - name: Update apt cache\n"
+    "      ansible.builtin.apt:\n"
+    "        update_cache: true\n"
+    "        cache_valid_time: 0\n"
+    "\n"
+    "    - name: Install MongoDB packages (latest in channel)\n"
+    "      ansible.builtin.apt:\n"
+    "        name:\n"
+    "          - percona-server-mongodb\n"
+    "          - percona-mongodb-mongosh\n"
+    "        state: latest\n"
+    "        update_cache: false\n"
+    "      when: not mongo_version\n"
+    "\n"
+    "    - name: Install MongoDB packages (pinned version)\n"
+    "      ansible.builtin.apt:\n"
+    f"        name:\n"
+    f"          - percona-server-mongodb={_NTL_OPEN} mongo_version {_NTL_CLOSE}*\n"
+    f"          - percona-mongodb-mongosh\n"
+    "        state: present\n"
+    "        allow_downgrade: true\n"
+    "        update_cache: false\n"
+    "      when: mongo_version\n"
+    "\n"
+    "    - name: Restart MongoDB service\n"
+    "      ansible.builtin.systemd:\n"
+    f'        name: "{_NTL_OPEN} restart_service {_NTL_CLOSE}"\n'
+    "        state: restarted\n"
+    "        daemon_reload: true\n"
+    "\n"
+    "    - name: Wait for MongoDB to accept connections\n"
+    "      ansible.builtin.command:\n"
+    "        cmd: mongosh admin -u root -p percona --port 27017 --host 127.0.0.1 --quiet --eval 'db.hello()'\n"
+    "      register: _mongo_ready\n"
+    "      retries: 60\n"
+    "      delay: 1\n"
+    "      until: _mongo_ready.rc == 0\n"
+    "      changed_when: false\n"
+)
+
+NOMAD_UPGRADE_MONGO = {
+    "ID": "upgrade-mongo",
+    "Name": "upgrade-mongo",
+    "Type": "batch",
+    "Datacenters": ["*"],
+    "Constraints": [
+        {
+            "LTarget": "${node.unique.name}",
+            "RTarget": "${NOMAD_META_target}",
+            "Operand": "=",
+        },
+    ],
+    "ParameterizedJob": {
+        "Payload": "forbidden",
+        "MetaRequired": ["target", "mongo_release"],
+        "MetaOptional": ["mongo_version", "restart_service", *_STALENESS_META_OPTIONAL],
+    },
+    "TaskGroups": [
+        {
+            "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
+            "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
+                {
+                    "Name": "run-playbook",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "sh",
+                        "args": [
+                            "-c",
+                            (
+                                "ANSIBLE_CONNECTION=local"
+                                " ANSIBLE_CONFIG=${NOMAD_TASK_DIR}/ansible.cfg"
+                                " ansible-playbook"
+                                " -c local"
+                                " -i localhost,"
+                                " -e mongo_release='${NOMAD_META_mongo_release}'"
+                                " -e mongo_version='${NOMAD_META_mongo_version}'"
+                                " -e restart_service='${NOMAD_META_restart_service}'"
+                                " ${NOMAD_TASK_DIR}/upgrade_mongo.yml"
+                            ),
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": (
+                                "[defaults]\n"
+                                "connection = local\n"
+                                "gathering = explicit\n"
+                                "stdout_callback = yaml\n"
+                            ),
+                            "DestPath": "local/ansible.cfg",
+                        },
+                        {
+                            "EmbeddedTmpl": _UPGRADE_MONGO_PLAYBOOK_TMPL,
+                            "DestPath": "local/upgrade_mongo.yml",
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
+
+NOMAD_RUN_ANSIBLE = {
+    "ID": "run-ansible",
+    "Name": "run-ansible",
+    "Type": "batch",
+    "Datacenters": ["*"],
+    "Constraints": [
+        {
+            "LTarget": "${node.unique.name}",
+            "RTarget": "${NOMAD_META_target}",
+            "Operand": "=",
+        },
+    ],
+    "ParameterizedJob": {
+        "Payload": "forbidden",
+        "MetaRequired": ["target", "playbook"],
+        "MetaOptional": ["extra_vars", *_STALENESS_META_OPTIONAL],
+    },
+    "TaskGroups": [
+        {
+            "Name": "execution",
+            "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+            "ReschedulePolicy": {"Attempts": 0},
+            "Tasks": [
+                deepcopy(_CHECK_STALENESS_TASK),
+                {
+                    "Name": "run-playbook",
+                    "Driver": "raw_exec",
+                    "User": "",
+                    "Config": {
+                        "command": "sh",
+                        "args": [
+                            "-c",
+                            # Three independent local-mode guards:
+                            # 1. ANSIBLE_CONNECTION=local  — env var, set before Ansible reads config
+                            # 2. ANSIBLE_CONFIG points to the template-written ansible.cfg below
+                            # 3. -c local CLI flag          — overrides any playbook-level connection:
+                            #
+                            # ${NOMAD_META_*} tokens are expanded by Nomad before sh runs.
+                            # Shell-local vars use bareword form to avoid Nomad interpolation errors.
+                            # Single-quoting ${NOMAD_META_extra_vars} after Nomad expands it ensures
+                            # the whole value is passed as one -e argument; empty string is a no-op.
+                            (
+                                "ANSIBLE_CONNECTION=local"
+                                " ANSIBLE_CONFIG=${NOMAD_TASK_DIR}/ansible.cfg"
+                                " ansible-playbook"
+                                " -c local"
+                                " -i localhost,"
+                                " -e '${NOMAD_META_extra_vars}'"
+                                " ${NOMAD_META_playbook}"
+                            ),
+                        ],
+                    },
+                    "Meta": {},
+                    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+                    "Templates": [
+                        {
+                            "EmbeddedTmpl": (
+                                "[defaults]\n"
+                                "connection = local\n"
+                                "gathering = explicit\n"
+                                "stdout_callback = yaml\n"
+                            ),
+                            "DestPath": "local/ansible.cfg",
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
+
 SYSTEM_TASKS = [
     Task(
         name="run-command",
@@ -442,6 +866,38 @@ SYSTEM_TASKS = [
         protected=True,
         anonymize_mask=None,
         output_files_path="run-script/local/output_files",
+        created_by=SYSTEM_USER,
+    ),
+    Task(
+        name="discover-mongo",
+        data=NOMAD_DISCOVER_MONGO,
+        owner=TaskOwner.ANSIBLE,
+        protected=True,
+        anonymize_mask=None,
+        created_by=SYSTEM_USER,
+    ),
+    Task(
+        name="upgrade-mongo",
+        data=NOMAD_UPGRADE_MONGO,
+        owner=TaskOwner.ANSIBLE,
+        protected=True,
+        anonymize_mask=None,
+        created_by=SYSTEM_USER,
+    ),
+    Task(
+        name="apt-upgrade",
+        data=NOMAD_APT_UPGRADE,
+        owner=TaskOwner.ANSIBLE,
+        protected=True,
+        anonymize_mask=None,
+        created_by=SYSTEM_USER,
+    ),
+    Task(
+        name="run-ansible",
+        data=NOMAD_RUN_ANSIBLE,
+        owner=TaskOwner.ANSIBLE,
+        protected=True,
+        anonymize_mask=None,
         created_by=SYSTEM_USER,
     ),
     Task(

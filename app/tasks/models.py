@@ -206,6 +206,7 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     RESTORE_MONGO = "RESTORE_MONGO"
     BACKUP_PG = "BACKUP_PG"
     MUM = "MUM"
+    ANSIBLE = "ANSIBLE"
 
 
 class TaskLogType(StrEnum):
@@ -570,6 +571,12 @@ class TaskExecuteRequest(BaseModel):
     :param chain_on_failure: Whether the chain should continue when a task fails,
         stops, or is lost. Defaults to False (chain only on success).
     :type chain_on_failure: bool
+    :param chain_targets: Executor target override per chained step, parallel to
+        ``chain_task_names``. When provided each entry routes the corresponding
+        chained task to a different Nomad node, enabling cross-host sequencing.
+        Must be the same length as ``chain_task_names`` when both are set.
+        Defaults to None (each step inherits the parent target).
+    :type chain_targets: list[str] | None
     """
 
     meta: dict[str, Any] = {}
@@ -578,6 +585,7 @@ class TaskExecuteRequest(BaseModel):
     anonymize_mask: int | None = None
     chain_task_names: list[str] | None = None
     chain_on_failure: bool = False
+    chain_targets: list[str] | None = None
 
     @field_validator("chain_on_failure", mode="before")
     @classmethod

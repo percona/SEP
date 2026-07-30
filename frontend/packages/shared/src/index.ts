@@ -61,6 +61,7 @@ export const ROUTES = {
   dipper: '/dipper',
   reports: '/reports',
   settings: '/settings',
+  mongoUpgrade: '/mongo-upgrade',
 } as const;
 
 // ── App-wide constants ────────────────────────────────────────────────

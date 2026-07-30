@@ -1373,6 +1373,227 @@ class TestDispatchChainedTask:
         mock_session_maker.assert_not_called()
         mock_dispatch.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_uses_first_chain_target_as_next_target(self) -> None:
+        """Assert _dispatch_chained_task routes the next step to chain_targets[0]."""
+        main_task = _make_chain_task("main-task")
+        chain_task = _make_chain_task("chain-task")
+        parent_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.SUCCESS,
+            {
+                "_chain_task_names": [chain_task.name],
+                "_chain_targets": ["host-b", "host-c"],
+            },
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.first", new_callable=AsyncMock
+            ) as mock_task_first,
+            patch(
+                "app.tasks.celery.dispatch_queue_item", new_callable=AsyncMock
+            ) as mock_dispatch,
+        ):
+            mock_task_first.return_value = chain_task
+            mock_dispatch.return_value = AsyncMock()
+
+            await _dispatch_chained_task(chain_task.name, parent_history)
+
+        mock_dispatch.assert_awaited_once()
+        dispatched_history = mock_dispatch.call_args[0][0]
+        assert dispatched_history.execution_request.target == "host-b"
+        assert dispatched_history.execution_request.meta.get("target") == "host-b"
+
+    @pytest.mark.asyncio
+    async def test_passes_remaining_chain_targets_forward(self) -> None:
+        """Assert _dispatch_chained_task carries chain_targets[1:] into the next step's meta."""
+        main_task = _make_chain_task("main-task")
+        chain_task = _make_chain_task("chain-task")
+        parent_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.SUCCESS,
+            {
+                "_chain_task_names": [chain_task.name, "final-task"],
+                "_chain_targets": ["host-b", "host-c"],
+            },
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.first", new_callable=AsyncMock
+            ) as mock_task_first,
+            patch(
+                "app.tasks.celery.dispatch_queue_item", new_callable=AsyncMock
+            ) as mock_dispatch,
+        ):
+            mock_task_first.return_value = chain_task
+            mock_dispatch.return_value = AsyncMock()
+
+            await _dispatch_chained_task(
+                chain_task.name, parent_history, ["final-task"]
+            )
+
+        dispatched_history = mock_dispatch.call_args[0][0]
+        assert dispatched_history.execution_request.meta.get("_chain_targets") == ["host-c"]
+        assert dispatched_history.execution_request.meta.get("_chain_task_names") == ["final-task"]
+
+    @pytest.mark.asyncio
+    async def test_chain_targets_exhausted_not_in_meta(self) -> None:
+        """Assert _chain_targets is absent when the last target has been consumed."""
+        main_task = _make_chain_task("main-task")
+        chain_task = _make_chain_task("chain-task")
+        parent_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.SUCCESS,
+            {
+                "_chain_task_names": [chain_task.name],
+                "_chain_targets": ["host-b"],
+            },
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.first", new_callable=AsyncMock
+            ) as mock_task_first,
+            patch(
+                "app.tasks.celery.dispatch_queue_item", new_callable=AsyncMock
+            ) as mock_dispatch,
+        ):
+            mock_task_first.return_value = chain_task
+            mock_dispatch.return_value = AsyncMock()
+
+            await _dispatch_chained_task(chain_task.name, parent_history)
+
+        dispatched_history = mock_dispatch.call_args[0][0]
+        assert "_chain_targets" not in dispatched_history.execution_request.meta
+        assert dispatched_history.execution_request.target == "host-b"
+
+    @pytest.mark.asyncio
+    async def test_propagates_non_private_runtime_meta(self) -> None:
+        """Assert non-private parent meta (e.g. restart_service) carries forward."""
+        main_task = _make_chain_task("main-task")
+        chain_task = _make_chain_task("chain-task")
+        parent_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.SUCCESS,
+            {
+                "_chain_task_names": [chain_task.name],
+                "restart_service": "mongod",
+                "extra_vars": "foo=bar",
+            },
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.first", new_callable=AsyncMock
+            ) as mock_task_first,
+            patch(
+                "app.tasks.celery.dispatch_queue_item", new_callable=AsyncMock
+            ) as mock_dispatch,
+        ):
+            mock_task_first.return_value = chain_task
+            mock_dispatch.return_value = AsyncMock()
+
+            await _dispatch_chained_task(chain_task.name, parent_history)
+
+        dispatched_history = mock_dispatch.call_args[0][0]
+        assert dispatched_history.execution_request.meta.get("restart_service") == "mongod"
+        assert dispatched_history.execution_request.meta.get("extra_vars") == "foo=bar"
+
+    @pytest.mark.asyncio
+    async def test_private_meta_not_propagated(self) -> None:
+        """Assert private _chain_* keys are never carried into the next step's meta."""
+        main_task = _make_chain_task("main-task")
+        chain_task = _make_chain_task("chain-task")
+        parent_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.SUCCESS,
+            {
+                "_chain_task_names": [chain_task.name],
+                "_chain_on_failure": True,
+                "_chain_depth": 2,
+                "restart_service": "mongod",
+            },
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.first", new_callable=AsyncMock
+            ) as mock_task_first,
+            patch(
+                "app.tasks.celery.dispatch_queue_item", new_callable=AsyncMock
+            ) as mock_dispatch,
+        ):
+            mock_task_first.return_value = chain_task
+            mock_dispatch.return_value = AsyncMock()
+
+            await _dispatch_chained_task(chain_task.name, parent_history)
+
+        dispatched_history = mock_dispatch.call_args[0][0]
+        meta = dispatched_history.execution_request.meta
+        assert meta.get("restart_service") == "mongod"
+        assert meta.get("_chain_depth") == 3
+        assert "_chain_task_names" not in meta
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_parent_target_without_chain_targets(self) -> None:
+        """Assert _dispatch_chained_task inherits parent target when _chain_targets absent."""
+        main_task = _make_chain_task("main-task")
+        chain_task = _make_chain_task("chain-task")
+        parent_history = _make_chain_history(
+            main_task,
+            TaskHistoryStatusEnum.SUCCESS,
+            {"_chain_task_names": [chain_task.name]},
+        )
+
+        session_maker, _ = _make_chain_session_mock()
+
+        with (
+            patch(
+                "app.tasks.celery.get_async_session_maker", return_value=session_maker
+            ),
+            patch(
+                "app.tasks.celery.TaskManager.first", new_callable=AsyncMock
+            ) as mock_task_first,
+            patch(
+                "app.tasks.celery.dispatch_queue_item", new_callable=AsyncMock
+            ) as mock_dispatch,
+        ):
+            mock_task_first.return_value = chain_task
+            mock_dispatch.return_value = AsyncMock()
+
+            await _dispatch_chained_task(chain_task.name, parent_history)
+
+        dispatched_history = mock_dispatch.call_args[0][0]
+        assert dispatched_history.execution_request.target == "host1"
+        assert "_chain_targets" not in dispatched_history.execution_request.meta
+
 
 class TestSyncQueueItemChainDispatch:
     """Test chain dispatch behavior in sync_queue_item."""

@@ -82,6 +82,9 @@ JSON_API_PATH_PREFIXES: tuple[str, ...] = (
     "/api/sep/",
     "/api/admin/",
     "/api/apps/",
+    "/api/oauth/",
+    "/api/users/",
+    "/api/config/",
 )
 
 

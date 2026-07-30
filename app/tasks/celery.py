@@ -781,17 +781,31 @@ async def _dispatch_chained_task(
                 "Chained task %r not found; skipping chain dispatch", chain_task_name
             )
             return
-        if chain_task_name == parent.execution_request.task:
+        chain_targets = parent.execution_request.meta.get("_chain_targets")
+        # Allow self-chaining when explicit per-step targets are provided — each
+        # step runs on a different host (rolling upgrade pattern), so repeating
+        # the same task name is intentional, not an accidental loop.
+        if chain_task_name == parent.execution_request.task and not chain_targets:
             logger.warning(
                 "Chained task %r is the same as the parent task; skipping self-chain",
                 chain_task_name,
             )
             return
+        next_target = chain_targets[0] if chain_targets else parent.execution_request.target
+        # Start from the static task defaults, then overlay the parent's non-private
+        # runtime meta so user-supplied params (e.g. restart_service, extra_vars)
+        # propagate through every step of the chain without needing to be re-stated.
         chain_meta = dict(chain_task.data.get("meta", {}))
+        chain_meta.update(
+            {k: v for k, v in parent.execution_request.meta.items() if not k.startswith("_")}
+        )
         chain_meta.pop("_chain_task_names", None)
+        chain_meta.pop("_chain_targets", None)
         if remaining_chain:
             chain_meta["_chain_task_names"] = remaining_chain
-        chain_meta["target"] = parent.execution_request.target
+        if chain_targets and len(chain_targets) > 1:
+            chain_meta["_chain_targets"] = chain_targets[1:]
+        chain_meta["target"] = next_target
         chain_meta["_chain_on_failure"] = parent.execution_request.meta.get(
             "_chain_on_failure", False
         )
@@ -803,7 +817,7 @@ async def _dispatch_chained_task(
             task=chain_task,
             execution_request=TaskExecutionRequest(
                 task=chain_task.name,
-                target=parent.execution_request.target,
+                target=next_target,
                 meta=chain_meta,
                 payload=chain_task.data.get("payload"),
                 tracking={"evaluation_id": ""},

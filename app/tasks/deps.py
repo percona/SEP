@@ -169,8 +169,13 @@ async def validate_chain_task_names(
     session: AsyncSession,
     chain_task_names: list[str],
     parent_task: Task,
+    chain_targets: list[str] | None = None,
 ) -> None:
     """Validate that all chain task names exist, no cycles are present, and owners/targets match.
+
+    When ``chain_targets`` is provided it must be the same length as
+    ``chain_task_names``; the static per-task ``RTarget`` constraint check is
+    skipped because each step has an explicit runtime target override.
 
     :param session: The async database session.
     :type session: AsyncSession
@@ -178,17 +183,31 @@ async def validate_chain_task_names(
     :type chain_task_names: list[str]
     :param parent_task: The parent task (to prevent cycles and enforce owner/target matching).
     :type parent_task: Task
-    :raises HTTPBadRequestException: If a cycle, owner mismatch, or target mismatch is found.
+    :param chain_targets: Optional per-step target overrides, parallel to ``chain_task_names``.
+    :type chain_targets: list[str] | None
+    :raises HTTPBadRequestException: If a cycle, owner mismatch, length mismatch, or
+        (when no explicit targets) static target mismatch is found.
     :raises HTTPNotFoundException: If any chain task does not exist.
     """
+    if chain_targets is not None and len(chain_targets) != len(chain_task_names):
+        raise HTTPBadRequestException(
+            f"chain_targets length ({len(chain_targets)}) must match"
+            f" chain_task_names length ({len(chain_task_names)})."
+        )
+    skip_target_check = chain_targets is not None
     parent_target = parent_task.data.get("Constraints", [{}])[0].get("RTarget")
-    seen = {parent_task.name}
+    # When explicit per-step targets are provided each step runs on a distinct
+    # host, so the same task name appearing multiple times is intentional (e.g.
+    # a rolling upgrade of N nodes). Cycle detection only applies when targets
+    # are inferred from the task spec and a repeated name would truly loop.
+    seen: set[str] = set() if skip_target_check else {parent_task.name}
     for name in chain_task_names:
         if name in seen:
             raise HTTPBadRequestException(
                 f"Cycle detected in task chain: {name!r} already appears in the chain."
             )
-        seen.add(name)
+        if not skip_target_check:
+            seen.add(name)
         chain_task = await TaskManager.first(
             session,
             col(Task.deleted_at).is_(None),
@@ -201,12 +220,13 @@ async def validate_chain_task_names(
                 f"Chained task {name!r} has owner {chain_task.owner!r},"
                 f" expected {parent_task.owner!r}."
             )
-        chain_target = chain_task.data.get("Constraints", [{}])[0].get("RTarget")
-        if chain_target != parent_target:
-            raise HTTPBadRequestException(
-                f"Chained task {name!r} has target {chain_target!r},"
-                f" expected {parent_target!r}."
-            )
+        if not skip_target_check:
+            chain_target = chain_task.data.get("Constraints", [{}])[0].get("RTarget")
+            if chain_target != parent_target:
+                raise HTTPBadRequestException(
+                    f"Chained task {name!r} has target {chain_target!r},"
+                    f" expected {parent_target!r}."
+                )
 
 
 async def prepare_task_history(
@@ -235,9 +255,16 @@ async def prepare_task_history(
         execution_data.meta |= task.data.get("meta", {})
         execution_data.payload = task.data.get("payload", execution_data.payload)
     if execution_data.chain_task_names:
-        await validate_chain_task_names(session, execution_data.chain_task_names, task)
+        await validate_chain_task_names(
+            session,
+            execution_data.chain_task_names,
+            task,
+            execution_data.chain_targets,
+        )
         execution_data.meta["_chain_task_names"] = execution_data.chain_task_names
         execution_data.meta["_chain_on_failure"] = execution_data.chain_on_failure
+        if execution_data.chain_targets:
+            execution_data.meta["_chain_targets"] = execution_data.chain_targets
     if task.backend == TaskBackendEnum.CELERY:
         target = task.data.get("target")
     else:

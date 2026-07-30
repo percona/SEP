@@ -42,6 +42,7 @@ from app.sep.api.routes.services import router as services_router
 from app.sep.api.routes.settings import router as settings_router
 from app.sep.api.routes.task_history import router as task_history_router
 from app.sep.api.routes.task_stats import router as task_stats_router
+from app.sep.plugins.mongo_upgrade.routes import router as mongo_upgrade_router
 from app.sep.deps import (
     IsApiAdmin,
     IsApiAuthenticated,
@@ -110,3 +111,8 @@ api_router.include_router(
     dependencies=[IsApiAdmin, RequireBearerForUnsafeMethods],
 )
 api_router.include_router(apps_router, prefix="/apps", tags=["apps"])
+api_router.include_router(
+    mongo_upgrade_router,
+    prefix="/sep/mongo-upgrade",
+    tags=["mongo-upgrade"],
+)
