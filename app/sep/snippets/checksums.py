@@ -15,8 +15,11 @@
 
 """Hash snippet files and derive checksum-manifest keys.
 
-Kept in a package whose ``__init__`` chain imports nothing, so the manifest
-generator script can reuse these helpers without building the snippets app.
+Deliberately free of settings imports so the manifest generator script, which
+runs from a pre-commit hook, can reuse these helpers without building the
+snippets app. The sibling ``utils.py`` imports ``snippets_settings`` and the
+app package's ``__init__`` constructs the app object, so neither is a home for
+code the script needs.
 """
 
 from __future__ import annotations
