@@ -25,6 +25,7 @@ import type { AtwBatchExecuteResponse, AtwBatchExecuteWrite, AtwSnippetSummary }
 
 export interface CollectPaneProps {
   incidentId: string;
+  isClosed?: boolean;
 }
 
 /** Namespace prefix for a selected snippet's override fields, keyed by position. */
@@ -123,7 +124,7 @@ function batchItemErrors(response: AtwBatchExecuteResponse): string[] {
  * selected snippet), and batch-execute every selection against the incident.
  * Per-task status is polled by the Results pane's execution list.
  */
-export function CollectPane({ incidentId }: CollectPaneProps) {
+export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) {
   const [available, setAvailable] = useState<AtwSnippetSummary[]>([]);
   const [selected, setSelected] = useState<AtwSnippetSummary[]>([]);
   const [itemErrors, setItemErrors] = useState<string[]>([]);
@@ -211,10 +212,17 @@ export function CollectPane({ incidentId }: CollectPaneProps) {
         Collect
       </Typography>
 
+      {isClosed && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          This incident is closed. Reopen it to run more diagnostic snippets.
+        </Alert>
+      )}
+
       <CategoryBrowser onSnippetsChange={handleSnippetsChange} />
 
       <Autocomplete
         multiple
+        disabled={isClosed}
         sx={{ mt: 3 }}
         options={options}
         value={selected}
@@ -270,7 +278,7 @@ export function CollectPane({ incidentId }: CollectPaneProps) {
         </Alert>
       )}
 
-      {selected.length > 0 && schemaQuery.data && (
+      {selected.length > 0 && schemaQuery.data && !isClosed && (
         <Box sx={{ mt: 3 }}>
           <SchemaFormRenderer
             key={formKey}

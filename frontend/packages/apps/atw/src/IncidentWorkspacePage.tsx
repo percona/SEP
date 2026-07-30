@@ -15,11 +15,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Alert, Box, CircularProgress, Link as MuiLink, Paper, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Link as MuiLink,
+  Paper,
+  Stack,
+  Typography,
+} from '@mui/material';
+import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { useNavigate, useParams } from 'react-router';
 import { CollectPane } from './CollectPane';
 import { ResultsPane } from './ResultsPane';
-import { useAtwIncident } from './hooks';
+import { useAtwIncident, useCloseAtwIncident, useReopenAtwIncident } from './hooks';
 
 /**
  * Incident workspace rendered at ``/atw/:incidentId``. Two side-by-side panes —
@@ -30,6 +41,9 @@ export function IncidentWorkspacePage() {
   const { incidentId } = useParams<{ incidentId: string }>();
   const navigate = useNavigate();
   const { data: incident, isLoading, error } = useAtwIncident(incidentId);
+  const closeMutation = useCloseAtwIncident();
+  const reopenMutation = useReopenAtwIncident();
+  const isClosed = incident?.closed_at !== null && incident?.closed_at !== undefined;
 
   if (!incidentId) {
     return null;
@@ -58,9 +72,45 @@ export function IncidentWorkspacePage() {
         </Alert>
       )}
 
-      <Typography variant="h4" sx={{ mb: 0.5 }}>
-        {incident?.name ?? 'Incident'}
-      </Typography>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        alignItems={{ xs: 'flex-start', sm: 'center' }}
+        justifyContent="space-between"
+        spacing={1}
+        sx={{ mb: 0.5 }}
+      >
+        <Typography variant="h4">{incident?.name ?? 'Incident'}</Typography>
+        {incident && (
+          <Stack direction="row" spacing={1}>
+            {isClosed ? (
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<LockOpenOutlinedIcon />}
+                disabled={reopenMutation.isPending}
+                onClick={() => reopenMutation.mutate(incident.id)}
+              >
+                Reopen incident
+              </Button>
+            ) : (
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<LockOutlinedIcon />}
+                disabled={closeMutation.isPending}
+                onClick={() => closeMutation.mutate(incident.id)}
+              >
+                Close incident
+              </Button>
+            )}
+          </Stack>
+        )}
+      </Stack>
+      {isClosed && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          This incident is closed. Reopen it to run more diagnostic snippets.
+        </Alert>
+      )}
       {incident?.case_ref && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Case reference: {incident.case_ref}
@@ -77,7 +127,7 @@ export function IncidentWorkspacePage() {
         }}
       >
         <Paper variant="outlined" sx={{ p: 2 }}>
-          <CollectPane incidentId={incidentId} />
+          <CollectPane incidentId={incidentId} isClosed={isClosed} />
         </Paper>
         <Paper variant="outlined" sx={{ p: 2 }}>
           <ResultsPane incidentId={incidentId} />

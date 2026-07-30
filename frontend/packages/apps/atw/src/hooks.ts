@@ -167,6 +167,38 @@ export function useDeleteAtwIncident() {
   });
 }
 
+export function useCloseAtwIncident() {
+  const queryClient = useQueryClient();
+  return useMutation<AtwIncident, Error, string>({
+    mutationFn: async (incidentId) => {
+      const { data } = await apiClient.post<AtwIncident>(
+        `${ATW_BASE}/incidents/${incidentId}/close/`,
+      );
+      return data;
+    },
+    onSuccess: (incident) => {
+      queryClient.invalidateQueries({ queryKey: incidentsKey });
+      queryClient.invalidateQueries({ queryKey: ['atw', 'incidents', incident.id] });
+    },
+  });
+}
+
+export function useReopenAtwIncident() {
+  const queryClient = useQueryClient();
+  return useMutation<AtwIncident, Error, string>({
+    mutationFn: async (incidentId) => {
+      const { data } = await apiClient.post<AtwIncident>(
+        `${ATW_BASE}/incidents/${incidentId}/reopen/`,
+      );
+      return data;
+    },
+    onSuccess: (incident) => {
+      queryClient.invalidateQueries({ queryKey: incidentsKey });
+      queryClient.invalidateQueries({ queryKey: ['atw', 'incidents', incident.id] });
+    },
+  });
+}
+
 // ── Merged execution schema ──────────────────────────────────────────────
 
 /**

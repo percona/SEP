@@ -118,6 +118,8 @@ class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
 class AtwIncidentFactory(SQLAlchemyFactory[AtwIncident]):
     """Define factory for AtwIncident instances."""
 
+    closed_at = None
+
 
 class AtwIncidentExecutionFactory(SQLAlchemyFactory[AtwIncidentExecution]):
     """Define factory for AtwIncidentExecution instances."""

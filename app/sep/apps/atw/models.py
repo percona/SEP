@@ -60,6 +60,7 @@ class AtwIncident(BaseUUIDSQLModel, AtwIncidentBase, table=True):
     """Represent a named grouping of diagnostic snippet executions per support case.
 
     :param created_by: Username of the support engineer who created the incident.
+    :param closed_at: When the incident was closed, if ever; ``None`` means open.
     :param executions: The snippet executions grouped under this incident.
     :param send_logs: The delivery attempts recorded against this incident.
     """
@@ -67,6 +68,7 @@ class AtwIncident(BaseUUIDSQLModel, AtwIncidentBase, table=True):
     __tablename__ = "atw_incident"
 
     created_by: str = SQLField(nullable=False)
+    closed_at: UTCDatetime | None = SQLField(default=None, nullable=True)
     executions: list["AtwIncidentExecution"] = Relationship(
         back_populates="incident",
         cascade_delete=True,
@@ -110,6 +112,7 @@ class AtwIncidentResponse(BaseModel):
     :param created_by: Username of the support engineer who created the incident.
     :param created_at: When the incident was created.
     :param updated_at: When the incident was last updated, if ever.
+    :param closed_at: When the incident was closed, if ever; ``None`` means open.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -120,6 +123,7 @@ class AtwIncidentResponse(BaseModel):
     created_by: str
     created_at: UTCDatetime
     updated_at: UTCDatetime | None
+    closed_at: UTCDatetime | None
 
 
 class AtwIncidentExecution(BaseUUIDSQLModel, table=True):

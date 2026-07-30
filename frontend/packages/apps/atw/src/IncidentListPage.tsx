@@ -20,6 +20,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -37,12 +38,16 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 import { Link } from 'react-router';
 import {
   ATW_PAGE_SIZE,
   useAtwIncidents,
+  useCloseAtwIncident,
   useCreateAtwIncident,
   useDeleteAtwIncident,
+  useReopenAtwIncident,
   useUpdateAtwIncident,
 } from './hooks';
 import type { AtwIncident } from './types';
@@ -59,6 +64,8 @@ export function IncidentListPage() {
   const createMutation = useCreateAtwIncident();
   const updateMutation = useUpdateAtwIncident();
   const deleteMutation = useDeleteAtwIncident();
+  const closeMutation = useCloseAtwIncident();
+  const reopenMutation = useReopenAtwIncident();
 
   useEffect(() => {
     if (data && data.total > 0 && data.offset >= data.total) {
@@ -154,14 +161,46 @@ export function IncidentListPage() {
               }}
             >
               <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                <MuiLink component={Link} to={incident.id} variant="subtitle1">
-                  {incident.name}
-                </MuiLink>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <MuiLink component={Link} to={incident.id} variant="subtitle1">
+                    {incident.name}
+                  </MuiLink>
+                  {incident.closed_at && (
+                    <Chip label="Closed" size="small" color="default" variant="outlined" />
+                  )}
+                </Box>
                 <Typography variant="caption" color="text.secondary" display="block">
                   {incident.case_ref ? `Case ${incident.case_ref} · ` : ''}
                   Created by {incident.created_by}
                 </Typography>
               </Box>
+              {incident.closed_at ? (
+                <Tooltip title="Reopen">
+                  <IconButton
+                    aria-label={`Reopen ${incident.name}`}
+                    disabled={reopenMutation.isPending}
+                    onClick={() => {
+                      reopenMutation.reset();
+                      reopenMutation.mutate(incident.id);
+                    }}
+                  >
+                    <LockOpenOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              ) : (
+                <Tooltip title="Close">
+                  <IconButton
+                    aria-label={`Close ${incident.name}`}
+                    disabled={closeMutation.isPending}
+                    onClick={() => {
+                      closeMutation.reset();
+                      closeMutation.mutate(incident.id);
+                    }}
+                  >
+                    <LockOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
               <Tooltip title="Rename">
                 <IconButton
                   aria-label={`Rename ${incident.name}`}

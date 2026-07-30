@@ -79,6 +79,7 @@ class TestAtwIncidentResponse:
             "created_by",
             "created_at",
             "updated_at",
+            "closed_at",
         }
 
 

@@ -42,6 +42,7 @@ const incident = {
   created_by: 'engineer',
   created_at: '2026-07-22T10:00:00Z',
   updated_at: null,
+  closed_at: null,
 };
 
 function paginated<T>(items: T[]) {
@@ -142,5 +143,38 @@ describe('IncidentListPage', () => {
       expect(screen.getByText('DB slowness')).toBeTruthy();
     });
     expect(screen.queryByRole('button', { name: /Go to next page/i })).toBeNull();
+  });
+
+  it('closes an open incident from the row action', async () => {
+    mockedApi.get.mockResolvedValue(paginated([incident]));
+    mockedApi.post.mockResolvedValue({
+      data: { ...incident, closed_at: '2026-07-30T12:00:00Z' },
+    });
+    const user = userEvent.setup();
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => expect(screen.getByText('DB slowness')).toBeTruthy());
+    await user.click(screen.getByRole('button', { name: /Close DB slowness/i }));
+
+    await waitFor(() => {
+      expect(mockedApi.post).toHaveBeenCalledWith(`/apps/atw/incidents/${incident.id}/close/`);
+    });
+  });
+
+  it('reopens a closed incident from the row action', async () => {
+    const closedIncident = { ...incident, closed_at: '2026-07-30T12:00:00Z' };
+    mockedApi.get.mockResolvedValue(paginated([closedIncident]));
+    mockedApi.post.mockResolvedValue({ data: incident });
+    const user = userEvent.setup();
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => expect(screen.getByText('Closed')).toBeTruthy());
+    await user.click(screen.getByRole('button', { name: /Reopen DB slowness/i }));
+
+    await waitFor(() => {
+      expect(mockedApi.post).toHaveBeenCalledWith(`/apps/atw/incidents/${incident.id}/reopen/`);
+    });
   });
 });
