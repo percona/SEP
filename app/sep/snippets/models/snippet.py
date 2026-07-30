@@ -35,6 +35,7 @@ import yaml
 from aiofiles.ospath import getsize
 from async_lru import alru_cache
 from pydantic import (
+    AliasChoices,
     BaseModel,
     BeforeValidator,
     computed_field,
@@ -97,6 +98,10 @@ _ONE_HOUR = 60 * 60
 _SEVEN_DAYS = 7 * 24 * _ONE_HOUR
 EXECUTOR_HOSTS_INPUT_NAME = "-hostname-"
 EXTRA_ARGS_INPUT_NAME = "-extra_args-"
+# Mirrors app.sep.apps.framework.schema.EXTRA_ARGS_FIELD_NAME. Can't import it: that
+# package's __init__ imports script_helpers.py, which imports BaseSnippet from this
+# module, so importing anything under app.sep.apps.framework here cycles back.
+SCHEMA_EXTRA_ARGS_FIELD_NAME = "extra_args"
 EXTRA_ARGS_INPUT = TextInputElement(
     name=EXTRA_ARGS_INPUT_NAME,
     placeholder="e.g. --verbose",
@@ -955,7 +960,13 @@ class BaseSnippet(BaseModel):
         if add_extra_args_field:
             fields[BaseSnippetArgs.extra_args_field] = (
                 ExtraArgsField,
-                Field(default_factory=list, alias=EXTRA_ARGS_INPUT_NAME),
+                Field(
+                    default_factory=list,
+                    validation_alias=AliasChoices(
+                        EXTRA_ARGS_INPUT_NAME, SCHEMA_EXTRA_ARGS_FIELD_NAME
+                    ),
+                    serialization_alias=EXTRA_ARGS_INPUT_NAME,
+                ),
             )
 
         if add_sudo_field:

@@ -50,6 +50,7 @@ from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
+    EXTRA_ARGS_INPUT_NAME,
     Snippet,
     SnippetExecutionMeta,
 )
@@ -378,6 +379,74 @@ class TestBuildExecutionMeta:
         legacy_meta = _legacy_execution_meta(script.snippet, body)
 
         assert hook_meta.model_dump() == legacy_meta.model_dump()
+
+    async def test_extra_args_reach_command_via_new_schema_alias(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Deliver a schema-driven ``extra_args`` submission into the built command.
+
+        End-to-end assertion for the new Extra Args field: a value keyed by the
+        schema field name must survive the args-only twin's ``model_validate``,
+        the hook's ``model_construct`` re-attachment, and land in the interpreter
+        command string ``to_args_string()`` builds.
+        """
+        monkeypatch.setattr(
+            snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
+        )
+        snippet = await create_snippet("extra.sh", approved=True)
+        snippet.meta = {**snippet.meta, "allow_extra_args": True}
+        snippet.__dict__.pop("allow_extra_args", None)
+        await SnippetManager.save(
+            request_less_session, snippet, flag_modified_fields=["meta"]
+        )
+        script = await snippet_source.load_script("extra.sh")
+        body = ScriptExecuteWrite(
+            executor_host="host1", args={"extra_args": "--verbose"}
+        )
+
+        meta = snippet_source.build_execution_meta(
+            script, _framework_processed_body(script, body)
+        )
+
+        assert "--verbose" in meta.args.split()
+
+    async def test_extra_args_still_bind_via_legacy_alias(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Keep the legacy ``-extra_args-`` submission spelling working end-to-end.
+
+        SEP-1500 depends on this staying true until the Jinja form path is
+        retired: the new schema-driven alias must be additive, not a replacement.
+        """
+        monkeypatch.setattr(
+            snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
+        )
+        snippet = await create_snippet("extra.sh", approved=True)
+        snippet.meta = {**snippet.meta, "allow_extra_args": True}
+        snippet.__dict__.pop("allow_extra_args", None)
+        await SnippetManager.save(
+            request_less_session, snippet, flag_modified_fields=["meta"]
+        )
+        script = await snippet_source.load_script("extra.sh")
+        new_alias_body = ScriptExecuteWrite(
+            executor_host="host1", args={"extra_args": "--verbose"}
+        )
+        legacy_body = ScriptExecuteWrite(
+            executor_host="host1", args={EXTRA_ARGS_INPUT_NAME: "--verbose"}
+        )
+
+        new_alias_meta = snippet_source.build_execution_meta(
+            script, _framework_processed_body(script, new_alias_body)
+        )
+        legacy_meta = _legacy_execution_meta(script.snippet, legacy_body)
+
+        assert new_alias_meta.model_dump() == legacy_meta.model_dump()
 
     @pytest.mark.parametrize("requested_sudo", [True, False])
     async def test_optional_sudo_toggle_is_honored(

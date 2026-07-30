@@ -37,6 +37,7 @@ from app.sep.apps.framework.schema import (
     AnyField,
     BoolField,
     EXECUTOR_HOST_FIELD_NAME,
+    EXTRA_ARGS_FIELD_NAME,
     HostField,
     SCRIPT_PREVIEW_FIELD_NAME,
     SUDO_FIELD_NAME,
@@ -54,6 +55,7 @@ from app.tasks.models import TaskHistoryStatusEnum
 
 __all__ = [
     "MAX_BATCH_SNIPPETS",
+    "NON_SHAREABLE_FIELD_NAMES",
     "ATWBatchExecuteItemResponse",
     "ATWBatchExecuteItemWrite",
     "ATWBatchExecuteResponse",
@@ -97,6 +99,14 @@ _MIN_SHARED_DECLARERS = 2
 _SYNTHETIC_FIELD_NAMES = frozenset(
     {EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME, SCRIPT_PREVIEW_FIELD_NAME}
 )
+NON_SHAREABLE_FIELD_NAMES = frozenset({EXTRA_ARGS_FIELD_NAME})
+"""Keep these fields per-snippet even when several snippets declare them identically.
+
+Unlike ``_SYNTHETIC_FIELD_NAMES`` (fields excluded entirely because a caller
+re-synthesises them), these are ordinary per-snippet fields that must never be
+promoted to the shared section: extra args are snippet-specific CLI flags, so
+merging them would silently apply one snippet's flags to another's command.
+"""
 
 
 async def resolve_snippets(filenames: Sequence[str]) -> dict[str, SnippetScript]:
@@ -339,10 +349,12 @@ async def dispatch_batch_item(
 ) -> ScriptExecutionResponse:
     """Narrow the shared args to one already-resolved batch item and dispatch it.
 
-    Shared arguments are filtered to the parameters the snippet actually declares,
-    so a batch may offer a value no single snippet accepts, and the item's own
-    ``args`` then override what remains. The snippet is resolved once for the whole
-    batch by the caller and handed in, so a repeated filename costs one lookup.
+    Shared arguments are filtered to the parameters the snippet actually declares
+    and excludes ``NON_SHAREABLE_FIELD_NAMES``, so a batch may offer a value no
+    single snippet accepts (or one no snippet may share, like Extra Args), and the
+    item's own ``args`` then override what remains. The snippet is resolved once
+    for the whole batch by the caller and handed in, so a repeated filename costs
+    one lookup.
 
     :param body: The batch payload supplying the executor host, sudo choice, and
         shared arguments.
@@ -356,7 +368,11 @@ async def dispatch_batch_item(
     :raises OSError: Propagated from ``execute_script`` when the Tasks API
         transport itself fails.
     """
-    declared = {field.name for field in parameter_fields(script)}
+    declared = {
+        field.name
+        for field in parameter_fields(script)
+        if field.name not in NON_SHAREABLE_FIELD_NAMES
+    }
     args = {name: value for name, value in body.shared_args.items() if name in declared}
     args.update(item.args)
     return await execute_script(

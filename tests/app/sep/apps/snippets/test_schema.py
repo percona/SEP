@@ -143,6 +143,39 @@ async def test_per_snippet_schema_includes_optional_sudo_toggle(create_snippet):
 
 
 @pytest.mark.asyncio
+async def test_per_snippet_schema_includes_extra_args_field_when_allowed(
+    create_snippet,
+):
+    """Add the Extra Args field to the Execution section when the snippet allows it."""
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.meta = {**snippet.meta, "allow_extra_args": True}
+    snippet.__dict__.pop("allow_extra_args", None)
+
+    schema = build_snippet_schema(snippet)
+
+    section = _execution_section(schema)
+    extra_args_field = next(f for f in section.fields if f.name == "extra_args")
+    assert isinstance(extra_args_field, StringField)
+    assert extra_args_field.label == "Extra Args"
+    assert extra_args_field.placeholder == "e.g. --verbose"
+    assert (
+        extra_args_field.description
+        == "Any extra args to pass to the snippet execution command"
+    )
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_omits_extra_args_field_by_default(create_snippet):
+    """Omit the Extra Args field for a snippet that never opts into ``allow_extra_args``."""
+    snippet = await create_snippet("hello.sh", approved=True)
+
+    schema = build_snippet_schema(snippet)
+
+    all_fields = [field for section in schema.forms for field in section.fields]
+    assert not any(field.name == "extra_args" for field in all_fields)
+
+
+@pytest.mark.asyncio
 async def test_per_snippet_schema_maps_str_parameter_to_string_field(create_snippet):
     """STR parameters surface as StringField with their declared constraints."""
     snippet = await create_snippet("hello.sh", approved=True)
