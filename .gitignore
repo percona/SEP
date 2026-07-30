@@ -410,8 +410,3 @@ frontend/packages/e2e/test-results/*
 .claude/
 .codex/
 graphify-out/
-
-# PMM feature-build harness (branch pmm): un-ignore just env/pmm-fb/
-!/env/
-/env/*
-!/env/pmm-fb/

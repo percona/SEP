@@ -13,7 +13,7 @@ and Docker Hub registries.
 strips every app package except `inventory`, `mysql_backups` and `atw` — the
 snippets app is reduced to the non-UI modules atw's builtin-snippet execution
 needs — see the marked `RUN` step in `Containerfile.sidecar`. The paired
-PMM+SEP compose harness lives in `env/pmm-fb/`.
+PMM+SEP compose harness lives in `pmm-fb/`.
 
 ## What it contains
 
