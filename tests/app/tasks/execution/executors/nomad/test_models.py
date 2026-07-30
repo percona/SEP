@@ -96,7 +96,7 @@ MULTIBYTE_LINE_EOF_OFFSET = 12  # raw EOF of "café\n€uro" (6 + 6 UTF-8 bytes)
 MULTIBYTE_WITHHELD_BYTES = 6  # raw byte length of the withheld "€uro"
 
 
-def _redact_card_token(text, _entities):
+def _redact_card_token(text: str, _entities: set[PIIEntity]) -> str:
     """Redact a full 16-digit card token, matching only whole lines.
 
     Stand-in for ``anonymize_text`` that only matches the complete number, so a
