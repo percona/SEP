@@ -81,16 +81,19 @@ class TestBackupPgContract(DerivedRouterContractTests):
         assert response.status_code == status.HTTP_201_CREATED
         detail = response.json()
         assert "host" in detail
-        assert detail["service_type"] == ServiceTypeEnum.POSTGRESQL.value
+        assert "service_type" not in detail
+        assert "owner" not in detail
         assert "anonymize_mask" in detail
         assert "anonymized_entities" in detail
         assert "connectivity_warning" in detail
 
-    def test_list_carries_service_type_and_anonymization(self, contract_client) -> None:
-        """Assert list rows carry the POSTGRESQL service_type and anonymization surface.
+    def test_list_omits_internal_fields_and_carries_anonymization(
+        self, contract_client
+    ) -> None:
+        """Assert list rows omit owner/service_type and carry anonymization surface.
 
         The generic inject-extras test skips for backup_pg (no response context
-        provider), so cover the newly-inherited fields explicitly.
+        provider), so cover the inherited anonymization fields explicitly.
         """
         response = contract_client.get(f"{app_base_url(self.app_def)}/")
 
@@ -98,28 +101,30 @@ class TestBackupPgContract(DerivedRouterContractTests):
         body = response.json()
         rows = body["items"] if isinstance(body, dict) else body
         row = next(r for r in rows if r["name"] == SEEDED_TASK_NAME)
-        assert row["service_type"] == ServiceTypeEnum.POSTGRESQL.value
+        assert "service_type" not in row
+        assert "owner" not in row
         assert "anonymize_mask" in row
         assert "anonymized_entities" in row
 
-    def test_detail_carries_service_type_and_anonymization(
+    def test_detail_omits_internal_fields_and_carries_anonymization(
         self, contract_client
     ) -> None:
-        """Assert the detail body carries the POSTGRESQL service_type and anonymization surface."""
+        """Assert the detail body omits owner/service_type and carries anonymization."""
         response = contract_client.get(
             f"{app_base_url(self.app_def)}/{SEEDED_TASK_NAME}"
         )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body["service_type"] == ServiceTypeEnum.POSTGRESQL.value
+        assert "service_type" not in body
+        assert "owner" not in body
         assert "anonymize_mask" in body
         assert "anonymized_entities" in body
 
-    def test_update_carries_service_type_and_anonymization(
+    def test_update_omits_internal_fields_and_carries_anonymization(
         self, contract_client
     ) -> None:
-        """Assert the update response body carries the injected service_type + surface."""
+        """Assert the update response omits owner/service_type and carries anonymization."""
         body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
         base = app_base_url(self.app_def)
 
@@ -127,7 +132,8 @@ class TestBackupPgContract(DerivedRouterContractTests):
 
         assert response.status_code == status.HTTP_200_OK
         updated = response.json()
-        assert updated["service_type"] == ServiceTypeEnum.POSTGRESQL.value
+        assert "service_type" not in updated
+        assert "owner" not in updated
         assert "anonymize_mask" in updated
         assert "anonymized_entities" in updated
 
