@@ -69,8 +69,8 @@ class TaskHistoryLogWriter:
         new_bytes: bytes,
         force_flush: bool = False,
         producer_offset_after: int | None = None,
-        nomad_offset_after: int | None = None,
-        allocation_epoch: int | None = None,
+        producer_fetch_offset_after: int | None = None,
+        producer_epoch: int | None = None,
     ) -> None:
         """Persist ``new_bytes`` for the given ``(task_history_id, source, stream)``.
 
@@ -93,19 +93,20 @@ class TaskHistoryLogWriter:
             end of ``new_bytes``. When provided, the state row's
             ``producer_offset`` is advanced atomically with the flush.
         :type producer_offset_after: int | None
-        :param nomad_offset_after: The raw Nomad-space fetch offset for the next
-            read. When provided, the row's ``nomad_offset`` is advanced
-            atomically with the flush; when ``None`` the existing value is
-            preserved so non-Nomad callers do not disturb it.
-        :param allocation_epoch: The Nomad allocation ``CreateIndex`` the bytes
-            belong to. When it is *older* than the current allocation epoch the
-            write is discarded — the bytes come from an allocation the frontier
-            has already moved past (a sync that overlapped a reschedule) and
-            appending them would corrupt the stream. For an existing row the
-            comparison is against that row's per-stream epoch; on the
-            first-insert path (no row yet) it is against the task-level
-            high-water mark stamped at the last frontier reset.
-            ``None`` leaves the row's epoch untouched (non-Nomad callers).
+        :param producer_fetch_offset_after: The raw producer-space fetch offset
+            for the next read. When provided, the row's ``producer_fetch_offset``
+            is advanced atomically with the flush; when ``None`` the existing
+            value is preserved so callers that do not track a fetch cursor do
+            not disturb it.
+        :param producer_epoch: The producer-generation stamp the bytes belong
+            to (for example a Nomad allocation ``CreateIndex``). When it is
+            *older* than the current producer epoch the write is discarded —
+            the bytes come from a producer the frontier has already moved past
+            (a sync that overlapped a reschedule) and appending them would
+            corrupt the stream. For an existing row the comparison is against
+            that row's per-stream epoch; on the first-insert path (no row yet)
+            it is against the task-level high-water mark stamped at the last
+            frontier reset. ``None`` leaves the row's epoch untouched.
         :raises LogWriterConflictError: If the optimistic-locking retries are
             exhausted without converging on a successful update.
         """
@@ -119,18 +120,18 @@ class TaskHistoryLogWriter:
                     task_history_id, source, stream
                 )
 
-            if allocation_epoch is not None:
+            if producer_epoch is not None:
                 # First insert has no per-stream row yet; guard against the
                 # task-level high-water mark, not the transient row's ``0``.
-                guard_epoch = state.allocation_epoch
+                guard_epoch = state.producer_epoch
                 if is_new:
                     # Take the row lock so a concurrent frontier reset serialises
                     # instead of racing (first-insert TOCTOU).
-                    guard_epoch = await TaskHistoryManager.get_log_allocation_epoch(
+                    guard_epoch = await TaskHistoryManager.get_log_producer_epoch(
                         session, task_history_id, for_update=True
                     )
-                if allocation_epoch < guard_epoch:
-                    # Stale write from a superseded allocation; drop it, releasing
+                if producer_epoch < guard_epoch:
+                    # Stale write from a superseded producer; drop it, releasing
                     # any first-insert lock so it doesn't pin the row.
                     await cls._release_first_insert_lock(session, is_new=is_new)
                     return
@@ -186,15 +187,13 @@ class TaskHistoryLogWriter:
                 if producer_offset_after is not None
                 else state.producer_offset
             )
-            new_nomad = (
-                nomad_offset_after
-                if nomad_offset_after is not None
-                else state.nomad_offset
+            new_fetch = (
+                producer_fetch_offset_after
+                if producer_fetch_offset_after is not None
+                else state.producer_fetch_offset
             )
-            new_allocation_epoch = (
-                allocation_epoch
-                if allocation_epoch is not None
-                else state.allocation_epoch
+            new_producer_epoch = (
+                producer_epoch if producer_epoch is not None else state.producer_epoch
             )
             new_version = state.version + 1
 
@@ -208,8 +207,8 @@ class TaskHistoryLogWriter:
                 old_version=state.version,
                 persisted_offset=persisted_offset,
                 producer_offset=new_producer,
-                nomad_offset=new_nomad,
-                allocation_epoch=new_allocation_epoch,
+                producer_fetch_offset=new_fetch,
+                producer_epoch=new_producer_epoch,
                 staging=staging,
                 now=now,
             )
@@ -237,30 +236,30 @@ class TaskHistoryLogWriter:
         session: AsyncSession,
         task_history_id: int,
         *,
-        new_allocation_epoch: int,
+        new_producer_epoch: int,
     ) -> None:
         """Flush every stream's staging buffer and reset the fetch frontier.
 
-        Called when Nomad reschedules a task to a follow-up allocation: the
-        new allocation's log file starts at byte 0, so the allocation-relative
-        cursors (``producer_offset`` and ``nomad_offset``) from the previous
-        allocation must be cleared and ``allocation_epoch`` advanced to the new
-        allocation's ``CreateIndex``, and the leftover staging bytes from the
-        previous allocation must be emitted as their own chunk instead of being
-        concatenated with the new allocation's bytes.
+        Called when the executor reschedules onto a follow-up producer (for
+        example a Nomad allocation): the new producer's log file starts at byte
+        0, so the producer-relative cursors (``producer_offset`` and
+        ``producer_fetch_offset``) from the previous producer must be cleared
+        and ``producer_epoch`` advanced, and the leftover staging bytes from
+        the previous producer must be emitted as their own chunk instead of
+        being concatenated with the new producer's bytes.
 
         :param session: The SQLAlchemy asynchronous session.
         :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier whose state
             rows should be drained and reset.
         :type task_history_id: int
-        :param new_allocation_epoch: The ``CreateIndex`` of the allocation the
-            frontier is being reset onto.
+        :param new_producer_epoch: The producer epoch the frontier is being
+            reset onto (for example a Nomad allocation ``CreateIndex``).
         """
         # Lock the TaskHistory row before touching any log/state rows so this
         # reset and a concurrent first-insert append serialise in the same order
         # (TaskHistory first), closing the first-insert TOCTOU.
-        await TaskHistoryManager.get_log_allocation_epoch(
+        await TaskHistoryManager.get_log_producer_epoch(
             session, task_history_id, for_update=True
         )
         rows = await TaskHistoryLogStateManager.list_for_task(session, task_history_id)
@@ -286,8 +285,8 @@ class TaskHistoryLogWriter:
                     new_version=row.version + 1,
                     persisted_offset=new_persisted,
                     producer_offset=row.producer_offset,
-                    nomad_offset=row.nomad_offset,
-                    allocation_epoch=row.allocation_epoch,
+                    producer_fetch_offset=row.producer_fetch_offset,
+                    producer_epoch=row.producer_epoch,
                     staging=b"",
                     now=now,
                 )
@@ -309,13 +308,13 @@ class TaskHistoryLogWriter:
                     },
                 )
         await TaskHistoryLogStateManager.reset_allocation_frontier(
-            session, task_history_id, new_allocation_epoch=new_allocation_epoch
+            session, task_history_id, new_producer_epoch=new_producer_epoch
         )
         # Stamp the task-level high-water mark in the same transaction as the
         # per-stream reset so a first-insert guard (no per-stream row yet) has a
         # current epoch to check against.
-        await TaskHistoryManager.bump_log_allocation_epoch(
-            session, task_history_id, new_allocation_epoch=new_allocation_epoch
+        await TaskHistoryManager.bump_log_producer_epoch(
+            session, task_history_id, new_producer_epoch=new_producer_epoch
         )
         await session.commit()
 
@@ -541,8 +540,8 @@ class TaskHistoryLogWriter:
         old_version: int,
         persisted_offset: int,
         producer_offset: int,
-        nomad_offset: int,
-        allocation_epoch: int,
+        producer_fetch_offset: int,
+        producer_epoch: int,
         staging: bytes,
         now: datetime,
     ) -> bool:
@@ -568,8 +567,9 @@ class TaskHistoryLogWriter:
         :type persisted_offset: int
         :param producer_offset: The producer-relative offset to persist.
         :type producer_offset: int
-        :param nomad_offset: The raw Nomad-space fetch offset to persist.
-        :param allocation_epoch: The Nomad ``CreateIndex`` to persist.
+        :param producer_fetch_offset: The raw producer-space fetch offset to
+            persist.
+        :param producer_epoch: The producer-generation stamp to persist.
         :param staging: The remaining staging buffer to persist.
         :type staging: bytes
         :param now: The update timestamp.
@@ -585,8 +585,8 @@ class TaskHistoryLogWriter:
                 stream=stream,
                 persisted_offset=persisted_offset,
                 producer_offset=producer_offset,
-                nomad_offset=nomad_offset,
-                allocation_epoch=allocation_epoch,
+                producer_fetch_offset=producer_fetch_offset,
+                producer_epoch=producer_epoch,
                 staging=staging,
                 version=new_version,
                 now=now,
@@ -600,8 +600,8 @@ class TaskHistoryLogWriter:
             new_version=new_version,
             persisted_offset=persisted_offset,
             producer_offset=producer_offset,
-            nomad_offset=nomad_offset,
-            allocation_epoch=allocation_epoch,
+            producer_fetch_offset=producer_fetch_offset,
+            producer_epoch=producer_epoch,
             staging=staging,
             now=now,
         )

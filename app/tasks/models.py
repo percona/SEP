@@ -102,11 +102,13 @@ class ExecutionEvent(BaseModel):
 
     :param timestamp: When the event occurred (UTC).
     :type timestamp: UTCDatetime
-    :param event_type: Executor-specific event category (e.g. Nomad task event type).
+    :param event_type: Executor-specific event category (for example a Nomad
+        task event type).
     :type event_type: str
     :param description: Human-readable message for the event (no step prefix).
     :type description: str
-    :param step: Optional executor task/step name (e.g. Nomad task within the group).
+    :param step: Optional executor task/step name (for example a Nomad task
+        within the group).
     :type step: str | None
     """
 
@@ -690,12 +692,12 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     :type task: Task
     :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
     :type sync_in_progress_started_at: UTCDatetime | None
-    :param log_allocation_epoch: Task-level high-water mark of the current Nomad
-        allocation ``CreateIndex``, stamped whenever the log frontier is reset. The
-        log writer consults it on the first-insert path (before any per-stream
-        ``TaskHistoryLogState`` row exists) to discard writes from a superseded
-        allocation. ``0`` is the legacy/unknown sentinel that is trusted
-        unconditionally.
+    :param log_producer_epoch: Task-level high-water mark of the current
+        producer epoch (for example a Nomad allocation ``CreateIndex``), stamped
+        whenever the log frontier is reset. The log writer consults it on the
+        first-insert path (before any per-stream ``TaskHistoryLogState`` row
+        exists) to discard writes from a superseded producer. ``0`` is the
+        legacy/unknown sentinel that is trusted unconditionally.
     :param executed_by: The user ID of the user who executed the task.
     :type executed_by: str | None
     """
@@ -714,7 +716,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         default=None,
         sa_type=DateTimeWithTimezone,
     )
-    log_allocation_epoch: int = SQLField(
+    log_producer_epoch: int = SQLField(
         sa_column=Column(
             BigInteger,
             nullable=False,
@@ -875,7 +877,8 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
 
     :param task_history_id: The ID of the ``TaskHistory`` this state row tracks.
     :type task_history_id: int
-    :param source: The execution step (Nomad task name) this state row tracks.
+    :param source: The execution step name this state row tracks (for example a
+        Nomad task name).
     :type source: str
     :param stream: The log stream (stdout or stderr) this state row tracks.
     :type stream: TaskLogType
@@ -883,19 +886,21 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
         flushed into the chunk store.
     :type persisted_offset: int
     :param producer_offset: The producer-relative byte offset already consumed
-        from the current allocation (Nomad-relative; resets on allocation
-        switch). May diverge from ``persisted_offset`` after a Nomad
-        followup-allocation switch.
+        from the current producer epoch (resets when the producer switches, for
+        example on a Nomad follow-up allocation). May diverge from
+        ``persisted_offset`` after such a switch.
     :type producer_offset: int
-    :param nomad_offset: The raw Nomad-space byte offset for the next log fetch
-        (the ``offset=`` kwarg of the next ``stream_logs.stream`` call).
-        Allocation-relative like ``producer_offset`` (resets on switch); kept
-        durable here so a worker without the in-memory cursor resumes the fetch
-        instead of re-reading the whole file from ``0``.
-    :param allocation_epoch: The Nomad allocation ``CreateIndex`` (monotonic,
-        creation-anchored) that ``nomad_offset``/``producer_offset`` belong to.
-        ``0`` is the legacy/unknown sentinel (pre-migration rows and non-Nomad
-        streams) that the seed and write guards trust unconditionally.
+    :param producer_fetch_offset: The raw producer-space byte offset for the
+        next log fetch (for example the ``offset=`` kwarg of a Nomad
+        ``stream_logs.stream`` call). Producer-relative like
+        ``producer_offset`` (resets on switch); kept durable here so a worker
+        without the in-memory cursor resumes the fetch instead of re-reading
+        the whole file from ``0``.
+    :param producer_epoch: Monotonic producer-generation stamp that
+        ``producer_fetch_offset`` / ``producer_offset`` belong to (for example
+        a Nomad allocation ``CreateIndex``). ``0`` is the legacy/unknown
+        sentinel (pre-migration rows and streams without a producer epoch)
+        that the seed and write guards trust unconditionally.
     :param staging: Bytes pending flush to the chunk store.
     :type staging: bytes
     :param staging_updated_at: When ``staging`` was last modified; used to age
@@ -943,14 +948,14 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
             server_default="0",
         ),
     )
-    nomad_offset: int = SQLField(
+    producer_fetch_offset: int = SQLField(
         sa_column=Column(
             BigInteger,
             nullable=False,
             server_default="0",
         ),
     )
-    allocation_epoch: int = SQLField(
+    producer_epoch: int = SQLField(
         sa_column=Column(
             BigInteger,
             nullable=False,

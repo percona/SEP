@@ -27,10 +27,11 @@ from app.tasks.config import tasks_settings
 REPO_ROOT = Path(__file__).resolve().parents[4]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
-# The merged head immediately before nomad_offset / allocation_epoch are added.
+# The merged head immediately before nomad_offset / allocation_epoch are added
+# (later renamed to producer_fetch_offset / producer_epoch).
 _PRE_NOMAD_CURSOR_REVISION = "f028a195fbda"
 # An anonymized-stream row: producer_offset diverges from the true raw offset,
-# so the backfill (nomad_offset = producer_offset) is the documented
+# so the backfill (originally nomad_offset = producer_offset) is the documented
 # approximation rather than an exact seed.
 _ANONYMIZED_PRODUCER_OFFSET = 4096
 
@@ -56,8 +57,10 @@ def tasks_alembic_config(tmp_path, monkeypatch):
     return cfg, sync_url
 
 
-def test_backfill_seeds_nomad_offset_from_producer_offset(tasks_alembic_config):
-    """Assert the upgrade backfills nomad_offset from producer_offset for in-flight rows."""
+def test_backfill_seeds_producer_fetch_offset_from_producer_offset(
+    tasks_alembic_config,
+):
+    """Assert the upgrade backfills producer_fetch_offset from producer_offset for in-flight rows."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _PRE_NOMAD_CURSOR_REVISION)
 
@@ -74,10 +77,10 @@ def test_backfill_seeds_nomad_offset_from_producer_offset(tasks_alembic_config):
     try:
         with engine.begin() as conn:
             row = conn.exec_driver_sql(
-                "SELECT nomad_offset, allocation_epoch FROM taskhistory_log_state"
+                "SELECT producer_fetch_offset, producer_epoch FROM taskhistory_log_state"
             ).one()
-        assert row.nomad_offset == _ANONYMIZED_PRODUCER_OFFSET
-        assert row.allocation_epoch == 0
+        assert row.producer_fetch_offset == _ANONYMIZED_PRODUCER_OFFSET
+        assert row.producer_epoch == 0
     finally:
         engine.dispose()
 
@@ -92,9 +95,9 @@ def test_new_columns_default_zero_on_fresh_insert(tasks_alembic_config):
         with engine.begin() as conn:
             conn.exec_driver_sql(_INSERT_STATE_ROW, (0,))
             row = conn.exec_driver_sql(
-                "SELECT nomad_offset, allocation_epoch FROM taskhistory_log_state"
+                "SELECT producer_fetch_offset, producer_epoch FROM taskhistory_log_state"
             ).one()
-        assert row.nomad_offset == 0
-        assert row.allocation_epoch == 0
+        assert row.producer_fetch_offset == 0
+        assert row.producer_epoch == 0
     finally:
         engine.dispose()

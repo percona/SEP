@@ -771,7 +771,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param anonymize_entities: PII entities to anonymize for ``run-script``
             and ``step1`` content. When ``None``, no anonymization is performed.
         :type anonymize_entities: set[PIIEntity] | None
-        :return: ``(delta_text, new_nomad_offset, new_producer_offset)`` —
+        :return: ``(delta_text, new_producer_fetch_offset, new_producer_offset)`` —
             the anonymized bytes fetched this cycle, the advanced Nomad-space
             offset for the next fetch, and the advanced producer-space offset
             that the writer should persist.
@@ -793,20 +793,20 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
             return "", nomad_start_offset, producer_start_offset
         pieces = []
-        nomad_offset = nomad_start_offset
+        producer_fetch_offset = nomad_start_offset
         for raw_log_data_item in (
             "{" + item for item in raw_log_data.split("{") if item
         ):
             log_data = json.loads(raw_log_data_item)
             if raw_msg := log_data.get("Data"):
-                nomad_offset = log_data.get("Offset", nomad_offset)
+                producer_fetch_offset = log_data.get("Offset", producer_fetch_offset)
                 msg = b64decode_str(raw_msg)
                 if step in ("run-script", "step1") and anonymize_entities:
                     msg = anonymize_text(msg, anonymize_entities)
                 pieces.append(msg)
         delta = "".join(pieces)
         producer_offset = producer_start_offset + len(delta.encode("utf-8"))
-        return delta, nomad_offset, producer_offset
+        return delta, producer_fetch_offset, producer_offset
 
     def get_logs_for_allocation(
         self,
@@ -857,15 +857,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             producer_offset_key = f"{log_type}_producer_offset"
             nomad_start_offset = task_logs[step].get(last_offset_key) or 0
             producer_start_offset = task_logs[step].get(producer_offset_key) or 0
-            delta, new_nomad_offset, new_producer_offset = self._fetch_step_log_delta(
-                alloc_id,
-                step,
-                log_type,
-                nomad_start_offset,
-                producer_start_offset,
-                anonymize_entities,
+            delta, new_producer_fetch_offset, new_producer_offset = (
+                self._fetch_step_log_delta(
+                    alloc_id,
+                    step,
+                    log_type,
+                    nomad_start_offset,
+                    producer_start_offset,
+                    anonymize_entities,
+                )
             )
-            task_logs[step][last_offset_key] = new_nomad_offset
+            task_logs[step][last_offset_key] = new_producer_fetch_offset
             task_logs[step][producer_offset_key] = new_producer_offset
             task_logs[step][log_type] = delta
         return task_logs
@@ -1002,7 +1004,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     ) -> None:
         """Persist this sync cycle's delta logs into the chunk store.
 
-        Resets the fetch frontier (both cursors zeroed, ``allocation_epoch``
+        Resets the fetch frontier (both cursors zeroed, ``producer_epoch``
         stamped to the new allocation's ``CreateIndex``) for every stream when
         Nomad reschedules to a new allocation so the fetcher reads the new
         allocation from the start; the epoch is threaded into every write so a
@@ -1028,7 +1030,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         if previous_allocation_id is not None and previous_allocation_id != alloc_id:
             await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-                writer_session, queue_item.id, new_allocation_epoch=alloc_epoch
+                writer_session, queue_item.id, new_producer_epoch=alloc_epoch
             )
 
         initial_offsets = await self._build_initial_log_offsets(
@@ -1129,7 +1131,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         Seeds each stream's next-fetch cursor from its durable
         ``TaskHistoryLogState`` row, but only when the row belongs to the
-        current allocation — its ``allocation_epoch`` matches ``current_epoch``
+        current allocation — its ``producer_epoch`` matches ``current_epoch``
         or is the ``0`` legacy/unknown sentinel that trusts the migration
         backfill. A row stamped to a known *different* allocation holds a cursor
         in that allocation's byte space, so it is skipped and the stream
@@ -1150,10 +1152,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         )
         initial_offsets = defaultdict(dict)
         for row in state_rows:
-            if row.allocation_epoch not in (0, current_epoch):
+            if row.producer_epoch not in (0, current_epoch):
                 continue
             initial_offsets[row.source][f"{row.stream.value}_last_offset"] = (
-                row.nomad_offset
+                row.producer_fetch_offset
             )
             initial_offsets[row.source][f"{row.stream.value}_producer_offset"] = (
                 row.producer_offset
@@ -1190,7 +1192,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 delta_text = payload.get(log_type) or ""
                 if not delta_text and not force_flush:
                     continue
-                nomad_offset = payload.get(f"{log_type.value}_last_offset", 0)
+                producer_fetch_offset = payload.get(f"{log_type.value}_last_offset", 0)
                 producer_offset = payload.get(f"{log_type.value}_producer_offset", 0)
                 await TaskHistoryLogWriter.append(
                     writer_session,
@@ -1199,8 +1201,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     stream=log_type,
                     new_bytes=delta_text.encode("utf-8"),
                     producer_offset_after=producer_offset,
-                    nomad_offset_after=nomad_offset,
-                    allocation_epoch=alloc_epoch,
+                    producer_fetch_offset_after=producer_fetch_offset,
+                    producer_epoch=alloc_epoch,
                     force_flush=force_flush,
                 )
 
