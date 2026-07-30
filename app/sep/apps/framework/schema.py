@@ -954,12 +954,6 @@ class ListView(SchemaBaseModel):
 #: Never mutate it; pass through ``default_columns()``, which copies per call.
 EXECUTOR_HOST_COLUMN = Column(key="hostname", label=EXECUTION_HOST_LABEL)
 
-#: Read-only "Service Type" chip column shared by the service-type task apps.
-#: Never mutate it; pass through ``default_columns()``, which copies per call.
-SERVICE_TYPE_COLUMN = Column(
-    key="service_type", label="Service Type", format=ColumnFormat.CHIP
-)
-
 
 def default_columns(*middle: Column) -> list[Column]:
     """Return the standard task-plugin list-view columns wrapping ``middle``.

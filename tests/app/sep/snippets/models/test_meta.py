@@ -21,6 +21,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from app.core.utils.fields import UTCDatetime
+from app.core.utils.pydantic import CustomFieldMetadata
 from app.sep.snippets.forms import (
     CheckboxInputElement,
     DateTimeInputElement,
@@ -869,3 +870,40 @@ class TestHiddenParameter:
         )
         assert result.visible_parameters == [first, last]
         assert result.parameters == [first, hidden, last]
+
+
+class TestSensitiveParameter:
+    """Cover the ``sensitive`` flag that opts a parameter into value masking."""
+
+    def test_sensitive_defaults_to_false(self):
+        """Leave a parameter unmarked unless the frontmatter opts in."""
+        param = SnippetMetaParameter(name="dest")
+        assert param.sensitive is False
+
+    def test_sensitive_parses_from_frontmatter(self):
+        """Accept ``sensitive: true`` and round-trip it."""
+        param = SnippetMetaParameter(name="auth-blob", sensitive=True)
+        assert param.sensitive is True
+
+    def test_frontmatter_without_the_key_still_parses(self):
+        """Keep existing frontmatter valid now that the field exists."""
+        param = SnippetMetaParameter.model_validate(
+            {"name": "dest", "type": "str", "required": True}
+        )
+        assert param.sensitive is False
+
+    def test_absent_from_validation_metadata_when_false(self):
+        """Omit the default from the lowered metadata so readers see ``None``."""
+        param = SnippetMetaParameter(name="dest")
+        metadata = CustomFieldMetadata.field_to_dict(
+            param.to_validation_field(), strict=True
+        )
+        assert metadata.get("sensitive") is None
+
+    def test_present_in_validation_metadata_when_true(self):
+        """Lower an opted-in parameter's flag onto the dynamic field's metadata."""
+        param = SnippetMetaParameter(name="auth-blob", sensitive=True)
+        metadata = CustomFieldMetadata.field_to_dict(
+            param.to_validation_field(), strict=True
+        )
+        assert metadata["sensitive"] is True
