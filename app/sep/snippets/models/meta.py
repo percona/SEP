@@ -77,6 +77,7 @@ from app.sep.snippets.forms import (
     TextInputElement,
     TextInputHTMLElement,
 )
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 
 ParameterType = str | int | float | bool | datetime | None
 
@@ -280,6 +281,22 @@ class SnippetMetaParameter(BaseModel):
     name: NonEmptyStr = Field(
         ..., pattern=r"^\w(?:[\w-]*\w)?$", serialization_alias="title"
     )
+
+    @field_validator("name")
+    @classmethod
+    def _reject_reserved_name(cls, value: str) -> str:
+        """Reject a parameter name reserved for a synthesized execution field.
+
+        :param value: The candidate parameter name.
+        :return: ``value`` unchanged, when it is not reserved.
+        """
+        if value == EXTRA_ARGS_FIELD_NAME:
+            raise ValueError(
+                f"parameter name {value!r} is reserved for the synthesized "
+                "Extra Args field"
+            )
+        return value
+
     py_type: SnippetMetaParameterType = Field(
         SnippetMetaParameterType.STR, validation_alias="type"
     )

@@ -526,6 +526,27 @@ class TestValidatedParameters:
         result = snippet.validated_parameters
         assert len(result.errors) > 0
 
+    def test_extra_args_named_parameter_is_rejected(self):
+        """Drop a parameter reserved for the synthesized Extra Args field.
+
+        Regression test for a wire-name collision: an ordinary parameter
+        named ``extra_args`` would otherwise share its wire name with the
+        synthesized Extra Args execution field, causing
+        ``build_snippet_schema`` to raise a duplicate-field error, or a
+        submitted value to silently double-bind in the execution model. It
+        is now rejected like any other invalid parameter, before either path
+        is reached.
+        """
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"parameters": [{"name": "extra_args", "type": "str"}]},
+        )
+        result = snippet.validated_parameters
+        assert len(result.parameters) == 0
+        assert any("reserved" in error for error in result.errors)
+
     def test_no_parameters(self):
         """Verify empty parameters produce no errors."""
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)

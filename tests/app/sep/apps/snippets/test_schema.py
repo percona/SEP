@@ -176,6 +176,39 @@ async def test_per_snippet_schema_omits_extra_args_field_by_default(create_snipp
 
 
 @pytest.mark.asyncio
+async def test_per_snippet_schema_drops_extra_args_named_parameter(create_snippet):
+    """Drop a frontmatter parameter reserved for the synthesized Extra Args field.
+
+    Regression test: previously this reached ``build_snippet_schema`` and
+    raised an opaque ``duplicate field name(s)`` error when
+    ``allow_extra_args`` was set, or silently double-bound submitted values
+    in the execution model when it was not. The reserved-name parameter is
+    now caught earlier, at parameter parse time (see ``validated_parameters``
+    on the snippet), so it never reaches either path -- ``build_snippet_schema``
+    just omits it like any other invalid parameter.
+    """
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.meta = {
+        **snippet.meta,
+        "allow_extra_args": True,
+        "parameters": [{"name": "extra_args", "type": "str"}],
+    }
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.__dict__.pop("allow_extra_args", None)
+
+    assert any("reserved" in error for error in snippet.validated_parameters.errors)
+
+    schema = build_snippet_schema(snippet)
+
+    assert not any(s.title == "Parameters" for s in schema.forms)
+    section = _execution_section(schema)
+    extra_args_fields = [f for f in section.fields if f.name == "extra_args"]
+    assert len(extra_args_fields) == 1
+    assert isinstance(extra_args_fields[0], StringField)
+
+
+@pytest.mark.asyncio
 async def test_per_snippet_schema_maps_str_parameter_to_string_field(create_snippet):
     """STR parameters surface as StringField with their declared constraints."""
     snippet = await create_snippet("hello.sh", approved=True)

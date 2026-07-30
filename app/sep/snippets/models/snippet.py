@@ -84,6 +84,7 @@ from app.sep.snippets.forms import (
     SubmitButtonElement,
     TextInputElement,
 )
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     META_KEY_DESCRIPTION,
     META_KEY_SERVICE_TYPE,
@@ -98,10 +99,6 @@ _ONE_HOUR = 60 * 60
 _SEVEN_DAYS = 7 * 24 * _ONE_HOUR
 EXECUTOR_HOSTS_INPUT_NAME = "-hostname-"
 EXTRA_ARGS_INPUT_NAME = "-extra_args-"
-# Mirrors app.sep.apps.framework.schema.EXTRA_ARGS_FIELD_NAME. Can't import it: that
-# package's __init__ imports script_helpers.py, which imports BaseSnippet from this
-# module, so importing anything under app.sep.apps.framework here cycles back.
-SCHEMA_EXTRA_ARGS_FIELD_NAME = "extra_args"
 EXTRA_ARGS_INPUT = TextInputElement(
     name=EXTRA_ARGS_INPUT_NAME,
     placeholder="e.g. --verbose",
@@ -339,7 +336,7 @@ class BaseSnippetArgs(BaseModel):
     :type executor_host: NonEmptyStr
     """
 
-    extra_args_field: ClassVar[str] = "extra_args"
+    extra_args_field: ClassVar[str] = EXTRA_ARGS_FIELD_NAME
     sudo_field: ClassVar[str] = "sudo"
     executor_host: NonEmptyStr = Field(
         validation_alias=EXECUTOR_HOSTS_INPUT_NAME, exclude=True
@@ -963,7 +960,7 @@ class BaseSnippet(BaseModel):
                 Field(
                     default_factory=list,
                     validation_alias=AliasChoices(
-                        EXTRA_ARGS_INPUT_NAME, SCHEMA_EXTRA_ARGS_FIELD_NAME
+                        EXTRA_ARGS_INPUT_NAME, EXTRA_ARGS_FIELD_NAME
                     ),
                     serialization_alias=EXTRA_ARGS_INPUT_NAME,
                 ),
