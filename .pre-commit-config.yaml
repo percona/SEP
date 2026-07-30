@@ -46,6 +46,14 @@ repos:
         language: system
         files: ^sep_installer\.sh$
         pass_filenames: false
+      - id: update-snippets-checksum-manifest
+        name: Update built-in snippets checksum manifest
+        description: "Regenerate snippets/builtin-snippets.sha256 when files under snippets/ change"
+        entry: python3 scripts/update_snippets_checksum_manifest.py
+        language: python
+        additional_dependencies: ["aiofiles==24.1.0"]
+        files: ^snippets/
+        pass_filenames: false
       - id: changelog-fragments
         name: Validate changelog.d/ fragments
         description: "Validate per-PR changelog fragments under changelog.d/"
