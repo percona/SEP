@@ -57,21 +57,30 @@ COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
 
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 
-# PMM feature-build variant (branch `pmm`): only the inventory, mysql_backups,
-# atw and snippets apps ship — every other app package is stripped from the
-# bundle so it cannot be activated. Two import-only stubs survive because
-# app.sep.main and the settings routes import them unconditionally:
-# alerts/config.py and dipper/constants.py; their package __init__ files are
-# emptied so importing them no longer drags in the removed app modules. The
-# stripped alerts migrations leave alembic.ini's version_locations with their
-# scripts (atw, the only other app-owned migration branch, stays).
+# PMM feature-build variant (branch `pmm`): only the inventory, mysql_backups
+# and atw apps ship — every other app package is stripped from the bundle so it
+# cannot be activated. Import-only stubs survive where unconditional imports
+# force them: alerts/config.py and dipper/constants.py (app.sep.main, settings
+# routes), and most of the snippets app's non-UI modules — atw executes builtin
+# snippets through snippets/script_source.py and its deps, and app.sep.main
+# imports snippets/celery.py (the sync task that ingests and auto-approves the
+# builtin library; its worker registration is static via STATIC_CELERY_INCLUDE).
+# Only the snippets UI surface (app.py, routes.py, extra_routes.py) is dropped.
+# Package __init__ files are emptied so importing the packages no longer drags
+# in the removed modules. The stripped alerts migrations leave alembic.ini's
+# version_locations with their scripts (atw, the only other app-owned migration
+# branch, stays).
 RUN cd $APP_HOME/app/sep/apps && \
     rm -rf alert_troubleshooting alters archives backup_mongo backup_pg \
         checksums mysql_summary report tasks topology && \
     find alerts -mindepth 1 -maxdepth 1 ! -name '__init__.py' ! -name 'config.py' -exec rm -rf {} + && \
     find dipper -mindepth 1 -maxdepth 1 ! -name '__init__.py' ! -name 'constants.py' -exec rm -rf {} + && \
+    find snippets -mindepth 1 -maxdepth 1 ! -name '__init__.py' ! -name 'celery.py' \
+        ! -name 'builtin_manifest.py' ! -name 'constants.py' ! -name 'deps.py' \
+        ! -name 'models.py' ! -name 'schema.py' ! -name 'script_source.py' -exec rm -rf {} + && \
     : > alerts/__init__.py && \
     : > dipper/__init__.py && \
+    : > snippets/__init__.py && \
     sed -i 's|:%(here)s/app/sep/apps/alerts/migrations/versions||' $APP_HOME/alembic.ini && \
     chown 0:1001 $APP_HOME/alembic.ini
 

@@ -10,8 +10,9 @@ builds and publishes the same tag with a `-sidecar` suffix on both the internal
 and Docker Hub registries.
 
 **On this branch (`pmm`, the PMM feature-build branch)** the image additionally
-strips every app package except `inventory`, `mysql_backups`, `atw` and
-`snippets` — see the marked `RUN` step in `Containerfile.sidecar`. The paired
+strips every app package except `inventory`, `mysql_backups` and `atw` — the
+snippets app is reduced to the non-UI modules atw's builtin-snippet execution
+needs — see the marked `RUN` step in `Containerfile.sidecar`. The paired
 PMM+SEP compose harness lives in `env/pmm-fb/`.
 
 ## What it contains

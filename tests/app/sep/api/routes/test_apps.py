@@ -251,6 +251,9 @@ class TestListAppsForNavigation:
         assert snippets["enabled"] is False
         assert "lifecycle_state" not in snippets
 
+    @pytest.mark.skip(
+        reason="pmm feature-build branch: atw no longer declares requires_apps=('snippets',)"
+    )
     async def test_atw_reported_disabled_when_snippets_disabled(
         self, api_user_client: TestClient, override_session: AsyncSession
     ) -> None:
@@ -328,6 +331,9 @@ class TestListAppsForNavigation:
         assert entries["atw"]["enabled"] is False
         assert entries["atw"]["blocking_dependencies"] == []
 
+    @pytest.mark.skip(
+        reason="pmm feature-build branch: atw no longer declares requires_apps=('snippets',)"
+    )
     @pytest.mark.parametrize(
         "state",
         [AppLifecycleEnum.DISABLING, AppLifecycleEnum.ENABLING],

@@ -246,12 +246,18 @@ class TestCeleryDerivation:
 
     def test_build_include_empty_apps_is_static_base_only(self) -> None:
         """Return exactly the static service base when no apps are configured."""
-        assert build_celery_include([]) == ["app.tasks.celery"]
+        assert build_celery_include([]) == [
+            "app.tasks.celery",
+            "app.sep.apps.snippets.celery",
+        ]
 
     def test_build_include_dedupes_static_base_collision(self) -> None:
         """Drop an app module that duplicates the static base, keeping first-seen order."""
         apps = [App(module_name="checksums", celery_module_path="app.tasks.celery")]
-        assert build_celery_include(apps) == ["app.tasks.celery"]
+        assert build_celery_include(apps) == [
+            "app.tasks.celery",
+            "app.sep.apps.snippets.celery",
+        ]
 
     def test_module_for_key(self) -> None:
         """Map an app key to its celery module."""
