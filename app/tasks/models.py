@@ -66,14 +66,6 @@ TASK_ALIAS_LENGTH = 100
 SYSTEM_USER = "SYSTEM"
 ANY_OWNER = "ANY"
 
-#: Allocation-relative output-files directory of every job spec that pins its
-#: ``run-script`` task's ``work_dir`` to ``${NOMAD_TASK_DIR}/output_files``
-#: (``run-python``, ``exec-artifact``, ``exec-python-artifact``). It is the
-#: :attr:`TaskBase.output_files_path` those specs run under, so a payload's
-#: working directory and the path SEP reads its files back from are the same
-#: place. ``run-command`` pins no ``work_dir`` and so has no output-files path.
-RUN_SCRIPT_OUTPUT_FILES_PATH = "run-script/local/output_files"
-
 
 def _encode_anonymize_mask(v: Any) -> Any:
     """Encode the anonymize mask from a set of PII entities.
@@ -992,13 +984,16 @@ GENERIC_EXECUTOR_TASK_NAMES: frozenset[str] = frozenset(
 
 INVENTORY_SYNC_TASK_NAME = "inventory-sync"
 SYNC_RUNNING_TASKS_TASK_NAME = "tasks__sync_running_tasks"
-CHECK_NOMAD_CERT_EXPIRY_TASK_NAME = "tasks__check_nomad_cert_expiry"
 
+#: Maintenance / system task names excluded from user-facing task lists.
+#: The cert-expiry member is a literal matching
+#: :data:`~app.tasks.execution.executors.nomad.constants.CHECK_NOMAD_CERT_EXPIRY_TASK_NAME`
+#: so this module does not import the Nomad executor package.
 INTERNAL_TASK_NAMES: frozenset[str] = frozenset(
     {
         INVENTORY_SYNC_TASK_NAME,
         SYNC_RUNNING_TASKS_TASK_NAME,
-        CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
+        "tasks__check_nomad_cert_expiry",
     }
 )
 

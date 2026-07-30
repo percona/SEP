@@ -31,8 +31,10 @@ from app.tasks.db.seed import (
     SYSTEM_PERIODIC_TASKS,
     SYSTEM_TASKS,
 )
-from app.tasks.models import (
+from app.tasks.execution.executors.nomad.constants import (
     CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
+)
+from app.tasks.models import (
     INTERNAL_TASK_NAMES,
     SYNC_RUNNING_TASKS_TASK_NAME,
     TaskBackendEnum,

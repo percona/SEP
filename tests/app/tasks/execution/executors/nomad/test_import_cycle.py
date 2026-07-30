@@ -22,9 +22,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[6]
 
 # Submodules that must load in a clean interpreter without importing
-# ``app.tasks.config`` first. ``models`` is the heavy end of the former cycle;
-# ``exceptions`` is a light sibling that still executes package ``__init__``.
+# ``app.tasks.config`` first. ``constants`` is the light dependency-free probe;
+# ``models`` is the heavy end of the former cycle.
 _SUBMODULES = (
+    "app.tasks.execution.executors.nomad.constants",
     "app.tasks.execution.executors.nomad.exceptions",
     "app.tasks.execution.executors.nomad.models",
 )
