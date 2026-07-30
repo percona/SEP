@@ -714,9 +714,7 @@ def ensure_terminal_punctuation(message: str) -> str:
     does not.
 
     :param message: The single-line fragment description.
-    :type message: str
     :return: The description, guaranteed to end in sentence punctuation.
-    :rtype: str
     """
     trimmed = message.rstrip(TRAILING_CLOSERS)
     if trimmed and trimmed[-1] in SENTENCE_TERMINATORS:
@@ -728,15 +726,10 @@ def cmd_add(ticket: str, section: str, message: str, *, force: bool) -> int:
     """Handle the ``add`` subcommand.
 
     :param ticket: The ticket key, e.g. ``SEP-503``.
-    :type ticket: str
     :param section: The short section name, e.g. ``added``.
-    :type section: str
     :param message: The single-line description for the fragment.
-    :type message: str
     :param force: Overwrite an existing fragment when ``True``.
-    :type force: bool
     :return: Process exit code (``0`` on success, ``1`` on error).
-    :rtype: int
     """
     ticket = ticket.strip()
     section = section.strip().lower()
@@ -783,7 +776,6 @@ def cmd_check() -> int:
     """Handle the ``check`` subcommand.
 
     :return: ``0`` if all fragments are valid, ``1`` otherwise.
-    :rtype: int
     """
     try:
         load_fragments()
