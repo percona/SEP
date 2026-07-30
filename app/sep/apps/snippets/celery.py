@@ -47,8 +47,8 @@ _CONTENT_CHANGED_REASON = "File contents have changed"
 # Kept next to the sync approval transition: the ``system`` sentinel lands in
 # ``Snippet.updated_by`` alongside real user ids, and ``is_human_revoked``
 # treats a non-null ``updated_by`` on an unapproved row as sticky revocation.
-_BUILTIN_APPROVAL_USER_ID = "system"
-_BUILTIN_APPROVAL_REASON = "Auto-approved: matches built-in checksum manifest"
+BUILTIN_APPROVAL_USER_ID = "system"
+BUILTIN_APPROVAL_REASON = "Auto-approved: matches built-in checksum manifest"
 
 
 @owned_by("snippets")
@@ -238,7 +238,7 @@ def _apply_builtin_approval_policy(
         return False
     if manifest_match:
         if content_changed or not snippet.is_approved:
-            snippet.approve(_BUILTIN_APPROVAL_REASON, _BUILTIN_APPROVAL_USER_ID)
+            snippet.approve(BUILTIN_APPROVAL_REASON, BUILTIN_APPROVAL_USER_ID)
             return True
         return False
     if content_changed:

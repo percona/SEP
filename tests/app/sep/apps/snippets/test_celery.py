@@ -24,8 +24,8 @@ import pytest
 import app.sep.apps.snippets.celery as sep_celery
 from app.sep.apps.snippets.builtin_manifest import BUILTIN_CHECKSUM_MANIFEST
 from app.sep.apps.snippets.celery import (
-    _BUILTIN_APPROVAL_REASON,
-    _BUILTIN_APPROVAL_USER_ID,
+    BUILTIN_APPROVAL_REASON,
+    BUILTIN_APPROVAL_USER_ID,
 )
 from app.sep.snippets.config import SnippetFilter, SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
@@ -282,7 +282,7 @@ class TestUpdateSnippets:
 
 
 class TestBuiltinAutoApproval:
-    """Test built-in checksum auto-approval during ``update_snippets``."""
+    """Cover built-in checksum auto-approval during ``update_snippets``."""
 
     @staticmethod
     def _patch_snippets_dir(mocker, tmp_path, *, auto_approve: bool = True):
@@ -308,8 +308,8 @@ class TestBuiltinAutoApproval:
         row = await SnippetManager.first(session, filename="builtin.sh")
         assert row is not None
         assert row.is_approved is True
-        assert row.updated_by == _BUILTIN_APPROVAL_USER_ID
-        assert row.reason == _BUILTIN_APPROVAL_REASON
+        assert row.updated_by == BUILTIN_APPROVAL_USER_ID
+        assert row.reason == BUILTIN_APPROVAL_REASON
 
     @pytest.mark.asyncio
     async def test_verified_content_change_auto_approves(
@@ -335,8 +335,8 @@ class TestBuiltinAutoApproval:
         row = await SnippetManager.first(session, filename="builtin.sh")
         assert row is not None
         assert row.is_approved is True
-        assert row.updated_by == _BUILTIN_APPROVAL_USER_ID
-        assert row.reason == _BUILTIN_APPROVAL_REASON
+        assert row.updated_by == BUILTIN_APPROVAL_USER_ID
+        assert row.reason == BUILTIN_APPROVAL_REASON
         assert (
             row.md5_digest
             == hashlib.md5(new_content, usedforsecurity=False).hexdigest()
@@ -520,8 +520,8 @@ class TestBuiltinAutoApproval:
         row = await SnippetManager.first(session, filename="builtin.sh")
         assert row is not None
         assert row.is_approved is True
-        assert row.updated_by == _BUILTIN_APPROVAL_USER_ID
-        assert row.reason == _BUILTIN_APPROVAL_REASON
+        assert row.updated_by == BUILTIN_APPROVAL_USER_ID
+        assert row.reason == BUILTIN_APPROVAL_REASON
 
     @pytest.mark.asyncio
     async def test_approvals_and_content_changes_use_split_batches(

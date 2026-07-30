@@ -449,7 +449,7 @@ class TestSnippetsRouterDeprecation:
 
 
 class TestSnippetsRemoveApprovalHumanRevocation:
-    """Jinja remove-approval must leave ``updated_by`` set so sync treats it as sticky."""
+    """Verify Jinja remove-approval leaves ``updated_by`` set for sticky sync."""
 
     @pytest.mark.asyncio
     async def test_remove_approval_records_human_revocation(

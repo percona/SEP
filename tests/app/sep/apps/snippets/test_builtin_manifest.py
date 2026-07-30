@@ -29,7 +29,7 @@ MODULE = "app.sep.apps.snippets.builtin_manifest"
 
 
 class TestLoadBuiltinChecksumManifest:
-    """Test load_builtin_checksum_manifest parser branches."""
+    """Cover the load_builtin_checksum_manifest parser branches."""
 
     @pytest.mark.asyncio
     async def test_missing_manifest_returns_empty(self, tmp_path, caplog):
@@ -112,7 +112,7 @@ class TestLoadBuiltinChecksumManifest:
 
 
 class TestSha256File:
-    """Test sha256_file against known content."""
+    """Verify sha256_file against known content."""
 
     @pytest.mark.asyncio
     async def test_hashes_file_contents(self, tmp_path):
