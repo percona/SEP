@@ -701,6 +701,29 @@ def cmd_resolve_backmerge(version: str) -> int:
     return 0
 
 
+SENTENCE_TERMINATORS = ".!?"
+TRAILING_CLOSERS = ")]}\"'`"
+
+
+def ensure_terminal_punctuation(message: str) -> str:
+    """Return ``message`` with a terminal period appended when it lacks one.
+
+    A fragment is rendered verbatim as a release-note bullet, so it has to read as
+    a complete sentence. Closing delimiters are ignored when locating the final
+    character, so ``Pass `--force` `` gains a period while ``He said "stop."``
+    does not.
+
+    :param message: The single-line fragment description.
+    :type message: str
+    :return: The description, guaranteed to end in sentence punctuation.
+    :rtype: str
+    """
+    trimmed = message.rstrip(TRAILING_CLOSERS)
+    if trimmed and trimmed[-1] in SENTENCE_TERMINATORS:
+        return message
+    return message + "."
+
+
 def cmd_add(ticket: str, section: str, message: str, *, force: bool) -> int:
     """Handle the ``add`` subcommand.
 
@@ -748,8 +771,11 @@ def cmd_add(ticket: str, section: str, message: str, *, force: bool) -> int:
             file=sys.stderr,
         )
         return 1
-    fragment_path.write_text(message + "\n", encoding="utf-8")
+    normalized = ensure_terminal_punctuation(message)
+    fragment_path.write_text(normalized + "\n", encoding="utf-8")
     print(f"Created {fragment_path}")
+    if normalized != message:
+        print("note: appended a terminal period so the entry reads as a sentence")
     return 0
 
 
