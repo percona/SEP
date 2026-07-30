@@ -706,11 +706,11 @@ TRAILING_CLOSERS = ")]}\"'`"
 
 
 def ensure_terminal_punctuation(message: str) -> str:
-"""Return ``message`` with terminal sentence punctuation, appending a period when needed.
+    """Return ``message`` with terminal sentence punctuation, appending a period when needed.
 
-A fragment is rendered verbatim as a release-note bullet, so it has to read as
-a complete sentence. Closing delimiters are ignored when locating the final
-character, so ``Drop the flag (deprecated)`` gains a period while ``He said "stop."``
+    A fragment is rendered verbatim as a release-note bullet, so it has to read as
+    a complete sentence. Closing delimiters are ignored when locating the final
+    character, so ``Drop the flag (deprecated)`` gains a period while ``He said "stop."``
     does not.
 
     :param message: The single-line fragment description.
