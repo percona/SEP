@@ -54,7 +54,6 @@ from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
-from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.apps.snippets.celery import sync_snippets
 from app.sep.config import sep_settings, SEPSettings
@@ -395,7 +394,7 @@ sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
 
 
-imported_plugins = set()
+jinja_ui_mounted = False
 for app in get_app_registry():
     if app.jinja_router is None:
         continue
@@ -407,36 +406,24 @@ for app in get_app_registry():
     sep_app.include_router(
         app.jinja_router, prefix=app.uri_path, dependencies=plugin_deps
     )
-    imported_plugins.add(app.key)
+    jinja_ui_mounted = True
 
-_TASK_INFRA_PLUGINS = frozenset(
-    {
-        "alters",
-        "archives",
-        "tasks",
-        "mysql_backups",
-        "backup_mongo",
-        "backup_pg",
-        "checksums",
-    }
-)
-
-if _TASK_INFRA_PLUGINS & imported_plugins:
+if any(app.uses_task_data for app in get_app_registry()):
     from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.execution_events import router as execution_events_router
-    from app.sep.routes.inventory_ajax import router as inventory_ajax_router
-    from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
-    sep_app.include_router(inventory_ajax_router, prefix="/inventory-api")
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
     sep_app.include_router(download_files_router, prefix="/files")
     sep_app.include_router(execution_events_router, prefix="/execution-events")
-    sep_app.include_router(stop_task_router, prefix="/stop-task")
 
-if (_TASK_INFRA_PLUGINS | {"inventory"}) & imported_plugins:
+if jinja_ui_mounted:
+    from app.sep.routes.inventory_ajax import router as inventory_ajax_router
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
+    from app.sep.routes.stop_task import router as stop_task_router
 
+    sep_app.include_router(inventory_ajax_router, prefix="/inventory-api")
+    sep_app.include_router(stop_task_router, prefix="/stop-task")
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
 
 if any(app.artifact_base_dirs for app in get_app_registry()):
@@ -447,20 +434,8 @@ if any(app.artifact_base_dirs for app in get_app_registry()):
 sep_app.include_router(api_router)
 sep_app.include_router(top_level_api_router, include_in_schema=False)
 
-if "snippets" in imported_plugins:
-    sep_app.mount(
-        "/static/snippets",
-        AuthenticatedStaticFiles(directory=snippets_settings.SNIPPETS_DIR),
-        name="snippets_files",
-    )
-if "dipper" in imported_plugins:
-    sep_app.mount(
-        "/static/dipper",
-        AuthenticatedStaticFiles(directory=DIPPER_PAYLOADS_DIR),
-        name="dipper_files",
-    )
 for app in get_app_registry():
-    for static_mount in getattr(app, "static_mounts", ()):
+    for static_mount in app.static_mounts:
         sep_app.mount(
             static_mount.path,
             AuthenticatedStaticFiles(directory=static_mount.directory),

@@ -42,4 +42,5 @@ app = BaseApp(
     api_router=api_router,
     jinja_router=jinja_router,
     requires_apps=("snippets",),
+    uses_task_data=True,
 )
