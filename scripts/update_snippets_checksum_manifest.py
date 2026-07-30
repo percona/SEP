@@ -29,6 +29,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SNIPPETS_DIR = REPO_ROOT / "snippets"
 
+sys.path.insert(0, str(REPO_ROOT))
+
 
 async def _hash_snippet_entries(
     snippets_dir: Path,
@@ -41,10 +43,7 @@ async def _hash_snippet_entries(
     :return: ``(digest, relative_path)`` pairs in sorted-path order.
     :raises OSError: If a snippet file cannot be opened or read.
     """
-    from app.sep.apps.snippets.builtin_manifest import (
-        manifest_relative_path,
-        sha256_file,
-    )
+    from app.sep.snippets.checksums import manifest_relative_path, sha256_file
 
     entries: list[tuple[str, str]] = []
     for path in sorted(snippets_dir.rglob("*")):
@@ -67,8 +66,7 @@ def generate_manifest() -> tuple[int, Path]:
     :raises SystemExit: If the snippets directory does not exist.
     :raises OSError: If a snippet file or the manifest cannot be read or written.
     """
-    sys.path.insert(0, str(REPO_ROOT))
-    from app.sep.apps.snippets.builtin_manifest import BUILTIN_CHECKSUM_MANIFEST
+    from app.sep.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST
 
     if not SNIPPETS_DIR.is_dir():
         raise SystemExit(f"Snippets directory not found: {SNIPPETS_DIR}")

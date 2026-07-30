@@ -50,7 +50,8 @@ repos:
         name: Update built-in snippets checksum manifest
         description: "Regenerate snippets/builtin-snippets.sha256 when files under snippets/ change"
         entry: python3 scripts/update_snippets_checksum_manifest.py
-        language: system
+        language: python
+        additional_dependencies: ["aiofiles==24.1.0"]
         files: ^snippets/
         pass_filenames: false
       - id: changelog-fragments
