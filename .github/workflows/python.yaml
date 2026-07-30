@@ -80,7 +80,7 @@ jobs:
       - name: Install test dependencies
         run: poetry sync --no-root
       - name: Run tests
-        run: make test PYTEST_MARKERS='not postgres' COV=${{ matrix.python == '3.11.9' && '1' || '0' }}
+        run: make test PYTEST_MARKERS='not postgres and not mysql' COV=${{ matrix.python == '3.11.9' && '1' || '0' }}
       - name: Generate coverage comment data
         id: coverage_comment
         if: matrix.python == '3.11.9' && github.event_name == 'pull_request'
@@ -124,6 +124,34 @@ jobs:
         run: poetry sync --no-root --with postgresql
       - name: Run PostgreSQL tests
         run: make test PYTEST_MARKERS='postgres' PYTEST_WORKERS=0 COV=0
+
+  test_mysql:
+    name: test (mysql)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0.46
+        env:
+          MYSQL_ROOT_PASSWORD: sep
+          MYSQL_DATABASE: sep_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -psep --silent"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      SEP_TEST_MYSQL_DSN: mysql+aiomysql://root:sep@127.0.0.1:3306/sep_test
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: "3.11.9"
+          cache: poetry
+      - name: Install test dependencies
+        run: poetry sync --no-root --with mysql
+      - name: Run MySQL tests
+        run: make test PYTEST_MARKERS='mysql' PYTEST_WORKERS=0 COV=0
 
   build:
     strategy:
