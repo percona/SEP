@@ -13,4 +13,31 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.tasks.execution.executors.nomad.models import NomadExecutor
+"""Nomad task executor package.
+
+``NomadExecutor`` is resolved lazily via ``__getattr__`` so submodule imports
+do not deadlock against ``app.tasks.config`` (which imports ``NomadExecutor``
+back from this package).
+"""
+
+__all__ = ["NomadExecutor"]
+
+
+def __getattr__(name: str) -> object:
+    """Resolve ``NomadExecutor`` on first attribute access.
+
+    :param name: The attribute being read.
+    :return: The resolved attribute.
+    :raises AttributeError: If ``name`` is not exported by this package.
+    """
+    if name == "NomadExecutor":
+        from app.tasks.execution.executors.nomad.models import NomadExecutor
+
+        globals()[name] = NomadExecutor
+        return NomadExecutor
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """Return attribute names for ``dir()``, including the lazy export."""
+    return sorted({*globals(), *__all__})

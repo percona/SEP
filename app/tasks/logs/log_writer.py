@@ -21,7 +21,6 @@ from datetime import datetime, UTC
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.utils.date_time import utc_now
-from app.tasks import config as tasks_config
 from app.tasks.crud import (
     TaskHistoryLogManager,
     TaskHistoryLogStateManager,
@@ -635,6 +634,10 @@ class TaskHistoryLogWriter:
         """
         if persisted_offset <= previous_persisted_offset:
             return
+        # Lazy import keeps app.tasks.config out of the log_writer import chain
+        # (log_writer sits on the NomadExecutor ↔ config cycle).
+        from app.tasks import config as tasks_config
+
         cap = tasks_config.tasks_settings.LOG_STREAM_CAP_BYTES
         low_water = persisted_offset - cap
         if low_water <= 0:

@@ -59,7 +59,6 @@ from app.core.utils import (
     utc_now,
 )
 from app.core.utils.pydantic import field_with_metadata
-from app.tasks import config as tasks_config
 from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskHistoryLogStateManager, TaskHistoryManager
@@ -499,6 +498,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             parameterized_job.get("MetaRequired") or []
         )
         if "staleness_threshold_seconds" in declared_meta:
+            # Lazy import keeps app.tasks.config out of the nomad.models import
+            # chain (config imports NomadExecutor back from this package).
+            from app.tasks import config as tasks_config
+
             filtered_meta["staleness_threshold_seconds"] = str(
                 tasks_config.tasks_settings.STALENESS_THRESHOLD_SECONDS
             )
