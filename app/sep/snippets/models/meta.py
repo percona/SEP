@@ -194,77 +194,55 @@ class SnippetMetaParameter(BaseModel):
     """Represent a parameter for a support snippet.
 
     :param name: The name of the parameter.
-    :type name: NonEmptyStr
     :param py_type: The type of the parameter (``str``, ``int``, ``float``, ``bool``).
         Defaults to ``str``. This parameter is validated as "type" in input data.
-    :type py_type: SnippetMetaParameterType
     :param required: Whether the parameter is required. Defaults to False.
-    :type required: bool
     :param positional: Whether the parameter is positional. Defaults to False.
-    :type positional: bool
     :param arg_format: The format string for the parameter when used as a command-line
         argument. Use ``${value}`` as a placeholder (required for non-flag arguments).
         Defaults to None, which uses the default format from the snippets settings.
-    :type arg_format: NonEmptyStr | None
     :param description: A description of the parameter. Defaults to None, meaning it
         won't be used for validation.
-    :type description: NonEmptyStr | None
     :param label: A label for the parameter. Defaults to None, meaning it won't be used
         for validation.
-    :type label: NonEmptyStr | None
     :param placeholder: A placeholder for the parameter. Defaults to None, meaning it
         won't be used for validation.
-    :type placeholder: NonEmptyStr | None
     :param group: An optional group name for organizing parameters into separate
         fieldsets in the execution form. Parameters sharing the same group are rendered
         together. Defaults to None, meaning the parameter belongs to the default
         ungrouped fieldset.
-    :type group: NonEmptyStr | None
     :param default: The default value for the parameter. Defaults to None, meaning no
         default.
-    :type default: str | int | float | bool | datetime | None
     :param choices: A list of choices for the parameter. Each choice can be a string or
         a dictionary with "label" and "value" keys. Defaults to None, meaning it won't
         be used for validation. This parameter is validated as "options" or "choices"
         in input data.
-    :type choices: list[SnippetMetaParameterChoice] | None
     :param min_length: The minimum length for string parameters. Defaults to 1.
-    :type min_length: PositiveInt | None
     :param max_length: The maximum length for string parameters. Defaults to 1,
         meaning it won't be used for validation.
-    :type max_length: PositiveInt | None
     :param pattern: A regex pattern that the parameter value must match. Defaults to
         None, meaning it won't be used for validation.
-    :type pattern: NonEmptyStr | None
     :param gt: The value must be greater than this for numeric parameters. Defaults to
         None, meaning it won't be used for validation.
-    :type gt: float | None
     :param lt: The value must be less than this for numeric parameters. Defaults to
         None, meaning it won't be used for validation.
-    :type lt: float | None
     :param ge: The value must be greater than or equal to this for numeric parameters.
         Defaults to None, meaning it won't be used for validation.
-    :type ge: float | None
     :param le: The value must be less than or equal to this for numeric parameters.
         Defaults to None, meaning it won't be used for validation.
-    :type le: float | None
     :param step: The step value for numeric parameters. Defaults to None, which sets
         step to 1 for int and 0.1 for float types.
-    :type step: float | None
     :param html_elem: The HTML element to use for text input parameters. Can be
         TextInputHTMLElement.TEXT or TextInputHTMLElement.TEXTAREA. Defaults to None,
         which uses TextInputHTMLElement.TEXT.
-    :type html_elem: TextInputHTMLElement | None
     :param visible_when: Hide this parameter unless the referenced sibling
         condition matches. Accepts a bare parameter name (truthiness match) or a
         mapping with ``parameter`` and optional ``equals``. Mutually exclusive
         with ``visible_when_not``. Client-enforced only (see
         :class:`SnippetVisibilityCondition`). Defaults to None.
-    :type visible_when: SnippetVisibilityCondition | None
     :param visible_when_not: Hide this parameter when the referenced sibling
         condition matches. Same grammar as ``visible_when``. Mutually exclusive
         with ``visible_when``. Client-enforced only. Defaults to None.
-    :type visible_when_not: SnippetVisibilityCondition | None
     :param requires_when: Require a value for this parameter when the referenced
         sibling condition matches. Same grammar as ``visible_when``. Mutually
         exclusive with ``requires_when_not``. Lowered onto a ``requires``
@@ -272,30 +250,31 @@ class SnippetMetaParameter(BaseModel):
         on the execute paths (see
         :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`). Defaults to
         None.
-    :type requires_when: SnippetVisibilityCondition | None
     :param requires_when_not: Require a value for this parameter when the
         referenced sibling condition does not match. Same grammar as
         ``requires_when``. Mutually exclusive with ``requires_when``. Enforced
         server-side. Defaults to None.
-    :type requires_when_not: SnippetVisibilityCondition | None
     :param forbidden_when: Forbid a value for this parameter when the referenced
         sibling condition matches. Same grammar as ``visible_when``. Mutually
         exclusive with ``forbidden_when_not``. Lowered onto a ``forbidden``
         :class:`~app.sep.apps.framework.rules.FieldGate` and enforced server-side.
         Defaults to None.
-    :type forbidden_when: SnippetVisibilityCondition | None
     :param forbidden_when_not: Forbid a value for this parameter when the
         referenced sibling condition does not match. Same grammar as
         ``forbidden_when``. Mutually exclusive with ``forbidden_when``. Enforced
         server-side. Defaults to None.
-    :type forbidden_when_not: SnippetVisibilityCondition | None
     :param hidden: Unconditionally omit this parameter from every rendered
         execution form -- it is never emitted into the form HTML or form schema
         at all. It is still validated normally (it stays in
         ``to_validation_field``), so a value injected server-side -- e.g. the PMM
         ``apikey`` from ``settings.PMM.api_key`` -- continues to validate without
         a visible field. Defaults to False.
-    :type hidden: bool
+    :param sensitive: Treat this parameter's value as a credential, so surfaces
+        that replay a recorded command line replace it with a fixed-width mask
+        (see :func:`app.sep.snippets.masking.mask_snippet_args`). Parameters
+        whose name carries a credential word are masked without opting in; this
+        flag covers the ones the name pattern cannot recognise. Defaults to
+        False.
     """
 
     name: NonEmptyStr = Field(
@@ -331,6 +310,7 @@ class SnippetMetaParameter(BaseModel):
     forbidden_when: SnippetVisibilityCondition | None = None
     forbidden_when_not: SnippetVisibilityCondition | None = None
     hidden: bool = False
+    sensitive: bool = False
 
     @field_validator(
         "visible_when",
@@ -677,7 +657,7 @@ class SnippetMetaParameter(BaseModel):
             **attrs,
             alias=self.name,
             metadata=self.model_dump(
-                include={"positional", "is_flag", "arg_format"},
+                include={"positional", "is_flag", "arg_format", "sensitive"},
                 exclude_none=True,
                 exclude_defaults=True,
             ),

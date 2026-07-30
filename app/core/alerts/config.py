@@ -61,16 +61,17 @@ class AlertSettings(BaseYamlSettings):
     def _set_alerts_providers(cls, data: Any) -> Any:
         providers = set()
         for provider_data in data:
-            provider_name = provider_data.pop("PROVIDER", None) or provider_data.pop(
-                "provider", None
-            )
+            # Copy before pop so materializer-backed PATCH persistence keeps the
+            # discriminator key in the raw JSON (the same object is stored).
+            entry = dict(provider_data)
+            provider_name = entry.pop("PROVIDER", None) or entry.pop("provider", None)
             if not provider_name:
                 raise ValueError(
                     "Invalid alert provider configuration. Ensure 'PROVIDER' is set."
                 )
             try:
                 provider_class = AlertProviderEnum[provider_name.upper()].value
-                providers.add(provider_class.model_validate(provider_data))
+                providers.add(provider_class.model_validate(entry))
             except KeyError:
                 raise ValueError(
                     f"Invalid alert provider: {provider_name}. Available providers: {[e.name for e in AlertProviderEnum]}"
