@@ -3476,11 +3476,13 @@ export interface components {
      *
      *     :param timestamp: When the event occurred (UTC).
      *     :type timestamp: UTCDatetime
-     *     :param event_type: Executor-specific event category (e.g. Nomad task event type).
+     *     :param event_type: Executor-specific event category (for example a Nomad
+     *         task event type).
      *     :type event_type: str
      *     :param description: Human-readable message for the event (no step prefix).
      *     :type description: str
-     *     :param step: Optional executor task/step name (e.g. Nomad task within the group).
+     *     :param step: Optional executor task/step name (for example a Nomad task
+     *         within the group).
      *     :type step: str | None
      */
     ExecutionEvent: {

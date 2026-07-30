@@ -727,11 +727,13 @@ export interface components {
      *
      *     :param timestamp: When the event occurred (UTC).
      *     :type timestamp: UTCDatetime
-     *     :param event_type: Executor-specific event category (e.g. Nomad task event type).
+     *     :param event_type: Executor-specific event category (for example a Nomad
+     *         task event type).
      *     :type event_type: str
      *     :param description: Human-readable message for the event (no step prefix).
      *     :type description: str
-     *     :param step: Optional executor task/step name (e.g. Nomad task within the group).
+     *     :param step: Optional executor task/step name (for example a Nomad task
+     *         within the group).
      *     :type step: str | None
      */
     ExecutionEvent: {
@@ -1328,12 +1330,12 @@ export interface components {
      *     :type task: Task
      *     :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
      *     :type sync_in_progress_started_at: UTCDatetime | None
-     *     :param log_allocation_epoch: Task-level high-water mark of the current Nomad
-     *         allocation ``CreateIndex``, stamped whenever the log frontier is reset. The
-     *         log writer consults it on the first-insert path (before any per-stream
-     *         ``TaskHistoryLogState`` row exists) to discard writes from a superseded
-     *         allocation. ``0`` is the legacy/unknown sentinel that is trusted
-     *         unconditionally.
+     *     :param log_producer_epoch: Task-level high-water mark of the current
+     *         producer epoch (for example a Nomad allocation ``CreateIndex``), stamped
+     *         whenever the log frontier is reset. The log writer consults it on the
+     *         first-insert path (before any per-stream ``TaskHistoryLogState`` row
+     *         exists) to discard writes from a superseded producer. ``0`` is the
+     *         legacy/unknown sentinel that is trusted unconditionally.
      *     :param executed_by: The user ID of the user who executed the task.
      *     :type executed_by: str | None
      */
@@ -1352,8 +1354,8 @@ export interface components {
       finished_at?: string | null;
       /** Id */
       id: number | null;
-      /** Log Allocation Epoch */
-      log_allocation_epoch: number;
+      /** Log Producer Epoch */
+      log_producer_epoch: number;
       /** Started At */
       started_at?: string | null;
       /** @default pending */
