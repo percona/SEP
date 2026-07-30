@@ -47,7 +47,6 @@ export interface FreeSoloSelectProps<T extends ReferenceOption> {
   helperText?: string;
   error?: boolean;
   noOptionsText?: string;
-  /** Called when the dropdown opens (e.g. to refetch option lists). */
   onOpen?: () => void;
 }
 
