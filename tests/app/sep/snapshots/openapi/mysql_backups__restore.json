@@ -4067,10 +4067,6 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "port": {
             "anyOf": [
               {
@@ -4085,16 +4081,6 @@
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -4121,7 +4107,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
