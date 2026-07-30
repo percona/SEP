@@ -38,10 +38,10 @@ make changelog-add TICKET=SEP-503 SECTION=added \
 This creates `changelog.d/SEP-503.added.md` containing just the description.
 Commit the file as part of your PR.
 
-**Write the description as a complete sentence, ending in a period.** A fragment
+**Write the description as a complete sentence, ending in `.`, `!`, or `?`.** A fragment
 is rendered verbatim as a release-note bullet, so whatever punctuation it carries
 is what users read. `make changelog-add` appends a terminal period when the `MSG`
-lacks one (recognising `.`, `!` and `?`, and looking past a trailing `)`, `]`,
+lacks sentence punctuation (recognising `.`, `!` and `?`, and looking past a trailing `)`, `]`,
 `}`, quote or backtick), and tells you when it did — so a fragment edited by hand
 is the only way to end up without one. Capitalise the first word; do not add a
 `- SEP-XXX:` prefix, which assembly supplies.

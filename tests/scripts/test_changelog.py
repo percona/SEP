@@ -98,7 +98,7 @@ def test_add_creates_fragment(repo):
     ],
 )
 def test_add_normalizes_terminal_punctuation(repo, message, expected):
-    """``add`` appends a terminal period only when the message lacks one.
+    """Verify that ``add`` appends a terminal period only when the message lacks sentence punctuation.
 
     :param repo: Test repo fixture.
     :param message: The description passed to ``add``.
