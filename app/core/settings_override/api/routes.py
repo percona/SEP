@@ -74,6 +74,7 @@ from app.core.settings_override.registry import (
     resolve_nested_field,
     resolve_nested_field_metadata,
     resolve_nested_value,
+    unwrap_secrets_for_storage,
 )
 
 ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettingsProxy]
@@ -1247,6 +1248,7 @@ async def _stage_and_commit_overrides(
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
     for key, value in to_apply:
+        stored_value = unwrap_secrets_for_storage(value)
         existing = await SettingsOverrideManager.first(
             session, setting_class=setting_class, key=key
         )
@@ -1255,12 +1257,12 @@ async def _stage_and_commit_overrides(
                 SettingOverride(
                     setting_class=setting_class,
                     key=key,
-                    value=value,
+                    value=stored_value,
                     is_active=True,
                 )
             )
         else:
-            existing.value = value
+            existing.value = stored_value
             existing.is_active = True
             session.add(existing)
     await session.commit()
