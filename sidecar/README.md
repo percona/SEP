@@ -9,6 +9,11 @@ Build it with `make image-sidecar` (tag `sep:${RELEASE_VER}-sidecar`). Jenkins
 builds and publishes the same tag with a `-sidecar` suffix on both the internal
 and Docker Hub registries.
 
+**On this branch (`pmm`, the PMM feature-build branch)** the image additionally
+strips every app package except `inventory`, `mysql_backups`, `atw` and
+`snippets` — see the marked `RUN` step in `Containerfile.sidecar`. The paired
+PMM+SEP compose harness lives in `env/pmm-fb/`.
+
 ## What it contains
 
 | Input | Role |

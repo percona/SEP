@@ -1,0 +1,62 @@
+# PMM + SEP feature-build topology (branch `pmm`).
+#
+# pmm-server is the PMM feature build carrying the SEP frontend and the
+# PMM_ENABLE_SEP PostgreSQL exposure (Percona-Lab/pmm-submodules#4500 =
+# percona/pmm branch PMM-15216, PRs #5653 + #5700): its entrypoint provisions
+# the network-reachable low-privilege `sep` role and `sep` database.
+#
+# sep-sidecar is the app-restricted consolidated side-car built from this
+# branch (apps: inventory, mysql_backups, atw, snippets; supervisord running
+# the three APIs + Celery worker/beat + bundled Valkey).
+#
+# pmm.conf overlays the stock nginx config so the five SEP path prefixes the
+# PMM UI expects (/api, /sep_app, /stream-logs, /execution-events, /files)
+# reach the side-car; see pmm.conf for the interim auth (Option D) wiring.
+#
+# The side-car gets a fixed IP because nginx resolves proxy targets at
+# startup, when the SEP container may not be running yet — and a name-based
+# upstream would also go stale when sep-sidecar is restarted (e.g. after
+# minting the Grafana token). pmm.conf proxies to that IP.
+#
+# All credentials in this directory are throwaway feature-build test values;
+# see README.md.
+
+name: sep-pmm-fb
+
+services:
+  pmm-server:
+    image: docker.io/perconalab/pmm-server-fb:PR-4500-133001e
+    environment:
+      PMM_ENABLE_SEP: "1"
+      PMM_SEP_POSTGRES_PASSWORD: sep-fb-pg-pw
+    ports:
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - pmm-data:/srv
+      - ./pmm.conf:/etc/nginx/conf.d/pmm.conf:ro
+    networks:
+      sep-pmm:
+        ipv4_address: 172.28.9.2
+
+  sep-sidecar:
+    image: docker.io/percona/percona-sep:pmm-c412a7c-sidecar
+    depends_on: [pmm-server]
+    volumes:
+      - ./settings.yaml:/home/sep/app/settings.yaml:ro
+    ports:
+      - "127.0.0.1:9000:9000" # sep API (direct host access for probing)
+      - "127.0.0.1:9001:9001" # inventory API
+      - "127.0.0.1:9002:9002" # tasks API
+    networks:
+      sep-pmm:
+        ipv4_address: 172.28.9.30
+
+networks:
+  sep-pmm:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.9.0/24
+
+volumes:
+  pmm-data:
