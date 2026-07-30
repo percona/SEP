@@ -795,8 +795,10 @@ class TestSnippetManagerListQueryOnMySQL:
     """Exercise the snippets NULLs-last ordering against a real MySQL bind.
 
     MySQL has no ``NULLS LAST`` syntax, so this path can only be verified on a real
-    bind (auto-skipped when ``SEP_TEST_MYSQL_DSN`` is unset). The expected filename
-    orders are the same literals the PostgreSQL class asserts.
+    bind (auto-skipped when ``SEP_TEST_MYSQL_DSN`` is unset). The meta-title case
+    asserts the same filename-order literals the PostgreSQL class does; the
+    filename-sort case has no PostgreSQL counterpart, since it exists to cover the
+    tie-breaker-free ordering where the construct is the entire ``ORDER BY``.
     """
 
     async def test_sort_by_meta_title_places_missing_titles_last(

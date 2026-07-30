@@ -914,10 +914,12 @@ class TestListQueryPaginatedPostgres:
 class TestListQueryPaginatedMySQL:
     """Cover spec-derived NULLs-last ordering against a real MySQL bind.
 
-    The expected row orders are the same literals as
-    ``TestListQueryPaginatedPostgres`` asserts, which is the point: identical
+    The ascending and descending nullable-sort cases assert the same row-order
+    literals as ``TestListQueryPaginatedPostgres``, which is the point: identical
     expectations across dialects show the construct normalises MySQL's ordering to
-    the PostgreSQL/SQLite one.
+    the PostgreSQL/SQLite one. The all-NULL and ``select_related`` cases below have
+    no PostgreSQL counterpart -- both exercise shapes specific to the prepended
+    ``ISNULL`` term.
     """
 
     @pytest.mark.asyncio
