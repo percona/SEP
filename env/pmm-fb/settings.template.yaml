@@ -1,11 +1,14 @@
-# SEP settings for the PMM feature-build topology (mounted read-only at
-# /home/sep/app/settings.yaml by compose.yaml; the side-car bakes
-# FASTAPI_ENV=production_docker, so `default` + `production_docker` apply).
+# SEP settings TEMPLATE for the PMM feature-build topology. bootstrap.sh
+# renders it to settings.yaml (gitignored), filling the __*__ markers from the
+# generated .env; compose.yaml mounts the rendered file read-only at
+# /home/sep/app/settings.yaml (the side-car bakes FASTAPI_ENV=production_docker,
+# so `default` + `production_docker` apply).
 #
 # Derived from the verified SEP-1578 spike settings, adapted to the feature
 # build:
-#   - only the four apps shipped in the pmm-c412a7c side-car image are
-#     activated (the image does not contain the others);
+#   - only the three apps shipped in the side-car image are activated (the
+#     image does not contain the others; the snippets app is stripped to the
+#     non-UI modules atw needs, with builtin snippets ingested at boot);
 #   - all three services plus the Celery beat store share the single `sep`
 #     database the PMM entrypoint provisions (PMM_ENABLE_SEP exposes exactly
 #     `sep`/`sep`; the three Alembic tracks use distinct version tables and
@@ -22,7 +25,7 @@ default:
   ALLOWED_HOSTS:
     - "*"
   ALLOW_CONCURRENT_SESSIONS: True
-  SECRET_KEY: "sep-pmm-fb-test-only-secret"
+  SECRET_KEY: "__SEP_SECRET_KEY__"
   LOGGING: INFO
   SSL_CAFILE: null
   AUTH:
@@ -42,7 +45,6 @@ default:
         - .sh
     APPS:
       - MODULE_NAME: inventory
-      - MODULE_NAME: snippets
       - MODULE_NAME: atw
       - MODULE_NAME: mysql_backups
     SYNCERS:
@@ -57,7 +59,7 @@ default:
 
 production_docker:
   BASE_URL: http://sep-sidecar:9000 # executors download snippets/scripts from here
-  SEP_INTERNAL_TOKEN: 27d6ead2a9be260158e2ca8d98ab8f5a5fe7a56fa516e4c0aa2f2cb383b45f5d
+  SEP_INTERNAL_TOKEN: __SEP_INTERNAL_TOKEN__
   AUTH:
     PROVIDER:
       grafana:
@@ -66,7 +68,7 @@ production_docker:
         session_cookie_name: pmm_session
         verify_ssl: false
   CELERY:
-    BEAT_DBURI: postgresql://sep:sep-fb-pg-pw@pmm-server:5432/sep
+    BEAT_DBURI: postgresql://sep:__SEP_PG_PASSWORD__@pmm-server:5432/sep
     BROKER_URL: redis://127.0.0.1:6379/0 # superseded by the credentialed URL the entrypoint mints
     RESULT_BACKEND: redis://127.0.0.1:6379/1
     RESULT_EXPIRES: 3600
@@ -75,7 +77,7 @@ production_docker:
     ENGINE: postgresql
     HOST: pmm-server
     NAME: sep
-    PASSWORD: sep-fb-pg-pw
+    PASSWORD: __SEP_PG_PASSWORD__
     PORT: 5432
     USER: sep
   INVENTORY:
@@ -83,7 +85,7 @@ production_docker:
       ENGINE: postgresql
       HOST: pmm-server
       NAME: sep
-      PASSWORD: sep-fb-pg-pw
+      PASSWORD: __SEP_PG_PASSWORD__
       PORT: 5432
       USER: sep
     SSL_CERTFILE: null
@@ -96,7 +98,7 @@ production_docker:
       ENGINE: postgresql
       HOST: pmm-server
       NAME: sep
-      PASSWORD: sep-fb-pg-pw
+      PASSWORD: __SEP_PG_PASSWORD__
       PORT: 5432
       USER: sep
     INVENTORY_ENDPOINT: http://127.0.0.1:9001
@@ -121,7 +123,7 @@ production_docker:
       ENGINE: postgresql
       HOST: pmm-server
       NAME: sep
-      PASSWORD: sep-fb-pg-pw
+      PASSWORD: __SEP_PG_PASSWORD__
       PORT: 5432
       USER: sep
     UVICORN_HOST: 0.0.0.0

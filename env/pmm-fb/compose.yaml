@@ -6,20 +6,23 @@
 # the network-reachable low-privilege `sep` role and `sep` database.
 #
 # sep-sidecar is the app-restricted consolidated side-car built from this
-# branch (apps: inventory, mysql_backups, atw, snippets; supervisord running
-# the three APIs + Celery worker/beat + bundled Valkey).
+# branch (apps: inventory, mysql_backups, atw; supervisord running the three
+# APIs + Celery worker/beat + bundled Valkey; builtin snippets ingested at
+# boot, no snippets management UI).
 #
-# pmm.conf overlays the stock nginx config so the five SEP path prefixes the
-# PMM UI expects (/api, /sep_app, /stream-logs, /execution-events, /files)
-# reach the side-car; see pmm.conf for the interim auth (Option D) wiring.
+# Run ./bootstrap.sh first: it generates the .env this file interpolates and
+# renders settings.yaml + pmm.conf from their committed templates. pmm.conf
+# overlays the stock nginx config so the five SEP path prefixes the PMM UI
+# expects (/api, /sep_app, /stream-logs, /execution-events, /files) reach the
+# side-car; see pmm.conf.template for the interim auth (Option D) wiring.
 #
 # The side-car gets a fixed IP because nginx resolves proxy targets at
 # startup, when the SEP container may not be running yet — and a name-based
 # upstream would also go stale when sep-sidecar is restarted (e.g. after
 # minting the Grafana token). pmm.conf proxies to that IP.
 #
-# All credentials in this directory are throwaway feature-build test values;
-# see README.md.
+# No credentials are committed: bootstrap.sh generates them per deployment
+# into the gitignored .env / rendered files; see README.md.
 
 name: sep-pmm-fb
 
@@ -28,7 +31,7 @@ services:
     image: docker.io/perconalab/pmm-server-fb:PR-4500-133001e
     environment:
       PMM_ENABLE_SEP: "1"
-      PMM_SEP_POSTGRES_PASSWORD: sep-fb-pg-pw
+      PMM_SEP_POSTGRES_PASSWORD: ${SEP_PG_PASSWORD:?run ./bootstrap.sh first}
       PMM_ENABLE_NOMAD: "1" # SEP task execution runs through PMM's embedded Nomad…
       PMM_PUBLIC_ADDRESS: pmm-server # …which silently refuses to start without a public address
     ports:

@@ -125,8 +125,11 @@ token="$(grafana_api -X POST "${PMM_URL}/graph/api/serviceaccounts/${sa_id}/toke
 }
 success "Minted Grafana service-account token (${SA_NAME}, role Admin)"
 
-sed -E -i "s|(service_account_token:) glsa_[A-Za-z0-9_]+|\1 ${token}|; s|(API_KEY:) glsa_[A-Za-z0-9_]+|\1 ${token}|" \
-    "${settings_file}"
+# Inode-preserving rewrite: the file is bind-mounted into the container, and a
+# sed -i inode swap is invisible there until the container is fully recreated
+updated="$(sed -E "s|(service_account_token:) glsa_[A-Za-z0-9_]+|\1 ${token}|; s|(API_KEY:) glsa_[A-Za-z0-9_]+|\1 ${token}|" \
+    "${settings_file}")"
+printf '%s\n' "${updated}" > "${settings_file}"
 success "Wrote the token into ${settings_file}"
 
 if [[ ${RESTART} -eq 1 ]]; then

@@ -1,10 +1,13 @@
-  # ── SEP side-car (feature build overlay) ──────────────────────────────────
-  # This file is the stock pmm.conf from percona/pmm branch PMM-15216 plus the
-  # marked SEP blocks. Interim auth (Option D): pass a client-supplied bearer
-  # through; inject the SEP internal token otherwise (the PMM UI sends no
-  # token — mirrors the vite dev proxy on that branch).
+  # ── SEP side-car (feature build overlay) TEMPLATE ─────────────────────────
+  # bootstrap.sh renders this to pmm.conf (gitignored), filling the bearer from
+  # the generated .env; compose.yaml overlays the rendered file onto the stock
+  # nginx config. Base content is the stock pmm.conf from percona/pmm branch
+  # PMM-15216 plus the marked SEP blocks. Interim auth (Option D): pass a
+  # client-supplied bearer through; inject the SEP internal token otherwise
+  # (the PMM UI sends no token — mirrors the vite dev proxy on that branch;
+  # swapping to the Grafana SA token needs SEP-side support, SEP-1692).
   map $http_authorization $sep_authorization {
-    "" "Bearer 27d6ead2a9be260158e2ca8d98ab8f5a5fe7a56fa516e4c0aa2f2cb383b45f5d";
+    "" "Bearer __SEP_BEARER_TOKEN__";
     default $http_authorization;
   }
 
