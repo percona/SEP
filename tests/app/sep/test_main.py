@@ -927,6 +927,9 @@ class TestAppStateGuards:
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
 
+    @pytest.mark.skip(
+        reason="pmm feature-build branch: atw no longer declares requires_apps=('snippets',)"
+    )
     @pytest.mark.asyncio
     async def test_atw_json_route_503s_when_snippets_disabled(
         self, guarded_client: TestClient, session
