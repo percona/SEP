@@ -256,9 +256,14 @@ def _compile_nulls_last_ordering_mysql(
 ) -> str:
     """Render MySQL's ``ISNULL(<expr>) ASC, <expr> <direction>`` equivalent.
 
-    The interpolated text is the compiler's rendering of an allowlisted column
-    expression, never a client-supplied value; literals inside the expression stay
-    bound parameters.
+    The interpolated text is the compiler's own rendering of the wrapped
+    expression, never a client-supplied value: sort keys are allowlisted by
+    :attr:`~app.core.db.list_query.ListQuerySpec.sortable` before they reach the
+    construct, and :class:`NullsLastOrdering` coerces a raw string argument into a
+    bound parameter rather than SQL text. Path literals carried by
+    :func:`func_json_extract` use ``literal_execute``, so the dialect's literal
+    processor inlines them at execution -- the same rendering that function
+    documents, unchanged by the wrapper.
 
     :param element: The ordering construct being compiled.
     :param compiler: The active SQL compiler.

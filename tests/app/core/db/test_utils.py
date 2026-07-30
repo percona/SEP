@@ -236,19 +236,43 @@ class TestNullsLastOrdering:
         assert ascending != cache_key(ordering_table.c.parent_id, descending=True)
         assert ascending != cache_key(ordering_table.c.id, descending=False)
 
-    def test_expression_literals_remain_bound_parameters(self, ordering_table):
-        """Keep a wrapped expression's literals bound, never spliced into the SQL."""
+    def test_wrapped_expression_inlines_only_its_code_constant_path(
+        self, ordering_table
+    ):
+        """Render the ``literal_execute`` JSON path inline, identically in both terms.
+
+        ``func_json_extract`` builds its path with ``literal_execute``, so the
+        dialect's literal processor -- not a bound parameter -- emits it at
+        execution. The value is a code constant, and the wrapper renders the
+        expression once and reuses it, so both terms carry the same text.
+        """
         extract = func_json_extract(
             DatabaseDialect.MYSQL, ordering_table.c.meta, "title"
         )
+        query = select(ordering_table.c.id).order_by(NullsLastOrdering(extract))
+
+        executed = query.compile(
+            dialect=mysql.dialect(), compile_kwargs={"render_postcompile": True}
+        )
+
+        assert str(executed).endswith(
+            "ORDER BY ISNULL(json_extract(item.meta, '$.title')) ASC, "
+            "json_extract(item.meta, '$.title') ASC"
+        )
+        assert executed.params == {}
+
+    def test_raw_string_column_becomes_a_bound_parameter(self, ordering_table):
+        """Bind a raw string argument instead of splicing it into the ORDER BY."""
+        injected = "parent_id; DROP TABLE item --"
+
         compiled = (
             select(ordering_table.c.id)
-            .order_by(NullsLastOrdering(extract))
+            .order_by(NullsLastOrdering(injected))
             .compile(dialect=mysql.dialect())
         )
 
-        assert "$.title" not in str(compiled)
-        assert "$.title" in compiled.params.values()
+        assert "DROP TABLE" not in str(compiled)
+        assert injected in compiled.params.values()
 
 
 @pytest.mark.parametrize(
