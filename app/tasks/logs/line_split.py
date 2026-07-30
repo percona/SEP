@@ -20,15 +20,14 @@ chunks is never matched by Presidio and escapes redaction. Callers use this
 helper to withhold the trailing partial line until later bytes complete it.
 """
 
-# ``\n`` and ``\r``. A carriage return is treated as a terminator so that
-# ``\r``-driven progress output does not stall un-flushed on the live tail.
-# Both are ASCII (< 0x80), so they can never appear inside a multi-byte UTF-8
-# sequence -- splitting on either is inherently codepoint-safe.
-_LINE_TERMINATORS = (0x0A, 0x0D)
-
 
 def split_complete_lines(buf: bytes) -> tuple[bytes, bytes]:
     r"""Split ``buf`` at the last line terminator.
+
+    A carriage return is treated as a terminator alongside the newline so that
+    ``\r``-driven progress output does not stall un-flushed on the live tail.
+    Both are ASCII (< 0x80), so neither can appear inside a multi-byte UTF-8
+    sequence -- splitting on either is inherently codepoint-safe.
 
     :param buf: The raw (pre-anonymization) bytes fetched so far.
     :return: ``(complete, remainder)`` where ``complete`` is every byte up to
@@ -36,7 +35,7 @@ def split_complete_lines(buf: bytes) -> tuple[bytes, bytes]:
         trailing partial line to withhold. When ``buf`` holds no terminator the
         whole buffer is withheld as the remainder.
     """
-    for index in range(len(buf) - 1, -1, -1):
-        if buf[index] in _LINE_TERMINATORS:
-            return buf[: index + 1], buf[index + 1 :]
-    return b"", buf
+    index = max(buf.rfind(b"\n"), buf.rfind(b"\r"))
+    if index == -1:
+        return b"", buf
+    return buf[: index + 1], buf[index + 1 :]
