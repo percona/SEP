@@ -87,6 +87,22 @@ SUPERSEDED_ALLOCATION_EPOCH = 100
 CURRENT_ALLOCATION_EPOCH = 200
 SEED_OFFSET = 3
 LEGACY_SEED_PRODUCER_OFFSET = 5
+# Line-split anonymization fixtures: a 16-digit card token straddling frames.
+SPLIT_TOKEN_FIRST_FRAME_OFFSET = 13  # raw EOF after "card=41111111"
+SPLIT_TOKEN_LINE_EOF_OFFSET = 22  # raw EOF after the completed "card=...\n" line
+WITHHELD_PARTIAL_FRAME_EOF_OFFSET = 12  # raw EOF of "ok\ncard=41"
+WITHHELD_PARTIAL_RESUME_OFFSET = 5  # cursor rolled back over the withheld "card=41"
+MULTIBYTE_LINE_EOF_OFFSET = 12  # raw EOF of "café\n€uro" (6 + 6 UTF-8 bytes)
+MULTIBYTE_WITHHELD_BYTES = 6  # raw byte length of the withheld "€uro"
+
+
+def _redact_card_token(text, _entities):
+    """Redact a full 16-digit card token, matching only whole lines.
+
+    Stand-in for ``anonymize_text`` that only matches the complete number, so a
+    token split across chunks is redacted only once the line is reassembled.
+    """
+    return text.replace("4111111111111111", "[REDACTED]")
 
 
 def _build_task(
@@ -1620,7 +1636,7 @@ class TestGetLogsForAllocation:
         mock_nomad_cls.return_value = mock_backend
         mock_anonymize.return_value = "REDACTED"
 
-        raw_msg = b64encode(b"sensitive data").decode()
+        raw_msg = b64encode(b"sensitive data\n").decode()
         log_data = json.dumps({"Data": raw_msg, "Offset": 100})
         mock_backend.client.stream_logs.stream.return_value = log_data
 
@@ -1716,7 +1732,7 @@ class TestGetLogsForAllocation:
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_anonymize.return_value = "[REDACTED]"
-        raw_bytes = b"4111-1111-1111-1111"
+        raw_bytes = b"4111-1111-1111-1111\n"
         raw_msg = b64encode(raw_bytes).decode()
         log_data = json.dumps({"Data": raw_msg, "Offset": len(raw_bytes)})
         mock_backend.client.stream_logs.stream.return_value = log_data
@@ -1750,7 +1766,7 @@ class TestGetLogsForAllocation:
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_anonymize.return_value = "[REDACTED]"
-        raw_bytes = b"4111-1111-1111-1111"
+        raw_bytes = b"4111-1111-1111-1111\n"
         raw_msg = b64encode(raw_bytes).decode()
         first_log_data = json.dumps({"Data": raw_msg, "Offset": len(raw_bytes)})
         mock_backend.client.stream_logs.stream.side_effect = [
@@ -1788,6 +1804,187 @@ class TestGetLogsForAllocation:
         assert second["run-script"]["stdout"] == ""
         assert second["run-script"]["stdout_last_offset"] == len(raw_bytes)
         assert second["run-script"]["stdout_producer_offset"] == len("[REDACTED]")
+
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_redacts_token_split_across_frames(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert a token split across two frames of one fetch is redacted.
+
+        Per-frame anonymization would see ``card=41111111`` and
+        ``11111111`` separately and match neither; joining the frames before
+        anonymization lets Presidio see the whole token.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = _redact_card_token
+        frame_one = json.dumps(
+            {
+                "Data": b64encode(b"card=41111111").decode(),
+                "Offset": SPLIT_TOKEN_FIRST_FRAME_OFFSET,
+            }
+        )
+        frame_two = json.dumps(
+            {
+                "Data": b64encode(b"11111111\n").decode(),
+                "Offset": SPLIT_TOKEN_LINE_EOF_OFFSET,
+            }
+        )
+        mock_backend.client.stream_logs.stream.return_value = frame_one + frame_two
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+
+        executor = _build_executor()
+        result = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+
+        assert result["run-script"]["stdout"] == "card=[REDACTED]\n"
+        assert "4111" not in result["run-script"]["stdout"]
+        assert result["run-script"]["stdout_last_offset"] == SPLIT_TOKEN_LINE_EOF_OFFSET
+        assert result["run-script"]["stdout_withheld"] == 0
+
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_withholds_partial_line_across_cycles(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert a token straddling a sync-cycle boundary is redacted.
+
+        Cycle one ends mid-token with no newline: the partial line is withheld
+        and the Nomad cursor is rolled back by its raw byte length, so cycle two
+        re-fetches the bytes, joins the completed line, and redacts it.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = _redact_card_token
+        cycle_one = json.dumps(
+            {
+                "Data": b64encode(b"card=41111111").decode(),
+                "Offset": SPLIT_TOKEN_FIRST_FRAME_OFFSET,
+            }
+        )
+        cycle_two = json.dumps(
+            {
+                "Data": b64encode(b"card=4111111111111111\n").decode(),
+                "Offset": SPLIT_TOKEN_LINE_EOF_OFFSET,
+            }
+        )
+        mock_backend.client.stream_logs.stream.side_effect = [
+            cycle_one,  # run-script stdout, cycle 1
+            "",  # run-script stderr, cycle 1
+            cycle_two,  # run-script stdout, cycle 2
+            "",  # run-script stderr, cycle 2
+        ]
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+
+        executor = _build_executor()
+        first = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+
+        assert first["run-script"]["stdout"] == ""
+        assert first["run-script"]["stdout_last_offset"] == 0  # rolled back past token
+        assert first["run-script"]["stdout_withheld"] == SPLIT_TOKEN_FIRST_FRAME_OFFSET
+
+        second = executor.get_logs_for_allocation(
+            alloc,
+            initial_logs={
+                "run-script": {
+                    "stdout_last_offset": first["run-script"]["stdout_last_offset"],
+                    "stdout_producer_offset": first["run-script"][
+                        "stdout_producer_offset"
+                    ],
+                }
+            },
+            anonymize_entities={PIIEntity.CREDIT_CARD},
+        )
+
+        assert second["run-script"]["stdout"] == "card=[REDACTED]\n"
+        assert "4111" not in second["run-script"]["stdout"]
+        assert second["run-script"]["stdout_last_offset"] == SPLIT_TOKEN_LINE_EOF_OFFSET
+        assert second["run-script"]["stdout_withheld"] == 0
+
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_multibyte_split_not_corrupted(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert the line split never cleaves a multi-byte UTF-8 codepoint.
+
+        The complete portion ends after a multi-byte char and the withheld
+        remainder both starts and continues with multi-byte chars; the emitted
+        delta must decode cleanly and the cursor roll back by the exact raw byte
+        length of the remainder.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = _redact_card_token
+        raw_bytes = "café\n€uro".encode()
+        frame = json.dumps(
+            {
+                "Data": b64encode(raw_bytes).decode(),
+                "Offset": MULTIBYTE_LINE_EOF_OFFSET,
+            }
+        )
+        mock_backend.client.stream_logs.stream.return_value = frame
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+
+        executor = _build_executor()
+        result = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+
+        assert result["run-script"]["stdout"] == "café\n"
+        assert result["run-script"]["stdout_withheld"] == MULTIBYTE_WITHHELD_BYTES
+        assert result["run-script"]["stdout_last_offset"] == (
+            MULTIBYTE_LINE_EOF_OFFSET - MULTIBYTE_WITHHELD_BYTES
+        )
+
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_flush_partial_emits_newlineless_tail(
+        self, mock_nomad_cls, mock_anonymize
+    ):
+        """Assert flush_partial emits a trailing line that never gets a newline."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = _redact_card_token
+        raw_bytes = b"card=4111111111111111"  # no terminating newline
+        frame = json.dumps(
+            {"Data": b64encode(raw_bytes).decode(), "Offset": len(raw_bytes)}
+        )
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+        executor = _build_executor()
+
+        mock_backend.client.stream_logs.stream.return_value = frame
+        withheld = executor.get_logs_for_allocation(
+            alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+        )
+        assert withheld["run-script"]["stdout"] == ""
+        assert withheld["run-script"]["stdout_withheld"] == len(raw_bytes)
+
+        mock_backend.client.stream_logs.stream.return_value = frame
+        flushed = executor.get_logs_for_allocation(
+            alloc,
+            anonymize_entities={PIIEntity.CREDIT_CARD},
+            flush_partial=True,
+        )
+        assert flushed["run-script"]["stdout"] == "card=[REDACTED]"
+        assert flushed["run-script"]["stdout_withheld"] == 0
+        assert flushed["run-script"]["stdout_last_offset"] == len(raw_bytes)
 
 
 class TestNomadLogStreaming:
@@ -1878,6 +2075,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
+                pending=bytearray(),
             )
 
         assert state == "running"
@@ -1981,6 +2179,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
+                pending=bytearray(),
             )
 
         assert state == _NOMAD_LOG_STREAM_CLIENT_ERROR
@@ -2023,6 +2222,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
+                pending=bytearray(),
             )
 
         assert state == _NOMAD_LOG_STREAM_SOCK_TIMEOUT
@@ -2065,6 +2265,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
+                pending=bytearray(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -2083,6 +2284,153 @@ class TestNomadLogStreaming:
         assert all(log.type == TaskLogType.STDOUT for log in logs)
         offsets = [log.offset for log in logs]
         assert offsets == sorted(offsets)
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_redacts_token_split_across_frames(
+        self, mock_anonymize
+    ):
+        """Assert a token split across two live frames is redacted once whole."""
+        mock_anonymize.side_effect = _redact_card_token
+        chunks = [
+            self._nomad_log_frame(
+                msg="card=41111111", offset=SPLIT_TOKEN_FIRST_FRAME_OFFSET
+            ),
+            self._nomad_log_frame(msg="11111111\n", offset=SPLIT_TOKEN_LINE_EOF_OFFSET),
+        ]
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = {
+            "ID": "alloc-stream",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "TaskStates": {
+                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
+            },
+        }
+        params = {
+            "task": "run-script",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_request", return_value=mock_ctx):
+            await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="run-script",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=bytearray(),
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [log.msg for log in logs] == ["card=[REDACTED]\n"]
+        assert "4111" not in logs[0].msg
+        assert logs[0].offset == SPLIT_TOKEN_LINE_EOF_OFFSET
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_withholds_partial_and_rolls_back_offset(
+        self, mock_anonymize
+    ):
+        """Assert the emitted offset is rolled back over a withheld partial line."""
+        mock_anonymize.side_effect = _redact_card_token
+        chunks = [
+            self._nomad_log_frame(
+                msg="ok\ncard=41", offset=WITHHELD_PARTIAL_FRAME_EOF_OFFSET
+            )
+        ]
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = {
+            "ID": "alloc-stream",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "TaskStates": {
+                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
+            },
+        }
+        params = {
+            "task": "run-script",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+        pending = bytearray()
+
+        with patch.object(executor, "_request", return_value=mock_ctx):
+            await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="run-script",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [log.msg for log in logs] == ["ok\n"]
+        # raw EOF (12) minus the 7 withheld bytes of "card=41"
+        assert logs[0].offset == WITHHELD_PARTIAL_RESUME_OFFSET
+        assert bytes(pending) == b"card=41"  # carried for the next frame
+        assert (
+            params["offset"] == WITHHELD_PARTIAL_FRAME_EOF_OFFSET
+        )  # raw resume cursor
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch.object(NomadExecutor, "_consume_nomad_log_stream", new_callable=AsyncMock)
+    async def test_push_logs_flushes_withheld_tail_on_stream_end(
+        self, mock_consume, mock_anonymize
+    ):
+        """Assert a newline-less withheld tail is flushed before the end sentinel."""
+        mock_anonymize.side_effect = _redact_card_token
+
+        async def fake_consume(**kwargs):
+            kwargs["pending"].extend(b"card=4111111111111111")
+            return (_NOMAD_LOG_STREAM_SOCK_TIMEOUT, kwargs["alloc"], None)
+
+        mock_consume.side_effect = fake_consume
+
+        executor = _build_executor()
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_log_stream_timeout"):
+            await executor._push_logs_to_queue(
+                self._alloc_for_logs(),
+                "run-script",
+                TaskLogType.STDOUT,
+                queue,
+                start_offset=0,
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert logs[0].msg == "card=[REDACTED]"
+        assert "4111" not in logs[0].msg
+        assert logs[-1].msg is None  # end-of-stream sentinel comes last
 
     @pytest.mark.asyncio
     async def test_consume_nomad_log_stream_split_frame_reassembly(self):
@@ -2120,6 +2468,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
+                pending=bytearray(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -2175,6 +2524,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
+                pending=bytearray(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -2242,6 +2592,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
+                pending=bytearray(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3495,6 +3846,103 @@ class TestDrainTerminalLogs:
         assert stdout == "out\ntail\n"
         assert stderr == "err\ndone\n"
         assert mock_sleep.await_count == self.EXPECTED_SLEEPS_ALL_STREAMS_DRAINED
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_terminal_drain_flushes_newlineless_anonymized_tail(
+        self,
+        mock_nomad_cls,
+        mock_sleep,
+        mock_anonymize,
+        session,
+        created_task_with_history,
+    ):
+        """Assert a newline-less anonymized tail is flushed, not withheld forever."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = _redact_card_token
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {("run-script", TaskLogType.STDOUT): ["", "card=4111111111111111"]}
+        )
+        history = created_task_with_history
+        history.anonymize_mask = PIIEntity.CREDIT_CARD.value
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        content = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert content == "card=[REDACTED]"
+        assert "4111" not in content
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_terminal_drain_not_fooled_by_withheld_partial(
+        self,
+        mock_nomad_cls,
+        mock_sleep,
+        mock_anonymize,
+        session,
+        created_task_with_history,
+    ):
+        """Assert the early-exit does not fire while a stream withholds a partial.
+
+        Both streams advance then quiet, which would normally early-exit; but
+        stdout still holds a withheld partial, so the loop must poll the full
+        window and the completed tail must be redacted on the final flush.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = _redact_card_token
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {
+                ("run-script", TaskLogType.STDOUT): [
+                    "",
+                    "tail1\n",
+                    "tail1\ncard=4111111111111111",
+                ],
+                ("run-script", TaskLogType.STDERR): ["", "eout\n"],
+            }
+        )
+        history = created_task_with_history
+        history.anonymize_mask = PIIEntity.CREDIT_CARD.value
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(
+            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+        )
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        stdout = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert stdout == "tail1\ncard=[REDACTED]"
+        assert "4111" not in stdout
+        assert mock_sleep.await_count == self.DRAIN_MAX_ATTEMPTS
 
     @pytest.mark.asyncio
     @patch(
