@@ -21,8 +21,9 @@ import pytest
 import pytest_asyncio
 from fastapi import Depends, FastAPI, status
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import col, SQLModel
+from sqlmodel import col, select, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
@@ -177,6 +178,19 @@ class TestResolveSort:
         """Raise ``UnknownSortKeyError`` after stripping ``-`` from an unknown key."""
         with pytest.raises(UnknownSortKeyError):
             _spec().resolve_sort("-evil")
+
+    @pytest.mark.parametrize("raw_sort", [None, "-name"], ids=["asc", "desc"])
+    def test_resolved_ordering_renders_mysql_isnull_idiom(self, raw_sort) -> None:
+        """Emit MySQL's ``ISNULL`` idiom instead of the unparsable ``NULLS LAST``."""
+        order_by = _spec().resolve_sort(raw_sort)
+
+        rendered = str(
+            select(col(LQItem.id)).order_by(*order_by).compile(dialect=mysql.dialect())
+        )
+
+        assert "NULLS LAST" not in rendered
+        assert "ISNULL(" in rendered
+        assert rendered.rstrip().endswith("id ASC")
 
 
 class TestBuildSearchPredicate:

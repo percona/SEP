@@ -82,7 +82,34 @@ def test_add_creates_fragment(repo):
     assert exit_code == 0
     fragment = repo / "changelog.d" / "SEP-503.added.md"
     assert fragment.exists()
-    assert fragment.read_text(encoding="utf-8") == "New alert\n"
+    assert fragment.read_text(encoding="utf-8") == "New alert.\n"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("New alert", "New alert."),
+        ("New alert.", "New alert."),
+        ("Is it ready?", "Is it ready?"),
+        ("Stop!", "Stop!"),
+        ("Pass `--force` to overwrite", "Pass `--force` to overwrite."),
+        ('He said "stop."', 'He said "stop."'),
+        ("Drop the flag (deprecated)", "Drop the flag (deprecated)."),
+    ],
+)
+def test_add_normalizes_terminal_punctuation(repo, message, expected):
+    """Verify that ``add`` appends a terminal period only when the message lacks sentence punctuation.
+
+    :param repo: Test repo fixture.
+    :param message: The description passed to ``add``.
+    :param expected: The description as written to the fragment.
+    """
+    exit_code = changelog.main(
+        ["add", "--ticket", "SEP-503", "--section", "added", "--message", message],
+    )
+    assert exit_code == 0
+    fragment = repo / "changelog.d" / "SEP-503.added.md"
+    assert fragment.read_text(encoding="utf-8") == f"{expected}\n"
 
 
 def test_add_rejects_duplicate_without_force(repo, capsys):
@@ -126,7 +153,7 @@ def test_add_force_overwrites(repo):
     assert exit_code == 0
     assert (repo / "changelog.d" / "SEP-503.added.md").read_text(
         encoding="utf-8",
-    ) == "Second\n"
+    ) == "Second.\n"
 
 
 def test_add_rejects_invalid_ticket(repo, capsys):
