@@ -73,7 +73,7 @@ class TestShouldInlineEncrypt:
         self, bin_cmd: str, keyfile: str | None, expected: bool | None
     ) -> None:
         """Assert each (bin_cmd, keyfile) combination yields the expected gate result."""
-        assert bool(_should_inline_encrypt(bin_cmd, keyfile)) is expected
+        assert _should_inline_encrypt(bin_cmd, keyfile) is expected
 
     def test_mariadb_backup_excluded_even_with_keyfile(self) -> None:
         """Assert mariadb-backup never gates the inline flag on, keyfile or not."""
@@ -143,3 +143,75 @@ class TestInlineEncryptWiredIntoCommand:
             and c.value.startswith("--encrypt")
         ]
         assert appended == ["--encrypt=AES256", "--encrypt-key-file=%s"]
+
+
+def _xtrabackup_run_node() -> ast.FunctionDef:
+    """Return ``Xtrabackup.run``'s FunctionDef, raising if renamed/removed."""
+    for node in ast.walk(xtrabackup_payload_tree()):
+        if isinstance(node, ast.ClassDef) and node.name == "Xtrabackup":
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and item.name == "run":
+                    return item
+    raise RuntimeError(f"Xtrabackup.run not found in {XTRABACKUP_PAYLOAD_PATH}.")
+
+
+class TestAes256VerifyWiredIntoRun:
+    """Assert ``run`` still encrypts stragglers then verifies the AES-256 dir.
+
+    ``encrypt_files_aes256`` and ``is_encrypted_dir(method="aes256")`` are each
+    tested in isolation elsewhere, so they stay green even if the call site in
+    ``run`` is deleted. This structural assertion pins the integration that
+    actually closes the "AES-256 shipped unverified" gap.
+    """
+
+    def _verify_if(self) -> ast.If:
+        """Return the single ``if ...:`` block that calls ``encrypt_files_aes256``."""
+        ifs = [
+            node
+            for node in ast.walk(_xtrabackup_run_node())
+            if isinstance(node, ast.If)
+            and node.body
+            and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Call)
+            and isinstance(node.body[0].value.func, ast.Attribute)
+            and node.body[0].value.func.attr == "encrypt_files_aes256"
+        ]
+        assert len(ifs) == 1, (
+            "expected exactly one `if ...:` block calling `encrypt_files_aes256` "
+            f"in Xtrabackup.run, found {len(ifs)}"
+        )
+        return ifs[0]
+
+    def test_verify_follows_encrypt_and_checks_aes256_method(self) -> None:
+        """Assert the nested check calls ``is_encrypted_dir`` with ``method="aes256"``."""
+        nested_ifs = [
+            stmt for stmt in self._verify_if().body if isinstance(stmt, ast.If)
+        ]
+        assert len(nested_ifs) == 1, "expected exactly one nested verification `if`"
+        test = nested_ifs[0].test
+        assert isinstance(test, ast.UnaryOp)
+        assert isinstance(test.op, ast.Not)
+        call = test.operand
+        assert isinstance(call, ast.Call)
+        assert isinstance(call.func, ast.Name)
+        assert call.func.id == "is_encrypted_dir"
+        methods = [
+            kw.value.value
+            for kw in call.keywords
+            if kw.arg == "method" and isinstance(kw.value, ast.Constant)
+        ]
+        assert methods == ["aes256"]
+
+    def test_verify_failure_raises_backup_error(self) -> None:
+        """Assert the nested check raises ``BackupError`` on verification failure."""
+        nested_if = next(
+            stmt for stmt in self._verify_if().body if isinstance(stmt, ast.If)
+        )
+        raises = [
+            stmt.exc.func.id
+            for stmt in nested_if.body
+            if isinstance(stmt, ast.Raise)
+            and isinstance(stmt.exc, ast.Call)
+            and isinstance(stmt.exc.func, ast.Name)
+        ]
+        assert raises == ["BackupError"]
