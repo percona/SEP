@@ -34,7 +34,6 @@ import yaml
 from fastapi import status
 from pytest_mock import MockerFixture
 
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.app import app as mysql_backups_app
@@ -94,7 +93,7 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
     remapped_username = None
 
     def test_create_injects_extras(self, contract_client: Any) -> None:
-        """Create binds the context provider; assert 201 + the service_type extra.
+        """Assert create binds the context provider and omits internal fields.
 
         Overrides the generic suite method: the per-mode ``FailRule``s and
         upload-consistency validator defeat the Polyfactory body, so a hand-built
@@ -105,10 +104,11 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         response = contract_client.post(f"{base}/", json=_valid_body())
 
         assert response.status_code == status.HTTP_201_CREATED, response.text
-        assert response.json()["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in response.json()
+        assert "owner" not in response.json()
 
     def test_update_derived_injects_extras(self, contract_client: Any) -> None:
-        """Derived PUT binds the context provider; assert 200 + the service_type extra.
+        """Assert the derived PUT binds the context provider and omits internal fields.
 
         Overrides the generic suite method for the same gating reason as
         :meth:`test_create_injects_extras`.
@@ -121,7 +121,8 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         )
 
         assert response.status_code == status.HTTP_200_OK, response.text
-        assert response.json()["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in response.json()
+        assert "owner" not in response.json()
 
     def _valid_update_body(self, *, task_name: str) -> dict[str, Any] | None:
         """Return the gated valid PUT body; the generic Polyfactory body 422s here.
@@ -142,7 +143,8 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         body = response.json()
         assert body["backup_type"] == BackupType.MYDUMPER.value
         assert body["hostname"] == SYNTH_EXECUTOR_HOST
-        assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in body
+        assert "owner" not in body
         assert "anonymize_mask" in body
         assert "anonymized_entities" in body
 
@@ -328,7 +330,8 @@ def test_update_returns_create_mirror_shape(regular_user: Any) -> None:
     assert body["backup_type"] == BackupType.XTRABACKUP.value
     assert body["hostname"] == SYNTH_EXECUTOR_HOST
     assert "connectivity_warning" in body
-    assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+    assert "service_type" not in body
+    assert "owner" not in body
     assert "anonymize_mask" in body
     assert "anonymized_entities" in body
 

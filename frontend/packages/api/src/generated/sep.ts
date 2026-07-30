@@ -799,11 +799,16 @@ export interface paths {
      * Atw List Incident Executions
      * @description List one incident's snippet executions, newest first, with live task status.
      *
+     *     Each row also reports the command line its snippet ran with, credential values
+     *     masked. A row whose snippet or upstream payload cannot supply what masking
+     *     needs reports its arguments as withheld; the page still returns.
+     *
      *     :param session: The database session.
      *     :param incident: The incident resolved from the ``incident_id`` path parameter.
      *     :param pagination: The offset/limit window for the page.
      *     :param tasks_api: The authenticated Tasks API client.
-     *     :return: A paginated page of executions hydrated from the Tasks API.
+     *     :return: A paginated page of executions hydrated from the Tasks API, each with
+     *         its masked arguments or the reason they are absent.
      */
     get: operations['atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get'];
     put?: never;
@@ -860,7 +865,7 @@ export interface paths {
     put?: never;
     /**
      * Atw Start Send Job
-     * @description Start delivering the selected executions' output files to the support case.
+     * @description Start delivering the selected executions' output files and logs to the support case.
      *
      *     The row is created before the task is queued so a broker failure is still
      *     recorded as a failed attempt rather than vanishing: the row is the only place
@@ -4806,11 +4811,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5157,8 +5159,20 @@ export interface components {
      *     :param started_at: When the upstream execution started.
      *     :param finished_at: When the upstream execution finished.
      *     :param has_logs: Whether the upstream execution has readable logs.
+     *     :param masked_args: The command line the snippet ran with, credential values
+     *         replaced by a fixed-width mask. ``None`` together with
+     *         ``args_withheld=False`` means the execution recorded no arguments.
+     *         Defaults to ``None``.
+     *     :param args_withheld: Whether the arguments were suppressed because they
+     *         could not be masked safely -- distinguishing that from an execution that
+     *         genuinely ran with none. Defaults to ``False``.
      */
     atw__ATWIncidentExecutionResponse: {
+      /**
+       * Args Withheld
+       * @default false
+       */
+      args_withheld: boolean;
       /**
        * Created At
        * Format: date-time
@@ -5173,6 +5187,8 @@ export interface components {
        * Format: uuid4
        */
       id: string;
+      /** Masked Args */
+      masked_args?: string | null;
       /** Snippet Filename */
       snippet_filename: string;
       /** Started At */
@@ -5356,7 +5372,8 @@ export interface components {
      * @description Define the payload starting one diagnostics send.
      *
      *     :param case_ref: The support-case reference to attach the bundle to.
-     *     :param execution_ids: The incident executions whose output files to send.
+     *     :param execution_ids: The incident executions whose output files and logs to
+     *         send.
      */
     atw__AtwSendJobWrite: {
       /** Case Ref */
@@ -5515,11 +5532,8 @@ export interface components {
       latest_pbm_status?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5560,11 +5574,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5772,11 +5783,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5826,11 +5834,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6006,13 +6011,10 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6053,11 +6055,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6270,11 +6269,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6309,11 +6305,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6484,13 +6477,10 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6500,16 +6490,20 @@ export interface components {
      * @description Represent the universal task-response surface for standard task apps.
      *
      *     Carry the fields shared by every standard ``TaskExecutionApp`` response:
-     *     the task identity and ownership, the resolved execution status, the stored
-     *     configuration, and the audit/anonymization metadata. A standard app whose
-     *     response has no app-specific fields uses this model directly; an app with
-     *     extras subclasses it. The model is parametrized by the task ``owner``, which
-     *     drives the ``anonymized_entities`` default-entity lookup.
+     *     the task identity, the resolved execution status, the stored configuration,
+     *     and the audit/anonymization metadata. A standard app whose response has no
+     *     app-specific fields uses this model directly; an app with extras subclasses
+     *     it. The model is parametrized by the task ``owner``, which drives the
+     *     ``anonymized_entities`` default-entity lookup but is excluded from the
+     *     serialized detail/list payload (as is ``service_type``).
      *
      *     :param name: The task name.
-     *     :param owner: The entity or user that owns the task.
+     *     :param owner: The task-category owner (for example ``BACKUPS``). Kept
+     *         as a model attribute for ``anonymized_entities`` and server-side
+     *         filtering; excluded from the serialized detail/list payload.
      *     :param service_type: The database service type, stamped by the builder;
-     *         ``None`` for an app without a fixed service type.
+     *         ``None`` for an app without a fixed service type. Excluded from the
+     *         serialized detail/list payload.
      *     :param status: The latest known execution status; ``None`` until the task
      *         runs.
      *     :param last_executed_at: The most recent time the task finished executing
@@ -6566,11 +6560,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -7642,11 +7633,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8590,11 +8578,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8830,13 +8815,10 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;

@@ -23,7 +23,6 @@ import yaml
 from fastapi import status
 
 from app.core.exceptions import HTTPNotFoundException
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.mysql_backups.deps import get_backups_task
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
@@ -183,7 +182,8 @@ class TestListEndpoint:
         assert row["name"] == task["name"]
         assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
         assert row["backup_type"] == BackupType.MYDUMPER.value
-        assert row["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in row
+        assert "owner" not in row
         assert "anonymize_mask" in row
         assert "anonymized_entities" in row
         mock_task_api_dep.post.assert_awaited_once_with(
@@ -251,7 +251,8 @@ class TestDetailEndpoint:
         body = response.json()
         assert body["name"] == task["name"]
         assert body["backup_type"] == BackupType.MYDUMPER.value
-        assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in body
+        assert "owner" not in body
         assert "anonymize_mask" in body
         assert "anonymized_entities" in body
 
