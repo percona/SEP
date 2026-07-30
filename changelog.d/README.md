@@ -46,12 +46,6 @@ lacks one (recognising `.`, `!` and `?`, and looking past a trailing `)`, `]`,
 is the only way to end up without one. Capitalise the first word; do not add a
 `- SEP-XXX:` prefix, which assembly supplies.
 
-This also binds on a **plan** that specifies the `make changelog-add` invocation
-verbatim: the `MSG=` string in a plan is prose the implementer transcribes, so
-its punctuation is the plan author's to get right (see
-`.claude/skills/shared/claim-verification.md` § "Prose a plan specifies verbatim
-is still unverified").
-
 **Skip this step when any of these applies:**
 
 1. **Purely internal changes** — CI, refactoring, tooling, docs with no
