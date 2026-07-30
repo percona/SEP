@@ -19,7 +19,7 @@ This definition replaces the hand-written JSON API router and schema: the
 registry discovers the exported ``app`` and mounts its derived router, which
 serves the byte-identical schema, list, detail, create, update, execute, and
 delete surfaces. Create and update are derived from the model-first
-:class:`~app.sep.apps.mysql_backups.models.BackupCreate` through the
+:class:`~app.sep.apps.mysql_backups.forms.BackupCreate` through the
 ``run-python`` spec builder, with the ``backup_type``-aware
 :func:`~app.sep.apps.mysql_backups.deps.build_mysql_backups_api_task_response`
 stamping ``backup_type`` / ``hostname`` on list, detail, and create; delete is
@@ -42,11 +42,7 @@ from app.sep.apps.framework.apps import (
 from app.sep.apps.framework.schema import RelatedApp
 from app.sep.apps.mysql_backups.api_routes import router as catalog_router
 from app.sep.apps.mysql_backups.deps import build_mysql_backups_api_task_response
-from app.sep.apps.mysql_backups.models import (
-    BackupCreate,
-    BackupTaskResponse,
-    OWNER,
-)
+from app.sep.apps.mysql_backups.forms import BackupCreate, BackupTaskResponse, OWNER
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.mysql_backups.restore.app import app as restore_app
 from app.sep.apps.mysql_backups.routes import router as jinja_router

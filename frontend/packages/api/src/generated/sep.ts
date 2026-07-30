@@ -1814,19 +1814,21 @@ export interface paths {
     };
     /**
      * List Service Backups
-     * @description Return a MySQL service's completed backup runs, newest run first.
+     * @description Return a page of a MySQL service's completed backup runs, newest run first.
      *
      *     The ``service_id`` path parameter is resolved by
      *     :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an
      *     unknown service surface as a ``404``. A resolvable service with no recorded
-     *     runs yields an empty list, so a caller building a restore selector is never
+     *     runs yields an empty page, so a caller building a restore selector is never
      *     blocked by an empty catalog but is still told when the service itself is
      *     unknown.
      *
      *     :param service: The inventory service resolved from the ``service_id`` path
      *         parameter.
      *     :param session: The database session the catalog is queried on.
-     *     :return: The service's recorded backup runs, newest run first.
+     *     :param pagination: The requested offset/limit window.
+     *     :return: The requested page of the service's recorded backup runs, newest
+     *         run first.
      */
     get: operations['mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get'];
     put?: never;
@@ -8577,6 +8579,8 @@ export interface components {
      *     :param service_name: The inventory service the backup was taken from.
      *     :param hostname: The backup target host.
      *     :param backup_type: The backup tool, ``"M"`` (mydumper) or ``"X"`` (xtrabackup).
+     *         Narrower than :class:`BackupType`: binlog runs are never catalogued, so
+     *         ``"B"`` never appears here.
      *     :param location: The resolved on-disk directory the run produced.
      *     :param upload_destination: The upload destination when one was configured.
      *     :param size_bytes: The backup size in bytes, when the run reported it.
@@ -8659,6 +8663,17 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
+    /** PaginatedResponse[BackupRunResponse] */
+    mysql_backups__PaginatedResponse_BackupRunResponse_: {
+      /** Items */
+      items: components['schemas']['mysql_backups__BackupRunResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[BackupTaskResponse] */
     mysql_backups__PaginatedResponse_BackupTaskResponse_: {
       /** Items */
@@ -13094,7 +13109,10 @@ export interface operations {
   };
   mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get: {
     parameters: {
-      query?: never;
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
       header?: never;
       path: {
         service_id: number;
@@ -13109,7 +13127,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['mysql_backups__BackupRunResponse'][];
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupRunResponse_'];
         };
       };
       /** @description Validation Error */

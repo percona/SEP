@@ -85,11 +85,11 @@ def _history(
 
 @pytest.mark.usefixtures("_recorder_uses_test_session")
 class TestRecordsSuccessfulRuns:
-    """A successful mydumper/xtrabackup run leaves exactly one full record."""
+    """Leave exactly one full record for a successful mydumper/xtrabackup run."""
 
     @pytest.mark.asyncio
     async def test_mydumper_success_records_all_fields(self, session) -> None:
-        """A full mydumper result maps onto every record field."""
+        """Map a full mydumper result onto every record field."""
         await record_backup_run(
             session,
             _history(backup_type="M"),
@@ -116,7 +116,7 @@ class TestRecordsSuccessfulRuns:
     async def test_xtrabackup_incremental_location_stored_verbatim(
         self, session
     ) -> None:
-        """The incremental layout is a different location string, stored as-is."""
+        """Store the incremental layout's different location string as-is."""
         incremental = "/data/backups/xtrabackup/svc-a/_incrementals/20260729"
         await record_backup_run(
             session,
@@ -132,13 +132,13 @@ class TestRecordsSuccessfulRuns:
 
 @pytest.mark.usefixtures("_recorder_uses_test_session")
 class TestPartialResults:
-    """A success that reports nothing/partial still records what is available."""
+    """Record what is available even when a success reports nothing or partial data."""
 
     @pytest.mark.asyncio
     async def test_none_result_records_run_with_empty_artifact_fields(
         self, session
     ) -> None:
-        """A success reporting no result still records the run, fields empty."""
+        """Record the run with empty fields when a success reports no result."""
         await record_backup_run(session, _history(backup_type="M"), None)
 
         records = await MysqlBackupRunManager.list(session)
@@ -152,7 +152,7 @@ class TestPartialResults:
 
     @pytest.mark.asyncio
     async def test_partial_result_records_reported_fields_only(self, session) -> None:
-        """A partial result stores what was reported and leaves the rest empty."""
+        """Store what a partial result reported and leave the rest empty."""
         await record_backup_run(
             session,
             _history(backup_type="M"),
@@ -168,7 +168,7 @@ class TestPartialResults:
     async def test_malformed_result_fields_are_dropped_not_raised(
         self, session
     ) -> None:
-        """Wrong-typed remote-reported fields are nulled, never stored or raised."""
+        """Null wrong-typed remote-reported fields instead of storing or raising."""
         await record_backup_run(
             session,
             _history(backup_type="M"),
@@ -186,7 +186,7 @@ class TestPartialResults:
 
     @pytest.mark.asyncio
     async def test_bool_is_not_accepted_as_size(self, session) -> None:
-        """``True`` is an int subclass but never a valid size."""
+        """Reject ``True`` as a size even though it is an int subclass."""
         await record_backup_run(
             session, _history(backup_type="M"), {"size_bytes": True}
         )
@@ -195,7 +195,7 @@ class TestPartialResults:
 
     @pytest.mark.asyncio
     async def test_missing_service_name_still_records(self, session) -> None:
-        """A run whose task carries no service name is still recorded."""
+        """Record a run even when its task carries no service name."""
         await record_backup_run(
             session, _history(backup_type="M", service_name=None), None
         )
@@ -207,11 +207,11 @@ class TestPartialResults:
 
 @pytest.mark.usefixtures("_recorder_uses_test_session")
 class TestNoRecordCases:
-    """Binlog, non-success terminals, and unknown tools leave no record."""
+    """Leave no record for binlog runs, non-success terminals, and unknown tools."""
 
     @pytest.mark.asyncio
     async def test_binlog_success_records_nothing(self, session) -> None:
-        """A successful binlog run leaves no catalog record."""
+        """Leave no catalog record for a successful binlog run."""
         await record_backup_run(
             session,
             _history(backup_type="B"),
@@ -230,7 +230,7 @@ class TestNoRecordCases:
         ],
     )
     async def test_non_success_terminal_records_nothing(self, session, status) -> None:
-        """A failed, stopped, or lost terminal leaves no catalog record."""
+        """Leave no catalog record for a failed, stopped, or lost terminal."""
         await record_backup_run(
             session,
             _history(backup_type="M", status=status),
@@ -241,7 +241,7 @@ class TestNoRecordCases:
 
     @pytest.mark.asyncio
     async def test_unknown_backup_type_records_nothing(self, session) -> None:
-        """A run whose config carries no known backup type is not recorded."""
+        """Skip recording a run whose config carries no known backup type."""
         await record_backup_run(session, _history(backup_type=None), None)
 
         assert await MysqlBackupRunManager.list(session) == []
@@ -249,11 +249,11 @@ class TestNoRecordCases:
 
 @pytest.mark.usefixtures("_recorder_uses_test_session")
 class TestIdempotency:
-    """One record per run, even on re-invocation."""
+    """Keep one record per run, even on re-invocation."""
 
     @pytest.mark.asyncio
     async def test_double_invocation_records_once(self, session) -> None:
-        """Re-invoking the recorder for one run keeps a single record."""
+        """Keep a single record when re-invoking the recorder for one run."""
         history = _history(backup_type="M")
         result = {"backup_dir": "/data/backups/mydumper/svc-a/20260729"}
 
@@ -264,10 +264,10 @@ class TestIdempotency:
 
 
 class TestRecorderRegistration:
-    """The app stamps the recorder, and the tasks service can resolve it."""
+    """Stamp the recorder on the app and let the tasks service resolve it."""
 
     def test_app_stamps_and_resolves_the_recorder(self) -> None:
-        """The app declares the recorder path and it resolves to the callable."""
+        """Declare the recorder path on the app and resolve it to the callable."""
         from app.sep.apps.mysql_backups.app import app
 
         assert app.run_result_recorder == RUN_RESULT_RECORDER

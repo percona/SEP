@@ -18,7 +18,7 @@
 import inspect
 import os
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -447,7 +447,7 @@ async def postgres_session(postgres_engine: AsyncEngine) -> AsyncSession:
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async db session for testing."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",

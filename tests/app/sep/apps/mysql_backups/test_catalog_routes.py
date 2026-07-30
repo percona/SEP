@@ -23,9 +23,10 @@ from httpx import ASGITransport, AsyncClient, Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPNotFoundException
+from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.mysql_backups.catalog_models import MysqlBackupRun
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
+from app.sep.apps.mysql_backups.models import MysqlBackupRun
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -38,12 +39,16 @@ from app.sep.main import sep_app
 _URL = "/api/apps/mysql_backups/services/{service_id}/backups"
 
 
-def _service(name: str, service_id: int = 1) -> dict:
+def _service(
+    name: str,
+    service_id: int = 1,
+    service_type: ServiceTypeEnum = ServiceTypeEnum.MYSQL,
+) -> dict:
     """Build a minimal inventory service payload the route can resolve."""
     return {
         "id": service_id,
         "name": name,
-        "type": ServiceTypeEnum.MYSQL.value,
+        "type": service_type.value,
         "node_id": 1,
     }
 
@@ -52,7 +57,7 @@ def _inventory(
     returns: dict | None = None, *, raises: Exception | None = None
 ) -> AsyncMock:
     """Build a mock InventoryAPI whose ``get`` returns or raises."""
-    mock = AsyncMock()
+    mock = AsyncMock(spec=RemoteAPI)
     if raises is not None:
         mock.get.side_effect = raises
     else:
@@ -87,7 +92,7 @@ class TestServiceBackupsRoute:
 
     @pytest.mark.asyncio
     async def test_returns_records_newest_first(self, session, regular_user) -> None:
-        """The route returns a service's records newest first."""
+        """Return a service's records newest first."""
         for i in range(3):
             await MysqlBackupRunManager.save(
                 session,
@@ -106,16 +111,17 @@ class TestServiceBackupsRoute:
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert [r["location"] for r in body] == [
+        assert body["total"] == 3  # noqa: PLR2004
+        assert [r["location"] for r in body["items"]] == [
             "/data/xtrabackup/svc-a/2",
             "/data/xtrabackup/svc-a/1",
             "/data/xtrabackup/svc-a/0",
         ]
-        assert body[0]["backup_type"] == "X"
+        assert body["items"][0]["backup_type"] == "X"
 
     @pytest.mark.asyncio
     async def test_excludes_other_services(self, session, regular_user) -> None:
-        """The route returns only the requested service's records."""
+        """Return only the requested service's records."""
         await MysqlBackupRunManager.save(
             session,
             MysqlBackupRun(task_history_id=1, service_name="svc-a", backup_type="M"),
@@ -130,26 +136,28 @@ class TestServiceBackupsRoute:
         )
 
         body = response.json()
-        assert len(body) == 1
-        assert body[0]["service_name"] == "svc-a"
+        assert body["total"] == 1
+        assert body["items"][0]["service_name"] == "svc-a"
 
     @pytest.mark.asyncio
     async def test_existing_service_no_records_returns_empty(
         self, session, regular_user
     ) -> None:
-        """A resolvable service with no recorded runs returns an empty list."""
+        """Return an empty page for a resolvable service with no recorded runs."""
         response = await self._get(
             session, 1, _inventory(_service("svc-empty")), regular_user
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        body = response.json()
+        assert body["total"] == 0
+        assert body["items"] == []
 
     @pytest.mark.asyncio
     async def test_unknown_service_propagates_404(self, session, regular_user) -> None:
-        """An unknown service id is a real error, surfaced as ``404`` — not ``[]``.
+        """Surface an unknown service id as ``404`` — a real error, not an empty page.
 
-        Only a *resolvable* service with no recorded runs yields an empty list;
+        Only a *resolvable* service with no recorded runs yields an empty page;
         conflating the two would hide a bad service id from the caller.
         """
         response = await self._get(
@@ -161,7 +169,24 @@ class TestServiceBackupsRoute:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    @pytest.mark.asyncio
+    async def test_non_mysql_service_returns_404(self, session, regular_user) -> None:
+        """Surface a resolvable non-MySQL service as ``404``, not an empty page.
+
+        The catalog query filters on ``service_name`` alone, so serving a
+        wrong-type service would let a same-named non-MySQL service leak
+        another service's rows.
+        """
+        response = await self._get(
+            session,
+            1,
+            _inventory(_service("svc-a", service_type=ServiceTypeEnum.POSTGRESQL)),
+            regular_user,
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
     def test_requires_authentication(self, unauthenticated_client) -> None:
-        """The route rejects an unauthenticated caller."""
+        """Reject an unauthenticated caller."""
         response = unauthenticated_client.get(_URL.format(service_id=1))
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

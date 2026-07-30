@@ -134,36 +134,3 @@ def discover_plugin_migrations_and_models() -> list[str]:
             full_name = f"{plugins_pkg.__name__}.{plugin_dir.name}.models"
             _load_models_module(full_name, models_path)
     return version_dirs
-
-
-#: Plugins whose DB table lives in a self-contained ``catalog_models.py`` rather
-#: than in ``models.py``. Such a plugin keeps ``models.py`` heavy (importing
-#: ``app.inventory`` / ``app.tasks`` / the app framework for form-model
-#: construction), which cannot be loaded at migration time without bleeding those
-#: foreign tables into the sep autogenerate comparison; its table therefore lives
-#: in a self-contained module (importing only ``app.core`` / ``sqlalchemy`` /
-#: ``sqlmodel`` / ``pydantic``). Listed explicitly — one known file per entry —
-#: rather than scanned for, so migration metadata stays deterministic.
-_CATALOG_MODEL_PLUGINS = ("mysql_backups",)
-
-
-def load_catalog_models() -> None:
-    """Register the known self-contained ``catalog_models.py`` modules.
-
-    Loads each plugin in :data:`_CATALOG_MODEL_PLUGINS` via
-    ``spec_from_file_location`` — bypassing the package ``__init__`` (which pulls
-    the full route graph) exactly as
-    :func:`discover_plugin_migrations_and_models` does for ``models.py``. Unlike
-    migration discovery this is not migrations-first: a catalog table may live on
-    the shared ``sep_main`` chain rather than a per-plugin branch, so its owning
-    plugin need not have a ``migrations/`` directory of its own.
-
-    :return: ``None``.
-    """
-    package_dir = Path(plugins_pkg.__path__[0])
-    for name in _CATALOG_MODEL_PLUGINS:
-        catalog_path = package_dir / name / "catalog_models.py"
-        if catalog_path.is_file():
-            _load_models_module(
-                f"{plugins_pkg.__name__}.{name}.catalog_models", catalog_path
-            )

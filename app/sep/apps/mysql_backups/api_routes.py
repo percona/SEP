@@ -23,16 +23,14 @@ the ``/api/apps/*`` mount, so it introduces no mutating or unauthenticated
 surface.
 """
 
-import logging
-
 from fastapi import APIRouter
 
-from app.sep.apps.mysql_backups.catalog_models import BackupRunResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.deps import ResolvedMysqlService
+from app.sep.apps.mysql_backups.models import BackupRunResponse
 from app.sep.deps import SessionDep
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -41,20 +39,24 @@ router = APIRouter()
 async def list_service_backups(
     service: ResolvedMysqlService,
     session: SessionDep,
-) -> list[BackupRunResponse]:
-    """Return a MySQL service's completed backup runs, newest run first.
+    pagination: PaginationDep,
+) -> PaginatedResponse[BackupRunResponse]:
+    """Return a page of a MySQL service's completed backup runs, newest run first.
 
     The ``service_id`` path parameter is resolved by
     :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an
     unknown service surface as a ``404``. A resolvable service with no recorded
-    runs yields an empty list, so a caller building a restore selector is never
+    runs yields an empty page, so a caller building a restore selector is never
     blocked by an empty catalog but is still told when the service itself is
     unknown.
 
     :param service: The inventory service resolved from the ``service_id`` path
         parameter.
     :param session: The database session the catalog is queried on.
-    :return: The service's recorded backup runs, newest run first.
+    :param pagination: The requested offset/limit window.
+    :return: The requested page of the service's recorded backup runs, newest
+        run first.
     """
-    records = await MysqlBackupRunManager.list_for_service(session, service.name)
-    return [BackupRunResponse.model_validate(record) for record in records]
+    return await MysqlBackupRunManager.list_for_service(
+        session, service.name, pagination=pagination
+    )

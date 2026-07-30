@@ -22,19 +22,15 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import (
     assemble_envelope,
     resolve_refs,
 )
-from app.sep.apps.mysql_backups.catalog_models import extract_backup_type_marker
-from app.sep.apps.mysql_backups.models import (
-    BackupCreate,
-    BackupTaskResponse,
-    BackupType,
-    OWNER,
-)
+from app.sep.apps.mysql_backups.forms import BackupCreate, BackupTaskResponse, OWNER
+from app.sep.apps.mysql_backups.models import BackupType, extract_backup_type_marker
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
@@ -130,14 +126,21 @@ async def resolve_mysql_service(
     Lets the Inventory API's ``404`` propagate unchanged: an unknown ``service_id``
     is a real client error, not an empty catalog. The catalog query distinguishes
     the two — this raises for a service that does not exist, while a service that
-    exists but has no recorded runs yields an empty list.
+    exists but has no recorded runs yields an empty list. A resolvable service of
+    the wrong type is treated the same as an unknown one: the catalog query has no
+    way to tell the two apart (it filters on ``service_name`` alone), so serving
+    it would let a same-named non-MySQL service leak another service's rows.
 
     :param service_id: The inventory id of the service to resolve.
     :param inventory_api: The Inventory API client used to resolve the service.
     :return: The resolved service.
+    :raises HTTPNotFoundException: When the resolved service is not a MySQL service.
     """
     service_data = await inventory_api.get(f"/services/{service_id}")
-    return CreatedService.model_validate(service_data)
+    service = CreatedService.model_validate(service_data)
+    if service.type is not ServiceTypeEnum.MYSQL:
+        raise HTTPNotFoundException(detail="Service not found")
+    return service
 
 
 ResolvedMysqlService = Annotated[CreatedService, Depends(resolve_mysql_service)]
@@ -152,15 +155,13 @@ def _extract_backup_type_from_task(task: Task) -> BackupType | None:
     """Read ``BACKUP_TYPE`` out of the task's YAML config as a typed value, if present.
 
     Shares the defensive raw-marker parse with the run-result recorder via
-    :func:`~app.sep.apps.mysql_backups.catalog_models.extract_backup_type_marker`,
+    :func:`~app.sep.apps.mysql_backups.models.extract_backup_type_marker`,
     layering only the coercion to the typed :class:`BackupType` on top.
 
     :param task: The task whose ``data`` carries the YAML config.
     :return: The typed backup type, or ``None`` when absent or unrecognised.
     """
     marker = extract_backup_type_marker(task.data)
-    if marker is None:
-        return None
     try:
         return BackupType(marker)
     except ValueError:

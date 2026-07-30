@@ -19,8 +19,11 @@ from datetime import datetime, UTC
 
 import pytest
 
-from app.sep.apps.mysql_backups.catalog_models import MysqlBackupRun
+from app.core.pagination import Pagination
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
+from app.sep.apps.mysql_backups.models import MysqlBackupRun
+
+_PAGE = Pagination()
 
 
 class TestMysqlBackupRunManager:
@@ -28,7 +31,7 @@ class TestMysqlBackupRunManager:
 
     @pytest.mark.asyncio
     async def test_create_and_retrieve(self, session) -> None:
-        """A saved record round-trips with an assigned primary key."""
+        """Round-trip a saved record with an assigned primary key."""
         record = MysqlBackupRun(
             task_history_id=1,
             service_name="svc-a",
@@ -48,7 +51,7 @@ class TestMysqlBackupRunManager:
 
     @pytest.mark.asyncio
     async def test_list_for_service_newest_first(self, session) -> None:
-        """Records for a service come back newest first (created_at desc)."""
+        """Return a service's records newest first (created_at desc)."""
         for i in range(3):
             await MysqlBackupRunManager.save(
                 session,
@@ -60,13 +63,16 @@ class TestMysqlBackupRunManager:
                 ),
             )
 
-        records = await MysqlBackupRunManager.list_for_service(session, "svc-a")
+        page = await MysqlBackupRunManager.list_for_service(
+            session, "svc-a", pagination=_PAGE
+        )
 
-        assert [r.task_history_id for r in records] == [3, 2, 1]
+        assert page.total == 3  # noqa: PLR2004
+        assert [r.task_history_id for r in page.items] == [3, 2, 1]
 
     @pytest.mark.asyncio
     async def test_list_for_service_isolates_other_services(self, session) -> None:
-        """A per-service query returns only that service's records."""
+        """Return only that service's records for a per-service query."""
         await MysqlBackupRunManager.save(
             session,
             MysqlBackupRun(task_history_id=1, service_name="svc-a", backup_type="M"),
@@ -76,14 +82,16 @@ class TestMysqlBackupRunManager:
             MysqlBackupRun(task_history_id=2, service_name="svc-b", backup_type="M"),
         )
 
-        records = await MysqlBackupRunManager.list_for_service(session, "svc-a")
+        page = await MysqlBackupRunManager.list_for_service(
+            session, "svc-a", pagination=_PAGE
+        )
 
-        assert len(records) == 1
-        assert records[0].service_name == "svc-a"
+        assert page.total == 1
+        assert page.items[0].service_name == "svc-a"
 
     @pytest.mark.asyncio
     async def test_orders_by_finished_at_not_insertion_time(self, session) -> None:
-        """A late-catalogued older run sorts below a newer completed one.
+        """Sort a late-catalogued older run below a newer completed one.
 
         The row inserted second finished *earlier*, so ordering by run
         completion must place the first-inserted (later-finishing) row first —
@@ -108,11 +116,16 @@ class TestMysqlBackupRunManager:
             ),
         )
 
-        records = await MysqlBackupRunManager.list_for_service(session, "svc-a")
+        page = await MysqlBackupRunManager.list_for_service(
+            session, "svc-a", pagination=_PAGE
+        )
 
-        assert [r.task_history_id for r in records] == [1, 2]
+        assert [r.task_history_id for r in page.items] == [1, 2]
 
     @pytest.mark.asyncio
     async def test_empty_service_returns_empty_list(self, session) -> None:
-        """An unknown service yields an empty list, not an error."""
-        assert await MysqlBackupRunManager.list_for_service(session, "nope") == []
+        """Yield an empty list, not an error, for an unknown service."""
+        page = await MysqlBackupRunManager.list_for_service(
+            session, "nope", pagination=_PAGE
+        )
+        assert page.items == []

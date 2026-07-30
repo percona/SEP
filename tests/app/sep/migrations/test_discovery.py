@@ -23,12 +23,10 @@ from sqlmodel import SQLModel
 
 import app.sep.apps as plugins_pkg
 from app.sep.config import sep_settings
-from app.sep.migrations import _discovery
 from app.sep.migrations._discovery import (
     _load_models_module,
     discover_plugin_migrations_and_models,
     discover_plugin_version_dirs,
-    load_catalog_models,
 )
 
 
@@ -98,10 +96,6 @@ def _build_plugin(
 
 _MARKER_SRC = """
 MARKER = "plugin-models-loaded"
-"""
-
-_CATALOG_MARKER_SRC = """
-CATALOG_MARKER = "catalog-models-loaded"
 """
 
 
@@ -180,46 +174,6 @@ def test_discover_does_not_trigger_plugin_init_py(isolated_plugins_path):
 def test_discover_handles_snippets_plugin_without_error():
     """Real-tree discovery does not trigger plugin circular imports."""
     discover_plugin_migrations_and_models()
-
-
-def test_load_catalog_models_registers_real_catalog_table():
-    """``load_catalog_models`` places ``mysql_backup_run`` in ``SQLModel.metadata``."""
-    load_catalog_models()
-    assert "mysql_backup_run" in SQLModel.metadata.tables
-    assert "mysql_backups" in _discovery._CATALOG_MODEL_PLUGINS
-
-
-def test_load_catalog_models_bypasses_plugin_init(isolated_plugins_path, monkeypatch):
-    """A listed ``catalog_models.py`` loads without running ``__init__.py``."""
-    plugin_dir = isolated_plugins_path / "catalog_plugin"
-    plugin_dir.mkdir(parents=True)
-    (plugin_dir / "__init__.py").write_text(
-        "raise RuntimeError('plugin __init__.py must not run at migration time')\n"
-    )
-    (plugin_dir / "catalog_models.py").write_text(_CATALOG_MARKER_SRC)
-    monkeypatch.setattr(_discovery, "_CATALOG_MODEL_PLUGINS", ("catalog_plugin",))
-
-    load_catalog_models()
-
-    loaded = sys.modules["app.sep.apps.catalog_plugin.catalog_models"]
-    assert loaded.CATALOG_MARKER == "catalog-models-loaded"
-
-
-def test_load_catalog_models_skips_listed_plugin_without_catalog_module(
-    isolated_plugins_path, monkeypatch
-):
-    """A listed plugin missing its ``catalog_models.py`` is skipped, not an error."""
-    _build_plugin(
-        isolated_plugins_path,
-        "plain_plugin",
-        with_migrations=True,
-        models_source=_MARKER_SRC,
-    )
-    monkeypatch.setattr(_discovery, "_CATALOG_MODEL_PLUGINS", ("plain_plugin",))
-
-    load_catalog_models()
-
-    assert "app.sep.apps.plain_plugin.catalog_models" not in sys.modules
 
 
 def test_all_migration_owning_plugins_have_loadable_models():

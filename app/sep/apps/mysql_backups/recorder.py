@@ -16,7 +16,7 @@
 """Record a completed MySQL backup run into the catalog.
 
 This module owns the map from a terminal backup run onto one persisted
-:class:`~app.sep.apps.mysql_backups.catalog_models.MysqlBackupRun`. The tasks service
+:class:`~app.sep.apps.mysql_backups.models.MysqlBackupRun`. The tasks service
 resolves it lazily through :func:`app.tasks.hook_resolver.resolve_hook`,
 following the ``"module:function"`` path the backup task carries in
 ``Task.run_result_recorder`` (stamped at creation from
@@ -36,11 +36,12 @@ from typing import Any, TypeVar
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.sep.apps.mysql_backups.catalog_models import (
+from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
     extract_backup_type_marker,
     MysqlBackupRun,
 )
-from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.db import get_async_session_maker
 from app.tasks.models import TaskHistory, TaskHistoryStatusEnum
 
@@ -54,12 +55,9 @@ T = TypeVar("T")
 #: statically importing the plugin.
 RUN_RESULT_RECORDER = f"{__name__}:record_backup_run"
 
-#: ``BACKUP_TYPE`` markers for the tools that produce a per-run artifact worth
-#: cataloguing (``BackupType.MYDUMPER`` / ``BackupType.XTRABACKUP``). Binlog
-#: (``"B"``) runs continuously and has no per-run completion to record. Kept as
-#: raw markers so this recorder stays free of the plugin's heavy form-model
-#: import, which the tasks service would otherwise pull in when resolving it.
-_CATALOGUED_TYPES = frozenset({"M", "X"})
+#: Tools that produce a per-run artifact worth cataloguing. Binlog runs
+#: continuously and has no per-run completion to record, so it is excluded.
+_CATALOGUED_TYPES = frozenset({BackupType.MYDUMPER, BackupType.XTRABACKUP})
 
 
 def _coerce(value: Any, expected: type[T], field: str) -> T | None:

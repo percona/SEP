@@ -28,11 +28,8 @@ from app.sep.apps.mysql_backups.deps import (
     get_backups_task_info,
     parse_backup_task_data,
 )
-from app.sep.apps.mysql_backups.models import (
-    BackupCreate,
-    BackupType,
-    UploadProvider,
-)
+from app.sep.apps.mysql_backups.forms import BackupCreate, UploadProvider
+from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.inventory import CreatedNode, CreatedService
 from app.tasks.models import (

@@ -18,7 +18,8 @@
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
-from app.sep.apps.mysql_backups.catalog_models import MysqlBackupRun
+from app.core.pagination import PaginatedResponse, Pagination
+from app.sep.apps.mysql_backups.models import MysqlBackupRun
 
 
 class MysqlBackupRunManager(BaseSQLModelManager):
@@ -32,9 +33,9 @@ class MysqlBackupRunManager(BaseSQLModelManager):
 
     @classmethod
     async def list_for_service(
-        cls, session: AsyncSession, service_name: str
-    ) -> list[MysqlBackupRun]:
-        """Return a service's recorded backup runs, newest run first.
+        cls, session: AsyncSession, service_name: str, *, pagination: Pagination
+    ) -> PaginatedResponse[MysqlBackupRun]:
+        """Return a page of a service's recorded backup runs, newest run first.
 
         Ordered by run completion (``finished_at`` desc), not insertion time, so
         a run that was catalogued late cannot jump ahead of a more recently
@@ -46,14 +47,17 @@ class MysqlBackupRunManager(BaseSQLModelManager):
 
         :param session: The database session to query on.
         :param service_name: The inventory service name to filter records by.
-        :return: The service's backup-run records, newest run first.
+        :param pagination: Validated offset/limit window for this page.
+        :return: The requested page of the service's backup-run records, newest
+            run first.
         """
-        return await cls.list(
+        return await cls.list_paginated(
             session,
             order_by=[
                 MysqlBackupRun.finished_at.desc().nulls_last(),
                 MysqlBackupRun.created_at.desc(),
                 MysqlBackupRun.id.desc(),
             ],
+            pagination=pagination,
             service_name=service_name,
         )
