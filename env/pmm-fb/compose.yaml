@@ -29,6 +29,8 @@ services:
     environment:
       PMM_ENABLE_SEP: "1"
       PMM_SEP_POSTGRES_PASSWORD: sep-fb-pg-pw
+      PMM_ENABLE_NOMAD: "1" # SEP task execution runs through PMM's embedded Nomad…
+      PMM_PUBLIC_ADDRESS: pmm-server # …which silently refuses to start without a public address
     ports:
       - "127.0.0.1:8443:8443"
     volumes:
