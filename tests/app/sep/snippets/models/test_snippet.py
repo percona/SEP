@@ -635,15 +635,18 @@ class TestSnippetModel:
 
     @pytest.mark.asyncio
     async def test_update_from_snippet(self):
-        """Verify update_from_snippet updates meta and removes approval."""
+        """Verify content updates preserve approval fields."""
         from app.core.utils import utc_now
 
+        approved_at = utc_now()
         original = Snippet(
             id=1,
             filename="test.sh",
             size=100,
             md5_digest="a" * 32,
-            approved_at=utc_now(),
+            approved_at=approved_at,
+            updated_by="user-123",
+            reason="Approved by admin",
         )
         new_snippet = Snippet(
             filename="test.sh",
@@ -660,7 +663,45 @@ class TestSnippetModel:
         assert original.md5_digest == "b" * 32
         assert original.size == UPDATED_SIZE
         assert original.meta == {"title": "Updated"}
-        assert original.approved_at is None
+        assert original.approved_at == approved_at
+        assert original.updated_by == "user-123"
+        assert original.reason == "Approved by admin"
+
+    def test_is_human_revoked_when_unapproved_with_user(self):
+        """Verify an administrator revocation is detected.
+
+        Writer contract: both Jinja and API revoke routes pass a real user id
+        into ``remove_approval``, which leaves ``updated_by`` set while clearing
+        ``approved_at``. Sync relies on that signal to avoid re-approving.
+        """
+        snippet = Snippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        snippet.remove_approval("Approval removed by admin", "user-456")
+        assert snippet.is_human_revoked is True
+        assert snippet.updated_by == "user-456"
+
+    def test_is_human_revoked_false_for_automatic_removal(self):
+        """Verify automatic approval removals are not treated as human revocations.
+
+        Writer contract: sync content-change clears pass ``user_id=None`` so
+        ``is_human_revoked`` stays false and a later matching sync may re-approve.
+        """
+        snippet = Snippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        snippet.approve("Approved by admin", "user-123")
+        snippet.remove_approval("File contents have changed", None)
+        assert snippet.is_human_revoked is False
+        assert snippet.updated_by is None
+
+    def test_is_human_revoked_false_while_approved_with_user(self):
+        """Verify approval writers that set ``updated_by`` are not treated as revoked.
+
+        Writer contract: batch approve and single approve leave ``updated_by`` set
+        together with ``approved_at``, so ``is_human_revoked`` stays false.
+        """
+        snippet = Snippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        snippet.approve("Batch approved by admin", "user-789")
+        assert snippet.is_approved is True
+        assert snippet.updated_by == "user-789"
+        assert snippet.is_human_revoked is False
 
 
 class TestFromPath:
