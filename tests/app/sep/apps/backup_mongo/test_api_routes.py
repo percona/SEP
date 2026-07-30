@@ -23,7 +23,6 @@ from fastapi import HTTPException, status
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import BackupType, OWNER
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.inventory import CreatedService
@@ -238,7 +237,8 @@ class TestBackupMongoApiList:
         row = body["items"][0]
         assert row["name"] == "parent-backup"
         assert row["status"] == "success"
-        assert row["service_type"] == ServiceTypeEnum.MONGODB.value
+        assert "service_type" not in row
+        assert "owner" not in row
         assert "anonymize_mask" in row
         assert "anonymized_entities" in row
         mock_task_api_dep.get.assert_awaited_once_with(
@@ -465,7 +465,8 @@ class TestBackupMongoApiCreate:
 
         assert response.status_code == status.HTTP_201_CREATED
         create_body = response.json()
-        assert create_body["service_type"] == ServiceTypeEnum.MONGODB.value
+        assert "service_type" not in create_body
+        assert "owner" not in create_body
         assert "anonymize_mask" in create_body
         assert "anonymized_entities" in create_body
         assert "connectivity_warning" in create_body
@@ -590,7 +591,8 @@ class TestBackupMongoApiDetail:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["name"] == "parent-backup"
-        assert body["service_type"] == ServiceTypeEnum.MONGODB.value
+        assert "service_type" not in body
+        assert "owner" not in body
         assert "anonymize_mask" in body
         assert "anonymized_entities" in body
         derived_names = {item["name"] for item in body["derived_tasks"]}
