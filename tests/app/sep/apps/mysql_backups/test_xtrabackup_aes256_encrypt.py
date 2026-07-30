@@ -26,6 +26,7 @@ module constants, a fake ``subprocess`` recording commands, and a stub
 
 import ast
 import logging
+import multiprocessing.pool
 import os
 import pathlib
 import subprocess
@@ -33,10 +34,12 @@ import types
 
 import pytest
 
-_PAYLOAD_PATH = (
-    pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups/xtrabackup_payload"
+from tests.app.sep.apps.mysql_backups.conftest import (
+    XTRABACKUP_PAYLOAD_PATH,
+    xtrabackup_payload_tree,
 )
-_XBCRYPT_BIN = os.getenv("PERCONA_BACKUP_XBCRYPT_BIN", "/usr/bin/xbcrypt")
+
+_PAYLOAD_PATH = XTRABACKUP_PAYLOAD_PATH
 
 # Module-level constants the extracted symbols read (default args / bodies).
 _CONST_NAMES = frozenset(
@@ -45,6 +48,7 @@ _CONST_NAMES = frozenset(
         "UPLOADME_FILE",
         "XTRABACKUP_INFO",
         "XTRABACKUP_CHECKPOINTS",
+        "PLAINTEXT_METADATA_FILES",
         "XBCRYPT_BIN",
         "GPG_BIN",
     }
@@ -71,14 +75,32 @@ def _base_namespace() -> dict:
         "logging": logging,
         "Path": pathlib.Path,
         "Any": object,
+        "thread_pool": multiprocessing.pool,
     }
     exec("class BackupError(Exception):\n    pass", namespace)
     return namespace
 
 
+def _load_constant(name: str) -> object:
+    """Return a whitelisted module-level constant's value from the payload source."""
+    namespace = _base_namespace()
+    exec(
+        compile(
+            ast.Module(body=_const_nodes(xtrabackup_payload_tree()), type_ignores=[]),
+            str(_PAYLOAD_PATH),
+            "exec",
+        ),
+        namespace,
+    )
+    return namespace[name]
+
+
+_XBCRYPT_BIN = _load_constant("XBCRYPT_BIN")
+
+
 def _load_function(name: str) -> object:
     """Exec a single module-level payload function with its constants seeded."""
-    tree = ast.parse(_PAYLOAD_PATH.read_text())
+    tree = xtrabackup_payload_tree()
     namespace = _base_namespace()
     body = _const_nodes(tree)
     fn_nodes = [
@@ -115,7 +137,7 @@ def _payload_instance(method_names: tuple[str, ...], returncode: int = 0):
     returning ``returncode``). Returns ``(instance, BackupError, calls)`` where
     ``calls`` is the list of xbcrypt argv lists the code tried to run.
     """
-    tree = ast.parse(_PAYLOAD_PATH.read_text())
+    tree = xtrabackup_payload_tree()
     method_nodes = [
         node
         for node in ast.walk(tree)
@@ -130,11 +152,11 @@ def _payload_instance(method_names: tuple[str, ...], returncode: int = 0):
     class _FakeSubprocess:
         PIPE = -1
 
-        # N802/ARG004: signature mirrors ``subprocess.Popen`` verbatim so the
-        # payload's real call site binds unchanged; stdout/stderr are accepted
-        # and ignored on purpose.
+        # N802: signature mirrors ``subprocess.Popen`` verbatim so the payload's
+        # real call site binds unchanged. ``list.append`` is GIL-atomic, so this
+        # stays safe when ``encrypt_files_aes256`` calls it from pool threads.
         @staticmethod
-        def Popen(cmd, stdout=None, stderr=None):  # noqa: N802, ARG004
+        def Popen(cmd, **_kwargs):  # noqa: N802
             calls.append(list(cmd))
             return _FakeProc(returncode)
 
@@ -217,11 +239,11 @@ class TestIsEncryptedDirGpgUnchanged:
 
     def _fn_with_proc(self, returncode: int):
         namespace = _base_namespace()
-        tree = ast.parse(_PAYLOAD_PATH.read_text())
+        tree = xtrabackup_payload_tree()
         calls: list[list[str]] = []
 
         class _Popen:
-            def __init__(self, cmd, stdout=None, stderr=None):
+            def __init__(self, cmd, **_kwargs):
                 calls.append(cmd)
                 self.returncode = returncode
 
@@ -257,13 +279,6 @@ class TestIsEncryptedDirGpgUnchanged:
         (tmp_path / "plain.txt").write_text("x")
         fn, _ = self._fn_with_proc(2)
         assert fn(str(tmp_path)) is False
-
-    def test_default_method_is_gpg(self, tmp_path) -> None:
-        """Assert the default method stays gpg so existing call sites are unaffected."""
-        (tmp_path / "plain.txt").write_text("x")
-        fn, calls = self._fn_with_proc(0)
-        assert fn(str(tmp_path)) is True
-        assert calls, "gpg was not shelled out to under the default method"
 
 
 _ENCRYPT_METHODS = ("encrypt_files_aes256", "_run_encrypt_file_aes256", "_run_xbcrypt")

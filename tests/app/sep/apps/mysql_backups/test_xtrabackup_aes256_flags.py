@@ -16,99 +16,130 @@
 """Tests that the inline ``--encrypt=AES256`` flag is gated by backup binary.
 
 ``mariadb-backup`` has no ``--encrypt`` option, so the inline flag must be
-emitted only for ``xtrabackup``/``innobackupex``. ``_run_backup_cmd`` is far too
-coupled to run in isolation, so these are structural (AST) assertions on the
-single ``if`` in ``_run_backup_cmd`` that appends ``--encrypt=AES256``: they pin
-that the append is guarded by both the AES-256 keyfile and a
-``!= 'mariadb-backup'`` check, so the gating cannot be silently dropped or the
-flag emitted unconditionally (which would re-break the mariadb-backup path).
+emitted only for ``xtrabackup``/``innobackupex``. The gating decision lives in
+the module-level ``_should_inline_encrypt`` pure function, extracted from
+``_run_backup_cmd`` via AST and exec'd in isolation (the payload cannot be
+imported directly -- see ``test_xtrabackup_replica_flags.py``). Exercising the
+real function, rather than asserting on the shape of the guarding ``if``,
+means a behavior-preserving rewrite of the guard still passes these tests.
 """
 
 import ast
-import pathlib
 
-_PAYLOAD_PATH = (
-    pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups/xtrabackup_payload"
+import pytest
+
+from tests.app.sep.apps.mysql_backups.conftest import (
+    XTRABACKUP_PAYLOAD_PATH,
+    xtrabackup_payload_tree,
 )
+
+
+def _load_should_inline_encrypt():
+    """Extract and exec ``_should_inline_encrypt`` from the payload source via AST.
+
+    Locates the module-level ``def _should_inline_encrypt`` and compiles it in
+    isolation so the payload's heavy imports never run. Raises loudly if the
+    function has been renamed or removed, rather than silently passing.
+    """
+    for node in xtrabackup_payload_tree().body:
+        if isinstance(node, ast.FunctionDef) and node.name == "_should_inline_encrypt":
+            module = ast.Module(body=[node], type_ignores=[])
+            namespace: dict[str, object] = {}
+            exec(compile(module, str(XTRABACKUP_PAYLOAD_PATH), "exec"), namespace)
+            return namespace["_should_inline_encrypt"]
+    raise RuntimeError(
+        f"_should_inline_encrypt not found in {XTRABACKUP_PAYLOAD_PATH}. "
+        "Has the function been renamed or removed?"
+    )
+
+
+_should_inline_encrypt = _load_should_inline_encrypt()
+
+
+class TestShouldInlineEncrypt:
+    """Assert the inline-flag gate is keyed on binary and keyfile presence."""
+
+    @pytest.mark.parametrize(
+        ("bin_cmd", "keyfile", "expected"),
+        [
+            ("xtrabackup", "/keys/aes.key", True),
+            ("innobackupex", "/keys/aes.key", True),
+            ("mariadb-backup", "/keys/aes.key", False),
+            ("xtrabackup", None, False),
+            ("xtrabackup", "", False),
+        ],
+    )
+    def test_gate_per_binary_and_keyfile(
+        self, bin_cmd: str, keyfile: str | None, expected: bool | None
+    ) -> None:
+        """Assert each (bin_cmd, keyfile) combination yields the expected gate result."""
+        assert bool(_should_inline_encrypt(bin_cmd, keyfile)) is expected
+
+    def test_mariadb_backup_excluded_even_with_keyfile(self) -> None:
+        """Assert mariadb-backup never gates the inline flag on, keyfile or not."""
+        assert not _should_inline_encrypt("mariadb-backup", "/keys/aes.key")
+
+    def test_xtrabackup_with_keyfile_gates_flag_on(self) -> None:
+        """Assert xtrabackup with a keyfile still emits the inline flag (no regression)."""
+        assert _should_inline_encrypt("xtrabackup", "/keys/aes.key")
 
 
 def _run_backup_cmd_node() -> ast.FunctionDef:
     """Return the ``_run_backup_cmd`` FunctionDef, raising if renamed/removed."""
-    tree = ast.parse(_PAYLOAD_PATH.read_text())
-    for node in ast.walk(tree):
+    for node in ast.walk(xtrabackup_payload_tree()):
         if isinstance(node, ast.FunctionDef) and node.name == "_run_backup_cmd":
             return node
-    raise RuntimeError(f"_run_backup_cmd not found in {_PAYLOAD_PATH}.")
+    raise RuntimeError(f"_run_backup_cmd not found in {XTRABACKUP_PAYLOAD_PATH}.")
 
 
-def _inline_encrypt_ifs() -> list[ast.If]:
-    """Return every ``if`` in ``_run_backup_cmd`` that appends ``--encrypt=AES256``."""
-    return [
-        node
-        for node in ast.walk(_run_backup_cmd_node())
-        if isinstance(node, ast.If)
-        and any(
-            isinstance(c, ast.Constant) and c.value == "--encrypt=AES256"
-            for stmt in node.body
-            for c in ast.walk(stmt)
-        )
-    ]
+class TestInlineEncryptWiredIntoCommand:
+    """Assert ``_run_backup_cmd`` actually feeds the gate into the command.
 
+    The behavioral tests above exercise ``_should_inline_encrypt`` in isolation,
+    so they stay green even if the call site is deleted. These structural
+    assertions pin the integration, so dropping or corrupting the wiring fails
+    a test.
+    """
 
-class TestInlineEncryptFlagGatedByBinary:
-    """Assert the inline AES-256 append exists exactly once and is properly gated."""
-
-    def _gate(self) -> ast.If:
-        """Return the single guarding ``if`` node, failing if absent or duplicated."""
-        ifs = _inline_encrypt_ifs()
+    def _gate_if(self) -> ast.If:
+        """Return the single ``if _should_inline_encrypt(...):`` node."""
+        ifs = [
+            node
+            for node in ast.walk(_run_backup_cmd_node())
+            if isinstance(node, ast.If)
+            and isinstance(node.test, ast.Call)
+            and isinstance(node.test.func, ast.Name)
+            and node.test.func.id == "_should_inline_encrypt"
+        ]
         assert len(ifs) == 1, (
-            "expected exactly one `--encrypt=AES256` append site in _run_backup_cmd, "
-            f"found {len(ifs)}"
+            "expected exactly one `if _should_inline_encrypt(...):` in "
+            f"_run_backup_cmd, found {len(ifs)}"
         )
         return ifs[0]
 
-    def _test_constants(self) -> list[str]:
-        """Return the string constants referenced in the gate's condition."""
-        return [
-            c.value for c in ast.walk(self._gate().test) if isinstance(c, ast.Constant)
+    def test_gate_called_with_bin_cmd_then_keyfile(self) -> None:
+        """Assert the call passes the binary then the keyfile, in that order.
+
+        Guards against passing constants, only one option, or the two
+        swapped -- any of which would silently change the gate's behavior.
+        """
+        attrs = [
+            arg.attr
+            for arg in self._gate_if().test.args
+            if isinstance(arg, ast.Attribute)
+            and isinstance(arg.value, ast.Name)
+            and arg.value.id == "self"
         ]
+        assert attrs == ["xtrabackup_bin_cmd", "xtrabackup_aes256_keyfile"]
 
-    def _test_attrs(self) -> list[str]:
-        """Return the ``self.*`` attribute names referenced in the gate's condition."""
-        return [
-            a.attr
-            for a in ast.walk(self._gate().test)
-            if isinstance(a, ast.Attribute)
-            and isinstance(a.value, ast.Name)
-            and a.value.id == "self"
+    def test_gate_body_appends_both_flags_once(self) -> None:
+        """Assert the guarded body appends both AES-256 flags exactly once."""
+        appended = [
+            c.value
+            for stmt in self._gate_if().body
+            for c in ast.walk(stmt)
+            if isinstance(c, ast.Constant)
+            and isinstance(c.value, str)
+            and c.value.startswith("--encrypt")
         ]
-
-    def _mariadb_compare_ops(self) -> list[type]:
-        """Return the operator node types of the comparison against ``'mariadb-backup'``."""
-        for cmp in ast.walk(self._gate().test):
-            if isinstance(cmp, ast.Compare) and any(
-                isinstance(c, ast.Constant) and c.value == "mariadb-backup"
-                for c in cmp.comparators
-            ):
-                return [type(op) for op in cmp.ops]
-        return []
-
-    def test_flag_still_emitted_for_xtrabackup(self) -> None:
-        """Assert the inline flag path survives (xtrabackup must not regress)."""
-        assert len(_inline_encrypt_ifs()) == 1
-
-    def test_gate_excludes_mariadb_backup(self) -> None:
-        """Assert the append is guarded by a ``!= 'mariadb-backup'`` comparison."""
-        assert "mariadb-backup" in self._test_constants()
-
-    def test_gate_uses_not_equal(self) -> None:
-        """Assert the binary check is ``!=`` — flipping it to ``==`` must fail here."""
-        assert self._mariadb_compare_ops() == [ast.NotEq]
-
-    def test_gate_requires_keyfile(self) -> None:
-        """Assert the append is guarded by the AES-256 keyfile being set."""
-        assert "xtrabackup_aes256_keyfile" in self._test_attrs()
-
-    def test_gate_reads_selected_binary(self) -> None:
-        """Assert the gate keys off the selected backup binary."""
-        assert "xtrabackup_bin_cmd" in self._test_attrs()
+        assert appended == ["--encrypt=AES256", "--encrypt-key-file=%s"]
