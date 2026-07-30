@@ -52,6 +52,7 @@ from app.sep.apps.framework.api import CascadeCreatePlan
 from app.sep.apps.framework.cascade import (
     build_derived_payload,
     cascade_create_tasks,
+    cascade_delete_tasks,
     cascade_update_tasks,
     CascadeResult,
 )
@@ -467,6 +468,26 @@ async def update_backup_task_group(
         parent_payload,
         backup_derived_task_names(parent_task.name),
         BACKUP_MONGO_DERIVED,
+    )
+
+
+async def cascade_delete_backup_group(
+    tasks_api: TaskAPI,
+    parent_name: str,
+) -> CascadeResult:
+    """DELETE derived logical/physical/status/incremental siblings, then the parent.
+
+    Shared by the JSON API and the legacy Jinja delete route so both remove the
+    full backup task group.
+
+    :param tasks_api: The TaskAPI instance used to delete tasks.
+    :param parent_name: The name of the parent ``pbm_config`` task.
+    :return: The cascade outcome across derived siblings and the parent.
+    """
+    return await cascade_delete_tasks(
+        tasks_api,
+        parent_name,
+        backup_derived_task_names(parent_name),
     )
 
 

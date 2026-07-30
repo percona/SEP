@@ -36,7 +36,9 @@ from app.sep.apps.backup_mongo.deps import (
     BackupGeneratedTask,
     BackupsIndexContextDep,
     BackupsTask,
+    cascade_delete_backup_group,
     get_backups_task,
+    resolve_backup_parent_task,
 )
 from app.sep.apps.backup_mongo.schema import BACKUP_MONGO_DERIVED
 from app.sep.apps.framework.cascade import cascade_create_tasks
@@ -228,8 +230,9 @@ async def pbm_backups_delete(
     task: BackupsTask,
     tasks_api: TaskAPI,
 ) -> RedirectResponse:
-    """Delete backups task."""
-    await tasks_api.delete(f"/{task.name}")
-    await tasks_api.delete(f"/{task.name}-logical")
+    """Delete the backup task group (parent and all derived siblings)."""
+    parent_task = await resolve_backup_parent_task(task.name, tasks_api)
+    result = await cascade_delete_backup_group(tasks_api, parent_task.name)
+    result.raise_if_failed(op="delete")
     task_path = request.url_for("pbm_backups_index")
     return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)

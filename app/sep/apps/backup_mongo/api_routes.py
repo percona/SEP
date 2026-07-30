@@ -32,10 +32,10 @@ from fastapi import status as http_status
 from app.core.exceptions import HTTPInternalServerErrorException
 from app.sep.apps.backup_mongo.deps import (
     backup_create_from_write,
-    backup_derived_task_names,
     BackupCascadePlan,
     BackupsTask,
     build_backup_mongo_api_detail_response,
+    cascade_delete_backup_group,
     EditableBackupParent,
     ensure_backup_group_update_preserves_names,
     get_backups_task,
@@ -47,7 +47,6 @@ from app.sep.apps.backup_mongo.models import (
     BackupTaskWrite,
 )
 from app.sep.apps.framework.api import derive_cascade_create_route, derive_execute_route
-from app.sep.apps.framework.cascade import cascade_delete_tasks
 from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
@@ -123,9 +122,5 @@ async def backup_mongo_api_delete(
 ) -> None:
     """Delete a backup task group."""
     parent_task = await resolve_backup_parent_task(task_name, tasks_api)
-    result = await cascade_delete_tasks(
-        tasks_api,
-        parent_task.name,
-        backup_derived_task_names(parent_task.name),
-    )
+    result = await cascade_delete_backup_group(tasks_api, parent_task.name)
     result.raise_if_failed(op="delete")

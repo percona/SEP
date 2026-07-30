@@ -16,7 +16,7 @@
 """Define tests for the app.sep.apps.backup_mongo.routes module."""
 
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import yaml
 from fastapi import status
@@ -28,6 +28,7 @@ from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 EXPECTED_PBM_TASK_POSTS = 5
+EXPECTED_PBM_TASK_DELETES = 5
 
 
 def _parent_backup_task() -> dict[str, Any]:
@@ -202,3 +203,71 @@ def test_pbm_backups_detail_hides_incremental_action_when_sibling_missing(
     assert "/mongo-backup-task-incremental" in fetched_paths
     assert "/mongo-backup-task-incremental/history/" not in fetched_paths
     assert "Run Incremental Backup" not in response.text
+
+
+def test_pbm_backups_delete_removes_parent_and_all_derived_tasks(
+    test_client,
+    mock_task_api_dep,
+):
+    """POST delete cascades to every derived sibling before the parent."""
+    task = _parent_backup_task()
+    mock_task_api_dep.get = AsyncMock(return_value=task)
+    mock_task_api_dep.delete = AsyncMock(return_value=None)
+
+    response = test_client.post(
+        "/backup_mongo/mongo-backup-task/delete",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith("/backup_mongo/")
+    assert mock_task_api_dep.delete.await_count == EXPECTED_PBM_TASK_DELETES
+    assert mock_task_api_dep.delete.await_args_list == [
+        call("/mongo-backup-task-logical"),
+        call("/mongo-backup-task-physical"),
+        call("/mongo-backup-task-status"),
+        call("/mongo-backup-task-incremental"),
+        call("/mongo-backup-task"),
+    ]
+
+
+def test_pbm_backups_delete_resolves_sibling_name_to_parent_group(
+    test_client,
+    mock_task_api_dep,
+):
+    """POST delete via a derived sibling name still removes the whole group."""
+    parent = _parent_backup_task()
+    logical = TaskFactory.build(
+        name="mongo-backup-task-logical",
+        owner="BACKUP_MONGO",
+        backend=TaskBackendEnum.PROXY,
+    ).model_dump(mode="json")
+    logical["data"] = {
+        **parent["data"],
+        "backup_type": BackupType.PBM_LOGICAL.value,
+        "parent": "mongo-backup-task",
+    }
+
+    async def _mock_get(path: str, **kwargs: Any) -> Any:
+        if path == "/mongo-backup-task-logical":
+            return logical
+        if path == "/mongo-backup-task":
+            return parent
+        raise AssertionError(f"Unexpected path: {path!r}, kwargs={kwargs!r}")
+
+    mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
+    mock_task_api_dep.delete = AsyncMock(return_value=None)
+
+    response = test_client.post(
+        "/backup_mongo/mongo-backup-task-logical/delete",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert mock_task_api_dep.delete.await_args_list == [
+        call("/mongo-backup-task-logical"),
+        call("/mongo-backup-task-physical"),
+        call("/mongo-backup-task-status"),
+        call("/mongo-backup-task-incremental"),
+        call("/mongo-backup-task"),
+    ]
