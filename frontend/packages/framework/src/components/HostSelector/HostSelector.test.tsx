@@ -672,5 +672,58 @@ describe('HostSelector', () => {
         expect.objectContaining({ hostname: 'node-b', service_id: 7 }),
       );
     });
+
+    it('refetches /api/sep/hosts/ when the free-solo dropdown is opened', async () => {
+      const hosts = [{ id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' }];
+      mocked.get.mockResolvedValue(makeResponse(hosts));
+
+      const client = makeClient();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(1));
+
+      const user = userEvent.setup();
+      await user.click(screen.getByLabelText('Host'));
+
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2));
+    });
+
+    it('commits free-typed hosts in multiple mode', async () => {
+      mocked.get.mockResolvedValueOnce(
+        makeResponse([
+          { id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' },
+          { id: 'nomad-2', name: 'db-mysql-prod-02', address: '10.0.0.2' },
+        ]),
+      );
+
+      function MultiProbe() {
+        const methods = useForm<{ hosts: unknown }>({ defaultValues: { hosts: [] } });
+        return (
+          <FormProvider {...methods}>
+            <HostSelector name="hosts" label="Hosts" allowCustom multiple />
+            <output data-testid="hosts-value">{JSON.stringify(methods.watch('hosts'))}</output>
+          </FormProvider>
+        );
+      }
+
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <MultiProbe />
+        </Wrapper>,
+      );
+
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.click(screen.getByLabelText('Hosts'));
+      await user.click(await screen.findByText('db-mysql-prod-01'));
+      await user.type(screen.getByLabelText('Hosts'), 'custom-executor{Enter}');
+
+      expect(screen.getByTestId('hosts-value').textContent).toBe('["nomad-1","custom-executor"]');
+    });
   });
 });

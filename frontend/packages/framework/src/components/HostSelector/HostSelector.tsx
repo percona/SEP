@@ -268,6 +268,9 @@ export function HostSelector({
         helperText={text}
         error={showError}
         noOptionsText={noOptionsText}
+        onOpen={() => {
+          void refetch();
+        }}
       />
     );
   }
@@ -300,6 +303,9 @@ export function HostSelector({
           helperText={text}
           error={showError}
           noOptionsText={noOptionsText}
+          onOpen={() => {
+            void refetch();
+          }}
         />
       </>
     );

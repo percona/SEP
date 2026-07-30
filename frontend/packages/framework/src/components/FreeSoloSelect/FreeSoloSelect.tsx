@@ -47,6 +47,8 @@ export interface FreeSoloSelectProps<T extends ReferenceOption> {
   helperText?: string;
   error?: boolean;
   noOptionsText?: string;
+  /** Called when the dropdown opens (e.g. to refetch option lists). */
+  onOpen?: () => void;
 }
 
 const isOptionEqualToValue = <T extends ReferenceOption>(
@@ -70,6 +72,7 @@ function FreeSoloAutocomplete<T extends ReferenceOption>({
   helperText,
   error,
   noOptionsText,
+  onOpen,
 }: Omit<FreeSoloSelectProps<T>, 'name'> & {
   field: ControllerRenderProps<FieldValues, string>;
   fieldError?: FieldError;
@@ -124,6 +127,7 @@ function FreeSoloAutocomplete<T extends ReferenceOption>({
       getOptionLabel={labelOf}
       isOptionEqualToValue={isOptionEqualToValue}
       noOptionsText={noOptionsText}
+      onOpen={onOpen}
       data-testid={`${field.name}-autocomplete`}
       filterOptions={(opts, params) => {
         const filtered = filter(opts, params);
