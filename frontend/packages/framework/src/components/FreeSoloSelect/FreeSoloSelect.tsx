@@ -83,8 +83,8 @@ function FreeSoloAutocomplete<T extends ReferenceOption>({
   // renders as the option label rather than raw text — regardless of load
   // timing. Two cases resolve:
   //   - an exact label match (a value typed before options loaded);
-  //   - a stringified inventory id (e.g. `"4"` persisted in an edit form's
-  //     stored body), which would otherwise show as bare digits.
+  //   - a string that matches an option id (stringified numeric inventory ids
+  //     like `"4"`, or string host ids like `"nomad-1"`).
   const { value: fieldValue, onChange } = field;
   useEffect(() => {
     if (typeof fieldValue === 'string' && fieldValue.trim() !== '') {
@@ -94,11 +94,9 @@ function FreeSoloAutocomplete<T extends ReferenceOption>({
         onChange(labelMatch.id);
         return;
       }
-      if (/^\d+$/.test(trimmed)) {
-        const idMatch = options.find((o) => o.id === Number(trimmed));
-        if (idMatch) {
-          onChange(idMatch.id);
-        }
+      const idMatch = options.find((o) => o.id === trimmed || String(o.id) === trimmed);
+      if (idMatch) {
+        onChange(idMatch.id);
       }
     }
     // Intentionally keyed on `options` only: re-resolve a stored string when the

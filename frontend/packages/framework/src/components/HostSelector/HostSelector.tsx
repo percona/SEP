@@ -23,14 +23,18 @@ import { useHosts, type HostOption } from '../../hooks/useHosts';
 import { useResolvedServiceField } from '../../hooks/useResolvedServiceField';
 import type { ServiceType } from '../../hooks/useServices';
 import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
+import { FreeSoloSelect } from '../FreeSoloSelect';
 import { resolveExecutorHostForService } from './resolveExecutorHostForService';
 
 const EMPTY_HOSTS: HostOption[] = [];
 
 export interface HostSelectorProps {
   /**
-   * react-hook-form field name. In single mode stores a `HostOption | null`;
-   * in `multiple` mode stores a `(number | string)[]` (selected host ids).
+   * react-hook-form field name. Without `allowCustom`, stores a
+   * `HostOption | null`; with `allowCustom`, stores the committed
+   * `string | null` (executor id, free-typed value, or unset). In `multiple`
+   * mode stores a `(number | string)[]` (selected host ids and/or free-typed
+   * values).
    */
   name: string;
   label: string;
@@ -41,6 +45,7 @@ export interface HostSelectorProps {
    * Optional upstream service field. When set, the selector clears on service
    * change and auto-selects an executor using Dipper's resolve order
    * (node name → address → service name). The user may still override.
+   * Cascade auto-select applies to single mode only.
    */
   dependsOn?: string;
   /**
@@ -50,10 +55,13 @@ export interface HostSelectorProps {
    * ``useServices()`` page-loop is intentionally not used here.
    */
   serviceTypes?: readonly ServiceType[];
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allowCustom?: boolean;
   /**
-   * Render a closed multi-value host selector committing a `(number | string)[]`.
-   * Host free-solo is not offered, so multi-host is always a closed combobox.
-   * Cascade auto-select applies to single mode only.
+   * Render a multi-value host selector committing a `(number | string)[]`.
+   * Combined with `allowCustom`, yields a free-solo multi-select; otherwise a
+   * closed multi-select combobox. Cascade auto-select applies to single mode
+   * only.
    */
   multiple?: boolean;
 }
@@ -78,17 +86,23 @@ function hostValueId(value: unknown): string | undefined {
  * Cascade auto-select for a single host field. Mounted only when ``dependsOn``
  * is set. Scalar parent ids rehydrate through {@link useResolvedServiceField}
  * (same path as task-name suggestion and other service consumers).
+ *
+ * When ``allowCustom`` is set the free-solo path stores a scalar id/string, so
+ * cascade commits ``match.id``; otherwise it commits the hydrated
+ * ``HostOption`` expected by the closed ``AutoCompleteInput``.
  */
 function HostServiceCascade({
   name,
   dependsOn,
   hosts,
   serviceTypes,
+  allowCustom,
 }: {
   name: string;
   dependsOn: string;
   hosts: HostOption[];
   serviceTypes?: readonly ServiceType[];
+  allowCustom: boolean;
 }) {
   const { setValue, getValues } = useFormContext();
   const { service, resetKey } = useResolvedServiceField(dependsOn, serviceTypes);
@@ -115,10 +129,13 @@ function HostServiceCascade({
 
     const currentId = hostValueId(getValues(name));
     if (currentId === undefined || currentId === autoHostIdRef.current) {
-      setValue(name, match, { shouldDirty: false, shouldValidate: false });
+      setValue(name, allowCustom ? match.id : match, {
+        shouldDirty: false,
+        shouldValidate: false,
+      });
       autoHostIdRef.current = match.id;
     }
-  }, [resetKey, service, hosts, name, setValue, getValues]);
+  }, [resetKey, service, hosts, name, setValue, getValues, allowCustom]);
 
   return null;
 }
@@ -131,6 +148,7 @@ export function HostSelector({
   helperText,
   dependsOn,
   serviceTypes,
+  allowCustom,
   multiple,
 }: HostSelectorProps) {
   const {
@@ -177,7 +195,7 @@ export function HostSelector({
         label={label}
         options={hosts}
         getOptionLabel={getHostOptionLabel}
-        allowCustom={false}
+        allowCustom={Boolean(allowCustom)}
         required={required}
         disabled={disabled || isError}
         loading={isLoading}
@@ -185,6 +203,34 @@ export function HostSelector({
         error={isError || !!fieldError}
         noOptionsText={isLoading ? 'Loading hosts…' : 'No hosts available'}
       />
+    );
+  }
+
+  if (allowCustom) {
+    return (
+      <>
+        {dependsOn ? (
+          <HostServiceCascade
+            name={name}
+            dependsOn={dependsOn}
+            hosts={hosts}
+            serviceTypes={serviceTypes}
+            allowCustom
+          />
+        ) : null}
+        <FreeSoloSelect<HostOption>
+          name={name}
+          label={label}
+          options={hosts}
+          getOptionLabel={getHostOptionLabel}
+          required={required}
+          disabled={disabled || isError}
+          loading={isLoading}
+          helperText={text}
+          error={isError || !!fieldError}
+          noOptionsText={isLoading ? 'Loading hosts…' : 'No hosts available'}
+        />
+      </>
     );
   }
 
@@ -196,6 +242,7 @@ export function HostSelector({
           dependsOn={dependsOn}
           hosts={hosts}
           serviceTypes={serviceTypes}
+          allowCustom={false}
         />
       ) : null}
       <AutoCompleteInput<HostOption>
