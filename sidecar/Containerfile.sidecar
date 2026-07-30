@@ -57,6 +57,24 @@ COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
 
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 
+# PMM feature-build variant (branch `pmm`): only the inventory, mysql_backups,
+# atw and snippets apps ship — every other app package is stripped from the
+# bundle so it cannot be activated. Two import-only stubs survive because
+# app.sep.main and the settings routes import them unconditionally:
+# alerts/config.py and dipper/constants.py; their package __init__ files are
+# emptied so importing them no longer drags in the removed app modules. The
+# stripped alerts migrations leave alembic.ini's version_locations with their
+# scripts (atw, the only other app-owned migration branch, stays).
+RUN cd $APP_HOME/app/sep/apps && \
+    rm -rf alert_troubleshooting alters archives backup_mongo backup_pg \
+        checksums mysql_summary report tasks topology && \
+    find alerts -mindepth 1 -maxdepth 1 ! -name '__init__.py' ! -name 'config.py' -exec rm -rf {} + && \
+    find dipper -mindepth 1 -maxdepth 1 ! -name '__init__.py' ! -name 'constants.py' -exec rm -rf {} + && \
+    : > alerts/__init__.py && \
+    : > dipper/__init__.py && \
+    sed -i 's|:%(here)s/app/sep/apps/alerts/migrations/versions||' $APP_HOME/alembic.ini && \
+    chown 0:1001 $APP_HOME/alembic.ini
+
 # No compose file injects this for the side-car, so the loader would otherwise
 # fall back to the development defaults
 ENV FASTAPI_ENV=production_docker
