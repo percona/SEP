@@ -2387,23 +2387,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -2430,7 +2416,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -3059,8 +3044,13 @@
         "type": "object"
       },
       "atw__ATWIncidentExecutionResponse": {
-        "description": "Represent one recorded incident execution, hydrated with live task status.\n\nThe hydrated fields are ``None`` when the Tasks API could not be reached for\nthat row; the locally-recorded fields are always present.\n\n:param id: The execution row's UUID primary key.\n:param snippet_filename: The executed snippet's filename.\n:param task_history_id: The tasks-service execution this row references.\n:param created_at: When the execution was recorded.\n:param task_status: The upstream execution status.\n:param started_at: When the upstream execution started.\n:param finished_at: When the upstream execution finished.\n:param has_logs: Whether the upstream execution has readable logs.",
+        "description": "Represent one recorded incident execution, hydrated with live task status.\n\nThe hydrated fields are ``None`` when the Tasks API could not be reached for\nthat row; the locally-recorded fields are always present.\n\n:param id: The execution row's UUID primary key.\n:param snippet_filename: The executed snippet's filename.\n:param task_history_id: The tasks-service execution this row references.\n:param created_at: When the execution was recorded.\n:param task_status: The upstream execution status.\n:param started_at: When the upstream execution started.\n:param finished_at: When the upstream execution finished.\n:param has_logs: Whether the upstream execution has readable logs.\n:param masked_args: The command line the snippet ran with, credential values\n    replaced by a fixed-width mask. ``None`` together with\n    ``args_withheld=False`` means the execution recorded no arguments.\n    Defaults to ``None``.\n:param args_withheld: Whether the arguments were suppressed because they\n    could not be masked safely -- distinguishing that from an execution that\n    genuinely ran with none. Defaults to ``False``.",
         "properties": {
+          "args_withheld": {
+            "default": false,
+            "title": "Args Withheld",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3093,6 +3083,17 @@
             "format": "uuid4",
             "title": "Id",
             "type": "string"
+          },
+          "masked_args": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Masked Args"
           },
           "snippet_filename": {
             "title": "Snippet Filename",
@@ -3386,6 +3387,23 @@
         "title": "ATWSnippetSummary",
         "type": "object"
       },
+      "atw__AtwConfigResponse": {
+        "description": "Report whether the incident send action is available.\n\n:param send_disabled_reasons: Why sending is unavailable; empty when the\n    receiver is configured and the action is offered.",
+        "properties": {
+          "send_disabled_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Send Disabled Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "send_disabled_reasons"
+        ],
+        "title": "AtwConfigResponse",
+        "type": "object"
+      },
       "atw__AtwIncidentResponse": {
         "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.",
         "properties": {
@@ -3489,6 +3507,115 @@
         "title": "AtwIncidentWrite",
         "type": "object"
       },
+      "atw__AtwSendJobWrite": {
+        "description": "Define the payload starting one diagnostics send.\n\n:param case_ref: The support-case reference to attach the bundle to.\n:param execution_ids: The incident executions whose output files and logs to\n    send.",
+        "properties": {
+          "case_ref": {
+            "minLength": 1,
+            "title": "Case Ref",
+            "type": "string"
+          },
+          "execution_ids": {
+            "items": {
+              "format": "uuid4",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Execution Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "case_ref",
+          "execution_ids"
+        ],
+        "title": "AtwSendJobWrite",
+        "type": "object"
+      },
+      "atw__AtwSendLogResponse": {
+        "description": "Represent one recorded diagnostics send attempt.\n\nEvery field is always present on a stored attempt, so -- unlike returning the\n:class:`AtwSendLog` table model directly -- the generated client types them as\nrequired rather than optional.\n\n:param id: The attempt's UUID primary key.\n:param incident_id: The incident the attempt belongs to.\n:param case_ref: The support-case reference the attempt targeted.\n:param requested_by: Username of the support engineer who started it.\n:param status: The attempt's lifecycle status.\n:param started_at: When the worker picked it up, if it did.\n:param finished_at: When it reached a terminal status, if it did.\n:param created_at: When the attempt was requested.\n:param detail: The attempt's recorded evidence.",
+        "properties": {
+          "case_ref": {
+            "minLength": 1,
+            "title": "Case Ref",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "object"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid4",
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid4",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/atw__AtwSendStatusEnum"
+          }
+        },
+        "required": [
+          "id",
+          "incident_id",
+          "case_ref",
+          "requested_by",
+          "status",
+          "started_at",
+          "finished_at",
+          "created_at",
+          "detail"
+        ],
+        "title": "AtwSendLogResponse",
+        "type": "object"
+      },
+      "atw__AtwSendStatusEnum": {
+        "description": "Enumerate the lifecycle of one diagnostics send attempt.\n\nThe column stores member *names* (``PENDING``); the API serializes the\n``StrEnum`` *values* (``pending``).",
+        "enum": [
+          "pending",
+          "running",
+          "success",
+          "failed"
+        ],
+        "title": "AtwSendStatusEnum",
+        "type": "string"
+      },
       "atw__PaginatedResponse_ATWIncidentExecutionResponse_": {
         "properties": {
           "items": {
@@ -3549,6 +3676,37 @@
           "limit"
         ],
         "title": "PaginatedResponse[AtwIncidentResponse]",
+        "type": "object"
+      },
+      "atw__PaginatedResponse_AtwSendLogResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/atw__AtwSendLogResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[AtwSendLogResponse]",
         "type": "object"
       },
       "backup_mongo__BackupDerivedTaskSummary": {
@@ -3718,23 +3876,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -3761,7 +3905,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -3892,23 +4035,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -3935,7 +4064,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -4404,23 +4532,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -4447,7 +4561,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -4583,23 +4696,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -4626,7 +4725,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -5058,10 +5156,6 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "port": {
             "anyOf": [
               {
@@ -5076,16 +5170,6 @@
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -5112,7 +5196,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -5243,23 +5326,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -5286,7 +5355,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -5651,23 +5719,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -5694,7 +5748,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -5809,23 +5862,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -5852,7 +5891,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -6242,10 +6280,6 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "port": {
             "anyOf": [
               {
@@ -6260,16 +6294,6 @@
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -6296,7 +6320,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -6308,7 +6331,7 @@
         "type": "object"
       },
       "framework__BaseTaskResponse": {
-        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity and ownership, the resolved execution status, the stored\nconfiguration, and the audit/anonymization metadata. A standard app whose\nresponse has no app-specific fields uses this model directly; an app with\nextras subclasses it. The model is parametrized by the task ``owner``, which\ndrives the ``anonymized_entities`` default-entity lookup.\n\n:param name: The task name.\n:param owner: The entity or user that owns the task.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param last_executed_at: The most recent time the task finished executing\n    (``max`` ``finished_at`` across its history). Reported even while a\n    re-run is in progress (showing the prior completion); ``None`` until the\n    task has finished at least once.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution. Tasks\n    created through the JSON schema-driven path also carry a reserved additive\n    ``_form`` key holding the verbatim, validated create-form body for\n    prefilling an edit form; it is absent for tasks created through a legacy\n    form, so consumers must treat it as optional.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
+        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity, the resolved execution status, the stored configuration,\nand the audit/anonymization metadata. A standard app whose response has no\napp-specific fields uses this model directly; an app with extras subclasses\nit. The model is parametrized by the task ``owner``, which drives the\n``anonymized_entities`` default-entity lookup but is excluded from the\nserialized detail/list payload (as is ``service_type``).\n\n:param name: The task name.\n:param owner: The task-category owner (for example ``BACKUPS``). Kept\n    as a model attribute for ``anonymized_entities`` and server-side\n    filtering; excluded from the serialized detail/list payload.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type. Excluded from the\n    serialized detail/list payload.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param last_executed_at: The most recent time the task finished executing\n    (``max`` ``finished_at`` across its history). Reported even while a\n    re-run is in progress (showing the prior completion); ``None`` until the\n    task has finished at least once.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution. Tasks\n    created through the JSON schema-driven path also carry a reserved additive\n    ``_form`` key holding the verbatim, validated create-form body for\n    prefilling an edit form; it is absent for tasks created through a legacy\n    form, so consumers must treat it as optional.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -6412,23 +6435,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -6455,7 +6464,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -8483,23 +8491,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -8526,7 +8520,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -10584,23 +10577,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -10627,7 +10606,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -11332,10 +11310,6 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "port": {
             "anyOf": [
               {
@@ -11350,16 +11324,6 @@
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -11386,7 +11350,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -14800,6 +14763,28 @@
         ]
       }
     },
+    "/api/apps/atw/config/": {
+      "get": {
+        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard -- this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld; empty when it is offered.",
+        "operationId": "atw_atw_config_api_apps_atw_config__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Atw Config",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
     "/api/apps/atw/execution-schema/": {
       "get": {
         "description": "Build one execution form covering several snippets, merging common parameters.\n\nUnknown or unsafe filenames fail the whole request — a form the caller cannot\nfill for every selected snippet is not a partial success.\n\n:param snippet_filename: The selected snippet filenames, repeated per snippet\n    and deduplicated order-preserving.\n:return: The shared section followed by each snippet's remaining fields.\n:raises HTTPBadRequestException: When a filename is unsafe or malformed, failing\n    the whole request before any item is dispatched.\n:raises HTTPNotFoundException: When a filename matches no snippet.",
@@ -15080,7 +15065,7 @@
     },
     "/api/apps/atw/incidents/{incident_id}/executions/": {
       "get": {
-        "description": "List one incident's snippet executions, newest first, with live task status.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param pagination: The offset/limit window for the page.\n:param tasks_api: The authenticated Tasks API client.\n:return: A paginated page of executions hydrated from the Tasks API.",
+        "description": "List one incident's snippet executions, newest first, with live task status.\n\nEach row also reports the command line its snippet ran with, credential values\nmasked. A row whose snippet or upstream payload cannot supply what masking\nneeds reports its arguments as withheld; the page still returns.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param pagination: The offset/limit window for the page.\n:param tasks_api: The authenticated Tasks API client.\n:return: A paginated page of executions hydrated from the Tasks API, each with\n    its masked arguments or the reason they are absent.",
         "operationId": "atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get",
         "parameters": [
           {
@@ -15192,6 +15177,179 @@
           }
         },
         "summary": "Atw Batch Execute",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/{incident_id}/send-jobs/": {
+      "get": {
+        "description": "List one incident's diagnostics send attempts, newest first.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of send attempts, newest first.",
+        "operationId": "atw_atw_list_send_jobs_api_apps_atw_incidents__incident_id__send_jobs__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__PaginatedResponse_AtwSendLogResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw List Send Jobs",
+        "tags": [
+          "atw"
+        ]
+      },
+      "post": {
+        "description": "Start delivering the selected executions' output files and logs to the support case.\n\nThe row is created before the task is queued so a broker failure is still\nrecorded as a failed attempt rather than vanishing: the row is the only place\na support engineer can see that a send was ever tried.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param current_user: The authenticated user, stamped as ``requested_by``.\n:param body: The send payload naming the case reference and executions.\n:return: The created send log, pending.\n:raises HTTPUnprocessableEntityException: When an execution id does not belong\n    to this incident.\n:raises HTTPServiceUnavailableException: When the send could not be queued.\n:raises HTTPBadRequestException: Propagated from the manager when the row\n    cannot be written.",
+        "operationId": "atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/atw__AtwSendJobWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwSendLogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Start Send Job",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/{incident_id}/send-jobs/{send_job_id}": {
+      "get": {
+        "description": "Retrieve one diagnostics send attempt, for the dialog to poll.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param send_job_id: The send attempt's UUID.\n:return: The matching send attempt.\n:raises HTTPNotFoundException: If this incident has no such attempt.",
+        "operationId": "atw_atw_get_send_job_api_apps_atw_incidents__incident_id__send_jobs__send_job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "send_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Send Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwSendLogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Get Send Job",
         "tags": [
           "atw"
         ]

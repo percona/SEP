@@ -466,7 +466,8 @@ class TestBackupMongoResponseModels:
         assert isinstance(response, BaseTaskResponse)
         assert dumped["backup_type"] == BackupType.PBM_LOGICAL.value
         assert dumped["hostname"] == "mongo-host"
-        assert dumped["service_type"] is None
+        assert "service_type" not in dumped
+        assert "owner" not in dumped
         assert "anonymize_mask" in dumped
         assert "anonymized_entities" in dumped
         assert "connectivity_warning" in dumped

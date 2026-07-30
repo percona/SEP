@@ -40,6 +40,7 @@ from app.sep.models import AppLifecycleEnum, AppState
 SNIPPETS_TASK = "sep__sync_snippets"
 ALERTS_TASK = "sep__backup_alert_config"
 REPORT_PURGE_TASK = "sep__purge_report_artifacts"
+ATW_PURGE_TASK = "sep__purge_atw_bundles"
 CELERY_RESULT_EXPIRES_SECONDS = 3600
 
 
@@ -330,7 +331,7 @@ class TestAppScheduleContribution:
         mocker.patch.object(
             seed_module.sep_settings,
             "APPS",
-            [_plugin("snippets"), _plugin("alerts"), _plugin("report")],
+            [_plugin("snippets"), _plugin("alerts"), _plugin("report"), _plugin("atw")],
         )
 
         tasks = self._tasks_by_name(seed_module.get_system_periodic_tasks())
@@ -346,6 +347,10 @@ class TestAppScheduleContribution:
         assert tasks[REPORT_PURGE_TASK].owner_app_key == "report"
         assert tasks[REPORT_PURGE_TASK].task_name == (
             "app.sep.apps.report.celery.purge_report_artifacts"
+        )
+        assert tasks[ATW_PURGE_TASK].owner_app_key == "atw"
+        assert tasks[ATW_PURGE_TASK].task_name == (
+            "app.sep.apps.atw.celery.purge_atw_bundles"
         )
 
     def test_non_contributing_app_adds_no_owned_schedule(self, mocker) -> None:
