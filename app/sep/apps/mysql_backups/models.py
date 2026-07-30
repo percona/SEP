@@ -66,6 +66,10 @@ class MysqlBackupRun(BaseSQLModel, table=True):
         unique, so one run maps to exactly one record.
     :param service_name: The inventory service name the backup was taken from
         (the task's ``_service_name`` meta), used as the per-service query key.
+        Not a foreign key — the catalog is sep-owned and joins to inventory by
+        name only, so two MySQL services sharing a name (``Service.name`` carries
+        no uniqueness constraint) would have their rows merged under either id.
+
     :param hostname: The backup target host (the task's ``target`` meta).
     :param backup_type: The backup tool the run used, mydumper or xtrabackup.
     :param location: The resolved on-disk directory the run produced, stored
