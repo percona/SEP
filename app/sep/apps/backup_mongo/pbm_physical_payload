@@ -252,10 +252,9 @@ def _escape_label_value(value: str) -> str:
 def _safe_filename_alias(value: str) -> str:
     """Return ``value`` with characters unsafe in a ``.prom`` filename replaced.
 
-    The alias reaches the filename from host-controlled task config: a path
-    separator would redirect the write outside the collector directory and a NUL
-    byte would make ``open`` raise, so both (and stray newlines) collapse to
-    ``_``.
+    The alias comes from ``NOMAD_META_TARGET``. Path separators could redirect
+    the write outside the collector directory, so they and stray newlines
+    collapse to ``_``.
 
     :param value: The raw alias.
     :return: The alias safe to embed in a filename.
