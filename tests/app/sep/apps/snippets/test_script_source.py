@@ -421,8 +421,8 @@ class TestBuildExecutionMeta:
     ) -> None:
         """Keep the legacy ``-extra_args-`` submission spelling working end-to-end.
 
-        SEP-1500 depends on this staying true until the Jinja form path is
-        retired: the new schema-driven alias must be additive, not a replacement.
+        The new schema-driven alias must be additive, not a replacement, so
+        both spellings resolve to the same execution args.
         """
         monkeypatch.setattr(
             snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
