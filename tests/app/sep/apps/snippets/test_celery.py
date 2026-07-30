@@ -376,6 +376,35 @@ class TestBuiltinAutoApproval:
         assert row.is_approved is False
 
     @pytest.mark.asyncio
+    async def test_absent_from_manifest_skips_hashing(self, session, mocker, tmp_path):
+        """Assert sync only hashes files the manifest has an entry for.
+
+        A digest for an unlisted file can never match, so computing one costs a
+        full read per user-supplied snippet on every sync.
+        """
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path)
+        _write_manifest(tmp_path, {"builtin.sh": b"#!/bin/bash\necho builtin\n"})
+        (tmp_path / "custom.sh").write_bytes(b"#!/bin/bash\necho custom\n")
+        spy = mocker.spy(sep_celery, "sha256_file")
+
+        await sep_celery.update_snippets()
+
+        assert {call.args[0].name for call in spy.call_args_list} == {"builtin.sh"}
+
+    @pytest.mark.asyncio
+    async def test_auto_approve_disabled_skips_hashing(self, session, mocker, tmp_path):
+        """Assert sync hashes nothing when built-in auto-approval is disabled."""
+        _patch_session(mocker, session)
+        self._patch_snippets_dir(mocker, tmp_path, auto_approve=False)
+        _write_manifest(tmp_path, {"builtin.sh": b"#!/bin/bash\necho builtin\n"})
+        spy = mocker.spy(sep_celery, "sha256_file")
+
+        await sep_celery.update_snippets()
+
+        assert spy.call_args_list == []
+
+    @pytest.mark.asyncio
     async def test_content_change_auto_clear_is_not_human_revocation(
         self, session, mocker, tmp_path
     ):

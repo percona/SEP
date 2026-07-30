@@ -170,9 +170,11 @@ async def _sync_snippet_file(
     """
     snippet = await Snippet.from_path(snippet_path)
     logger.debug("Processing file %s: %s", snippet_path, snippet.model_dump())
-    manifest_match = auto_approve_enabled and manifest.get(
-        snippet_name
-    ) == await sha256_file(snippet_path)
+    expected_digest = manifest.get(snippet_name) if auto_approve_enabled else None
+    manifest_match = (
+        expected_digest is not None
+        and expected_digest == await sha256_file(snippet_path)
+    )
     created_snippet, created = await SnippetManager.get_or_create(
         session, snippet, {"filename"}
     )
