@@ -426,44 +426,69 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
 _NTL_OPEN = '{{ "{{" }}'   # rendered by Nomad → {{
 _NTL_CLOSE = '{{ "}}" }}'  # rendered by Nomad → }}
 
-# Ansible playbook for upgrading OS packages on a Debian executor host.
+# Ansible playbook for upgrading OS packages on an executor host.
 # Embedded directly in the Nomad job spec via EmbeddedTmpl so no out-of-band
 # playbook deployment to executor nodes is required.
 #
+# Runs on both Debian- and RHEL-family hosts. Facts are gathered (subset ``min``)
+# because the branch below keys on ``ansible_facts['os_family']`` -- a full-system
+# upgrade is the one operation with no portable module spelling: apt exposes it as
+# the ``upgrade`` parameter, dnf as ``name: "*"``. Named-package upgrades use
+# ansible.builtin.package and need no branch.
+#
 # Meta inputs (all optional):
-#   packages        — space-separated list of package names; omit for full dist-upgrade
+#   packages        — space-separated list of package names; omit for a full upgrade
 #   restart_service — systemd unit to restart after upgrade (e.g. "mysql" or "mongod")
-_APT_UPGRADE_PLAYBOOK_TMPL = (
+_OS_UPGRADE_PLAYBOOK_TMPL = (
     "---\n"
-    "- name: Upgrade Debian executor host\n"
+    "- name: Upgrade executor host packages\n"
     "  hosts: localhost\n"
     "  connection: local\n"
     "  become: true\n"
-    "  gather_facts: false\n"
+    "  gather_facts: true\n"
+    "  gather_subset:\n"
+    "    - min\n"
     "  vars:\n"
     '    packages: ""\n'
     '    restart_service: ""\n'
     "  tasks:\n"
-    "    - name: Update apt cache\n"
+    "    - name: Full upgrade (Debian family)\n"
     "      ansible.builtin.apt:\n"
     "        update_cache: true\n"
     "        cache_valid_time: 0\n"
-    "\n"
-    "    - name: Full dist-upgrade\n"
-    "      ansible.builtin.apt:\n"
     "        upgrade: dist\n"
     "        autoremove: true\n"
     "        autoclean: true\n"
-    "      when: not packages\n"
+    "      when: not packages and ansible_facts['os_family'] == 'Debian'\n"
+    "\n"
+    "    - name: Full upgrade (RHEL family)\n"
+    "      ansible.builtin.dnf:\n"
+    '        name: "*"\n'
+    "        state: latest\n"
+    "        update_cache: true\n"
+    "      when: not packages and ansible_facts['os_family'] == 'RedHat'\n"
+    "\n"
+    # ansible.builtin.package is a thin name/state wrapper with no cache control,
+    # so a named upgrade refreshes the cache through the concrete module first --
+    # otherwise apt resolves "latest" against a stale index.
+    "    - name: Refresh apt cache before a named upgrade\n"
+    "      ansible.builtin.apt:\n"
+    "        update_cache: true\n"
+    "        cache_valid_time: 0\n"
+    "      when: packages and ansible_facts['os_family'] == 'Debian'\n"
+    "\n"
+    "    - name: Refresh dnf cache before a named upgrade\n"
+    "      ansible.builtin.dnf:\n"
+    "        update_cache: true\n"
+    "      when: packages and ansible_facts['os_family'] == 'RedHat'\n"
     "\n"
     "    - name: Upgrade specific packages\n"
-    "      ansible.builtin.apt:\n"
+    "      ansible.builtin.package:\n"
     # packages.split() converts the space-separated meta value into a list.
     # Nomad expands ${NOMAD_META_packages} before sh runs; single-quoting in
     # the command preserves spaces so the whole value reaches Ansible as one arg.
     f'        name: "{_NTL_OPEN} packages.split() {_NTL_CLOSE}"\n'
     "        state: latest\n"
-    "        update_cache: false\n"
     "      when: packages\n"
     "\n"
     "    - name: Restart service after upgrade\n"
@@ -474,9 +499,9 @@ _APT_UPGRADE_PLAYBOOK_TMPL = (
     "      when: restart_service\n"
 )
 
-NOMAD_APT_UPGRADE = {
-    "ID": "apt-upgrade",
-    "Name": "apt-upgrade",
+NOMAD_OS_UPGRADE = {
+    "ID": "os-upgrade",
+    "Name": "os-upgrade",
     "Type": "batch",
     "Datacenters": ["*"],
     "Constraints": [
@@ -518,7 +543,7 @@ NOMAD_APT_UPGRADE = {
                                 " -i localhost,"
                                 " -e packages='${NOMAD_META_packages}'"
                                 " -e restart_service='${NOMAD_META_restart_service}'"
-                                " ${NOMAD_TASK_DIR}/apt_upgrade.yml"
+                                " ${NOMAD_TASK_DIR}/os_upgrade.yml"
                             ),
                         ],
                     },
@@ -535,8 +560,8 @@ NOMAD_APT_UPGRADE = {
                             "DestPath": "local/ansible.cfg",
                         },
                         {
-                            "EmbeddedTmpl": _APT_UPGRADE_PLAYBOOK_TMPL,
-                            "DestPath": "local/apt_upgrade.yml",
+                            "EmbeddedTmpl": _OS_UPGRADE_PLAYBOOK_TMPL,
+                            "DestPath": "local/os_upgrade.yml",
                         },
                     ],
                 },
@@ -647,15 +672,19 @@ NOMAD_DISCOVER_MONGO = {
 #   mongo_version   — exact package version prefix, e.g. "8.0.12-7" (optional; omit for latest)
 #   restart_service — systemd unit to restart (default: mongod)
 #
-# No Ansible Jinja2 {{ }} in this template — all values come from Nomad meta
-# expanded on the CLI via -e flags, so no Nomad template escaping is needed.
+# Runs on both Debian- and RHEL-family hosts. percona-release itself is portable,
+# and the PSMDB package names are identical on both, so only two things branch:
+# the cache refresh, and the pinned-version spelling -- apt separates name and
+# version with "=" (pkg=8.0.12-7*), dnf with "-" (pkg-8.0.12-7*).
 _UPGRADE_MONGO_PLAYBOOK_TMPL = (
     "---\n"
     "- name: Upgrade MongoDB on executor host\n"
     "  hosts: localhost\n"
     "  connection: local\n"
     "  become: true\n"
-    "  gather_facts: false\n"
+    "  gather_facts: true\n"
+    "  gather_subset:\n"
+    "    - min\n"
     "  vars:\n"
     '    mongo_release: "psmdb-80"\n'
     '    mongo_version: ""\n'
@@ -665,29 +694,44 @@ _UPGRADE_MONGO_PLAYBOOK_TMPL = (
     "      ansible.builtin.command:\n"
     f"        cmd: percona-release enable {_NTL_OPEN} mongo_release {_NTL_CLOSE}\n"
     "\n"
-    "    - name: Update apt cache\n"
+    "    - name: Refresh apt cache (Debian family)\n"
     "      ansible.builtin.apt:\n"
     "        update_cache: true\n"
     "        cache_valid_time: 0\n"
+    "      when: ansible_facts['os_family'] == 'Debian'\n"
+    "\n"
+    "    - name: Refresh dnf cache (RHEL family)\n"
+    "      ansible.builtin.dnf:\n"
+    "        update_cache: true\n"
+    "      when: ansible_facts['os_family'] == 'RedHat'\n"
     "\n"
     "    - name: Install MongoDB packages (latest in channel)\n"
-    "      ansible.builtin.apt:\n"
+    "      ansible.builtin.package:\n"
     "        name:\n"
     "          - percona-server-mongodb\n"
     "          - percona-mongodb-mongosh\n"
     "        state: latest\n"
-    "        update_cache: false\n"
     "      when: not mongo_version\n"
     "\n"
-    "    - name: Install MongoDB packages (pinned version)\n"
+    "    - name: Install MongoDB packages (pinned version, Debian family)\n"
     "      ansible.builtin.apt:\n"
-    f"        name:\n"
+    "        name:\n"
     f"          - percona-server-mongodb={_NTL_OPEN} mongo_version {_NTL_CLOSE}*\n"
-    f"          - percona-mongodb-mongosh\n"
+    "          - percona-mongodb-mongosh\n"
     "        state: present\n"
     "        allow_downgrade: true\n"
     "        update_cache: false\n"
-    "      when: mongo_version\n"
+    "      when: mongo_version and ansible_facts['os_family'] == 'Debian'\n"
+    "\n"
+    "    - name: Install MongoDB packages (pinned version, RHEL family)\n"
+    "      ansible.builtin.dnf:\n"
+    "        name:\n"
+    f"          - percona-server-mongodb-{_NTL_OPEN} mongo_version {_NTL_CLOSE}*\n"
+    "          - percona-mongodb-mongosh\n"
+    "        state: present\n"
+    "        allow_downgrade: true\n"
+    "        update_cache: false\n"
+    "      when: mongo_version and ansible_facts['os_family'] == 'RedHat'\n"
     "\n"
     "    - name: Restart MongoDB service\n"
     "      ansible.builtin.systemd:\n"
@@ -893,8 +937,8 @@ SYSTEM_TASKS = [
         created_by=SYSTEM_USER,
     ),
     Task(
-        name="apt-upgrade",
-        data=NOMAD_APT_UPGRADE,
+        name="os-upgrade",
+        data=NOMAD_OS_UPGRADE,
         owner="ANSIBLE",
         protected=True,
         anonymize_mask=None,
