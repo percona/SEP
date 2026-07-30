@@ -84,6 +84,7 @@ def _should_inline_encrypt(bin_cmd: str, keyfile: str | None) -> bool:
     """
     return bool(keyfile) and bin_cmd != 'mariadb-backup'
 
+
 BACKUP_DIR_REGEX = {
     "X": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$",
     "I": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}_incrementals$",
@@ -622,6 +623,7 @@ def is_encrypted_dir(
     :param logger: Logger instance.
     :param method: Encryption format to verify against (``"gpg"`` or ``"aes256"``).
     :return: True if all files are encrypted, False otherwise.
+    :raises BackupError: If ``method`` is not ``"gpg"`` or ``"aes256"``.
     """
     if method not in ("gpg", "aes256"):
         raise BackupError("Unknown encryption method: %s" % (method,))
@@ -631,7 +633,7 @@ def is_encrypted_dir(
             if method == "aes256":
                 if p.suffix != ".xbcrypt":
                     if logger:
-                        logger.error('Unencrypted file in AES-256 dir: "%s"', p.name)
+                        logger.error('Not encrypted: %s', p.name)
                     return False
                 continue
             cmd = [
@@ -2215,7 +2217,7 @@ class Xtrabackup(Backup):
             if not is_encrypted_dir(
                 self.last_backup_dir, method='aes256', logger=self.logger
             ):
-                raise BackupError('AES-256 verification failed: %s' % (self.last_backup_dir,))
+                raise BackupError('AES-256 verify failed: %s' % (self.last_backup_dir,))
 
         # Encrypt backup w/o upload as a separate option.
         # No hardlinking or rsync upload to avoid the mess.
@@ -2278,7 +2280,7 @@ class Xtrabackup(Backup):
             except Exception:
                 self.logger.exception("Failed to write the run-result file.")
 
-    def encrypt_files_aes256(self, dir_path):
+    def encrypt_files_aes256(self, dir_path: str | None) -> None:
         """Encrypt plaintext files under a directory with xbcrypt/AES-256.
 
         Recurses ``dir_path``, skipping files already carrying a ``.xbcrypt``
@@ -2296,13 +2298,14 @@ class Xtrabackup(Backup):
             return
         # A list comprehension (not a generator) fully drains rglob() before any
         # file is touched, so the walk can't re-yield the .xbcrypt files the pool
-        # is creating underneath it.
-        thread_pool.ThreadPool(5).map(self._run_encrypt_file_aes256, [
+        # is creating underneath it. Bounded by CPU count so xbcrypt can't starve
+        # the host on small hosts.
+        thread_pool.ThreadPool(min(5, os.cpu_count() or 5)).map(self._run_encrypt_file_aes256, [
             p for p in Path(dir_path).rglob('*')
             if p.is_file() and p.suffix != '.xbcrypt' and p.name not in PLAINTEXT_METADATA_FILES
         ])
 
-    def _run_xbcrypt(self, cmd, remove_path):
+    def _run_xbcrypt(self, cmd: list[str], remove_path: str) -> None:
         """Run an ``xbcrypt`` command, then delete ``remove_path`` on success.
 
         :param cmd: The ``xbcrypt`` argument list to execute.
@@ -2321,10 +2324,12 @@ class Xtrabackup(Backup):
             raise BackupError('xbcrypt failed on %s: %s' % (remove_path, err))
         os.remove(remove_path)
 
-    def _run_encrypt_file_aes256(self, file_path):
+    def _run_encrypt_file_aes256(self, file_path: str) -> None:
         """Encrypt a single file in place with xbcrypt/AES-256.
 
         :param file_path: Plaintext file to encrypt; no-ops when it is absent.
+        :raises BackupError: If the underlying xbcrypt run fails (propagated
+            from :meth:`_run_xbcrypt`).
         """
         if os.path.exists(file_path):
             self._run_xbcrypt(
@@ -2507,7 +2512,9 @@ class Xtrabackup(Backup):
 
         self.logger.info('OK Xtrabackup complete: %s', self.last_backup_dir)
 
-    def _decrypt_file_aes256(self, keyfile, input_path, output_path):
+    def _decrypt_file_aes256(
+        self, keyfile: str, input_path: str, output_path: str
+    ) -> None:
         """Decrypt one xbcrypt/AES-256 file to ``output_path`` and drop the input.
 
         No-ops when ``input_path`` is absent, so callers need not pre-check.

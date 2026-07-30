@@ -51,6 +51,9 @@ _CONST_NAMES = frozenset(
         "PLAINTEXT_METADATA_FILES",
         "XBCRYPT_BIN",
         "GPG_BIN",
+        "XTRABACKUP_BIN",
+        "XTRABACKUP_BIN_REAL",
+        "XTRABACKUP_BIN_MARIADB",
     }
 )
 
@@ -129,13 +132,30 @@ class _FakeProc:
         return b"", b"boom"
 
 
-def _payload_instance(method_names: tuple[str, ...], returncode: int = 0):
+def _payload_instance(
+    method_names: tuple[str, ...],
+    *,
+    returncode: int = 0,
+    extra_namespace: dict[str, object] | None = None,
+    real_subprocess: bool = False,
+):
     """Build an instance of a synthetic class carrying the named payload methods.
 
     The methods are lifted verbatim from the payload and exec'd into a class over
     a namespace whose ``subprocess`` is faked (recording every command and
     returning ``returncode``). Returns ``(instance, BackupError, calls)`` where
     ``calls`` is the list of xbcrypt argv lists the code tried to run.
+
+    :param method_names: The payload method names to lift into the synthetic class.
+    :param returncode: The return code the faked ``subprocess.Popen`` reports.
+    :param extra_namespace: Extra globals (e.g. a fake module-level function, or a
+        payload constant override such as ``XBCRYPT_BIN``) merged into the exec
+        namespace after the payload's own constants are loaded (so this wins),
+        before the class is compiled.
+    :param real_subprocess: When True, keep the real ``subprocess`` module instead
+        of faking ``Popen`` -- for integration tests that need a real process (e.g.
+        a stand-in ``xbcrypt`` executable) to actually run. ``calls`` is unused
+        (always ``[]``) in this mode.
     """
     tree = xtrabackup_payload_tree()
     method_nodes = [
@@ -161,7 +181,8 @@ def _payload_instance(method_names: tuple[str, ...], returncode: int = 0):
             return _FakeProc(returncode)
 
     namespace = _base_namespace()
-    namespace["subprocess"] = _FakeSubprocess
+    if not real_subprocess:
+        namespace["subprocess"] = _FakeSubprocess
     exec(
         compile(
             ast.Module(body=_const_nodes(tree), type_ignores=[]),
@@ -170,6 +191,7 @@ def _payload_instance(method_names: tuple[str, ...], returncode: int = 0):
         ),
         namespace,
     )
+    namespace.update(extra_namespace or {})
     cls = ast.ClassDef(
         name="_Payload",
         bases=[],
@@ -343,6 +365,55 @@ class TestEncryptFilesAes256:
         inst, _, calls = _payload_instance(_ENCRYPT_METHODS)
         inst.encrypt_files_aes256(str(tmp_path))
         assert calls == []
+
+
+class _RecordingThreadPool:
+    """Stand in for ``multiprocessing.pool.ThreadPool`` that runs synchronously.
+
+    Records the requested ``processes`` count instead of actually pooling, so
+    tests can assert on the size the real call site requested.
+    """
+
+    def __init__(self, processes: int) -> None:
+        self.processes = processes
+
+    def map(self, func, iterable):
+        """Apply ``func`` to each item synchronously, mirroring ``ThreadPool.map``."""
+        return [func(item) for item in iterable]
+
+
+class TestEncryptFilesAes256WorkerCount:
+    """Assert the encrypt pass bounds its ``ThreadPool`` size by CPU cores."""
+
+    @pytest.mark.parametrize(
+        ("cpu_count", "expected"),
+        [(8, 5), (2, 2), (None, 5)],
+    )
+    def test_pool_size_bounded_by_cpu_count(
+        self,
+        tmp_path,
+        monkeypatch: pytest.MonkeyPatch,
+        cpu_count: int | None,
+        expected: int,
+    ) -> None:
+        """Assert the pool never exceeds available cores, capped at 5 by default."""
+        monkeypatch.setattr(os, "cpu_count", lambda: cpu_count)
+        (tmp_path / "ibdata1").write_text("data")
+        pool_sizes: list[int] = []
+
+        class _CapturingThreadPool(_RecordingThreadPool):
+            def __init__(self, processes: int) -> None:
+                pool_sizes.append(processes)
+                super().__init__(processes)
+
+        inst, _, _ = _payload_instance(
+            _ENCRYPT_METHODS,
+            extra_namespace={
+                "thread_pool": types.SimpleNamespace(ThreadPool=_CapturingThreadPool)
+            },
+        )
+        inst.encrypt_files_aes256(str(tmp_path))
+        assert pool_sizes == [expected]
 
 
 _DECRYPT_METHODS = (
