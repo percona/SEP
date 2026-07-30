@@ -18,6 +18,7 @@
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
+from app.core.db.utils import NullsLastOrdering
 from app.core.pagination import PaginatedResponse, Pagination
 from app.sep.apps.mysql_backups.models import MysqlBackupRun
 
@@ -39,10 +40,11 @@ class MysqlBackupRunManager(BaseSQLModelManager):
 
         Ordered by run completion (``finished_at`` desc), not insertion time, so
         a run that was catalogued late cannot jump ahead of a more recently
-        finished one. ``NULLS LAST`` is explicit: a row whose ``finished_at`` was
-        never reported sorts to the tail on both backends (Postgres orders NULLs
-        first under ``desc`` by default, SQLite last — this pins the intended
-        order). ``created_at`` then ``id`` (both desc) break ties and order the
+        finished one. NULLs-last is explicit via
+        :class:`~app.core.db.utils.NullsLastOrdering`, so a row whose
+        ``finished_at`` was never reported sorts to the tail on every supported
+        backend, including MySQL, which has no native ``NULLS LAST`` syntax.
+        ``created_at`` then ``id`` (both desc) break ties and order the
         null-``finished_at`` rows among themselves by insertion order.
 
         :param session: The database session to query on.
@@ -54,7 +56,7 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         return await cls.list_paginated(
             session,
             order_by=[
-                MysqlBackupRun.finished_at.desc().nulls_last(),
+                NullsLastOrdering(MysqlBackupRun.finished_at, descending=True),
                 MysqlBackupRun.created_at.desc(),
                 MysqlBackupRun.id.desc(),
             ],
