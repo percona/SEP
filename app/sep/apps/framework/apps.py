@@ -30,7 +30,6 @@ from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Annotated, Any, Self
 
 from fastapi import APIRouter, Body, Depends, Form, params
@@ -93,7 +92,6 @@ __all__ = [
     "AppCapabilities",
     "Cascade",
     "ListFilterConfig",
-    "StaticMount",
     "TaskExecutionApp",
     "Views",
 ]
@@ -235,24 +233,6 @@ class Cascade:
 
     derived: tuple[DerivedTask, ...] = ()
     predecessors: tuple[ChainedPredecessor, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class StaticMount:
-    """Declare one authenticated static mount for a script app's payload directory.
-
-    Collected from the registry in ``app/sep/main.py`` and mounted through
-    :class:`~app.sep.utils.static.AuthenticatedStaticFiles`, so a payload directory
-    is never served anonymously.
-
-    :param path: The mount prefix (for example ``/static/snippets``).
-    :param directory: The directory served behind authentication.
-    :param name: The Starlette mount name used for reverse URL lookups.
-    """
-
-    path: str
-    directory: Path
-    name: str
 
 
 class TaskExecutionApp(BaseApp):
@@ -421,10 +401,9 @@ class TaskExecutionApp(BaseApp):
         sibling tabs under ``{route_base}/{route_segment}``. Threaded into the
         derived ``GET /schema`` (``AppSchema.related_apps``). Defaults to an
         empty tuple.
-    :param static_mounts: Authenticated static mounts for the app's payload
-        directories, collected from the registry and mounted in ``app/sep/main.py``
-        through :class:`~app.sep.utils.static.AuthenticatedStaticFiles`. Defaults to
-        an empty tuple.
+    :param uses_task_data: Overrides the :class:`BaseApp` default to ``True``: a
+        derived task app's list and detail surfaces always render the shared
+        task-history views. Defaults to ``True``.
     """
 
     owner: str
@@ -463,7 +442,7 @@ class TaskExecutionApp(BaseApp):
     delete_guard: tuple[params.Depends, ...] | _Unguarded = ()
     description: str | None = None
     related_apps: tuple[RelatedApp, ...] = ()
-    static_mounts: tuple[StaticMount, ...] = ()
+    uses_task_data: bool = True
 
     _task_getter: Callable[..., Awaitable[Task]] | None = PrivateAttr(default=None)
 

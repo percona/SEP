@@ -95,11 +95,24 @@ const MOCK_EXECUTION = {
   started_at: null,
   finished_at: null,
   has_logs: false,
+  masked_args: null as string | null,
+  args_withheld: false,
 };
+
+/**
+ * A realistic long masked command line — a `--mongodb-uri` invocation, at 162
+ * characters. Wide enough that a `nowrap` summary line blows the workspace grid
+ * track out past the viewport unless every ancestor between the line and the
+ * grid can shrink below its content width.
+ */
+const LONG_MASKED_ARGS =
+  "mongodb_pbm_diagnostics.sh --mongodb-uri 'mongodb://pbmuser:***@mongo-node-1.internal:27017/?replicaSet=rs0&authSource=admin' --log-entries 10000 --journal-lines 2000";
 
 interface AtwApiMockOptions {
   batchStatus?: number;
   batchJson?: string;
+  /** Executions the listing returns straight away, without a batch POST. */
+  seededExecutions?: (typeof MOCK_EXECUTION)[];
 }
 
 /**
@@ -122,6 +135,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       ],
     });
 
+  const seededExecutions = options.seededExecutions ?? [];
   let executionRecorded = false;
 
   await page.route('**/api/**', (route) => {
@@ -169,7 +183,24 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(paginated(executionRecorded ? [MOCK_EXECUTION] : [])),
+        body: JSON.stringify(
+          paginated(
+            seededExecutions.length > 0
+              ? seededExecutions
+              : executionRecorded
+                ? [MOCK_EXECUTION]
+                : [],
+          ),
+        ),
+      });
+    }
+
+    // Send-job history (GET) for the incident.
+    if (pathname.endsWith(`/incidents/${INCIDENT_ID}/send-jobs/`) && req.method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(paginated([])),
       });
     }
 
@@ -206,6 +237,15 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(MOCK_ATW_LIST),
+      });
+    }
+
+    // Diagnostics-send availability probe.
+    if (pathname.endsWith('/atw/config/') && req.method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ send_disabled_reasons: [] }),
       });
     }
 
@@ -293,5 +333,28 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
     await page.getByRole('button', { name: 'Execute batch' }).click();
 
     await expect(page.getByText('Batch execute failed (e2e)')).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('a long recorded argument string is clipped instead of widening the page', async ({
+    page,
+  }) => {
+    await mockAtwApis(page, {
+      seededExecutions: [{ ...MOCK_EXECUTION, masked_args: LONG_MASKED_ARGS }],
+    });
+    await page.goto(`${APP_ROUTE}/${INCIDENT_ID}`);
+
+    const summaryLine = page.locator('.MuiAccordionSummary-content').getByText(LONG_MASKED_ARGS);
+    await expect(summaryLine).toBeVisible({ timeout: 30_000 });
+
+    // The collapsed line must be clipped by its container, which is what makes
+    // the `text-overflow: ellipsis` visible, rather than stretching the pane.
+    const clipped = await summaryLine.evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(clipped).toBe(true);
+
+    const pageWidths = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    }));
+    expect(pageWidths.scrollWidth).toBeLessThanOrEqual(pageWidths.innerWidth);
   });
 });

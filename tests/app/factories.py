@@ -36,7 +36,7 @@ from app.inventory.models import (
 )
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.archives.models import ArchivesCreate
-from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
+from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution, AtwSendLog
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.tasks.models import (
     Task,
@@ -121,6 +121,16 @@ class AtwIncidentFactory(SQLAlchemyFactory[AtwIncident]):
 
 class AtwIncidentExecutionFactory(SQLAlchemyFactory[AtwIncidentExecution]):
     """Define factory for AtwIncidentExecution instances."""
+
+
+class AtwSendLogFactory(SQLAlchemyFactory[AtwSendLog]):
+    """Define factory for AtwSendLog instances.
+
+    ``detail`` is pinned to an empty mapping because polyfactory cannot generate a
+    value for the untyped JSON column.
+    """
+
+    detail = Use(dict)
 
 
 class GeneratedTaskFactory(ModelFactory[TaskWrite]):

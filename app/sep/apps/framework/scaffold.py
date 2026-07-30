@@ -1251,8 +1251,8 @@ def _print_summary(result: ScaffoldResult) -> None:
         f"  tests: {result.tests_dir}\n"
         f"{payload_note}"
         f"{script_note}"
-        f"\n{registration} Manage it from the Admin App Manager (Settings -> Apps) "
-        "once you have filled in the skeleton.\n"
+        f"\n{registration} Manage it from the Apps page in the sidebar "
+        "(/admin/apps) once you have filled in the skeleton.\n"
     )
 
 
