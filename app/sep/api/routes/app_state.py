@@ -32,6 +32,7 @@ from app.celery import celery
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.exceptions import HTTPConflictException
 from app.sep.app_drain import finalize_drain_if_complete
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.crud import AppRunningTaskManager, AppStateManager
 from app.sep.deps import (
     PROTECTED_APP_KEYS,
@@ -40,9 +41,8 @@ from app.sep.deps import (
 )
 from app.sep.models import AppLifecycleEnum, AppStateBase, AppStateWrite
 from app.sep.periodic_tasks import apply_effective_enabled
-from app.sep.plugins.framework.registry import get_app_registry
 
-router = APIRouter(tags=["admin", "apps"])
+router = APIRouter()
 
 
 class AppInfoResponse(BaseModel):
@@ -97,16 +97,17 @@ class AppStateResponse(BaseModel):
 async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
     """List every configured app with its current enabled state.
 
-    Returns one entry per ``SEP.PLUGINS`` entry, in declaration order. Apps with
-    no row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);
-    protected apps (``inventory``) are forced to ``ENABLED`` and reported with
-    ``toggleable=False``. The list is non-paginated: app cardinality is bounded
-    (<20).
+    Returns one entry per registered app, in declaration order (each parent is
+    immediately followed by its child apps). Apps with no row default to
+    ``ENABLED`` (``enabled=True``, ``toggleable=True``); protected apps
+    (``inventory``) are forced to ``ENABLED`` and reported with
+    ``toggleable=False``. A child app (``parent_key`` set) is not independently
+    toggleable either (``toggleable=False``) and derives its lifecycle from the
+    parent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`. The list is
+    non-paginated: app cardinality is bounded (<20).
 
     :param session: The database session.
-    :type session: SessionDep
     :return: The per-app info list.
-    :rtype: list[AppInfoResponse]
     """
     states = await AppStateManager.all_lifecycle_states(session)
     return [
@@ -115,7 +116,7 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
             name=app.name,
             lifecycle_state=lifecycle,
             enabled=lifecycle == AppLifecycleEnum.ENABLED,
-            toggleable=app.key not in PROTECTED_APP_KEYS,
+            toggleable=app.key not in PROTECTED_APP_KEYS and app.parent_key is None,
             uri_path=app.uri_path,
             css_class=app.css_class,
             sidebar=app.sidebar,
@@ -124,8 +125,8 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
         for app in get_app_registry()
         for lifecycle in (
             AppLifecycleEnum.ENABLED
-            if app.key in PROTECTED_APP_KEYS
-            else states.get(app.key, AppLifecycleEnum.ENABLED),
+            if app.state_key in PROTECTED_APP_KEYS
+            else states.get(app.state_key, AppLifecycleEnum.ENABLED),
         )
     ]
 

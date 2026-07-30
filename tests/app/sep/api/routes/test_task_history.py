@@ -28,7 +28,7 @@ from app.core.pagination import (
     MAX_PAGINATION_LIMIT,
 )
 from app.sep.main import sep_app
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 TWO_MERGED_HISTORY_ROWS = 2
@@ -43,7 +43,7 @@ def _history_item(*, item_id: int, started_at: str, task_name: str) -> dict[str,
     task = TaskFactory.build(
         id=item_id,
         name=task_name,
-        owner=TaskOwner.BACKUP_MONGO,
+        owner="BACKUP_MONGO",
         backend=TaskBackendEnum.PROXY,
     )
     task_payload = task.model_dump(mode="json")
@@ -541,6 +541,43 @@ class TestSepTaskHistoryListAll:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_called()
+
+    def test_forwards_exclude_internal_when_requested(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Forward ``exclude_internal=true`` to the upstream list when requested."""
+        mock_task_api_dep.get.return_value = {
+            "items": [],
+            "total": 0,
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": DEFAULT_PAGINATION_LIMIT,
+        }
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params={"exclude_internal": "true"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        call_params = mock_task_api_dep.get.call_args.kwargs["params"]
+        assert call_params.get("exclude_internal") == "true"
+
+    def test_exclude_internal_not_forwarded_by_default(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Omit ``exclude_internal`` from upstream params when the option is not requested."""
+        mock_task_api_dep.get.return_value = {
+            "items": [],
+            "total": 0,
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": DEFAULT_PAGINATION_LIMIT,
+        }
+        response = test_client.get("/api/sep/task-history/")
+        assert response.status_code == status.HTTP_200_OK
+        call_params = mock_task_api_dep.get.call_args.kwargs["params"]
+        assert "exclude_internal" not in call_params
 
 
 class TestSepStopTaskHistoryEndpoint:

@@ -56,14 +56,23 @@ from app.core.db.models import DateTimeWithTimezone
 from app.core.db.sql_types import AutoJSON, MaybeCompressedText
 from app.core.utils.fields import (
     EmptyStrToNone,
-    EnumFieldMixin,
     UTCDatetime,
 )
+from app.core.utils.path import resolve_payload_reference
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
 
 TASK_ALIAS_LENGTH = 100
 SYSTEM_USER = "SYSTEM"
+ANY_OWNER = "ANY"
+
+#: Allocation-relative output-files directory of every job spec that pins its
+#: ``run-script`` task's ``work_dir`` to ``${NOMAD_TASK_DIR}/output_files``
+#: (``run-python``, ``exec-artifact``, ``exec-python-artifact``). It is the
+#: :attr:`TaskBase.output_files_path` those specs run under, so a payload's
+#: working directory and the path SEP reads its files back from are the same
+#: place. ``run-command`` pins no ``work_dir`` and so has no output-files path.
+RUN_SCRIPT_OUTPUT_FILES_PATH = "run-script/local/output_files"
 
 
 def _encode_anonymize_mask(v: Any) -> Any:
@@ -178,35 +187,30 @@ class TaskHistoryStatusEnum(StrEnum):
             TaskHistoryStatusEnum.STALE,
         ]
 
+    def is_terminal(self) -> bool:
+        """Check if task execution has reached a terminal state.
 
-class TaskOwner(EnumFieldMixin, StrEnum):
-    """Control the choice of task owners.
+        :return: True if task execution will not transition again.
+        """
+        return self.is_finished() or self == TaskHistoryStatusEnum.LOST
 
-    :cvar ANY: Value for tasks without owner restrictions.
-    :vartype ANY: str
-    :cvar ALTERS: Value for schema change tasks.
-    :vartype ALTERS: str
-    :cvar ARCHIVER: Value for data archiver tasks.
-    :vartype ARCHIVER: str
-    :cvar BACKUPS: Value for backup tasks.
-    :vartype BACKUPS: str
-    :cvar RESTORES: Value for restore tasks.
-    :vartype RESTORES: str
-    :cvar CHECKSUMS: Value for checksum tasks.
-    :vartype CHECKSUMS: str
-    """
+    @classmethod
+    def active_statuses(cls) -> frozenset["TaskHistoryStatusEnum"]:
+        """Return the statuses whose executions are still in flight.
 
-    ANY = "ANY"
-    ALTERS = "ALTERS"
-    ARCHIVER = "ARCHIVER"
-    BACKUPS = "BACKUPS"
-    RESTORES = "RESTORES"
-    CHECKSUMS = "CHECKSUMS"
-    BACKUP_MONGO = "BACKUP_MONGO"
-    RESTORE_MONGO = "RESTORE_MONGO"
-    BACKUP_PG = "BACKUP_PG"
-    MUM = "MUM"
-    ANSIBLE = "ANSIBLE"
+        These are the non-terminal statuses (``PENDING`` / ``RUNNING``); a new
+        non-terminal status only needs adding here.
+
+        :return: The frozen set of in-flight statuses.
+        """
+        return frozenset({cls.PENDING, cls.RUNNING})
+
+    def is_active(self) -> bool:
+        """Check whether the task status indicates an in-flight execution.
+
+        :return: True if the status is ``PENDING`` or ``RUNNING``; False otherwise.
+        """
+        return self in self.active_statuses()
 
 
 class TaskLogType(StrEnum):
@@ -266,21 +270,18 @@ class TaskExecutionRequest(BaseModel):
 
     @cached_property
     def payload_content(self) -> str | None:
-        """Retrieve the content of the payload if it's a file path.
+        """Return the payload content, resolving a ``file://`` reference to file text.
 
-        If the payload starts with "file://", it attempts to read the file content.
-        Otherwise, it returns the payload string directly.
+        If the payload is a ``file://`` reference, resolve it to an existing file
+        via :func:`resolve_payload_reference` and return the file's contents.
+        Otherwise return the payload string (possibly ``None``) unchanged.
 
-        :return: The content of the payload or None if not applicable.
-        :rtype: str | None
+        :return: The referenced file's contents, or the payload string as-is.
+        :raises PayloadReferenceError: If a ``file://`` reference cannot be
+            resolved to an existing file.
         """
         if self.payload and self.payload.strip().startswith("file://"):
-            payload_path = Path(
-                self.payload.strip().replace("file://", "", 1),
-            ).resolve()
-            if payload_path.is_file():
-                with payload_path.open() as payload_file:
-                    return payload_file.read()
+            return resolve_payload_reference(self.payload).read_text()
         return self.payload
 
 
@@ -336,32 +337,33 @@ class TaskBase(SQLModel):
     """Define the base structure for task-related operations.
 
     :param name: The name of the task.
-    :type name: str
     :param data: The task data stored in JSON format.
-    :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
-    :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-    :type owner: str
+    :param owner: The owner of the task. Defaults to ``"ANY"``.
     :param is_template: Whether the task is a template. Defaults to False.
-    :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
-    :type protected: bool
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
         logs and files generated by the task. Defaults to None, meaning the entities
         defined in
         :attr:`app.tasks.anonymizer.config.AnonymizerSettings.DEFAULT_ENTITIES` will be
         used.
-    :type anonymize_mask: int | None
     :param alert_on_fail: Whether to trigger an alert on task failure and
         auto-resolve it on subsequent success. Defaults to False.
-    :type alert_on_fail: bool
     :param alert_detail_builder: The ``"module:function"`` path of a plugin
         callable that enriches this task's failure alert, or None. Set by the
         owning plugin at task creation and resolved lazily by
         :func:`app.tasks.alert_hooks.build_owner_alert_details`; keeps plugin
         alert knowledge out of the tasks service. Defaults to None.
-    :type alert_detail_builder: str | None
+    :param run_result_recorder: The ``"module:function"`` path of a plugin
+        callable that records this task's structured run result when it reaches a
+        terminal status, or None. Set by the owning plugin at task creation and
+        resolved lazily by :func:`app.tasks.run_result.maybe_record_run`; keeps
+        plugin result-recording knowledge out of the tasks service. Defaults to
+        None.
+    :param output_files_path: The allocation-relative path where output files
+        generated by the task are expected. Only files in this path are offered
+        for user pulling, and it is where a run's structured result is read back
+        from. Defaults to None, meaning no files will be available for pulling.
     """
 
     name: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
@@ -371,13 +373,15 @@ class TaskBase(SQLModel):
         sa_column=Column(EnumField(TaskBackendEnum, native_enum=False), nullable=False),
     )
     owner: str = SQLField(
-        default=TaskOwner.ANY,
+        default=ANY_OWNER,
         index=True,
     )
     is_template: bool = SQLField(default=False, index=True)
     protected: bool = False
     alert_on_fail: bool = False
     alert_detail_builder: str | None = None
+    run_result_recorder: str | None = None
+    output_files_path: str | None = None
     anonymize_mask: AnonymizeMask | None = None
 
     @model_validator(mode="after")
@@ -403,38 +407,26 @@ class Task(TaskBase, BaseSQLModel, table=True):
     """Represent a task stored in the database.
 
     :param name: The name of the task.
-    :type name: str
     :param data: The task data stored in JSON format.
-    :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
-    :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-    :type owner: TaskOwner
+    :param owner: The owner of the task. Defaults to ``"ANY"``.
     :param is_template: Whether the task is a template. Defaults to False.
-    :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
-    :type protected: bool
     :param alert_on_fail: Whether to trigger an alert on task failure and
         auto-resolve it on subsequent success. Defaults to False.
-    :type alert_on_fail: bool
     :param alert_detail_builder: The ``"module:function"`` path of a plugin
         callable that enriches this task's failure alert, or None.
-    :type alert_detail_builder: str | None
+    :param run_result_recorder: The ``"module:function"`` path of a plugin
+        callable that records this task's structured run result at terminal
+        status, or None.
+    :param output_files_path: The allocation-relative path where output files
+        generated by the task are expected, or None.
     :param history: The history of task executions.
-    :type history: list[TaskHistory]
     :param deleted_at: The deletion timestamp, if applicable.
-    :type deleted_at: UTCDatetime | None
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
         logs and files generated by the task. Defaults to 0 (no anonymization).
-    :type anonymize_mask: int | None
     :param created_by: The user ID of the user who created the task.
-    :type created_by: str | None
     :param last_updated_by: The user ID of the user who last modified the task.
-    :type last_updated_by: str | None
-    :param output_files_path: The path where output files generated by the task are
-        expected. Only files in this path will be considered for user pulling. Defaults
-        to None, meaning no files will be available for pulling.
-    :type output_files_path: str | None
     """
 
     __table_args__ = (
@@ -455,7 +447,6 @@ class Task(TaskBase, BaseSQLModel, table=True):
     )
     created_by: str | None = None
     last_updated_by: str | None = None
-    output_files_path: str | None = None
 
     @property
     def anonymized_entities(self) -> set[PIIEntity]:
@@ -475,37 +466,29 @@ class TaskResponse(TaskBase, BaseSQLModel):
     """Represent a task API response.
 
     :param name: The name of the task.
-    :type name: str
     :param data: The task data stored in JSON format.
-    :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
-    :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-    :type owner: TaskOwner
+    :param owner: The owner of the task. Defaults to ``"ANY"``.
     :param is_template: Whether the task is a template. Defaults to False.
-    :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
-    :type protected: bool
     :param alert_on_fail: Whether to trigger an alert on task failure and
         auto-resolve it on subsequent success. Defaults to False.
-    :type alert_on_fail: bool
     :param alert_detail_builder: The ``"module:function"`` path of a plugin
         callable that enriches this task's failure alert, or None.
-    :type alert_detail_builder: str | None
+    :param run_result_recorder: The ``"module:function"`` path of a plugin
+        callable that records this task's structured run result at terminal
+        status, or None.
+    :param output_files_path: The allocation-relative path where output files
+        generated by the task are expected, or None.
     :param deleted_at: The deletion timestamp, if applicable.
-    :type deleted_at: UTCDatetime | None
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
         logs and files generated by the task. Defaults to 0 (no anonymization).
-    :type anonymize_mask: int | None
     :param created_by: The user ID of the user who created the task.
-    :type created_by: str | None
     :param last_updated_by: The user ID of the user who last modified the task.
-    :type last_updated_by: str | None
     :param anonymized_entities: Sorted list of PII entity names derived from
         ``anonymize_mask`` (or from the owner's configured defaults when the
         mask is ``None``). Each name is the raw ``PIIEntity`` member name
         (e.g. ``"EMAIL_ADDRESS"``). Read-only; computed on serialisation.
-    :type anonymized_entities: list[str]
     """
 
     deleted_at: UTCDatetime | None
@@ -528,26 +511,22 @@ class TaskWrite(TaskBase):
     """Define the model for creating new tasks.
 
     :param name: The name of the task.
-    :type name: str
     :param data: The task data stored in JSON format.
-    :type data: dict
     :param backend: The backend used for task execution. Defaults to Nomad.
-    :type backend: TaskBackendEnum
-    :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-    :type owner: TaskOwner
+    :param owner: The owner of the task. Defaults to ``"ANY"``.
     :param is_template: Whether the task is a template. Defaults to False.
-    :type is_template: bool
     :param protected: Whether the task is protected from deletion. Defaults to False.
-    :type protected: bool
     :param alert_on_fail: Whether to trigger an alert on task failure and
         auto-resolve it on subsequent success. Defaults to False.
-    :type alert_on_fail: bool
     :param alert_detail_builder: The ``"module:function"`` path of a plugin
         callable that enriches this task's failure alert, or None.
-    :type alert_detail_builder: str | None
+    :param run_result_recorder: The ``"module:function"`` path of a plugin
+        callable that records this task's structured run result at terminal
+        status, or None.
+    :param output_files_path: The allocation-relative path where output files
+        generated by the task are expected, or None.
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
         logs and files generated by the task. Defaults to 0 (no anonymization).
-    :type anonymize_mask: int | None
     """
 
 
@@ -726,6 +705,12 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     :type task: Task
     :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
     :type sync_in_progress_started_at: UTCDatetime | None
+    :param log_allocation_epoch: Task-level high-water mark of the current Nomad
+        allocation ``CreateIndex``, stamped whenever the log frontier is reset. The
+        log writer consults it on the first-insert path (before any per-stream
+        ``TaskHistoryLogState`` row exists) to discard writes from a superseded
+        allocation. ``0`` is the legacy/unknown sentinel that is trusted
+        unconditionally.
     :param executed_by: The user ID of the user who executed the task.
     :type executed_by: str | None
     """
@@ -743,6 +728,13 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     sync_in_progress_started_at: UTCDatetime | None = SQLField(
         default=None,
         sa_type=DateTimeWithTimezone,
+    )
+    log_allocation_epoch: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
     )
 
     @property
@@ -862,6 +854,13 @@ class TaskHistoryLog(BaseSQLModel, table=True):
             "start_offset",
             name="uq_taskhistory_log_chunk",
         ),
+        Index(
+            "ix_taskhistory_log_stream_end_offset",
+            "task_history_id",
+            "source",
+            "stream",
+            "end_offset",
+        ),
     )
 
     task_history_id: int = SQLField(
@@ -883,7 +882,7 @@ class TaskHistoryLog(BaseSQLModel, table=True):
 
 
 class TaskHistoryLogState(BaseSQLModel, table=True):
-    """Per-stream staging buffer and persisted offsets for the log writer.
+    """Hold the per-stream staging buffer and persisted offsets for the log writer.
 
     Inherits from ``BaseSQLModel`` (surrogate integer PK) and declares a
     unique constraint on ``(task_history_id, source, stream)`` — callers
@@ -903,6 +902,15 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
         switch). May diverge from ``persisted_offset`` after a Nomad
         followup-allocation switch.
     :type producer_offset: int
+    :param nomad_offset: The raw Nomad-space byte offset for the next log fetch
+        (the ``offset=`` kwarg of the next ``stream_logs.stream`` call).
+        Allocation-relative like ``producer_offset`` (resets on switch); kept
+        durable here so a worker without the in-memory cursor resumes the fetch
+        instead of re-reading the whole file from ``0``.
+    :param allocation_epoch: The Nomad allocation ``CreateIndex`` (monotonic,
+        creation-anchored) that ``nomad_offset``/``producer_offset`` belong to.
+        ``0`` is the legacy/unknown sentinel (pre-migration rows and non-Nomad
+        streams) that the seed and write guards trust unconditionally.
     :param staging: Bytes pending flush to the chunk store.
     :type staging: bytes
     :param staging_updated_at: When ``staging`` was last modified; used to age
@@ -950,6 +958,20 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
             server_default="0",
         ),
     )
+    nomad_offset: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
+    )
+    allocation_epoch: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
+    )
     staging: bytes = SQLField(
         sa_column=Column(
             LargeBinary,
@@ -965,6 +987,27 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
         ),
     )
     version: int = SQLField(default=0, nullable=False)
+
+
+GENERIC_EXECUTOR_TASK_NAMES: frozenset[str] = frozenset(
+    {
+        "run-python",
+        "exec-artifact",
+        "exec-python-artifact",
+    }
+)
+
+INVENTORY_SYNC_TASK_NAME = "inventory-sync"
+SYNC_RUNNING_TASKS_TASK_NAME = "tasks__sync_running_tasks"
+CHECK_NOMAD_CERT_EXPIRY_TASK_NAME = "tasks__check_nomad_cert_expiry"
+
+INTERNAL_TASK_NAMES: frozenset[str] = frozenset(
+    {
+        INVENTORY_SYNC_TASK_NAME,
+        SYNC_RUNNING_TASKS_TASK_NAME,
+        CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
+    }
+)
 
 
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
@@ -990,10 +1033,49 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
         Populated by list/retrieve routes; defaults to ``False``.
     :type has_logs: bool
+    :param display_name: A user-meaningful label derived from the task name or
+        execution-request metadata. Read-only; computed on serialisation.
     """
 
     task: TaskResponse
     has_logs: bool = False
+
+    @computed_field
+    @property
+    def display_name(self) -> str:
+        """Return a user-meaningful display label for this task history row.
+
+        For normal tasks, returns ``task.name``. For generic executor templates
+        (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
+        ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
+        are distinguishable: the filename comes from the snippet metadata or the
+        ``file://`` payload basename, the source directory from whichever of those
+        carries one, and the target from the execution request. Falls back to
+        ``"<task> on <target>"`` when no filename is available.
+
+        :return: The display label for the task history entry.
+        """
+        task_name = self.task.name
+        if task_name not in GENERIC_EXECUTOR_TASK_NAMES:
+            return task_name
+        meta = self.execution_request.meta or {}
+        snippet_fn = meta.get("_snippet_filename") or meta.get("snippet_filename")
+        payload = self.execution_request.payload
+        payload_path = (
+            payload.removeprefix("file://")
+            if payload and payload.startswith("file://")
+            else None
+        )
+        target = self.execution_request.target
+        source = snippet_fn or payload_path
+        if not source:
+            return f"{self.execution_request.task} on {target}"
+        source_dir = Path(source).parent.name or (
+            Path(payload_path).parent.name if payload_path else ""
+        )
+        leaf = Path(source).name
+        label = f"{source_dir}/{leaf}" if source_dir else leaf
+        return f"{label} on {target}"
 
 
 class TaskStats(BaseModel):
@@ -1117,6 +1199,31 @@ class TaskHistoryLatestStatusRequest(BaseModel):
         default_factory=list,
         max_length=LATEST_HISTORY_STATUS_NAMES_MAX,
     )
+
+
+class TaskHistoryLatestStatus(BaseModel):
+    """Represent the latest-history projection for a single task.
+
+    :param status: The latest known execution status, taken from the newest
+        history row; ``None`` only when the task has no history rows at all.
+    :param finished_at: The most recent ``finished_at`` across all of the task's
+        history rows (a ``max``), so a task with an in-progress re-run still
+        reports its prior completion; ``None`` when no run has ever finished.
+    """
+
+    status: TaskHistoryStatusEnum | None = None
+    finished_at: datetime | None = None
+
+
+class TaskHistoryStatusPoint(BaseModel):
+    """Represent one system-triggered run observation for a task name.
+
+    :param created_at: When the history row was recorded.
+    :param status: The recorded execution status.
+    """
+
+    created_at: datetime
+    status: TaskHistoryStatusEnum
 
 
 class TransformPayloadRequest(BaseModel):

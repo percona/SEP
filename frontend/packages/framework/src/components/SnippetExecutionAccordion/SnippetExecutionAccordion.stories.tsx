@@ -39,7 +39,7 @@ const baseSchema = {
         {
           type: 'string',
           name: 'executor_host',
-          label: 'Executor Host',
+          label: 'Execution Host',
           required: true,
         },
         {
@@ -121,7 +121,7 @@ export const WithExecutorHost: Story = {
   },
   parameters: {
     fetchResponses: {
-      '/api/plugins/snippets/snippet/schema?snippet_filename=host-snippet.sh': baseSchema,
+      '/api/apps/snippets/snippet/schema?snippet_filename=host-snippet.sh': baseSchema,
     },
   },
   play: async ({ canvasElement }) => {
@@ -129,7 +129,7 @@ export const WithExecutorHost: Story = {
     await waitFor(() => {
       expect(canvas.getByLabelText(/Table Name/i)).toBeInTheDocument();
     });
-    expect(canvas.queryByLabelText(/Executor Host/i)).not.toBeInTheDocument();
+    expect(canvas.queryByLabelText(/Execution Host/i)).not.toBeInTheDocument();
   },
 };
 
@@ -146,13 +146,13 @@ export const DefaultExpanded: Story = {
   },
   parameters: {
     fetchResponses: {
-      '/api/plugins/snippets/snippet/schema?snippet_filename=expanded-snippet.sh': baseSchema,
+      '/api/apps/snippets/snippet/schema?snippet_filename=expanded-snippet.sh': baseSchema,
     },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await waitFor(() => {
-      expect(canvas.getByLabelText(/Executor Host/i)).toBeInTheDocument();
+      expect(canvas.getByLabelText(/Execution Host/i)).toBeInTheDocument();
     });
     expect(canvas.getByLabelText(/Table Name/i)).toBeInTheDocument();
   },
@@ -173,8 +173,8 @@ export const WithHistory: Story = {
   },
   parameters: {
     fetchResponses: {
-      '/api/plugins/snippets/snippet/schema?snippet_filename=history-snippet.sh': baseSchema,
-      '/api/plugins/snippets/snippet/history?snippet_filename=history-snippet.sh': successHistory,
+      '/api/apps/snippets/snippet/schema?snippet_filename=history-snippet.sh': baseSchema,
+      '/api/apps/snippets/snippet/history?snippet_filename=history-snippet.sh': successHistory,
     },
   },
 };
@@ -194,8 +194,8 @@ export const AfterSuccessfulRun: Story = {
   },
   parameters: {
     fetchResponses: {
-      '/api/plugins/snippets/snippet/schema?snippet_filename=run-snippet.sh': baseSchema,
-      '/api/plugins/snippets/snippet/execute?snippet_filename=run-snippet.sh': { task_id: 4242 },
+      '/api/apps/snippets/snippet/schema?snippet_filename=run-snippet.sh': baseSchema,
+      '/api/apps/snippets/snippet/execute?snippet_filename=run-snippet.sh': { task_id: 4242 },
       '/execution-events/4242': [],
     },
     sseScripts: {

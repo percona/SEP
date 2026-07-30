@@ -17,9 +17,9 @@
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 
-const PLUGIN_ROUTE = '/schema-change/alters';
-const PLUGIN_DISPLAY_NAME = 'Alters';
-const PLUGIN_API_NAME = 'alters';
+const APP_ROUTE = '/schema-change/alters';
+const APP_DISPLAY_NAME = 'Alters';
+const APP_API_NAME = 'alters';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -33,12 +33,12 @@ const MOCK_USER = {
 };
 
 /**
- * Minimal PluginSchema for alters — covers list/create/detail plus the DSN
+ * Minimal AppSchema for alters — covers list/create/detail plus the DSN
  * conditional gate and manual schema/table target fields.
  */
 const MOCK_ALTERS_SCHEMA = {
-  name: PLUGIN_API_NAME,
-  display_name: PLUGIN_DISPLAY_NAME,
+  name: APP_API_NAME,
+  display_name: APP_DISPLAY_NAME,
   description: 'Run pt-online-schema-change to perform online MySQL schema modifications.',
   capabilities: { chaining: true, alert_on_fail: true, scheduling: true, stats: true },
   forms: [
@@ -46,7 +46,7 @@ const MOCK_ALTERS_SCHEMA = {
       title: 'Task',
       fields: [
         { type: 'string', name: 'task_name', label: 'Task Name', required: true },
-        { type: 'host', name: 'hostname', label: 'Executor Host', required: true },
+        { type: 'host', name: 'hostname', label: 'Execution Host', required: true },
         {
           type: 'service',
           name: 'service_id',
@@ -207,15 +207,15 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       });
     }
 
-    if (pathname === `/api/plugins/${PLUGIN_API_NAME}/schema`) {
+    if (pathname === `/api/apps/${APP_API_NAME}/schema`) {
       return route.fulfill({ json: MOCK_ALTERS_SCHEMA });
     }
 
-    if (pathname === `/api/plugins/${PLUGIN_API_NAME}/` && req.method() === 'GET') {
+    if (pathname === `/api/apps/${APP_API_NAME}/` && req.method() === 'GET') {
       return route.fulfill({ json: tasks });
     }
 
-    if (pathname === `/api/plugins/${PLUGIN_API_NAME}/` && req.method() === 'POST') {
+    if (pathname === `/api/apps/${APP_API_NAME}/` && req.method() === 'POST') {
       const body = req.postDataJSON() as Record<string, unknown>;
       overrides.capturePosts?.push(body);
       const created = {
@@ -239,7 +239,7 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       return route.fulfill({ status: 201, json: created });
     }
 
-    const detailMatch = pathname.match(/^\/api\/plugins\/alters\/([^/]+)$/);
+    const detailMatch = pathname.match(/^\/api\/apps\/alters\/([^/]+)$/);
     if (detailMatch && req.method() === 'GET') {
       const taskName = decodeURIComponent(detailMatch[1]!);
       const task = tasks.find((row) => row.name === taskName);
@@ -288,7 +288,7 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       return route.fulfill({ json: [{ id: 20, name: 'users' }] });
     }
 
-    if (pathname.includes(`/plugins/${PLUGIN_API_NAME}/`)) {
+    if (pathname.includes(`/apps/${APP_API_NAME}/`)) {
       return route.fulfill({ json: [] });
     }
 
@@ -303,13 +303,13 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
 }
 
 class AltersPage {
-  readonly heading = this.page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME });
+  readonly heading = this.page.getByRole('heading', { name: APP_DISPLAY_NAME });
   readonly newButton = this.page.getByRole('button', { name: /new .+/i });
 
   constructor(private readonly page: Page) {}
 
   async goto(): Promise<void> {
-    await this.page.goto(PLUGIN_ROUTE);
+    await this.page.goto(APP_ROUTE);
   }
 
   async openCreateForm(): Promise<void> {
@@ -337,7 +337,7 @@ class AltersPage {
 
 async function fillRequiredCreateFields(page: Page, taskName: string): Promise<void> {
   await page.getByLabel('Task Name').fill(taskName);
-  await page.getByLabel('Executor Host').click();
+  await page.getByLabel('Execution Host').click();
   await page.getByRole('option', { name: 'host1' }).click();
   await page.getByLabel('Database Host').click();
   await page.getByRole('option', { name: 'svc1 (mysql)' }).click();
@@ -346,7 +346,7 @@ async function fillRequiredCreateFields(page: Page, taskName: string): Promise<v
   await page.getByLabel('Alter').fill('ADD COLUMN smoke_col INT');
 }
 
-test.describe(`${PLUGIN_DISPLAY_NAME} plugin smoke`, () => {
+test.describe(`${APP_DISPLAY_NAME} app smoke`, () => {
   test.beforeEach(async ({ page }) => {
     tasks.length = 0;
     await mockAltersApis(page);
@@ -412,7 +412,7 @@ test.describe(`${PLUGIN_DISPLAY_NAME} plugin smoke`, () => {
       },
     });
 
-    await page.goto(`${PLUGIN_ROUTE}/task/smoke-alter-detail`);
+    await page.goto(`${APP_ROUTE}/task/smoke-alter-detail`);
 
     await expect(page.getByTestId('alters-pre-checks-execute')).toBeVisible({
       timeout: 10_000,

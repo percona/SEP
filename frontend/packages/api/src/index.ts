@@ -32,11 +32,11 @@ export {
 export { createQueryClient, defaultQueryClientConfig } from './queryClient';
 
 // Errors
-export { ApiError, normalizeAxiosError } from './errors';
-export type { ApiErrorDetails, ApiErrorKind } from './errors';
+export { ApiError, normalizeAxiosError, parseFieldErrors } from './errors';
+export type { ApiErrorDetails, ApiErrorKind, FieldValidationError } from './errors';
 
 // Auth
-export { postLogin, postRefresh, postLogout, fetchCurrentUser } from './auth';
+export { postLogin, postRefresh, postSession, postLogout, fetchCurrentUser } from './auth';
 
 // Types (re-exported from generated OpenAPI schemas)
 export type { OAuthTokenResponse, SPAOAuthTokenResponse, User } from './types/api';
@@ -59,9 +59,9 @@ export type { paths as SepPaths, components as SepComponents } from './generated
 export { mainApi, sepApi, throwOnApiError } from './typed-client';
 
 export type {
-  PluginSchema,
-  PluginEntitySchema,
-  PluginField,
+  AppSchema,
+  AppEntitySchema,
+  AppField,
   SectionField,
   OneOfBranch,
   OneOfGroup,
@@ -71,7 +71,7 @@ export type {
   DetailField,
   DetailSection,
   DetailView,
-  PluginCapabilities,
+  AppCapabilities,
   StringField,
   IntegerField,
   FloatField,
@@ -84,30 +84,41 @@ export type {
   FileField,
   YamlField,
   ServiceField,
+  MultiServiceField,
   SchemaField,
+  MultiSchemaField,
   TableField,
+  MultiTableField,
   HostField,
+  MultiHostField,
+  RemoteChoiceField,
   ScriptPreviewField,
   Predicate,
   FieldGate,
   CardinalityRule,
   FailRule,
-} from './types/plugin-schema';
+  RelatedApp,
+} from './types/app-schema';
 
 // Hooks
 export {
   useCurrentUser,
-  usePluginSchema,
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  useUpdatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
+  useAppSchema,
+  useAppTasks,
+  useAppTask,
+  RUNNING_STATUSES,
+  isRunningStatus,
+  useCreateAppTask,
+  useUpdateAppTask,
+  useAppEntityList,
+  useAppEntityDetail,
+  normalizeAppListResponse,
+  DEFAULT_APP_LIST_OFFSET,
+  DEFAULT_APP_LIST_LIMIT,
+  useCreateAppEntity,
+  useUpdateAppEntity,
+  useDeleteAppEntity,
+  useDeleteAppTask,
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
   useDashboardStats,
@@ -127,10 +138,23 @@ export {
   ADMIN_APPS_QUERY_KEY,
   ADMIN_APP_MUTATION_KEY,
   useConfigExport,
+  useConnectivityCheck,
+  CONNECTIVITY_CHECK_PATH,
   useAppInfo,
   APP_INFO_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats, EnabledApp, AppInfo } from './hooks';
+export type {
+  AlertConfig,
+  DashboardStats,
+  EnabledApp,
+  AppInfo,
+  AppListPagination,
+  AppListQueryOptions,
+  AppListResult,
+  PaginatedAppList,
+  TaskHistoryStatus,
+} from './hooks';
+export type { ConnectivityCheckRequest, ConnectivityResult, ConnectivityStatus } from './hooks';
 export type {
   AdminApp,
   AppStateResult,

@@ -22,27 +22,37 @@ export { SEP_TABLE_CLASS } from './constants';
 export { SchemaFormRenderer } from './components/SchemaFormRenderer';
 export type { RenderFieldArgs, RenderFieldOverride } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
-export type { RenderListColumnArgs, RenderListColumnOverride } from './components/SchemaListView';
+export type {
+  RenderListColumnArgs,
+  RenderListColumnOverride,
+  SchemaListServerPagination,
+} from './components/SchemaListView';
 export {
-  SchemaDrivenPlugin,
+  SchemaDrivenApp,
   DeleteConfirmDialog,
-  PluginCreatePage,
-  PluginDetailPage,
-  PluginListPage,
-  PluginSchedulePage,
-} from './components/SchemaDrivenPlugin';
-export type { PluginFormSlotProps, RenderFormSlot } from './components/SchemaDrivenPlugin';
-export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
-export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/PluginDetailPage';
-export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
+  AppCreatePage,
+  AppDetailPage,
+  AppListPage,
+  AppSchedulePage,
+} from './components/SchemaDrivenApp';
+export type { AppFormSlotProps, RenderFormSlot } from './components/SchemaDrivenApp';
+export type { DeleteConfirmDialogProps } from './components/SchemaDrivenApp';
+export type { TaskExecuteAction } from './components/SchemaDrivenApp/AppDetailPage';
+export type { TaskExecuteBody } from './hooks';
+export { pathToEntityList } from './components/SchemaDrivenApp/AppDetailPage';
+export { getStoredForm, STORED_FORM_KEY } from './components/SchemaDrivenApp';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';
 export type { SchemaSelectorProps } from './components/SchemaSelector';
+export { RemoteChoiceSelector } from './components/RemoteChoiceSelector';
+export type { RemoteChoiceSelectorProps } from './components/RemoteChoiceSelector';
 export { TableSelector } from './components/TableSelector';
 export type { TableSelectorProps } from './components/TableSelector';
 export { FreeSoloSelect } from './components/FreeSoloSelect';
 export type { FreeSoloSelectProps } from './components/FreeSoloSelect';
+export { FreeSoloMultiSelect } from './components/FreeSoloMultiSelect';
+export type { FreeSoloMultiSelectProps } from './components/FreeSoloMultiSelect';
 export { HostSelector, StandaloneHostSelector } from './components/HostSelector';
 export type { StandaloneHostSelectorProps } from './components/HostSelector';
 export {
@@ -57,13 +67,16 @@ export type { TaskLogViewerProps, BadgeStatus } from './components/TaskLogViewer
 export {
   TaskHistoryTable,
   TaskHistoryStatusBadge,
+  isTaskHistoryStatus,
   ChainDisplay,
+  TaskFilesDialog,
 } from './components/TaskHistoryTable';
 export type {
   TaskHistoryTableProps,
   TaskHistoryEntry,
   TaskHistoryStatus,
   PaginatedTaskHistory,
+  TaskFilesDialogProps,
 } from './components/TaskHistoryTable';
 export { SnippetExecutionAccordion } from './components/SnippetExecutionAccordion';
 export type { SnippetExecutionAccordionProps } from './components/SnippetExecutionAccordion';
@@ -84,7 +97,7 @@ export type { ScheduleCellProps } from './components/ScheduleCell';
 export { ScheduleSummary } from './components/ScheduleSummary';
 export type { ScheduleSummaryProps } from './components/ScheduleSummary';
 export {
-  useScheduledTasksForPlugin,
+  useScheduledTasksForApp,
   useCreateScheduledTask,
   useUpdateScheduledTask,
   useDeleteScheduledTask,
@@ -95,12 +108,19 @@ export {
   type IntervalSchedule,
   type PeriodicTaskExecuteRequest,
 } from './components/ScheduledTasksPanel/hooks';
-export { default as DetailSyntaxHighlighter } from './components/SchemaDrivenPlugin/DetailSyntaxHighlighter';
-export { detailSyntaxBlockSx } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
-export type { DetailSyntaxLanguage } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
+export { default as DetailSyntaxHighlighter } from './components/SchemaDrivenApp/DetailSyntaxHighlighter';
+export { detailSyntaxBlockSx } from './components/SchemaDrivenApp/detailSyntaxStyles';
+export type { DetailSyntaxLanguage } from './components/SchemaDrivenApp/detailSyntaxStyles';
 
 // Hooks
-export { useServices, useSchemas, useTables, useHosts } from './hooks';
+export {
+  useServices,
+  useSchemas,
+  useTables,
+  useHosts,
+  useResolvedServiceField,
+  useRemoteChoices,
+} from './hooks';
 export type {
   ServiceOption,
   ServiceType,
@@ -111,7 +131,11 @@ export type {
   UseSchemasOptions,
   UseTablesOptions,
   UseHostsOptions,
+  UseRemoteChoicesOptions,
+  ResolvedServiceField,
 } from './hooks';
+
+export { cascadeParentResetKey } from './utils/cascadeParentResetKey';
 
 export {
   useTaskLogs,
@@ -121,8 +145,8 @@ export {
   useTaskHistoryByName,
   useTaskHistoryByNames,
   useStopTaskHistory,
-  useSnippetPluginExecution,
-  useSnippetPluginSchema,
+  useSnippetAppExecution,
+  useSnippetAppSchema,
   isRunningStatus,
   RUNNING_STATUSES,
   useTaskHistoryFiles,
@@ -141,7 +165,7 @@ export type {
   FileMetadata,
   TaskHistoryFilesMap,
   TaskFileDownloadParams,
-  UseSnippetPluginExecutionOptions,
+  UseSnippetAppExecutionOptions,
 } from './hooks';
 
 export {
@@ -150,19 +174,19 @@ export {
 } from './utils/snippetFormSubmission';
 export type { SnippetExecutionFormPayload } from './utils/snippetFormSubmission';
 
-export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetPlugin';
+export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetApp';
 
 export { resolvePath } from './utils/resolvePath';
 
 export { downloadBlob } from './utils/downloadBlob';
 
 export {
-  SNIPPETS_PLUGINS_API_BASE,
-  SNIPPET_PLUGIN_PER_SNIPPET_BASE,
-  snippetPluginApprovalPath,
-  snippetPluginDownloadPath,
-  snippetPluginExecutePath,
-  snippetPluginHistoryPath,
-  snippetPluginPreviewPath,
-  snippetPluginSchemaPath,
-} from './snippetPluginPaths';
+  SNIPPETS_APPS_API_BASE,
+  SNIPPET_APP_PER_SNIPPET_BASE,
+  snippetAppApprovalPath,
+  snippetAppDownloadPath,
+  snippetAppExecutePath,
+  snippetAppHistoryPath,
+  snippetAppPreviewPath,
+  snippetAppSchemaPath,
+} from './snippetAppPaths';

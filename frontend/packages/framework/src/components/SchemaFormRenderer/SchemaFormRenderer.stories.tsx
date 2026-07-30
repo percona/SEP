@@ -18,7 +18,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { createMemoryRouter, RouterProvider, Link } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider, Link } from 'react-router';
 import { Controller, useFormContext } from 'react-hook-form';
 import Slider from '@mui/material/Slider';
 import Typography from '@mui/material/Typography';
@@ -194,6 +194,27 @@ export const WithSubmitError: Story = {
   },
 };
 
+export const WithFieldErrors: Story = {
+  args: {
+    sections: MULTI_SECTION_SCHEMA.slice(0, 1),
+    submitLabel: 'Retry',
+    // Mirrors what the create/edit pages produce from a 422: a persistent banner
+    // listing every backend message plus inline per-field errors applied via
+    // setError. The `host` entry below maps to no rendered field, so it is
+    // surfaced through the banner only — never silently dropped.
+    submitError: [
+      "Couldn't save your changes:",
+      '• Title: String should have at least 3 characters',
+      '• host: field required',
+    ].join('\n'),
+    fieldErrors: [
+      { path: 'title', message: 'String should have at least 3 characters' },
+      { path: 'host', message: 'field required' },
+    ],
+    onSubmit: () => {},
+  },
+};
+
 export const MinimalForm: Story = {
   args: {
     sections: [
@@ -249,7 +270,7 @@ export const ConditionalFields: Story = {
 };
 
 /**
- * Mirrors the pt-online-schema-change (alters) plugin's Recursion section.
+ * Mirrors the pt-online-schema-change (alters) app's Recursion section.
  * "DSN Table" is only needed when Recursion Method is "DSN" — otherwise it
  * is hidden and excluded from the submission payload.
  */
@@ -292,7 +313,7 @@ export const AltersRecursionMethod: Story = {
 };
 
 /**
- * Mirrors the pt-archiver (archives) plugin's purge-conditions section.
+ * Mirrors the pt-archiver (archives) app's purge-conditions section.
  * When Swap Drop = 1 (SWAP_DROP) the WHERE clause is forbidden — pt-archiver
  * selects all rows. Any other swap_drop value requires a WHERE clause.
  */
@@ -341,7 +362,7 @@ export const ArchivesSwapDrop: Story = {
  *  - forbidden + requires on `where`: hidden when swap_drop=1, required otherwise
  *
  * This is the "combined 5-validator" shape referenced in SEP-1077 AC #4 —
- * intended as living documentation for plugin authors migrating to Wave 2.
+ * intended as living documentation for app authors migrating to Wave 2.
  */
 export const ArchivesCombined: Story = {
   args: {

@@ -35,7 +35,7 @@ from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import FileMetadata, TaskHistoryResponse
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["sep", "tasks", "files"])
+router = APIRouter(tags=["tasks"])
 
 
 @router.get(

@@ -23,7 +23,9 @@ from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 from sqlalchemy_celery_beat import PeriodicTask
 
 from app.core.auth.models import OAuthToken
-from app.core.auth.providers.casdoor import CasdoorSDK
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.casdoor.sdk import CasdoorSDK
+from app.core.auth.providers.grafana.models import GrafanaUser
 from app.inventory.models import (
     HostSystemObservationWrite,
     NodeWrite,
@@ -32,10 +34,10 @@ from app.inventory.models import (
     ServiceWrite,
     TableWrite,
 )
-from app.models import CasdoorUser
+from app.sep.apps.alters.models import AltersCreate
+from app.sep.apps.archives.models import ArchivesCreate
+from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution, AtwSendLog
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
-from app.sep.plugins.alters.models import AltersCreate
-from app.sep.plugins.archives.models import ArchivesCreate
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -55,12 +57,18 @@ MOCK_DESTINATION_TABLE_ID = 2
 MOCK_OBSERVED_AT = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
 
 
-def build_task_history(task: Task) -> TaskHistory:
-    """Build an unsaved ``TaskHistory`` for ``task`` with a SUCCESS execution request.
+def build_task_history(
+    task: Task, status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.SUCCESS
+) -> TaskHistory:
+    """Build an unsaved ``TaskHistory`` for ``task`` with an execution request.
 
     ``execution_request.task`` mirrors ``task.name`` so JSON-extraction tests can
     assert the stored scalar round-trips. Callers persist it via
     ``TaskHistoryManager.save``.
+
+    :param task: Provide the task that owns the history record.
+    :param status: Set the execution status for the created history record.
+    :return: Return an unsaved task history model.
     """
     return TaskHistory(
         task_id=task.id,
@@ -71,7 +79,7 @@ def build_task_history(task: Task) -> TaskHistory:
             meta={"target": "node1"},
             tracking={"evaluation_id": "", "allocation_id": None},
         ),
-        status=TaskHistoryStatusEnum.SUCCESS,
+        status=status,
         executed_by="test-user",
     )
 
@@ -91,6 +99,10 @@ class CasdoorUserFactory(ModelFactory[CasdoorUser]):
     is_deleted: bool = False
 
 
+class GrafanaUserFactory(ModelFactory[GrafanaUser]):
+    """Define factory for GrafanaUser instances."""
+
+
 class TaskFactory(ModelFactory[Task]):
     """Define factory for Task instances."""
 
@@ -101,6 +113,24 @@ class TaskFactory(ModelFactory[Task]):
 
 class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
     """Define factory for PeriodicTasks instances."""
+
+
+class AtwIncidentFactory(SQLAlchemyFactory[AtwIncident]):
+    """Define factory for AtwIncident instances."""
+
+
+class AtwIncidentExecutionFactory(SQLAlchemyFactory[AtwIncidentExecution]):
+    """Define factory for AtwIncidentExecution instances."""
+
+
+class AtwSendLogFactory(SQLAlchemyFactory[AtwSendLog]):
+    """Define factory for AtwSendLog instances.
+
+    ``detail`` is pinned to an empty mapping because polyfactory cannot generate a
+    value for the untyped JSON column.
+    """
+
+    detail = Use(dict)
 
 
 class GeneratedTaskFactory(ModelFactory[TaskWrite]):
@@ -142,10 +172,8 @@ class TaskHistoryResponseFactory(ModelFactory[TaskHistoryResponse]):
 class AltersCreateFactory(ModelFactory[AltersCreate]):
     """Define factory for AltersCreate instances."""
 
-    schema_id = 1
-    table_id = 2
-    schema_name = ""
-    table_name = ""
+    db_schema = 1
+    db_table = 2
     recursion_method = "processlist"
     dsn_table = ""
     continue_on_pre_check_failure = False

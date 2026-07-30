@@ -24,13 +24,16 @@ import { buildNavigationItems } from '../appNavConfig';
 // Sidebar tree shape, icons, and React paths live in appNavConfig; labels and
 // visibility come from GET /api/apps/ via buildNavigationItems().
 
+/** A sidebar icon component — an MUI ``SvgIconComponent`` or a brand icon. */
+export type NavIcon = SvgIconComponent | ((props: SvgIconProps) => React.JSX.Element);
+
 export interface NavItem {
   title: string;
-  icon: SvgIconComponent | ((props: SvgIconProps) => React.JSX.Element);
+  icon: NavIcon;
   to?: string;
   children?: NavItem[];
   /**
-   * Backend plugin key (the last dotted segment of the plugin's
+   * Backend app key (the last dotted segment of the app's
    * ``MODULE_NAME``) used to hide this item when the app is disabled. Items
    * without an `appKey` — parent groups, the Dashboard root, and the always-on
    * Inventory app — render unconditionally.

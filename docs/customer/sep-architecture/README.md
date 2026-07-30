@@ -131,7 +131,7 @@ Commit the updated `.mmd` source alongside README/checklist edits and regenerate
 
 ## What this diagram does NOT cover
 
-- **Dynamic per-task data flow** (request → snippet/proxy plugin → executor → DB → log path). See **SEP-1215**.
+- **Dynamic per-task data flow** (request → snippet/proxy app → executor → DB → log path). See **SEP-1215**.
 - **Nomad raw_exec driver semantics, non-root agent, ACL stance, agent sandboxing**. See **SEP-1218**.
 - **Audit-log retention, PII filtering, log anonymization, ServiceNow / PagerDuty ingestion**. See **SEP-1220**.
 - **The bundled-PMM-container variant** (`CREATE_PMM_CONTAINER=1`). The diagram represents the customer-deployed scenario where PMM is external and Nomad is customer-provided; the `#---PMM---#` block of `compose.yaml` is sed-removed in that scenario.

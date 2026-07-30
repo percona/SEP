@@ -18,7 +18,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException, status
+from fastapi import FastAPI, HTTPException, status
 from sqlalchemy.dialects.postgresql import JSON, JSONB
 
 from app.core.settings_override.models import SettingClassEnum
@@ -38,6 +38,46 @@ from app.tasks.main import (
 from app.tasks.main import lifespan as tasks_module_lifespan
 
 
+def _null_async_cm() -> MagicMock:
+    """Return a MagicMock that behaves as a no-op async context manager."""
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=None)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return cm
+
+
+@pytest.mark.asyncio
+async def test_tasks_lifespan_wires_anonymizer_into_refresher():
+    """Assert ``tasks_lifespan`` refreshes ANONYMIZER_SETTINGS, not only TASKS.
+
+    The Tasks API process must load a pre-existing ``ANONYMIZER_SETTINGS``
+    override on boot -- otherwise the settings LIST/GET serves the default
+    ``DEFAULT_ENTITIES`` until an in-process PATCH runs ``refresh_all``. The
+    Celery worker already wires both proxies; this asserts the HTTP-API lifespan
+    mirrors it. ``ALERT_SETTINGS`` stays out (shared-proxy clobber concern).
+    """
+    refresher = MagicMock(return_value=_null_async_cm())
+    with (
+        patch("app.tasks.main.init_tasks_db", new=AsyncMock()),
+        patch(
+            "app.tasks.main.verify_taskhistory_execution_request_is_jsonb",
+            new=AsyncMock(),
+        ),
+        patch("app.tasks.main.settings_override_refresher", refresher),
+        patch("app.tasks.main.default_lifespan", return_value=_null_async_cm()),
+        patch("app.tasks.main.NomadLifecycle", return_value=_null_async_cm()),
+    ):
+        async with tasks_lifespan(FastAPI()):
+            pass
+
+    refresher.assert_called_once()
+    proxies = refresher.call_args.args[1]
+    assert SettingClassEnum.ANONYMIZER_SETTINGS in proxies
+    assert SettingClassEnum.TASKS_SETTINGS in proxies
+    # ALERT_SETTINGS must stay out of the Tasks-process refresher.
+    assert SettingClassEnum.ALERT_SETTINGS not in proxies
+
+
 def test_tasks_app_lifespan_is_always_set():
     """Assert ``tasks_lifespan`` is always assigned at module level.
 
@@ -49,7 +89,7 @@ def test_tasks_app_lifespan_is_always_set():
 
 
 def test_tasks_app_publishes_nomad_rebind_callback_on_state():
-    """The NOMAD rebind callback registry is published on ``tasks_app.state``.
+    """Assert the NOMAD rebind callback registry is published on ``tasks_app.state``.
 
     The settings-API PATCH/DELETE handlers read the registry from
     ``request.app.state.override_callbacks`` to fire the rebind inline; requests
@@ -63,7 +103,7 @@ def test_tasks_app_publishes_nomad_rebind_callback_on_state():
 
 @pytest.mark.asyncio
 async def test_reconcile_nomad_rebinds_when_holder_present():
-    """The NOMAD rebind callback reconciles the live holder when one is set."""
+    """Assert the NOMAD rebind callback reconciles the live holder when one is set."""
     holder = MagicMock()
     holder.reconcile = AsyncMock()
     app_mock = MagicMock()
@@ -75,7 +115,7 @@ async def test_reconcile_nomad_rebinds_when_holder_present():
 
 @pytest.mark.asyncio
 async def test_reconcile_nomad_skips_when_holder_absent():
-    """The NOMAD rebind callback is a no-op when the holder was cleared.
+    """Assert the NOMAD rebind callback is a no-op when the holder was cleared.
 
     During the shutdown race ``NomadLifecycle.__aexit__`` sets
     ``tasks_app.state.nomad_lifecycle`` to ``None`` before the override refresher
@@ -231,13 +271,10 @@ def _make_schema_check_engine_mock(dialect_name: str, columns):
     """Build a mock async engine whose inspector returns ``columns``.
 
     :param dialect_name: The dialect name reported by ``engine.dialect.name``.
-    :type dialect_name: str
     :param columns: The list of column dicts returned by
         ``inspect(sync_conn).get_columns("taskhistory")``.
-    :type columns: list[dict] | None
     :return: A ``(engine_mock, run_sync_mock)`` pair suitable for patching
         ``app.tasks.db.seed.engine``.
-    :rtype: tuple
     """
     engine_mock = MagicMock()
     engine_mock.dialect.name = dialect_name

@@ -22,9 +22,9 @@ import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 const SNIPPET_FILENAME = 'test-snippet.sh';
 
-const PLUGIN_ROUTE = `/snippets/${encodeURIComponent(SNIPPET_FILENAME)}`;
+const APP_ROUTE = `/snippets/${encodeURIComponent(SNIPPET_FILENAME)}`;
 
-const PLUGIN_DISPLAY_NAME = 'SEP-1099 fixture snippet';
+const APP_DISPLAY_NAME = 'SEP-1099 fixture snippet';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -39,7 +39,7 @@ const MOCK_USER = {
 
 const MOCK_SNIPPET_SCHEMA = {
   name: 'snippets',
-  display_name: PLUGIN_DISPLAY_NAME,
+  display_name: APP_DISPLAY_NAME,
   description: 'E2E fixture for snippet download.',
   forms: [],
   list_view: { columns: [] },
@@ -60,7 +60,7 @@ interface SnippetDownloadMockOptions {
 }
 
 function snippetApiPaths() {
-  const base = '/api/plugins/snippets/snippet';
+  const base = '/api/apps/snippets/snippet';
   return {
     schema: `${base}/schema`,
     history: `${base}/history`,
@@ -186,13 +186,11 @@ test.describe('Snippet detail — download', () => {
 
     await mockSnippetDetailApis(page);
 
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
-    await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME, exact: true })).toBeVisible(
-      {
-        timeout: 30_000,
-      },
-    );
+    await expect(page.getByRole('heading', { name: APP_DISPLAY_NAME, exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
 
     const downloadButton = page.getByRole('button', {
       name: `Download ${SNIPPET_FILENAME}`,
@@ -217,13 +215,11 @@ test.describe('Snippet detail — download', () => {
   test('download API failure surfaces an inline alert', async ({ page }) => {
     await mockSnippetDetailApis(page, { downloadStatus: 403 });
 
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
-    await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME, exact: true })).toBeVisible(
-      {
-        timeout: 30_000,
-      },
-    );
+    await expect(page.getByRole('heading', { name: APP_DISPLAY_NAME, exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
 
     await page.getByRole('button', { name: `Download ${SNIPPET_FILENAME}` }).click();
 

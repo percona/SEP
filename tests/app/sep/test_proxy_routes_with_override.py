@@ -44,12 +44,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession, create_asyn
 from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
     get_api_authenticated_user,
@@ -75,7 +75,10 @@ async def override_session_maker() -> async_sessionmaker:
     )
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    return get_async_session_maker_from_engine(engine)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
 
 
 def _sep_proxies() -> dict:
@@ -122,7 +125,7 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
     non-JSON-API routes, masking the status code distinction.
     """
     update_snippets_spy = mocker.patch(
-        "app.sep.plugins.snippets.routes.update_snippets",
+        "app.sep.apps.snippets.routes.update_snippets",
         new=AsyncMock(return_value=None),
     )
 

@@ -1,0 +1,103 @@
+""" PBM Force Resync Payload """
+
+import subprocess
+import os
+import sys
+import yaml
+
+
+# --- BEGIN GENERATED PBM CREDS PREAMBLE ---
+def _creds_path(config_source: str) -> str:
+    """Resolve the MongoDB URI credentials path from ``NOMAD_META_CONFIG``.
+
+    :param config_source: The config surface named in the error message, either
+        ``"backup"`` or ``"restore"``.
+    :return: The credentials-file path (from the config or the ``$HOME`` fallback).
+    """
+    config_yaml = os.environ.get("NOMAD_META_CONFIG")
+    if config_yaml:
+        try:
+            config = yaml.safe_load(config_yaml)
+            if isinstance(config, dict):
+                path = config.get("credentials_path")
+                if path:
+                    return path
+        except yaml.YAMLError as err:
+            print(
+                f"Failed to parse NOMAD_META_CONFIG as YAML: {err}. Falling back to HOME-based credentials path.",
+                file=sys.stderr,
+            )
+    envhome = os.environ.get("HOME")
+    if not envhome:
+        print(
+            f"PBM credentials path not set (credentials_path in {config_source} config) and HOME is unset",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return f"{envhome}/.mongodb_uri"
+
+
+def _creds_path_from_config(config: object, config_source: str = "restore") -> str:
+    """Resolve the MongoDB URI credentials path from an already-parsed config dict.
+
+    :param config: The parsed restore/backup config value. Anything other than a
+        ``dict`` (``None``, a bare scalar, a list, ...) is treated as missing config,
+        since ``yaml.safe_load`` can legally return a truthy non-dict.
+    :param config_source: The config surface named in the error message, either
+        ``"backup"`` or ``"restore"``.
+    :return: The credentials-file path (from the config or the ``$HOME`` fallback).
+    """
+    if isinstance(config, dict):
+        path = config.get("credentials_path")
+        if path:
+            return path
+    envhome = os.environ.get("HOME")
+    if not envhome:
+        print(
+            f"PBM credentials path not set (credentials_path in {config_source} config) and HOME is unset",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return f"{envhome}/.mongodb_uri"
+
+
+def pbm_creds(creds_path: str) -> str:
+    """Read the MongoDB URI from ``creds_path``, exiting 1 on any read failure.
+
+    :param creds_path: The resolved credentials-file path to read.
+    :return: The stripped MongoDB URI read from the file.
+    """
+    try:
+        with open(creds_path, encoding="utf-8") as fpt:
+            return fpt.read().strip()
+    except FileNotFoundError as err:
+        print(f"Credentials file not found: {creds_path}: {err}", file=sys.stderr)
+        sys.exit(1)
+    except PermissionError as err:
+        print(
+            f"Permission denied reading credentials file {creds_path}: {err}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except OSError as err:
+        print(f"Error reading credentials file {creds_path}: {err}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as err:
+        print(f"Error reading credentials file {creds_path}: {err}", file=sys.stderr)
+        sys.exit(1)
+# --- END GENERATED PBM CREDS PREAMBLE ---
+
+
+def pbm():
+    """ PBM Force Resync Payload """
+
+    os.environ['PBM_MONGODB_URI'] = pbm_creds(_creds_path('restore'))
+    cmd = ['pbm', 'config', '--force-resync']
+
+    proc = subprocess.Popen(cmd)
+    proc.wait()
+    ret_code = proc.poll()
+    if ret_code != 0:
+        sys.exit(ret_code)
+
+pbm()

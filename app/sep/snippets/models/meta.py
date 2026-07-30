@@ -16,6 +16,9 @@
 """Define models for snippet metadata in the SEP app."""
 
 __all__ = [
+    "META_KEY_DESCRIPTION",
+    "META_KEY_SERVICE_TYPE",
+    "META_KEY_TITLE",
     "SnippetMetaParameter",
     "SnippetMetaParameterChoice",
     "SnippetMetaParameterType",
@@ -29,7 +32,6 @@ from collections.abc import Callable
 from datetime import datetime
 from enum import Enum, StrEnum
 from functools import cached_property
-from string import Template
 from typing import Annotated, Any, NamedTuple, NotRequired, Self
 
 from annotated_types import (
@@ -52,6 +54,7 @@ from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandl
 from typing_extensions import TypedDict
 
 from app.core.utils import run_pydantic_type_validator, shorten_text
+from app.core.utils.cli_args import is_value_arg_template
 from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.fields import (
     EmptyStrToNone,
@@ -78,6 +81,15 @@ from app.sep.snippets.forms import (
 ParameterType = str | int | float | bool | datetime | None
 
 logger = logging.getLogger(__name__)
+
+META_KEY_TITLE = "title"
+"""``meta`` JSON key holding a snippet's human title."""
+
+META_KEY_DESCRIPTION = "description"
+"""``meta`` JSON key holding a snippet's description."""
+
+META_KEY_SERVICE_TYPE = "service_type"
+"""``meta`` JSON key holding a snippet's free-form service type."""
 
 
 class SnippetMetaParameterType(EnumFieldMixin, Enum):
@@ -145,13 +157,13 @@ class SnippetVisibilityCondition(BaseModel):
 
     .. note::
         Visibility conditions lower onto the framework's ``forbidden``
-        :class:`~app.sep.plugins.framework.rules.FieldGate`. The React renderer
+        :class:`~app.sep.apps.framework.rules.FieldGate`. The React renderer
         evaluates them to hide the field and drop its value from the submitted
         payload, and both snippet execute paths additionally enforce them
         server-side: a value submitted directly for a field whose gate fires is
         rejected (HTTP 422 on the JSON API; flash + redirect on the legacy form),
         matching ``field_gate_forbidden`` "must be absent" semantics. See
-        :func:`app.sep.plugins.snippets.schema.evaluate_visibility_gates`.
+        :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`.
 
     :param parameter: The name of the sibling parameter the rule references.
     :type parameter: NonEmptyStr
@@ -182,84 +194,87 @@ class SnippetMetaParameter(BaseModel):
     """Represent a parameter for a support snippet.
 
     :param name: The name of the parameter.
-    :type name: NonEmptyStr
-    :param py_type: The type of the parameter (`str`, `int`, `float`, `bool`). Defaults
-        to `str`. This parameter is validated as "type" in input data.
-    :type py_type: SnippetMetaParameterType
+    :param py_type: The type of the parameter (``str``, ``int``, ``float``, ``bool``).
+        Defaults to ``str``. This parameter is validated as "type" in input data.
     :param required: Whether the parameter is required. Defaults to False.
-    :type required: bool
     :param positional: Whether the parameter is positional. Defaults to False.
-    :type positional: bool
     :param arg_format: The format string for the parameter when used as a command-line
-        argument. Use `${value}` as a placeholder (required for non-flag arguments).
+        argument. Use ``${value}`` as a placeholder (required for non-flag arguments).
         Defaults to None, which uses the default format from the snippets settings.
-    :type arg_format: NonEmptyStr | None
     :param description: A description of the parameter. Defaults to None, meaning it
         won't be used for validation.
-    :type description: NonEmptyStr | None
     :param label: A label for the parameter. Defaults to None, meaning it won't be used
         for validation.
-    :type label: NonEmptyStr | None
     :param placeholder: A placeholder for the parameter. Defaults to None, meaning it
         won't be used for validation.
-    :type placeholder: NonEmptyStr | None
     :param group: An optional group name for organizing parameters into separate
         fieldsets in the execution form. Parameters sharing the same group are rendered
         together. Defaults to None, meaning the parameter belongs to the default
         ungrouped fieldset.
-    :type group: NonEmptyStr | None
     :param default: The default value for the parameter. Defaults to None, meaning no
         default.
-    :type default: str | int | float | bool | datetime | None
     :param choices: A list of choices for the parameter. Each choice can be a string or
         a dictionary with "label" and "value" keys. Defaults to None, meaning it won't
         be used for validation. This parameter is validated as "options" or "choices"
         in input data.
-    :type choices: list[SnippetMetaParameterChoice] | None
     :param min_length: The minimum length for string parameters. Defaults to 1.
-    :type min_length: PositiveInt | None
     :param max_length: The maximum length for string parameters. Defaults to 1,
         meaning it won't be used for validation.
-    :type max_length: PositiveInt | None
     :param pattern: A regex pattern that the parameter value must match. Defaults to
         None, meaning it won't be used for validation.
-    :type pattern: NonEmptyStr | None
     :param gt: The value must be greater than this for numeric parameters. Defaults to
         None, meaning it won't be used for validation.
-    :type gt: float | None
     :param lt: The value must be less than this for numeric parameters. Defaults to
         None, meaning it won't be used for validation.
-    :type lt: float | None
     :param ge: The value must be greater than or equal to this for numeric parameters.
         Defaults to None, meaning it won't be used for validation.
-    :type ge: float | None
     :param le: The value must be less than or equal to this for numeric parameters.
         Defaults to None, meaning it won't be used for validation.
-    :type le: float | None
     :param step: The step value for numeric parameters. Defaults to None, which sets
         step to 1 for int and 0.1 for float types.
-    :type step: float | None
     :param html_elem: The HTML element to use for text input parameters. Can be
         TextInputHTMLElement.TEXT or TextInputHTMLElement.TEXTAREA. Defaults to None,
         which uses TextInputHTMLElement.TEXT.
-    :type html_elem: TextInputHTMLElement | None
     :param visible_when: Hide this parameter unless the referenced sibling
         condition matches. Accepts a bare parameter name (truthiness match) or a
         mapping with ``parameter`` and optional ``equals``. Mutually exclusive
         with ``visible_when_not``. Client-enforced only (see
         :class:`SnippetVisibilityCondition`). Defaults to None.
-    :type visible_when: SnippetVisibilityCondition | None
     :param visible_when_not: Hide this parameter when the referenced sibling
         condition matches. Same grammar as ``visible_when``. Mutually exclusive
         with ``visible_when``. Client-enforced only. Defaults to None.
-    :type visible_when_not: SnippetVisibilityCondition | None
+    :param requires_when: Require a value for this parameter when the referenced
+        sibling condition matches. Same grammar as ``visible_when``. Mutually
+        exclusive with ``requires_when_not``. Lowered onto a ``requires``
+        :class:`~app.sep.apps.framework.rules.FieldGate` and enforced server-side
+        on the execute paths (see
+        :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`). Defaults to
+        None.
+    :param requires_when_not: Require a value for this parameter when the
+        referenced sibling condition does not match. Same grammar as
+        ``requires_when``. Mutually exclusive with ``requires_when``. Enforced
+        server-side. Defaults to None.
+    :param forbidden_when: Forbid a value for this parameter when the referenced
+        sibling condition matches. Same grammar as ``visible_when``. Mutually
+        exclusive with ``forbidden_when_not``. Lowered onto a ``forbidden``
+        :class:`~app.sep.apps.framework.rules.FieldGate` and enforced server-side.
+        Defaults to None.
+    :param forbidden_when_not: Forbid a value for this parameter when the
+        referenced sibling condition does not match. Same grammar as
+        ``forbidden_when``. Mutually exclusive with ``forbidden_when``. Enforced
+        server-side. Defaults to None.
     :param hidden: Unconditionally omit this parameter from every rendered
         execution form -- it is never emitted into the form HTML or form schema
         at all. It is still validated normally (it stays in
         ``to_validation_field``), so a value injected server-side -- e.g. the PMM
         ``apikey`` from ``settings.PMM.api_key`` -- continues to validate without
         a visible field. Defaults to False.
-    :type hidden: bool
+    :param sensitive: Treat this parameter's value as a credential, so surfaces
+        that replay a recorded command line replace it with a fixed-width mask
+        (see :func:`app.sep.snippets.masking.mask_snippet_args`). Parameters
+        whose name carries a credential word are masked without opting in; this
+        flag covers the ones the name pattern cannot recognise. Defaults to
+        False.
     """
 
     name: NonEmptyStr = Field(
@@ -290,9 +305,22 @@ class SnippetMetaParameter(BaseModel):
     html_elem: TextInputHTMLElement | None = None
     visible_when: SnippetVisibilityCondition | None = None
     visible_when_not: SnippetVisibilityCondition | None = None
+    requires_when: SnippetVisibilityCondition | None = None
+    requires_when_not: SnippetVisibilityCondition | None = None
+    forbidden_when: SnippetVisibilityCondition | None = None
+    forbidden_when_not: SnippetVisibilityCondition | None = None
     hidden: bool = False
+    sensitive: bool = False
 
-    @field_validator("visible_when", "visible_when_not", mode="before")
+    @field_validator(
+        "visible_when",
+        "visible_when_not",
+        "requires_when",
+        "requires_when_not",
+        "forbidden_when",
+        "forbidden_when_not",
+        mode="before",
+    )
     @classmethod
     def normalize_visibility_condition(cls, value: Any) -> Any:
         """Normalize a bare string into a truthiness visibility condition.
@@ -355,6 +383,91 @@ class SnippetMetaParameter(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def validate_gate_conditions(self) -> Self:
+        """Validate the requires/forbidden field-gate conditions.
+
+        The four gate fields (``requires_when`` / ``requires_when_not`` /
+        ``forbidden_when`` / ``forbidden_when_not``) reuse the visibility-condition
+        shape and lower onto the framework's ``requires`` / ``forbidden``
+        :class:`FieldGate` lists, enforced server-side on the execute paths (see
+        :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`).
+
+        :return: The validated :class:`SnippetMetaParameter` instance.
+        :raises ValueError: If both variants of a kind are declared together; if a
+            gate is declared on a ``hidden`` parameter (hidden parameters are
+            excluded from the form schema, so the gate would never be lowered or
+            enforced — a silent bypass); if a gate is combined with a visibility
+            condition (visibility already emits a forbidden gate — the combination
+            is ambiguous); if a gate is combined with ``required=True`` (``requires``
+            is redundant, ``forbidden`` is unsatisfiable); if a gate is combined
+            with a non-empty ``default`` (the backfilled default makes a
+            ``forbidden`` gate an unsatisfiable trap and a ``requires`` gate a dead
+            rule); or if a gated parameter's name or referenced sibling is not a
+            valid Python identifier.
+        """
+        if self.requires_when is not None and self.requires_when_not is not None:
+            raise ValueError(
+                "declare only one of 'requires_when' or 'requires_when_not'"
+            )
+        if self.forbidden_when is not None and self.forbidden_when_not is not None:
+            raise ValueError(
+                "declare only one of 'forbidden_when' or 'forbidden_when_not'"
+            )
+        requires = (self.requires_when, self.requires_when_not)
+        forbidden = (self.forbidden_when, self.forbidden_when_not)
+        gate_conditions = [c for c in (*requires, *forbidden) if c is not None]
+        if not gate_conditions:
+            return self
+        if self.hidden:
+            raise ValueError(
+                "a hidden parameter cannot declare a requires/forbidden gate "
+                "(hidden parameters are excluded from the form schema, so the "
+                "gate would never be enforced server-side)"
+            )
+        if self.visible_when is not None or self.visible_when_not is not None:
+            raise ValueError(
+                "a parameter cannot combine a requires/forbidden gate with a "
+                "visibility condition"
+            )
+        if self.required and any(c is not None for c in requires):
+            raise ValueError("a required parameter cannot declare a 'requires' gate")
+        if self.required and any(c is not None for c in forbidden):
+            raise ValueError("a required parameter cannot declare a 'forbidden' gate")
+        if value_is_present(self.default):
+            raise ValueError(
+                "a parameter with a non-empty default cannot declare a "
+                "requires/forbidden gate"
+            )
+        if not self.name.isidentifier():
+            raise ValueError(
+                f"a parameter declaring a requires/forbidden gate must have a name "
+                f"that is a valid Python identifier (no hyphens); got {self.name!r}"
+            )
+        self._validate_gate_references(gate_conditions)
+        return self
+
+    def _validate_gate_references(
+        self, conditions: list["SnippetVisibilityCondition"]
+    ) -> None:
+        """Reject gate conditions that self-reference or name a non-identifier.
+
+        :param conditions: The gate conditions declared on this parameter.
+        :raises ValueError: If a condition references the parameter itself or a
+            sibling whose name is not a valid Python identifier.
+        """
+        for condition in conditions:
+            if condition.parameter == self.name:
+                raise ValueError(
+                    "a requires/forbidden gate cannot reference the parameter itself"
+                )
+            if not condition.parameter.isidentifier():
+                raise ValueError(
+                    f"a requires/forbidden gate must reference a parameter whose "
+                    f"name is a valid Python identifier (no hyphens); got "
+                    f"{condition.parameter!r}"
+                )
+
+    @model_validator(mode="after")
     def set_default_step(self) -> Self:
         """Set default step for numeric parameters if not provided.
 
@@ -373,7 +486,7 @@ class SnippetMetaParameter(BaseModel):
     def validate_arg_format(self) -> Self:
         """Validate the arg_format for non-flag parameters contains '${value}'.
 
-        :return: The validated `SnippetMetaParameter` instance.
+        :return: The validated ``SnippetMetaParameter`` instance.
         :rtype: SnippetMetaParameter
         :raises ValueError: If arg_format is provided for non-flag parameters but
             does not include '${value}'.
@@ -381,7 +494,7 @@ class SnippetMetaParameter(BaseModel):
         if (
             not self.is_flag
             and self.arg_format is not None
-            and "value" not in Template(self.arg_format).get_identifiers()
+            and not is_value_arg_template(self.arg_format)
         ):
             raise ValueError(
                 "arg_format must include '${value}' for non-flag parameters"
@@ -544,7 +657,7 @@ class SnippetMetaParameter(BaseModel):
             **attrs,
             alias=self.name,
             metadata=self.model_dump(
-                include={"positional", "is_flag", "arg_format"},
+                include={"positional", "is_flag", "arg_format", "sensitive"},
                 exclude_none=True,
                 exclude_defaults=True,
             ),

@@ -24,7 +24,7 @@ from pytest_mock import MockerFixture
 from starlette.datastructures import URL
 
 from app import __summary__, __version__
-from app.models import CasdoorUser
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.config import sep_settings
 from app.sep.deps import get_default_context
 

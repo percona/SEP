@@ -35,7 +35,15 @@ from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.db.engine import engine
-from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum, TaskOwner
+from app.tasks.models import (
+    CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
+    INVENTORY_SYNC_TASK_NAME,
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
+    SYNC_RUNNING_TASKS_TASK_NAME,
+    SYSTEM_USER,
+    Task,
+    TaskBackendEnum,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -849,7 +857,7 @@ SYSTEM_TASKS = [
         data=NOMAD_RUN_PYTHON,
         protected=True,
         anonymize_mask=None,
-        output_files_path="run-script/local/output_files",
+        output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
         created_by=SYSTEM_USER,
     ),
     Task(
@@ -857,7 +865,7 @@ SYSTEM_TASKS = [
         data=NOMAD_EXEC_ARTIFACT,
         protected=True,
         anonymize_mask=None,
-        output_files_path="run-script/local/output_files",
+        output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
         created_by=SYSTEM_USER,
     ),
     Task(
@@ -865,13 +873,13 @@ SYSTEM_TASKS = [
         data=NOMAD_EXEC_PYTHON_ARTIFACT,
         protected=True,
         anonymize_mask=None,
-        output_files_path="run-script/local/output_files",
+        output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
         created_by=SYSTEM_USER,
     ),
     Task(
         name="discover-mongo",
         data=NOMAD_DISCOVER_MONGO,
-        owner=TaskOwner.ANSIBLE,
+        owner="ANSIBLE",
         protected=True,
         anonymize_mask=None,
         created_by=SYSTEM_USER,
@@ -879,7 +887,7 @@ SYSTEM_TASKS = [
     Task(
         name="upgrade-mongo",
         data=NOMAD_UPGRADE_MONGO,
-        owner=TaskOwner.ANSIBLE,
+        owner="ANSIBLE",
         protected=True,
         anonymize_mask=None,
         created_by=SYSTEM_USER,
@@ -887,7 +895,7 @@ SYSTEM_TASKS = [
     Task(
         name="apt-upgrade",
         data=NOMAD_APT_UPGRADE,
-        owner=TaskOwner.ANSIBLE,
+        owner="ANSIBLE",
         protected=True,
         anonymize_mask=None,
         created_by=SYSTEM_USER,
@@ -895,15 +903,15 @@ SYSTEM_TASKS = [
     Task(
         name="run-ansible",
         data=NOMAD_RUN_ANSIBLE,
-        owner=TaskOwner.ANSIBLE,
+        owner="ANSIBLE",
         protected=True,
         anonymize_mask=None,
         created_by=SYSTEM_USER,
     ),
     Task(
-        name="inventory-sync",  # keep in sync with INVENTORY_SYNC_TASK_NAME in app.sep.plugins.inventory.models
+        name=INVENTORY_SYNC_TASK_NAME,
         data={
-            "callable": "app.sep.plugins.inventory.sync.run_scheduled_inventory_sync",
+            "callable": "app.sep.apps.inventory.sync.run_scheduled_inventory_sync",
             "target": "local",
         },
         backend=TaskBackendEnum.CELERY,
@@ -938,7 +946,7 @@ SYSTEM_PERIODIC_TASKS = [
         schedule=IntervalSchedule(every=30, period=Period.SECONDS),
         tasks=[
             SystemPeriodicTaskData(
-                name="tasks__sync_running_tasks",
+                name=SYNC_RUNNING_TASKS_TASK_NAME,
                 task_name="app.tasks.celery.sync_running_tasks",
                 extra_kwargs={"expire_seconds": 30},
             ),
@@ -953,8 +961,22 @@ if _nomad_cert_schedule is not None:
             schedule=_nomad_cert_schedule,
             tasks=[
                 SystemPeriodicTaskData(
-                    name="tasks__check_nomad_cert_expiry",
+                    name=CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
                     task_name="app.tasks.celery.check_nomad_cert_expiry",
+                ),
+            ],
+        ),
+    )
+
+_log_purge_schedule = tasks_settings.LOG_PURGE_INTERVAL
+if _log_purge_schedule is not None:
+    SYSTEM_PERIODIC_TASKS.append(
+        SystemPeriodicTaskSchedule(
+            schedule=_log_purge_schedule,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="tasks__purge_task_history_logs",
+                    task_name="app.tasks.celery.purge_task_history_logs",
                 ),
             ],
         ),
@@ -1027,13 +1049,13 @@ async def init_tasks_db() -> None:
 async def verify_taskhistory_execution_request_is_jsonb() -> None:
     """Fail fast if ``taskhistory.execution_request`` is not ``jsonb`` on PostgreSQL.
 
-    Defend against a deploy that ships SEP-988's ``@>`` dispatch dedup code
+    Defend against a deploy that ships the ``@>`` dispatch dedup code
     without running the corresponding Alembic migration. ``compare_type``
     intentionally suppresses the ``json``/``jsonb`` diff during autogeneration,
     so ``make checkmigrations`` cannot detect this skew. Without this guard,
     the first dispatch hits ``operator does not exist: json @> jsonb`` at
     runtime; with it, the Tasks app refuses to start until the column is
-    converted. The check is a no-op on SQLite and MySQL, where SEP-988's
+    converted. The check is a no-op on SQLite and MySQL, where the corresponding
     migration is also a no-op.
 
     Use SQLAlchemy's reflection inspector rather than a raw

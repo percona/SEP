@@ -31,13 +31,13 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
-// Minimal schema served for /api/plugins/:name/schema. SchemaDrivenPlugin
+// Minimal schema served for /api/apps/:name/schema. SchemaDrivenApp
 // renders `display_name` as an h4 heading and "New {display_name}" as the
 // create-button label, which is enough surface for the smoke assertions.
-// Keys are snake_case to match the backend PluginSchema shape — the React
+// Keys are snake_case to match the backend AppSchema shape — the React
 // components read `schema.display_name` / `schema.list_view` directly.
 // Fields kept intentionally minimal: empty forms/list_view ⇒ no extra UI.
-const MOCK_PLUGIN_SCHEMA = {
+const MOCK_APP_SCHEMA = {
   name: 'checksums',
   display_name: 'Checksums',
   forms: [],
@@ -57,7 +57,7 @@ const MOCK_PLUGIN_SCHEMA = {
  * Dispatch logic:
  *   /api/oauth/refresh           -> fake access token (bootstraps AuthProvider)
  *   /api/users/me                -> fake user profile (completes session bootstrap)
- *   /api/plugins/:name/schema    -> minimal valid PluginSchema (renders heading)
+ *   /api/apps/:name/schema    -> minimal valid AppSchema (renders heading)
  *   /api/sep/dashboard/          -> zero counts for dashboard stat cards
  *   /api/sep/task-history/       -> empty paginated response (prevents refetchInterval crash)
  *   /api/apps/                   -> every nav app enabled (renders the full sidebar)
@@ -92,7 +92,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PLUGIN_SCHEMA),
+        body: JSON.stringify(MOCK_APP_SCHEMA),
       });
     }
 
@@ -116,7 +116,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       return fulfillEnabledApps(route);
     }
 
-    // Default: empty success for plugin task lists and anything else
+    // Default: empty success for app task lists and anything else
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -163,6 +163,32 @@ test.describe('shell sanity smoke', () => {
     await expect(page.getByLabel('Password')).toBeVisible();
   });
 
+  test('ambient Grafana session auto-logs-in without showing the login form', async ({ page }) => {
+    await mockAuthenticatedApis(page);
+    // No SEP refresh cookie, but a valid ambient Grafana session: the bootstrap
+    // falls back to POST /api/oauth/session and lands authenticated. Registered
+    // after the catch-all so these specific routes take precedence.
+    await page.route('**/api/oauth/refresh', (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'no valid session' }),
+      }),
+    );
+    await page.route('**/api/oauth/session', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(MOCK_TOKEN),
+      }),
+    );
+
+    await page.goto('/');
+
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(page).not.toHaveURL(/\/login/);
+  });
+
   test('authenticated user sees dashboard with navigation sidebar', async ({ page }) => {
     await mockAuthenticatedApis(page);
     await page.goto('/');
@@ -172,19 +198,16 @@ test.describe('shell sanity smoke', () => {
     await expect(page.getByText('Welcome back, smoke')).toBeVisible();
 
     // Sidebar navigation items must be present (permanent drawer on desktop).
-    // "Schema Change" only appears in the nav (not duplicated on the dashboard),
-    // so it uniquely identifies the sidebar. "Snippets" is the collapsible group
-    // holding Snippet Manager + Collect Diagnostic Data; its child entries are
-    // unmounted until the group is expanded (Collapse uses unmountOnExit), so
-    // expand it before asserting the child nav entry renders.
-    await expect(page.getByText('Schema Change')).toBeVisible();
-    const snippetsGroup = page.getByRole('button', { name: 'Snippets', exact: true });
-    await expect(snippetsGroup).toBeVisible();
-    await snippetsGroup.click();
+    // "Snippet Manager" is now top-level, while diagnostic apps sit under the
+    // "Diagnostics" group.
     await expect(page.getByRole('button', { name: 'Snippet Manager' })).toBeVisible();
+    const diagnosticsGroup = page.getByRole('button', { name: 'Diagnostics', exact: true });
+    await expect(diagnosticsGroup).toBeVisible();
+    await diagnosticsGroup.click();
+    await expect(page.getByRole('button', { name: 'Collect Diagnostic Data' })).toBeVisible();
   });
 
-  test('checksums plugin route mounts without console errors', async ({ page }) => {
+  test('checksums app route mounts without console errors', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
@@ -193,16 +216,16 @@ test.describe('shell sanity smoke', () => {
     });
 
     await mockAuthenticatedApis(page);
-    await page.goto('/plugins/checksums');
+    await page.goto('/apps/checksums');
 
-    // SchemaDrivenPlugin renders the schema displayName as an h4 heading.
-    // Allow extra time for the lazy-loaded SchemaDrivenPlugin / framework chunk to
+    // SchemaDrivenApp renders the schema displayName as an h4 heading.
+    // Allow extra time for the lazy-loaded SchemaDrivenApp / framework chunk to
     // load (Vite preview serves a cold network roundtrip on first nav).
     await expect(page.getByRole('heading', { name: 'Checksums' })).toBeVisible({
       timeout: 30_000,
     });
 
-    // "New Checksums" button confirms the full PluginListPage mounted
+    // "New Checksums" button confirms the full AppListPage mounted
     await expect(page.getByRole('button', { name: /new checksums/i })).toBeVisible();
 
     const criticalErrors = consoleErrors.filter((msg) => !isBenignConsoleError(msg));

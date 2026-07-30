@@ -16,19 +16,31 @@
  */
 
 export { useCurrentUser } from './useCurrentUser';
-export { usePluginSchema } from './usePluginSchema';
+export { useAppSchema } from './useAppSchema';
 export {
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  useUpdatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
-} from './usePluginTasks';
+  useAppTasks,
+  useAppTask,
+  useCreateAppTask,
+  useUpdateAppTask,
+  useAppEntityList,
+  useAppEntityDetail,
+  useCreateAppEntity,
+  useUpdateAppEntity,
+  useDeleteAppEntity,
+  useDeleteAppTask,
+  normalizeAppListResponse,
+  DEFAULT_APP_LIST_OFFSET,
+  DEFAULT_APP_LIST_LIMIT,
+  RUNNING_STATUSES,
+  isRunningStatus,
+} from './useAppTasks';
+export type {
+  AppListPagination,
+  AppListQueryOptions,
+  AppListResult,
+  PaginatedAppList,
+  TaskHistoryStatus,
+} from './useAppTasks';
 export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
 export type { AlertConfig } from './useAlertConfig';
 export { useDashboardStats } from './useDashboardStats';
@@ -71,5 +83,11 @@ export type {
   ForceDisableAppVars,
 } from './useAdminApps';
 export { useConfigExport } from './useConfigExport';
+export { useConnectivityCheck, CONNECTIVITY_CHECK_PATH } from './useConnectivityCheck';
+export type {
+  ConnectivityCheckRequest,
+  ConnectivityResult,
+  ConnectivityStatus,
+} from './useConnectivityCheck';
 export { useAppInfo, APP_INFO_QUERY_KEY } from './useAppInfo';
 export type { AppInfo } from './useAppInfo';

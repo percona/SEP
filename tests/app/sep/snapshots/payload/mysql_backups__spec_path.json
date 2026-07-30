@@ -14,13 +14,15 @@
         "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/mysql_backups/binlog_payload",
+      "payload": "file://app/sep/apps/mysql_backups/binlog_payload",
       "task": "run-python"
     },
     "is_template": false,
     "name": "backups-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "binlog_rsync_no_alt": {
     "alert_detail_builder": null,
@@ -37,13 +39,15 @@
         "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/mysql_backups/binlog_payload",
+      "payload": "file://app/sep/apps/mysql_backups/binlog_payload",
       "task": "run-python"
     },
     "is_template": false,
     "name": "backups-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "mydumper_rsync": {
     "alert_detail_builder": null,
@@ -60,13 +64,15 @@
         "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/mysql_backups/mydumper_payload",
+      "payload": "file://app/sep/apps/mysql_backups/mydumper_payload",
       "task": "run-python"
     },
     "is_template": false,
     "name": "backups-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "xtrabackup_s3_encrypt": {
     "alert_detail_builder": null,
@@ -83,12 +89,14 @@
         "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/mysql_backups/xtrabackup_payload",
+      "payload": "file://app/sep/apps/mysql_backups/xtrabackup_payload",
       "task": "run-python"
     },
     "is_template": false,
     "name": "backups-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUPS",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   }
 }

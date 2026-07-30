@@ -1,6 +1,6 @@
 # @sep/e2e — Playwright E2E smoke tests
 
-End-to-end smoke tests for the SEP React shell and schema-driven plugins, powered by [Playwright](https://playwright.dev/).
+End-to-end smoke tests for the SEP React shell and schema-driven apps, powered by [Playwright](https://playwright.dev/).
 
 ## Quick start
 
@@ -16,21 +16,21 @@ pnpm --filter @sep/e2e test:e2e:ui   # open Playwright UI mode for debugging
 
 `playwright.config.ts` runs `VITE_MOCK_API=true pnpm --filter @sep/shell build && pnpm --filter @sep/shell preview --port 5174 --strictPort` as the `webServer`. All API calls are intercepted inside each spec via `page.route('**/api/**', …)` so no real backend is required.
 
-Testing the **production** bundle (not the dev server) is intentional: it exercises the same code path users get. The mock-data fallbacks inside `usePluginTasks` are gated on `import.meta.env.DEV || import.meta.env.VITE_MOCK_API === 'true'`, and Vite statically replaces both expressions at build time. Setting `VITE_MOCK_API=true` for this build lights up the fallback branch in the bundle so the schema-driven plugin list pages render without a live `/api/plugins/*` endpoint, while real production builds (which never set the flag) get the fallback dead-code-eliminated.
+Testing the **production** bundle (not the dev server) is intentional: it exercises the same code path users get. The mock-data fallbacks inside `useAppTasks` are gated on `import.meta.env.DEV || import.meta.env.VITE_MOCK_API === 'true'`, and Vite statically replaces both expressions at build time. Setting `VITE_MOCK_API=true` for this build lights up the fallback branch in the bundle so the schema-driven app list pages render without a live `/api/apps/*` endpoint, while real production builds (which never set the flag) get the fallback dead-code-eliminated.
 
-## Adding a smoke test for a new plugin
+## Adding a smoke test for a new app
 
 1. **Copy the template:**
 
    ```bash
-   cp tests/_template.spec.ts tests/<plugin-name>.spec.ts
+   cp tests/_template.spec.ts tests/<app-name>.spec.ts
    ```
 
 2. **Update the two constants at the top of the file:**
 
    ```ts
-   const PLUGIN_ROUTE = '/your-plugin-path'; // React Router path
-   const PLUGIN_DISPLAY_NAME = 'Your Plugin'; // schema.displayName
+   const APP_ROUTE = '/your-app-path'; // React Router path
+   const APP_DISPLAY_NAME = 'Your App'; // schema.displayName
    ```
 
 3. **Run and iterate:**
@@ -43,28 +43,28 @@ Testing the **production** bundle (not the dev server) is intentional: it exerci
 
 4. **Locator conventions:** Prefer ARIA roles (`getByRole`) over CSS selectors. For schema-driven list pages the key landmarks are:
 
-   | Element        | Locator                                                    |
-   | -------------- | ---------------------------------------------------------- |
-   | Plugin heading | `page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME })` |
-   | Create button  | `page.getByRole('button', { name: /new .+/i })`            |
-   | Task row       | `page.getByRole('row', { name: /row-text/i })`             |
-   | Form field     | `page.getByLabel('Field Label')`                           |
+   | Element       | Locator                                                 |
+   | ------------- | ------------------------------------------------------- |
+   | App heading   | `page.getByRole('heading', { name: APP_DISPLAY_NAME })` |
+   | Create button | `page.getByRole('button', { name: /new .+/i })`         |
+   | Task row      | `page.getByRole('row', { name: /row-text/i })`          |
+   | Form field    | `page.getByLabel('Field Label')`                        |
 
-5. **If your plugin needs a real backend:** replace the `mockAuthenticatedApis` helper with a Playwright `webServer` that spins up `docker-compose.yml` with a known seed. See `playwright.config.ts` `webServer` docs for the pattern.
+5. **If your app needs a real backend:** replace the `mockAuthenticatedApis` helper with a Playwright `webServer` that spins up `docker-compose.yml` with a known seed. See `playwright.config.ts` `webServer` docs for the pattern.
 
 ## Page-object pattern
 
-For plugins with multi-step flows (create → detail → action), extract locators into a page-object class:
+For apps with multi-step flows (create → detail → action), extract locators into a page-object class:
 
 ```ts
-class MyPluginPage {
-  readonly heading = this.page.getByRole('heading', { name: 'My Plugin' });
-  readonly newButton = this.page.getByRole('button', { name: /new my plugin/i });
+class MyAppPage {
+  readonly heading = this.page.getByRole('heading', { name: 'My App' });
+  readonly newButton = this.page.getByRole('button', { name: /new my app/i });
 
   constructor(private readonly page: Page) {}
 
   async goto() {
-    await this.page.goto('/my-plugin');
+    await this.page.goto('/my-app');
   }
 }
 ```

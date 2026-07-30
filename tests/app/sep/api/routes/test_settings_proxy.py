@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP-level ``TasksSettings`` proxy (SEP-1330).
+"""Tests for the SEP-level ``TasksSettings`` proxy.
 
 ``TasksSettings`` storage lives in the Tasks sub-app, so the SEP settings router
 registers it as a *remote* class: the LIST appends its group server-side and the
@@ -37,11 +37,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -97,8 +97,11 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(name="mock_tasks")
@@ -161,7 +164,7 @@ class TestListAggregation:
     def test_appends_tasks_group_fetched_server_side(
         self, admin_client: TestClient, mock_tasks: AsyncMock
     ) -> None:
-        """Return the three local groups plus the Tasks group, fetched via the proxy."""
+        """Return core, proxied TasksSettings, and app-owned groups in order."""
         mock_tasks.get.return_value = _tasks_list([_tasks_setting(has_override=True)])
         response = admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -169,7 +172,8 @@ class TestListAggregation:
         assert {"SEPSettings", "SnippetsSettings", "MessagesSettings"}.issubset(
             set(classes)
         )
-        assert classes[-1] == SettingClassEnum.TASKS_SETTINGS.value
+        assert classes[-2] == SettingClassEnum.TASKS_SETTINGS.value
+        assert classes[-1] == SettingClassEnum.ALERT_SETTINGS.value
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
     def test_list_emits_is_advanced_for_sep_settings(
@@ -197,6 +201,38 @@ class TestListAggregation:
         assert all(advanced[k] is True for k in session_leaves)
         # A basic setting stays False.
         assert advanced["SYNC_REFRESH_TIME"] is False
+
+    def test_list_marks_ambient_sso_not_applicable_under_non_grafana(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """Mark AMBIENT_SESSION_SSO_ENABLED not applicable under a non-Grafana provider."""
+        mock_tasks.get.return_value = _tasks_list()
+        response = admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        sep_group = next(
+            g
+            for g in response.json()["groups"]
+            if g["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+        )
+        applicable = {s["key"]: s["is_applicable"] for s in sep_group["settings"]}
+        assert applicable["AMBIENT_SESSION_SSO_ENABLED"] is False
+        # Every other field stays applicable by default.
+        assert applicable["SYNC_REFRESH_TIME"] is True
+
+    def test_list_marks_ambient_sso_applicable_under_grafana(
+        self, admin_client: TestClient, mock_tasks: AsyncMock, grafana_mock
+    ) -> None:
+        """Mark AMBIENT_SESSION_SSO_ENABLED applicable under the Grafana provider."""
+        mock_tasks.get.return_value = _tasks_list()
+        response = admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        sep_group = next(
+            g
+            for g in response.json()["groups"]
+            if g["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+        )
+        applicable = {s["key"]: s["is_applicable"] for s in sep_group["settings"]}
+        assert applicable["AMBIENT_SESSION_SSO_ENABLED"] is True
 
     def test_empty_tasks_group_still_renders(
         self, admin_client: TestClient, mock_tasks: AsyncMock

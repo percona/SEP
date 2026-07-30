@@ -28,12 +28,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadGatewayException
 from app.core.requests import RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
+from app.sep.bundle_upload.plan import DeliveryPlan
+from app.sep.config import sep_settings
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -48,6 +50,7 @@ EXPORT_URL = "/api/sep/admin/settings/export"
 SETTINGS_LIST_URL = "/api/sep/admin/settings/"
 REDACTED_SECRET = "**********"
 SAMPLE_STALENESS_THRESHOLD_SECONDS = 3600
+DEFAULT_ALERT_BACKUP_RETENTION = 10
 
 SAMPLE_TASKS_LIST: dict[str, Any] = {
     "groups": [
@@ -98,8 +101,11 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(name="mock_tasks_api")
@@ -216,12 +222,7 @@ class TestSepConfigExportYaml:
         assert response.headers["content-disposition"].endswith('.yaml"')
 
         payload = yaml.safe_load(response.text)
-        assert set(payload) == {
-            SettingClassEnum.SEP_SETTINGS.value,
-            SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.MESSAGES_SETTINGS.value,
-            SettingClassEnum.TASKS_SETTINGS.value,
-        }
+        assert set(payload) == FULL_EXPORT_CLASSES
         mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
 
     async def test_export_keys_match_list_for_sep_classes(
@@ -234,8 +235,22 @@ class TestSepConfigExportYaml:
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.MESSAGES_SETTINGS.value,
+            SettingClassEnum.ALERTS_SETTINGS.value,
         ):
             assert set(export[setting_class]) == list_keys[setting_class]
+
+    async def test_alerts_settings_block_exported(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Export the new ``AlertsSettings`` section with its three fields."""
+        export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
+        list_keys = _list_keys_by_class(api_admin_client)
+        block = export[SettingClassEnum.ALERTS_SETTINGS.value]
+        # Exported keys mirror the LIST projection exactly (including the
+        # ``BACKUP_INTERVAL__*`` flattening and inherited ``FASTAPI_ENV``).
+        assert set(block) == list_keys[SettingClassEnum.ALERTS_SETTINGS.value]
+        assert block["BACKUP_RETENTION"] == DEFAULT_ALERT_BACKUP_RETENTION
+        assert block["ALERT_FOLDER_NAME"] == "SEP Alerts"
 
     async def test_secret_fields_match_list_projection(
         self, api_admin_client: TestClient
@@ -253,14 +268,7 @@ class TestSepConfigExportYaml:
         """Render scalar and nested ``SecretStr`` values as ``**********``."""
         from pydantic import SecretStr
 
-        from app.core.config import PMMSettings
-        from app.core.utils.fields import UniqueList
-        from app.sep.config import (
-            HealthReportSettings,
-            sep_settings,
-            SyncerExtraKwargs,
-            SyncOptions,
-        )
+        from app.sep.config import HealthReportSettings, sep_settings
 
         mocker.patch.object(
             sep_settings,
@@ -272,25 +280,6 @@ class TestSepConfigExportYaml:
                 client_id="client-1",
             ),
         )
-        mocker.patch.object(
-            sep_settings,
-            "SYNCER_EXTRA_KWARGS",
-            SyncerExtraKwargs(
-                pmm=PMMSettings(api_key=SecretStr("syncer-extra-secret"))
-            ),
-        )
-        mocker.patch.object(
-            sep_settings,
-            "SYNCERS",
-            UniqueList(
-                [
-                    SyncOptions(
-                        syncer="PMMSyncer",
-                        pmm=PMMSettings(api_key=SecretStr("syncer-inline-secret")),
-                    )
-                ]
-            ),
-        )
         yaml_text = api_admin_client.get(EXPORT_URL).text
         export = yaml.safe_load(yaml_text)
         sep_block = export[SettingClassEnum.SEP_SETTINGS.value]
@@ -299,10 +288,31 @@ class TestSepConfigExportYaml:
             export[SettingClassEnum.TASKS_SETTINGS.value]["API_SECRET"]
             == REDACTED_SECRET
         )
-        assert sep_block["SYNCER_EXTRA_KWARGS"]["pmm"]["api_key"] == REDACTED_SECRET
-        assert sep_block["SYNCERS"][0]["pmm"]["api_key"] == REDACTED_SECRET
-        assert "syncer-extra-secret" not in yaml_text
-        assert "syncer-inline-secret" not in yaml_text
+        assert "local-secret" not in yaml_text
+
+    async def test_delivery_plan_secrets_redacted_in_yaml(
+        self, api_admin_client: TestClient, mocker
+    ) -> None:
+        """Render every ``DIAGNOSTICS_DELIVERY`` secret as ``**********``."""
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY",
+            DeliveryPlan(
+                endpoint="https://snow.example.com/",
+                secrets={"api_key": "plan-secret"},
+                upload={
+                    "path": "attachment/upload",
+                    "headers": {"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+                },
+            ),
+        )
+        yaml_text = api_admin_client.get(EXPORT_URL).text
+        export = yaml.safe_load(yaml_text)
+        block = export[SettingClassEnum.SEP_SETTINGS.value]["DIAGNOSTICS_DELIVERY"]
+
+        assert block["secrets"]["api_key"] == REDACTED_SECRET
+        assert block["upload"]["path"] == "attachment/upload"
+        assert "plan-secret" not in yaml_text
 
     async def test_inventory_endpoint_redacted_in_yaml(
         self, api_admin_client: TestClient
@@ -356,9 +366,9 @@ class TestSepConfigExportYaml:
     async def test_complex_field_renders_as_mapping(
         self, api_admin_client: TestClient
     ) -> None:
-        """Emit ``SEPSettings.PLUGINS`` as a structured value, not a repr blob."""
+        """Emit ``SEPSettings.APPS`` as a structured value, not a repr blob."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
-        plugins = export[SettingClassEnum.SEP_SETTINGS.value]["PLUGINS"]
+        plugins = export[SettingClassEnum.SEP_SETTINGS.value]["APPS"]
         assert isinstance(plugins, list)
         if plugins:
             assert isinstance(plugins[0], dict)
@@ -537,7 +547,19 @@ class TestSepConfigExportTasksFanOut:
 SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
 SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
 MESSAGES_CLASS = SettingClassEnum.MESSAGES_SETTINGS.value
+ALERTS_CLASS = SettingClassEnum.ALERTS_SETTINGS.value
+SETTINGS_CLASS = SettingClassEnum.SETTINGS.value
+ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
 TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
+FULL_EXPORT_CLASSES = {
+    SEP_CLASS,
+    SNIPPETS_CLASS,
+    MESSAGES_CLASS,
+    ALERTS_CLASS,
+    SETTINGS_CLASS,
+    ALERT_CLASS,
+    TASKS_CLASS,
+}
 TASKS_SAMPLE_KEY = "STALENESS_THRESHOLD_SECONDS"
 MIN_MULTI_KEYS = 2
 
@@ -556,11 +578,11 @@ class TestSepConfigExportFilter:
     async def test_omitted_keys_returns_full_export(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
     ) -> None:
-        """Yield the full four-block export and fan out once when ``keys`` is omitted."""
+        """Yield the full export and fan out once when ``keys`` is omitted."""
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_200_OK
         payload = yaml.safe_load(response.text)
-        assert set(payload) == {SEP_CLASS, SNIPPETS_CLASS, MESSAGES_CLASS, TASKS_CLASS}
+        assert set(payload) == FULL_EXPORT_CLASSES
         mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
 
     async def test_single_key_selector_returns_only_that_key(
@@ -630,6 +652,46 @@ class TestSepConfigExportFilter:
         assert response.status_code == status.HTTP_200_OK
         payload = yaml.safe_load(response.text)
         assert list(payload) == [SEP_CLASS, TASKS_CLASS]
+
+    async def test_block_order_places_app_owned_before_tasks(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Place app-owned blocks after core classes and before Tasks."""
+        response = api_admin_client.get(
+            EXPORT_URL,
+            params={"keys": [TASKS_CLASS, ALERT_CLASS, SEP_CLASS]},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert list(payload) == [SEP_CLASS, ALERT_CLASS, TASKS_CLASS]
+
+    async def test_alert_settings_whole_class_selector(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Export every ``AlertSettings`` key without fanning out to Tasks."""
+        list_keys = _list_keys_by_class(api_admin_client)
+        mock_tasks_api.get.reset_mock()
+        response = api_admin_client.get(EXPORT_URL, params={"keys": ALERT_CLASS})
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {ALERT_CLASS}
+        assert set(payload[ALERT_CLASS]) == list_keys[ALERT_CLASS]
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_alert_settings_key_selector_skips_tasks_fan_out(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Export one ``AlertSettings`` key with no upstream Tasks call."""
+        mock_tasks_api.get.reset_mock()
+        response = api_admin_client.get(
+            EXPORT_URL,
+            params={"keys": f"{ALERT_CLASS}.SOURCE_PREFIX"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {ALERT_CLASS}
+        assert set(payload[ALERT_CLASS]) == {"SOURCE_PREFIX"}
+        mock_tasks_api.get.assert_not_called()
 
     async def test_whole_class_dominates_overlapping_key(
         self, api_admin_client: TestClient

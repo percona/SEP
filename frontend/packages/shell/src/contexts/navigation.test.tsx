@@ -36,6 +36,9 @@ const app = (app_key: string, enabled: boolean): EnabledApp => ({
   custom_ui: false,
   group: null,
   nav_order: null,
+  react_route: `/apps/${app_key}`,
+  nav_icon: null,
+  blocking_dependencies: [],
 });
 
 /** Flatten leaf titles (parents + children) for assertion convenience. */
@@ -75,9 +78,9 @@ afterEach(() => {
 });
 
 describe('NavigationProvider', () => {
-  it('drops disabled-app items and keeps non-plugin items', () => {
+  it('drops disabled-app items and keeps non-app items', () => {
     // Snippets disabled, Tasks enabled; everything else absent → filtered out
-    // except the always-on non-plugin items (Dashboard, Inventory).
+    // except the always-on non-app items (Dashboard, Inventory).
     useEnabledApps.mockReturnValue({ data: [app('tasks', true), app('snippets', false)] });
     const titles = renderProvider();
 

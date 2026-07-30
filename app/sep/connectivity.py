@@ -18,14 +18,14 @@
 These helpers serve the **form (Jinja) flow** — they emit flash messages via
 :func:`app.sep.middleware.messages.warning` and depend on a Starlette
 :class:`~starlette.requests.Request`. The **JSON API flow** uses the parallel
-helpers in :mod:`app.sep.plugins.framework.connectivity`, which return a
+helpers in :mod:`app.sep.apps.framework.connectivity`, which return a
 ``ConnectivityWarning | None`` object instead of mutating request state.
 """
 
 import logging
 from collections import OrderedDict
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any, cast, NamedTuple
 
 from aiohttp import ClientError
 from async_lru import alru_cache
@@ -40,7 +40,11 @@ from app.sep.middleware import messages
 logger = logging.getLogger(__name__)
 
 CACHE_TTL = 600
-CHECK_TIMEOUT = 10
+#: Connect budget (seconds) sent to the Tasks API as ``request.timeout``. The
+#: poll loop charges only post-provisioning connect time against it; the inner
+#: DB ``connect_timeout`` (the payload's ``CONNECT_TIMEOUT``) must stay strictly
+#: below it.
+CHECK_TIMEOUT = 20
 CACHE_MAXSIZE = 128
 
 CONNECTIVITY_META_HOST_KEY = "_connectivity_host"
@@ -50,6 +54,21 @@ CONNECTIVITY_TARGET_KEY = "_connectivity_target"
 CONNECTIVITY_WARNING_KEY = "_connectivity_warning"
 
 _LATEST_RESULTS: OrderedDict[tuple[str, str], bool] = OrderedDict()
+
+
+class ConnectivityResult(NamedTuple):
+    """Hold the outcome of a Tasks API connectivity check.
+
+    :param success: Whether the database connect succeeded.
+    :param error: A failure description, or ``None`` on success.
+    :param task_history_id: The run-script task-history id whose log explains
+        the result, or ``None`` when no task was created (e.g. the Tasks API
+        was unreachable).
+    """
+
+    success: bool
+    error: str | None
+    task_history_id: int | None
 
 
 async def get_check_connectivity_flag(request: Request) -> bool:
@@ -65,9 +84,7 @@ async def get_check_connectivity_flag(request: Request) -> bool:
     values fall back to ``False``.
 
     :param request: The incoming HTTP request.
-    :type request: Request
     :return: ``True`` when the checkbox or equivalent field is set.
-    :rtype: bool
     """
     form = await request.form()
     try:
@@ -86,15 +103,12 @@ def _record_latest_result(target: str, service_type: str, *, success: bool) -> N
     TTL of its own; ``alru_cache`` remains the authoritative TTL store and
     the snapshot is best-effort, refreshed each time
     ``check_and_warn_connectivity`` (form path) or
-    ``app.sep.plugins.framework.connectivity.record_connectivity_warning``
+    ``app.sep.apps.framework.connectivity.record_connectivity_warning``
     (JSON API path) runs.
 
     :param target: The Nomad node name.
-    :type target: str
     :param service_type: The lowercase service type (e.g. ``mysql``).
-    :type service_type: str
     :param success: Whether the most recent check succeeded.
-    :type success: bool
     """
     key = (target, service_type)
     _LATEST_RESULTS[key] = success
@@ -113,7 +127,6 @@ def clear_connectivity_caches() -> None:
     process-lifetime state.
 
     :return: ``None``.
-    :rtype: None
     """
     _fetch_connectivity_result.cache_clear()
     _LATEST_RESULTS.clear()
@@ -123,12 +136,9 @@ def get_latest_connectivity_result(target: str, service_type: str) -> bool | Non
     """Return the latest connectivity outcome for a ``(target, service_type)`` pair.
 
     :param target: The Nomad node name.
-    :type target: str
     :param service_type: The lowercase service type (e.g. ``mysql``).
-    :type service_type: str
     :return: ``True`` if the last recorded check succeeded, ``False`` if it
         failed, or ``None`` when no result has been recorded for that pair.
-    :rtype: bool | None
     """
     return _LATEST_RESULTS.get((target, service_type))
 
@@ -140,27 +150,28 @@ async def _fetch_connectivity_result(
     host: str,
     port: int,
     service_type: str,
-) -> tuple[bool, str | None]:
-    """Run the Tasks API connectivity check and return ``(success, error)``.
+) -> ConnectivityResult:
+    """Run the Tasks API connectivity check and return a ``ConnectivityResult``.
 
     Memoize results by ``(tasks_api, target, host, port, service_type)`` so
     repeated checks within ``CACHE_TTL`` seconds skip the API roundtrip.
     ``RemoteAPI`` is hashable, so it participates in the cache key directly
     without any contextvar indirection.
 
+    ``task_history_id`` carries the underlying run-script task id so callers can
+    link its log; it is ``None`` on transport errors where no task was created.
+    Because the result is memoized, a repeat check within ``CACHE_TTL`` reuses
+    the first call's ``task_history_id`` — its "View log" link points at that
+    earlier run rather than a fresh one. This is acceptable: the cache key pins
+    identical check parameters, so the earlier log stays representative.
+
     :param tasks_api: Authenticated Tasks API client.
-    :type tasks_api: RemoteAPI
     :param target: The Nomad node name.
-    :type target: str
     :param host: The database host address.
-    :type host: str
     :param port: The database port.
-    :type port: int
     :param service_type: The lowercase service type (e.g. ``mysql``).
-    :type service_type: str
-    :return: A tuple of ``(success, error)`` where ``error`` is ``None`` on
-        success or carries a human-readable message on failure.
-    :rtype: tuple[bool, str | None]
+    :return: A :class:`ConnectivityResult`; ``error`` is ``None`` on success and
+        ``task_history_id`` is ``None`` when no task was created.
     """
     try:
         result = cast(
@@ -176,7 +187,11 @@ async def _fetch_connectivity_result(
                 },
             ),
         )
-        return result.get("success", False), result.get("error")
+        return ConnectivityResult(
+            result.get("success", False),
+            result.get("error"),
+            result.get("task_history_id"),
+        )
     except HTTPException as exc:
         logger.debug(
             "Tasks API connectivity check returned error response", exc_info=True
@@ -184,10 +199,12 @@ async def _fetch_connectivity_result(
         error = (
             exc.detail if isinstance(exc.detail, str) else "Connectivity check failed"
         )
-        return False, error
+        return ConnectivityResult(success=False, error=error, task_history_id=None)
     except (OSError, TimeoutError, ClientError):
         logger.debug("Could not reach Tasks API for connectivity check", exc_info=True)
-        return False, "Could not reach the Tasks API"
+        return ConnectivityResult(
+            success=False, error="Could not reach the Tasks API", task_history_id=None
+        )
 
 
 async def check_and_warn_connectivity(
@@ -207,28 +224,27 @@ async def check_and_warn_connectivity(
     circuit until ``CACHE_TTL`` seconds elapse.
 
     :param request: The HTTP request (for flash messages).
-    :type request: Request
     :param tasks_api: Authenticated Tasks API client.
-    :type tasks_api: RemoteAPI
     :param target: The Nomad node name.
-    :type target: str
     :param host: The database host address.
-    :type host: str
     :param port: The database port.
-    :type port: int
     :param service_type: The lowercase service type (e.g. ``mysql``).
-    :type service_type: str
     """
-    success, error = await _fetch_connectivity_result(
+    success, error, task_history_id = await _fetch_connectivity_result(
         tasks_api, target, host, port, service_type
     )
     _record_latest_result(target, service_type, success=success)
 
     if not success:
+        pointer = (
+            f" (see task #{task_history_id} logs)"
+            if task_history_id is not None
+            else ""
+        )
         messages.warning(
             request,
             f"Connectivity warning for {host}:{port} ({service_type}) "
-            f"on executor {target}: {error or 'check failed'}",
+            f"on executor {target}: {error or 'check failed'}{pointer}",
         )
 
 
@@ -249,15 +265,11 @@ async def maybe_check_connectivity(
     the task payload themselves.
 
     :param request: The HTTP request (for flash messages).
-    :type request: Request
     :param tasks_api: Authenticated Tasks API client.
-    :type tasks_api: RemoteAPI
     :param meta: The ``task.data["meta"]`` mapping from the created task.
-    :type meta: dict[str, Any]
     :param check_connectivity: If ``False``, skip both the Tasks API call and
         the ``_LATEST_RESULTS`` cache write. Honors the per-task opt-out from
         the SEP task creation forms.
-    :type check_connectivity: bool
     """
     if not check_connectivity:
         return
@@ -287,7 +299,6 @@ def annotate_tasks_with_connectivity(tasks: Iterable[dict[str, Any]]) -> None:
       ``_connectivity_service_type`` keys.
 
     :param tasks: The iterable of task dictionaries to annotate in-place.
-    :type tasks: Iterable[dict[str, Any]]
     """
     for task in tasks:
         target = task.get(CONNECTIVITY_TARGET_KEY)

@@ -30,8 +30,8 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
 
+from app.sep.apps.alerts.models import AlertBackup
 from app.sep.config import sep_settings
-from app.sep.plugins.alerts.models import AlertBackup
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"

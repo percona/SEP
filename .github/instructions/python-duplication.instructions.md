@@ -12,10 +12,11 @@ Same string or numeric literal appearing in 2+ files in the diff (or 1 in the di
 
 - **Important** if the literal appears in 3+ files, if changing it would require touching every occurrence, or if it encodes a convention (port, key, format string).
 - **Minor** if it appears in 2 files and is unlikely to change.
-- Flag even **single-file plugin-identity literals** — plugin slug, plugin-owned meta-key, plugin `settings.yaml` key, URL fragment routed to the plugin — they encode a cross-plugin contract. Extract to a module-level constant.
+- Flag even **single-file app-identity literals** — app slug, app-owned meta-key, app `settings.yaml` key, URL fragment routed to the app — they encode a cross-app contract. Extract to a module-level constant.
 - Don't flag test fixture values or Python builtins.
+- **Field-name sets that mirror a model** — a module-level tuple/list/set of, or dict keyed by, a model's field-name string literals (`RENDERED_FIELDS = ("os_version", "config")`, or a dict keyed by `Capabilities` fields) duplicates the model, the single source of truth. Derive from `Model.model_fields` or hang a `ClassVar` on the model. Caveat: prefer a named allow-set over a blanket `frozenset(Model.model_fields) - {excluded}`, which silently absorbs every future field the model gains.
 
-Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL_PORT` in `app/inventory/constants.py`. `"MYSQL"`/`"POSTGRESQL"` → `ServiceTypeEnum.MYSQL.value`.
+Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL_PORT` in `app/inventory/constants.py`. Any hardcoded service-type string (`"mysql"`, `"postgresql"`, `"valkey"`, …) → `ServiceTypeEnum.<member>` (it's a `StrEnum` — the member *is* the string).
 
 ## DUP-2 — Hand-rolled where a helper exists
 
@@ -29,6 +30,10 @@ Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL
 | Hardcoded `"MYSQL"`/`"POSTGRESQL"` | `ServiceTypeEnum.<member>.value` |
 | New string/dict/date helper | Check `app/core/utils/` first |
 | Raw `session.execute(select(...))` | `BaseSQLModelManager` methods |
+| `session.exec(...)` inside a Manager classmethod body | `await cls._exec(session, query)` |
+| `Manager.first(...)` then `if obj is None: raise HTTPNotFoundException(...)` | `Manager.get_or_404(session, **f)` |
+| `Manager.first(...)` → `if existing: update() else: create()` | `Manager.get_or_create(session, data, filter_include={...})` |
+| Inline `datetime.now(UTC)` / `datetime.utcnow()` timestamp | `utc_now()` from `app/core/utils/date_time` (microseconds zeroed) |
 | `fastapi.HTTPException` | `HTTPNotFoundException` / `HTTPConflictException` / etc. |
 | Inline `RemoteAPI` client | `Annotated[RemoteAPI, Depends(get_*_api)]` in `deps.py` |
 | Manual JWT/auth | `CurrentUser = Annotated[User, IsAuthenticated]` |
@@ -46,9 +51,28 @@ Compare each new pattern against the dominant form in sibling files in the same 
 Before accepting a non-trivial block of new code, grep the package's route handlers for the same logic shape — DUP-2 misses this, since route bodies aren't in the helper catalog.
 
 - **Same-package** — extract the duplicated logic into a `Depends()` or helper.
-- **Cross-plugin** — if a route in plugin A processes a domain object owned by plugin B, prefer a classmethod on B's response model (`SnippetResponse.from_snippet(snippet)`) so consumers import and call it.
+- **Cross-app** — if a route in app A processes a domain object owned by app B, prefer a classmethod on B's response model (`SnippetResponse.from_snippet(snippet)`) so consumers import and call it.
 
 Don't flag trivial duplication or new code that legitimately needs a different shape.
+
+## DUP-5 — Repeated call shape or boilerplate block
+
+- Same function call (name + overlapping kwargs) appearing ≥3 times in one file → extract a thin one-liner wrapper that names the intent (e.g. `hot_field(default)` for repeated `field_with_metadata(default, metadata={...})`).
+- A verbatim multi-line setup/teardown block (≥3 lines, `try`/`finally`/`async with`) duplicated ≥2 times across sibling callers → extract a shared context manager or helper.
+
+The wrapper must name the *intent*, not just collapse syntax — a 3-line helper saving 1 line per call with no clear name isn't worth it.
+
+## DUP-6 — Reuse stops at the leading underscore
+
+Before flagging "reuse the existing symbol," check for a `_` prefix. A `_`-prefixed module member is not public — importing it across module boundaries couples the importer to an internal the owner can rename or delete without notice. Fix: define a trivial literal locally, or promote the symbol to public (drop `_`, add to `__all__`) in the owning module and import that. Applies to tests too (they're `SLF001`-exempt, so nothing mechanical catches it).
+
+## DUP-7 — Conformance checks derive their expectation from the verified source
+
+When a diff adds a consistency/conformance check, the expected value must be *derived from* the production function or constant being verified (called, imported, computed) — never re-typed as an independent copy. A re-typed expectation drifts from the code silently and defeats the check.
+
+## DUP-8 — Unit label agrees with the factor and the documented contract
+
+When a value is shown to a human with a unit — an error message, log line, validation failure, or UI string — the label, the conversion factor that produces the number, and the unit in the field's docstring / schema description must all agree. Binary-vs-decimal (KB/KiB, MB/MiB) and seconds-vs-milliseconds mismatches are the common, user-visible drift. Flag when the three diverge.
 
 ## Pydantic — declarative over imperative
 

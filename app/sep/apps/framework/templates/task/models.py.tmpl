@@ -1,0 +1,52 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define the model-first create form for the << display_name_doc >> app."""
+
+from typing import Annotated
+
+from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework.form_dsl import (
+    ArgFormat,
+    ServiceRef,
+    TaskFormModel,
+    Ui,
+)
+
+
+class << class_prefix >>Form(TaskFormModel):
+    """Declare the create/update body and ``GET /schema`` source for << display_name_doc >>.
+
+    The single source of the JSON request body the server validates *and* the
+    derived form. ``TaskFormModel`` supplies the shared Task-section fields —
+    ``task_name`` and the ``hostname`` executor host — so this model declares
+    only the task's own inputs. Replace the example fields below with the real
+    ones: the ``ServiceRef`` resolves the target database service, and each
+    ``ArgFormat`` field becomes a CLI argument.
+
+    :param service_id: The Inventory id of the target database service.
+    :param message: An example value argument passed to the command.
+    """
+
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=(ServiceTypeEnum.<< service_type >>,)),
+        Ui(label="Database Host", section="Task"),
+    ]
+    message: Annotated[
+        str,
+        ArgFormat(),
+        Ui(section="Task", description="Example value argument"),
+    ] = "hello"

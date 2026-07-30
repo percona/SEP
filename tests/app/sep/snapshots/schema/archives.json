@@ -12,7 +12,7 @@
       {
         "fields": [
           {
-            "label": "Executor Host",
+            "label": "Execution Host",
             "path": "data.meta.target"
           },
           {
@@ -45,12 +45,13 @@
       "fields": [
         {
           "label": "Task Name",
+          "min_length": 1,
           "name": "task_name",
           "required": true,
           "type": "string"
         },
         {
-          "label": "Executor Host",
+          "label": "Execution Host",
           "name": "hostname",
           "required": true,
           "type": "host"
@@ -132,6 +133,7 @@
                 {
                   "description": "Custom query defining source rows.",
                   "label": "Source Query",
+                  "min_length": 1,
                   "name": "source.source_query",
                   "required": true,
                   "type": "string"
@@ -186,6 +188,7 @@
                 {
                   "description": "File path for archiving rows instead of a table.",
                   "label": "Destination File",
+                  "min_length": 1,
                   "name": "destination.dest_file",
                   "required": true,
                   "type": "string"
@@ -232,6 +235,7 @@
                 {
                   "description": "Manual destination host address.",
                   "label": "Destination Host",
+                  "min_length": 1,
                   "name": "host.dest_host",
                   "required": true,
                   "type": "string"
@@ -275,6 +279,7 @@
             }
           ],
           "label": "WHERE Clause",
+          "min_length": 1,
           "name": "where",
           "required": false,
           "requires": [
@@ -298,17 +303,20 @@
       "fields": [
         {
           "label": "Use Index",
+          "min_length": 1,
           "name": "use_index",
           "required": false,
           "type": "string"
         },
         {
           "label": "Extra Args",
+          "min_length": 1,
           "name": "extra_args",
           "required": false,
           "type": "string"
         },
         {
+          "default": 1000,
           "ge": 1,
           "label": "Limit",
           "name": "limit",
@@ -316,6 +324,7 @@
           "type": "integer"
         },
         {
+          "default": 1,
           "ge": 0,
           "label": "Sleep (s)",
           "name": "sleep",
@@ -359,15 +368,15 @@
         "sortable": false
       },
       {
-        "format": "chip",
-        "key": "service_type",
-        "label": "Service Type",
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
         "sortable": false
       },
       {
         "format": "relative",
-        "key": "created_at",
-        "label": "Created",
+        "key": "last_executed_at",
+        "label": "Last Executed",
         "sortable": false
       },
       {

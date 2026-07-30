@@ -13,21 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Constants for the artifact download module.
+"""Define constant for signing artifact-download URLs.
 
-These constants live in their own module to avoid the import cycle that
-would otherwise form when both ``app.sep.routes.artifacts`` and a plugin's
-``deps.py`` need them: ``artifacts.py`` imports plugin-side constants
-(for example, :data:`app.sep.plugins.dipper.constants.DIPPER_PAYLOADS_DIR`),
-while plugin ``deps.py`` modules import the artifact constants here.
+Houses the itsdangerous salt shared by the generic ``app.sep.routes.artifacts``
+route and the framework signer in ``app.sep.apps.framework.script_helpers``, so
+both sign and verify download tokens under the same namespace.
 """
 
-__all__ = [
-    "ARTIFACT_DOWNLOAD_SALT",
-    "ARTIFACT_TYPE_DIPPER",
-    "ARTIFACT_TYPE_SNIPPET",
-]
+__all__ = ["ARTIFACT_DOWNLOAD_SALT"]
 
 ARTIFACT_DOWNLOAD_SALT = "artifact-download"
-ARTIFACT_TYPE_SNIPPET = "snippet"
-ARTIFACT_TYPE_DIPPER = "dipper"

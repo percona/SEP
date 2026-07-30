@@ -17,7 +17,7 @@
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import AppDisabledPage from './AppDisabledPage';
@@ -27,6 +27,79 @@ describe('AppDisabledPage', () => {
     render(
       <MemoryRouter>
         <AppDisabledPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('This feature is currently disabled.')).toBeInTheDocument();
+    expect(screen.getByText('Contact an administrator to re-enable it.')).toBeInTheDocument();
+  });
+
+  it('names the blocking required app when a single dependency is off', () => {
+    render(
+      <MemoryRouter>
+        <AppDisabledPage
+          appDisplayName="Collect Diagnostic Data"
+          blockingDependencyNames={['Snippet Manager']}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The Snippet Manager app must be enabled first. Contact an administrator to enable it.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Contact an administrator to re-enable it.')).not.toBeInTheDocument();
+  });
+
+  it('names every blocking app when several dependencies are off', () => {
+    render(
+      <MemoryRouter>
+        <AppDisabledPage
+          appDisplayName="Collect Diagnostic Data"
+          blockingDependencyNames={['Snippet Manager', 'Task Manager']}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'These apps must be enabled first: Snippet Manager, Task Manager. Contact an administrator to enable them.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('falls back to "This feature" in the title when the app name is absent', () => {
+    render(
+      <MemoryRouter>
+        <AppDisabledPage blockingDependencyNames={['Snippet Manager']} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('This feature is unavailable')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The Snippet Manager app must be enabled first. Contact an administrator to enable it.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('names every blocking app in the body when the app name is absent', () => {
+    render(
+      <MemoryRouter>
+        <AppDisabledPage blockingDependencyNames={['Snippet Manager', 'Task Manager']} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('This feature is unavailable')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'These apps must be enabled first: Snippet Manager, Task Manager. Contact an administrator to enable them.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the generic copy when no blocking dependency is supplied', () => {
+    render(
+      <MemoryRouter>
+        <AppDisabledPage appDisplayName="Collect Diagnostic Data" blockingDependencyNames={[]} />
       </MemoryRouter>,
     );
     expect(screen.getByText('This feature is currently disabled.')).toBeInTheDocument();

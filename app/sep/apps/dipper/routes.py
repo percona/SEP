@@ -1,0 +1,222 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define routes for the Dipper plugin.
+
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/apps/dipper/`` and the React UI consumes them via
+``frontend/packages/plugins/dipper``. Every response from this router
+carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
+hit; the routes remain mounted so users can fall back to the legacy UI
+while the React UI reaches full feature parity.
+"""
+
+import logging
+
+from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from app.sep.apps.dipper.constants import (
+    CollectorTypeEnum,
+    DIPPER_SCRIPT_BY_SERVICE_TYPE,
+)
+from app.sep.apps.dipper.deps import (
+    DipperScriptWithMetaDep,
+    ExecutionMetaDep,
+    get_dipper_script_filename,
+    get_pmm_form_defaults,
+    has_pmm_script,
+    resolve_executor_host_for_service,
+    resolve_pmm_executor_host,
+    SupportedDipperServices,
+)
+from app.sep.apps.dipper.models import DipperScript
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
+from app.sep.config import sep_settings
+from app.sep.deps import (
+    DefaultContext,
+    ExecutorHosts,
+    ExecutorHostsCtx,
+    InventoryAPI,
+    IsAuthenticated,
+    TaskAPI,
+)
+from app.sep.inventory import CreatedService
+from app.sep.middleware import messages
+from app.sep.utils.jinja import syntax_highlight
+from app.tasks.models import TaskHistoryStatusEnum
+
+logger = logging.getLogger(__name__)
+router = APIRouter(route_class=DeprecatedJinja2Route)
+templates = sep_settings.TEMPLATES
+
+
+@router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
+async def dipper_index(
+    request: Request,
+    context: DefaultContext,
+    inventory_api: InventoryAPI,
+    supported_services: SupportedDipperServices,
+    tasks_api: TaskAPI,
+    executor_hosts: ExecutorHosts,
+    executor_hosts_ctx: ExecutorHostsCtx,
+    service_id: int | None = None,
+    collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT,
+) -> HTMLResponse:
+    """Render the Dipper page with service selection and execution history."""
+    context |= {
+        "services": supported_services,
+        "selected_service_id": service_id,
+        "collector_type": collector_type,
+    }
+
+    if service_id is None:
+        return templates.TemplateResponse(
+            request=request, name="dipper/index.html.j2", context=context
+        )
+
+    try:
+        service_data = await inventory_api.get(f"/services/{service_id}")
+    except HTTPException as exc:
+        messages.error(request, f"Could not load service {service_id}: {exc.detail}")
+        return templates.TemplateResponse(
+            request=request, name="dipper/index.html.j2", context=context
+        )
+
+    if service_data.get("type") not in {t.value for t in DIPPER_SCRIPT_BY_SERVICE_TYPE}:
+        messages.error(request, "Selected service type is not supported by Dipper")
+        return templates.TemplateResponse(
+            request=request, name="dipper/index.html.j2", context=context
+        )
+
+    selected_service = CreatedService.model_validate(service_data)
+
+    script_filename = get_dipper_script_filename(selected_service.type, collector_type)
+    script = await DipperScript.from_path(script_filename, update_meta=True)
+    try:
+        preview = await script.get_preview()
+        context["script_preview"] = syntax_highlight(
+            preview.full_content, style="monokai", linenos=True, wrapcode=True
+        )
+    except UnicodeDecodeError:
+        logger.exception("Could not decode dipper script for preview")
+
+    default_executor_host = None
+    if collector_type == CollectorTypeEnum.PMM:
+        resolved_executor_host = resolve_pmm_executor_host(executor_hosts)
+        if resolved_executor_host is None:
+            messages.warning(
+                request,
+                "Failed to resolve PMM server to an execution target; please select manually.",
+            )
+            default_executor_host = resolve_executor_host_for_service(
+                executor_hosts, selected_service
+            )
+    else:
+        resolved_executor_host = resolve_executor_host_for_service(
+            executor_hosts, selected_service
+        )
+        if resolved_executor_host is None:
+            messages.warning(
+                request,
+                "Could not map selected service to an execution target; please select manually.",
+            )
+
+    form_defaults = (
+        get_pmm_form_defaults(
+            resolved_executor_host,
+            selected_service.name,
+            selected_service.node.name,
+        )
+        if collector_type == CollectorTypeEnum.PMM
+        else None
+    )
+
+    snippet_filename = f"dipper/{selected_service.id}/{script.filename}"
+    response = await tasks_api.get(
+        f"/{script.execution_task_name}/history/",
+        params={"snippet_filename": snippet_filename},
+    )
+    history_tasks = response["items"]
+    for history in history_tasks:
+        try:
+            history["available_files"] = await tasks_api.get(
+                f"/history/{history['id']}/files/"
+            )
+        except HTTPException:
+            history["available_files"] = []
+
+    response = await tasks_api.get(
+        f"/{script.execution_task_name}/history/",
+        params={
+            "snippet_filename": snippet_filename,
+            "status": TaskHistoryStatusEnum.RUNNING,
+        },
+    )
+    context |= {
+        "is_pmm_script_available": has_pmm_script(selected_service.type),
+        "selected_service": selected_service,
+        "script": script,
+        "script_execution_url": str(
+            request.url_for("dipper_execute").include_query_params(
+                service_id=selected_service.id, collector_type=collector_type.value
+            )
+        ),
+        "executor_hosts": frozenset(
+            {
+                (
+                    resolved_executor_host,
+                    executor_hosts_ctx.display_name(resolved_executor_host),
+                )
+            }
+        )
+        if resolved_executor_host
+        else executor_hosts_ctx.as_form_hosts(),
+        "resolved_executor_host": resolved_executor_host,
+        "default_executor_host": default_executor_host,
+        "form_defaults": form_defaults,
+        "history_tasks": history_tasks,
+        "running_tasks": response["items"],
+    }
+    logger.debug("Context for Dipper index page: %s", context)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dipper/index.html.j2",
+        context=context,
+    )
+
+
+@router.post("/execute", dependencies=[IsAuthenticated])
+async def dipper_execute(
+    request: Request,
+    tasks_api: TaskAPI,
+    execution_meta: ExecutionMetaDep,
+    script: DipperScriptWithMetaDep,
+    service_id: int,
+    collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT,
+) -> RedirectResponse:
+    """Dispatch a dipper task for the selected service."""
+    await tasks_api.post(
+        f"/execute/{script.execution_task_name}",
+        json={"meta": execution_meta.model_dump(by_alias=True, exclude_none=True)},
+    )
+    messages.success(request, "Data collection started")
+    return RedirectResponse(
+        request.url_for("dipper_index").include_query_params(
+            service_id=service_id, collector_type=collector_type.value
+        ),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )

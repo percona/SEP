@@ -16,10 +16,10 @@
  */
 
 import type { RegisterOptions } from 'react-hook-form';
-import type { PluginField } from '../types';
+import type { AppField } from '../types';
 import { getAtPath, setAtPath } from './fieldPath';
 
-export function buildValidationRules(field: PluginField): RegisterOptions {
+export function buildValidationRules(field: AppField): RegisterOptions {
   const rules: RegisterOptions = {};
 
   if (field.required) {
@@ -105,7 +105,7 @@ export function buildValidationRules(field: PluginField): RegisterOptions {
  */
 export function coerceFormValues(
   values: Record<string, unknown>,
-  fields: PluginField[],
+  fields: AppField[],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...values };
   for (const field of fields) {
@@ -130,6 +130,25 @@ export function coerceFormValues(
         setAtPath(out, field.name, id ?? undefined);
       } else if (raw === '' || raw === null) {
         setAtPath(out, field.name, undefined);
+      }
+    }
+    if (
+      field.type === 'multi_service' ||
+      field.type === 'multi_schema' ||
+      field.type === 'multi_table' ||
+      field.type === 'multi_host'
+    ) {
+      if (Array.isArray(raw)) {
+        const normalized = raw
+          .map((entry) =>
+            entry && typeof entry === 'object' && 'id' in (entry as Record<string, unknown>)
+              ? (entry as { id: unknown }).id
+              : entry,
+          )
+          .filter((entry) => entry !== '' && entry !== null && entry !== undefined);
+        setAtPath(out, field.name, normalized);
+      } else if (raw === '' || raw === null || raw === undefined) {
+        setAtPath(out, field.name, []);
       }
     }
   }

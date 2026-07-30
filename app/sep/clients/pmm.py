@@ -15,17 +15,28 @@
 
 """PMM API client for interacting with the PMM inventory system."""
 
+import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar, NoReturn
 
-from aiohttp import ClientResponseError
+from aiohttp import ClientResponse, ClientResponseError
 from async_lru import _LRUCacheWrapper, alru_cache
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from app.core.requests import RemoteAPI
+from app.core.requests.connectivity import (
+    build_connectivity_result,
+    classify_connectivity_error,
+    ConnectivityResult,
+    ConnectivityStatusEnum,
+    PROBE_TIMEOUT_SECONDS,
+)
+from app.core.requests.remote_api import (
+    exception_for_status,
+    UPSTREAM_NON_JSON_HEADER,
+)
 from app.core.utils.dict import remove_falsy_values_from_dict
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import SourceEnum
@@ -198,9 +209,13 @@ class PMMRemoteAPI(RemoteAPI):
     :param default_to_v3: Whether to default to PMM v3 API endpoints if the API version
         cannot be determined. Defaults to True.
     :type default_to_v3: bool
+    :cvar CONNECTIVITY_CHECK_PATH: PMM exposes its version (and proves
+        reachability) at this route, so the connectivity probe targets it
+        instead of the base ``/``.
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
+    CONNECTIVITY_CHECK_PATH: ClassVar[str] = "/v1/version"
     api_key: SecretStr
     error_detail_key: NonEmptyStr = "message"
     error_code_key: NonEmptyStr | None = "code"
@@ -264,6 +279,45 @@ class PMMRemoteAPI(RemoteAPI):
         """
         version_data = await self.get("/v1/version")
         return version_data["version"]
+
+    async def check_connectivity(
+        self, service: str, *, path: str | None = None
+    ) -> ConnectivityResult:
+        """Probe PMM and report the PMM version on success.
+
+        Override the generic probe so a successful check also reports the PMM
+        version. The probe route is the class-level
+        :attr:`CONNECTIVITY_CHECK_PATH` (``/v1/version``) unless an explicit
+        ``path`` is given. A response with an unexpected body shape (missing
+        ``version`` key) still counts as reachable -- the server answered --
+        just without a version. All other failures are classified into the same
+        outcome states as the base probe and never re-raised.
+
+        :param service: Stable identifier of the probed service (``"pmm"``).
+        :type service: str
+        :param path: Optional override for the probe route. Defaults to
+            :attr:`CONNECTIVITY_CHECK_PATH`.
+        :type path: str | None
+        :return: The normalized connectivity result, with ``version`` set on
+            success.
+        :rtype: ConnectivityResult
+        """
+        probe_path = path if path is not None else self.CONNECTIVITY_CHECK_PATH
+        try:
+            async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
+                version_data = await self.get(probe_path)
+            version = version_data["version"]
+        except (KeyError, TypeError):
+            return build_connectivity_result(
+                service,
+                ConnectivityStatusEnum.REACHABLE,
+                detail="Reachable (version unavailable).",
+            )
+        except Exception as exc:  # noqa: BLE001 -- classified, never re-raised
+            return build_connectivity_result(service, classify_connectivity_error(exc))
+        return build_connectivity_result(
+            service, ConnectivityStatusEnum.REACHABLE, version=version
+        )
 
     async def get_node(
         self,
@@ -595,10 +649,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise HTTPException(
-                    status_code=err.status,
-                    detail=err.message,
-                ) from None
+                self._raise_upstream_no_body_error(response, err)
 
     async def update_rule(
         self,
@@ -704,6 +755,37 @@ class PMMRemoteAPI(RemoteAPI):
         )
         return ContactPoint.model_validate(data)
 
+    @staticmethod
+    def _raise_upstream_no_body_error(
+        response: ClientResponse, err: ClientResponseError
+    ) -> NoReturn:
+        """Translate an error from a no-JSON-body endpoint into a project exception.
+
+        The provisioning PUT/DELETE endpoints return 202/204 with no body on
+        success. On error, PMM itself answers with a Grafana JSON body
+        (``{"message": ...}``), but a reverse proxy failing in front of PMM can
+        return an HTML 404, which would otherwise map to
+        :class:`HTTPNotFoundException` and be swallowed by restore callers that
+        treat a 404 as "not provisioned". Inspect ``response.content_type`` and
+        stamp ``UPSTREAM_NON_JSON_HEADER`` on a non-JSON error body so
+        :func:`exception_for_status` keeps a proxy 404 as a bare
+        :class:`fastapi.HTTPException`.
+
+        :param response: The upstream error response.
+        :param err: The :class:`ClientResponseError` raised by
+            ``raise_for_status``.
+        :raises HTTPException: Always -- the mapped project exception, or a bare
+            HTTPException for a non-JSON body or an unmapped status.
+        """
+        headers = (
+            None
+            if response.content_type == "application/json"
+            else {UPSTREAM_NON_JSON_HEADER: "1"}
+        )
+        raise exception_for_status(
+            err.status, detail=err.message, headers=headers
+        ) from None
+
     async def update_contact_point(
         self, uid: str, name: str, type_: str, settings: dict[str, Any]
     ) -> None:
@@ -730,10 +812,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise HTTPException(
-                    status_code=err.status,
-                    detail=err.message,
-                ) from None
+                self._raise_upstream_no_body_error(response, err)
 
     async def delete_contact_point(self, uid: str) -> None:
         """Delete an alert contact point by its UID.
@@ -752,10 +831,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise HTTPException(
-                    status_code=err.status,
-                    detail=err.message,
-                ) from None
+                self._raise_upstream_no_body_error(response, err)
 
     async def get_notification_policy(self) -> NotificationPolicy:
         """Fetch the current notification policy tree from PMM.

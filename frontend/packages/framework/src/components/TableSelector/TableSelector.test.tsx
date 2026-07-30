@@ -301,6 +301,86 @@ describe('TableSelector', () => {
     });
   });
 
+  describe('multiple (multi-value)', () => {
+    it('fetches tables when the parent is a multi-schema array', async () => {
+      mocked.get.mockResolvedValueOnce({
+        data: [
+          { id: 100, name: 'users' },
+          { id: 101, name: 'orders' },
+        ],
+      });
+      const client = makeClient();
+      function Probe() {
+        const methods = useForm<{ databases: number[]; tables: unknown }>({
+          defaultValues: { databases: [42], tables: [] },
+        });
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="tables" label="Tables" dependsOn="databases" multiple />
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/schemas/42/tables'));
+      expect(screen.getByLabelText('Tables')).not.toBeDisabled();
+    });
+
+    it('resets the child to [] when the parent schema changes', async () => {
+      mocked.get.mockResolvedValue({ data: [{ id: 1, name: 't' }] });
+      const client = makeClient();
+      const setSchemaRef: { current: ((s: SchemaOption) => void) | null } = { current: null };
+      function Probe() {
+        const methods = useForm<{ schema: SchemaOption; tables: unknown }>({
+          defaultValues: { schema: { id: 1, name: 's1' }, tables: [100, 101] },
+        });
+        setSchemaRef.current = (s) => methods.setValue('schema', s);
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="tables" label="Tables" dependsOn="schema" multiple />
+            <output data-testid="tables-value">{JSON.stringify(methods.watch('tables'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      expect(screen.getByTestId('tables-value').textContent).toBe('[100,101]');
+      await act(async () => {
+        setSchemaRef.current?.({ id: 2, name: 's2' });
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('tables-value').textContent).toBe('[]');
+      });
+    });
+
+    it('stays enabled for a custom (free-typed) parent', async () => {
+      const client = makeClient();
+      function Probe() {
+        const methods = useForm<{ schema: unknown; tables: unknown }>({
+          defaultValues: { schema: 'custom-schema', tables: [] },
+        });
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="tables" label="Tables" dependsOn="schema" allowCustom multiple />
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      expect(screen.getByLabelText('Tables')).not.toBeDisabled();
+      expect(mocked.get).not.toHaveBeenCalled();
+    });
+  });
+
   it('back-compat: without allowCustom a typed value is not committed', async () => {
     mocked.get.mockResolvedValue({ data: [{ id: 100, name: 'users' }] });
     const client = makeClient();

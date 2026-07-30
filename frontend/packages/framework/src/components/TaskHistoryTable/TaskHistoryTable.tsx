@@ -318,7 +318,7 @@ function TaskHistoryTableView({
         </DialogContent>
         <DialogActions>
           <Button onClick={cancelStop}>Cancel</Button>
-          <Button onClick={confirmStop} color="warning" variant="contained" autoFocus>
+          <Button onClick={confirmStop} variant="contained" autoFocus>
             Stop
           </Button>
         </DialogActions>
@@ -410,6 +410,7 @@ function PresentationalTaskHistoryTable({
   resolveUserName,
   onViewLogs,
   onStopTask,
+  isStopping,
   onDownloadFiles,
   onChainItemClick,
   hideTaskNameColumn,
@@ -428,7 +429,7 @@ function PresentationalTaskHistoryTable({
       onChainItemClick={onChainItemClick}
       hideTaskNameColumn={hideTaskNameColumn}
       onConfirmStop={onConfirmStop}
-      isStopping={false}
+      isStopping={!!isStopping}
       canStop={canStop}
     />
   );

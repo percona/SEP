@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "codegen": "tsx scripts/gen-icon-map.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -22,21 +23,20 @@
     "@mui/utils": "^7.3.7",
     "@mui/x-date-pickers": "^7.6.2",
     "@percona/percona-ui": "^1.0.16",
+    "@sep/alert-troubleshooting": "workspace:*",
+    "@sep/alerts": "workspace:*",
+    "@sep/alters": "workspace:*",
     "@sep/api": "workspace:*",
+    "@sep/atw": "workspace:*",
+    "@sep/backup-mongo": "workspace:*",
+    "@sep/dipper": "workspace:*",
     "@sep/framework": "workspace:*",
     "@sep/inventory": "workspace:*",
-    "@sep/plugin-alert-troubleshooting": "workspace:*",
-    "@sep/plugin-alerts": "workspace:*",
-    "@sep/plugin-alters": "workspace:*",
-    "@sep/plugin-atw": "workspace:*",
-    "@sep/plugin-backup-mongo": "workspace:*",
-    "@sep/plugin-mum": "workspace:*",
-    "@sep/plugin-mongo-upgrade": "workspace:*",
-    "@sep/plugin-dipper": "workspace:*",
-    "@sep/plugin-report": "workspace:*",
-    "@sep/plugin-tasks": "workspace:*",
-    "@sep/plugins-snippets": "workspace:*",
+    "@sep/report": "workspace:*",
     "@sep/shared": "workspace:*",
+    "@sep/snippets": "workspace:*",
+    "@sep/tasks": "workspace:*",
+    "@sep/topology": "workspace:*",
     "@tanstack/react-query": "^5.100.7",
     "axios": "^1.15.2",
     "date-fns": "^4.1.0",
@@ -45,7 +45,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.74.0",
-    "react-router-dom": "^7.14.2"
+    "react-router": "^8.3.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
@@ -56,6 +56,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "jsdom": "^29.1.1",
     "msw": "^2.13.6",
+    "tsx": "^4.21.0",
     "typescript": "~6.0.3",
     "vite": "^8.0.16",
     "vitest": "^4.0.0"

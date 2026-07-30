@@ -43,22 +43,22 @@ The UI does not submit arbitrary shell commands. SEP uses two main execution pat
 | Run | Pick an **approved** snippet (or dipper collector) and submit a **schema-defined** form | No saved task definition; `meta` is built on each run |
 | Command | Never typed by the user | Fixed Nomad job type (`exec-artifact`, etc.) plus server-built `meta` (target, interpreter, signed artifact URL) |
 
-**Snippets:** `POST /api/plugins/snippets/snippet/execute?snippet_filename=...` → SEP → Tasks API `POST /execute/{execution_task_name}` where `execution_task_name` resolves to `exec-artifact` for bash snippets and `exec-python-artifact` for Python snippets with requirements.
-**Dipper:** `POST /api/plugins/dipper/` → same Tasks execute pattern with dipper script metadata.
+**Snippets:** `POST /api/apps/snippets/snippet/execute?snippet_filename=...` → SEP → Tasks API `POST /execute/{execution_task_name}` where `execution_task_name` resolves to `exec-artifact` for bash snippets and `exec-python-artifact` for Python snippets with requirements.
+**Dipper:** `POST /api/apps/dipper/` → same Tasks execute pattern with dipper script metadata.
 
-#### Path B — Create then execute (proxy plugins: checksums, alters)
+#### Path B — Create then execute (proxy apps: checksums, alters)
 
 | Step | What the engineer does | What the server enforces |
 |------|------------------------|-------------------------|
-| **Create** | Fill a plugin form (e.g. MySQL service, databases, checksum options) | Plugin resolves inventory entities and builds a **PROXY** task: fixed `meta.command` (e.g. `pt-table-checksum`), `meta.args`, `meta.target` stored in Tasks DB |
+| **Create** | Fill an app form (e.g. MySQL service, databases, checksum options) | App resolves inventory entities and builds a **PROXY** task: fixed `meta.command` (e.g. `pt-table-checksum`), `meta.args`, `meta.target` stored in Tasks DB |
 | **Execute** | Click **Execute** on a saved task (optional ETA / task chain) | Request body does **not** include a new shell command; Tasks API **merges** stored `meta` from the task definition (`prepare_task_history` for `TaskBackendEnum.PROXY`) |
 | **Nomad** | — | Dispatches underlying `run-command` job with merged meta |
 
 **Checksums example (canonical Path B):**
 
-1. **Create:** `POST /api/plugins/checksums/` — `build_checksum_task` assembles `pt-table-checksum` with args from inventory (`app/sep/plugins/checksums/deps.py`, `_assemble_checksum_payload`).
+1. **Create:** `POST /api/apps/checksums/` — `build_checksums_spec` assembles `pt-table-checksum` with args from inventory (`app/sep/apps/checksums/spec.py`), with the legacy Jinja form path using (`app/sep/apps/checksums/deps.py`, `_assemble_checksum_payload`).
 2. **Persist:** `POST /api/tasks/` — task row with `owner=CHECKSUMS`, `backend=PROXY`, `data.task=run-command`.
-3. **Execute:** `POST /api/tasks/execute/{task_name}` — body may only contain `eta`, `chain_task_names`; command comes from stored task (`app/sep/plugins/checksums/routes.py`, `checksums_execute`).
+3. **Execute:** `POST /api/apps/checksums/{task_name}/execute` — body may only contain `eta`, `chain_task_names`, `chain_on_failure`; command comes from stored task (`app/sep/apps/framework/api.py`, `derive_execute_route`, which posts to `POST /api/tasks/execute/{task_name}`).
 
 The same two-phase pattern applies to **alters** (`command: pt-online-schema-change`).
 
@@ -85,7 +85,7 @@ Optional **Presidio anonymization** may mask log content when `anonymize_mask` i
 | **Tasks PostgreSQL** (`taskhistory`, `taskhistory_log`) | Any **authenticated** OAuth user can read task history and logs by ID. A separate `SEP_INTERNAL_TOKEN` service principal (synthetic non-admin user `sep-service`, id `00000000-0000-4000-8000-000000000000`) can authenticate for service-to-service calls and has the same read scope as a regular authenticated user. General list/retrieve APIs do **not** filter by `executed_by`. |
 | **PMM** | Users with PMM annotation access for the environment. |
 | **Infrastructure logs** | Platform operators with access to the deployment log pipeline. |
-| **Snippet approval** | **Admin** users only. Single approve: `PUT /api/plugins/snippets/snippet/approval?snippet_filename=...`. Bulk approve: `PATCH /api/plugins/snippets/approvals`. Both gated via the `ApiAdminUser` dependency. |
+| **Snippet approval** | **Admin** users only. Single approve: `PUT /api/apps/snippets/snippet/approval?snippet_filename=...`. Bulk approve: `PATCH /api/apps/snippets/approvals`. Both gated via the `ApiAdminUser` dependency. |
 
 No per-row owner filter is applied to general task history / log reads. Future versions may add filtering for specific task / meta combinations.
 
@@ -124,14 +124,14 @@ Commit the updated `.mmd` sources with any README/checklist changes. The PDF und
 |----------|-------------------------|
 | P1 OAuth login | `app/api/routes/oauth.py` (`spa_login`) |
 | P2 JWT introspection | `app/core/auth/providers/casdoor.py`, `app/models.py` (`from_jwt`) |
-| P3 SEP UI | `frontend/packages/shell/` (React 18 SPA — entry `src/main.tsx`, auth context `src/contexts/auth.tsx`). Plugin UIs live under `frontend/packages/plugins/{name}/` and `frontend/packages/framework/` (shared schema-driven UI). |
-| P4a Snippets plugin API | `app/sep/plugins/snippets/api_routes.py`, `deps.py` |
-| P4b Proxy plugin create (checksums) | `app/sep/plugins/checksums/api_routes.py` (`checksums_api_create`), `deps.py` (`build_checksum_task`, `_assemble_checksum_payload`) |
-| P4c Proxy plugin execute (checksums) | `app/sep/plugins/checksums/routes.py` (`checksums_execute`) |
+| P3 SEP UI | `frontend/packages/shell/` (React 18 SPA — entry `src/main.tsx`, auth context `src/contexts/auth.tsx`). App UIs live under `frontend/packages/plugins/{name}/` and `frontend/packages/framework/` (shared schema-driven UI). |
+| P4a Snippets app API | `app/sep/apps/snippets/app.py` (declarative `TaskExecutionApp`), `script_source.py` (`snippet_source` — derives list/schema/history/execute); auxiliary verbs (approval, refresh, preview) in `extra_routes.py` |
+| P4b Proxy app create (checksums) | `app/sep/apps/checksums/app.py` (declarative `TaskExecutionApp`), `spec.py` (`build_checksums_spec`), `models.py` (`ChecksumsForm`); create route derived by `app/sep/apps/framework/api.py` (`derive_crud_routes`) |
+| P4c Proxy app execute (checksums) | `app/sep/apps/framework/api.py` (`derive_execute_route`), enabled via `app/sep/apps/checksums/app.py` (`AppCapabilities(execute=True)`) |
 | PROXY meta merge | `app/tasks/deps.py` (`prepare_task_history`, lines ~191–193) |
 | P5 Tasks API | `app/tasks/routes.py` (`execute_task_name`), `app/tasks/deps.py` |
 | D4 Task definitions | `task` table via `POST /api/tasks/`; seed template `run-command` in `app/tasks/db/seed.py` |
-| Inventory (Path B) | `app/sep/plugins/checksums/deps.py` (`get_created_entity` for services/schemas/tables) |
+| Inventory (Path B) | `app/sep/apps/checksums/deps.py` (`get_created_entity` for services/schemas/tables) |
 | P6 Celery worker | `app/tasks/celery.py` (`dispatch_queue_item`) |
 | P7 Nomad executor | `app/tasks/execution/executors/nomad/models.py` |
 | P8 Record attribution | `app/tasks/deps.py` (`prepare_task_history`) |

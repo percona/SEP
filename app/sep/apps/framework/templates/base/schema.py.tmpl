@@ -1,0 +1,35 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define the ``AppSchema`` for the << display_name_doc >> app."""
+
+from app.sep.apps.framework.schema import (
+    Column,
+    DetailView,
+    ListView,
+    AppSchema,
+)
+
+<< name >>_schema = AppSchema(
+    name="<< name >>",
+    display_name=<< display_name_repr >>,
+    description=<< schema_description_repr >>,
+    forms=[],
+    list_view=ListView(
+        columns=[Column(key="name", label="Name", sortable=True)],
+        default_sort="name",
+    ),
+    detail_view=DetailView(sections=[]),
+)

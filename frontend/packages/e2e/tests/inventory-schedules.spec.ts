@@ -47,7 +47,7 @@ const MOCK_SCHEMA = {
   ],
 };
 
-const MOCK_PLUGIN_TASKS = [{ name: TASK_NAME }];
+const MOCK_APP_TASKS = [{ name: TASK_NAME }];
 
 const MOCK_AVAILABLE_SYNCERS = [
   { name: 'myapp.SyncerA', display_name: 'Syncer A' },
@@ -89,8 +89,8 @@ async function mockInventoryScheduleApis(page: Page) {
       });
     }
 
-    // Plugin schema
-    if (pathname.endsWith('/plugins/inventory/schema')) {
+    // App schema
+    if (pathname.endsWith('/apps/inventory/schema')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -98,17 +98,17 @@ async function mockInventoryScheduleApis(page: Page) {
       });
     }
 
-    // Plugin tasks list (usePluginTasks)
-    if (pathname.endsWith('/plugins/inventory/') && method === 'GET') {
+    // App tasks list (useAppTasks)
+    if (pathname.endsWith('/apps/inventory/') && method === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PLUGIN_TASKS),
+        body: JSON.stringify(MOCK_APP_TASKS),
       });
     }
 
     // Available syncers
-    if (pathname.includes('/plugins/inventory/available-syncers/')) {
+    if (pathname.includes('/apps/inventory/available-syncers/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -117,7 +117,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Sync status (for SyncControl on nodes page)
-    if (pathname.includes('/plugins/inventory/sync/status/')) {
+    if (pathname.includes('/apps/inventory/sync/status/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -126,7 +126,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Inventory nodes
-    if (pathname.includes('/plugins/inventory/nodes')) {
+    if (pathname.includes('/apps/inventory/nodes')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     }
 
@@ -202,7 +202,7 @@ test.describe('Inventory schedule management smoke', () => {
     await page.goto(NODES_ROUTE);
 
     // Exactly one Schedules button: inventory's working custom one. The generic
-    // PluginListPage button is suppressed via hideScheduleButton.
+    // AppListPage button is suppressed via hideScheduleButton.
     const scheduleButtons = page.getByRole('button', { name: /Schedules/i });
     await expect(scheduleButtons).toHaveCount(1);
 

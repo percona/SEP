@@ -16,8 +16,10 @@
  */
 
 export { TaskHistoryTable } from './TaskHistoryTable';
-export { StatusBadge as TaskHistoryStatusBadge } from './StatusBadge';
+export { StatusBadge as TaskHistoryStatusBadge, isTaskHistoryStatus } from './StatusBadge';
 export { ChainDisplay } from './ChainDisplay';
+export { TaskFilesDialog } from './TaskFilesDialog';
+export type { TaskFilesDialogProps } from './TaskFilesDialog';
 export type {
   TaskHistoryTableProps,
   TaskHistoryEntry,

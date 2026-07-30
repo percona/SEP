@@ -20,12 +20,14 @@ from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
 from string import Template
-from typing import Any, ClassVar, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 from urllib.parse import urlparse
 
+from annotated_types import Gt
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 from pydantic import (
+    AliasChoices,
     AliasGenerator,
     BaseModel,
     computed_field,
@@ -37,12 +39,13 @@ from pydantic import (
     PositiveInt,
     SecretStr,
 )
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
+from app import BASE_DIR
 from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
-    PMMSettings,
-    settings,
 )
 from app.core.db.config import DatabaseOptions
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
@@ -52,6 +55,7 @@ from app.core.settings_override.registry import (
     hot_field,
     materialize_template,
     nested_overridable_field,
+    not_overridable_field,
 )
 from app.core.utils import (
     deep_dict_update,
@@ -60,13 +64,14 @@ from app.core.utils import (
 from app.core.utils.fields import (
     CredentialHttpUrl,
     RelativeDirectoryPathField,
-    StrCredentialHttpUrl,
-    StrHttpUrl,
     StrImportableAttribute,
+    StrRelativePath,
     TimedeltaSeconds,
     UniqueList,
     URIPath,
 )
+from app.sep.apps.nav_icons import NavIcon
+from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -75,7 +80,21 @@ logger = logging.getLogger(__name__)
 _LEGACY_BACKUP_MODULE_NAMES = frozenset({"backup", "backups"})
 
 
-class Plugin(BaseCaseInsensitiveModel):
+def _module_or_package_exists(target: Path) -> bool:
+    """Return whether ``target`` names a module file or package directory.
+
+    Probe the filesystem instead of importing, so settings-construction validators
+    can confirm a dotted path resolves without triggering circular imports through
+    plugin ``__init__`` modules.
+
+    :param target: The import path rendered as a filesystem path, extension omitted.
+    :return: ``True`` when a ``target/__init__.py`` package or ``target.py`` module
+        file exists on disk.
+    """
+    return (target / "__init__.py").is_file() or target.with_suffix(".py").is_file()
+
+
+class App(BaseCaseInsensitiveModel):
     """Represent a SEP plugin.
 
     This model defines the structure for a plugin, including its name, module,
@@ -83,33 +102,33 @@ class Plugin(BaseCaseInsensitiveModel):
     path and set default values based on the plugin's name.
 
     :param name: The name of the plugin. Optional: a MODULE_NAME-only entry
-        omits it and the :class:`app.sep.plugins.framework.registry.AppRegistry`
+        omits it and the :class:`app.sep.apps.framework.registry.AppRegistry`
         derives descriptive metadata from the module basename instead.
-    :type name: str | None
     :param module_name: The name of the module associated with the plugin. This field is
-        automatically prefixed with ``app.sep.plugins.`` during validation.
+        automatically prefixed with ``app.sep.apps.`` during validation.
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    :type uri_path: HttpUrl | URIPath
     :param css_class: The CSS class associated with the plugin. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    :type css_class: str
     :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
-    :type sidebar: bool
     :param group: The nav group key this plugin nests under (read from YAML as
         ``GROUP``); ``None`` renders it as a top-level sidebar entry.
     :param nav_order: The plugin's sort position within the sidebar (read from
         YAML as ``NAV_ORDER``); ``None`` sorts last.
+    :param react_route: The canonical React route (read from YAML as
+        ``REACT_ROUTE``); ``None`` resolves to ``/apps/<key>`` in the listing.
+    :param nav_icon: The sidebar icon key (read from YAML as ``NAV_ICON``),
+        validated against the :class:`~app.sep.apps.nav_icons.NavIcon` vocabulary;
+        an unknown value fails settings validation at load.
     :param enabled: Whether the plugin ships enabled. Read only at first-startup
         seed time to set the initial :class:`app.sep.models.AppState` row;
         defaults to ``True`` so every plugin already in ``settings.yaml`` keeps
         shipping enabled. Set ``ENABLED: false`` to seed a plugin disabled.
-    :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
-        JSON ``APIRouter`` instance (e.g. ``"app.sep.plugins.checksums.api_routes.router"``).
-        When set, the router is mounted under ``/api/plugins/{key}`` by the
+        JSON ``APIRouter`` instance (e.g. ``"app.sep.apps.checksums.api_routes.router"``).
+        When set, the router is mounted under ``/api/apps/{key}`` by the
         shared API router loop. Three input states:
 
         * **Field omitted** — auto-derive from ``module_name`` when the
@@ -118,7 +137,22 @@ class Plugin(BaseCaseInsensitiveModel):
           imported.
         * **Explicit ``null``** — opt the plugin out of the JSON API mount,
           even if a conventional module exists.
-    :type api_router_path: StrImportableAttribute | None
+    :param celery_module_path: Optional dot-separated import path to the plugin's
+        Celery task module (e.g. ``"app.sep.apps.snippets.celery"``). The path is a
+        *module*, not an attribute, so it feeds the worker ``include`` list rather
+        than being resolved to an object. Three input states, mirroring
+        ``api_router_path``:
+
+        * **Field omitted** — auto-derive ``<module_name>.celery`` when the plugin
+          ships a ``celery.py`` (convention).
+        * **Explicit string** — use as-is, filesystem-probed for existence during
+          settings construction (import-free, like ``module_name``) so a typo fails
+          at load rather than only when the Celery worker imports it. The path is a
+          trusted operator setting at the same trust level as
+          ``module_name``/``api_router_path`` and is not confined to the plugin's
+          own package.
+        * **Explicit ``null``** — opt the plugin out of the Celery include list,
+          even if a conventional ``celery.py`` exists.
     """
 
     name: str | None = None
@@ -128,11 +162,14 @@ class Plugin(BaseCaseInsensitiveModel):
     sidebar: bool = True
     group: str | None = None
     nav_order: int | None = None
+    react_route: URIPath | None = None
+    nav_icon: NavIcon | None = None
     enabled: bool = True
     api_router_path: StrImportableAttribute | None = None
+    celery_module_path: str | None = None
 
     def __eq__(self, other: Any) -> bool:
-        if isinstance(other, Plugin):
+        if isinstance(other, App):
             return self.module_name == other.module_name
         raise NotImplementedError
 
@@ -142,26 +179,26 @@ class Plugin(BaseCaseInsensitiveModel):
         """Resolve the full module path for the plugin.
 
         This method takes the module name provided and prefixes it with
-        ``app.sep.plugins.`` to resolve the full import path. Legacy MySQL
+        ``app.sep.apps.`` to resolve the full import path. Legacy MySQL
         backups plugin names (``backup``, ``backups``) are remapped to
         ``mysql_backups`` with a deprecation warning before prefixing; the
         legacy aliases will not be supported in the next version.
 
         :param v: The module name to resolve.
         :type v: str
-        :return: The full module path with the ``app.sep.plugins.`` prefix.
+        :return: The full module path with the ``app.sep.apps.`` prefix.
         :rtype: str
         """
         if v in _LEGACY_BACKUP_MODULE_NAMES:
             logger.warning(
-                "Plugin MODULE_NAME %r is deprecated; remapping to "
+                "App MODULE_NAME %r is deprecated; remapping to "
                 "'mysql_backups'. The legacy value will not be supported "
                 "in the next version — update settings.yaml to use "
                 "'mysql_backups'.",
                 v,
             )
             v = "mysql_backups"
-        return f"app.sep.plugins.{v}"
+        return f"app.sep.apps.{v}"
 
     @field_validator("module_name")
     @classmethod
@@ -175,13 +212,13 @@ class Plugin(BaseCaseInsensitiveModel):
         still constructing. A filesystem probe keeps construction import-free; the
         real import happens when the registry is built, after settings are ready.
 
-        :param v: The resolved ``app.sep.plugins.``-prefixed module path.
+        :param v: The resolved ``app.sep.apps.``-prefixed module path.
         :return: The validated module path.
         :raises ValueError: When no module file or package exists at the path.
         """
-        relative = v.removeprefix("app.sep.plugins.")
-        target = Path(__file__).parent / "plugins" / Path(*relative.split("."))
-        if (target / "__init__.py").is_file() or target.with_suffix(".py").is_file():
+        relative = v.removeprefix("app.sep.apps.")
+        target = Path(__file__).parent / "apps" / Path(*relative.split("."))
+        if _module_or_package_exists(target):
             return v
         raise ValueError(f"No module named {v}")
 
@@ -205,7 +242,7 @@ class Plugin(BaseCaseInsensitiveModel):
         during settings construction without triggering circular imports
         through plugin ``__init__`` modules. Fail-fast on a missing
         ``router`` attribute is still enforced later in
-        ``build_plugins_router`` via ``import_var``.
+        ``build_apps_router`` via ``import_var``.
 
         :return: ``self`` with ``api_router_path`` populated when the
             plugin module ships an ``api_routes.py`` file.
@@ -213,16 +250,62 @@ class Plugin(BaseCaseInsensitiveModel):
         """
         if "api_router_path" in self.model_fields_set:
             return self
-        relative = self.module_name.removeprefix("app.sep.plugins.")
+        relative = self.module_name.removeprefix("app.sep.apps.")
         candidate_file = (
             Path(__file__).parent
-            / "plugins"
+            / "apps"
             / Path(*relative.split("."))
             / "api_routes.py"
         )
         if candidate_file.is_file():
             self.api_router_path = f"{self.module_name}.api_routes.router"
         return self
+
+    @model_validator(mode="after")
+    def _default_celery_module_from_convention(self) -> Self:
+        """Auto-derive ``celery_module_path`` from ``module_name`` when not set.
+
+        Run only when the field was not present in the input data. ``None`` in the
+        input is a deliberate opt-out and is preserved.
+
+        Probe by filesystem, not by import, so this validator can run during
+        settings construction without triggering circular imports through plugin
+        ``__init__`` modules -- exactly as ``_default_api_router_from_convention``
+        does for ``api_routes.py``.
+
+        :return: ``self`` with ``celery_module_path`` populated when the plugin
+            module ships a ``celery.py`` file.
+        """
+        if "celery_module_path" in self.model_fields_set:
+            return self
+        relative = self.module_name.removeprefix("app.sep.apps.")
+        candidate_file = (
+            Path(__file__).parent / "apps" / Path(*relative.split(".")) / "celery.py"
+        )
+        if candidate_file.is_file():
+            self.celery_module_path = f"{self.module_name}.celery"
+        return self
+
+    @model_validator(mode="after")
+    def _validate_celery_module_exists(self) -> Self:
+        """Confirm ``celery_module_path`` resolves to a module file on disk.
+
+        The convention-derived path is set only after its own filesystem probe, but
+        an explicit override skips that check, so a typo would surface only when the
+        Celery worker tries to import the module. Probe by filesystem (import-free,
+        consistent with ``validate_module_exists``) so a bad override fails during
+        settings construction instead. The path is repo-root-relative, so an
+        override is not confined to the plugin's own package.
+
+        :return: ``self`` unchanged when the path exists or is unset.
+        :raises ValueError: When the path names no module file or package on disk.
+        """
+        if self.celery_module_path is None:
+            return self
+        target = BASE_DIR / Path(*self.celery_module_path.split("."))
+        if _module_or_package_exists(target):
+            return self
+        raise ValueError(f"No module named {self.celery_module_path}")
 
     @computed_field
     @property
@@ -265,52 +348,47 @@ class SessionOptions(BaseModel):
     PATH: URIPath | None = None
 
 
-class _DeprecatedPMMConfig(BaseLowercaseModel):
-    """Accept deprecated ``SEP.PMM`` fields for backward compatibility.
+def _reject_removed_syncer_pmm(data: Any) -> Any:
+    """Reject a removed per-syncer ``pmm`` override key.
 
-    Include both connection/auth fields (forwarded to ``settings.PMM``) and
-    alerts-specific fields (read by ``AlertsPMMConfig``). All fields are typed
-    so that env-var values are validated correctly by Pydantic.
+    The per-syncer ``pmm:`` override was removed; PMM synchronizers now
+    read the top-level ``PMM`` section directly. A leftover ``pmm`` key (any case) is
+    rejected with a ``ValueError`` -- which pydantic wraps into a ``ValidationError``
+    -- so upgraded deployments fail fast at startup instead of silently honoring dead
+    config. ``SEPSettings.add_syncer_extra_kwargs`` re-validates each merged
+    ``SyncOptions``, so a ``pmm`` carried via ``SYNCER_EXTRA_KWARGS`` is rejected there
+    too.
 
-    :param endpoint: The PMM server URL.
-    :type endpoint: StrCredentialHttpUrl | None
-    :param frontend: The PMM frontend URL.
-    :type frontend: StrHttpUrl | None
-    :param api_key: API key for PMM authentication.
-    :type api_key: SecretStr | None
-    :param verify_ssl: Whether to verify SSL certificates.
-    :type verify_ssl: bool
-    :param execution_target: Explicit execution target name or address for PMM tasks.
-    :type execution_target: str | None
-    :param backup_interval: Interval between alert configuration backups.
-    :type backup_interval: IntervalSchedule
-    :param backup_retention: Maximum number of alert backups to retain.
-    :type backup_retention: PositiveInt
-    :param alert_folder_name: Display name of the PMM folder used for SEP-managed
-        alert rules.
-    :type alert_folder_name: str
+    :param data: The raw input mapping passed to the model.
+    :return: The input unchanged when no ``pmm`` key is present.
+    :raises ValueError: When the input carries a ``pmm`` key (any case).
     """
-
-    model_config = ConfigDict(extra="allow")
-    endpoint: StrCredentialHttpUrl | None = None
-    frontend: StrHttpUrl | None = None
-    api_key: SecretStr | None = None
-    verify_ssl: bool = True
-    execution_target: str | None = None
-    backup_interval: IntervalSchedule = IntervalSchedule(every=24, period=Period.HOURS)
-    backup_retention: PositiveInt = 10
-    alert_folder_name: str = "SEP Alerts"
+    if isinstance(data, dict) and any(
+        isinstance(k, str) and k.lower() == "pmm" for k in data
+    ):
+        raise ValueError(
+            "Per-syncer 'pmm:' override is no longer honored (removed in SEP-1477); "
+            "PMM synchronizers read the top-level 'PMM' section. Remove the stale "
+            "'pmm' key from SEP.SYNCERS / SEP.SYNCER_EXTRA_KWARGS."
+        )
+    return data
 
 
 class SyncerExtraKwargs(BaseLowercaseModel):
-    """Global keyword arguments merged into every configured synchronizer.
-
-    :param pmm: PMM connection overrides applied to each synchronizer entry.
-    :type pmm: PMMSettings | None
-    """
+    """Global keyword arguments merged into every configured synchronizer."""
 
     model_config = ConfigDict(extra="allow")
-    pmm: PMMSettings | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_pmm(cls, data: Any) -> Any:
+        """Reject a removed per-syncer ``pmm`` override key.
+
+        :param data: The raw input mapping passed to the model.
+        :return: The input unchanged when no ``pmm`` key is present.
+        :raises ValueError: When the input carries a ``pmm`` key.
+        """
+        return _reject_removed_syncer_pmm(data)
 
 
 class SyncOptions(BaseLowercaseModel):
@@ -323,18 +401,26 @@ class SyncOptions(BaseLowercaseModel):
     :param syncer: The importable attribute name for the synchronizer. This field is
         automatically prefixed with "app.sep.sync.syncers." during validation.
     :type syncer: StrImportableAttribute
-    :param pmm: Optional PMM connection overrides for synchronizers that accept them.
-    :type pmm: PMMSettings | None
     """
 
     model_config = ConfigDict(extra="allow")
     syncer: StrImportableAttribute
-    pmm: PMMSettings | None = None
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, SyncOptions):
             return self.syncer == other.syncer
         raise NotImplementedError
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_pmm(cls, data: Any) -> Any:
+        """Reject a removed per-syncer ``pmm`` override key.
+
+        :param data: The raw input mapping passed to the model.
+        :return: The input unchanged when no ``pmm`` key is present.
+        :raises ValueError: When the input carries a ``pmm`` key.
+        """
+        return _reject_removed_syncer_pmm(data)
 
     @field_validator("syncer", mode="before")
     @classmethod
@@ -399,6 +485,17 @@ class HealthReportSettings(BaseLowercaseModel):
     :type api_key: SecretStr | None
     :param client_id: Customer identifier sent with each upload.
     :type client_id: str | None
+    :param artifact_dir: Directory where rendered PDF artifacts are staged for
+        download. Shared between the Celery worker (writer) and web (reader), so
+        only lightweight job metadata transits the Celery result backend.
+    :type artifact_dir: StrRelativePath
+    :param artifact_ttl: Maximum age (seconds) of a staged PDF artifact before the
+        cleanup task removes it. Should mirror ``CELERY.RESULT_EXPIRES`` so a
+        job's metadata and its artifact expire together.
+    :type artifact_ttl: PositiveInt
+    :param cleanup_interval: Cadence of the ``purge_report_artifacts`` sweep that
+        deletes staged PDFs older than ``artifact_ttl``.
+    :type cleanup_interval: IntervalSchedule
     """
 
     schedules: list[ReportScheduleEntry] = []
@@ -406,6 +503,11 @@ class HealthReportSettings(BaseLowercaseModel):
     endpoint: str | None = None
     api_key: SecretStr | None = None
     client_id: str | None = None
+    artifact_dir: StrRelativePath = "data/health-reports"
+    artifact_ttl: PositiveInt = 3600
+    cleanup_interval: IntervalSchedule = IntervalSchedule(
+        every=15, period=Period.MINUTES
+    )
 
     @field_validator("endpoint", "client_id", mode="before")
     @classmethod
@@ -417,9 +519,19 @@ class HealthReportSettings(BaseLowercaseModel):
     @field_validator("endpoint", mode="after")
     @classmethod
     def _normalize_endpoint(cls, v: str | None) -> str | None:
-        if v is not None:
-            return v.rstrip("/")
-        return v
+        """Trim a bare origin's trailing slash while preserving a path's.
+
+        An intake may route ``/v1/upload/`` and ``/v1/upload`` differently,
+        answering the slashless spelling with a redirect that replays the
+        request body -- credentials included -- to the redirect target. The
+        configured path is therefore sent exactly as written.
+
+        :param v: The configured endpoint, or ``None`` when unset.
+        :return: The endpoint with only a bare origin's trailing slash removed.
+        """
+        if v is None:
+            return None
+        return v if urlparse(v).path.strip("/") else v.rstrip("/")
 
     @field_validator("api_key", mode="before")
     @classmethod
@@ -475,25 +587,20 @@ class AppDrainSettings(BaseLowercaseModel):
     reconcile_interval: IntervalSchedule = IntervalSchedule(
         every=5, period=Period.MINUTES
     )
-    stale_task_ttl: TimedeltaSeconds = timedelta(hours=1)
+    # Positivity uses the ``Gt`` annotation constraint rather than a
+    # ``field_validator`` because runtime-override coercion re-checks
+    # annotated-type constraints but does not re-run field validators; a
+    # non-positive TTL would trigger the premature-pruning failure mode noted in
+    # the ``stale_task_ttl`` docstring param above.
+    stale_task_ttl: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(hours=1)
 
-    @field_validator("stale_task_ttl")
-    @classmethod
-    def _stale_task_ttl_positive(cls, value: timedelta) -> timedelta:
-        """Reject a zero or negative stale-task TTL.
 
-        The reconciler prunes rows whose ``created_at`` predates
-        ``utc_now() - stale_task_ttl``. A non-positive TTL puts that cutoff at or
-        after the present, so every in-flight ``AppRunningTask`` row is pruned and
-        a ``DISABLING`` app finalizes to ``DISABLED`` while its tasks still run.
-
-        :param value: The configured stale-task TTL.
-        :return: The validated TTL.
-        :raises ValueError: If ``value`` is not strictly positive.
-        """
-        if value.total_seconds() <= 0:
-            raise ValueError("APP_DRAIN.stale_task_ttl must be a positive duration")
-        return value
+def _warn_legacy_apps_key() -> None:
+    """Emit a deprecation warning for the legacy ``SEP.PLUGINS`` config key."""
+    logger.warning(
+        "The SEP.PLUGINS / SEP__PLUGINS config key is deprecated and will be "
+        "removed in a future release; use SEP.APPS / SEP__APPS instead.",
+    )
 
 
 class SEPSettings(BaseYamlAppSettings):
@@ -501,71 +608,60 @@ class SEPSettings(BaseYamlAppSettings):
 
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
-    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
-    :type UVICORN_PORT: int
     :param SESSION: Session configuration options for the legacy ``authToken``
         cookie used by the Jinja UI.
-    :type SESSION: SessionOptions
     :param SESSION_REFRESH: Session configuration options for the SPA
         ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
         ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
         vars, the value must start with ``/``.
-    :type SESSION_REFRESH: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
         ``Path("templates")``.
-    :type TEMPLATES_DIR: RelativeDirectoryPathField
     :param STATIC_DIR: The directory containing static files. Defaults to
         ``Path("static")``.
-    :type STATIC_DIR: RelativeDirectoryPathField
     :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
         definition files. When ``None``, the bundled ``alert_definitions/`` directory
         inside the alerts plugin is used.
-    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
-    :type INVENTORY_ENDPOINT: CredentialHttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
-    :type TASKS_ENDPOINT: CredentialHttpUrl
-    :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
+    :param APPS: A list of apps used by SEP. Defaults to an empty list with
         duplicates removed.
-    :type PLUGINS: UniqueList[Plugin]
     :param PROXY_HEADERS: Whether to use proxy headers (like ``X-Forwarded-For``).
         Defaults to ``False``.
-    :type PROXY_HEADERS: bool
     :param DATABASE: The database configuration options.
         Defaults to an SQLite database with the name 'sep.db'.
-    :type DATABASE: DatabaseOptions
     :param SYNCERS: A list of synchronizers used by SEP. Defaults to an empty list with
         duplicates removed.
-    :type SYNCERS: UniqueList[SyncOptions]
     :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
         to an empty mapping.
-    :type SYNCER_EXTRA_KWARGS: SyncerExtraKwargs
     :param SYNC_REFRESH_TIME: The time interval (in seconds) for browser refresh during
         synchronization. Defaults to 5 seconds.
-    :type SYNC_REFRESH_TIME: int
-    :param PMM: Deprecated ``SEP.PMM`` section for backward compatibility. Connection
-        fields are forwarded to the top-level ``settings.PMM``; alerts fields are read
-        by ``AlertsPMMConfig``.
-    :type PMM: _DeprecatedPMMConfig
     :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
         Upload is disabled by default.
-    :type HEALTH_REPORT: HealthReportSettings
+    :param DIAGNOSTICS_DELIVERY: The delivery plan used to send diagnostic
+        bundles to a receiver: named secrets, an ordered list of HTTP resolution
+        steps, and one terminal multipart upload step. ``None`` (the default)
+        means no receiver is configured. Set through env or YAML only, so every
+        write runs the plan's cross-reference validation as a whole; DB
+        overrides are rejected because a per-leaf override would merge without
+        re-validating the plan.
     :param APP_DRAIN: Operator-tunable settings for the cooperative app-drain
         reconciler (reconcile cadence and stale running-task TTL).
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         ``$summary`` and ``$version`` placeholders. Defaults to ``"$summary $version"``.
-    :type FOOTER_TEMPLATE: Template
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
-    :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
     :param CONNECTIVITY_CHECK_DEFAULT: Initial state of the "Check connectivity"
         checkbox on task creation forms. When ``True``, the checkbox is pre-checked;
         when ``False`` (default), it is unchecked. Because unchecked HTML
         checkboxes submit no field, the route parameter defaults to ``False`` —
         automated clients that omit ``check_connectivity`` will skip the check
         regardless of this setting.
-    :type CONNECTIVITY_CHECK_DEFAULT: bool
+    :param AMBIENT_SESSION_SSO_ENABLED: Whether to sign an unauthenticated caller
+        in automatically from an existing PMM/Grafana session cookie (ambient
+        SSO), skipping SEP's login form. Defaults to ``False`` (opt-in). Takes
+        effect only under the Grafana auth provider and requires SEP and Grafana
+        to be same-site so the browser sends the session cookie to SEP.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -583,17 +679,32 @@ class SEPSettings(BaseYamlAppSettings):
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
     TASKS_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
-    PLUGINS: UniqueList[Plugin] = UniqueList()
+    APPS: UniqueList[App] = Field(
+        default_factory=UniqueList,
+        validation_alias=AliasChoices("APPS", "PLUGINS"),
+    )
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
     SYNC_REFRESH_TIME: int = hot_field(5)
-    PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
-    APP_DRAIN: AppDrainSettings = AppDrainSettings()
-    ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600)
+    DIAGNOSTICS_DELIVERY: DeliveryPlan | None = not_overridable_field(
+        None, advanced=True
+    )
+    APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
+    AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(
+        default=False,
+        description=(
+            "Enable ambient Grafana-session SSO: sign an unauthenticated caller "
+            "in automatically from an existing PMM/Grafana session cookie, "
+            "skipping SEP's login form. Off by default; effective only under the "
+            "Grafana auth provider and only when SEP and Grafana are same-site so "
+            "the browser sends the session cookie to SEP."
+        ),
+    )
     FOOTER_TEMPLATE: Template = hot_field(
         Template("$summary $version"),
         materializer=materialize_template,
@@ -616,6 +727,55 @@ class SEPSettings(BaseYamlAppSettings):
                 "Use PMM__FRONTEND (top-level) or SEP__PMM__FRONTEND instead.",
             )
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_legacy_plugins_key(cls, data: Any) -> Any:
+        """Emit a deprecation warning when the legacy ``PLUGINS`` key is set via YAML or init.
+
+        :param data: The raw input data.
+        :return: The input data unchanged.
+        """
+        if isinstance(data, dict) and "PLUGINS" in data:
+            _warn_legacy_apps_key()
+        return data
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Emit a deprecation warning when the legacy ``SEP__PLUGINS`` env key supplies the app list.
+
+        The before-validator covers the YAML / init path but never sees an
+        env-only legacy key: the environment source keys the value by the field
+        name ``APPS``, not the matched alias. Detect the stripped legacy key
+        here so the deprecation warning is airtight for the env source too.
+
+        :param settings_cls: The settings class being configured.
+        :param init_settings: The init-arguments source.
+        :param env_settings: The environment-variable source.
+        :param dotenv_settings: The dotenv-file source.
+        :param file_secret_settings: The file-secret source.
+        :return: The source tuple from the base implementation, unchanged.
+        """
+        sources = super().settings_customise_sources(
+            settings_cls,
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
+        if any(
+            "plugins" in getattr(source, "env_vars", {})
+            for source in (env_settings, dotenv_settings)
+        ):
+            _warn_legacy_apps_key()
+        return sources
 
     @computed_field
     @cached_property
@@ -673,6 +833,34 @@ class SEPSettings(BaseYamlAppSettings):
             return Template(v)
         return v
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_sep_pmm(cls, data: Any) -> Any:
+        """Reject a removed ``SEP.PMM`` section.
+
+        ``SEP.PMM`` was removed; PMM connection/auth config now lives
+        only under the top-level ``PMM`` section, and the alerts fields it used to
+        carry moved to the alerts-owned ``SEP.ALERTS`` section. A leftover ``PMM``
+        key under ``SEP`` (any case, including the ``SEP__PMM__*`` env-var path) is
+        rejected with a ``ValueError`` -- which pydantic wraps into a
+        ``ValidationError`` -- so upgraded deployments fail fast at startup instead
+        of silently carrying dead config.
+
+        :param data: The raw input mapping passed to the model.
+        :return: The input unchanged when no top-level ``PMM`` key is present.
+        :raises ValueError: When the input carries a ``PMM`` key.
+        """
+        if isinstance(data, dict) and any(
+            isinstance(k, str) and k.lower() == "pmm" for k in data
+        ):
+            raise ValueError(
+                "The 'SEP.PMM' section was removed (SEP-1477); PMM connection config "
+                "now lives only under the top-level 'PMM' section, and its alerts "
+                "fields moved to the 'SEP.ALERTS' section. Remove the stale 'SEP.PMM' "
+                "block from settings.yaml."
+            )
+        return data
+
     @model_validator(mode="after")
     def add_syncer_extra_kwargs(self) -> Self:
         """Integrate extra keyword arguments into synchronizers.
@@ -690,44 +878,6 @@ class SEPSettings(BaseYamlAppSettings):
             deep_dict_update(syncer_data, extra_kwargs)
             syncers.append(SyncOptions.model_validate(syncer_data))
         self.SYNCERS = syncers
-        return self
-
-    @model_validator(mode="after")
-    def _forward_deprecated_pmm_fields(self) -> Self:
-        """Forward deprecated ``SEP.PMM`` connection fields to ``settings.PMM``.
-
-        Only forward fields that were explicitly set under ``SEP.PMM`` AND were
-        NOT explicitly set in the top-level ``PMM`` section. This ensures the
-        top-level config always wins when both are present.
-
-        :return: The updated settings instance.
-        :rtype: Self
-        """
-        connection_fields = {
-            "endpoint",
-            "frontend",
-            "api_key",
-            "verify_ssl",
-            "execution_target",
-        }
-        deprecated_set = self.PMM.model_fields_set & connection_fields
-        if not deprecated_set:
-            return self
-        core_set = settings.PMM.model_fields_set
-        fields_to_forward = deprecated_set - core_set
-        if fields_to_forward:
-            logger.warning(
-                "Setting PMM connection fields under SEP.PMM is deprecated. "
-                "Use the top-level PMM section instead. "
-                "Deprecated fields found: %s",
-                ", ".join(sorted(fields_to_forward)),
-            )
-            settings.PMM = settings.PMM.model_copy(
-                update={
-                    field_name: getattr(self.PMM, field_name)
-                    for field_name in fields_to_forward
-                }
-            )
         return self
 
 

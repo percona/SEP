@@ -18,9 +18,9 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-const PLUGIN_ROUTE = '/atw';
+const APP_ROUTE = '/atw';
 
-const PLUGIN_DISPLAY_NAME = 'Collect Diagnostic Data';
+const APP_DISPLAY_NAME = 'Collect Diagnostic Data';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -33,7 +33,19 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
-/** Minimal listing row matching ``GET /api/plugins/atw/``. */
+const INCIDENT_ID = 'inc-e2e-1';
+
+/** Single stored incident, listed at ``GET /api/apps/atw/incidents/``. */
+const MOCK_INCIDENT = {
+  id: INCIDENT_ID,
+  name: 'E2E incident',
+  case_ref: null,
+  created_by: 'smoke',
+  created_at: '2026-07-22T10:00:00Z',
+  updated_at: null,
+};
+
+/** Category listing matching ``GET /api/apps/atw/`` (feeds the category browser). */
 const MOCK_ATW_LIST = [
   {
     category_root: 'MySQL',
@@ -52,59 +64,79 @@ const MOCK_ATW_LIST = [
   },
 ];
 
-/** Served at ``GET /api/plugins/atw/schema`` (discovery; page uses listing + per-snippet schema). */
-const MOCK_ATW_PLUGIN_SCHEMA = {
-  name: 'atw',
-  display_name: PLUGIN_DISPLAY_NAME,
-  forms: [],
-  list_view: { columns: [], default_sort: 'category_root' },
+/**
+ * Merged execution schema for the selected snippet — a single shared string
+ * ``executor_host`` avoids host-registry API calls, and no per-snippet override
+ * fields keeps the form to the shared section.
+ */
+const MOCK_MERGED_SCHEMA = {
+  shared: [
+    {
+      type: 'string',
+      name: 'executor_host',
+      label: 'Executor host',
+      required: true,
+    },
+  ],
+  per_snippet: [{ snippet_filename: 'diag/slow-query.sh', fields: [] }],
+};
+
+function paginated<T>(items: T[]) {
+  return { items, total: items.length, offset: 0, limit: 50 };
+}
+
+/** One recorded execution surfaced in the Results pane after a successful batch. */
+const MOCK_EXECUTION = {
+  id: 'exec-e2e-1',
+  snippet_filename: 'diag/slow-query.sh',
+  task_history_id: 1,
+  created_at: '2026-07-22T10:01:00Z',
+  task_status: 'success',
+  started_at: null,
+  finished_at: null,
+  has_logs: false,
+  masked_args: null as string | null,
+  args_withheld: false,
 };
 
 /**
- * Per-snippet schema for ``SchemaFormRenderer`` — string ``executor_host`` avoids host-registry API calls.
+ * A realistic long masked command line — a `--mongodb-uri` invocation, at 162
+ * characters. Wide enough that a `nowrap` summary line blows the workspace grid
+ * track out past the viewport unless every ancestor between the line and the
+ * grid can shrink below its content width.
  */
-const MOCK_SNIPPET_EXECUTE_SCHEMA = {
-  name: 'snippets',
-  display_name: 'Snippet',
-  forms: [
-    {
-      title: 'Run',
-      fields: [
-        {
-          type: 'string',
-          name: 'executor_host',
-          label: 'Executor host',
-          required: true,
-        },
-      ],
-    },
-  ],
-};
-
-const EMPTY_TASK_HISTORY_PAGE = {
-  items: [],
-  total: 0,
-  offset: 0,
-  limit: 50,
-};
+const LONG_MASKED_ARGS =
+  "mongodb_pbm_diagnostics.sh --mongodb-uri 'mongodb://pbmuser:***@mongo-node-1.internal:27017/?replicaSet=rs0&authSource=admin' --log-entries 10000 --journal-lines 2000";
 
 interface AtwApiMockOptions {
-  executeStatus?: number;
-  executeJson?: string;
+  batchStatus?: number;
+  batchJson?: string;
+  /** Executions the listing returns straight away, without a batch POST. */
+  seededExecutions?: (typeof MOCK_EXECUTION)[];
 }
 
 /**
- * Authenticated session plus ATW + snippets routes needed for Collect Diagnostic Data flows.
+ * Authenticated session plus the incident, category, merged-schema, batch-execute,
+ * and grouped-history routes the incident-first ATW flow exercises. The executions
+ * listing is empty until a successful batch POST records one.
  */
 async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise<void> {
-  const executeStatus = options.executeStatus ?? 200;
-  const executeJson =
-    options.executeJson ??
+  const batchStatus = options.batchStatus ?? 201;
+  const batchJson =
+    options.batchJson ??
     JSON.stringify({
-      task_name: 'atw-e2e-task',
-      task_id: 1,
-      snippet_filename: 'diag/slow-query.sh',
+      items: [
+        {
+          snippet_filename: 'diag/slow-query.sh',
+          task_name: 'atw-e2e-task',
+          task_history_id: 1,
+          error: null,
+        },
+      ],
     });
+
+  const seededExecutions = options.seededExecutions ?? [];
+  let executionRecorded = false;
 
   await page.route('**/api/**', (route) => {
     const req = route.request();
@@ -134,38 +166,73 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (pathname.includes('/plugins/snippets/') && pathname.endsWith('/history')) {
+    // Batch execute (POST) — record a success so the executions listing populates.
+    if (pathname.endsWith(`/incidents/${INCIDENT_ID}/executions/`) && req.method() === 'POST') {
+      if (batchStatus < 400) {
+        executionRecorded = true;
+      }
+      return route.fulfill({
+        status: batchStatus,
+        contentType: 'application/json',
+        body: batchJson,
+      });
+    }
+
+    // Grouped execution history (GET) for the incident.
+    if (pathname.endsWith(`/incidents/${INCIDENT_ID}/executions/`) && req.method() === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(EMPTY_TASK_HISTORY_PAGE),
+        body: JSON.stringify(
+          paginated(
+            seededExecutions.length > 0
+              ? seededExecutions
+              : executionRecorded
+                ? [MOCK_EXECUTION]
+                : [],
+          ),
+        ),
       });
     }
 
-    if (pathname.includes('/plugins/snippets/') && pathname.endsWith('/schema')) {
+    // Send-job history (GET) for the incident.
+    if (pathname.endsWith(`/incidents/${INCIDENT_ID}/send-jobs/`) && req.method() === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_SNIPPET_EXECUTE_SCHEMA),
+        body: JSON.stringify(paginated([])),
       });
     }
 
-    if (
-      pathname.includes('/plugins/snippets/') &&
-      pathname.endsWith('/execute') &&
-      req.method() === 'POST'
-    ) {
+    // Single incident (workspace header).
+    if (pathname.endsWith(`/incidents/${INCIDENT_ID}`) && req.method() === 'GET') {
       return route.fulfill({
-        status: executeStatus,
+        status: 200,
         contentType: 'application/json',
-        body: executeJson,
+        body: JSON.stringify(MOCK_INCIDENT),
       });
     }
 
-    if (
-      req.method() === 'GET' &&
-      (pathname === '/api/plugins/atw/' || pathname === '/api/plugins/atw')
-    ) {
+    // Incident list.
+    if (pathname.endsWith('/incidents/') && req.method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(paginated([MOCK_INCIDENT])),
+      });
+    }
+
+    // Merged execution schema for the current selection.
+    if (pathname.endsWith('/atw/execution-schema/')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(MOCK_MERGED_SCHEMA),
+      });
+    }
+
+    // Category listing.
+    if (pathname === '/api/apps/atw/' || pathname === '/api/apps/atw') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -173,11 +240,12 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (pathname === '/api/plugins/atw/schema') {
+    // Diagnostics-send availability probe.
+    if (pathname.endsWith('/atw/config/') && req.method() === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_ATW_PLUGIN_SCHEMA),
+        body: JSON.stringify({ send_disabled_reasons: [] }),
       });
     }
 
@@ -199,32 +267,36 @@ function isBenignConsoleError(msg: string): boolean {
   return false;
 }
 
-async function selectAtwSnippetAndOpenForm(page: Page): Promise<void> {
-  await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME })).toBeVisible({
+/** Open the stored incident and drive the Collect pane to a ready-to-submit form. */
+async function openIncidentAndBuildForm(page: Page): Promise<void> {
+  await expect(page.getByRole('heading', { name: APP_DISPLAY_NAME })).toBeVisible({
     timeout: 30_000,
   });
 
-  const categoryCombo = page.getByRole('combobox', { name: 'Category', exact: true });
-  if ((await categoryCombo.count()) > 0) {
-    await expect(categoryCombo).toContainText('MySQL', { timeout: 15_000 });
-    await categoryCombo.click();
-    await page.getByRole('option', { name: 'MySQL' }).click();
-  }
+  await page.getByRole('link', { name: MOCK_INCIDENT.name }).click();
 
+  await expect(page.getByRole('heading', { name: MOCK_INCIDENT.name })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // Single-root listing hides the top-level Category control; select down to the
+  // leaf category so the snippet multi-select is populated.
   await page.getByRole('combobox', { name: 'Subcategory 1' }).click();
   await page.getByRole('option', { name: 'Performance Issues' }).click();
 
   await page.getByRole('combobox', { name: 'Subcategory 2' }).click();
   await page.getByRole('option', { name: 'Overall Slowness' }).click();
 
-  await page.getByRole('combobox', { name: 'Snippet' }).click();
+  await page.getByRole('combobox', { name: 'Snippets' }).click();
   await page.getByRole('option', { name: 'Slow Query Diagnostics' }).click();
+  // Close the option list so it does not overlay the form controls.
+  await page.keyboard.press('Escape');
 
   await expect(page.getByLabel('Executor host')).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe('Collect Diagnostic Data (ATW)', () => {
-  test('execute success navigates to the snippet detail route', async ({ page }) => {
+  test('batch execute records an execution in the Results pane', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
@@ -233,31 +305,56 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
     });
 
     await mockAtwApis(page);
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
-    await selectAtwSnippetAndOpenForm(page);
+    await openIncidentAndBuildForm(page);
 
     await page.getByLabel('Executor host').fill('e2e-host.local');
-    await page.getByRole('button', { name: 'Execute' }).click();
+    await page.getByRole('button', { name: 'Execute batch' }).click();
 
-    await expect(page).toHaveURL(/\/snippets\/diag%2Fslow-query\.sh/);
+    // The execution appears in the Results pane once the batch is recorded.
+    await expect(page.getByText('diag/slow-query.sh')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Done')).toBeVisible();
 
     const criticalErrors = consoleErrors.filter((msg) => !isBenignConsoleError(msg));
     expect(criticalErrors).toEqual([]);
   });
 
-  test('execute failure shows submit error on the form', async ({ page }) => {
+  test('batch execute failure shows a submit error on the form', async ({ page }) => {
     await mockAtwApis(page, {
-      executeStatus: 400,
-      executeJson: JSON.stringify({ detail: 'Execute failed (e2e)' }),
+      batchStatus: 400,
+      batchJson: JSON.stringify({ detail: 'Batch execute failed (e2e)' }),
     });
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
-    await selectAtwSnippetAndOpenForm(page);
+    await openIncidentAndBuildForm(page);
 
     await page.getByLabel('Executor host').fill('e2e-host.local');
-    await page.getByRole('button', { name: 'Execute' }).click();
+    await page.getByRole('button', { name: 'Execute batch' }).click();
 
-    await expect(page.getByRole('alert')).toContainText('Execute failed (e2e)');
+    await expect(page.getByText('Batch execute failed (e2e)')).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('a long recorded argument string is clipped instead of widening the page', async ({
+    page,
+  }) => {
+    await mockAtwApis(page, {
+      seededExecutions: [{ ...MOCK_EXECUTION, masked_args: LONG_MASKED_ARGS }],
+    });
+    await page.goto(`${APP_ROUTE}/${INCIDENT_ID}`);
+
+    const summaryLine = page.locator('.MuiAccordionSummary-content').getByText(LONG_MASKED_ARGS);
+    await expect(summaryLine).toBeVisible({ timeout: 30_000 });
+
+    // The collapsed line must be clipped by its container, which is what makes
+    // the `text-overflow: ellipsis` visible, rather than stretching the pane.
+    const clipped = await summaryLine.evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(clipped).toBe(true);
+
+    const pageWidths = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    }));
+    expect(pageWidths.scrollWidth).toBeLessThanOrEqual(pageWidths.innerWidth);
   });
 });

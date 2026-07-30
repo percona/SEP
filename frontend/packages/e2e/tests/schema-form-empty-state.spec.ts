@@ -37,7 +37,7 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
-// Single mocked plugin slug — `mysql_backups` — so we reuse the registered
+// Single mocked app slug — `mysql_backups` — so we reuse the registered
 // shell route. The schema shape inside is bespoke for this regression suite:
 // one empty required multi_choice, one empty 4-option choice (select), and
 // one gated choice that re-mounts when S3 is added/removed from upload.
@@ -108,10 +108,10 @@ async function mockRoutes(page: Page) {
     if (pathname.includes('/users/me')) {
       return route.fulfill({ json: MOCK_USER });
     }
-    if (pathname === '/api/plugins/mysql_backups/schema') {
+    if (pathname === '/api/apps/mysql_backups/schema') {
       return route.fulfill({ json: MOCK_SCHEMA });
     }
-    if (pathname === '/api/plugins/mysql_backups/' && req.method() === 'GET') {
+    if (pathname === '/api/apps/mysql_backups/' && req.method() === 'GET') {
       return route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 50 } });
     }
     if (pathname.endsWith('/sep/hosts/')) {
@@ -133,8 +133,8 @@ async function mockRoutes(page: Page) {
 }
 
 async function openCreateForm(page: Page) {
-  // SchemaDrivenPlugin (no entities) mounts the create route at /new directly.
-  await page.goto('/plugins/mysql_backups/new');
+  // SchemaDrivenApp (no entities) mounts the create route at /new directly.
+  await page.goto('/apps/mysql_backups/new');
   // Wait for the rendered InputLabel — proxy for "form is mounted".
   await expect(page.locator('label#upload-label')).toBeVisible({ timeout: 30_000 });
 }

@@ -67,6 +67,17 @@ const MOCK_REPORT = {
 };
 
 const MOCK_CONFIG = { upload_disabled_reasons: [] };
+const MOCK_PDF_JOB = {
+  job_id: 'pdf-job-1',
+  status: 'success',
+  pdf_ready: true,
+};
+const MOCK_UPLOAD_JOB = {
+  job_id: 'upload-job-1',
+  status: 'success',
+  pdf_ready: false,
+  result: { sys_id: 'smoke-abc123', status: 'uploaded' },
+};
 
 // ── Route mocking ─────────────────────────────────────────────────────────────
 
@@ -85,13 +96,19 @@ async function mockReportRoutes(page: Page) {
     if (pathname.includes('/users/me')) {
       return route.fulfill({ json: MOCK_USER });
     }
-    if (pathname === '/api/plugins/report/config') {
+    if (pathname === '/api/apps/report/config') {
       return route.fulfill({ json: MOCK_CONFIG });
     }
-    if (pathname === '/api/plugins/report/generate/json' && req.method() === 'GET') {
+    if (pathname === '/api/apps/report/generate/json' && req.method() === 'GET') {
       return route.fulfill({ json: MOCK_REPORT });
     }
-    if (pathname === '/api/plugins/report/generate/pdf' && req.method() === 'POST') {
+    if (pathname === '/api/apps/report/pdf-jobs' && req.method() === 'POST') {
+      return route.fulfill({ json: { ...MOCK_PDF_JOB, status: 'pending', pdf_ready: false } });
+    }
+    if (pathname === '/api/apps/report/pdf-jobs/pdf-job-1' && req.method() === 'GET') {
+      return route.fulfill({ json: MOCK_PDF_JOB });
+    }
+    if (pathname === '/api/apps/report/pdf-jobs/pdf-job-1/pdf' && req.method() === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/pdf',
@@ -99,8 +116,11 @@ async function mockReportRoutes(page: Page) {
         headers: { 'Content-Disposition': 'attachment; filename="report.pdf"' },
       });
     }
-    if (pathname === '/api/plugins/report/upload' && req.method() === 'POST') {
-      return route.fulfill({ json: { sys_id: 'smoke-abc123', status: 'uploaded' } });
+    if (pathname === '/api/apps/report/upload-jobs' && req.method() === 'POST') {
+      return route.fulfill({ json: { ...MOCK_UPLOAD_JOB, status: 'pending', result: null } });
+    }
+    if (pathname === '/api/apps/report/upload-jobs/upload-job-1' && req.method() === 'GET') {
+      return route.fulfill({ json: MOCK_UPLOAD_JOB });
     }
 
     return route.fulfill({
@@ -115,7 +135,7 @@ async function mockReportRoutes(page: Page) {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-test.describe('Report plugin smoke', () => {
+test.describe('Report app smoke', () => {
   test('form renders and submit navigates to result', async ({ page }) => {
     await mockReportRoutes(page);
     await page.goto('/reports');
@@ -138,10 +158,10 @@ test.describe('Report plugin smoke', () => {
     await expect(page.getByRole('button', { name: /upload to servicenow/i })).toBeVisible();
   });
 
-  test('PDF download button calls generate/pdf and shows no error', async ({ page }) => {
+  test('PDF download button calls pdf-jobs endpoint and shows no error', async ({ page }) => {
     let pdfRequested = false;
     await mockReportRoutes(page);
-    await page.route('**/api/plugins/report/generate/pdf', (route) => {
+    await page.route('**/api/apps/report/pdf-jobs/pdf-job-1/pdf', (route) => {
       pdfRequested = true;
       return route.fulfill({
         status: 200,

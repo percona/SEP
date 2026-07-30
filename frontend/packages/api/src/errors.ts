@@ -67,6 +67,55 @@ function messageFromPayload(payload: unknown, fallback: string): string {
   return fallback;
 }
 
+/** A single backend per-field validation failure, ready to map onto a form field. */
+export interface FieldValidationError {
+  /** Dot-joined field path (react-hook-form name). Empty string for form-level errors. */
+  path: string;
+  /** Human-readable message from the backend (`detail[].msg`). */
+  message: string;
+}
+
+/**
+ * Parse a 422 payload (`ApiError.data.detail[]`, a Pydantic ``errors()`` array)
+ * into ``{ path, message }`` pairs.
+ *
+ * Each entry's ``loc`` tuple is joined into a dot path matching the form's
+ * react-hook-form field names. FastAPI request-body validation prefixes ``loc``
+ * with a ``"body"`` segment (e.g. ``["body", "limit"]``); manual
+ * ``model_validate`` failures do not. The leading ``"body"`` is stripped so both
+ * shapes resolve to the same field path. The ``"body"`` strip is positional, so
+ * a top-level field literally named ``body`` is indistinguishable from FastAPI's
+ * wrapper segment; plugin schemas do not use that name. Entries whose ``loc``
+ * carries no field segment yield an empty ``path`` so callers can surface them
+ * as form-level errors rather than dropping them.
+ *
+ * Returns an empty array when the payload is not a recognizable detail array.
+ */
+export function parseFieldErrors(error: unknown): FieldValidationError[] {
+  const data = error instanceof ApiError ? error.data : error;
+  const detail = (data as { detail?: unknown } | null | undefined)?.detail;
+  if (!Array.isArray(detail)) {
+    return [];
+  }
+
+  const result: FieldValidationError[] = [];
+  for (const entry of detail) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    const { loc, msg } = entry as { loc?: unknown; msg?: unknown };
+    const message = typeof msg === 'string' && msg.length > 0 ? msg : 'Invalid value';
+    let segments = Array.isArray(loc)
+      ? loc.filter((s): s is string | number => typeof s === 'string' || typeof s === 'number')
+      : [];
+    if (segments[0] === 'body') {
+      segments = segments.slice(1);
+    }
+    result.push({ path: segments.map(String).join('.'), message });
+  }
+  return result;
+}
+
 export function normalizeAxiosError(error: unknown): ApiError {
   if (error instanceof ApiError) {
     return error;

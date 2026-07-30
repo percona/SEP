@@ -27,8 +27,14 @@ import { useConfigExport, useSettingsList } from '@sep/api';
 
 import { useAuth } from '../contexts/auth';
 import SettingsGroup from '../components/settings/SettingsGroup';
+import TestConnectionButton from '../components/settings/TestConnectionButton';
 import SettingsSearchBar from '../components/settings/SettingsSearchBar';
-import { DEFAULT_SETTINGS_FILTERS, filterSettingsGroups } from '../components/settings/filters';
+import {
+  DEFAULT_SETTINGS_FILTERS,
+  appLabelFor,
+  filterSettingsGroups,
+  partitionSettingsGroups,
+} from '../components/settings/filters';
 
 export default function SettingsPage() {
   const { isAdmin } = useAuth();
@@ -38,11 +44,22 @@ export default function SettingsPage() {
   const [filters, setFilters] = useState(DEFAULT_SETTINGS_FILTERS);
 
   const allGroups = useMemo(() => settingsQuery.data ?? [], [settingsQuery.data]);
-  const settingClasses = useMemo(() => allGroups.map((group) => group.setting_class), [allGroups]);
+  // Only offer classes the page can actually render: disabled app-owned groups
+  // are hidden, so their classes must not surface in the Class filter either
+  // (selecting one would otherwise dead-end in the empty state).
+  const settingClasses = useMemo(() => {
+    const { core, appOwned } = partitionSettingsGroups(allGroups);
+    return [...core, ...appOwned].map((group) => group.setting_class);
+  }, [allGroups]);
   const visibleGroups = useMemo(
     () => filterSettingsGroups(allGroups, filters),
     [allGroups, filters],
   );
+  const { core: coreGroups, appOwned: appGroups } = useMemo(
+    () => partitionSettingsGroups(visibleGroups),
+    [visibleGroups],
+  );
+  const searchActive = filters.search.trim() !== '';
 
   if (!isAdmin) {
     return (
@@ -90,14 +107,17 @@ export default function SettingsPage() {
             View and edit application configuration at runtime.
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={<DownloadIcon />}
-          onClick={() => configExport.mutate()}
-          disabled={configExport.isPending}
-        >
-          {configExport.isPending ? 'Downloading…' : 'Download YAML'}
-        </Button>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+          <TestConnectionButton />
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={() => configExport.mutate()}
+            disabled={configExport.isPending}
+          >
+            {configExport.isPending ? 'Downloading…' : 'Download YAML'}
+          </Button>
+        </Box>
       </Box>
 
       {configExport.isError && (
@@ -115,19 +135,41 @@ export default function SettingsPage() {
       <SettingsSearchBar filters={filters} onChange={setFilters} settingClasses={settingClasses} />
 
       <LoadableChildren loading={settingsQuery.isLoading}>
-        {visibleGroups.length === 0 ? (
+        {coreGroups.length === 0 && appGroups.length === 0 ? (
           <Typography variant="body2" color="text.secondary" data-testid="settings-empty">
             No settings match the current filters.
           </Typography>
         ) : (
-          visibleGroups.map((group) => (
-            <SettingsGroup
-              key={group.setting_class}
-              settingClass={group.setting_class}
-              settings={group.settings}
-              searchActive={filters.search.trim() !== ''}
-            />
-          ))
+          <>
+            {coreGroups.map((group) => (
+              <SettingsGroup
+                key={group.setting_class}
+                settingClass={group.setting_class}
+                settings={group.settings}
+                searchActive={searchActive}
+              />
+            ))}
+
+            {appGroups.length > 0 && (
+              <Box data-testid="app-settings-region" sx={{ mt: coreGroups.length > 0 ? 4 : 0 }}>
+                <Typography
+                  variant="subtitle1"
+                  sx={{ fontFamily: '"Poppins", sans-serif', fontWeight: 500, mb: 1.5 }}
+                >
+                  App settings
+                </Typography>
+                {appGroups.map((group) => (
+                  <SettingsGroup
+                    key={group.setting_class}
+                    settingClass={group.setting_class}
+                    settings={group.settings}
+                    searchActive={searchActive}
+                    appLabel={appLabelFor(group)}
+                  />
+                ))}
+              </Box>
+            )}
+          </>
         )}
       </LoadableChildren>
     </>

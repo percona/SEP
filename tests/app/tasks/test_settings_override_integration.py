@@ -44,7 +44,10 @@ async def _override_session_maker() -> async_sessionmaker:
     )
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    return get_async_session_maker_from_engine(engine)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
 
 
 def _tasks_proxies() -> dict:
@@ -75,6 +78,7 @@ async def test_pre_execution_connectivity_check_override(
 
 
 _OVERRIDE_STALENESS_SECONDS = 7200
+_OVERRIDE_LOG_RETENTION_DAYS = 30
 
 
 @pytest.mark.asyncio
@@ -123,6 +127,45 @@ async def test_tasks_proxy_visible_after_refresh(
         )
     await refresh_all(lambda: override_session_maker, _tasks_proxies())
     assert tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK is target
+
+
+@pytest.mark.asyncio
+async def test_log_retention_days_override_applies_at_runtime(
+    override_session_maker: async_sessionmaker,
+) -> None:
+    """A valid ``LOG_RETENTION_DAYS`` override is reflected on the proxy."""
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="LOG_RETENTION_DAYS",
+                value=_OVERRIDE_LOG_RETENTION_DAYS,
+            ),
+        )
+    await refresh_all(lambda: override_session_maker, _tasks_proxies())
+    assert tasks_settings.LOG_RETENTION_DAYS == _OVERRIDE_LOG_RETENTION_DAYS
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid_value", [0, -5, 366, "x", 1.5])
+async def test_log_retention_days_invalid_override_falls_back(
+    override_session_maker: async_sessionmaker,
+    invalid_value: object,
+) -> None:
+    """An out-of-range/non-integer override is skipped; the default is kept."""
+    baseline = tasks_settings.LOG_RETENTION_DAYS
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="LOG_RETENTION_DAYS",
+                value=invalid_value,
+            ),
+        )
+    await refresh_all(lambda: override_session_maker, _tasks_proxies())
+    assert baseline == tasks_settings.LOG_RETENTION_DAYS
 
 
 @pytest.mark.asyncio

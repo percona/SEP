@@ -27,7 +27,7 @@ def _plugin_css_classes() -> list[str]:
         data = yaml.safe_load(f)
     return [
         plugin["CSS_CLASS"]
-        for plugin in data.get("default", {}).get("SEP", {}).get("PLUGINS", [])
+        for plugin in data.get("default", {}).get("SEP", {}).get("APPS", [])
         if "CSS_CLASS" in plugin
     ]
 
@@ -39,7 +39,7 @@ class TestSidebarIconCSSCoverage:
     def test_plugin_css_class_has_sidebar_icon_rule(self, css_class: str) -> None:
         """Assert a declared plugin CSS class has a matching ``::before`` icon rule.
 
-        :param css_class: CSS class name from settings.yaml PLUGINS list.
+        :param css_class: CSS class name from settings.yaml APPS list.
         :type css_class: str
         """
         css = Path("static/css/base.css").read_text()
@@ -48,9 +48,9 @@ class TestSidebarIconCSSCoverage:
     def test_missing_rule_is_detected(self) -> None:
         """Assert the guard catches a plugin class with no matching icon rule.
 
-        Simulates the regression introduced in SEP-1102 where CSS_CLASS was
-        renamed to ``mysql_backups`` but the corresponding ``::before`` rule was
-        not added — leaving the sidebar icon invisible.
+        Simulates the regression where a plugin's CSS_CLASS was renamed (e.g. to
+        ``mysql_backups``) but the corresponding ``::before`` rule was not added
+        — leaving the sidebar icon invisible.
         """
         css_missing_mysql_backups = (
             ".list-item.archive .icon::before { content: 'archive'; }\n"

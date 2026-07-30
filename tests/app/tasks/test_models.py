@@ -24,8 +24,13 @@ import yaml
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
-from app.sep.plugins.archives.alerts import ALERT_DETAIL_BUILDER
+from app.core.utils.path import PayloadReferenceError
+from app.sep.apps.archives.alerts import (
+    ALERT_DETAIL_BUILDER,
+    ARCHIVER_TRACE_PLACEHOLDER,
+)
 from app.tasks.anonymizer.entities import PIIEntity
+from app.tasks.crud import TaskManager
 from app.tasks.models import (
     _encode_anonymize_mask,
     DispatchLock,
@@ -40,9 +45,9 @@ from app.tasks.models import (
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskLogType,
-    TaskOwner,
     TaskResponse,
     TaskStats,
+    TaskWrite,
     TransformPayloadRequest,
 )
 from tests.app.factories import TaskFactory
@@ -114,27 +119,33 @@ class TestTaskHistoryStatusEnum:
         ],
     )
     def test_is_finished_false(self, status: TaskHistoryStatusEnum) -> None:
-        """Assert is_finished returns False for non-terminal statuses."""
+        """Assert is_finished returns False for unfinished statuses."""
         assert status.is_finished() is False
 
+    @pytest.mark.parametrize(
+        "status",
+        [
+            TaskHistoryStatusEnum.FAILED,
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.STOPPED,
+            TaskHistoryStatusEnum.LOST,
+            TaskHistoryStatusEnum.STALE,
+        ],
+    )
+    def test_is_terminal_true(self, status: TaskHistoryStatusEnum) -> None:
+        """Assert is_terminal returns True for terminal statuses."""
+        assert status.is_terminal() is True
 
-class TestTaskOwner:
-    """Test TaskOwner enum values."""
-
-    def test_all_values_exist(self) -> None:
-        """Assert all nine owner values exist."""
-        expected = {
-            "ANY",
-            "ALTERS",
-            "ARCHIVER",
-            "BACKUPS",
-            "RESTORES",
-            "CHECKSUMS",
-            "BACKUP_MONGO",
-            "RESTORE_MONGO",
-            "BACKUP_PG",
-        }
-        assert {o.name for o in TaskOwner} == expected
+    @pytest.mark.parametrize(
+        "status",
+        [
+            TaskHistoryStatusEnum.PENDING,
+            TaskHistoryStatusEnum.RUNNING,
+        ],
+    )
+    def test_is_terminal_false(self, status: TaskHistoryStatusEnum) -> None:
+        """Assert is_terminal returns False for active statuses."""
+        assert status.is_terminal() is False
 
 
 class TestTaskLogType:
@@ -260,11 +271,21 @@ class TestTask:
         """Assert anonymized_entities falls back to anonymizer_settings defaults."""
         default_entities = {PIIEntity.EMAIL_ADDRESS, PIIEntity.PHONE_NUMBER}
         mock_defaults = defaultdict(lambda: default_entities)
-        task = TaskFactory.build(anonymize_mask=None, owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(anonymize_mask=None, owner="BACKUPS")
         with patch("app.tasks.models.anonymizer_settings") as mock_settings:
             mock_settings.DEFAULT_ENTITIES = mock_defaults
             result = task.anonymized_entities
         assert result == default_entities
+
+    @pytest.mark.asyncio
+    async def test_run_result_recorder_propagates_to_task_row(self, session) -> None:
+        """Persist ``run_result_recorder`` from a ``TaskWrite`` onto the ``Task`` row."""
+        recorder = "app.sep.apps.mysql_backups.recorder:record_backup_run"
+        write = TaskWrite.model_validate(
+            TaskFactory.build(name="recorder-task", run_result_recorder=recorder)
+        )
+        task = await TaskManager.create(session, write)
+        assert task.run_result_recorder == recorder
 
 
 class TestTaskResponseAnonymizedEntities:
@@ -300,7 +321,7 @@ class TestTaskResponseAnonymizedEntities:
         mock_defaults = defaultdict(lambda: default_entities)
         fields = {
             **self.BASE_FIELDS,
-            "owner": TaskOwner.CHECKSUMS,
+            "owner": "CHECKSUMS",
             "anonymize_mask": None,
         }
         with patch("app.tasks.models.anonymizer_settings") as mock_settings:
@@ -333,12 +354,13 @@ class TestTaskExecutionRequest:
         )
         assert req.payload_content == '{"key": "value"}'
 
-    def test_payload_content_file_path_nonexistent(self) -> None:
-        """Assert payload_content returns payload string for non-existent file."""
+    def test_payload_content_unresolvable_file_raises(self) -> None:
+        """Assert payload_content raises for an unresolvable file:// reference."""
         req = TaskExecutionRequest(
             task="t", target="n", payload="file:///nonexistent/path.json"
         )
-        assert req.payload_content == "file:///nonexistent/path.json"
+        with pytest.raises(PayloadReferenceError):
+            _ = req.payload_content
 
     def test_payload_content_none(self) -> None:
         """Assert payload_content returns None when payload is None."""
@@ -681,7 +703,7 @@ class TestTaskHistory:
         return TaskFactory.build(
             id=1,
             name="test-task",
-            owner=TaskOwner.ARCHIVER,
+            owner="ARCHIVER",
             alert_detail_builder=ALERT_DETAIL_BUILDER,
             anonymize_mask=None,
             data={"task": "run-python", "meta": meta},
@@ -700,7 +722,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="2026 ERROR: pt-archiver Purge Failed"),
         )
         mock_trigger = AsyncMock()
@@ -734,7 +756,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="ERROR: boom"),
         )
         mock_trigger = AsyncMock()
@@ -749,8 +771,6 @@ class TestTaskHistory:
         self, execution_request: TaskExecutionRequest, mocker
     ) -> None:
         """Render the placeholder for a missing STDERR trace, never an empty block."""
-        from app.sep.plugins.archives.alerts import ARCHIVER_TRACE_PLACEHOLDER
-
         history = TaskHistory(
             id=1075,
             task_id=1,
@@ -759,7 +779,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value=None),
         )
         mock_trigger = AsyncMock()
@@ -774,7 +794,7 @@ class TestTaskHistory:
     ) -> None:
         """Give non-archiver failures no custom_details and keep the target summary."""
         read_spy = mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="x"),
         )
         history = TaskHistory(
@@ -798,7 +818,7 @@ class TestTaskHistory:
     ) -> None:
         """Leave Archiver LOST unchanged: no custom_details, no source-node summary."""
         read_spy = mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="x"),
         )
         history = TaskHistory(
@@ -859,7 +879,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="ERROR: boom"),
         )
         mock_trigger = AsyncMock()
@@ -933,6 +953,142 @@ class TestTaskHistoryResponse:
         response = TaskHistoryResponse.model_validate(history)
 
         assert response.has_logs is True
+
+
+class TestTaskHistoryResponseDisplayName:
+    """Test ``TaskHistoryResponse.display_name`` derivation."""
+
+    @pytest.fixture
+    def normal_task(self) -> Task:
+        """Return a Task with a plain user-defined name."""
+        return TaskFactory.build(id=1, name="backup-task", data={"key": "val"})
+
+    @pytest.fixture
+    def run_python_task(self) -> Task:
+        """Return a run-python generic executor Task."""
+        return TaskFactory.build(id=2, name="run-python", data={"key": "val"})
+
+    @pytest.fixture
+    def exec_artifact_task(self) -> Task:
+        """Return an exec-artifact generic executor Task."""
+        return TaskFactory.build(id=3, name="exec-artifact", data={"key": "val"})
+
+    def _history(
+        self, task: Task, execution_request: TaskExecutionRequest
+    ) -> TaskHistoryResponse:
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        return TaskHistoryResponse.model_validate(history)
+
+    def test_normal_task_returns_task_name(self, normal_task: Task) -> None:
+        """Assert a regular task returns its ``task.name`` as the display label."""
+        req = TaskExecutionRequest(task="backup-task", target="node-1")
+        assert self._history(normal_task, req).display_name == "backup-task"
+
+    def test_generic_executor_uses_underscore_snippet_filename_from_meta(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert ``_snippet_filename`` drives the label as ``<dir>/<file> on <target>``."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="node-1",
+            meta={"_snippet_filename": "diag/slow-query.sh"},
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "diag/slow-query.sh on node-1"
+        )
+
+    def test_generic_executor_uses_legacy_snippet_filename_key(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert bare ``snippet_filename`` key is accepted when underscore variant absent."""
+        req = TaskExecutionRequest(
+            task="run-python", target="node-1", meta={"snippet_filename": "legacy.sh"}
+        )
+        assert self._history(run_python_task, req).display_name == "legacy.sh on node-1"
+
+    def test_generic_executor_fallback_to_task_on_target(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert the fallback label is ``<task> on <target>`` when no snippet filename."""
+        req = TaskExecutionRequest(task="run-python", target="node-1")
+        assert (
+            self._history(run_python_task, req).display_name == "run-python on node-1"
+        )
+
+    def test_generic_executor_file_payload_uses_source_dir_and_basename(
+        self, exec_artifact_task: Task
+    ) -> None:
+        """Assert a ``file://`` payload yields ``<dir>/<file> on <target>``."""
+        req = TaskExecutionRequest(
+            task="exec-artifact",
+            target="node-1",
+            payload="file:///plugins/backup/script.sh",
+        )
+        assert (
+            self._history(exec_artifact_task, req).display_name
+            == "backup/script.sh on node-1"
+        )
+
+    def test_generic_executor_system_payload_without_snippet_filename(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert a system ``file://`` payload surfaces its owning directory."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="db-1",
+            payload="file://app/tasks/connectivity/payload.py",
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "connectivity/payload.py on db-1"
+        )
+
+    def test_generic_executor_bare_snippet_borrows_source_dir_from_payload(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert a bare snippet filename borrows its directory from the payload path."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="db-2",
+            meta={"_snippet_filename": "payload.py"},
+            payload="file://app/sep/sync/syncers/system_facts/payload.py",
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "system_facts/payload.py on db-2"
+        )
+
+    def test_generic_executor_non_file_payload_falls_back_to_task_on_target(
+        self, exec_artifact_task: Task
+    ) -> None:
+        """Assert a non-file:// payload is ignored for basename derivation."""
+        req = TaskExecutionRequest(
+            task="exec-artifact", target="node-1", payload="inline-value"
+        )
+        assert (
+            self._history(exec_artifact_task, req).display_name
+            == "exec-artifact on node-1"
+        )
+
+    def test_empty_meta_does_not_crash(self, run_python_task: Task) -> None:
+        """Assert an empty meta dict falls back gracefully without raising."""
+        req = TaskExecutionRequest(task="run-python", target="node-1", meta={})
+        result = self._history(run_python_task, req).display_name
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_none_meta_does_not_crash(self, run_python_task: Task) -> None:
+        """Assert a None meta falls back gracefully without raising."""
+        req = TaskExecutionRequest(task="run-python", target="node-1", meta=None)
+        result = self._history(run_python_task, req).display_name
+        assert isinstance(result, str)
 
 
 class TestTaskStats:

@@ -81,6 +81,7 @@ from app.tasks.models import (
     Task,
     TaskBackendEnum,
     TaskHistory,
+    TaskHistoryLatestStatus,
     TaskHistoryLatestStatusRequest,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
@@ -92,6 +93,8 @@ from app.tasks.models import (
 )
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.models import PeriodicTaskCreate, PeriodicTaskResponse
+from app.tasks.periodic.utils import attach_last_run_status
+from app.tasks.run_result import maybe_record_run
 
 logger = logging.getLogger(__name__)
 
@@ -211,10 +214,15 @@ async def update_task(
     response_model=list[PeriodicTaskResponse],
 )
 async def list_periodic_tasks_by_task_name(
-    celery_beat_session: CeleryBeatSessionDep, task: ExecutableTaskDep
+    celery_beat_session: CeleryBeatSessionDep,
+    session: SessionDep,
+    task: ExecutableTaskDep,
 ) -> list[PeriodicTask]:
     """List periodic tasks by task name."""
-    return await PeriodicTaskManager.list_by_task_names(celery_beat_session, task.name)
+    periodic_tasks = await PeriodicTaskManager.list_by_task_names(
+        celery_beat_session, task.name
+    )
+    return await attach_last_run_status(session, periodic_tasks)
 
 
 @router.post(
@@ -396,16 +404,18 @@ async def _populate_has_logs(
 async def list_task_history(
     session: SessionDep,
     pagination: PaginationDep,
+    *,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
+    exclude_internal: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[TaskHistory]:
     """List all task history records."""
     logger.debug("Listing task history")
-    response = await TaskHistoryManager.list_paginated(
+    response = await TaskHistoryManager.list_all_history_paginated(
         session,
-        select_related=(TaskHistory.task,),
         query_options=[undefer(TaskHistory.execution_request)],
         pagination=pagination,
         status=task_status,
+        exclude_internal=exclude_internal,
     )
     await _populate_has_logs(session, response.items)
     return response
@@ -415,12 +425,12 @@ async def list_task_history(
     "/history/latest",
     dependencies=[IsAuthenticatedDep],
 )
-async def latest_task_history_status(
+async def latest_task_history(
     session: SessionDep,
     body: TaskHistoryLatestStatusRequest,
-) -> dict[str, TaskHistoryStatusEnum | None]:
-    """Return the latest known execution status for each requested task name."""
-    logger.debug("Resolving latest history status for %s task(s)", len(body.names))
+) -> dict[str, TaskHistoryLatestStatus | None]:
+    """Return the latest-history projection (status + finished_at) per task name."""
+    logger.debug("Resolving latest history projection for %s task(s)", len(body.names))
     return await TaskHistoryManager.latest_status_by_task_names(session, body.names)
 
 
@@ -687,6 +697,8 @@ async def sync_task_history(
         id=saved.id,
     )
     await maybe_dispatch_chain(synced, was_running=True)
+    if synced.status.is_terminal():
+        await maybe_record_run(synced.id, executor)
     _set_has_logs(
         synced,
         value=await TaskHistoryLogManager.exists_for_task(session, synced.id)

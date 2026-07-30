@@ -16,7 +16,7 @@
 """Define legacy AJAX proxy routes for inventory API schema/table data.
 
 Serve dynamic dropdown data to Jinja2 forms that predate the shared
-``/api/plugins/*`` surface. New plugin API endpoints should register under
+``/api/apps/*`` surface. New plugin API endpoints should register under
 ``app/sep/api/router.py`` instead of being added here.
 """
 
@@ -26,12 +26,13 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.core.pagination import fetch_all_dict_items
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.deps import InventoryAPI, IsAuthenticated
 from app.sep.utils.decorators import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["sep", "inventory"])
+router = APIRouter(route_class=DeprecatedJinja2Route)
 
 
 @router.get("/services/{service_id}/schemas", dependencies=[IsAuthenticated])

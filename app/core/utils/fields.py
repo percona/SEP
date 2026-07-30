@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Annotated, Any, Self, TypeVar
 from urllib.parse import urlparse, urlunparse
 
+from annotated_types import Interval
 from pydantic import (
     AfterValidator,
     AnyUrl,
@@ -50,6 +51,7 @@ from app.core.utils.imports import (
     validate_module_is_importable,
 )
 from app.core.utils.iterators import unique_everseen
+from app.core.utils.json_pointer import validate_json_pointer
 from app.core.utils.path import resolve_relative_path
 
 E = TypeVar("E", bound=Enum)
@@ -202,10 +204,11 @@ class URL(StarletteURL):
         source_type: Any,
         handler: GetCoreSchemaHandler,
     ) -> core_schema.CoreSchema:
-        """Provide the Pydantic core schema for URL validation.
+        """Provide the Pydantic core schema for URL validation and serialization.
 
-        This method integrates the `validate_url` method into Pydantic's
-        validation schema.
+        Integrate the ``validate_url`` method into Pydantic's validation schema
+        and serialize URL values to their string form in JSON mode, so a
+        ``URL``-typed value round-trips through ``model_dump(mode="json")``.
 
         :param source_type: The source type for validation.
         :type source_type: Any
@@ -214,7 +217,12 @@ class URL(StarletteURL):
         :return: The core schema incorporating the URL validation logic.
         :rtype: core_schema.CoreSchema
         """
-        return core_schema.no_info_plain_validator_function(cls.validate_url)
+        return core_schema.no_info_plain_validator_function(
+            cls.validate_url,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                str, when_used="json"
+            ),
+        )
 
     @classmethod
     def validate_url(cls, url: str) -> Self:
@@ -417,6 +425,26 @@ def database_url_normalized_scheme_field_factory(
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
+
+def dsn_safe(value: str) -> str:
+    """Reject DSN/CLI delimiters in a free-typed schema, table, or host name.
+
+    Percona Toolkit DSN strings and comma-separated CLI arguments treat ``,``
+    and ``=`` as structural delimiters. Free-solo reference fields accept either
+    an inventory id (``int``) or a free-typed name (``str``); callers receiving
+    ``int | str`` values should guard with ``isinstance(value, str)`` first.
+
+    :param value: The free-typed name to validate.
+    :return: ``value`` unchanged when it contains no delimiter.
+    :raises ValueError: When ``value`` contains ``,`` or ``=``.
+    """
+    if "," in value or "=" in value:
+        raise ValueError(
+            "Values cannot contain ',' or '=' characters (DSN delimiters)."
+        )
+    return value
+
+
 StrippedNonEmptyStr = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1)
 ]
@@ -424,6 +452,30 @@ StrippedNonEmptyStr = Annotated[
 
 EmptyStrToNone = Annotated[None, BeforeValidator(lambda v: None if v == "" else v)]
 """Convert empty strings to None."""
+
+TCP_PORT_MIN = 1
+TCP_PORT_MAX = 65535
+
+TcpPort = Annotated[int, Field(ge=TCP_PORT_MIN, le=TCP_PORT_MAX)]
+"""Define a TCP port number constrained to the valid 1-65535 range."""
+
+
+def bounded_int_from_empty_str_factory(ge: int, le: int | None = None) -> Any:
+    """Build a bounded optional-int field type that coerces ``""`` to ``None``.
+
+    The bounds sit at the returned type's outer ``Annotated`` level, carried by a single
+    ``Interval`` container, so that Pydantic applies them only to real integers (not the
+    coerced ``None``) and the form-DSL bounds scan reads them (it flattens
+    ``GroupedMetadata`` containers such as ``Interval``). A plain
+    ``int | EmptyStrToNone`` union cannot express this, hence a dedicated factory.
+
+    :param ge: The inclusive lower bound applied to non-empty integer input.
+    :param le: The inclusive upper bound; ``None`` leaves the field unbounded above.
+    :return: An ``Annotated`` optional-int type carrying the bounds and blank coercion.
+    """
+    coerce_blank = BeforeValidator(lambda value: None if value == "" else value)
+    return Annotated[int | None, Interval(ge=ge, le=le), coerce_blank]
+
 
 RelativeFilePathField = Annotated[
     FilePath,
@@ -654,6 +706,13 @@ URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]
 
 This annotated type ensures that the string starts with a forward slash and does
 not contain any whitespace characters.
+"""
+
+JsonPointerStr = Annotated[str, AfterValidator(validate_json_pointer)]
+"""Define a string field holding an RFC 6901 JSON Pointer.
+
+The empty string is the valid root pointer; any other value must start with a
+forward slash and use ``~`` only in a ``~0`` or ``~1`` escape.
 """
 
 StrImportableModule = Annotated[str, AfterValidator(validate_module_is_importable)]

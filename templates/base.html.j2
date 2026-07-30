@@ -84,18 +84,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
                         </button>
                         <div id="userMenu" class="content" aria-hidden="true">
                             <ul role="menu">
-                                {% if user is defined and user.is_admin %}
-                                    <li role="none">
-                                        <a href="{{ casdoor_url }}"
-                                           target="_blank"
-                                           rel="noopener noreferrer"
-                                           role="menuitem"
-                                           class="list-item">
-                                            <span class="label">Manage account (Casdoor)</span>
-                                            <span class="material-symbols-outlined">north_east</span>
-                                        </a>
-                                    </li>
-                                {% endif %}
                                 <li role="none">
                                     <a class="list-item theme-change dark" role="menuitem">
                                         <span class="label">Change to Dark Mode</span>

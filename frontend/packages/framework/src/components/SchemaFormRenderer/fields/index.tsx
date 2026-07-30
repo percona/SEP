@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { PluginField } from '../types';
+import type { AppField } from '../types';
 import { StringField } from './StringField';
 import { IntegerField } from './IntegerField';
 import { FloatField } from './FloatField';
@@ -27,9 +27,14 @@ import { DateTimeField } from './DateTimeField';
 import { FileField } from './FileField';
 import { YamlField } from './YamlField';
 import { ServiceField } from './ServiceField';
+import { MultiServiceField } from './MultiServiceField';
 import { SchemaField } from './SchemaField';
+import { MultiSchemaField } from './MultiSchemaField';
 import { TableField } from './TableField';
+import { MultiTableField } from './MultiTableField';
 import { HostField } from './HostField';
+import { MultiHostField } from './MultiHostField';
+import { RemoteChoiceField } from './RemoteChoiceField';
 import { ScriptPreviewField } from './ScriptPreviewField';
 
 export {
@@ -44,21 +49,26 @@ export {
   FileField,
   YamlField,
   ServiceField,
+  MultiServiceField,
   SchemaField,
+  MultiSchemaField,
   TableField,
+  MultiTableField,
   HostField,
+  MultiHostField,
+  RemoteChoiceField,
   ScriptPreviewField,
 };
 
 interface FieldRendererProps {
-  field: PluginField;
+  field: AppField;
 }
 
 /**
- * Dispatches a PluginField to the concrete component for its `type` discriminator.
+ * Dispatches an AppField to the concrete component for its `type` discriminator.
  *
  * The switch is exhaustive on the discriminated union — adding a new field type
- * to `PluginField` will surface a TypeScript error here until the case is added.
+ * to `AppField` will surface a TypeScript error here until the case is added.
  */
 export function FieldRenderer({ field }: FieldRendererProps) {
   switch (field.type) {
@@ -84,14 +94,24 @@ export function FieldRenderer({ field }: FieldRendererProps) {
       return <YamlField field={field} />;
     case 'service':
       return <ServiceField field={field} />;
+    case 'multi_service':
+      return <MultiServiceField field={field} />;
     case 'schema':
       return <SchemaField field={field} />;
+    case 'multi_schema':
+      return <MultiSchemaField field={field} />;
     case 'table':
       return <TableField field={field} />;
+    case 'multi_table':
+      return <MultiTableField field={field} />;
     case 'host':
       return <HostField field={field} />;
+    case 'multi_host':
+      return <MultiHostField field={field} />;
     case 'script_preview':
       return <ScriptPreviewField field={field} />;
+    case 'remote_choice':
+      return <RemoteChoiceField field={field} />;
     default: {
       const exhaustive: never = field;
       void exhaustive;

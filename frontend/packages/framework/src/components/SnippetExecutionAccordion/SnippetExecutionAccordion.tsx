@@ -33,12 +33,12 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type PluginSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@sep/api';
 import {
-  snippetPluginExecutePath,
-  snippetPluginHistoryPath,
-  snippetPluginSchemaPath,
-} from '../../snippetPluginPaths';
+  snippetAppExecutePath,
+  snippetAppHistoryPath,
+  snippetAppSchemaPath,
+} from '../../snippetAppPaths';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
 import {
   TaskHistoryTable,
@@ -46,9 +46,7 @@ import {
   type TaskHistoryEntry,
 } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
-
-/** Fields always hidden from the dynamic form. */
-const HIDDEN_FORM_FIELDS = new Set(['script_preview']);
+import { useStopTaskHistory } from '../../hooks';
 
 /** Fields excluded from the snippet `args` payload (handled at top level instead). */
 const ARGS_EXCLUDED_FIELDS = new Set(['executor_host', 'sudo', 'script_preview']);
@@ -74,10 +72,10 @@ interface SnippetExecutionRequest {
 }
 
 function useSnippetAccordionSchema(filename: string, enabled: boolean) {
-  return useQuery<PluginSchema>({
+  return useQuery<AppSchema>({
     queryKey: ['snippets', filename, 'schema', { execution_only: true }],
     queryFn: async () => {
-      const { data } = await apiClient.get<PluginSchema>(snippetPluginSchemaPath(filename), {
+      const { data } = await apiClient.get<AppSchema>(snippetAppSchemaPath(filename), {
         params: { execution_only: true },
       });
       return data;
@@ -91,10 +89,7 @@ function useSnippetAccordionExecution(filename: string) {
   const queryClient = useQueryClient();
   return useMutation<ExecuteResponse, Error, SnippetExecutionRequest>({
     mutationFn: async (body) => {
-      const { data } = await apiClient.post<ExecuteResponse>(
-        snippetPluginExecutePath(filename),
-        body,
-      );
+      const { data } = await apiClient.post<ExecuteResponse>(snippetAppExecutePath(filename), body);
       return data;
     },
     onSuccess: () => {
@@ -109,9 +104,7 @@ function useSnippetAccordionHistory(filename: string, enabled: boolean) {
   return useQuery<PaginatedTaskHistory>({
     queryKey: ['snippets', filename, 'history'],
     queryFn: async () => {
-      const { data } = await apiClient.get<PaginatedTaskHistory>(
-        snippetPluginHistoryPath(filename),
-      );
+      const { data } = await apiClient.get<PaginatedTaskHistory>(snippetAppHistoryPath(filename));
       return data;
     },
     enabled,
@@ -147,16 +140,14 @@ export function SnippetExecutionAccordion({
   const schemaQuery = useSnippetAccordionSchema(snippetFilename, expanded);
   const executionMutation = useSnippetAccordionExecution(snippetFilename);
   const historyQuery = useSnippetAccordionHistory(snippetFilename, showHistory);
+  const stop = useStopTaskHistory();
 
   const displayTitle = title ?? snippetFilename;
 
   const hoistingHost = Boolean(executorHost);
   const filteredSections = (schemaQuery.data?.forms ?? []).map((section) => ({
     ...section,
-    fields: section.fields.filter(
-      (field) =>
-        !HIDDEN_FORM_FIELDS.has(field.name) && (field.name !== 'executor_host' || !hoistingHost),
-    ),
+    fields: section.fields.filter((field) => field.name !== 'executor_host' || !hoistingHost),
   }));
 
   const handleSubmit = (values: Record<string, unknown>) => {
@@ -255,6 +246,20 @@ export function SnippetExecutionAccordion({
                 isLoading={historyQuery.isLoading}
                 hideTaskNameColumn
                 onViewLogs={setLogsEntry}
+                onStopTask={(entry) => {
+                  if (entry.id !== null && entry.id !== undefined) {
+                    // This accordion's history is keyed under
+                    // ['snippets', filename, 'history'] and does not poll, so the
+                    // stop hook's ['task-history'] invalidation never reaches it;
+                    // refetch this query directly once the stop succeeds.
+                    stop.mutate(entry.id, {
+                      onSuccess: () => {
+                        historyQuery.refetch();
+                      },
+                    });
+                  }
+                }}
+                isStopping={stop.isPending}
               />
             )}
           </>

@@ -28,12 +28,14 @@ from nomad.api.exceptions import BaseNomadException
 from app import __summary__, __version__
 from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPGoneException
+from app.core.health import build_health_router
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     ProxyEntry,
     settings_override_refresher,
 )
 from app.core.settings_override.models import SettingClassEnum
+from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.connectivity.routes import router as connectivity_router
 from app.tasks.db import get_async_session_maker
@@ -107,9 +109,15 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # too would, in the combined ``app.main:app`` process, have both
             # refreshers publish into it from their separate databases and clobber
             # each other every cycle.
+            # ANONYMIZER_SETTINGS is safe to wire (unlike ALERT above): its proxy
+            # is tasks-track-DB-owned, so no cross-refresher clobber. Without it
+            # the API process serves stale defaults until an in-process PATCH.
             {
                 SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
                     tasks_settings, TasksSettings
+                ),
+                SettingClassEnum.ANONYMIZER_SETTINGS: ProxyEntry(
+                    anonymizer_settings, AnonymizerSettings
                 ),
             },
             settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
@@ -124,6 +132,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 lifespan = tasks_lifespan
 tasks_app = create_app(
+    build_health_router(get_async_session_maker),
     tasks_router,
     periodic_router,
     connectivity_router,

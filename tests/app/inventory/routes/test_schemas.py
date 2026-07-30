@@ -158,6 +158,31 @@ class TestUpdateSchema:
         assert data["name"] == "renamed_schema"
         assert data["service_id"] == service.id
 
+    def test_update_schema_omitting_service_id_preserves_association(
+        self, test_client: TestClient, schema: Schema, service: Service, node: Node
+    ) -> None:
+        """Partial update without service_id succeeds and leaves the FK unchanged."""
+        test_client.post(
+            "/services/",
+            json=ServiceWriteFactory.build(node_id=node.id).model_dump(mode="json"),
+        )
+        response = test_client.put(
+            f"/schemas/{schema.id}", json={"name": "renamed_schema"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "renamed_schema"
+        assert data["service_id"] == service.id
+
+    def test_update_schema_explicit_null_service_id(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Return 400 when service_id is explicitly null on a non-nullable relationship."""
+        payload = {"name": schema.name, "service_id": None}
+        response = test_client.put(f"/schemas/{schema.id}", json=payload)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid service_id: None"
+
 
 class TestDeleteSchema:
     """Test DELETE /schemas/{schema_id} endpoint."""

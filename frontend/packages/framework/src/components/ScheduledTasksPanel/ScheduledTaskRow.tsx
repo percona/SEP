@@ -31,6 +31,7 @@ import TableCell from '@mui/material/TableCell';
 import TableRow from '@mui/material/TableRow';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import { LastRunStatus } from './LastRunStatus';
 import { ScheduledTaskForm } from './ScheduledTaskForm';
 import { describePeriod, formatAbsoluteTime } from './periods';
 import type { AvailableTask } from '../ChainBuilder';
@@ -101,7 +102,16 @@ export function ScheduledTaskRow({
           )}
         </TableCell>
         <TableCell>{formatAbsoluteTime(task.start_time)}</TableCell>
-        <TableCell>{formatAbsoluteTime(task.last_run_at)}</TableCell>
+        <TableCell>
+          <Stack spacing={0.5} alignItems="flex-start">
+            <LastRunStatus status={task.last_run_status} lastRunAt={task.last_run_at} />
+            {task.last_run_at && (
+              <Typography variant="body2" color="text.secondary">
+                {formatAbsoluteTime(task.last_run_at)}
+              </Typography>
+            )}
+          </Stack>
+        </TableCell>
         <TableCell>{formatAbsoluteTime(task.next_run_at)}</TableCell>
         <TableCell>{task.total_run_count}</TableCell>
         <TableCell>
@@ -171,7 +181,6 @@ export function ScheduledTaskRow({
               setConfirmOpen(false);
               onDelete(task);
             }}
-            color="error"
             variant="contained"
             autoFocus
           >

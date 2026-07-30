@@ -26,8 +26,12 @@
             "path": "data.meta._command_line"
           },
           {
-            "label": "Target",
+            "label": "Execution Host",
             "path": "data.meta.target"
+          },
+          {
+            "label": "Database Host",
+            "path": "data.meta._service_host"
           },
           {
             "label": "Schema",
@@ -50,12 +54,13 @@
       "fields": [
         {
           "label": "Task Name",
+          "min_length": 1,
           "name": "task_name",
           "required": true,
           "type": "string"
         },
         {
-          "label": "Executor Host",
+          "label": "Execution Host",
           "name": "hostname",
           "required": true,
           "type": "host"
@@ -84,146 +89,24 @@
     {
       "collapsed_by_default": false,
       "collapsible": false,
-      "fail_when": [
-        {
-          "error_fields": [
-            "schema_id",
-            "table_id",
-            "schema_name",
-            "table_name"
-          ],
-          "fail_when": {
-            "all": [
-              {
-                "not": {
-                  "all_present": [
-                    "schema_id",
-                    "table_id"
-                  ]
-                }
-              },
-              {
-                "not": {
-                  "all": [
-                    {
-                      "truthy": "schema_name"
-                    },
-                    {
-                      "truthy": "table_name"
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          "message": "Either both schema_id and table_id or both schema_name and table_name must be provided."
-        },
-        {
-          "error_fields": [
-            "schema_id",
-            "table_id",
-            "schema_name",
-            "table_name"
-          ],
-          "fail_when": {
-            "all": [
-              {
-                "all_present": [
-                  "schema_id",
-                  "table_id"
-                ]
-              },
-              {
-                "all": [
-                  {
-                    "truthy": "schema_name"
-                  },
-                  {
-                    "truthy": "table_name"
-                  }
-                ]
-              }
-            ]
-          },
-          "message": "Cannot use both schema_id/table_id and schema_name/table_name at the same time."
-        }
-      ],
       "fields": [
         {
+          "allow_custom": true,
           "depends_on": "service_id",
-          "forbidden": [
-            {
-              "when": {
-                "all": [
-                  {
-                    "truthy": "schema_name"
-                  },
-                  {
-                    "truthy": "table_name"
-                  }
-                ]
-              }
-            }
-          ],
+          "description": "Schema to alter; pick from inventory or type a name.",
           "label": "Schema",
-          "name": "schema_id",
-          "required": false,
+          "name": "db_schema",
+          "required": true,
           "type": "schema"
         },
         {
-          "depends_on": "schema_id",
-          "forbidden": [
-            {
-              "when": {
-                "all": [
-                  {
-                    "truthy": "schema_name"
-                  },
-                  {
-                    "truthy": "table_name"
-                  }
-                ]
-              }
-            }
-          ],
+          "allow_custom": true,
+          "depends_on": "db_schema",
+          "description": "Table to alter; pick from inventory or type a name.",
           "label": "Table",
-          "name": "table_id",
-          "required": false,
+          "name": "db_table",
+          "required": true,
           "type": "table"
-        },
-        {
-          "description": "Manual schema name when not selecting from inventory",
-          "forbidden": [
-            {
-              "when": {
-                "all_present": [
-                  "schema_id",
-                  "table_id"
-                ]
-              }
-            }
-          ],
-          "label": "Schema Name",
-          "name": "schema_name",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "description": "Manual table name when not selecting from inventory",
-          "forbidden": [
-            {
-              "when": {
-                "all_present": [
-                  "schema_id",
-                  "table_id"
-                ]
-              }
-            }
-          ],
-          "label": "Table Name",
-          "name": "table_name",
-          "required": false,
-          "type": "string"
         }
       ],
       "render_after_submit": false,
@@ -236,6 +119,7 @@
         {
           "description": "Schema modifications excluding ALTER TABLE keywords (e.g. ADD COLUMN new_col INT, DROP COLUMN old_col)",
           "label": "Alter",
+          "min_length": 1,
           "name": "alter",
           "required": true,
           "type": "string"
@@ -460,15 +344,15 @@
         "sortable": false
       },
       {
-        "format": "chip",
-        "key": "service_type",
-        "label": "Service Type",
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
         "sortable": false
       },
       {
         "format": "relative",
-        "key": "created_at",
-        "label": "Created",
+        "key": "last_executed_at",
+        "label": "Last Executed",
         "sortable": false
       },
       {

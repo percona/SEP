@@ -20,13 +20,18 @@ import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
-import type { ListColumn, ListView } from '@sep/api';
+import {
+  MaterialReactTable,
+  type MRT_ColumnDef,
+  type MRT_PaginationState,
+} from 'material-react-table';
+import { DEFAULT_APP_LIST_LIMIT, type ListColumn, type ListView } from '@sep/api';
 import { SEP_TABLE_CLASS } from '../../constants';
 import { ScheduleCell } from '../ScheduleCell';
+import { TaskHistoryStatusBadge, isTaskHistoryStatus } from '../TaskHistoryTable';
 import {
   selectSchedule,
-  useScheduledTasksForPlugin,
+  useScheduledTasksForApp,
   type PeriodicTaskResponse,
 } from '../ScheduledTasksPanel';
 
@@ -50,6 +55,14 @@ export interface RenderListColumnArgs {
  * row-delete control) is never routed through this override.
  */
 export type RenderListColumnOverride = (args: RenderListColumnArgs) => ReactNode;
+
+/** Server-driven pagination metadata wired into MaterialReactTable manual pagination. */
+export interface SchemaListServerPagination {
+  total: number;
+  offset: number;
+  limit: number;
+  onChange: (next: { offset: number; limit: number }) => void;
+}
 
 interface SchemaListViewProps {
   listView: ListView;
@@ -75,11 +88,21 @@ interface SchemaListViewProps {
    * {@link RenderListColumnOverride}.
    */
   renderListColumn?: RenderListColumnOverride;
+  /**
+   * When set, enables server-driven manual pagination over the current page in
+   * ``data``. Omit or pass ``null`` for legacy bare-array lists (client-side
+   * pagination over the full ``data`` prop).
+   */
+  pagination?: SchemaListServerPagination | null;
 }
 
 function formatCellValue(value: unknown, format: ListColumn['format']): ReactNode {
-  if (value === null) {
-    return '—';
+  if (value === null || value === undefined) {
+    // Time-based columns render an absent value as an empty cell — a
+    // never-executed task has no Last Executed time, and an em-dash there would
+    // read as a misleading placeholder. Other formats keep the em-dash to
+    // signal "no value".
+    return format === 'relative' || format === 'date' ? null : '—';
   }
   const str = String(value);
 
@@ -87,20 +110,12 @@ function formatCellValue(value: unknown, format: ListColumn['format']): ReactNod
     case 'chip':
       return <Chip label={str} size="small" />;
     case 'status':
-      return (
-        <Chip
-          label={str}
-          size="small"
-          color={
-            str === 'completed' || str === 'success'
-              ? 'success'
-              : str === 'failed' || str === 'error'
-                ? 'error'
-                : str === 'running' || str === 'in_progress'
-                  ? 'info'
-                  : 'default'
-          }
-        />
+      // Unrecognized values (no live backend producer) fall back to a plain
+      // chip rather than indexing StatusBadge's STATUS_MAP with an unknown key.
+      return isTaskHistoryStatus(str) ? (
+        <TaskHistoryStatusBadge status={str} />
+      ) : (
+        <Chip label={str} size="small" />
       );
     case 'date':
       return new Date(str).toLocaleDateString();
@@ -140,7 +155,7 @@ const EMPTY_SCHEDULE = new Map<string, PeriodicTaskResponse>();
  * The schedule fetch and the client-side task-name join only happen when the
  * list view declares a `schedule`-format column and a plugin name is provided.
  * In that case rendering is delegated to {@link ScheduleJoinedListView}, which
- * is the only place that mounts `useScheduledTasksForPlugin` — so plugins
+ * is the only place that mounts `useScheduledTasksForApp` — so plugins
  * without a schedule column issue no periodic-tasks request (and need no
  * QueryClient).
  */
@@ -157,10 +172,13 @@ export function SchemaListView(props: SchemaListViewProps) {
  * Fetches the plugin's periodic tasks, builds the by-name lookup, and renders
  * the table. Isolated from {@link SchemaListView} so the schedule hook is only
  * mounted when a schedule column is actually present.
+ *
+ * ``useScheduledTasksForApp`` uses ``fetchAllPages``, so this path may issue up
+ * to ~50 sequential task-list requests alongside the paged list fetch.
  */
 function ScheduleJoinedListView(props: SchemaListViewProps & { pluginName: string }) {
   const { pluginName, disableSchedulePolling = false } = props;
-  const { periodicTasks, isLoading: scheduleLoading } = useScheduledTasksForPlugin(pluginName, {
+  const { periodicTasks, isLoading: scheduleLoading } = useScheduledTasksForApp(pluginName, {
     disablePolling: disableSchedulePolling,
   });
 
@@ -204,12 +222,21 @@ function SchemaListViewCore({
   onDeleteRow,
   deletingRowId,
   renderListColumn,
+  pagination,
   scheduleByTask,
   scheduleLoading = false,
 }: SchemaListViewProps & {
   scheduleByTask: Map<string, PeriodicTaskResponse>;
   scheduleLoading?: boolean;
 }) {
+  const serverPagination = pagination ?? null;
+  const manualPagination = serverPagination !== null;
+  const pageIndex =
+    manualPagination && serverPagination.limit > 0
+      ? Math.floor(serverPagination.offset / serverPagination.limit)
+      : 0;
+  const pageSize = manualPagination ? serverPagination.limit : 10;
+
   const columns = useMemo<MRT_ColumnDef<Record<string, unknown>>[]>(
     () =>
       listView.columns.map((col) => {
@@ -222,7 +249,7 @@ function SchemaListViewCore({
             Cell: ({ row }) => {
               const name = row.original.name;
               // Trim to match how the detail summary derives its lookup key
-              // (PluginDetailPage trims `task.name`), so the list cell and the
+              // (AppDetailPage trims `task.name`), so the list cell and the
               // summary join to the same schedule even with stray whitespace.
               const matched =
                 name === undefined || name === null
@@ -294,10 +321,36 @@ function SchemaListViewCore({
     <MaterialReactTable
       columns={columns}
       data={data}
-      state={{ isLoading }}
+      state={{
+        isLoading,
+        ...(manualPagination && { pagination: { pageIndex, pageSize } }),
+      }}
       enableColumnActions={false}
       enableDensityToggle={false}
       enableFullScreenToggle={false}
+      enablePagination
+      manualPagination={manualPagination}
+      rowCount={manualPagination ? serverPagination.total : undefined}
+      onPaginationChange={
+        manualPagination
+          ? (updater) => {
+              const prev: MRT_PaginationState = { pageIndex, pageSize };
+              const next = typeof updater === 'function' ? updater(prev) : updater;
+              serverPagination.onChange({
+                offset: next.pageIndex * next.pageSize,
+                limit: next.pageSize,
+              });
+            }
+          : undefined
+      }
+      muiTablePaginationProps={
+        manualPagination
+          ? {
+              // Single option: MUI hides the select; see DEFAULT_APP_LIST_LIMIT.
+              rowsPerPageOptions: [DEFAULT_APP_LIST_LIMIT],
+            }
+          : undefined
+      }
       initialState={{
         sorting: listView.default_sort
           ? [
@@ -308,6 +361,7 @@ function SchemaListViewCore({
             ]
           : [],
         density: 'compact',
+        ...(!manualPagination && { pagination: { pageIndex: 0, pageSize: 10 } }),
       }}
       muiTablePaperProps={{
         className: SEP_TABLE_CLASS,

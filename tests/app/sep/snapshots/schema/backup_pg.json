@@ -12,7 +12,7 @@
       {
         "fields": [
           {
-            "label": "Target",
+            "label": "Execution Host",
             "path": "hostname"
           },
           {
@@ -48,12 +48,13 @@
       "fields": [
         {
           "label": "Task Name",
+          "min_length": 1,
           "name": "task_name",
           "required": true,
           "type": "string"
         },
         {
-          "label": "Executor Host",
+          "label": "Execution Host",
           "name": "hostname",
           "required": true,
           "type": "host"
@@ -78,6 +79,7 @@
         {
           "description": "pgBackRest stanza name as defined in pgbackrest.conf on the host (e.g. ``sep-test``). Passed verbatim as ``--stanza`` to every pgbackrest invocation.",
           "label": "Stanza",
+          "min_length": 1,
           "name": "stanza",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
           "required": true,
@@ -151,6 +153,7 @@
         },
         {
           "label": "Backup Directory",
+          "min_length": 1,
           "name": "backup_dir",
           "required": true,
           "type": "string"
@@ -175,7 +178,7 @@
       },
       {
         "key": "hostname",
-        "label": "Executor Host",
+        "label": "Execution Host",
         "sortable": false
       },
       {
@@ -188,6 +191,12 @@
         "format": "relative",
         "key": "created_at",
         "label": "Created",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
         "sortable": false
       },
       {

@@ -1,10 +1,14 @@
 ---
-applyTo: "app/**/models.py,app/**/schema.py,app/*/migrations/**/*.py,app/*/db/seed.py,app/sep/plugins/**/api_routes.py,settings.yaml"
+applyTo: "app/**/models.py,app/**/schema.py,app/**/migrations/**/*.py,app/*/db/seed.py,app/sep/apps/**/api_routes.py,settings.yaml"
 ---
 
 # Backwards Compatibility
 
 SEP runs three API services (SEP, Inventory, Tasks) consumed by the web UI, CLI tools, and background executors. Changes to public contracts can break consumers silently.
+
+## Released-ness is the precondition
+
+Before flagging any break below, check whether the symbol's introducing PR is still inside the current `[Unreleased]` window (its changelog fragment sits unreleased in `changelog.d/`). A symbol that nothing has shipped a dependency on carries no backwards-compatibility obligation — do NOT demand a shim, alias, or two-phase migration for a field / enum / column / config key added earlier in the same unreleased cycle.
 
 ## API Response Shape (`*Response` models)
 
@@ -30,6 +34,8 @@ The migration-then-deploy window means both old and new code may run against the
 
 Add NOT NULL with `server_default`, or add nullable first, backfill, tighten. Drop/rename in two phases: stop reading in code (deploy), then drop/rename. Removing an enum value from a `StrEnum` used in a DB column orphans rows — migrate first.
 
+Retiring a previously-valid **constrained-vocabulary value** (a `StrEnum` member, a literal-set option, a `task.data["meta"]["args"]` arg, a JSON-config key) needs a one-shot data migration on the owning track. Remediating with in-place read-path coercion (`if value == "old": value = "new"` inside a parser/deserializer) is NOT equivalent — it accumulates unbounded legacy debt. Flag it.
+
 ## Enums
 
 Members appear in API responses, DB columns, task payloads, and config. Removing a member breaks all of them. Renaming a member's **value** (string/int) equals removing the old + adding the new. New members are safe iff consumers handle unknown values gracefully — confirm.
@@ -44,10 +50,11 @@ Members appear in API responses, DB columns, task payloads, and config. Removing
 
 - Changing an endpoint's error status code (404 → 410) breaks consumers matching on codes.
 - Changing the error detail structure (`str` → `dict`) breaks consumers parsing it.
+- Adding a new error case (a status code the endpoint didn't return before) is lower-risk but should still be documented.
 
 ## Task Payloads
 
-Serialized at task creation, deserialized by executors — potentially on a different code version. Mismatch causes `TaskDataNotFoundInExecutorException`.
+Serialized at task creation, deserialized by executors — potentially on a different code version. Mismatch causes `TaskDataNotFoundInExecutorError`.
 
 - Adding a required field breaks deserialization of already-queued tasks. Use optional fields with defaults.
 - Removing a field is safe (Pydantic ignores extras) **unless** the executor reads it.
@@ -60,9 +67,16 @@ System and periodic tasks are seeded at startup via `get_or_create`. Orphaned pe
 - Renaming a system task's `name` creates a new entry and orphans the old — scheduled jobs or user periodic tasks referencing the old name break.
 - Removing a seed entry deletes it on next startup. Dependent user-configured periodic tasks or Nomad jobs fail silently.
 - Renaming a `meta` key in a Nomad job template breaks in-flight jobs dispatched with the old parameter names.
+- Changing an `IntervalSchedule` value (30s → 5m) is safe — `get_or_create` updates it in place. Removing the schedule field entirely breaks the periodic task that references it.
+
+## Behavioral asymmetry across processes / deployments / install-states
+
+A feature that behaves differently by process (API vs Celery worker), deployment, or install-state (fresh vs upgraded DB) is a silent-break risk even when no contract changed. Common shapes: HOT-reloaded settings, `server_default` backfill vs ORM default, feature flags, router-level gates, SQLAlchemy event listeners that only fire in the process that registered them. Reviewer prompt: across which axes does the new behaviour NOT propagate uniformly? Each asymmetric axis should be named in the changelog fragment.
 
 ## Severity guide
 
-**Critical:** Removed/renamed `*Response` field; NOT NULL without `server_default`; enum member removed/renamed; task payload gained a required field without default; config key renamed without fallback; system task renamed.
+**Critical:** Removed/renamed `*Response` field; NOT NULL without `server_default`; enum member removed/renamed; task payload gained a required field without default; config key renamed without fallback; system or periodic task renamed in seed data; constrained-vocabulary value retired via read-path coercion instead of a data migration.
 
-**Important:** New required field on `*Write`; column dropped still referenced by current code; error status/detail changed; endpoint removed or path changed; seed entry removed; Nomad parameter structure changed.
+**Important:** New required field on `*Write`; column dropped still referenced by current code; error status/detail changed; endpoint removed or URL path changed (including a router-level `prefix=` change on `APIRouter` / `include_router`, which silently re-paths every endpoint on that router — confirm the re-path is required by the ticket, since path normalization bundled into unrelated work is also a scope question); seed entry removed; Nomad parameter structure changed; behavioral asymmetry across processes/deployments/install-states not named in the changelog fragment.
+
+**Should note:** New enum member (verify consumers handle unknown values); new optional `*Response` field (confirm the default serializes cleanly); config key added as required (confirm every deployment env will set it).

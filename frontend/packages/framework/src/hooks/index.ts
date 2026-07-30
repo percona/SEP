@@ -32,13 +32,22 @@ export { useLogDownload } from './useLogDownload';
 export type { DownloadLog } from './useLogDownload';
 
 export { useServices } from './useServices';
-export type { ServiceOption, ServiceType, UseServicesOptions } from './useServices';
+export type {
+  ServiceOption,
+  ServiceNodeOption,
+  ServiceType,
+  UseServicesOptions,
+} from './useServices';
+export { useResolvedServiceField } from './useResolvedServiceField';
+export type { ResolvedServiceField } from './useResolvedServiceField';
 export { useSchemas } from './useSchemas';
 export type { SchemaOption, UseSchemasOptions } from './useSchemas';
 export { useTables } from './useTables';
 export type { TableOption, UseTablesOptions } from './useTables';
 export { useHosts } from './useHosts';
 export type { HostOption, UseHostsOptions } from './useHosts';
+export { useRemoteChoices } from './useRemoteChoices';
+export type { UseRemoteChoicesOptions } from './useRemoteChoices';
 
 export {
   useTaskHistory,
@@ -54,6 +63,7 @@ export type {
   TaskHistoryEntry,
   PaginatedTaskHistory,
   UseTaskHistoryOptions,
+  TaskExecuteBody,
 } from './useTaskHistory';
 
 export { useTaskHistoryFiles } from './useTaskHistoryFiles';
@@ -62,9 +72,9 @@ export type { FileMetadata, TaskHistoryFilesMap } from './useTaskHistoryFiles';
 export { useTaskFileDownload } from './useTaskFileDownload';
 export type { TaskFileDownloadParams } from './useTaskFileDownload';
 
-export { useSnippetPluginSchema } from './useSnippetPluginSchema';
-export { useSnippetPluginExecution } from './useSnippetPluginExecution';
-export type { UseSnippetPluginExecutionOptions } from './useSnippetPluginExecution';
+export { useSnippetAppSchema } from './useSnippetAppSchema';
+export { useSnippetAppExecution } from './useSnippetAppExecution';
+export type { UseSnippetAppExecutionOptions } from './useSnippetAppExecution';
 
 export { useTaskStats } from './useTaskStats';
 export type { TaskStatsView } from './useTaskStats';

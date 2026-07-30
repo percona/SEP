@@ -16,10 +16,12 @@
 """Define tests for base SEP dependencies."""
 
 from collections import OrderedDict
+from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.testclient import TestClient
 from itsdangerous import BadSignature
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -28,6 +30,9 @@ from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
+from app.core.auth.models import OAuthToken
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
@@ -35,8 +40,11 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
-from app.models import CasdoorUser
-from app.sep.config import Plugin, sep_settings
+from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.registry import AppRegistry, build_app_registry
+from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.config import App, sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
@@ -54,6 +62,7 @@ from app.sep.deps import (
     get_executor_hosts,
     get_executor_hosts_context,
     get_inventory_api,
+    get_pmm_api,
     get_task_by_name,
     get_task_history,
     get_tasks_api,
@@ -63,17 +72,19 @@ from app.sep.deps import (
     get_username_mapping,
     is_bearer_authenticated,
     PROTECTED_APP_KEYS,
+    protected_task_guard,
+    reject_if_protected,
     require_app_enabled,
     require_bearer_for_unsafe_methods,
+    require_pmm_api,
+    resolve_ambient_session_token,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
-from app.sep.plugins.framework.registry import build_app_registry
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 from tests.app.factories import (
     CasdoorUserFactory,
@@ -112,6 +123,69 @@ def _make_request(method: str = "GET", authorization: str | None = None) -> Requ
     req = Request(scope)
     req.state.messages = OrderedDict()
     return req
+
+
+class TestResolveAmbientSessionToken:
+    """Test ``resolve_ambient_session_token`` gating and silent-fallback behavior."""
+
+    @staticmethod
+    def _request(cookies: dict[str, str] | None = None) -> Request:
+        """Build a minimal GET request carrying ``cookies`` in the Cookie header."""
+        headers = []
+        if cookies:
+            joined = "; ".join(f"{name}={value}" for name, value in cookies.items())
+            headers.append((b"cookie", joined.encode()))
+        return Request(
+            {"type": "http", "headers": headers, "method": "GET", "path": "/"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_none_when_toggle_disabled(self, grafana_mock) -> None:
+        """Assert the helper no-ops when the toggle is off, even under Grafana."""
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_session_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_provider_not_grafana(self, mocker) -> None:
+        """Assert a non-Grafana active provider yields ``None`` (AC #7)."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_session_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_cookie_absent(self, grafana_mock, mocker) -> None:
+        """Assert an absent session cookie yields ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request()
+        assert await resolve_ambient_session_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_returns_token_on_happy_path(
+        self, grafana_mock, grafana_user_record, mocker
+    ) -> None:
+        """Assert a valid ambient session mints a token pair through the real model."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "ambient"})
+
+        token = await resolve_ambient_session_token(request)
+
+        assert isinstance(token, OAuthToken)
+        assert token.access_token
+        assert token.refresh_token
+        grafana_mock.get_current_user.assert_awaited_once_with("ambient")
+
+    @pytest.mark.asyncio
+    async def test_operational_failure_logs_and_returns_none(
+        self, grafana_mock, mocker
+    ) -> None:
+        """Assert an operational upstream failure logs a warning and falls back to ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        grafana_mock.get_current_user.side_effect = GrafanaException()
+        warning = mocker.patch("app.sep.deps.logger.warning")
+        request = self._request({"grafana_session": "s"})
+
+        assert await resolve_ambient_session_token(request) is None
+        warning.assert_called_once()
 
 
 class TestGetBaseUrl:
@@ -420,42 +494,46 @@ class TestGetUsernameMapping:
     """Test get_username_mapping dependency."""
 
     @pytest.mark.asyncio
-    async def test_casdoor_failure_returns_empty_dict(self) -> None:
-        """Assert Casdoor API failure returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
-                side_effect=ValueError("connection failed")
-            )
+    async def test_provider_failure_returns_empty_dict(self) -> None:
+        """Assert an auth-provider failure returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=ValueError("connection failed")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_http_exception_returns_empty_dict(self) -> None:
-        """Assert HTTPException from Casdoor returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
-                side_effect=HTTPException(status_code=500, detail="fail")
-            )
+        """Assert an HTTPException from the provider returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=HTTPException(status_code=500, detail="fail")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_key_error_returns_empty_dict(self) -> None:
-        """Assert KeyError from malformed response returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(side_effect=KeyError("missing"))
+        """Assert a KeyError from a malformed response returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=KeyError("missing")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_attribute_error_returns_empty_dict(self) -> None:
         """Assert AttributeError (e.g. session not initialized) returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(
                 side_effect=AttributeError(
                     "'NoneType' object has no attribute 'request'"
                 )
-            )
+            ),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
@@ -500,6 +578,86 @@ class TestGetTasksApi:
         result = await gen.__anext__()
         assert result is mock_authenticated
         mock_client.auth.assert_called_once_with("test-token")
+
+
+class TestGetPmmApi:
+    """Test the ``get_pmm_api`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_endpoint_not_configured(self):
+        """Assert ``None`` is returned when PMM endpoint is not set."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = None
+            mock_settings.PMM.api_key = None
+            result = await get_pmm_api()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_api_key_not_configured(self):
+        """Assert ``None`` is returned when PMM API key is not set."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = None
+            result = await get_pmm_api()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_configured(self):
+        """Assert a ``PMMRemoteAPI`` is returned when PMM is configured."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = True
+            mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            result = await get_pmm_api()
+        assert result is mock_client
+        mock_settings.get_remote_api.assert_awaited_once_with(
+            PMMRemoteAPI,
+            endpoint="https://pmm.example.com",
+            api_key="secret-key",
+            verify_ssl=True,
+            ssl_cafile="/etc/ssl/ca.pem",
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_configured_verify_ssl_false(self) -> None:
+        """Assert ``verify_ssl=False`` is threaded through to ``get_remote_api``."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = False
+            mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            result = await get_pmm_api()
+        assert result is mock_client
+        mock_settings.get_remote_api.assert_awaited_once_with(
+            PMMRemoteAPI,
+            endpoint="https://pmm.example.com",
+            api_key="secret-key",
+            verify_ssl=False,
+            ssl_cafile="/etc/ssl/ca.pem",
+        )
+
+
+class TestRequirePmmApi:
+    """Test the ``require_pmm_api`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_available(self) -> None:
+        """Assert the PMM API client is returned when it is not ``None``."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        result = await require_pmm_api(mock_client)
+        assert result is mock_client
+
+    @pytest.mark.asyncio
+    async def test_raises_service_unavailable_when_none(self) -> None:
+        """Assert ``HTTPServiceUnavailableException`` is raised when PMM is ``None``."""
+        with pytest.raises(HTTPServiceUnavailableException) as exc:
+            await require_pmm_api(None)
+        assert exc.value.detail == "PMM is not configured"
 
 
 class TestGetExecutorHosts:
@@ -592,21 +750,21 @@ class TestGetTaskByName:
     @pytest.mark.asyncio
     async def test_owner_mismatch_raises_not_found(self) -> None:
         """Assert wrong owner raises 404."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         mock_api = AsyncMock()
         mock_api.get.return_value = task.model_dump(mode="json")
 
         with pytest.raises(HTTPNotFoundException):
-            await get_task_by_name(mock_api, task.name, owner=TaskOwner.ALTERS)
+            await get_task_by_name(mock_api, task.name, owner="ALTERS")
 
     @pytest.mark.asyncio
     async def test_matching_owner_returns_task(self) -> None:
         """Assert correct owner returns the task."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         mock_api = AsyncMock()
         mock_api.get.return_value = task.model_dump(mode="json")
 
-        result = await get_task_by_name(mock_api, task.name, owner=TaskOwner.BACKUPS)
+        result = await get_task_by_name(mock_api, task.name, owner="BACKUPS")
         assert isinstance(result, Task)
         assert result.name == task.name
 
@@ -626,7 +784,7 @@ class TestGetTaskHistory:
     @pytest.mark.asyncio
     async def test_owner_mismatch_raises_not_found(self) -> None:
         """Assert wrong owner raises 404."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         history_data = {
             "id": 1,
             "execution_request": {"tracking": {}},
@@ -641,7 +799,7 @@ class TestGetTaskHistory:
         mock_api.get.return_value = history_data
 
         with pytest.raises(HTTPNotFoundException):
-            await get_task_history(mock_api, 1, owner=TaskOwner.ALTERS)
+            await get_task_history(mock_api, 1, owner="ALTERS")
 
 
 class TestGetTasksContext:
@@ -683,6 +841,7 @@ class TestGetTasksContext:
             mock_remote_api,
             get_task_info,
             executor_hosts_ctx,
+            service_type=ServiceTypeEnum.MYSQL,
         )
         assert context["services"][0]["id"] == created_service.id
         assert context["executor_hosts"] == [
@@ -715,6 +874,7 @@ class TestGetTasksContext:
             mock_api,
             lambda _: {},
             executor_hosts_ctx,
+            service_type=ServiceTypeEnum.MYSQL,
         )
 
         assert context["connectivity_check_default"] is default_value
@@ -762,6 +922,7 @@ class TestGetTasksContext:
             mock_api,
             lambda _: {},
             executor_hosts_ctx,
+            service_type=ServiceTypeEnum.MYSQL,
         )
         assert len(context["pending_tasks"]) == 1
         assert context["pending_tasks"][0]["id"] == PENDING_HISTORY_ID
@@ -769,6 +930,41 @@ class TestGetTasksContext:
         assert context["running_tasks"][0]["id"] == RUNNING_HISTORY_ID
         assert len(context["history_tasks"]) == 1
         assert context["history_tasks"][0]["id"] == SUCCESS_HISTORY_ID
+
+    @pytest.mark.asyncio
+    async def test_service_type_scopes_services_and_owner_filters_tasks(self) -> None:
+        """Assert the ``/services/`` fetch scopes by ``service_type``, tasks by owner.
+
+        Exercises AC6's ``get_tasks_context`` clause: a brand-new owner string no
+        core module knows still round-trips, with the caller-supplied
+        ``service_type`` driving the inventory fetch.
+        """
+        mock_api = AsyncMock()
+        mock_api.get = AsyncMock(
+            side_effect=[
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                [],
+            ]
+        )
+        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
+
+        await get_tasks_context(
+            mock_api,
+            mock_api,
+            lambda _: {},
+            executor_hosts_ctx,
+            owner="CONTRACT_NEW_OWNER",
+            service_type=ServiceTypeEnum.POSTGRESQL,
+        )
+
+        calls = mock_api.get.await_args_list
+        services_call = next(call for call in calls if call.args[0] == "/services/")
+        assert (
+            services_call.kwargs["params"]["service_type"] == ServiceTypeEnum.POSTGRESQL
+        )
+        tasks_call = next(call for call in calls if call.args[0] == "/")
+        assert tasks_call.kwargs["params"]["owner"] == "CONTRACT_NEW_OWNER"
 
 
 class TestGetTasksIndexContext:
@@ -795,7 +991,7 @@ class TestGetTasksIndexContext:
                 },
                 [{"task": "backup-task", "enabled": True}],
                 {
-                    "items": [{"name": "backup-task", "owner": TaskOwner.BACKUPS}],
+                    "items": [{"name": "backup-task", "owner": "BACKUPS"}],
                     "total": 1,
                     "offset": 0,
                     "limit": 50,
@@ -812,7 +1008,7 @@ class TestGetTasksIndexContext:
         )
 
         with patch("app.sep.deps.sep_settings") as mock_sep:
-            mock_sep.PLUGINS = []
+            mock_sep.APPS = []
             context = await get_tasks_index_context(
                 mock_inv_api, mock_tasks_api, default_context, executor_hosts_ctx
             )
@@ -823,7 +1019,7 @@ class TestGetTasksIndexContext:
         assert "is_task_manager_enabled" in context
         assert context["is_task_manager_enabled"] is False
         assert context["nodes"] == EXPECTED_NODE_COUNT
-        assert context["periodic_tasks"][0]["owner"] == TaskOwner.BACKUPS
+        assert context["periodic_tasks"][0]["owner"] == "BACKUPS"
 
     @pytest.mark.asyncio
     async def test_task_manager_enabled(self) -> None:
@@ -936,6 +1132,106 @@ class TestCheckForConflictedRunningTasks:
             ]
         )
         await check_for_conflicted_running_tasks("test-task", mock_api)
+
+
+class TestRejectIfProtected:
+    """Test the shared reject_if_protected check."""
+
+    def test_protected_task_raises_edit_message(self) -> None:
+        """Assert a protected task raises 409 with the default edit message."""
+        task = TaskFactory.build(owner="BACKUPS", protected=True)
+        with pytest.raises(HTTPConflictException) as exc_info:
+            reject_if_protected(task)
+        assert exc_info.value.detail == "Cannot edit a protected task."
+
+    def test_protected_task_raises_delete_message(self) -> None:
+        """Assert action='delete' yields the delete-specific 409 message."""
+        task = TaskFactory.build(owner="ALTERS", protected=True)
+        with pytest.raises(HTTPConflictException) as exc_info:
+            reject_if_protected(task, action="delete")
+        assert exc_info.value.detail == "Cannot delete a protected task."
+
+    def test_unprotected_task_returns_same_task(self) -> None:
+        """Assert an unprotected task is returned unchanged."""
+        task = TaskFactory.build(owner="BACKUPS", protected=False)
+        assert reject_if_protected(task) is task
+
+    def test_protected_none_returns_task(self) -> None:
+        """Assert a falsy/None protected flag does not raise."""
+        task = TaskFactory.build(owner="BACKUPS")
+        task.protected = None
+        assert reject_if_protected(task, action="delete") is task
+
+
+class TestProtectedTaskGuard:
+    """Test the protected_task_guard dependency factory.
+
+    These exercise the factory through real FastAPI dependency resolution: the
+    built guard is mounted on a probe route so ``Depends(task_dep)`` actually
+    resolves the supplied dependency. This validates that the factory is wired
+    to ``task_dep`` (the mock is awaited), not just that the inner rejection
+    body works.
+    """
+
+    @staticmethod
+    def _build_client(
+        task: Task, *, action: str = "edit"
+    ) -> tuple[TestClient, list[bool]]:
+        """Mount ``protected_task_guard(task_dep)`` on a probe route.
+
+        Builds a real async ``task_dep`` that records each invocation, so the
+        returned ``calls`` list proves FastAPI resolved the guard through
+        ``Depends(task_dep)`` rather than the guard reaching the task by another
+        path.
+
+        :param task: The task the resolved dependency should return.
+        :type task: Task
+        :param action: The action verb forwarded to the guard factory.
+        :type action: str
+        :return: The test client and the per-request invocation record.
+        :rtype: tuple[TestClient, list[bool]]
+        """
+        calls: list[bool] = []
+
+        async def task_dep() -> Task:
+            calls.append(True)
+            return task
+
+        guard = protected_task_guard(task_dep, action=action)
+        app = FastAPI()
+
+        @app.get("/probe")
+        async def _probe(resolved: Annotated[Task, Depends(guard)]) -> dict[str, str]:
+            return {"name": resolved.name}
+
+        return TestClient(app), calls
+
+    def test_guard_rejects_protected_task(self) -> None:
+        """Assert the built dependency resolves task_dep then raises 409."""
+        task = TaskFactory.build(owner="BACKUPS", protected=True)
+        client, calls = self._build_client(task)
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Cannot edit a protected task."
+        assert calls == [True]
+
+    def test_guard_delete_verb(self) -> None:
+        """Assert action='delete' propagates to the built dependency message."""
+        task = TaskFactory.build(owner="ALTERS", protected=True)
+        client, calls = self._build_client(task, action="delete")
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Cannot delete a protected task."
+        assert calls == [True]
+
+    def test_guard_passes_unprotected_task(self) -> None:
+        """Assert the built dependency returns an unprotected task unchanged."""
+        task = TaskFactory.build(owner="BACKUPS", protected=False)
+        client, calls = self._build_client(task)
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"name": task.name}
+        assert calls == [True]
 
 
 class TestExecutorHostsContext:
@@ -1315,7 +1611,7 @@ class TestRequireAppEnabled:
 
     @pytest.mark.asyncio
     async def test_gate_passes_when_enabled(self, session) -> None:
-        """The gate returns ``None`` when the app is ``ENABLED``."""
+        """Assert the gate returns ``None`` when the app is ``ENABLED``."""
         session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
         )
@@ -1333,7 +1629,7 @@ class TestRequireAppEnabled:
         ],
     )
     async def test_gate_raises_503_for_non_enabled_states(self, session, state) -> None:
-        """The gate raises 503 whenever the app is not ``ENABLED``."""
+        """Assert the gate raises 503 whenever the app is not ``ENABLED``."""
         session.add(AppState(app_key="snippets", lifecycle_state=state))
         await session.commit()
         gate = require_app_enabled("snippets")
@@ -1351,6 +1647,62 @@ class TestRequireAppEnabled:
         """``inventory`` is the protected key the mount loops must skip."""
         assert "inventory" in PROTECTED_APP_KEYS
 
+    @staticmethod
+    def _dependent_registry() -> AppRegistry:
+        """Build a two-app registry where ``dependent`` requires ``dep``."""
+        return AppRegistry(
+            [
+                BaseApp(
+                    key="dependent",
+                    name="dependent",
+                    display_name="dependent",
+                    uri_path="/dependent",
+                    requires_apps=("dep",),
+                ),
+                BaseApp(
+                    key="dep",
+                    name="dep",
+                    display_name="dep",
+                    uri_path="/dep",
+                ),
+            ]
+        )
+
+    @pytest.mark.asyncio
+    async def test_gate_503_when_dependency_disabled(self, session) -> None:
+        """Assert the gate 503s on the dependent's key when a required app is disabled."""
+        session.add(AppState(app_key="dep", lifecycle_state=AppLifecycleEnum.DISABLED))
+        await session.commit()
+        with patch(
+            "app.sep.apps.framework.registry.get_app_registry",
+            return_value=self._dependent_registry(),
+        ):
+            gate = require_app_enabled("dependent")
+            with pytest.raises(HTTPServiceUnavailableException) as exc_info:
+                await gate(session)
+        assert "dependent" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_gate_passes_when_dependency_enabled(self, session) -> None:
+        """Assert the gate passes when both the app and its dependency are enabled."""
+        with patch(
+            "app.sep.apps.framework.registry.get_app_registry",
+            return_value=self._dependent_registry(),
+        ):
+            gate = require_app_enabled("dependent")
+            assert await gate(session) is None
+
+    @pytest.mark.asyncio
+    async def test_gate_fail_open_on_db_error(self, session) -> None:
+        """Assert a DB read failure degrades to allowing the request (fail-open)."""
+        with patch.object(
+            AppStateManager,
+            "all_lifecycle_states",
+            side_effect=SQLAlchemyError("db down"),
+        ):
+            gate = require_app_enabled("snippets")
+            assert await gate(session) is None
+
 
 class TestGetToggleableAppKey:
     """Test app-key resolver used by the app-state toggle endpoint."""
@@ -1360,11 +1712,11 @@ class TestGetToggleableAppKey:
     ) -> None:
         """A configured, non-protected key resolves to itself."""
         monkeypatch.setattr(
-            "app.sep.plugins.framework.registry.get_app_registry",
+            "app.sep.apps.framework.registry.get_app_registry",
             lambda: build_app_registry(
                 [
-                    Plugin(name="Inventory", module_name="inventory"),
-                    Plugin(name="Snippet Manager", module_name="snippets"),
+                    App(name="Inventory", module_name="inventory"),
+                    App(name="Snippet Manager", module_name="snippets"),
                 ]
             ),
         )
@@ -1380,9 +1732,9 @@ class TestGetToggleableAppKey:
     ) -> None:
         """An unconfigured key raises 404."""
         monkeypatch.setattr(
-            "app.sep.plugins.framework.registry.get_app_registry",
+            "app.sep.apps.framework.registry.get_app_registry",
             lambda: build_app_registry(
-                [Plugin(name="Snippet Manager", module_name="snippets")]
+                [App(name="Snippet Manager", module_name="snippets")]
             ),
         )
         with pytest.raises(HTTPNotFoundException):
@@ -1393,12 +1745,12 @@ class TestGetDefaultContextPluginFiltering:
     """Test that ``get_default_context`` filters the sidebar by app state."""
 
     @staticmethod
-    def _plugins() -> list[Plugin]:
+    def _plugins() -> list[App]:
         """Build a representative inventory + two non-protected plugins."""
         return [
-            Plugin(name="Inventory", module_name="inventory"),
-            Plugin(name="Snippet Manager", module_name="snippets"),
-            Plugin(name="Checksums", module_name="checksums"),
+            App(name="Inventory", module_name="inventory"),
+            App(name="Snippet Manager", module_name="snippets"),
+            App(name="Checksums", module_name="checksums"),
         ]
 
     @pytest.mark.asyncio
@@ -1423,7 +1775,7 @@ class TestGetDefaultContextPluginFiltering:
 
         with (
             patch(
-                "app.sep.plugins.framework.registry.get_app_registry",
+                "app.sep.apps.framework.registry.get_app_registry",
                 return_value=build_app_registry(self._plugins()),
             ),
             patch("app.sep.deps.settings"),
@@ -1448,7 +1800,7 @@ class TestGetDefaultContextPluginFiltering:
 
         with (
             patch(
-                "app.sep.plugins.framework.registry.get_app_registry",
+                "app.sep.apps.framework.registry.get_app_registry",
                 return_value=build_app_registry(self._plugins()),
             ),
             patch("app.sep.deps.settings"),
@@ -1468,7 +1820,7 @@ class TestGetDefaultContextPluginFiltering:
         """A configured plugin with no DB row is shown (missing -> enabled)."""
         with (
             patch(
-                "app.sep.plugins.framework.registry.get_app_registry",
+                "app.sep.apps.framework.registry.get_app_registry",
                 return_value=build_app_registry(self._plugins()),
             ),
             patch("app.sep.deps.settings"),
@@ -1480,15 +1832,109 @@ class TestGetDefaultContextPluginFiltering:
         keys = {p.key for p in context["plugins"]}
         assert keys == {"inventory", "snippets", "checksums"}
 
+    @staticmethod
+    def _dependent_registry() -> AppRegistry:
+        """Build a registry where ``dependent`` requires ``snippets``."""
+        return AppRegistry(
+            [
+                BaseApp(
+                    key="inventory",
+                    name="inventory",
+                    display_name="Inventory",
+                    uri_path="/inventory",
+                ),
+                BaseApp(
+                    key="snippets",
+                    name="snippets",
+                    display_name="Snippets",
+                    uri_path="/snippets",
+                ),
+                BaseApp(
+                    key="dependent",
+                    name="dependent",
+                    display_name="Dependent",
+                    uri_path="/dependent",
+                    requires_apps=("snippets",),
+                ),
+            ]
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_app_hidden_when_dependency_disabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """Assert an app is dropped from the sidebar when a required app is disabled."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+        with (
+            patch(
+                "app.sep.apps.framework.registry.get_app_registry",
+                return_value=self._dependent_registry(),
+            ),
+            patch("app.sep.deps.settings"),
+        ):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert "dependent" not in keys
+        assert "snippets" not in keys
+        assert "inventory" in keys
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_app_shown_when_dependency_enabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """Assert an app stays in the sidebar when its dependency is enabled (missing row)."""
+        with (
+            patch(
+                "app.sep.apps.framework.registry.get_app_registry",
+                return_value=self._dependent_registry(),
+            ),
+            patch("app.sep.deps.settings"),
+        ):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert {"inventory", "snippets", "dependent"} <= keys
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_alert_troubleshooting_hidden_when_snippets_disabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """Drop Alert Troubleshooting from the sidebar when snippets is disabled."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        with patch("app.sep.deps.settings"):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert "alert_troubleshooting" not in keys
+        assert "snippets" not in keys
+        assert "inventory" in keys
+
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")
     async def test_db_failure_degrades_to_showing_all_apps(
         self, session, dummy_request, regular_user
     ) -> None:
-        """A DB read failure shows every app so the page (and error pages) render."""
+        """Assert a DB read failure shows every app so the page (and error pages) render."""
         with (
             patch(
-                "app.sep.plugins.framework.registry.get_app_registry",
+                "app.sep.apps.framework.registry.get_app_registry",
                 return_value=build_app_registry(self._plugins()),
             ),
             patch("app.sep.deps.settings"),

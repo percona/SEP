@@ -17,10 +17,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 
-const { useScheduledTasksForPluginMock } = vi.hoisted(() => ({
-  useScheduledTasksForPluginMock: vi.fn(),
+const { useScheduledTasksForAppMock } = vi.hoisted(() => ({
+  useScheduledTasksForAppMock: vi.fn(),
 }));
 
 // Mock only the schedule hook; pull the real period/time helpers from their
@@ -29,12 +29,14 @@ const { useScheduledTasksForPluginMock } = vi.hoisted(() => ({
 // whole suite runs.
 vi.mock('../ScheduledTasksPanel', async () => {
   const periods = await import('../ScheduledTasksPanel/periods');
+  const { LastRunStatus } = await import('../ScheduledTasksPanel/LastRunStatus');
   return {
-    useScheduledTasksForPlugin: (...args: unknown[]) => useScheduledTasksForPluginMock(...args),
+    useScheduledTasksForApp: (...args: unknown[]) => useScheduledTasksForAppMock(...args),
     describePeriod: periods.describePeriod,
     formatRelativeTime: periods.formatRelativeTime,
     formatAbsoluteTime: periods.formatAbsoluteTime,
     selectSchedule: periods.selectSchedule,
+    LastRunStatus,
   };
 });
 
@@ -64,7 +66,7 @@ function makePeriodic(overrides: Partial<PeriodicTaskResponse> = {}): PeriodicTa
 }
 
 function setup(periodicTasks: PeriodicTaskResponse[], isLoading = false) {
-  useScheduledTasksForPluginMock.mockReturnValue({ periodicTasks, isLoading });
+  useScheduledTasksForAppMock.mockReturnValue({ periodicTasks, isLoading });
 }
 
 function renderSummary(taskName = 'plugin-task') {
@@ -73,7 +75,7 @@ function renderSummary(taskName = 'plugin-task') {
       <ScheduleSummary
         pluginName="archives"
         taskName={taskName}
-        scheduleHref="/plugins/archives/schedule"
+        scheduleHref="/apps/archives/schedule"
         disablePolling
       />
     </MemoryRouter>,
@@ -83,7 +85,7 @@ function renderSummary(taskName = 'plugin-task') {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
-  useScheduledTasksForPluginMock.mockReset();
+  useScheduledTasksForAppMock.mockReset();
 });
 
 afterEach(() => {
@@ -132,6 +134,35 @@ describe('ScheduleSummary', () => {
     expect(scheduled).toHaveTextContent('every 1 hours');
   });
 
+  it('renders the last-run outcome with the shared status badge', () => {
+    setup([makePeriodic({ last_run_status: 'failed' })]);
+    renderSummary();
+
+    const lastRun = screen.getByTestId('schedule-summary-last-run');
+    expect(lastRun).toHaveTextContent('Last run');
+    const badge = lastRun.querySelector('[data-status="failed"]');
+    expect(badge).not.toBeNull();
+    expect(badge).toHaveTextContent('Failed');
+  });
+
+  it('shows an explicit "Not yet run" state when a scheduled task has never run', () => {
+    setup([makePeriodic({ last_run_status: null, last_run_at: null })]);
+    renderSummary();
+
+    const lastRun = screen.getByTestId('schedule-summary-last-run');
+    expect(lastRun).toHaveTextContent('Not yet run');
+    expect(lastRun.querySelector('[data-status]')).toBeNull();
+  });
+
+  it('forwards lastRunAt so a run without a resolved result shows "Unknown", not "Not yet run"', () => {
+    setup([makePeriodic({ last_run_status: null, last_run_at: '2026-06-18T10:00:00Z' })]);
+    renderSummary();
+
+    const lastRun = screen.getByTestId('schedule-summary-last-run');
+    expect(lastRun).toHaveTextContent('Unknown');
+    expect(lastRun).not.toHaveTextContent('Not yet run');
+  });
+
   it('renders a not-scheduled state with an add-a-schedule link', () => {
     setup([makePeriodic({ task: 'a-different-task' })]);
     renderSummary();
@@ -139,6 +170,6 @@ describe('ScheduleSummary', () => {
     expect(screen.getByTestId('schedule-summary-unscheduled')).toHaveTextContent('Not scheduled');
     const link = screen.getByTestId('schedule-summary-add-link');
     expect(link).toHaveTextContent('Add a schedule');
-    expect(link).toHaveAttribute('href', '/plugins/archives/schedule');
+    expect(link).toHaveAttribute('href', '/apps/archives/schedule');
   });
 });

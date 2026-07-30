@@ -22,6 +22,7 @@ from fastapi import APIRouter, Form, Header, status
 from fastapi.responses import RedirectResponse
 
 from app.core.utils import deep_dict_update
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.deps import IsAuthenticated, IsCsrfValidated, TaskAPI
 from app.sep.tasks import (
     EnhancedPeriodicTaskCreateRequest,
@@ -30,7 +31,7 @@ from app.sep.tasks import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["sep", "periodic-tasks"])
+router = APIRouter(route_class=DeprecatedJinja2Route)
 
 
 @router.post(

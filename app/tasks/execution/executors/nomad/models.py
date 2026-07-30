@@ -29,7 +29,7 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from aiohttp import (
     ClientError,
@@ -38,13 +38,18 @@ from aiohttp import (
 from fastapi import status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
-from pydantic import Field
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.celery.models import IntervalSchedule
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
+from app.core.settings_override.registry import (
+    hot_field,
+    InheritedMarkers,
+    ReloadClassification,
+    REMOTE_API_TLS_MARKERS,
+)
 from app.core.utils import (
     async_run,
     b64decode_str,
@@ -53,6 +58,7 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
+from app.core.utils.pydantic import field_with_metadata
 from app.tasks import config as tasks_config
 from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
@@ -85,25 +91,6 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
-
-_LOG_FETCH_OFFSETS: dict[tuple[int, str, str, TaskLogType], int] = {}
-"""Process-local Nomad-space fetch cursors keyed by
-``(task_history_id, allocation_id, step, log_type)``. Kept separate from the
-DB-persisted ``TaskHistoryLogState.producer_offset`` so the ``offset=`` kwarg
-passed to ``stream_logs.stream`` stays in raw Nomad byte space even when
-anonymization rewrites the producer-space length."""
-
-
-def _clear_log_fetch_offsets(task_history_id: int) -> None:
-    """Drop every ``_LOG_FETCH_OFFSETS`` entry for a task history.
-
-    :param task_history_id: The task history identifier whose fetch cursors
-        should be discarded.
-    :type task_history_id: int
-    """
-    for key in list(_LOG_FETCH_OFFSETS):
-        if key[0] == task_history_id:
-            del _LOG_FETCH_OFFSETS[key]
 
 
 def _nomad_event_body_text(ev: dict) -> str:
@@ -277,46 +264,56 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     :param wait_interval: The interval in seconds between status checks.
         Defaults to 5 seconds.
-    :type wait_interval: int
     :param endpoint: The base URL for the external API endpoint.
-    :type endpoint: HttpUrl
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
-    :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to ``__name__``.
-    :type logger_name: str
     :param secure: Whether to use a secure connection. Defaults to False.
-    :type secure: bool
     :param timeout: The timeout in seconds for requests to the Nomad API.
         Defaults to 10 seconds.
-    :type timeout: int
     :param minify_payload: Whether to minify payloads before dispatching Parameterized
         Jobs. Defaults to True.
-    :type minify_payload: bool
     :param log_socket_read_timeout: Socket read timeout in seconds for log streaming.
         Defaults to 10.
-    :type log_socket_read_timeout: int
     :param cert_expiry_warn_days: Number of days before ``not_valid_after`` when
         Nomad TLS cert expiry alerts should fire. Used by the periodic
         ``check_nomad_cert_expiry`` task. Defaults to 7.
-    :type cert_expiry_warn_days: int
     :param check_cert_expiry_interval: Beat schedule for ``check_nomad_cert_expiry``
         (e.g. once per day). Set to ``None`` to skip registering the periodic task
         in ``app.tasks.db.seed`` (Celery beat will not run the check).
-    :type check_cert_expiry_interval: IntervalSchedule | None
+    :param terminal_log_drain_max_attempts: Number of bounded re-fetch attempts
+        after terminal detection to drain any stdout/stderr tail Nomad's
+        ``logmon`` flushes shortly after the task finishes. Each attempt waits
+        ``terminal_log_drain_interval`` seconds, then re-reads from the persisted
+        offsets. Each finishing task adds up to
+        ``terminal_log_drain_max_attempts * terminal_log_drain_interval`` seconds
+        to its terminal sync, run inline within the Celery beat cycle, so lower
+        this for large fleets where many tasks finish in the same beat and the
+        added latency would otherwise approach the beat cadence. Set to ``0`` to
+        disable the drain (behaviour identical to the pre-drain terminal sync).
+        Defaults to 5.
+    :param terminal_log_drain_interval: Seconds to wait before each post-terminal
+        drain re-fetch, giving ``logmon`` time to flush the tail. Defaults to 0.5.
+    :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
+        fields (``verify_ssl`` and the ``ssl_*`` paths) HOT and ``advanced``
+        without redeclaring them; set to the shared :data:`REMOTE_API_TLS_MARKERS`.
     """
 
-    secure: bool = False
-    timeout: int = 10
-    minify_payload: bool = True
-    log_socket_read_timeout: int = 10
-    cert_expiry_warn_days: int = Field(default=7, ge=1)
-    check_cert_expiry_interval: IntervalSchedule | None = Field(
+    # Overlay, not redeclaration: redeclaring would drop the inherited frozen
+    # ``FieldInfo`` and force ``frozen=True`` repeated. ``endpoint`` left unmarked.
+    # Reuses the shared TLS overlay so every remote-api model marks these the same.
+    INHERITED_MARKERS: ClassVar[InheritedMarkers] = REMOTE_API_TLS_MARKERS
+    secure: bool = hot_field(default=False, advanced=True)
+    timeout: int = hot_field(10, advanced=True)
+    minify_payload: bool = hot_field(default=True, advanced=True)
+    log_socket_read_timeout: int = hot_field(10, advanced=True)
+    cert_expiry_warn_days: int = hot_field(7, ge=1, advanced=True)
+    terminal_log_drain_max_attempts: int = hot_field(5, ge=0, advanced=True)
+    terminal_log_drain_interval: float = hot_field(0.5, gt=0, advanced=True)
+    check_cert_expiry_interval: IntervalSchedule | None = field_with_metadata(
+        metadata={"reload": ReloadClassification.HOT, "advanced": True},
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
     )
 
@@ -1046,9 +1043,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     ) -> None:
         """Persist this sync cycle's delta logs into the chunk store.
 
-        Resets the producer offset to ``0`` for every stream when Nomad
-        reschedules to a new allocation so the fetcher reads the new
-        allocation from the start.
+        Resets the fetch frontier (both cursors zeroed, ``allocation_epoch``
+        stamped to the new allocation's ``CreateIndex``) for every stream when
+        Nomad reschedules to a new allocation so the fetcher reads the new
+        allocation from the start; the epoch is threaded into every write so a
+        sync that overlapped the switch cannot append superseded bytes.
 
         :param writer_session: The dedicated session used for log chunk
             persistence, supplied by the caller.
@@ -1063,18 +1062,18 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type previous_allocation_id: str | None
         """
         alloc_id = alloc["ID"]
+        alloc_epoch = alloc["CreateIndex"]
         legacy_logs = decompress_legacy_logs(queue_item)
         if legacy_logs:
             await backfill_legacy_logs(writer_session, queue_item.id, legacy_logs)
 
         if previous_allocation_id is not None and previous_allocation_id != alloc_id:
-            await TaskHistoryLogWriter.drain_and_reset_producer_offsets(
-                writer_session, queue_item.id
+            await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+                writer_session, queue_item.id, new_allocation_epoch=alloc_epoch
             )
-            _clear_log_fetch_offsets(queue_item.id)
 
         initial_offsets = await self._build_initial_log_offsets(
-            writer_session, queue_item.id, alloc_id
+            writer_session, queue_item.id, alloc_epoch
         )
         task_logs = self.get_logs_for_allocation(
             alloc,
@@ -1086,28 +1085,102 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         await self._write_nomad_deltas(
             writer_session,
             queue_item.id,
-            alloc_id,
+            alloc_epoch,
             task_logs,
             force_flush=force_flush,
         )
         if force_flush:
+            await self._drain_terminal_logs(
+                writer_session, queue_item, alloc, alloc_epoch
+            )
             await self._force_flush_remaining_streams(writer_session, queue_item.id)
-            _clear_log_fetch_offsets(queue_item.id)
+
+    async def _drain_terminal_logs(
+        self,
+        writer_session: AsyncSession,
+        queue_item: TaskHistory,
+        alloc: dict[str, Any],
+        alloc_epoch: int,
+    ) -> None:
+        """Fetch Nomad logs after terminal detection until every stream is quiet.
+
+        Nomad's ``logmon`` flushes stdout/stderr to the readable log file
+        asynchronously, so the single terminal fetch in
+        :meth:`_persist_nomad_task_logs` can miss a tail ``logmon`` had not yet
+        written, most visibly the burst of output right before process exit.
+        This bounded loop gives ``logmon`` a short interval to catch up, then
+        re-reads from the persisted ``TaskHistoryLogState`` cursors, repeating
+        until every started ``(step, stream)`` has advanced at least once and
+        then gone quiet, or ``terminal_log_drain_max_attempts`` is reached. The
+        writer's producer-offset dedup keeps every re-fetch idempotent, so an
+        overlapping read cannot double-write.
+
+        Advancement is tracked per stream, not per task: the loop early-exits
+        only once every candidate stream has itself advanced-then-quieted. A
+        stream that has not yet produced anything keeps the loop polling to the
+        attempt cap, so a stream whose first post-terminal flush lands after a
+        sibling stream already drained is not dropped, and a task that writes to
+        only one stream polls the full window (correctness over latency; the
+        window is ``hot``-tunable).
+
+        :param writer_session: The dedicated log writer session.
+        :param queue_item: The terminal task history record being drained.
+        :param alloc: The current Nomad allocation dict.
+        :param alloc_epoch: The allocation's ``CreateIndex``, threaded into each
+            write so a superseded allocation's bytes are discarded.
+        """
+        advanced = set()
+        candidates = set()
+        for _ in range(self.terminal_log_drain_max_attempts):
+            await asyncio.sleep(self.terminal_log_drain_interval)
+            initial_offsets = await self._build_initial_log_offsets(
+                writer_session, queue_item.id, alloc_epoch
+            )
+            task_logs = self.get_logs_for_allocation(
+                alloc, initial_offsets, queue_item.anonymized_entities
+            )
+            candidates.update(
+                (step, log_type) for step in task_logs for log_type in TaskLogType
+            )
+            produced = {
+                (step, log_type)
+                for step in task_logs
+                for log_type in TaskLogType
+                if task_logs[step].get(log_type)
+            }
+            if produced:
+                advanced |= produced
+                await self._write_nomad_deltas(
+                    writer_session,
+                    queue_item.id,
+                    alloc_epoch,
+                    task_logs,
+                    force_flush=True,
+                )
+            elif advanced == candidates:
+                return
 
     @staticmethod
     async def _build_initial_log_offsets(
         writer_session: AsyncSession,
         task_history_id: int,
-        alloc_id: str,
+        current_epoch: int,
     ) -> dict[str, dict[str, Any]]:
         """Return the per-stream ``initial_logs`` dict for the current cycle.
+
+        Seeds each stream's next-fetch cursor from its durable
+        ``TaskHistoryLogState`` row, but only when the row belongs to the
+        current allocation — its ``allocation_epoch`` matches ``current_epoch``
+        or is the ``0`` legacy/unknown sentinel that trusts the migration
+        backfill. A row stamped to a known *different* allocation holds a cursor
+        in that allocation's byte space, so it is skipped and the stream
+        restarts from ``0`` rather than reusing a superseded cursor.
 
         :param writer_session: The dedicated log writer session.
         :type writer_session: AsyncSession
         :param task_history_id: The task history identifier.
         :type task_history_id: int
-        :param alloc_id: The current Nomad allocation identifier.
-        :type alloc_id: str
+        :param current_epoch: The running allocation's ``CreateIndex``.
         :return: A dict shaped
             ``{source: {f"{stream.value}_last_offset": int,
             f"{stream.value}_producer_offset": int}}``.
@@ -1118,11 +1191,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         )
         initial_offsets = defaultdict(dict)
         for row in state_rows:
-            nomad_offset = _LOG_FETCH_OFFSETS.get(
-                (task_history_id, alloc_id, row.source, row.stream), 0
-            )
+            if row.allocation_epoch not in (0, current_epoch):
+                continue
             initial_offsets[row.source][f"{row.stream.value}_last_offset"] = (
-                nomad_offset
+                row.nomad_offset
             )
             initial_offsets[row.source][f"{row.stream.value}_producer_offset"] = (
                 row.producer_offset
@@ -1133,7 +1205,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     async def _write_nomad_deltas(
         writer_session: AsyncSession,
         task_history_id: int,
-        alloc_id: str,
+        alloc_epoch: int,
         task_logs: dict[str, dict[str, Any]],
         *,
         force_flush: bool,
@@ -1144,8 +1216,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type writer_session: AsyncSession
         :param task_history_id: The task history identifier.
         :type task_history_id: int
-        :param alloc_id: The current Nomad allocation identifier.
-        :type alloc_id: str
+        :param alloc_epoch: The current Nomad allocation's ``CreateIndex``,
+            stamped onto the state row so a write from a superseded allocation
+            is discarded by the writer's epoch guard.
         :param task_logs: The per-step/per-stream delta dict returned by
             :meth:`get_logs_for_allocation`.
         :type task_logs: dict[str, dict[str, Any]]
@@ -1156,12 +1229,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         for step, payload in task_logs.items():
             for log_type in TaskLogType:
                 delta_text = payload.get(log_type) or ""
-                nomad_offset = payload.get(f"{log_type.value}_last_offset", 0)
-                _LOG_FETCH_OFFSETS[(task_history_id, alloc_id, step, log_type)] = (
-                    nomad_offset
-                )
                 if not delta_text and not force_flush:
                     continue
+                nomad_offset = payload.get(f"{log_type.value}_last_offset", 0)
                 producer_offset = payload.get(f"{log_type.value}_producer_offset", 0)
                 await TaskHistoryLogWriter.append(
                     writer_session,
@@ -1170,6 +1240,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     stream=log_type,
                     new_bytes=delta_text.encode("utf-8"),
                     producer_offset_after=producer_offset,
+                    nomad_offset_after=nomad_offset,
+                    allocation_epoch=alloc_epoch,
                     force_flush=force_flush,
                 )
 
@@ -1668,21 +1740,26 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             yield None
 
     async def stream_file(
-        self, queue_item: TaskHistory, path: str, chunk_size: int = _ONE_MEBIBYTE
+        self,
+        queue_item: TaskHistory,
+        path: str,
+        chunk_size: int = _ONE_MEBIBYTE,
+        *,
+        anonymize: bool = True,
     ) -> AsyncGenerator[bytes, None]:
         """Stream a file from the allocation's filesystem in chunks.
 
         Directories are archived on the fly and streamed as a tar.gz archive.
 
         :param queue_item: The task history record for tracking the logs.
-        :type queue_item: TaskHistory
         :param path: The path to the file to be streamed.
-        :type path: str
         :param chunk_size: The size of each chunk to read from the file. Defaults to
             1 MiB.
-        :type chunk_size: int
+        :param anonymize: Whether to redact the task's configured entities from the
+            streamed content. Defaults to ``True``, as every read served to a user
+            must be redacted; internal reads of content SEP itself produced may opt
+            out to get the bytes back verbatim.
         :return: An async generator yielding chunks of the file as bytes.
-        :rtype: AsyncGenerator[bytes, None]
         """
         alloc = self.get_allocation_for_task_history(queue_item)
         alloc_id = alloc["ID"]
@@ -1697,7 +1774,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if self._is_directory(stat):
             logger.info("Requested path %s is a directory, streaming as tar.gz", path)
             async for chunk in self._stream_directory_as_tar_gz(
-                queue_item, alloc_id, path
+                queue_item, alloc_id, path, anonymize=anonymize
             ):
                 yield chunk
             return
@@ -1715,7 +1792,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             async with self._request("GET", endpoint, params=params) as response:
                 response.raise_for_status()
                 content = await response.read()
-                if queue_item.anonymized_entities:
+                if anonymize and queue_item.anonymized_entities:
                     try:
                         text = content.decode()
                         yield anonymize_text(
@@ -1777,6 +1854,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         path: str,
         file_size: int,
         chunk_size: int = _ONE_MEBIBYTE,
+        *,
+        anonymize: bool = True,
     ) -> bytes:
         """Read a remote file fully, applying anonymization when needed."""
         if file_size == 0:
@@ -1789,7 +1868,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             async with self._request("GET", endpoint, params=params) as response:
                 response.raise_for_status()
                 chunk = await response.read()
-                if queue_item.anonymized_entities:
+                if anonymize and queue_item.anonymized_entities:
                     try:
                         text = chunk.decode()
                         chunk = anonymize_text(
@@ -1811,7 +1890,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         return bytes(content)
 
     async def _stream_directory_as_tar_gz(
-        self, queue_item: TaskHistory, alloc_id: str, path: str
+        self,
+        queue_item: TaskHistory,
+        alloc_id: str,
+        path: str,
+        *,
+        anonymize: bool = True,
     ) -> AsyncGenerator[bytes, None]:
         """Archive a directory on the fly and stream it as a tar.gz archive."""
         queue = asyncio.Queue()
@@ -1846,7 +1930,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                 tar.addfile(tarinfo)
                                 continue
                             file_bytes = await self._read_file_bytes(
-                                queue_item, alloc_id, abs_path, size
+                                queue_item,
+                                alloc_id,
+                                abs_path,
+                                size,
+                                anonymize=anonymize,
                             )
                             tarinfo.size = len(file_bytes)
                             tar.addfile(tarinfo, fileobj=io.BytesIO(file_bytes))

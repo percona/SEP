@@ -26,33 +26,38 @@ the admin listing at ``/api/admin/apps/``.
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.utils.fields import URIPath
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.crud import AppStateManager
-from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
-from app.sep.models import AppLifecycleEnum
-from app.sep.plugins.framework.registry import get_app_registry
+from app.sep.deps import SessionDep
 
 router = APIRouter(tags=["apps"])
+APPS_ROUTE_PREFIX = "/apps"
 
 
 class AppKeyResponse(BaseModel):
     """Represent a minimal per-app entry for the navigation shell.
 
     :param app_key: The plugin module key.
-    :type app_key: str
     :param enabled: Whether the app is currently enabled.
-    :type enabled: bool
     :param sidebar: Whether the plugin appears in the sidebar.
-    :type sidebar: bool
     :param uri_path: The plugin's mount URI path.
-    :type uri_path: str
     :param display_name: The human-facing label for the app.
-    :type display_name: str
     :param custom_ui: Whether the app ships a bespoke React UI.
-    :type custom_ui: bool
     :param group: The nav group key this app nests under; ``None`` when the app
         renders as a top-level sidebar entry.
     :param nav_order: The app's sort position within the sidebar; ``None`` when
         unset.
+    :param react_route: The canonical React route the shell mounts and links to;
+        always concrete (defaulting to ``/apps/<app_key>``).
+    :param nav_icon: The sidebar icon key; ``None`` falls back to the shell's
+        default app icon.
+    :param blocking_dependencies: The effective-disabled ``requires_apps`` keys
+        that are the reason this app is effective-disabled. Empty when the app is
+        enabled or disabled by its own state; non-empty only for a
+        dependency-driven disablement, so the shell can name the required app on
+        the disabled splash.
     """
 
     app_key: str
@@ -63,34 +68,59 @@ class AppKeyResponse(BaseModel):
     custom_ui: bool
     group: str | None
     nav_order: int | None
+    react_route: URIPath
+    nav_icon: NavIcon | None
+    blocking_dependencies: list[str] = []
+
+
+def build_navigation_react_route(app_key: str, react_route: URIPath | None) -> URIPath:
+    """Return the canonical navigation route for an app entry.
+
+    :param app_key: The plugin module key.
+    :param react_route: The optional plugin-declared route override.
+    :return: A concrete route under the ``/apps`` namespace.
+    """
+    route_suffix = react_route or f"/{app_key}"
+    if route_suffix == APPS_ROUTE_PREFIX or route_suffix.startswith(
+        f"{APPS_ROUTE_PREFIX}/"
+    ):
+        return route_suffix
+    return f"{APPS_ROUTE_PREFIX}{route_suffix}"
 
 
 @router.get("/")
 async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
     """Return per-app state for the current user's navigation.
 
-    Protected apps are always reported ``enabled=True``. Non-protected apps
-    reflect their DB state (a missing row -> ``enabled=True``: a configured
-    plugin is active until explicitly disabled).
+    Protected apps are always reported ``enabled=True``. Every other app reflects
+    its *effective* state via :meth:`AppRegistry.resolve_effective_enabled`: its
+    own row must be ``ENABLED`` (a missing row -> ``enabled=True``: a configured
+    plugin is active until explicitly disabled) **and** every app it declares in
+    ``requires_apps`` must be effectively enabled, so the shell hides an app when
+    a dependency is off. A child app owns no row, so it resolves through its
+    parent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`.
 
     :param session: The database session.
-    :type session: SessionDep
     :return: The per-app navigation list.
-    :rtype: list[AppKeyResponse]
     """
     states = await AppStateManager.all_lifecycle_states(session)
+    registry = get_app_registry()
+    memo: dict[str, bool] = {}
     return [
         AppKeyResponse(
             app_key=app.key,
-            enabled=app.key in PROTECTED_APP_KEYS
-            or states.get(app.key, AppLifecycleEnum.ENABLED)
-            == AppLifecycleEnum.ENABLED,
+            enabled=registry.resolve_effective_enabled(app.key, states, memo),
             sidebar=app.sidebar,
             uri_path=app.uri_path,
             display_name=app.display_name,
             custom_ui=app.custom_ui,
             group=app.group,
             nav_order=app.nav_order,
+            react_route=build_navigation_react_route(app.key, app.react_route),
+            nav_icon=app.nav_icon,
+            blocking_dependencies=list(
+                registry.resolve_blocking_dependencies(app.key, states, memo)
+            ),
         )
-        for app in get_app_registry()
+        for app in registry
     ]

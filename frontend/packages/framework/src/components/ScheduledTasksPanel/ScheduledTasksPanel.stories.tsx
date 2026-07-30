@@ -18,17 +18,18 @@
 import { useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import { ScheduledTasksPanel } from './ScheduledTasksPanel';
 import type { PeriodicTaskResponse } from './hooks';
 
 interface StoryArgs {
   periodicTasks: PeriodicTaskResponse[];
-  pluginTasks: { name: string }[];
+  appTasks: { name: string }[];
 }
 
-const PLUGIN_NAME = 'demo-plugin';
+const APP_NAME = 'demo-plugin';
 
-const PLUGIN_TASKS = [{ name: 'demo-task' }, { name: 'demo-task-other' }];
+const APP_TASKS = [{ name: 'demo-task' }, { name: 'demo-task-other' }];
 
 const NOW = new Date();
 
@@ -45,6 +46,7 @@ const SAMPLE_TASKS: PeriodicTaskResponse[] = [
     description: '',
     start_time: null,
     last_run_at: iso(-3),
+    last_run_status: 'success',
     next_run_at: iso(2),
     date_changed: iso(-60),
     total_run_count: 42,
@@ -61,6 +63,7 @@ const SAMPLE_TASKS: PeriodicTaskResponse[] = [
     description: '',
     start_time: iso(-1440),
     last_run_at: iso(-720),
+    last_run_status: 'failed',
     next_run_at: iso(720),
     date_changed: iso(-1500),
     total_run_count: 7,
@@ -82,21 +85,33 @@ const SAMPLE_TASKS: PeriodicTaskResponse[] = [
   },
 ];
 
-function StoryHarness({ periodicTasks, pluginTasks }: StoryArgs) {
+function StoryHarness({ periodicTasks, appTasks }: StoryArgs) {
   const queryClient = useMemo(() => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: Infinity } },
     });
-    qc.setQueryData(['plugins', PLUGIN_NAME, 'tasks'], pluginTasks);
+    qc.setQueryData(
+      [
+        'plugins',
+        APP_NAME,
+        'tasks',
+        {
+          offset: DEFAULT_APP_LIST_OFFSET,
+          limit: DEFAULT_APP_LIST_LIMIT,
+          fetchAllPages: true,
+        },
+      ],
+      { items: appTasks, pagination: null },
+    );
     qc.setQueryData(['periodic'], periodicTasks);
     return qc;
-  }, [periodicTasks, pluginTasks]);
+  }, [periodicTasks, appTasks]);
 
   useEffect(() => () => queryClient.clear(), [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ScheduledTasksPanel pluginName={PLUGIN_NAME} disablePolling />
+      <ScheduledTasksPanel pluginName={APP_NAME} disablePolling />
     </QueryClientProvider>
   );
 }
@@ -111,17 +126,17 @@ export default meta;
 type Story = StoryObj<typeof StoryHarness>;
 
 export const Empty: Story = {
-  args: { periodicTasks: [], pluginTasks: PLUGIN_TASKS },
+  args: { periodicTasks: [], appTasks: APP_TASKS },
 };
 
 export const Populated: Story = {
-  args: { periodicTasks: SAMPLE_TASKS, pluginTasks: PLUGIN_TASKS },
+  args: { periodicTasks: SAMPLE_TASKS, appTasks: APP_TASKS },
 };
 
 export const PopulatedSingle: Story = {
-  args: { periodicTasks: [SAMPLE_TASKS[0]], pluginTasks: PLUGIN_TASKS },
+  args: { periodicTasks: [SAMPLE_TASKS[0]], appTasks: APP_TASKS },
 };
 
-export const NoPluginTasks: Story = {
-  args: { periodicTasks: [], pluginTasks: [] },
+export const NoAppTasks: Story = {
+  args: { periodicTasks: [], appTasks: [] },
 };

@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
 import List from '@mui/material/List';
@@ -36,7 +36,6 @@ import AppsIcon from '@mui/icons-material/Apps';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ViewQuiltIcon from '@mui/icons-material/ViewQuilt';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
-import GitHubIcon from '@mui/icons-material/GitHub';
 import { useAppInfo } from '@sep/api';
 import { useNavigation, type NavItem } from '../contexts/navigation';
 
@@ -271,12 +270,6 @@ export function DrawerContent({
           href="https://docs.percona.com"
           title="Documentation"
           icon={MenuBookIcon}
-          collapsed={collapsed}
-        />
-        <ExternalLink
-          href="https://github.com/percona/SEP"
-          title="GitHub"
-          icon={GitHubIcon}
           collapsed={collapsed}
         />
       </List>

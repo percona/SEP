@@ -27,12 +27,12 @@ from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel import SQLModel
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
-from app.sep.config import sep_settings
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.crud import AppRunningTaskManager, AppStateManager
 from app.sep.deps import (
     get_api_authenticated_user,
@@ -61,7 +61,7 @@ async def _seed_periodic_task(
     await session.flush()
     task = PeriodicTask(
         name=name,
-        task="app.sep.celery.sync_snippets",
+        task="app.sep.apps.snippets.celery.sync_snippets",
         enabled=enabled,
         schedule_model=schedule,
     )
@@ -83,8 +83,11 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(name="api_admin_client")
@@ -153,11 +156,11 @@ class TestListApps:
     async def test_lists_every_configured_plugin(
         self, api_admin_client: TestClient
     ) -> None:
-        """Returns one entry per ``SEP.PLUGINS`` entry with the expected shape."""
+        """Return one entry per registered app (parents plus children) with the expected shape."""
         response = api_admin_client.get("/api/admin/apps/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
-        assert len(payload) == len(sep_settings.PLUGINS)
+        assert len(payload) == len(get_app_registry().keys())
         entry = payload[0]
         assert set(entry) == {
             "app_key",
@@ -170,6 +173,15 @@ class TestListApps:
             "sidebar",
             "has_api_router",
         }
+
+    async def test_child_app_is_not_toggleable(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Return a child app marked non-toggleable — its state is managed by the parent."""
+        response = api_admin_client.get("/api/admin/apps/")
+        entries = {entry["app_key"]: entry for entry in response.json()}
+        assert entries["mysql_backups/restore"]["toggleable"] is False
+        assert entries["backup_mongo/restore"]["toggleable"] is False
 
     async def test_inventory_is_not_toggleable_and_enabled(
         self, api_admin_client: TestClient
@@ -319,25 +331,21 @@ class TestUpdateAppState:
             is AppLifecycleEnum.DISABLING
         )
 
-    async def test_scoped_key_resolves_through_path_param(
-        self, api_admin_client: TestClient, override_session: AsyncSession
+    async def test_scoped_child_key_resolves_through_path_param_and_is_409(
+        self, api_admin_client: TestClient
     ) -> None:
-        """Toggle a scoped app key containing ``/`` through the ``:path`` route param."""
-        override_session.add(
-            AppRunningTask(app_key="mysql_backups/restore", celery_task_id="running")
-        )
-        await override_session.commit()
+        """Resolve a scoped child key through the ``:path`` route param, then return 409.
 
+        The ``{app_key:path}`` converter captures the ``/`` so the request reaches
+        the handler (a non-resolving path would 404); a child app is managed by its
+        parent and cannot be toggled independently, so the toggle returns 409.
+        """
         response = api_admin_client.put(
             "/api/admin/apps/mysql_backups/restore/state",
             json={"lifecycle_state": AppLifecycleEnum.DISABLING},
         )
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {
-            "app_key": "mysql_backups/restore",
-            "enabled": False,
-            "lifecycle_state": AppLifecycleEnum.DISABLING,
-        }
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "mysql_backups" in response.json()["detail"]
 
     async def test_missing_row_disabled_target_returns_409(
         self, api_admin_client: TestClient, override_session: AsyncSession

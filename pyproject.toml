@@ -36,7 +36,7 @@ classifiers = [
 ]
 requires-python = ">=3.11.9,!=3.12.0,!=3.12.1,!=3.12.2,<3.14"
 dependencies = [
-    "aiohttp (>=3.14.0,<4.0.0)",
+    "aiohttp (>=3.14.1,<4.0.0)",
     "uvicorn[standard] (>=0.32.0,<0.33.0)",
     "sqlalchemy-celery-beat (>=0.8.4,<0.9.0)",
     "aioresponses (>=0.7.7,<0.8.0)",
@@ -65,8 +65,8 @@ dependencies = [
     "typing-extensions (>=4.15.0,<5.0.0)",
     "python-multipart (>=0.0.31,<0.0.32)",
     "croniter (>=6.0.0,<7.0.0)",
-    "weasyprint (>=68.1,<69.0)",
-    "cryptography (>=48.0.1,<49.0.0)",
+    "weasyprint (>=69.0,<70.0)",
+    "cryptography (>=49.0.0,<50.0.0)",
 ]
 
 [tool.poetry]
@@ -97,13 +97,6 @@ optional = true
 
 [tool.poetry.group.mysql.dependencies]
 aiomysql = "^0.3.0"
-
-[tool.poetry.group.syncmysql]
-optional = true
-
-[tool.poetry.group.syncmysql.dependencies]
-pymysql = "^1.1.3"
-myloginpath = "^0.0.4"
 
 [tool.poetry.group.postgresql]
 optional = true
@@ -157,6 +150,9 @@ polyfactory = "^2.18.0"
 pytest-asyncio = "^1.3.0"
 pytest-env = "^1.1.5"
 pytest-xdist = "^3.5"
+pytest-timeout = "^2.3.1"
+pymysql = "^1.1.3"
+myloginpath = "^0.0.4"
 
 [tool.poetry.requires-plugins]
 poetry-plugin-export = "^1.9.0"
@@ -172,7 +168,7 @@ exclude_dirs = [
     "build",
     "venv",
     "app/tests/",
-    "app/sep/plugins/dipper/payloads/",
+    "app/sep/apps/dipper/payloads/",
     "app/sep/sync/syncers/system_facts/payload.py",  # host-run payload; reads packages via rpm/dpkg-query (literal argv)
 ]
 
@@ -194,13 +190,14 @@ extend-exclude = [
     ".github",
     "build",
     "data",
-    "docs",
+    "/docs",
     "etc",
     "app/*/migrations/*",
     "payload.py",
     "payload",
     "*_payload",
     "**/payloads/*",
+    "tests/app/sep/apps/framework/golden/**",
 ]
 cache-dir = "build/tmp/.ruff_cache"
 target-version = "py311"
@@ -292,10 +289,15 @@ order-by-type = false
 "celery.py" = ["ARG001"]
 "test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
-"tests/app/sep/plugins/framework/contract_suite.py" = ["S"] # pytest contract-suite mixin uses bare assert
+"tests/app/sep/apps/framework/contract_suite.py" = ["S"] # pytest contract-suite mixin uses bare assert
 "scripts/*.py" = [
     "T201", # CLI scripts use print() for user-facing output
     "S603", # CLI scripts coordinate git/gh/make subprocesses with literal arg lists
+]
+"app/sep/apps/backup_mongo/pbm_creds_common.py" = [
+    "T201",   # canonical payload preamble prints diagnostics to stderr (as the shipped payloads do)
+    "PTH123", # payload preamble uses builtin open(); no pathlib is available at exec time
+    "BLE001", # payload preamble mirrors a deliberate catch-all credentials-read guard
 ]
 "app/sep/sync/syncers/system_facts/payload.py" = [
     "S603", # host-run payload coordinates rpm/dpkg-query with literal arg lists
@@ -310,14 +312,17 @@ line-ending = "lf"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
+# Guardrail: fail a runaway per-test setup/call/teardown instead of blocking the
+# whole run forever. Uses thread method so xdist workers stay compatible.
+timeout = 120
+timeout_method = "thread"
 markers = [
-    "syncmysql: require syncmysql dependencies",
     "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
 ]
 env = [
-    "CASDOOR__CLIENT_ID=test-client-id",
-    "CASDOOR__CLIENT_SECRET=test-client-secret",
-    'CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
+    "AUTH__PROVIDER__CASDOOR__CLIENT_ID=test-client-id",
+    "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=test-client-secret",
+    'AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
     'ALLOWED_HOSTS=["testserver", "test"]',
     "SEP__MESSAGES__LEVEL=0",
     "ALLOW_CONCURRENT_SESSIONS=false",
@@ -330,6 +335,10 @@ branch = true
 source = ["app"]
 omit = [
     "__init__.py",
+    # Apps the scaffolder tests generate under the real source tree and delete
+    # in teardown: measuring them leaves dead source paths in .coverage that
+    # break `coverage json` (the PR coverage-comment step) with "No source for code".
+    "app/sep/apps/_scaffold_*/*",
 ]
 
 [tool.coverage.report]

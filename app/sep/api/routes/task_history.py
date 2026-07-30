@@ -23,13 +23,13 @@ calls the Tasks sub-app directly. ``GET /`` either lists all history
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
-from app.sep.api.proxy import reraise_upstream_tasks_error
+from app.sep.api.proxy import reraise_upstream_tasks_errors
 from app.sep.api.task_history_merge import (
     fetch_merged_task_history,
     normalize_task_history_names,
@@ -44,15 +44,18 @@ router = APIRouter()
 async def list_merged_task_history(
     tasks_api: TaskAPI,
     pagination: PaginationDep,
+    *,
     task_names: Annotated[list[str] | None, Query()] = None,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
+    exclude_internal: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[TaskHistoryResponse]:
     """Return task-history rows, listing all of them or merging selected names.
 
     Three-way on ``task_names``:
 
     * **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already
-      paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.
+      paginated, forwarding the ``status`` filter, ``exclude_internal`` flag, and
+      client ``offset`` / ``limit``.
     * **provided, at least one non-blank name** -- query each name independently
       against the Tasks API, then merge, sort newest-first, and paginate globally.
     * **provided, every name blank after trimming** -- reject with ``422``.
@@ -62,6 +65,9 @@ async def list_merged_task_history(
     :param task_names: Zero or more task names (repeat the query param); omit to
         list all history.
     :param task_status: Optional exact status filter forwarded upstream.
+    :param exclude_internal: When ``True``, forward the filter to the upstream
+        list-all path so internal maintenance tasks are excluded before pagination.
+        Not forwarded on the ``task_names`` merge path. Defaults to ``False``.
     :return: Paginated task history, either the upstream list or the merged set.
     :raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but
         every value is empty after trimming.
@@ -74,25 +80,22 @@ async def list_merged_task_history(
             "offset": pagination.offset,
             "limit": pagination.limit,
             **({"status": task_status.value} if task_status is not None else {}),
+            **({"exclude_internal": "true"} if exclude_internal else {}),
         }
-        try:
+        with reraise_upstream_tasks_errors():
             payload = await tasks_api.get("/history/", params=params)
-        except (HTTPException, OSError) as exc:
-            reraise_upstream_tasks_error(exc)
         return PaginatedResponse[TaskHistoryResponse].model_validate(payload)
     if not normalize_task_history_names(task_names):
         raise HTTPUnprocessableEntityException(
             "task_names must contain at least one non-empty name"
         )
-    try:
+    with reraise_upstream_tasks_errors():
         return await fetch_merged_task_history(
             tasks_api,
             task_names,
             status=task_status,
             pagination=pagination,
         )
-    except (HTTPException, OSError) as exc:
-        reraise_upstream_tasks_error(exc)
 
 
 @router.post(
@@ -111,7 +114,5 @@ async def stop_task_history(task_history_id: int, tasks_api: TaskAPI) -> dict[st
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
         or a connection-level ``OSError``.
     """
-    try:
+    with reraise_upstream_tasks_errors():
         return await tasks_api.post(f"/history/{task_history_id}/stop/")
-    except (HTTPException, OSError) as exc:
-        reraise_upstream_tasks_error(exc)

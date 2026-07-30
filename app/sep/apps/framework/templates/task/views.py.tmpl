@@ -1,0 +1,38 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define the presentation bundle for the << display_name_doc >> app.
+
+Section membership and order are declared on the create form (via
+``Ui(section=...)`` and field-declaration order); the section titles, the list
+columns, and the UI capability flags live here. These feed the derived
+``GET /schema``.
+"""
+
+from app.sep.apps.framework.apps import Views
+from app.sep.apps.framework.form_dsl import FormLayout, TASK_SECTION_LAYOUT
+from app.sep.apps.framework.schema import (
+    Capabilities,
+    ListView,
+    default_columns,
+)
+
+<< name >>_views = Views(
+    layout=FormLayout(sections=(TASK_SECTION_LAYOUT,)),
+    list_view=ListView(
+        columns=default_columns(),
+    ),
+    capabilities=Capabilities(alert_on_fail=True),
+)

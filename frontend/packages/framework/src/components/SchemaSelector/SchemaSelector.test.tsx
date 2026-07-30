@@ -242,10 +242,18 @@ describe('SchemaSelector', () => {
       expect(screen.getByTestId('schema-value').textContent).toBe('"custom_schema"');
     });
 
-    it('treats a numeric custom parent string as custom (not an inventory id)', async () => {
+    it('treats a numeric parent string as an inventory id and loads its schemas', async () => {
+      // On edit, reference ids are persisted as strings (e.g. `"42"`); the
+      // dependent selector must resolve them to inventory ids and fetch, not
+      // mistake them for a free-typed custom host.
+      mocked.get.mockResolvedValue({
+        data: [
+          { id: 10, name: 'app_prod' },
+          { id: 11, name: 'analytics' },
+        ],
+      });
       const client = makeClient();
-      const user = userEvent.setup();
-      function NumericCustomParentProbe() {
+      function NumericParentProbe() {
         const methods = useForm<{ service: unknown; schema: unknown }>({
           defaultValues: { service: '42', schema: null },
         });
@@ -258,14 +266,42 @@ describe('SchemaSelector', () => {
       }
       render(
         <Wrapper client={client}>
-          <NumericCustomParentProbe />
+          <NumericParentProbe />
         </Wrapper>,
       );
-      const input = screen.getByLabelText('Schema');
-      expect(input).not.toBeDisabled();
-      expect(mocked.get).not.toHaveBeenCalled();
-      await user.type(input, 'custom_schema');
-      expect(screen.getByTestId('schema-value').textContent).toBe('"custom_schema"');
+      expect(screen.getByLabelText('Schema')).not.toBeDisabled();
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/services/42/schemas'));
+    });
+
+    it('resolves a stringified child schema id to its option name on edit', async () => {
+      // Reproduces the edit-form bug: both parent (service) and child (schema)
+      // come back as stringified ids; the child must render as the schema name,
+      // not the raw id, and must not be wiped by the parent-change reset.
+      mocked.get.mockResolvedValue({
+        data: [
+          { id: 10, name: 'app_prod' },
+          { id: 11, name: 'analytics' },
+        ],
+      });
+      const client = makeClient();
+      function EditProbe() {
+        const methods = useForm<{ service: unknown; schema: unknown }>({
+          defaultValues: { service: '7', schema: '11' },
+        });
+        return (
+          <FormProvider {...methods}>
+            <SchemaSelector name="schema" label="Schema" dependsOn="service" allowCustom />
+            <output data-testid="schema-value">{JSON.stringify(methods.watch('schema'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <EditProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(screen.getByLabelText('Schema')).toHaveValue('analytics'));
+      expect(screen.getByTestId('schema-value').textContent).toBe('11');
     });
 
     it('clears child value when parent custom value changes', async () => {
@@ -295,6 +331,65 @@ describe('SchemaSelector', () => {
       await waitFor(() => {
         expect(screen.getByTestId('schema-value').textContent).toBe('null');
       });
+      expect(mocked.get).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('multiple (multi-value)', () => {
+    it('resets the child to [] when the parent service changes', async () => {
+      mocked.get.mockResolvedValue({ data: [{ id: 1, name: 'a' }] });
+      const client = makeClient();
+      const setServiceRef: { current: ((s: ServiceOption) => void) | null } = { current: null };
+      function Probe() {
+        const methods = useForm<{ service: ServiceOption; schemas: unknown }>({
+          defaultValues: { service: { id: 1, name: 's1', type: 'mysql' }, schemas: [5, 6] },
+        });
+        setServiceRef.current = (s) => methods.setValue('service', s);
+        return (
+          <FormProvider {...methods}>
+            <SchemaSelector name="schemas" label="Schemas" dependsOn="service" multiple />
+            <output data-testid="schemas-value">{JSON.stringify(methods.watch('schemas'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      expect(screen.getByTestId('schemas-value').textContent).toBe('[5,6]');
+      await act(async () => {
+        setServiceRef.current?.({ id: 2, name: 's2', type: 'mysql' });
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('schemas-value').textContent).toBe('[]');
+      });
+    });
+
+    it('stays enabled for a custom (free-typed) parent', async () => {
+      const client = makeClient();
+      function Probe() {
+        const methods = useForm<{ service: unknown; schemas: unknown }>({
+          defaultValues: { service: 'custom-svc', schemas: [] },
+        });
+        return (
+          <FormProvider {...methods}>
+            <SchemaSelector
+              name="schemas"
+              label="Schemas"
+              dependsOn="service"
+              allowCustom
+              multiple
+            />
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      expect(screen.getByLabelText('Schemas')).not.toBeDisabled();
       expect(mocked.get).not.toHaveBeenCalled();
     });
   });

@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { FormSection, OneOfGroup, PluginField, SectionField } from '@sep/api';
+import type { FormSection, OneOfGroup, AppField, SectionField } from '@sep/api';
 
 /** Type guard for the `one_of` section container. */
 export function isOneOfGroup(field: SectionField): field is OneOfGroup {
@@ -28,14 +28,14 @@ export function collectOneOfGroups(sections: FormSection[]): OneOfGroup[] {
 }
 
 /** Expand one section item to its leaf fields (pass-through or branch flatten). */
-export function flattenSectionItem(field: SectionField): PluginField[] {
+export function flattenSectionItem(field: SectionField): AppField[] {
   if (isOneOfGroup(field)) {
     return field.branches.flatMap((branch) => branch.fields);
   }
   return [field];
 }
 
-/** Return every leaf {@link PluginField} across ``sections``, expanding one-of groups. */
-export function flattenSectionFields(sections: FormSection[]): PluginField[] {
+/** Return every leaf {@link AppField} across ``sections``, expanding one-of groups. */
+export function flattenSectionFields(sections: FormSection[]): AppField[] {
   return sections.flatMap((section) => section.fields.flatMap(flattenSectionItem));
 }

@@ -16,6 +16,7 @@
 """Pydantic request/response models for the settings REST API."""
 
 __all__ = [
+    "SettingClassAppMetadata",
     "SettingClassGroup",
     "SettingResponse",
     "SettingsListResponse",
@@ -34,39 +35,32 @@ class SettingResponse(BaseModel):
     """Represent a single setting's metadata and current value.
 
     :param setting_class: The settings class the field belongs to.
-    :type setting_class: SettingClassEnum
     :param key: The field name on the settings class.
-    :type key: str
     :param key_path: Carry the canonical key segments for ``key`` such that
         ``"__".join(key_path) == key``.
-    :type key_path: list[str]
     :param value: The current value visible through the proxy, dumped to a
         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
         redacted to ``"**********"``.
-    :type value: Any
     :param default_value: The field's declared default value, dumped via the
         same JSON serialiser. ``None`` when no default exists.
-    :type default_value: Any
     :param type: A human-readable representation of the field's declared
         annotation (for operator visibility; validation uses the actual
         ``FieldInfo``).
-    :type type: str
     :param reload: The reload classification (HOT or NOT_OVERRIDABLE).
-    :type reload: ReloadClassification
     :param description: The field's free-text description, or ``None``.
-    :type description: str | None
     :param is_secret: Whether the field's annotation contains a Pydantic secret
         (``SecretStr`` / ``SecretBytes``) at any depth.
-    :type is_secret: bool
     :param is_complex: Whether the field's annotation is or contains a Pydantic
         ``BaseModel`` subclass (true for nested submodels).
-    :type is_complex: bool
     :param has_override: Whether a row exists in the ``settingoverride`` table
         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
-    :type has_override: bool
     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
         present it separately from everyday settings. Display-only:
         it does not affect PATCH/DELETE eligibility.
+    :param is_applicable: Whether the setting applies under current runtime state
+        (e.g. the active auth provider). ``False`` lets the UI present the field
+        as inert. Display-only, like ``is_advanced``: it does not block
+        PATCH/DELETE server-side; the runtime gate is the real enforcement.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -83,6 +77,7 @@ class SettingResponse(BaseModel):
     is_complex: bool
     has_override: bool
     is_advanced: bool = False
+    is_applicable: bool = True
 
 
 class SettingsPatch(RootModel[dict[str, JsonValue]]):
@@ -97,6 +92,25 @@ class SettingsPatch(RootModel[dict[str, JsonValue]]):
     root: dict[str, JsonValue] = Field(min_length=1)
 
 
+class SettingClassAppMetadata(BaseModel):
+    """App-ownership metadata attached to a :class:`SettingClassGroup`.
+
+    :param is_app_owned: Always ``True`` for app-owned groups.
+    :type is_app_owned: bool
+    :param app_id: The owning app's registry key.
+    :type app_id: str
+    :param app_display_name: The owning app's human-facing label.
+    :type app_display_name: str
+    :param app_enabled: Whether the owning app is currently enabled.
+    :type app_enabled: bool
+    """
+
+    is_app_owned: bool = True
+    app_id: str
+    app_display_name: str
+    app_enabled: bool
+
+
 class SettingClassGroup(BaseModel):
     """One settings-class group in the LIST response.
 
@@ -105,10 +119,28 @@ class SettingClassGroup(BaseModel):
     :param settings: The fields declared on the settings class, with their
         current values and metadata.
     :type settings: list[SettingResponse]
+    :param is_app_owned: Whether this group belongs to a SEP app under
+        ``app/sep/apps/`` rather than core SEP wiring.
+    :type is_app_owned: bool
+    :param app_id: The owning app's registry key when ``is_app_owned`` is
+        ``True``; ``None`` for core groups.
+    :type app_id: str | None
+    :param app_display_name: The owning app's human-facing label when
+        ``is_app_owned`` is ``True``; ``None`` for core groups.
+    :type app_display_name: str | None
+    :param app_enabled: Whether the owning app is currently enabled when
+        ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
+        apps remain listed so the frontend can hide them without a second
+        lookup.
+    :type app_enabled: bool | None
     """
 
     setting_class: SettingClassEnum
     settings: list[SettingResponse]
+    is_app_owned: bool = False
+    app_id: str | None = None
+    app_display_name: str | None = None
+    app_enabled: bool | None = None
 
 
 class SettingsListResponse(BaseModel):

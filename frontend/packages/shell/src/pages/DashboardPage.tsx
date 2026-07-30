@@ -27,7 +27,7 @@ import DnsIcon from '@mui/icons-material/Dns';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import CodeIcon from '@mui/icons-material/Code';
 import DeviceHubIcon from '@mui/icons-material/DeviceHub';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
 import { useDashboardStats } from '@sep/api';
 import {
@@ -41,20 +41,43 @@ import { useAuth } from '../contexts/auth';
 interface RecentTask {
   id: number;
   name: string;
+  link: string;
   target: string;
   status: TaskHistoryStatus;
   started: string;
+}
+
+const OWNER_ROUTE_MAP: Record<string, (taskName: string) => string> = {
+  ALTERS: (n) => `/schema-change/alters/task/${encodeURIComponent(n)}`,
+  ARCHIVER: (n) => `/apps/archives/task/${encodeURIComponent(n)}`,
+  BACKUPS: (n) => `/apps/mysql_backups/task/${encodeURIComponent(n)}`,
+  RESTORES: (n) => `/tasks/${encodeURIComponent(n)}`,
+  CHECKSUMS: (n) => `/apps/checksums/task/${encodeURIComponent(n)}`,
+  BACKUP_MONGO: (n) => `/backups/mongodb/backups/task/${encodeURIComponent(n)}`,
+  RESTORE_MONGO: (n) => `/backups/mongodb/restores/task/${encodeURIComponent(n)}`,
+  BACKUP_PG: (n) => `/backups/postgresql/task/${encodeURIComponent(n)}`,
+  ANY: (n) => `/tasks/${encodeURIComponent(n)}`,
+};
+
+function TaskNameCell({ link, name }: { link: string; name: string }) {
+  const navigate = useNavigate();
+  return (
+    <Button
+      size="small"
+      sx={{ fontFamily: "'Roboto Mono', monospace", textTransform: 'none', p: 0 }}
+      onClick={() => navigate(link)}
+      data-task-link={link}
+    >
+      {name}
+    </Button>
+  );
 }
 
 const columns: MRT_ColumnDef<RecentTask>[] = [
   {
     accessorKey: 'name',
     header: 'Task',
-    Cell: ({ cell }) => (
-      <Typography variant="body2" sx={{ fontFamily: "'Roboto Mono', monospace" }}>
-        {cell.getValue<string>()}
-      </Typography>
-    ),
+    Cell: ({ row }) => <TaskNameCell link={row.original.link} name={row.original.name} />,
   },
   {
     accessorKey: 'target',
@@ -73,9 +96,13 @@ const columns: MRT_ColumnDef<RecentTask>[] = [
 ];
 
 function mapHistoryToRecentTask(item: TaskHistoryEntry): RecentTask {
+  const taskName = item.task.name;
+  const owner = item.task.owner as string;
+  const builder = OWNER_ROUTE_MAP[owner] ?? OWNER_ROUTE_MAP['ANY'];
   return {
     id: item.id ?? 0,
-    name: item.task.name,
+    name: item.display_name,
+    link: builder(taskName),
     target: item.execution_request.target,
     status: item.status ?? 'pending',
     started: item.started_at
@@ -89,7 +116,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
 
   const statsQuery = useDashboardStats();
-  const historyQuery = useTaskHistory({ limit: 5 });
+  const historyQuery = useTaskHistory({ limit: 5, excludeInternal: true });
 
   const stats = [
     {
@@ -118,7 +145,7 @@ export default function DashboardPage() {
       value: statsQuery.data?.targets ?? 0,
       icon: DeviceHubIcon,
       color: 'error.main',
-      to: '/tasks',
+      to: '/inventory/target-hosts',
     },
   ];
 

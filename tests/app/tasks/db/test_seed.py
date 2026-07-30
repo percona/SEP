@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from app.sep.plugins.inventory.models import INVENTORY_SYNC_TASK_NAME
+from app.sep.apps.inventory.models import INVENTORY_SYNC_TASK_NAME
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
     NOMAD_EXEC_ARTIFACT,
@@ -31,7 +31,12 @@ from app.tasks.db.seed import (
     SYSTEM_PERIODIC_TASKS,
     SYSTEM_TASKS,
 )
-from app.tasks.models import TaskBackendEnum
+from app.tasks.models import (
+    CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
+    INTERNAL_TASK_NAMES,
+    SYNC_RUNNING_TASKS_TASK_NAME,
+    TaskBackendEnum,
+)
 
 NOMAD_TEMPLATES_WITH_STALENESS = [
     NOMAD_RUN_COMMAND,
@@ -205,6 +210,36 @@ class TestStalenessPreambleShell:
         assert "threshold=5s" in line
 
 
+def test_internal_task_names_membership_is_exact() -> None:
+    """Assert INTERNAL_TASK_NAMES holds exactly the three maintenance-task constants.
+
+    Locks the dashboard ``exclude_internal`` filter's scope: adding or removing a
+    name (e.g. leaking a generic root task like ``run-python``) fails here, forcing
+    a deliberate update instead of silent filter drift.
+    """
+    assert (
+        frozenset(
+            {
+                INVENTORY_SYNC_TASK_NAME,
+                SYNC_RUNNING_TASKS_TASK_NAME,
+                CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
+            }
+        )
+        == INTERNAL_TASK_NAMES
+    )
+
+
+def test_internal_task_names_are_all_seeded() -> None:
+    """Assert every INTERNAL_TASK_NAMES member is seeded (guards filter/seeder drift)."""
+    seeded = {t.name for t in SYSTEM_TASKS}
+    seeded |= {e.name for _sched, tasks in SYSTEM_PERIODIC_TASKS for e in tasks}
+    expected = set(INTERNAL_TASK_NAMES)
+    # check_nomad_cert_expiry periodic task is config-gated; drop it when disabled.
+    if tasks_settings.NOMAD.check_cert_expiry_interval is None:
+        expected.discard(CHECK_NOMAD_CERT_EXPIRY_TASK_NAME)
+    assert expected <= seeded
+
+
 def test_nomad_cert_expiry_periodic_task_seeded() -> None:
     """Assert tasks__check_nomad_cert_expiry schedule matches TASKS.NOMAD when enabled."""
     interval = tasks_settings.NOMAD.check_cert_expiry_interval
@@ -228,3 +263,22 @@ def test_nomad_cert_expiry_periodic_task_seeded() -> None:
                 assert entry.task_name == "app.tasks.celery.check_nomad_cert_expiry"
                 return
     raise AssertionError("tasks__check_nomad_cert_expiry task not found")
+
+
+def test_purge_task_history_logs_periodic_task_seeded() -> None:
+    """Assert the log-purge periodic task is seeded on the configured schedule."""
+    interval = tasks_settings.LOG_PURGE_INTERVAL
+    if interval is None:
+        assert not any(
+            entry.name == "tasks__purge_task_history_logs"
+            for _sched, tasks in SYSTEM_PERIODIC_TASKS
+            for entry in tasks
+        )
+        return
+    for schedule, tasks in SYSTEM_PERIODIC_TASKS:
+        for entry in tasks:
+            if entry.name == "tasks__purge_task_history_logs":
+                assert schedule == interval
+                assert entry.task_name == "app.tasks.celery.purge_task_history_logs"
+                return
+    raise AssertionError("tasks__purge_task_history_logs task not found")

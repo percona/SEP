@@ -122,6 +122,22 @@ describe('useTaskHistory', () => {
     expect(url).toBe('/sep/task-history/');
     expect(mockApiGet.mock.calls.every(([u]) => !String(u).startsWith('/tasks/'))).toBe(true);
   });
+
+  it('sends exclude_internal=true when excludeInternal option is set', async () => {
+    renderHook(() => useTaskHistory({ excludeInternal: true }), { wrapper: wrapper() });
+    await waitFor(() => {
+      expect(mockApiGet).toHaveBeenCalledWith('/sep/task-history/', {
+        params: { exclude_internal: true },
+      });
+    });
+  });
+
+  it('omits exclude_internal from params when excludeInternal is not set', async () => {
+    renderHook(() => useTaskHistory(), { wrapper: wrapper() });
+    await waitFor(() => expect(mockApiGet).toHaveBeenCalled());
+    const params = mockApiGet.mock.calls[0][1]?.params ?? {};
+    expect(params).not.toHaveProperty('exclude_internal');
+  });
 });
 
 describe('useStopTaskHistory', () => {
@@ -137,7 +153,7 @@ describe('useStopTaskHistory', () => {
 
 describe('useExecuteTask', () => {
   it('encodes slash-containing plugin names per path segment', async () => {
-    const { result } = renderHook(() => useExecuteTask('backup_mongo/restores'), {
+    const { result } = renderHook(() => useExecuteTask('backup_mongo/restore'), {
       wrapper: wrapper(),
     });
 
@@ -146,7 +162,7 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      '/plugins/backup_mongo/restores/my-restore-task/execute',
+      '/apps/backup_mongo/restore/my-restore-task/execute',
       {},
     );
   });
@@ -160,12 +176,12 @@ describe('useExecuteTask', () => {
       await result.current.mutateAsync({ taskName: 'my-backup-task' });
     });
 
-    expect(mockApiPost).toHaveBeenCalledWith('/plugins/backup_mongo/my-backup-task/execute', {});
+    expect(mockApiPost).toHaveBeenCalledWith('/apps/backup_mongo/my-backup-task/execute', {});
   });
 
   it('encodes special characters in task names', async () => {
     const taskName = 'weird/name with spaces&q=?';
-    const { result } = renderHook(() => useExecuteTask('backup_mongo/restores'), {
+    const { result } = renderHook(() => useExecuteTask('backup_mongo/restore'), {
       wrapper: wrapper(),
     });
 
@@ -174,8 +190,30 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      `/plugins/backup_mongo/restores/${encodeURIComponent(taskName)}/execute`,
+      `/apps/backup_mongo/restore/${encodeURIComponent(taskName)}/execute`,
       {},
+    );
+  });
+
+  it('posts an optional execute body for chain wiring', async () => {
+    const executeBody = {
+      chain_task_names: ['my-alter'],
+      chain_on_failure: true,
+    };
+    const { result } = renderHook(() => useExecuteTask('alters'), {
+      wrapper: wrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        taskName: 'my-alter-pre-checks',
+        executeBody,
+      });
+    });
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/apps/alters/my-alter-pre-checks/execute',
+      executeBody,
     );
   });
 });

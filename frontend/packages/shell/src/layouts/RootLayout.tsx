@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router';
 import Providers from '../Providers';
 
 export default function RootLayout() {

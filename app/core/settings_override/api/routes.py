@@ -15,9 +15,16 @@
 
 """Build a settings REST API router parameterised by sub-app wiring."""
 
-__all__ = ["build_settings_router", "collect_class_setting_responses"]
+__all__ = [
+    "AppOwnedClassEntry",
+    "ClassEntry",
+    "RemoteClassEntry",
+    "build_settings_router",
+    "collect_class_setting_responses",
+]
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, params, Request, status
@@ -34,6 +41,7 @@ from app.core.exceptions import (
 )
 from app.core.requests.remote_api import RemoteAPI
 from app.core.settings_override.api.models import (
+    SettingClassAppMetadata,
     SettingClassGroup,
     SettingResponse,
     SettingsListResponse,
@@ -66,9 +74,31 @@ from app.core.settings_override.registry import (
     resolve_nested_field,
     resolve_nested_field_metadata,
     resolve_nested_value,
+    unwrap_secrets_for_storage,
 )
 
 ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettingsProxy]
+
+
+@dataclass(frozen=True, slots=True)
+class AppOwnedClassEntry:
+    """One app-owned settings class exposed on the SEP settings router.
+
+    :param setting_class: The settings class identifier.
+    :type setting_class: SettingClassEnum
+    :param settings_cls: The Pydantic settings model class.
+    :type settings_cls: type[BaseYamlSettings]
+    :param proxy: The live override proxy for the class.
+    :type proxy: OverridableSettingsProxy
+    :param app_key: The owning app's registry key.
+    :type app_key: str
+    """
+
+    setting_class: SettingClassEnum
+    settings_cls: type[BaseYamlSettings]
+    proxy: OverridableSettingsProxy
+    app_key: str
+
 
 #: One ``(SettingClassEnum, remote_base_path)`` pair per settings class whose
 #: storage lives in another sub-app and must be proxied server-side rather than
@@ -76,6 +106,16 @@ ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettings
 #: remote sub-app mounts its settings router at (e.g. ``"/admin/settings"``),
 #: relative to the injected ``RemoteAPI`` client's base URL.
 RemoteClassEntry = tuple[SettingClassEnum, str]
+
+#: Predicate deciding whether a field applies under current runtime state (e.g.
+#: the active auth provider). ``None`` at a router or call site means every field
+#: applies. Display-only: it drives ``SettingResponse.is_applicable`` for the UI
+#: and never blocks PATCH/DELETE.
+ApplicabilityPredicate = Callable[[SettingClassEnum, FieldMetadata], bool]
+
+#: Async callback resolving app identity and enabled state for one ``app_key``.
+#: Injected by the SEP wiring so this factory stays free of ``app.sep`` imports.
+ResolveAppMetadata = Callable[[AsyncSession, str], Awaitable[SettingClassAppMetadata]]
 
 
 async def _no_remote_api() -> None:
@@ -254,6 +294,7 @@ async def collect_class_setting_responses(
     setting_class: SettingClassEnum,
     settings_cls: type[BaseYamlSettings],
     proxy: OverridableSettingsProxy,
+    applicability: ApplicabilityPredicate | None = None,
 ) -> list[SettingResponse]:
     """Return every LIST-projection entry for one wired settings class.
 
@@ -262,15 +303,12 @@ async def collect_class_setting_responses(
     :func:`dump_field_value` so the key set matches ``GET /settings/``.
 
     :param session: The sub-app's database session.
-    :type session: AsyncSession
     :param setting_class: The settings class identifier (enum member).
-    :type setting_class: SettingClassEnum
     :param settings_cls: The Pydantic settings class to introspect.
-    :type settings_cls: type[BaseYamlSettings]
     :param proxy: The proxy whose attribute access yields current values.
-    :type proxy: OverridableSettingsProxy
+    :param applicability: Optional predicate deciding whether each field applies
+        under current runtime state; ``None`` marks every field applicable.
     :return: One :class:`SettingResponse` per LIST row for the class.
-    :rtype: list[SettingResponse]
     """
     rows = await SettingsOverrideManager.list(
         session, setting_class=setting_class, is_active=True
@@ -285,6 +323,7 @@ async def collect_class_setting_responses(
             proxy=proxy,
             field_meta=field_meta,
             override_keys=override_keys,
+            applicability=applicability,
         )
     ]
 
@@ -296,6 +335,7 @@ def _settings_response_from_field(
     proxy: OverridableSettingsProxy,
     field_meta: FieldMetadata,
     has_override: bool,
+    applicability: ApplicabilityPredicate | None = None,
 ) -> SettingResponse:
     """Build a :class:`SettingResponse` for one field on a settings class.
 
@@ -306,6 +346,8 @@ def _settings_response_from_field(
     :param field_meta: The introspected metadata for the field.
     :param has_override: Whether a ``settingoverride`` row exists for this
         ``(class, key)`` pair.
+    :param applicability: Optional predicate deciding whether the field applies
+        under current runtime state; ``None`` marks the field applicable.
     :return: The structured response for the field.
     """
     if "__" in field_meta.key:
@@ -336,6 +378,11 @@ def _settings_response_from_field(
         is_complex=field_meta.is_complex,
         has_override=has_override,
         is_advanced=field_meta.is_advanced,
+        is_applicable=(
+            applicability(setting_class, field_meta)
+            if applicability is not None
+            else True
+        ),
     )
 
 
@@ -346,6 +393,7 @@ def _field_responses(
     proxy: OverridableSettingsProxy,
     field_meta: FieldMetadata,
     override_keys: set[str],
+    applicability: ApplicabilityPredicate | None = None,
 ) -> list[SettingResponse]:
     """Return one response for a plain field, or one per leaf for a nested parent.
 
@@ -360,6 +408,8 @@ def _field_responses(
     :param proxy: The proxy whose attribute access yields current values.
     :param field_meta: The introspected metadata for the top-level field.
     :param override_keys: The canonical keys (and prefixes) carrying an override.
+    :param applicability: Optional predicate deciding whether each field applies
+        under current runtime state; ``None`` marks every field applicable.
     :return: One or more responses for the field.
     """
     leaves = (
@@ -375,6 +425,7 @@ def _field_responses(
                 proxy=proxy,
                 field_meta=field_meta,
                 has_override=field_meta.key in override_keys,
+                applicability=applicability,
             )
         ]
     responses = []
@@ -389,6 +440,7 @@ def _field_responses(
                 proxy=proxy,
                 field_meta=leaf_meta,
                 has_override=leaf_key in override_keys,
+                applicability=applicability,
             )
         )
     return responses
@@ -630,7 +682,135 @@ async def _fire_inline_rebind_callbacks(
     )
 
 
-def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + local/remote dispatch
+def _validate_app_owned_wiring(
+    app_owned: list[AppOwnedClassEntry],
+    resolve_app_metadata: ResolveAppMetadata | None,
+) -> None:
+    """Reject app-owned wiring that omits the metadata resolver.
+
+    :param app_owned: The app-owned settings classes to expose.
+    :param resolve_app_metadata: The callback that resolves app metadata.
+    :raises ValueError: If ``app_owned`` is non-empty but ``resolve_app_metadata``
+        is ``None``.
+    """
+    if app_owned and resolve_app_metadata is None:
+        raise ValueError(
+            "resolve_app_metadata is required when app_owned_classes is non-empty.",
+        )
+
+
+def _merge_app_owned_into_lookup(
+    class_lookup: dict[
+        SettingClassEnum, tuple[type[BaseYamlSettings], OverridableSettingsProxy]
+    ],
+    remote_lookup: dict[SettingClassEnum, str],
+    app_owned: list[AppOwnedClassEntry],
+) -> None:
+    """Register app-owned classes in the local lookup, rejecting duplicates.
+
+    :param class_lookup: The core class lookup map to extend in place.
+    :param remote_lookup: The remote class lookup map used for conflict checks.
+    :param app_owned: The app-owned settings classes to merge.
+    :raises ValueError: If a setting class is wired more than once.
+    """
+    for entry in app_owned:
+        if entry.setting_class in class_lookup:
+            raise ValueError(
+                f"Settings class {entry.setting_class.value!r} is wired as both"
+                " a core class and an app-owned class.",
+            )
+        if entry.setting_class in remote_lookup:
+            raise ValueError(
+                f"Settings class {entry.setting_class.value!r} is wired as both"
+                " a remote class and an app-owned class.",
+            )
+        class_lookup[entry.setting_class] = (entry.settings_cls, entry.proxy)
+
+
+async def _collect_app_owned_list_groups(
+    session: AsyncSession,
+    app_owned: list[AppOwnedClassEntry],
+    resolve_app_metadata: ResolveAppMetadata,
+) -> list[SettingClassGroup]:
+    """Build LIST groups for app-owned settings classes with app metadata.
+
+    :param session: The sub-app's database session.
+    :param app_owned: The app-owned settings classes to list.
+    :param resolve_app_metadata: The callback that resolves app metadata.
+    :return: One :class:`SettingClassGroup` per app-owned class.
+    """
+    groups = []
+    for entry in app_owned:
+        settings_list = await collect_class_setting_responses(
+            session=session,
+            setting_class=entry.setting_class,
+            settings_cls=entry.settings_cls,
+            proxy=entry.proxy,
+        )
+        metadata = await resolve_app_metadata(session, entry.app_key)
+        groups.append(
+            SettingClassGroup(
+                setting_class=entry.setting_class,
+                settings=settings_list,
+                is_app_owned=metadata.is_app_owned,
+                app_id=metadata.app_id,
+                app_display_name=metadata.app_display_name,
+                app_enabled=metadata.app_enabled,
+            )
+        )
+    return groups
+
+
+async def _collect_settings_list_groups(
+    session: AsyncSession,
+    remote_api: RemoteAPI | None,
+    classes: list[ClassEntry],
+    remote_lookup: dict[SettingClassEnum, str],
+    app_owned: list[AppOwnedClassEntry],
+    resolve_app_metadata: ResolveAppMetadata | None,
+    applicability: ApplicabilityPredicate | None,
+) -> list[SettingClassGroup]:
+    """Collect every settings-class group for the LIST endpoint.
+
+    :param session: The sub-app's database session.
+    :param remote_api: The client for remote settings classes, or ``None``.
+    :param classes: The core settings classes exposed locally.
+    :param remote_lookup: Remote classes keyed by enum member.
+    :param app_owned: App-owned settings classes appended after remote groups.
+    :param resolve_app_metadata: The callback that resolves app metadata.
+    :param applicability: Optional predicate driving ``is_applicable`` on each
+        core-class field; ``None`` marks every field applicable.
+    :return: Groups in core, remote, then app-owned declaration order.
+    """
+    groups = []
+    for setting_class, settings_cls, proxy in classes:
+        settings_list = await collect_class_setting_responses(
+            session=session,
+            setting_class=setting_class,
+            settings_cls=settings_cls,
+            proxy=proxy,
+            applicability=applicability,
+        )
+        groups.append(
+            SettingClassGroup(setting_class=setting_class, settings=settings_list)
+        )
+    for setting_class, base_path in remote_lookup.items():
+        groups.append(await _remote_list_group(remote_api, setting_class, base_path))
+    if app_owned:
+        if resolve_app_metadata is None:
+            msg = "resolve_app_metadata is required when app_owned classes are listed."
+            raise RuntimeError(msg)
+        groups.extend(
+            await _collect_app_owned_list_groups(
+                session,
+                app_owned,
+                resolve_app_metadata,
+            )
+        )
+    return groups
+
+
+def build_settings_router(
     *,
     classes: list[ClassEntry],
     session_dep: Any,
@@ -638,6 +818,9 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
     mutation_deps: list[params.Depends] | None = None,
     remote_classes: list[RemoteClassEntry] | None = None,
     remote_api_dep: Any = None,
+    applicability: ApplicabilityPredicate | None = None,
+    app_owned_classes: list[AppOwnedClassEntry] | None = None,
+    resolve_app_metadata: ResolveAppMetadata | None = None,
 ) -> APIRouter:
     """Build an :class:`APIRouter` exposing the settings CRUD endpoints.
 
@@ -652,7 +835,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
     JSON mutations carry no form body.
 
     :param classes: One ``(SettingClassEnum, settings_cls, proxy)`` triple per
-        settings class to expose on this router.
+        core settings class to expose on this router.
     :param session_dep: An ``Annotated[AsyncSession, Depends(...)]`` type alias
         for the sub-app's session dependency (e.g. ``app.sep.deps.SessionDep``
         or ``app.tasks.deps.SessionDep``). Used as the parameter annotation on
@@ -678,12 +861,31 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         which forwards the caller's Bearer token). Required when ``remote_classes``
         is non-empty; ignored otherwise. Used as the parameter annotation on each
         handler so FastAPI resolves the client per-request.
+    :param applicability: Optional predicate deciding whether each field applies
+        under current runtime state (e.g. the active auth provider). It drives
+        ``SettingResponse.is_applicable`` on every response the router returns
+        (LIST, DETAIL, and PATCH); ``None`` (the default) marks every field
+        applicable, so callers that omit it behave exactly as before. Display-only
+        -- it never blocks PATCH/DELETE.
+    :param app_owned_classes: Optional app-owned settings classes declared by
+        SEP plugins. Appended after core and remote groups on LIST; merged into
+        the local class lookup so GET / PATCH / DELETE work unchanged.
+    :param resolve_app_metadata: Async callback that resolves app identity and
+        enabled state for one ``app_key``. Required when ``app_owned_classes``
+        is non-empty; ignored otherwise. Injected by the SEP wiring so this
+        factory stays free of ``app.sep`` imports.
     :return: A configured :class:`APIRouter` ready to mount under a sub-app's
         ``/settings`` prefix.
+    :raises ValueError: If ``remote_classes`` is non-empty without
+        ``remote_api_dep``, or ``app_owned_classes`` is non-empty without
+        ``resolve_app_metadata``, or a setting class is wired more than once.
     """
     router = APIRouter(dependencies=[admin_dep])
+    app_owned = list(app_owned_classes or [])
+    _validate_app_owned_wiring(app_owned, resolve_app_metadata)
     class_lookup = {member: (cls, proxy) for member, cls, proxy in classes}
     remote_lookup, remote_dep = _remote_wiring(remote_classes, remote_api_dep)
+    _merge_app_owned_into_lookup(class_lookup, remote_lookup, app_owned)
 
     def _resolve(
         setting_class: SettingClassEnum,
@@ -712,29 +914,25 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
 
         Local classes are read from their config singletons; remote classes
         (``remote_classes``) are fetched server-side from their owning sub-app
-        and appended in declaration order. A failed remote fetch fails the whole
-        request with ``502`` -- the LIST never silently drops a remote group.
+        and appended in declaration order; app-owned classes follow remote
+        groups with per-group app metadata. A failed remote fetch fails the
+        whole request with ``502`` -- the LIST never silently drops a remote
+        group.
 
         :param session: The sub-app's database session.
         :param remote_api: The client for remote settings classes (``None`` when
             the router wires none).
         :return: Grouped responses, one group per configured settings class.
         """
-        groups = []
-        for setting_class, settings_cls, proxy in classes:
-            settings_list = await collect_class_setting_responses(
-                session=session,
-                setting_class=setting_class,
-                settings_cls=settings_cls,
-                proxy=proxy,
-            )
-            groups.append(
-                SettingClassGroup(setting_class=setting_class, settings=settings_list)
-            )
-        for setting_class, base_path in remote_lookup.items():
-            groups.append(
-                await _remote_list_group(remote_api, setting_class, base_path)
-            )
+        groups = await _collect_settings_list_groups(
+            session=session,
+            remote_api=remote_api,
+            classes=classes,
+            remote_lookup=remote_lookup,
+            app_owned=app_owned,
+            resolve_app_metadata=resolve_app_metadata,
+            applicability=applicability,
+        )
         return SettingsListResponse(groups=groups)
 
     @router.get("/{setting_class}/{key}")
@@ -772,6 +970,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
             proxy=proxy,
             field_meta=field_meta,
             has_override=key in override_keys,
+            applicability=applicability,
         )
 
     @router.patch("/{setting_class}", dependencies=mutation_deps or [])
@@ -832,6 +1031,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
                 proxy=proxy,
                 field_meta=field_meta_by_key[key],
                 has_override=True,
+                applicability=applicability,
             )
             for key, _ in to_apply
         ]
@@ -1048,6 +1248,7 @@ async def _stage_and_commit_overrides(
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
     for key, value in to_apply:
+        stored_value = unwrap_secrets_for_storage(value)
         existing = await SettingsOverrideManager.first(
             session, setting_class=setting_class, key=key
         )
@@ -1056,12 +1257,12 @@ async def _stage_and_commit_overrides(
                 SettingOverride(
                     setting_class=setting_class,
                     key=key,
-                    value=value,
+                    value=stored_value,
                     is_active=True,
                 )
             )
         else:
-            existing.value = value
+            existing.value = stored_value
             existing.is_active = True
             session.add(existing)
     await session.commit()

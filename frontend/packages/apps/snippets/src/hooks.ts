@@ -1,0 +1,482 @@
+/**
+ * Copyright (C) 2026 Percona LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  keepPreviousData,
+  type QueryClient,
+  type QueryKey,
+} from '@tanstack/react-query';
+import {
+  apiClient,
+  ApiError,
+  DEFAULT_APP_LIST_LIMIT,
+  DEFAULT_APP_LIST_OFFSET,
+  normalizeAppListResponse,
+  type AppListQueryOptions,
+  type AppListResult,
+  type AppSchema,
+  type PaginatedAppList,
+} from '@sep/api';
+import {
+  downloadBlob,
+  SNIPPETS_APPS_API_BASE,
+  snippetAppApprovalPath,
+  snippetAppDownloadPath,
+  snippetAppExecutePath,
+  snippetAppHistoryPath,
+  snippetAppSchemaPath,
+  type PaginatedTaskHistory,
+} from '@sep/framework';
+import type {
+  BatchApprovalErrorResponse,
+  BatchApprovalResponse,
+  RefreshResponse,
+  SnippetApprovalFilter,
+  SnippetBatchApproveRequest,
+  SnippetExecutionRequest,
+  SnippetExecutionResponse,
+  SnippetResponse,
+  SnippetServiceTypesResponse,
+  SnippetsCapabilitiesResponse,
+} from './types';
+
+const SNIPPETS_BASE = SNIPPETS_APPS_API_BASE;
+
+const SNIPPETS_LIST_QUERY_KEY = ['snippets', 'list'] as const;
+
+type SnippetsListCache = AppListResult<SnippetResponse>;
+type SnippetsListSnapshots = [QueryKey, SnippetsListCache | undefined][];
+
+/**
+ * Optimistically apply a single snippet's new approval state to one cached list
+ * page, respecting that page's own approval filter (read from its query key).
+ *
+ * Under an active approval filter the mutated row may no longer belong on the
+ * page: approving under "not approved" (or un-approving under "approved") drops
+ * the row and decrements the filtered `total` so the count stays honest; every
+ * other case (notably the "all" filter) flips `is_approved` in place, preserving
+ * instant feedback. Keeping the total in step also avoids stranding the user on
+ * an out-of-range page once the trailing page empties.
+ */
+function applyApprovalToList(
+  current: SnippetsListCache | undefined,
+  queryKey: QueryKey,
+  filename: string,
+  isApproved: boolean,
+): SnippetsListCache | undefined {
+  if (!current) {
+    return current;
+  }
+  const approval = (queryKey[2] as { approval?: SnippetApprovalFilter } | undefined)?.approval;
+  const excluded =
+    (approval === 'approved' && !isApproved) || (approval === 'not_approved' && isApproved);
+  if (excluded) {
+    const present = current.items.some((snippet) => snippet.filename === filename);
+    return {
+      ...current,
+      items: current.items.filter((snippet) => snippet.filename !== filename),
+      pagination:
+        present && current.pagination
+          ? { ...current.pagination, total: Math.max(0, current.pagination.total - 1) }
+          : current.pagination,
+    };
+  }
+  return {
+    ...current,
+    items: current.items.map((snippet) =>
+      snippet.filename === filename ? { ...snippet, is_approved: isApproved } : snippet,
+    ),
+  };
+}
+
+/**
+ * Optimistically apply an approval change across every cached snippets-list
+ * page. Each page is updated through its own query key so {@link applyApprovalToList}
+ * can honour that page's approval filter. Returns the pre-mutation snapshot for
+ * rollback.
+ */
+function optimisticallyApplyApproval(
+  queryClient: QueryClient,
+  filename: string,
+  isApproved: boolean,
+): SnippetsListSnapshots {
+  const previous = snapshotSnippetsLists(queryClient);
+  for (const [queryKey] of previous) {
+    queryClient.setQueryData<SnippetsListCache>(queryKey, (current) =>
+      applyApprovalToList(current, queryKey, filename, isApproved),
+    );
+  }
+  return previous;
+}
+
+function snapshotSnippetsLists(queryClient: QueryClient): SnippetsListSnapshots {
+  return queryClient.getQueriesData<SnippetsListCache>({ queryKey: SNIPPETS_LIST_QUERY_KEY });
+}
+
+function restoreSnippetsLists(
+  queryClient: QueryClient,
+  previous: SnippetsListSnapshots | undefined,
+) {
+  if (!previous) {
+    return;
+  }
+  for (const [queryKey, data] of previous) {
+    queryClient.setQueryData(queryKey, data);
+  }
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function extractBatchApprovalError(data: unknown): BatchApprovalErrorResponse | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const detail = (data as { detail?: unknown }).detail;
+  if (!detail || typeof detail !== 'object') {
+    return null;
+  }
+
+  const candidate = detail as {
+    missing_in_db?: unknown;
+    missing_on_disk?: unknown;
+  };
+  if (!isStringArray(candidate.missing_in_db) || !isStringArray(candidate.missing_on_disk)) {
+    return null;
+  }
+
+  return {
+    missing_in_db: candidate.missing_in_db,
+    missing_on_disk: candidate.missing_on_disk,
+  };
+}
+
+/**
+ * Server-side sort/search/filter selections for the snippets list.
+ *
+ * These map to the backend's opt-in list-query params. The caller (page) is
+ * responsible for mapping its UI sentinels onto server values — the hook forwards
+ * every *defined* value verbatim and only drops empty/undefined, so a real
+ * service type such as `"all"` is never mistaken for "no filter". ``uncategorized``
+ * is a distinct flag for "no service type" (absent or blank).
+ */
+export type SnippetsListFilters = {
+  search?: string;
+  approval?: SnippetApprovalFilter;
+  serviceType?: string;
+  uncategorized?: boolean;
+};
+
+/**
+ * Fetch a page of snippet entities discovered by the backend.
+ */
+export function useSnippets(options?: AppListQueryOptions & SnippetsListFilters) {
+  const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
+  const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
+  const search = options?.search?.trim() || undefined;
+  const approval = options?.approval || undefined;
+  const serviceType = options?.serviceType || undefined;
+  const uncategorized = options?.uncategorized || undefined;
+
+  return useQuery<AppListResult<SnippetResponse>>({
+    queryKey: [
+      ...SNIPPETS_LIST_QUERY_KEY,
+      { offset, limit, search, approval, serviceType, uncategorized },
+    ],
+    enabled: options?.enabled !== false,
+    queryFn: async () => {
+      const { data } = await apiClient.get<SnippetResponse[] | PaginatedAppList<SnippetResponse>>(
+        `${SNIPPETS_BASE}/`,
+        {
+          params: { offset, limit, search, approval, service_type: serviceType, uncategorized },
+        },
+      );
+      return normalizeAppListResponse(data);
+    },
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Fetch the whole-dataset service-type facet for the list filter.
+ *
+ * Sourced across every snippet (not the loaded page) so the service-type
+ * dropdown can offer every value the dataset contains. Shares the ``['snippets']``
+ * key prefix, so {@link useRefreshSnippets} invalidates it after a refresh.
+ */
+export function useSnippetServiceTypes() {
+  return useQuery<SnippetServiceTypesResponse>({
+    queryKey: ['snippets', 'service_types'],
+    queryFn: async () => {
+      const { data } = await apiClient.get<SnippetServiceTypesResponse>(
+        `${SNIPPETS_BASE}/service_types`,
+      );
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Fetch the per-snippet form schema.
+ *
+ * Pass ``executionOnly=true`` on pages that mount ``SnippetExecutionAccordion``
+ * so both share ``['snippets', filename, 'schema', { execution_only: true }]``
+ * and React Query deduplicates the fetch.
+ */
+export function useSnippetSchema(filename: string | undefined, executionOnly = false) {
+  return useQuery<AppSchema>({
+    queryKey: executionOnly
+      ? ['snippets', filename, 'schema', { execution_only: true }]
+      : ['snippets', filename, 'schema'],
+    queryFn: async () => {
+      if (!filename) {
+        throw new Error('Missing snippet filename');
+      }
+      const { data } = await apiClient.get<AppSchema>(
+        snippetAppSchemaPath(filename),
+        executionOnly ? { params: { execution_only: true } } : undefined,
+      );
+      return data;
+    },
+    enabled: Boolean(filename),
+    staleTime: executionOnly ? Infinity : 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Fetch the execution history for a single snippet.
+ *
+ * Returns the upstream paginated tasks-history payload so the React detail
+ * page can pass the result straight into the shared ``TaskHistoryTable``.
+ */
+export function useSnippetHistory(filename: string | undefined) {
+  return useQuery<PaginatedTaskHistory>({
+    queryKey: ['snippets', filename, 'history'],
+    queryFn: async () => {
+      if (!filename) {
+        throw new Error('Missing snippet filename');
+      }
+      const { data } = await apiClient.get<PaginatedTaskHistory>(snippetAppHistoryPath(filename));
+      return data;
+    },
+    enabled: Boolean(filename),
+  });
+}
+
+/**
+ * Mutation: download the raw snippet file (full body + YAML frontmatter).
+ *
+ * Routes through ``apiClient`` so the Bearer interceptor attaches the
+ * in-memory access token, then turns the Blob response into a save
+ * dialog via a temporary anchor click (mirrors ``useLogDownload``).
+ */
+export function useSnippetDownload(filename: string | undefined) {
+  return useMutation<Blob, Error, void>({
+    mutationFn: async () => {
+      if (!filename) {
+        throw new Error('Snippet filename is required for download.');
+      }
+      const { data } = await apiClient.get<Blob>(snippetAppDownloadPath(filename), {
+        responseType: 'blob',
+      });
+      downloadBlob(data, filename);
+      return data;
+    },
+  });
+}
+
+/**
+ * Mutation: execute a snippet against the tasks API.
+ *
+ * On success, the per-snippet history list query is invalidated so the
+ * detail page refetches and the new run row appears immediately.
+ */
+export function useSnippetExecution(filename: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation<SnippetExecutionResponse, Error, SnippetExecutionRequest>({
+    mutationFn: async (body) => {
+      if (!filename) {
+        throw new Error('Snippet filename is required for execution.');
+      }
+      const { data } = await apiClient.post<SnippetExecutionResponse>(
+        snippetAppExecutePath(filename),
+        body,
+      );
+      return data;
+    },
+    onSuccess: () => {
+      if (filename) {
+        queryClient.invalidateQueries({
+          queryKey: ['snippets', filename, 'history'],
+        });
+      }
+    },
+  });
+}
+/**
+ * Mutation: approve a single snippet (idempotent PUT).
+ *
+ * On success, the snippets list query is invalidated so the list view
+ * reflects the new approval state immediately.
+ */
+export function useApproveSnippet(filename: string) {
+  const queryClient = useQueryClient();
+  return useMutation<SnippetResponse, Error, void, { previous?: SnippetsListSnapshots }>({
+    mutationFn: async () => {
+      const { data } = await apiClient.put<SnippetResponse>(snippetAppApprovalPath(filename));
+      return data;
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
+      const previous = optimisticallyApplyApproval(queryClient, filename, true);
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      restoreSnippetsLists(queryClient, context?.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * Mutation: remove approval from a single snippet (idempotent DELETE).
+ *
+ * On success, the snippets list query is invalidated.
+ */
+export function useRemoveSnippetApproval(filename: string) {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, void, { previous?: SnippetsListSnapshots }>({
+    mutationFn: async () => {
+      await apiClient.delete(snippetAppApprovalPath(filename));
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
+      const previous = optimisticallyApplyApproval(queryClient, filename, false);
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      restoreSnippetsLists(queryClient, context?.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * Discriminated error union for {@link useBatchApproveSnippets}.
+ *
+ * `structured: true` — the backend returned a 400 with a parseable
+ * {@link BatchApprovalErrorResponse} payload (missing DB rows / disk files).
+ * `structured: false` — any other failure (network error, 5xx, etc.); the
+ * raw value is preserved in `raw` for logging.
+ */
+export type BatchApproveError =
+  | (Error & { structured: true; detail: BatchApprovalErrorResponse })
+  | (Error & { structured: false; raw: unknown });
+
+/**
+ * Mutation: batch-approve snippets via PATCH /approvals (idempotent).
+ *
+ * Returns a {@link BatchApprovalResponse} on success (200) or throws a
+ * {@link BatchApproveError} so callers can narrow on `err.structured`
+ * to render per-category badges (400) vs. a generic fallback message.
+ */
+export function useBatchApproveSnippets() {
+  const queryClient = useQueryClient();
+  return useMutation<BatchApprovalResponse, BatchApproveError, SnippetBatchApproveRequest>({
+    mutationFn: async (body) => {
+      try {
+        const { data } = await apiClient.patch<BatchApprovalResponse>(
+          `${SNIPPETS_BASE}/approvals`,
+          body,
+        );
+        return data;
+      } catch (err: unknown) {
+        const detail =
+          err instanceof ApiError && err.status === 400
+            ? extractBatchApprovalError(err.data)
+            : null;
+        if (detail) {
+          const batchError: BatchApproveError = Object.assign(new Error('Batch approval failed'), {
+            structured: true as const,
+            detail,
+          });
+          throw batchError;
+        }
+        const batchError: BatchApproveError = Object.assign(new Error('Batch approval failed'), {
+          structured: false as const,
+          raw: err,
+        });
+        throw batchError;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SNIPPETS_LIST_QUERY_KEY });
+    },
+  });
+}
+
+/**
+ * Fetch per-deployment capability flags for the snippets app.
+ *
+ * The capabilities response carries no privileged data, so this hook is
+ * safe to call for any authenticated user. The 5-minute ``staleTime``
+ * reflects that deployment flags do not change at runtime — refetching on
+ * every tab focus would be wasteful.
+ */
+export function useSnippetsCapabilities() {
+  return useQuery<SnippetsCapabilitiesResponse>({
+    queryKey: ['snippets', 'capabilities'],
+    queryFn: async () => {
+      const { data } = await apiClient.get<SnippetsCapabilitiesResponse>(
+        `${SNIPPETS_BASE}/capabilities`,
+      );
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Mutation: trigger a manual refresh of the snippets cache from disk.
+ *
+ * Admin + deployment-gated by ``manual_sync_enabled``; callers should
+ * gate the affordance on both ``isAdmin`` and the capabilities flag
+ * before invoking. On success, every cached snippet query is invalidated
+ * (``['snippets']`` prefix) since refresh can add, update, or remove rows.
+ */
+export function useRefreshSnippets() {
+  const queryClient = useQueryClient();
+  return useMutation<RefreshResponse, ApiError, void>({
+    mutationFn: async () => {
+      const { data } = await apiClient.post<RefreshResponse>(`${SNIPPETS_BASE}/refresh`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['snippets'] });
+    },
+  });
+}

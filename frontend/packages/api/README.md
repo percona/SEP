@@ -30,8 +30,8 @@ packages. Anything that talks to the backend should go through here.
   the `openapi-fetch` `{ data, error }` tuple to throw the same shape.
 - **Token accessor pattern** — `setTokenProvider()` and `setOnUnauthorized()`
   let the auth layer plug in without the API package depending on auth state.
-- **Hooks** — `usePluginSchema`, `usePluginTasks`, `usePluginTask`,
-  `useCreatePluginTask` (generic, predate codegen) and `useCurrentUser`
+- **Hooks** — `useAppSchema`, `useAppTasks`, `useAppTask`,
+  `useCreateAppTask` (generic, predate codegen) and `useCurrentUser`
   (sample of the typed-hook pattern).
 - **Auth functions** — `postLogin`, `postRefresh`, `fetchCurrentUser`.
   Thin request wrappers consumed by the `AuthProvider` in `@sep/shell`.
@@ -66,7 +66,7 @@ setOnUnauthorized(() => redirectToLogin());
 import { apiClient, ApiError } from '@sep/api';
 
 try {
-  const { data } = await apiClient.get('/plugins/checksums/');
+  const { data } = await apiClient.get('/apps/checksums/');
 } catch (err) {
   if (err instanceof ApiError && err.status === 404) {
     // handle not found
@@ -156,14 +156,14 @@ git diff --exit-code -- packages/api/src/generated/
 import { useQuery } from '@tanstack/react-query';
 import { sepApi, throwOnApiError, type SepComponents } from '@sep/api';
 
-type Task = SepComponents['schemas']['BaseTaskResponse'];
+type Task = SepComponents['schemas']['framework__BaseTaskResponse'];
 
 export function useChecksumTask(name: string) {
   return useQuery<Task>({
     queryKey: ['checksums', name],
     queryFn: () =>
       throwOnApiError(
-        sepApi.GET('/api/plugins/checksums/{task_name}', {
+        sepApi.GET('/api/apps/checksums/{task_name}', {
           params: { path: { task_name: name } },
         }),
       ),

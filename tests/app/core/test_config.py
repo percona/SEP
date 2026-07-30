@@ -25,6 +25,7 @@ from pydantic import SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config import (
+    _sanitize_client_kwargs,
     BaseYamlAppSettings,
     create_app,
     default_lifespan,
@@ -36,6 +37,29 @@ from app.core.config import (
 
 DEFAULT_ANNOTATIONS_TIMEOUT = 5
 CUSTOM_ANNOTATIONS_TIMEOUT = 7
+
+
+def test_sanitize_client_kwargs_redacts_url_password():
+    """``_sanitize_client_kwargs`` masks a password embedded in an endpoint URL."""
+    safe = _sanitize_client_kwargs(
+        {
+            "endpoint": "http://user:hunter2@localhost:8000/",
+            "verify_ssl": False,
+        }
+    )
+    assert "hunter2" not in safe["endpoint"]
+    assert "****" in safe["endpoint"]
+    assert safe["verify_ssl"] is False
+
+
+def test_sanitize_client_kwargs_preserves_credential_free_values():
+    """``_sanitize_client_kwargs`` leaves non-credential values untouched."""
+    api_key = SecretStr("token")
+    safe = _sanitize_client_kwargs(
+        {"endpoint": "http://localhost:8000/", "api_key": api_key}
+    )
+    assert safe["endpoint"] == "http://localhost:8000/"
+    assert safe["api_key"] is api_key
 
 
 class DummySettings(BaseSettings):
@@ -184,21 +208,26 @@ def test_settings_customise_sources(
 
 @pytest.mark.asyncio
 async def test_default_lifespan():
-    """Test default_lifespan manages CASDOOR and closes sessions."""
-    mock_casdoor = AsyncMock()
+    """Verify default_lifespan enters the active provider's lifespan and closes sessions."""
+    mock_lifespan_cm = AsyncMock()
+    mock_provider = MagicMock()
+    mock_provider.lifespan.return_value = mock_lifespan_cm
     mock_close_registry = AsyncMock()
 
     with (
         patch.object(Settings, "close_client_registry", mock_close_registry),
-        patch("app.core.config.settings.CASDOOR", mock_casdoor),
+        patch(
+            "app.core.auth.config.get_active_auth_provider", return_value=mock_provider
+        ),
     ):
         app = FastAPI()
 
         async with default_lifespan(app):
             pass
 
-    mock_casdoor.__aenter__.assert_called_once()
-    mock_casdoor.__aexit__.assert_called_once()
+    mock_provider.lifespan.assert_called_once()
+    mock_lifespan_cm.__aenter__.assert_called_once()
+    mock_lifespan_cm.__aexit__.assert_called_once()
     mock_close_registry.assert_called_once()
 
 

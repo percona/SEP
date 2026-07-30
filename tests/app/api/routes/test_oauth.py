@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from app.api.deps import RefreshTokenCookie
 from app.core.auth.exceptions import HTTPUnauthorizedException
+from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.main import app
 from app.sep.config import sep_settings
@@ -452,3 +453,79 @@ def test_session_refresh_defaults_match_plan():
     """Assert SESSION_REFRESH defaults produce the expected cookie attributes."""
     assert sep_settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
     assert sep_settings.SESSION_REFRESH.PATH == "/api/oauth"
+
+
+def test_spa_session_login_success(
+    test_client, grafana_mock, grafana_user_record, mocker
+):
+    """Assert POST /session mints a session from an ambient Grafana cookie."""
+    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+    test_client.cookies.set("grafana_session", "ambient")
+
+    response = test_client.post("/api/oauth/session")
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["access_token"]
+    assert "expires_in" in body
+    assert "refresh_token" not in body
+    refresh_headers = _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(refresh_headers) == 1
+    assert "HttpOnly" in refresh_headers[0]
+    assert "Path=/api/oauth" in refresh_headers[0]
+
+
+def test_spa_session_login_no_cookie_returns_401(test_client, grafana_mock, mocker):
+    """Assert POST /session returns 401 (silent fallback) with no ambient cookie."""
+    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+
+    response = test_client.post("/api/oauth/session")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_spa_session_login_toggle_off_returns_401(test_client, grafana_mock):
+    """Assert POST /session returns 401 when ambient SSO is disabled (default)."""
+    test_client.cookies.set("grafana_session", "ambient")
+
+    response = test_client.post("/api/oauth/session")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_grafana_spa_login_then_refresh(
+    test_client, grafana_mock, grafana_user_record, mocker
+):
+    """Assert the SPA can log in with Grafana active and then refresh its session.
+
+    Drives the real ``GrafanaUser`` through the routes (Grafana HTTP mocked) so a
+    non-empty refresh cookie is set at login and reused at refresh -- the flow an
+    empty Grafana refresh token would break on every SPA reload.
+    """
+    mocker.patch("app.api.routes.oauth.User", GrafanaUser)
+
+    login = test_client.post(
+        "/api/oauth/login",
+        json={"username": grafana_user_record["login"], "password": "secret"},
+    )
+
+    assert login.status_code == status.HTTP_200_OK
+    assert login.json()["access_token"]
+    login_cookies = _set_cookies_matching(
+        login.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(login_cookies) == 1
+    assert "refreshToken=;" not in login_cookies[0]
+
+    refreshed = test_client.post("/api/oauth/refresh")
+
+    assert refreshed.status_code == status.HTTP_200_OK
+    assert refreshed.json()["access_token"]

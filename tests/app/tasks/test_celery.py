@@ -16,9 +16,10 @@
 """Define tests for the app.tasks.celery module."""
 
 import asyncio
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,20 +32,21 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import undefer
-from sqlmodel import SQLModel
+from sqlmodel import col, select, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
 from app.core.alerts.models import AlertService, AlertSeverity
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
-from app.core.utils import json_serializer
+from app.core.utils import json_serializer, utc_now
 from app.tasks import celery as celery_module
 from app.tasks.celery import (
     _check_nomad_cert_expiry,
     _dispatch_chained_task,
     _dispatch_queue_item,
     _MAX_CHAIN_DEPTH,
+    _purge_task_history_logs,
     _raise_if_identical_task_conflict,
     check_nomad_cert_expiry,
     delete_task_history,
@@ -52,6 +54,7 @@ from app.tasks.celery import (
     get_executor_for_task,
     maybe_dispatch_chain,
     prepare_periodic_task_history,
+    purge_task_history_logs,
     sync_queue_item,
     sync_running_items,
     task_revoked_handler,
@@ -66,6 +69,7 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskExecutionRequest,
     TaskHistory,
+    TaskHistoryLog,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskWrite,
@@ -494,61 +498,15 @@ class TestInternalDispatchQueueItem:
 
 
 class TestRaiseIfIdenticalTaskConflict:
-    """Test _raise_if_identical_task_conflict."""
+    """Test _raise_if_identical_task_conflict.
 
-    @pytest.mark.asyncio
-    async def test_no_identical_task_passes(self):
-        """Assert no exception when no identical task exists."""
-        queue_item = _make_history()
-        session = _make_session_mock()
-
-        with patch(
-            "app.tasks.celery.TaskHistoryManager.first",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            await _raise_if_identical_task_conflict(queue_item, session)
-
-    @pytest.mark.asyncio
-    async def test_identical_task_raises_conflict(self):
-        """Assert HTTPConflictException when identical task is found."""
-        queue_item = _make_history()
-        session = _make_session_mock()
-        identical = _make_history(id=99)
-
-        with (
-            patch(
-                "app.tasks.celery.TaskHistoryManager.first",
-                new_callable=AsyncMock,
-                return_value=identical,
-            ),
-            pytest.raises(
-                HTTPConflictException, match="Identical queue item already running"
-            ),
-        ):
-            await _raise_if_identical_task_conflict(queue_item, session)
-
-    @pytest.mark.asyncio
-    async def test_no_meta_passes_empty_clauses(self):
-        """Assert empty meta produces no extra where clauses."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta=None,
-                payload=None,
-            ),
-        )
-        session = _make_session_mock()
-
-        with patch(
-            "app.tasks.celery.TaskHistoryManager.first",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            await _raise_if_identical_task_conflict(queue_item, session)
+    Behavioral coverage (conflict raises, self-exclusion, status/task scoping,
+    jsonb type-strictness, injection-safety) lives in
+    ``TestRaiseIfIdenticalTaskConflictRealPostgres``, which runs the query on a
+    real engine. What remains here is the one dialect-branch shape assertion the
+    end-to-end tests cannot observe: that SQLite still uses the ``json_extract``
+    text-equality loop rather than the PostgreSQL ``@>``/jsonb path.
+    """
 
     @staticmethod
     async def _capture_meta_clauses(queue_item, bind_name):
@@ -581,207 +539,6 @@ class TestRaiseIfIdenticalTaskConflict:
         return meta_clauses, rendered
 
     @pytest.mark.asyncio
-    async def test_pg_scalar_only_meta_emits_single_containment_clause(self):
-        """Assert PG scalar meta produces exactly one ``@>`` containment clause."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"target": "node-1", "priority": 5},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        clause = rendered[0]
-        assert "@>" in clause
-        assert "'meta'" in clause
-        assert '"target": "node-1"' in clause
-        assert '"priority": 5' in clause
-
-    @pytest.mark.asyncio
-    async def test_pg_bool_scalar_is_type_strict(self):
-        """Assert PG bool scalar is rendered as jsonb ``true``, not Python ``"True"``.
-
-        Pin the latent-bug fix for the bool-meta dedup path: the previous
-        text-equality path compared
-        ``->>`` output against ``str(True) == "True"``, which never matched
-        jsonb's lowercase ``true`` text form, leaving bool-meta dispatches
-        un-deduplicated.
-        """
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"flag": True},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        clause = rendered[0]
-        assert "@>" in clause
-        assert '"flag": true' in clause
-        assert '"True"' not in clause
-
-    @pytest.mark.asyncio
-    async def test_pg_none_scalar_is_type_strict(self):
-        """Assert PG None scalar is rendered as jsonb ``null``, not Python ``"None"``.
-
-        Pin the latent-bug fix: the previous text-equality path coerced
-        ``None`` to ``"None"`` via ``str(value)``, which never matched the
-        SQL ``NULL`` produced by ``->>`` on a jsonb null.
-        """
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"key": None},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        clause = rendered[0]
-        assert "@>" in clause
-        assert '"key": null' in clause
-        assert '"None"' not in clause
-
-    @pytest.mark.asyncio
-    async def test_pg_int_vs_string_scalar_is_distinct(self):
-        """Assert PG int and string-of-int scalars compile to distinct clauses.
-
-        Pin the intentional Breaking Changes shift: the previous text-equality
-        path treated ``1`` and ``"1"`` as duplicates because both serialised
-        to the text ``"1"``. The new ``@>`` path is type-strict, so the two
-        should never deduplicate against each other.
-        """
-        task = _make_task()
-        int_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"key": 1},
-                payload=None,
-            ),
-        )
-        str_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"key": "1"},
-                payload=None,
-            ),
-        )
-
-        _, int_rendered = await self._capture_meta_clauses(int_item, "postgresql")
-        _, str_rendered = await self._capture_meta_clauses(str_item, "postgresql")
-
-        assert int_rendered != str_rendered
-        assert '"key": 1' in int_rendered[0]
-        assert '"key": "1"' in str_rendered[0]
-
-    @pytest.mark.asyncio
-    async def test_pg_list_meta_uses_jsonb_equality_per_key(self):
-        """Assert PG list meta items render as per-key jsonb equality clauses."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"_chain_task_names": ["a", "b"]},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        clause = rendered[0]
-        assert "@>" not in clause
-        assert "'_chain_task_names'" in clause
-        assert '["a", "b"]' in clause
-        assert "JSONB" in clause.upper()
-
-    @pytest.mark.asyncio
-    async def test_pg_mixed_meta_uses_both_paths(self):
-        """Assert PG mixed scalar/list meta produces one ``@>`` and one equality clause."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"target": "node-1", "_chain_task_names": ["a"]},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        expected_clause_count = 2
-        assert len(rendered) == expected_clause_count
-        containment = [clause for clause in rendered if "@>" in clause]
-        equality = [clause for clause in rendered if "@>" not in clause]
-        assert len(containment) == 1
-        assert len(equality) == 1
-        assert '"target": "node-1"' in containment[0]
-        assert "'_chain_task_names'" in equality[0]
-        assert '["a"]' in equality[0]
-
-    @pytest.mark.asyncio
-    async def test_pg_scalar_subset_omits_at_clause_when_all_items_are_containers(self):
-        """Assert PG produces no ``@>`` clause when every meta value is a container."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={"_chain_task_names": ["a"]},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert len(rendered) == 1
-        assert "@>" not in rendered[0]
-
-    @pytest.mark.asyncio
-    async def test_pg_empty_meta_produces_no_meta_clauses(self):
-        """Assert PG empty-dict meta produces zero meta clauses via the falsy guard."""
-        task = _make_task()
-        queue_item = _make_history(
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node-1",
-                meta={},
-                payload=None,
-            ),
-        )
-
-        _, rendered = await self._capture_meta_clauses(queue_item, "postgresql")
-
-        assert rendered == []
-
-    @pytest.mark.asyncio
     async def test_sqlite_keeps_per_key_text_equality_loop(self):
         """Assert SQLite mixed meta still uses ``json_extract`` text equality."""
         task = _make_task()
@@ -802,6 +559,431 @@ class TestRaiseIfIdenticalTaskConflict:
         for clause in rendered:
             assert "json_extract" in clause.lower()
             assert "@>" not in clause
+
+
+async def _create_pg_task(
+    session: AsyncSession,
+    *,
+    name: str = "dedup-task",
+) -> Task:
+    """Persist a parent ``Task`` for real-PostgreSQL dedup tests."""
+    task_data = TaskFactory.build(
+        name=name,
+        backend=TaskBackendEnum.NOMAD,
+        data={"job": "test"},
+    )
+    return await TaskManager.create(session, TaskWrite.model_validate(task_data))
+
+
+async def _seed_pg_history(
+    session: AsyncSession,
+    *,
+    task_id: int,
+    task_name: str,
+    meta: dict | None,
+    status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.PENDING,
+    target: str = "node-1",
+    payload: str | None = None,
+) -> TaskHistory:
+    """Persist a ``TaskHistory`` row as live DB state for the dedup query.
+
+    The row is only ever matched through SQL, never attribute-accessed, so its
+    ``execution_request`` is a plain dict (persisted into the ``jsonb`` column).
+    """
+    row = TaskHistory(
+        task_id=task_id,
+        status=status,
+        execution_request={
+            "task": task_name,
+            "target": target,
+            "meta": meta,
+            "payload": payload,
+        },
+        executed_by="seed-user",
+    )
+    return await TaskHistoryManager.save(session, row)
+
+
+def _pg_queue_item(
+    task: Task,
+    *,
+    meta: dict | None,
+    item_id: int,
+    target: str = "node-1",
+    payload: str | None = None,
+) -> TaskHistory:
+    """Build the in-memory candidate passed to the dedup helper.
+
+    It is never persisted — table models skip validation, so the
+    ``execution_request`` is a real ``TaskExecutionRequest`` to expose the
+    ``.meta``/``.task``/``.target``/``.payload`` attributes the helper reads,
+    and a concrete ``id`` drives the ``id != queue_item.id`` self-exclusion.
+    """
+    return TaskHistory(
+        id=item_id,
+        task_id=task.id,
+        status=TaskHistoryStatusEnum.PENDING,
+        execution_request=TaskExecutionRequest(
+            task=task.name,
+            target=target,
+            meta=meta,
+            payload=payload,
+        ),
+        executed_by="queue-user",
+    )
+
+
+# id guaranteed distinct from any serial-assigned seeded row, so a seeded
+# duplicate is never excluded as "self".
+_UNSEEDED_ITEM_ID = 999_999
+
+
+class TestRaiseIfIdenticalTaskConflictRealPostgres:
+    """Exercise _raise_if_identical_task_conflict end-to-end on a real PostgreSQL engine.
+
+    Each test seeds live ``TaskHistory`` rows and runs the dedup query through an
+    asyncpg-backed session (``session.get_bind().name == "postgresql"``), so the
+    ``jsonb`` containment (``@>``) and per-key equality paths are proven by
+    outcome rather than by compiling SQL strings.
+    """
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_scalar_meta_conflict_raises(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a duplicate PENDING row with scalar meta (``@>`` path) raises conflict."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"target": "node-1", "priority": 5}
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta=meta
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(
+            HTTPConflictException, match="Identical queue item already running"
+        ):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_scalar_meta_only_self_passes(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert the candidate's own row is excluded by ``id != queue_item.id``."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"target": "node-1", "priority": 5}
+        row = await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta=meta
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=row.id)
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_container_meta_conflict_raises(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a duplicate with list meta (per-key jsonb equality) raises conflict."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"_chain_task_names": ["a", "b"]}
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta=meta
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_container_meta_is_exact_match_not_subset(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert list meta uses exact equality: a differing element does not dedup."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"_chain_task_names": ["a", "c"]},
+        )
+        queue_item = _pg_queue_item(
+            task, meta={"_chain_task_names": ["a", "b"]}, item_id=_UNSEEDED_ITEM_ID
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_scalar_containment_is_superset_tolerant(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert ``@>`` matches when the stored meta is a superset of the candidate's."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"target": "node-1", "priority": 5, "extra": "x"},
+        )
+        queue_item = _pg_queue_item(
+            task, meta={"target": "node-1", "priority": 5}, item_id=_UNSEEDED_ITEM_ID
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_finished_status_is_not_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert duplicates in a finished status (not PENDING/RUNNING) never conflict."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"target": "node-1"}
+        for finished in (
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.LOST,
+        ):
+            await _seed_pg_history(
+                postgres_session,
+                task_id=task.id,
+                task_name=task.name,
+                meta=meta,
+                status=finished,
+            )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_running_status_is_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a duplicate in RUNNING (an active status) still conflicts."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"target": "node-1"}
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_different_task_id_is_not_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert dedup is per ``task_id``: an identical request under another task passes."""
+        task = await _create_pg_task(postgres_session, name="task-a")
+        other = await _create_pg_task(postgres_session, name="task-b")
+        meta = {"target": "node-1"}
+        # Same execution_request.task string, but the row belongs to `other`.
+        await _seed_pg_history(
+            postgres_session, task_id=other.id, task_name=task.name, meta=meta
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_different_target_is_not_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a differing execution target passes (no conflict)."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"priority": 5}
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            target="node-2",
+        )
+        queue_item = _pg_queue_item(
+            task, meta=meta, item_id=_UNSEEDED_ITEM_ID, target="node-1"
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_different_payload_is_not_deduped(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a differing payload passes (no conflict)."""
+        task = await _create_pg_task(postgres_session)
+        meta = {"priority": 5}
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            payload="echo one",
+        )
+        queue_item = _pg_queue_item(
+            task, meta=meta, item_id=_UNSEEDED_ITEM_ID, payload="echo two"
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_bool_meta_is_type_strict(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert jsonb ``true`` dedups against ``True`` only — not ``False`` or ``"true"``."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"flag": True}
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(task, meta={"flag": True}, item_id=_UNSEEDED_ITEM_ID),
+                postgres_session,
+            )
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"flag": False}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"flag": "true"}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_int_vs_string_meta_is_type_strict(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert jsonb ``1`` dedups against int ``1`` only — not the string ``"1"``."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"key": 1}
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(task, meta={"key": 1}, item_id=_UNSEEDED_ITEM_ID),
+                postgres_session,
+            )
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"key": "1"}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_null_meta_is_type_strict(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert jsonb ``null`` dedups against ``None`` only — not the string ``"None"``."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"key": None}
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(task, meta={"key": None}, item_id=_UNSEEDED_ITEM_ID),
+                postgres_session,
+            )
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"key": "None"}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_empty_meta_does_not_over_constrain(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert empty candidate meta dedups on task/target/payload only."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"x": 1}
+        )
+        queue_item = _pg_queue_item(task, meta={}, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_none_meta_does_not_over_constrain(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert ``meta=None`` behaves like empty meta: dedup on task/target/payload."""
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session, task_id=task.id, task_name=task.name, meta={"x": 1}
+        )
+        queue_item = _pg_queue_item(task, meta=None, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_meta_value_special_characters_match_exactly(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert quote/SQL-metacharacter meta values are parameterized: exact match only."""
+        malicious = "a\"b'; DROP TABLE taskhistory;--"
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"note": malicious},
+        )
+        # An exact twin still deduplicates (value round-trips through jsonb safely).
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(
+                    task, meta={"note": malicious}, item_id=_UNSEEDED_ITEM_ID
+                ),
+                postgres_session,
+            )
+        # A benign value does not match — no injection widened the comparison.
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"note": "safe"}, item_id=_UNSEEDED_ITEM_ID),
+            postgres_session,
+        )
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_container_key_special_characters_match_exactly(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert a container meta key with quotes is safely inlined and matches exactly."""
+        weird_key = "we'ird\"key"
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={weird_key: ["x"]},
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(
+                    task, meta={weird_key: ["x"]}, item_id=_UNSEEDED_ITEM_ID
+                ),
+                postgres_session,
+            )
 
 
 class TestDeleteTaskHistory:
@@ -954,6 +1136,137 @@ class TestSyncRunningItems:
         mock_sync_task.chunks.assert_not_called()
 
 
+@asynccontextmanager
+async def _seed_purge_db(num_aged: int, *, chunks_each: int = 1):
+    """Build an in-memory tasks DB with ``num_aged`` aged finished histories.
+
+    Each history is SUCCESS, finished 100 days ago, and carries ``chunks_each``
+    log rows. Yields the session maker so the helper-under-test can be patched
+    onto it, then disposes the engine on exit so its aiosqlite thread cannot
+    outlive the test and block interpreter shutdown.
+    """
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    maker = get_async_session_maker_from_engine(engine)
+    old = utc_now() - timedelta(days=100)
+    async with maker() as session:
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="aged-task", backend=TaskBackendEnum.NOMAD)
+            ),
+        )
+        for _ in range(num_aged):
+            history = await TaskHistoryManager.save(
+                session,
+                TaskHistory(
+                    task_id=task.id,
+                    status=TaskHistoryStatusEnum.SUCCESS,
+                    created_at=old,
+                    finished_at=old,
+                    execution_request={
+                        "task": task.name,
+                        "target": "localhost",
+                        "meta": {},
+                        "tracking": {"allocation_id": None, "evaluation_id": None},
+                    },
+                ),
+            )
+            for offset in range(chunks_each):
+                session.add(
+                    TaskHistoryLog(
+                        task_history_id=history.id,
+                        source="run-python",
+                        stream=TaskLogType.STDOUT,
+                        start_offset=offset * 10,
+                        end_offset=offset * 10 + 10,
+                        content="x" * 10,
+                    )
+                )
+        await session.commit()
+    try:
+        yield maker
+    finally:
+        await engine.dispose()
+
+
+def _purge_settings(retention_days: int = 90, batch_size: int = 10):
+    """Return a stand-in settings object exposing the purge knobs."""
+    return SimpleNamespace(
+        LOG_RETENTION_DAYS=retention_days, LOG_PURGE_BATCH_SIZE=batch_size
+    )
+
+
+class TestPurgeTaskHistoryLogs:
+    """Test the task-history-log purge helper and Celery wrapper."""
+
+    @pytest.mark.asyncio
+    async def test_purges_all_aged_logs_across_batches(self):
+        """Loop batches until every aged log row is gone; audit rows survive."""
+        async with _seed_purge_db(1, chunks_each=5) as maker:
+            with (
+                patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+                patch(f"{MODULE}.tasks_settings", _purge_settings(batch_size=2)),
+            ):
+                await _purge_task_history_logs()
+
+            async with maker() as session:
+                logs = await session.exec(select(col(TaskHistoryLog.id)))
+                histories = await session.exec(select(col(TaskHistory.id)))
+            assert len(logs.all()) == 0
+            assert len(histories.all()) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_aged_rows_is_noop(self):
+        """A clean table deletes nothing and raises no error."""
+        async with _seed_purge_db(0) as maker:
+            with (
+                patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+                patch(f"{MODULE}.tasks_settings", _purge_settings()),
+            ):
+                await _purge_task_history_logs()  # must not raise
+
+    @pytest.mark.asyncio
+    async def test_error_triggers_alert_and_reraises(self):
+        """A delete failure fires a system alert and propagates the exception."""
+        async with _seed_purge_db(1) as maker:
+            boom = RuntimeError("db exploded")
+            with (
+                patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+                patch(f"{MODULE}.tasks_settings", _purge_settings()),
+                patch(
+                    f"{MODULE}.TaskHistoryLogManager.delete_aged_batch",
+                    new_callable=AsyncMock,
+                    side_effect=boom,
+                ),
+                patch(
+                    f"{MODULE}.alert_service.trigger", new_callable=AsyncMock
+                ) as mock_alert,
+                pytest.raises(RuntimeError),
+            ):
+                await _purge_task_history_logs()
+
+            mock_alert.assert_awaited_once()
+            alert = mock_alert.await_args[0][0]
+            assert alert["severity"] == AlertSeverity.ERROR
+            assert alert["dedup_key"] == "purge_task_history_logs"
+
+    def test_wrapper_runs_helper_on_loop(self):
+        """The Celery wrapper drives the async helper via the celery loop."""
+        with patch(f"{MODULE}.celery") as mock_celery:
+            mock_celery.loop.run_until_complete = MagicMock(
+                side_effect=lambda coro: coro.close()
+            )
+            purge_task_history_logs()
+        mock_celery.loop.run_until_complete.assert_called_once()
+
+
 class TestTaskRevokedHandler:
     """Test task_revoked_handler."""
 
@@ -1063,6 +1376,46 @@ class TestExecuteTaskQueue:
         assert isinstance(result, dict)
         assert ("get_task_history", 10) in call_order
         assert ("dispatch_queue_item", queue_item.id, True) in call_order
+
+    def test_unresolvable_payload_fails_terminally_without_dispatch(self, mocker):
+        """Assert an ad-hoc dispatch with an unresolvable payload fails FAILED, never dispatching."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="adhoc-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=True,
+                    data={"task": "wrapped"},
+                )
+            )
+            history = test_loop.run_until_complete(
+                _seed_history(
+                    async_session_maker,
+                    task,
+                    payload="file:///nonexistent/x_payload",
+                )
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            with patch.object(celery_module.celery, "loop", test_loop):
+                result = celery_module.execute_task_queue.__wrapped__(history.id)
+
+            mock_dispatch.assert_not_awaited()
+            mock_alert.assert_awaited_once()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].id == history.id
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+            assert result["status"] == TaskHistoryStatusEnum.FAILED.value
 
 
 class TestSyncQueueItem:
@@ -1250,6 +1603,40 @@ class TestDispatchChainedTask:
         assert dispatched_history.execution_request.target == "host1"
         assert dispatched_history.execution_request.meta.get("_chain_depth") == 1
         assert mock_dispatch.await_args.kwargs.get("await_annotations") is True
+
+    def test_unresolvable_payload_fails_terminally(self, mocker) -> None:
+        """Assert a chained task with an unresolvable payload persists FAILED, never dispatching."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            chain_task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="chain-task",
+                    backend=TaskBackendEnum.PROXY,
+                    data={
+                        "task": "wrapped",
+                        "payload": "file:///nonexistent/x_payload",
+                    },
+                )
+            )
+            parent_history = _make_chain_history(
+                _make_chain_task("main-task"),
+                TaskHistoryStatusEnum.SUCCESS,
+                {"_chain_task_names": ["chain-task"]},
+            )
+            mock_internal = mocker.patch(
+                "app.tasks.celery._dispatch_queue_item", new_callable=AsyncMock
+            )
+
+            test_loop.run_until_complete(
+                _dispatch_chained_task("chain-task", parent_history)
+            )
+
+            mock_internal.assert_not_awaited()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, chain_task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
 
     @pytest.mark.asyncio
     async def test_unknown_task_logs_warning(self) -> None:
@@ -2102,6 +2489,33 @@ async def _list_histories(async_session_maker, task_id: int) -> list[TaskHistory
         )
 
 
+async def _seed_history(
+    async_session_maker,
+    task,
+    *,
+    payload: str | None,
+    target: str = "node-1",
+) -> TaskHistory:
+    """Insert a PENDING TaskHistory row for ``task`` and return it with ``id`` loaded."""
+    async with async_session_maker() as session:
+        history = TaskHistory(
+            task_id=task.id,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target=target,
+                meta={"target": target},
+                payload=payload,
+                tracking={"evaluation_id": ""},
+            ),
+            status=TaskHistoryStatusEnum.PENDING,
+            executed_by="test-user",
+        )
+        session.add(history)
+        await session.commit()
+        await session.refresh(history)
+        return history
+
+
 async def _list_log_chunks(async_session_maker, task_history_id: int):
     """Return all TaskHistoryLog chunks for ``task_history_id``."""
     async with async_session_maker() as session:
@@ -2111,10 +2525,13 @@ async def _list_log_chunks(async_session_maker, task_history_id: int):
 
 
 async def _fake_dispatch_mark_running(
-    queue_item: TaskHistory, *, await_annotations: bool = False
+    queue_item: TaskHistory,
+    *,
+    await_annotations: bool = False,
+    periodic_task_name: str | None = None,
 ) -> TaskHistory:
     """Minimal dispatch stand-in: mark the item RUNNING and return it."""
-    del await_annotations
+    del await_annotations, periodic_task_name
     queue_item.status = TaskHistoryStatusEnum.RUNNING
     return queue_item
 
@@ -2161,6 +2578,10 @@ class TestExecuteTaskByName:
             _run_skip_gate(test_loop, task_name="test-task")
 
             assert mock_dispatch.call_count == 1
+            assert (
+                mock_dispatch.call_args.kwargs["periodic_task_name"]
+                == "periodic-test-task"
+            )
             mock_alert.assert_not_awaited()
 
     def test_unhealthy_target_skips_and_alerts(self, mocker):
@@ -3046,3 +3467,189 @@ class TestCheckNomadCertExpiry:
 
         check_nomad_cert_expiry()
         app_celery.loop.run_until_complete.assert_called_once_with(coro)
+
+
+class TestPreDispatchPayloadCheck:
+    """Test the pre-dispatch payload-resolution gate (``_pre_dispatch_payload_check``)."""
+
+    _BROKEN_DATA = {"task": "wrapped", "payload": "file:///nonexistent/x_payload"}
+
+    def test_unresolvable_payload_persists_failed_logs_and_alerts(self, mocker):
+        """Assert an unresolvable payload persists FAILED, writes stderr, and alerts."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=True,
+                    data=self._BROKEN_DATA,
+                )
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            result = _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_dispatch.assert_not_awaited()
+            mock_alert.assert_awaited_once()
+            alert_payload = mock_alert.await_args.args[0]
+            assert alert_payload["class"] == "task_dispatch_failure"
+            assert alert_payload["dedup_key"] == "task:test-task:node-1"
+
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            saved = rows[0]
+            assert saved.status == TaskHistoryStatusEnum.FAILED
+            assert saved.finished_at is not None
+            assert result["status"] == TaskHistoryStatusEnum.FAILED.value
+
+            chunks = test_loop.run_until_complete(
+                _list_log_chunks(async_session_maker, saved.id)
+            )
+            stderr_chunks = [c for c in chunks if c.stream == TaskLogType.STDERR]
+            assert stderr_chunks
+            assert "file:///nonexistent/x_payload" in stderr_chunks[0].content
+
+    def test_unresolvable_payload_gates_before_health_check(self, mocker):
+        """Assert the payload gate persists FAILED before the health check runs Nomad.
+
+        The health check calls ``executor.get_hosts()``, which contacts Nomad and
+        can raise when the target is unreachable; an unresolvable payload must fail
+        terminally ahead of that contact rather than depend on its outcome.
+        """
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data=self._BROKEN_DATA,
+                )
+            )
+            mock_health = mocker.patch(
+                "app.tasks.celery._pre_dispatch_health_check",
+                new_callable=AsyncMock,
+                side_effect=BaseNomadException("nomad down"),
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_health.assert_not_awaited()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+
+    def test_unresolvable_payload_no_alert_when_alert_on_fail_false(self, mocker):
+        """Assert the FAILED row and stderr chunk are written but no alert fires."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data=self._BROKEN_DATA,
+                )
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            mock_dispatch.assert_not_awaited()
+            mock_alert.assert_not_awaited()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+            chunks = test_loop.run_until_complete(
+                _list_log_chunks(async_session_maker, rows[0].id)
+            )
+            assert any(c.stream == TaskLogType.STDERR for c in chunks)
+
+    def test_resolvable_payload_returns_none_to_proceed(self, mocker, tmp_path):
+        """Assert the gate returns None (proceed) for a resolvable payload reference."""
+        payload_file = tmp_path / "payload_script"
+        payload_file.write_text("print('ok')")
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=True,
+                    data={"task": "wrapped", "payload": f"file://{payload_file}"},
+                )
+            )
+            task_history = test_loop.run_until_complete(
+                prepare_periodic_task_history(
+                    "test-task", {"meta": {"target": "node-1"}}
+                )
+            )
+
+            result = test_loop.run_until_complete(
+                celery_module._pre_dispatch_payload_check(
+                    task_history, "test-task", None
+                )
+            )
+
+            assert result is None
+
+    @pytest.mark.parametrize(
+        "read_error",
+        [
+            PermissionError("denied"),
+            UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid start byte"),
+        ],
+    )
+    def test_unreadable_payload_persists_failed(self, mocker, read_error):
+        """Assert a resolvable-but-unreadable payload (read error) also persists FAILED."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data={
+                        "task": "wrapped",
+                        "payload": "file://app/sep/plugins/mysql_backups/binlog_payload",
+                    },
+                )
+            )
+            unreadable = mocker.MagicMock()
+            unreadable.read_text.side_effect = read_error
+            mocker.patch(
+                "app.tasks.models.resolve_payload_reference", return_value=unreadable
+            )
+            task_history = test_loop.run_until_complete(
+                prepare_periodic_task_history(
+                    "test-task", {"meta": {"target": "node-1"}}
+                )
+            )
+
+            result = test_loop.run_until_complete(
+                celery_module._pre_dispatch_payload_check(
+                    task_history, "test-task", None
+                )
+            )
+
+            assert result is not None
+            assert result.status == TaskHistoryStatusEnum.FAILED

@@ -1,12 +1,65 @@
 {
   "components": {
     "schemas": {
-      "BackupDetail": {
-        "description": "Describe the full detail response for a single backup.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime\n:param templates: Templates captured in the backup.\n:type templates: list[BackupDetailTemplate]\n:param rules: Rules captured in the backup.\n:type rules: list[BackupDetailRule]\n:param contact_points: Contact points captured in the backup.\n:type contact_points: list[BackupDetailContactPoint]\n:param folders: Folders captured in the backup.\n:type folders: list[BackupDetailFolder]\n:param notification_policy_receiver: Top-level receiver from the captured\n    notification policy, or ``None`` when no policy was captured.\n:type notification_policy_receiver: str | None",
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "alerts__BackupDetail": {
+        "description": "Describe the full detail response for a single backup.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param templates: Templates captured in the backup.\n:param rules: Rules captured in the backup.\n:param contact_points: Contact points captured in the backup.\n:param folders: Folders captured in the backup.\n:param notification_policy_receiver: Top-level receiver from the captured\n    notification policy, or ``None`` when no policy was captured.",
         "properties": {
           "contact_points": {
             "items": {
-              "$ref": "#/components/schemas/BackupDetailContactPoint"
+              "$ref": "#/components/schemas/alerts__BackupDetailContactPoint"
             },
             "title": "Contact Points",
             "type": "array"
@@ -18,7 +71,7 @@
           },
           "folders": {
             "items": {
-              "$ref": "#/components/schemas/BackupDetailFolder"
+              "$ref": "#/components/schemas/alerts__BackupDetailFolder"
             },
             "title": "Folders",
             "type": "array"
@@ -40,14 +93,14 @@
           },
           "rules": {
             "items": {
-              "$ref": "#/components/schemas/BackupDetailRule"
+              "$ref": "#/components/schemas/alerts__BackupDetailRule"
             },
             "title": "Rules",
             "type": "array"
           },
           "templates": {
             "items": {
-              "$ref": "#/components/schemas/BackupDetailTemplate"
+              "$ref": "#/components/schemas/alerts__BackupDetailTemplate"
             },
             "title": "Templates",
             "type": "array"
@@ -65,8 +118,8 @@
         "title": "BackupDetail",
         "type": "object"
       },
-      "BackupDetailContactPoint": {
-        "description": "Represent a contact-point entry inside a backup snapshot.\n\n:param name: The contact point name.\n:type name: str\n:param type: The contact point type (e.g. ``\"pagerduty\"``).\n:type type: str",
+      "alerts__BackupDetailContactPoint": {
+        "description": "Represent a contact-point entry inside a backup snapshot.\n\n:param name: The contact point name.\n:param type: The contact point type (e.g. ``\"pagerduty\"``).",
         "properties": {
           "name": {
             "title": "Name",
@@ -84,8 +137,8 @@
         "title": "BackupDetailContactPoint",
         "type": "object"
       },
-      "BackupDetailFolder": {
-        "description": "Represent a folder entry inside a backup snapshot.\n\n:param title: The folder title.\n:type title: str",
+      "alerts__BackupDetailFolder": {
+        "description": "Represent a folder entry inside a backup snapshot.\n\n:param title: The folder title.",
         "properties": {
           "title": {
             "title": "Title",
@@ -98,8 +151,8 @@
         "title": "BackupDetailFolder",
         "type": "object"
       },
-      "BackupDetailRule": {
-        "description": "Represent a rule entry inside a backup snapshot.\n\n:param title: The rule title.\n:type title: str",
+      "alerts__BackupDetailRule": {
+        "description": "Represent a rule entry inside a backup snapshot.\n\n:param title: The rule title.",
         "properties": {
           "title": {
             "title": "Title",
@@ -112,8 +165,8 @@
         "title": "BackupDetailRule",
         "type": "object"
       },
-      "BackupDetailTemplate": {
-        "description": "Represent a template entry inside a backup snapshot.\n\n:param name: The template name.\n:type name: str\n:param summary: The template summary blurb.\n:type summary: str",
+      "alerts__BackupDetailTemplate": {
+        "description": "Represent a template entry inside a backup snapshot.\n\n:param name: The template name.\n:param summary: The template summary blurb.",
         "properties": {
           "name": {
             "title": "Name",
@@ -131,8 +184,8 @@
         "title": "BackupDetailTemplate",
         "type": "object"
       },
-      "BackupSummary": {
-        "description": "Represent a compact backup row used by the list endpoint.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime\n:param metadata: Summary counts persisted alongside the backup snapshot.\n:type metadata: dict[str, Any]",
+      "alerts__BackupSummary": {
+        "description": "Represent a compact backup row used by the list endpoint.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param metadata: Summary counts persisted alongside the backup snapshot.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -156,21 +209,8 @@
         "title": "BackupSummary",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "IndexBackupSummary": {
-        "description": "Represent a compact backup row for the index \"recent backups\" widget.\n\nLeaner than :class:`BackupSummary` (no ``metadata``): the list page only\nrenders the id and timestamp, so the index payload omits the summary counts.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime",
+      "alerts__IndexBackupSummary": {
+        "description": "Represent a compact backup row for the index \"recent backups\" widget.\n\nLeaner than :class:`BackupSummary` (no ``metadata``): the list page only\nrenders the id and timestamp, so the index payload omits the summary counts.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -189,8 +229,8 @@
         "title": "IndexBackupSummary",
         "type": "object"
       },
-      "IndexPagerDutyStatus": {
-        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:type configured: bool\n:param uid: The contact point UID when configured, otherwise ``None``.\n:type uid: str | None",
+      "alerts__IndexPagerDutyStatus": {
+        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:param uid: The contact point UID when configured, otherwise ``None``.",
         "properties": {
           "configured": {
             "title": "Configured",
@@ -214,12 +254,12 @@
         "title": "IndexPagerDutyStatus",
         "type": "object"
       },
-      "IndexResponse": {
-        "description": "Describe the response body for ``GET /api/plugins/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:type groups: list[IndexTemplateGroup]\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:type pmm_connected: bool\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:type pagerduty: IndexPagerDutyStatus | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[IndexBackupSummary]",
+      "alerts__IndexResponse": {
+        "description": "Describe the response body for ``GET /api/apps/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:param recent_backups: The most recent alert backups, newest first.",
         "properties": {
           "groups": {
             "items": {
-              "$ref": "#/components/schemas/IndexTemplateGroup"
+              "$ref": "#/components/schemas/alerts__IndexTemplateGroup"
             },
             "title": "Groups",
             "type": "array"
@@ -227,7 +267,7 @@
           "pagerduty": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/IndexPagerDutyStatus"
+                "$ref": "#/components/schemas/alerts__IndexPagerDutyStatus"
               },
               {
                 "type": "null"
@@ -240,7 +280,7 @@
           },
           "recent_backups": {
             "items": {
-              "$ref": "#/components/schemas/IndexBackupSummary"
+              "$ref": "#/components/schemas/alerts__IndexBackupSummary"
             },
             "title": "Recent Backups",
             "type": "array"
@@ -255,8 +295,8 @@
         "title": "IndexResponse",
         "type": "object"
       },
-      "IndexTemplate": {
-        "description": "Represent a single alert template row on the index page.\n\n:param name: The display name of the alert template.\n:type name: str\n:param service_type: The service category this template applies to.\n:type service_type: str\n:param expression: The PromQL expression backing the alert.\n:type expression: str\n:param default_threshold: The default numeric threshold for the UI.\n:type default_threshold: float\n:param severity: The severity level (``\"info\"``, ``\"warning\"``, ``\"critical\"``).\n:type severity: str\n:param description: A human-readable description of the alert.\n:type description: str\n:param summary: A short summary template for notifications.\n:type summary: str\n:param in_pmm: ``True`` when a template of this name is already present in PMM.\n:type in_pmm: bool",
+      "alerts__IndexTemplate": {
+        "description": "Represent a single alert template row on the index page.\n\n:param name: The display name of the alert template.\n:param service_type: The service category this template applies to.\n:param expression: The PromQL expression backing the alert.\n:param default_threshold: The default numeric threshold for the UI.\n:param severity: The severity level (``\"info\"``, ``\"warning\"``, ``\"critical\"``).\n:param description: A human-readable description of the alert.\n:param summary: A short summary template for notifications.\n:param in_pmm: ``True`` when a template of this name is already present in PMM.",
         "properties": {
           "default_threshold": {
             "title": "Default Threshold",
@@ -304,8 +344,8 @@
         "title": "IndexTemplate",
         "type": "object"
       },
-      "IndexTemplateGroup": {
-        "description": "Group index templates by service type.\n\n:param service_type: The service type identifier (e.g. ``\"mysql\"``).\n:type service_type: str\n:param label: The human-readable service type label (e.g. ``\"MySQL\"``).\n:type label: str\n:param templates: The templates belonging to this service type.\n:type templates: list[IndexTemplate]",
+      "alerts__IndexTemplateGroup": {
+        "description": "Group index templates by service type.\n\n:param service_type: The service type identifier (e.g. ``\"mysql\"``).\n:param label: The human-readable service type label (e.g. ``\"MySQL\"``).\n:param templates: The templates belonging to this service type.",
         "properties": {
           "label": {
             "title": "Label",
@@ -317,7 +357,7 @@
           },
           "templates": {
             "items": {
-              "$ref": "#/components/schemas/IndexTemplate"
+              "$ref": "#/components/schemas/alerts__IndexTemplate"
             },
             "title": "Templates",
             "type": "array"
@@ -331,8 +371,8 @@
         "title": "IndexTemplateGroup",
         "type": "object"
       },
-      "PagerDutyRequest": {
-        "description": "Describe the request body for ``POST /api/plugins/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.\n:type integration_key: NonEmptyStr",
+      "alerts__PagerDutyRequest": {
+        "description": "Describe the request body for ``POST /api/apps/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.",
         "properties": {
           "integration_key": {
             "minLength": 1,
@@ -346,8 +386,8 @@
         "title": "PagerDutyRequest",
         "type": "object"
       },
-      "PagerDutyResponse": {
-        "description": "Describe the response body for the PagerDuty save / delete endpoints.\n\n:param status: ``\"created\"``, ``\"updated\"`` (save) or ``\"deleted\"`` (delete).\n:type status: Literal[\"created\", \"updated\", \"deleted\"]",
+      "alerts__PagerDutyResponse": {
+        "description": "Describe the response body for the PagerDuty save / delete endpoints.\n\n:param status: ``\"created\"``, ``\"updated\"`` (save) or ``\"deleted\"`` (delete).",
         "properties": {
           "status": {
             "enum": [
@@ -365,11 +405,11 @@
         "title": "PagerDutyResponse",
         "type": "object"
       },
-      "PaginatedResponse_BackupSummary_": {
+      "alerts__PaginatedResponse_BackupSummary_": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/BackupSummary"
+              "$ref": "#/components/schemas/alerts__BackupSummary"
             },
             "title": "Items",
             "type": "array"
@@ -396,8 +436,8 @@
         "title": "PaginatedResponse[BackupSummary]",
         "type": "object"
       },
-      "PushItemResult": {
-        "description": "Represent a per-template result row returned by the push endpoint.\n\n:param name: The template name the result applies to.\n:type name: str\n:param status: One of ``\"success\"``, ``\"skipped\"``, ``\"error\"``.\n:type status: Literal[\"success\", \"skipped\", \"error\"]\n:param message: A human-readable description of the outcome.\n:type message: str",
+      "alerts__PushItemResult": {
+        "description": "Represent a per-template result row returned by the push endpoint.\n\n:param name: The template name the result applies to.\n:param status: One of ``\"success\"``, ``\"skipped\"``, ``\"error\"``.\n:param message: A human-readable description of the outcome.",
         "properties": {
           "message": {
             "title": "Message",
@@ -425,8 +465,8 @@
         "title": "PushItemResult",
         "type": "object"
       },
-      "PushRequest": {
-        "description": "Describe the request body for ``POST /api/plugins/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.\n:type selected_templates: list[NonEmptyStr]",
+      "alerts__PushRequest": {
+        "description": "Describe the request body for ``POST /api/apps/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.",
         "properties": {
           "selected_templates": {
             "items": {
@@ -444,12 +484,12 @@
         "title": "PushRequest",
         "type": "object"
       },
-      "PushResponse": {
-        "description": "Wrap the per-template results returned by the push endpoint.\n\n:param results: One :class:`PushItemResult` per template in the request.\n:type results: list[PushItemResult]",
+      "alerts__PushResponse": {
+        "description": "Wrap the per-template results returned by the push endpoint.\n\n:param results: One :class:`PushItemResult` per template in the request.",
         "properties": {
           "results": {
             "items": {
-              "$ref": "#/components/schemas/PushItemResult"
+              "$ref": "#/components/schemas/alerts__PushItemResult"
             },
             "title": "Results",
             "type": "array"
@@ -461,8 +501,8 @@
         "title": "PushResponse",
         "type": "object"
       },
-      "RestoreRequest": {
-        "description": "Describe the request body for ``POST /api/plugins/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.plugins.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.\n:type backup_id: int",
+      "alerts__RestoreRequest": {
+        "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.",
         "properties": {
           "backup_id": {
             "exclusiveMinimum": 0.0,
@@ -476,8 +516,8 @@
         "title": "RestoreRequest",
         "type": "object"
       },
-      "RestoreResponse": {
-        "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:type status: Literal[\"success\"]\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.plugins.alerts.restore.restore_from_backup`.\n:type details: dict[str, Any]",
+      "alerts__RestoreResponse": {
+        "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.",
         "properties": {
           "details": {
             "title": "Details",
@@ -498,60 +538,20 @@
         ],
         "title": "RestoreResponse",
         "type": "object"
-      },
-      "ValidationError": {
-        "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError",
-        "type": "object"
       }
     }
   },
   "paths": {
-    "/api/plugins/alerts/": {
+    "/api/apps/alerts/": {
       "get": {
-        "description": "Return everything the React list page needs in a single call.\n\nMirror the data assembled for the deprecated Jinja index view\n(:func:`app.sep.plugins.alerts.deps.get_alerts_index_context`) as JSON:\nalert templates grouped by service type, PMM connectivity, the PagerDuty\ncontact-point status, and the most recent backups.\n\n``present_names`` is ``None`` when PMM is unconfigured or unreachable, which\nis the same signal used to drive ``pmm_connected`` and per-template\n``in_pmm`` flags so the UI degrades gracefully.\n\n:param alert_templates: Local alert templates grouped by service type.\n:type alert_templates: AlertTemplatesDep\n:param present_names: Template names already present in PMM, or ``None`` when\n    PMM is unreachable.\n:type present_names: set[str] | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[AlertBackup]\n:param pagerduty_status: PagerDuty contact-point status, or ``None`` when PMM\n    is unreachable.\n:type pagerduty_status: dict[str, Any] | None\n:return: The aggregated index payload.\n:rtype: IndexResponse",
-        "operationId": "alerts_alerts_api_index_api_plugins_alerts__get",
+        "description": "Return everything the React list page needs in a single call.\n\nMirror the data assembled for the deprecated Jinja index view\n(:func:`app.sep.apps.alerts.deps.get_alerts_index_context`) as JSON:\nalert templates grouped by service type, PMM connectivity, the PagerDuty\ncontact-point status, and the most recent backups.\n\n``present_names`` is ``None`` when PMM is unconfigured or unreachable, which\nis the same signal used to drive ``pmm_connected`` and per-template\n``in_pmm`` flags so the UI degrades gracefully.\n\n:param alert_templates: Local alert templates grouped by service type.\n:type alert_templates: AlertTemplatesDep\n:param present_names: Template names already present in PMM, or ``None`` when\n    PMM is unreachable.\n:type present_names: set[str] | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[AlertBackup]\n:param pagerduty_status: PagerDuty contact-point status, or ``None`` when PMM\n    is unreachable.\n:type pagerduty_status: dict[str, Any] | None\n:return: The aggregated index payload.\n:rtype: IndexResponse",
+        "operationId": "alerts_alerts_api_index_api_apps_alerts__get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IndexResponse"
+                  "$ref": "#/components/schemas/alerts__IndexResponse"
                 }
               }
             },
@@ -564,10 +564,10 @@
         ]
       }
     },
-    "/api/plugins/alerts/backups": {
+    "/api/apps/alerts/backups": {
       "get": {
         "description": "Return a paginated page of alert backups, newest first.\n\n:param session: The async database session.\n:type session: SessionDep\n:param pagination: Validated offset/limit query parameters (``limit`` capped at 100).\n:type pagination: Pagination\n:return: A paginated envelope of backup summaries ordered by\n    ``created_at`` descending.\n:rtype: PaginatedResponse[BackupSummary]",
-        "operationId": "alerts_alerts_api_list_backups_api_plugins_alerts_backups_get",
+        "operationId": "alerts_alerts_api_list_backups_api_apps_alerts_backups_get",
         "parameters": [
           {
             "in": "query",
@@ -598,7 +598,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_BackupSummary_"
+                  "$ref": "#/components/schemas/alerts__PaginatedResponse_BackupSummary_"
                 }
               }
             },
@@ -621,10 +621,10 @@
         ]
       }
     },
-    "/api/plugins/alerts/backups/{backup_id}": {
+    "/api/apps/alerts/backups/{backup_id}": {
       "get": {
         "description": "Return a categorised view of a single backup.\n\n:param session: The async database session.\n:type session: SessionDep\n:param backup_id: Primary key of the backup row.\n:type backup_id: int\n:return: The full backup detail.\n:rtype: BackupDetail\n:raises HTTPNotFoundException: If the backup is not found.",
-        "operationId": "alerts_alerts_api_get_backup_api_plugins_alerts_backups__backup_id__get",
+        "operationId": "alerts_alerts_api_get_backup_api_apps_alerts_backups__backup_id__get",
         "parameters": [
           {
             "in": "path",
@@ -641,7 +641,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BackupDetail"
+                  "$ref": "#/components/schemas/alerts__BackupDetail"
                 }
               }
             },
@@ -664,15 +664,15 @@
         ]
       }
     },
-    "/api/plugins/alerts/pagerduty": {
+    "/api/apps/alerts/pagerduty": {
       "post": {
-        "description": "Create or update the PagerDuty contact point and notification route.\n\nMirror :func:`app.sep.plugins.alerts.routes.pagerduty_save` over JSON.\n\n:param payload: PagerDuty save request body.\n:type payload: PagerDutyRequest\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:return: ``status=\"created\"`` or ``status=\"updated\"``.\n:rtype: PagerDutyResponse\n:raises HTTPBadGatewayException: If the PMM upstream call fails.",
-        "operationId": "alerts_alerts_api_pagerduty_save_api_plugins_alerts_pagerduty_post",
+        "description": "Create or update the PagerDuty contact point and notification route.\n\nMirror :func:`app.sep.apps.alerts.routes.pagerduty_save` over JSON.\n\n:param payload: PagerDuty save request body.\n:type payload: PagerDutyRequest\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:return: ``status=\"created\"`` or ``status=\"updated\"``.\n:rtype: PagerDutyResponse\n:raises HTTPBadGatewayException: If the PMM upstream call fails.",
+        "operationId": "alerts_alerts_api_pagerduty_save_api_apps_alerts_pagerduty_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PagerDutyRequest"
+                "$ref": "#/components/schemas/alerts__PagerDutyRequest"
               }
             }
           },
@@ -683,7 +683,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PagerDutyResponse"
+                  "$ref": "#/components/schemas/alerts__PagerDutyResponse"
                 }
               }
             },
@@ -706,16 +706,16 @@
         ]
       }
     },
-    "/api/plugins/alerts/pagerduty/delete": {
+    "/api/apps/alerts/pagerduty/delete": {
       "post": {
         "description": "Delete the PagerDuty contact point and remove its notification route.\n\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:return: ``status=\"deleted\"``.\n:rtype: PagerDutyResponse\n:raises HTTPNotFoundException: If no PagerDuty contact point exists.\n:raises HTTPBadGatewayException: If the PMM upstream call fails.",
-        "operationId": "alerts_alerts_api_pagerduty_delete_api_plugins_alerts_pagerduty_delete_post",
+        "operationId": "alerts_alerts_api_pagerduty_delete_api_apps_alerts_pagerduty_delete_post",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PagerDutyResponse"
+                  "$ref": "#/components/schemas/alerts__PagerDutyResponse"
                 }
               }
             },
@@ -728,15 +728,15 @@
         ]
       }
     },
-    "/api/plugins/alerts/push": {
+    "/api/apps/alerts/push": {
       "post": {
-        "description": "Push selected alert templates to PMM as rules.\n\nMirror :func:`app.sep.plugins.alerts.routes.alerts_push` over JSON.\nPreserve the conflict-retry path: on ``create_rule`` collision call\n:func:`app.sep.plugins.alerts.restore.delete_conflicting_rules` and\nretry once.\n\n:param payload: Push request body listing template names to push.\n:type payload: PushRequest\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:param alert_templates: Local alert templates grouped by service type.\n:type alert_templates: AlertTemplatesDep\n:param folder: The PMM alert folder. Raises 502 if unreachable.\n:type folder: Folder\n:param present_names: Template names already present in PMM, or ``None`` if\n    PMM is unreachable for the listing call.\n:type present_names: set[str] | None\n:return: A ``PushResponse`` with one :class:`PushItemResult` per template.\n:rtype: PushResponse",
-        "operationId": "alerts_alerts_api_push_api_plugins_alerts_push_post",
+        "description": "Push selected alert templates to PMM as rules.\n\nMirror :func:`app.sep.apps.alerts.routes.alerts_push` over JSON.\nPreserve the conflict-retry path: on ``create_rule`` collision call\n:func:`app.sep.apps.alerts.restore.delete_conflicting_rules` and\nretry once.\n\n:param payload: Push request body listing template names to push.\n:type payload: PushRequest\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:param alert_templates: Local alert templates grouped by service type.\n:type alert_templates: AlertTemplatesDep\n:param folder: The PMM alert folder. Raises 502 if unreachable.\n:type folder: Folder\n:param present_names: Template names already present in PMM, or ``None`` if\n    PMM is unreachable for the listing call.\n:type present_names: set[str] | None\n:return: A ``PushResponse`` with one :class:`PushItemResult` per template.\n:rtype: PushResponse",
+        "operationId": "alerts_alerts_api_push_api_apps_alerts_push_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PushRequest"
+                "$ref": "#/components/schemas/alerts__PushRequest"
               }
             }
           },
@@ -747,7 +747,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PushResponse"
+                  "$ref": "#/components/schemas/alerts__PushResponse"
                 }
               }
             },
@@ -770,15 +770,15 @@
         ]
       }
     },
-    "/api/plugins/alerts/restore": {
+    "/api/apps/alerts/restore": {
       "post": {
         "description": "Restore alert configuration from a backup snapshot.\n\n:param payload: Restore request body identifying the backup to apply.\n:type payload: RestoreRequest\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:param session: The async database session.\n:type session: SessionDep\n:return: A ``RestoreResponse`` with the per-section restore counts.\n:rtype: RestoreResponse\n:raises HTTPNotFoundException: If the backup is not found.\n:raises HTTPBadGatewayException: If the PMM upstream call fails with\n    ``OSError``.",
-        "operationId": "alerts_alerts_api_restore_api_plugins_alerts_restore_post",
+        "operationId": "alerts_alerts_api_restore_api_apps_alerts_restore_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RestoreRequest"
+                "$ref": "#/components/schemas/alerts__RestoreRequest"
               }
             }
           },
@@ -789,7 +789,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RestoreResponse"
+                  "$ref": "#/components/schemas/alerts__RestoreResponse"
                 }
               }
             },

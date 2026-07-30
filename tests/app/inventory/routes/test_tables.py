@@ -158,6 +158,41 @@ class TestUpdateTable:
         assert data["name"] == "renamed_table"
         assert data["schema_id"] == schema.id
 
+    def test_update_table_omitting_schema_id_preserves_association(
+        self, test_client: TestClient, table: Table, schema: Schema, service: Service
+    ) -> None:
+        """Partial update without schema_id succeeds and leaves the FK unchanged."""
+        test_client.post(
+            "/schemas/",
+            json=SchemaWriteFactory.build(service_id=service.id).model_dump(
+                mode="json"
+            ),
+        )
+        payload = {
+            "name": "renamed_table",
+            "create": table.create,
+            "keys": table.keys,
+        }
+        response = test_client.put(f"/tables/{table.id}", json=payload)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "renamed_table"
+        assert data["schema_id"] == schema.id
+
+    def test_update_table_explicit_null_schema_id(
+        self, test_client: TestClient, table: Table
+    ) -> None:
+        """Return 400 when schema_id is explicitly null on a non-nullable relationship."""
+        payload = {
+            "name": table.name,
+            "create": table.create,
+            "keys": table.keys,
+            "schema_id": None,
+        }
+        response = test_client.put(f"/tables/{table.id}", json=payload)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid schema_id: None"
+
 
 class TestDeleteTable:
     """Test the DELETE /tables/{table_id} endpoint."""

@@ -9,9 +9,9 @@
 /app/__init__.py                   @percona/gas-team
 
 # Plugins (uniform); any payload file/dir relaxes to gas-team.
-/app/sep/plugins/                  @maxbube @peter-o-addo @yyyyyyyan
-/app/sep/plugins/**/*payload*      @percona/gas-team
-/app/sep/plugins/**/payloads/**    @percona/gas-team
+/app/sep/apps/                  @maxbube @peter-o-addo @yyyyyyyan
+/app/sep/apps/**/*payload*      @percona/gas-team
+/app/sep/apps/**/payloads/**    @percona/gas-team
 
 # ── Tests ───────────────────────────────────────────────────────────
 /tests/                            @marcuscruz-percona @peter-o-addo @yyyyyyyan
@@ -45,6 +45,7 @@
 /docker-compose.yml                @percona/gas-admin
 /entrypoint.sh                     @percona/gas-admin
 /entrypoint_celery.sh              @percona/gas-admin
+/sidecar/                          @percona/gas-admin
 /sep_installer.sh                  @maxbube @yyyyyyyan
 /sep_installer.sha256              @maxbube @yyyyyyyan
 /CHANGELOG.md                      @maxbube @yyyyyyyan

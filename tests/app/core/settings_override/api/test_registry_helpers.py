@@ -16,10 +16,11 @@
 """Unit tests for the field-introspection helpers in ``registry.py`` and the response builder ``_settings_response_from_field`` in ``api.routes``."""
 
 from datetime import timedelta
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
 import pytest
-from pydantic import BaseModel, Field, PositiveInt, SecretStr, ValidationError
+from annotated_types import Gt, Le
+from pydantic import BaseModel, Field, PositiveInt, SecretStr, Strict, ValidationError
 
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.api.routes import (
@@ -55,6 +56,7 @@ class _FixtureSettings(BaseYamlSettings):
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["FIXTURE"]
 
     HOT_INT: PositiveInt = hot_field(10)
+    HOT_STRICT_INT: Annotated[int, Strict(), Gt(0), Le(365)] = hot_field(90)
     HOT_BOOL: bool = hot_field(default=True)
     COLD_STRING: str = "default"
     COLD_TIMEDELTA: timedelta = timedelta(minutes=5)
@@ -84,6 +86,37 @@ def test_coerce_field_value_rejects_wrong_type() -> None:
     field = _FixtureSettings.model_fields["HOT_BOOL"]
     with pytest.raises(ValidationError):
         coerce_field_value(field, "not-a-bool")
+
+
+_STRICT_INT_LOWER_BOUND = 1
+_STRICT_INT_UPPER_BOUND = 365
+_STRICT_INT_DEFAULT = 90
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, 1.5, 0, _STRICT_INT_UPPER_BOUND + 1],
+)
+def test_coerce_field_value_strict_int_rejects(bad_value: object) -> None:
+    """A ``Strict()``-int field rejects bool/float and out-of-range integers.
+
+    ``Strict()`` blocks the lax ``bool``/``float -> int`` coercion that a plain
+    ``int`` annotation would silently accept; ``Gt(0)``/``Le(365)`` are preserved
+    through ``_annotated_type`` reassembly so the bounds still reject 0 and 366.
+    """
+    field = _FixtureSettings.model_fields["HOT_STRICT_INT"]
+    with pytest.raises(ValidationError):
+        coerce_field_value(field, bad_value)
+
+
+@pytest.mark.parametrize(
+    "valid_value",
+    [_STRICT_INT_LOWER_BOUND, _STRICT_INT_DEFAULT, _STRICT_INT_UPPER_BOUND],
+)
+def test_coerce_field_value_strict_int_accepts_in_range(valid_value: int) -> None:
+    """A ``Strict()``-int field accepts genuine integers within the bounds."""
+    field = _FixtureSettings.model_fields["HOT_STRICT_INT"]
+    assert coerce_field_value(field, valid_value) == valid_value
 
 
 def test_iter_class_fields_yields_every_field() -> None:
@@ -254,6 +287,39 @@ def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
     assert response.key_path == ["GROUP", "TOKEN"]
 
 
+def test_settings_response_applicable_defaults_true() -> None:
+    """Mark a field response applicable when no applicability predicate is given."""
+    proxy = OverridableSettingsProxy(
+        _FixtureSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    meta = next(m for m in iter_class_fields(_FixtureSettings) if m.key == "HOT_BOOL")
+    response = _settings_response_from_field(
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        settings_cls=_FixtureSettings,
+        proxy=proxy,
+        field_meta=meta,
+        has_override=False,
+    )
+    assert response.is_applicable is True
+
+
+def test_settings_response_honors_applicability_predicate() -> None:
+    """Mark the field response not applicable when the predicate returns ``False``."""
+    proxy = OverridableSettingsProxy(
+        _FixtureSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    meta = next(m for m in iter_class_fields(_FixtureSettings) if m.key == "HOT_BOOL")
+    response = _settings_response_from_field(
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        settings_cls=_FixtureSettings,
+        proxy=proxy,
+        field_meta=meta,
+        has_override=False,
+        applicability=lambda _cls, field: field.key != "HOT_BOOL",
+    )
+    assert response.is_applicable is False
+
+
 class _DeepLeafModel(BaseModel):
     """Innermost submodel, two levels under a nested-overridable parent."""
 
@@ -355,3 +421,34 @@ def test_remote_wiring_allows_no_dep_when_no_remote_classes() -> None:
     remote_lookup, remote_dep = _remote_wiring(None, None)
     assert remote_lookup == {}
     assert remote_dep is not None
+
+
+class _OverlayFixtureSettings(BaseYamlSettings):
+    """Define a settings class promoting a bare field via an ``INHERITED_MARKERS`` overlay."""
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["OVERLAYFIX"]
+    INHERITED_MARKERS: ClassVar[dict[str, dict[str, object]]] = {
+        "PROMOTED": {"reload": ReloadClassification.HOT, "advanced": True},
+    }
+
+    PROMOTED: int = 5
+    PLAIN: int = hot_field(6)
+
+
+def test_iter_class_fields_surfaces_overlay_advanced_and_reload() -> None:
+    """Assert a bare field promoted by the overlay surfaces ``advanced`` + HOT via the API."""
+    metas = {meta.key: meta for meta in iter_class_fields(_OverlayFixtureSettings)}
+    assert metas["PROMOTED"].is_advanced is True
+    assert metas["PROMOTED"].reload is ReloadClassification.HOT
+
+
+def test_iter_class_fields_leaves_non_overlay_field_untouched() -> None:
+    """Assert a field with no overlay entry is unaffected by the overlay mechanism."""
+    metas = {meta.key: meta for meta in iter_class_fields(_OverlayFixtureSettings)}
+    assert metas["PLAIN"].is_advanced is False
+
+
+def test_overlay_promoted_field_bare_call_ignores_overlay() -> None:
+    """Assert the bare ``FieldInfo`` fast path ignores the overlay (backward-compatible)."""
+    field = _OverlayFixtureSettings.model_fields["PROMOTED"]
+    assert is_advanced_field(field) is False

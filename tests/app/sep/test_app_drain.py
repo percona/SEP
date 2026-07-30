@@ -19,9 +19,11 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import utc_now
 from app.sep import app_drain
 from app.sep.app_drain import (
@@ -218,11 +220,9 @@ class TestRecordTaskSignals:
 
     def test_drainable_tasks_carry_their_owner(self) -> None:
         """Each drainable Celery task is tagged with its owning app key."""
-        from app.sep.celery import (
-            backup_alert_config,
-            generate_health_report,
-            sync_snippets,
-        )
+        from app.sep.apps.alerts.celery import backup_alert_config
+        from app.sep.apps.report.celery import generate_health_report
+        from app.sep.apps.snippets.celery import sync_snippets
 
         assert getattr(sync_snippets, "owner_app_key", None) == "snippets"
         assert getattr(generate_health_report, "owner_app_key", None) == "report"
@@ -337,6 +337,66 @@ class TestReconciler:
         prune_sweep_count = 1
         assert finalize.await_count == disabling_app_count
         assert maker.call_count == prune_sweep_count + disabling_app_count
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_per_app_session_isolation_on_real_postgres(
+        self,
+        postgres_engine: AsyncEngine,
+        postgres_session: AsyncSession,
+        mocker,
+    ) -> None:
+        """Guard per-app session isolation when one app aborts its transaction.
+
+        Real-PostgreSQL sibling of ``test_per_app_failure_does_not_stop_the_loop``.
+        On PostgreSQL the first error in a transaction aborts every later statement
+        in it (``InFailedSqlTransaction``), so this guards the reconciler's per-app
+        session isolation against a refactor that reuses one shared session: bind
+        the session maker to the real engine (each app gets an independent
+        ``asyncpg`` session), force the first-processed app's finalize to abort its
+        transaction with a real SQL error, and assert the next app still reaches
+        ``DISABLED``. A shared session would carry the abort forward and leave the
+        survivor ``DISABLING`` — failing this test.
+        """
+        # ``postgres_session`` shares ``postgres_engine`` and created the tables.
+        await _seed_app(postgres_session, "snippets", AppLifecycleEnum.DISABLING)
+        await _seed_app(postgres_session, "report", AppLifecycleEnum.DISABLING)
+
+        # Each ``maker()`` call yields an independent real session.
+        mocker.patch(
+            "app.sep.app_drain.get_async_session_maker",
+            return_value=get_async_session_maker_from_engine(postgres_engine),
+        )
+
+        # Fail on the first app processed: a shared session would carry the abort
+        # forward to the survivor; per-app sessions do not.
+        real_finalize = app_drain.finalize_drain_if_complete
+        processed: list[str] = []
+
+        async def flaky(session: AsyncSession, app_key: str) -> bool:
+            processed.append(app_key)
+            if len(processed) == 1:
+                # Real statement that aborts the PostgreSQL transaction.
+                await session.execute(text("SELECT 1 FROM table_that_does_not_exist"))
+            return await real_finalize(session, app_key)
+
+        mocker.patch("app.sep.app_drain.finalize_drain_if_complete", side_effect=flaky)
+
+        await app_drain._reconcile_disabling_apps()
+
+        seeded_app_count = 2
+        assert len(processed) == seeded_app_count
+        survivor = processed[1]
+        async with get_async_session_maker_from_engine(postgres_engine)() as verify:
+            assert (
+                await AppStateManager.current_lifecycle(verify, survivor)
+                is AppLifecycleEnum.DISABLED
+            )
+            # Failed app rolled back; stays DISABLING.
+            assert (
+                await AppStateManager.current_lifecycle(verify, processed[0])
+                is AppLifecycleEnum.DISABLING
+            )
 
 
 class TestTrackAppTask:

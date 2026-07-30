@@ -20,7 +20,7 @@ repos:
       - id: addlicense
         args: ["-f", ".license_header", "-v"]
         types_or: [python, javascript, ts, tsx, css, jinja]
-        exclude: ^(static/(js|css)/vendor/|frontend/(node_modules|.*/dist|packages/api/src/generated)/)
+        exclude: ^(static/(js|css)/vendor/|frontend/(node_modules|.*/dist|packages/[^/]+/src/generated)/)
   - repo: local
     hooks:
       - id: js-beautify
@@ -53,13 +53,20 @@ repos:
         language: system
         files: ^changelog\.d/
         pass_filenames: false
+      - id: sync-alembic-version-locations
+        name: Sync alembic.ini [sep] version_locations
+        description: "Regenerate [sep] version_locations from app migration dirs"
+        entry: python3 scripts/sync_alembic_version_locations.py
+        language: system
+        files: ^app/sep/apps/.*/migrations/versions/
+        pass_filenames: false
       - id: check-nomad-payload-size
         name: Check Nomad payload size
         description: "Ensure dispatch payloads stay under Nomad 16 KiB limit after minify+gzip"
         entry: python3 scripts/check_nomad_payload_size.py
         language: python
         additional_dependencies: ["python-minifier==2.11.3"]
-        files: ^app/sep/plugins/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
+        files: ^app/sep/apps/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
         pass_filenames: true
       - id: oxfmt
         name: oxfmt (frontend formatter)

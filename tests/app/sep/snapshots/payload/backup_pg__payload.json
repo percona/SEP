@@ -14,13 +14,15 @@
         "requirements": "packaging\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/backup_pg/payload",
+      "payload": "file://app/sep/apps/backup_pg/payload",
       "task": "run-python"
     },
     "is_template": false,
     "name": "backup-pg-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUP_PG",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "defaults_minimal": {
     "alert_detail_builder": null,
@@ -37,13 +39,15 @@
         "requirements": "packaging\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/backup_pg/payload",
+      "payload": "file://app/sep/apps/backup_pg/payload",
       "task": "run-python"
     },
     "is_template": false,
     "name": "backup-pg-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUP_PG",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   },
   "port_none_omits_server_port": {
     "alert_detail_builder": null,
@@ -60,12 +64,14 @@
         "requirements": "packaging\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/backup_pg/payload",
+      "payload": "file://app/sep/apps/backup_pg/payload",
       "task": "run-python"
     },
     "is_template": false,
     "name": "backup-pg-golden",
+    "output_files_path": "run-script/local/output_files",
     "owner": "BACKUP_PG",
-    "protected": false
+    "protected": false,
+    "run_result_recorder": null
   }
 }

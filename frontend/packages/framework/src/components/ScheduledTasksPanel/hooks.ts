@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, usePluginTasks, type TasksComponents } from '@sep/api';
+import { apiClient, useAppTasks, type TasksComponents } from '@sep/api';
 
 export type PeriodicTaskResponse = TasksComponents['schemas']['PeriodicTaskResponse'];
 export type PeriodicTaskCreate = TasksComponents['schemas']['PeriodicTaskCreate'];
@@ -28,13 +28,13 @@ export type PeriodicTaskExecuteRequest = TasksComponents['schemas']['PeriodicTas
 const PERIODIC_LIST_KEY = ['periodic'] as const;
 const POLL_INTERVAL_MS = 30_000;
 
-interface PluginTask extends Record<string, unknown> {
+interface AppTask extends Record<string, unknown> {
   name: string;
 }
 
 /**
  * Fetch all periodic tasks and filter to those whose `task` belongs to the
- * given plugin (resolved via `usePluginTasks`). The two queries are kept
+ * given plugin (resolved via `useAppTasks`). The two queries are kept
  * independent so the periodic list can poll on its own cadence for
  * `last_run_at` / `next_run_at` freshness.
  */
@@ -45,13 +45,22 @@ export interface UseScheduledTasksOptions {
   disablePolling?: boolean;
 }
 
-export function useScheduledTasksForPlugin(
+export function useScheduledTasksForApp(
   pluginName: string,
   options: UseScheduledTasksOptions = {},
 ) {
   const { pollingIntervalMs = POLL_INTERVAL_MS, disablePolling = false } = options;
-  const tasksQuery = usePluginTasks<PluginTask>(pluginName);
-  const pluginTaskNames = tasksQuery.data?.map((t) => t.name) ?? [];
+  // Forward the escape hatch: `useAppTasks` now polls while a task row is
+  // running, so without this a story/test that sets `disablePolling` would
+  // still spin up a live task-list refetch. The task-list poll keeps its own
+  // default cadence — the schedule `pollingIntervalMs` governs periodic-task
+  // freshness, a separate concern. `fetchAllPages` walks the paginated task
+  // list so schedule joins see every definition, not just the first page.
+  const tasksQuery = useAppTasks<AppTask>(pluginName, undefined, {
+    fetchAllPages: true,
+    disablePolling,
+  });
+  const pluginTaskNames = tasksQuery.data?.items.map((t) => t.name) ?? [];
 
   const periodicQuery = useQuery<PeriodicTaskResponse[], Error, PeriodicTaskResponse[]>({
     queryKey: PERIODIC_LIST_KEY,
@@ -71,7 +80,7 @@ export function useScheduledTasksForPlugin(
 
   return {
     periodicTasks: filtered,
-    pluginTasks: tasksQuery.data ?? [],
+    appTasks: tasksQuery.data?.items ?? [],
     isLoading: tasksQuery.isLoading || periodicQuery.isLoading,
     isError: tasksQuery.isError || periodicQuery.isError,
     error: tasksQuery.error ?? periodicQuery.error,

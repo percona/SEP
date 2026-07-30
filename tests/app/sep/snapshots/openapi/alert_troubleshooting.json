@@ -1,15 +1,93 @@
 {
   "components": {
     "schemas": {
-      "AlertDetailResponse": {
+      "AlertServiceType": {
+        "description": "Enumerate the supported service types for alert-related features.\n\n:cvar GENERIC: Generic service type.\n:vartype GENERIC: str\n:cvar MYSQL: MySQL service type.\n:vartype MYSQL: str\n:cvar MONGODB: MongoDB service type.\n:vartype MONGODB: str\n:cvar POSTGRESQL: PostgreSQL service type.\n:vartype POSTGRESQL: str",
+        "enum": [
+          "generic",
+          "mysql",
+          "mongodb",
+          "postgresql"
+        ],
+        "title": "AlertServiceType",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ServiceTypeEnum": {
+        "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
+        "enum": [
+          "mysql",
+          "postgresql",
+          "mongodb",
+          "proxysql",
+          "haproxy",
+          "external",
+          "valkey"
+        ],
+        "title": "ServiceTypeEnum",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "alert_troubleshooting__AlertDetailResponse": {
         "description": "Wrap the response for the alert detail endpoint.\n\n:param alert: The alert metadata.\n:type alert: AlertInfo\n:param snippets: Snippets associated with this alert.\n:type snippets: list[SnippetResponse]",
         "properties": {
           "alert": {
-            "$ref": "#/components/schemas/AlertInfo"
+            "$ref": "#/components/schemas/alert_troubleshooting__AlertInfo"
           },
           "snippets": {
             "items": {
-              "$ref": "#/components/schemas/SnippetResponse"
+              "$ref": "#/components/schemas/snippets__SnippetResponse"
             },
             "title": "Snippets",
             "type": "array"
@@ -22,12 +100,12 @@
         "title": "AlertDetailResponse",
         "type": "object"
       },
-      "AlertGroup": {
+      "alert_troubleshooting__AlertGroup": {
         "description": "Group alerts sharing a service type.\n\n:param service_type: The service type enum value.\n:type service_type: AlertServiceType\n:param label: Human-readable label for the service type.\n:type label: str\n:param alerts: Alerts belonging to this group.\n:type alerts: list[AlertSummary]",
         "properties": {
           "alerts": {
             "items": {
-              "$ref": "#/components/schemas/AlertSummary"
+              "$ref": "#/components/schemas/alert_troubleshooting__AlertSummary"
             },
             "title": "Alerts",
             "type": "array"
@@ -48,7 +126,7 @@
         "title": "AlertGroup",
         "type": "object"
       },
-      "AlertInfo": {
+      "alert_troubleshooting__AlertInfo": {
         "description": "Represent a normalized alert entry with its identifier and display label.\n\nAccept a plain string identifier, a dict with ``name`` (required) and\noptional ``label`` and ``service_type``, or keyword arguments.  Invalid\ninputs raise ``ValidationError``.  The ``service_type`` field is optional\nand, when absent, callers fall back to the snippet-level ``service_type``.\n\n:param name: The alert identifier as declared in snippet frontmatter.\n:type name: NonEmptyStr\n:param label: The human-readable display label for the alert.\n:type label: str\n:param service_type: The service type the alert applies to, overriding\n    the snippet-level ``service_type``.  ``None`` means \"fall back to the\n    snippet-level value\".\n:type service_type: AlertServiceType | None",
         "properties": {
           "label": {
@@ -78,18 +156,7 @@
         "title": "AlertInfo",
         "type": "object"
       },
-      "AlertServiceType": {
-        "description": "Enumerate the supported service types for alert-related features.\n\n:cvar GENERIC: Generic service type.\n:vartype GENERIC: str\n:cvar MYSQL: MySQL service type.\n:vartype MYSQL: str\n:cvar MONGODB: MongoDB service type.\n:vartype MONGODB: str\n:cvar POSTGRESQL: PostgreSQL service type.\n:vartype POSTGRESQL: str",
-        "enum": [
-          "generic",
-          "mysql",
-          "mongodb",
-          "postgresql"
-        ],
-        "title": "AlertServiceType",
-        "type": "string"
-      },
-      "AlertSummary": {
+      "alert_troubleshooting__AlertSummary": {
         "description": "Represent a minimal alert for the listing endpoint.\n\n:param name: The alert identifier.\n:type name: str\n:param label: The human-readable display label.\n:type label: str",
         "properties": {
           "label": {
@@ -108,7 +175,257 @@
         "title": "AlertSummary",
         "type": "object"
       },
-      "BoolField": {
+      "framework__AppEntitySchema": {
+        "additionalProperties": false,
+        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:type name: NonEmptyStr\n:param display_name: Human-readable title for this entity's screens.\n:type display_name: NonEmptyStr\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:type description: NonEmptyStr | None\n:param forms: Form sections for create (and edit when the UI supports it).\n:type forms: list[FormSection]\n:param list_view: Column configuration for this entity's list table.\n:type list_view: ListView\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.\n:type fail_when: list[FailRule] | None",
+        "properties": {
+          "cardinality_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__CardinalityRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality Rules"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "detail_highlights": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/framework__DetailHighlightLanguage"
+            },
+            "title": "Detail Highlights",
+            "type": "object"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "fail_when": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FailRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail When"
+          },
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/framework__FormSection"
+            },
+            "title": "Forms",
+            "type": "array"
+          },
+          "list_view": {
+            "$ref": "#/components/schemas/framework__ListView"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "forms",
+          "list_view"
+        ],
+        "title": "AppEntitySchema",
+        "type": "object"
+      },
+      "framework__AppSchema": {
+        "additionalProperties": false,
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:type related_apps: list[RelatedApp] | None",
+        "properties": {
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__Capabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cardinality_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__CardinalityRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality Rules"
+          },
+          "derived": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__DerivedTask"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "detail_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__DetailView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "entities": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__AppEntitySchema"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entities"
+          },
+          "fail_when": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FailRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail When"
+          },
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/framework__FormSection"
+            },
+            "title": "Forms",
+            "type": "array"
+          },
+          "list_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__ListView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "predecessors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__ChainedPredecessor"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predecessors"
+          },
+          "related_apps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__RelatedApp"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Apps"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
+          }
+        },
+        "required": [
+          "name",
+          "display_name"
+        ],
+        "title": "AppSchema",
+        "type": "object"
+      },
+      "framework__BoolField": {
         "additionalProperties": false,
         "description": "Represent a boolean toggle field.\n\n:param field_type: The discriminator literal; always ``\"bool\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"bool\"]",
         "properties": {
@@ -137,7 +454,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -167,7 +484,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -194,7 +511,7 @@
         "title": "BoolField",
         "type": "object"
       },
-      "Capabilities": {
+      "framework__Capabilities": {
         "additionalProperties": false,
         "description": "Represent plugin-level feature flags.\n\n:param chaining: Whether the plugin supports chaining tasks together.\n    Defaults to ``False``.\n:type chaining: bool\n:param alert_on_fail: Whether the plugin supports configuring a PMM\n    alert when a task fails. Defaults to ``False``.\n:type alert_on_fail: bool\n:param scheduling: Whether the plugin supports scheduling tasks on a\n    periodic interval. Defaults to ``False``.\n:type scheduling: bool\n:param stats: Whether the plugin supports rendering the aggregated\n    execution statistics card on its detail page. Defaults to\n    ``False``.\n:type stats: bool\n:param pii_anonymization: Whether the plugin wires ``anonymize_mask``\n    into task execution and the React detail page should surface which\n    PII entities are anonymized. This is a UI-rendering gate — the\n    anonymization always happens when configured; this flag controls\n    whether the detail view renders the \"PII Anonymization\" section.\n    Defaults to ``False``.\n:type pii_anonymization: bool",
         "properties": {
@@ -227,7 +544,7 @@
         "title": "Capabilities",
         "type": "object"
       },
-      "CardinalityRule": {
+      "framework__CardinalityRule": {
         "additionalProperties": false,
         "description": "Express a cardinality constraint over a list of fields.\n\nWhen ``when`` matches (or unconditionally if ``when`` is ``None``), the\ncount of present fields in ``fields`` must lie in ``[min, max]`` with\n``None`` bounds treated as unbounded.\n\n:param when: The predicate that gates the rule. ``None`` means\n    unconditional.\n:type when: Predicate | None\n:param fields: The non-empty list of target field names.\n:type fields: list[str]\n:param min: Optional lower bound on the count of present fields.\n    Defaults to ``None``.\n:type min: int | None\n:param max: Optional upper bound on the count of present fields.\n    Defaults to ``None``.\n:type max: int | None\n:param message: Optional failure message. Defaults to ``None``.\n:type message: str | None",
         "properties": {
@@ -291,9 +608,9 @@
         "title": "CardinalityRule",
         "type": "object"
       },
-      "ChainedPredecessor": {
+      "framework__ChainedPredecessor": {
         "additionalProperties": false,
-        "description": "Represent a chained predecessor task that runs before the parent.\n\nThe cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes\nthis spec when POSTing, PUTting, or DELETEing a plugin's tasks: each\npredecessor is created with ``data[\"parent\"]`` linked to the parent's\nname (when ``parent_link`` is true) and named\n``f\"{parent_name}{name_suffix}\"``. After every create succeeds, the\ncascade fires ``POST /execute/{first_predecessor_name}`` with\n``chain_task_names`` spanning the remaining predecessors followed by\nthe parent; ``chain_on_failure`` is derived from ``on_failure``\n(``\"halt\"`` maps to ``False``, ``\"continue\"`` maps to ``True``). The\nchain inherits ``_chain_on_failure`` chain-wide via celery's\n:func:`_dispatch_chained_task`.\n\n:param name_suffix: String appended to the parent's ``name`` to form\n    the predecessor's name (for example ``\"-pre-checks\"``).\n:type name_suffix: NonEmptyStr\n:param on_failure: Chain semantics when the predecessor terminates\n    non-successfully. ``\"halt\"`` (default) stops the chain;\n    ``\"continue\"`` lets the chain continue regardless. Translates to\n    the boolean ``chain_on_failure`` flag at execute time.\n:type on_failure: Literal[\"halt\", \"continue\"]\n:param parent_link: When true, set ``data[\"parent\"]`` on the\n    predecessor payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "description": "Represent a chained predecessor task that runs before the parent.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes\nthis spec when POSTing, PUTting, or DELETEing a plugin's tasks: each\npredecessor is created with ``data[\"parent\"]`` linked to the parent's\nname (when ``parent_link`` is true) and named\n``f\"{parent_name}{name_suffix}\"``. Create persists task records only;\nwhen the user starts the chain, the consuming plugin fires\n``POST /execute/{first_predecessor_name}`` using\n:func:`build_predecessor_chain_execute_body` for ``chain_task_names``\n(remaining predecessors then parent) and ``chain_on_failure`` derived\nfrom ``on_failure`` (``\"halt\"`` maps to ``False``, ``\"continue\"`` maps\nto ``True``).\n\n:param name_suffix: String appended to the parent's ``name`` to form\n    the predecessor's name (for example ``\"-pre-checks\"``).\n:type name_suffix: NonEmptyStr\n:param on_failure: Chain semantics when the predecessor terminates\n    non-successfully. ``\"halt\"`` (default) stops the chain;\n    ``\"continue\"`` lets the chain continue regardless. Translates to\n    the boolean ``chain_on_failure`` flag at execute time.\n:type on_failure: Literal[\"halt\", \"continue\"]\n:param parent_link: When true, set ``data[\"parent\"]`` on the\n    predecessor payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
         "properties": {
           "name_suffix": {
             "minLength": 1,
@@ -321,7 +638,7 @@
         "title": "ChainedPredecessor",
         "type": "object"
       },
-      "Choice": {
+      "framework__Choice": {
         "additionalProperties": false,
         "description": "Represent one option in a choice or multi-choice field.\n\n:param label: The human-readable label displayed for the choice.\n:type label: NonEmptyStr\n:param value: The value submitted when the choice is selected.\n:type value: NonEmptyStr\n:param disabled: Whether the option is rendered non-selectable. Optional,\n    defaulting to ``None`` (selectable). Typed ``bool | None`` so the\n    discovery endpoint's ``exclude_none`` posture drops it from the wire\n    until a plugin opts in, keeping the addition byte-compatible with\n    existing schemas. UI hint only; enforcing rejection of a disabled\n    value is the consuming app's responsibility.\n:type disabled: bool | None\n:param disabled_reason: Optional explanatory text surfaced (for example,\n    in a tooltip) when the option is disabled. Defaults to ``None`` and\n    may only be set when ``disabled`` is ``True``.\n:type disabled_reason: NonEmptyStr | None",
         "properties": {
@@ -366,13 +683,13 @@
         "title": "Choice",
         "type": "object"
       },
-      "ChoiceField": {
+      "framework__ChoiceField": {
         "additionalProperties": false,
         "description": "Represent a single-select dropdown field.\n\n:param field_type: The discriminator literal; always ``\"choice\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"choice\"]\n:param choices: The non-empty list of options the user can choose from.\n:type choices: list[Choice]",
         "properties": {
           "choices": {
             "items": {
-              "$ref": "#/components/schemas/Choice"
+              "$ref": "#/components/schemas/framework__Choice"
             },
             "minItems": 1,
             "title": "Choices",
@@ -403,7 +720,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -433,7 +750,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -461,14 +778,14 @@
         "title": "ChoiceField",
         "type": "object"
       },
-      "Column": {
+      "framework__Column": {
         "additionalProperties": false,
         "description": "Represent one column in a plugin list view.\n\n:param key: The task attribute path this column displays (for example,\n    ``\"status\"`` or ``\"target.service\"``).\n:type key: NonEmptyStr\n:param label: The human-readable column header.\n:type label: NonEmptyStr\n:param sortable: Whether the column can be used to sort the list.\n    Defaults to ``False``.\n:type sortable: bool\n:param format: Optional formatting hint applied when rendering the\n    column values. Defaults to ``None``.\n:type format: ColumnFormat | None",
         "properties": {
           "format": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ColumnFormat"
+                "$ref": "#/components/schemas/framework__ColumnFormat"
               },
               {
                 "type": "null"
@@ -498,7 +815,7 @@
         "title": "Column",
         "type": "object"
       },
-      "ColumnFormat": {
+      "framework__ColumnFormat": {
         "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str\n:cvar SCHEDULE: Render a generic schedule cell for the row's task. The\n    frontend joins the row to its periodic task by name and shows the next\n    run (relative, with the absolute timestamp on hover) plus a periodicity\n    popover, or a muted \"Not scheduled\" chip when the task has no schedule.\n    Not bound to the column's own cell value.\n:vartype SCHEDULE: str",
         "enum": [
           "text",
@@ -513,7 +830,7 @@
         "title": "ColumnFormat",
         "type": "string"
       },
-      "DateTimeField": {
+      "framework__DateTimeField": {
         "additionalProperties": false,
         "description": "Represent a datetime picker field.\n\n:param field_type: The discriminator literal; always ``\"datetime\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"datetime\"]",
         "properties": {
@@ -542,7 +859,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -572,7 +889,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -599,9 +916,9 @@
         "title": "DateTimeField",
         "type": "object"
       },
-      "DerivedTask": {
+      "framework__DerivedTask": {
         "additionalProperties": false,
-        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:type data_overrides: dict[str, Any] | None\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:type data_overrides: dict[str, Any] | None\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
         "properties": {
           "arg_substitutions": {
             "anyOf": [
@@ -659,14 +976,14 @@
         "title": "DerivedTask",
         "type": "object"
       },
-      "DetailField": {
+      "framework__DetailField": {
         "additionalProperties": false,
         "description": "Declare one labelled field rendered inside a :class:`DetailSection`.\n\n:param path: Dotted path into the task record (for example\n    ``\"data.meta.command\"``). Each segment must be a Python identifier,\n    optionally followed by one or more ``[N]`` array indices.\n:type path: DetailPath\n:param label: Human-readable label rendered alongside the resolved value.\n:type label: NonEmptyStr\n:param highlight: Optional syntax-highlighter hint. Defaults to ``None``.\n:type highlight: DetailHighlightLanguage | None",
         "properties": {
           "highlight": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DetailHighlightLanguage"
+                "$ref": "#/components/schemas/framework__DetailHighlightLanguage"
               },
               {
                 "type": "null"
@@ -692,23 +1009,24 @@
         "title": "DetailField",
         "type": "object"
       },
-      "DetailHighlightLanguage": {
+      "framework__DetailHighlightLanguage": {
         "description": "Enumerate supported syntax highlighters for detail fields.",
         "enum": [
           "sql",
           "json",
-          "bash"
+          "bash",
+          "yaml"
         ],
         "title": "DetailHighlightLanguage",
         "type": "string"
       },
-      "DetailSection": {
+      "framework__DetailSection": {
         "additionalProperties": false,
         "description": "Declare one titled section inside a :class:`DetailView`.\n\n:param title: Heading rendered above the section's fields.\n:type title: NonEmptyStr\n:param fields: Ordered list of fields rendered inside the section. An\n    empty list is valid; the frontend hides the section when every\n    field resolves to an empty value.\n:type fields: list[DetailField]",
         "properties": {
           "fields": {
             "items": {
-              "$ref": "#/components/schemas/DetailField"
+              "$ref": "#/components/schemas/framework__DetailField"
             },
             "title": "Fields",
             "type": "array"
@@ -726,13 +1044,13 @@
         "title": "DetailSection",
         "type": "object"
       },
-      "DetailView": {
+      "framework__DetailView": {
         "additionalProperties": false,
-        "description": "Declare the per-section detail-page layout for a task-style plugin.\n\nMirrors the role of :attr:`PluginSchema.list_view` for the list table:\nthe React framework reads ``detail_view`` to render the task detail\npage's section cards instead of inferring structure from the runtime\n``task.data`` shape.\n\n:param sections: Ordered list of sections rendered on the detail page.\n    An empty list is valid; the frontend renders no section cards.\n    Section titles must be unique within a view so the React key can\n    be derived from the title without positional disambiguation.\n:type sections: list[DetailSection]",
+        "description": "Declare the per-section detail-page layout for a task-style plugin.\n\nMirrors the role of :attr:`AppSchema.list_view` for the list table:\nthe React framework reads ``detail_view`` to render the task detail\npage's section cards instead of inferring structure from the runtime\n``task.data`` shape.\n\n:param sections: Ordered list of sections rendered on the detail page.\n    An empty list is valid; the frontend renders no section cards.\n    Section titles must be unique within a view so the React key can\n    be derived from the title without positional disambiguation.\n:type sections: list[DetailSection]",
         "properties": {
           "sections": {
             "items": {
-              "$ref": "#/components/schemas/DetailSection"
+              "$ref": "#/components/schemas/framework__DetailSection"
             },
             "title": "Sections",
             "type": "array"
@@ -744,7 +1062,7 @@
         "title": "DetailView",
         "type": "object"
       },
-      "FailRule": {
+      "framework__FailRule": {
         "additionalProperties": false,
         "description": "Express a predicate-only invariant: rule fails iff predicate matches.\n\n:param fail_when: The predicate whose match triggers a failure.\n:type fail_when: Predicate\n:param error_fields: The field names the FE renderer should attach the\n    error to (informational hint; the runtime evaluator ignores this\n    list). May be empty when no field is logically responsible.\n:type error_fields: list[str]\n:param message: Optional failure message. Defaults to ``None``.\n:type message: str | None",
         "properties": {
@@ -780,7 +1098,7 @@
         "title": "FailRule",
         "type": "object"
       },
-      "FieldGate": {
+      "framework__FieldGate": {
         "additionalProperties": false,
         "description": "Express a binary self-cardinality gate at :class:`BaseField` scope.\n\nUsed by :attr:`BaseField.requires` and :attr:`BaseField.forbidden`. The\ntarget field is the field carrying the rule (implicit self).\n\n:param when: The predicate that gates the rule.\n:type when: Predicate\n:param message: Optional failure message surfaced when the rule fires.\n    Defaults to ``None``.\n:type message: str | None",
         "properties": {
@@ -808,7 +1126,7 @@
         "title": "FieldGate",
         "type": "object"
       },
-      "FileField": {
+      "framework__FileField": {
         "additionalProperties": false,
         "description": "Represent a file upload field.\n\n:param field_type: The discriminator literal; always ``\"file\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"file\"]\n:param accept: Optional list of accepted file types, using the same\n    syntax as the HTML ``accept`` attribute (for example, ``[\".sql\",\n    \".csv\"]`` or ``[\"image/png\"]``). Defaults to ``None``.\n:type accept: list[str] | None",
         "properties": {
@@ -851,7 +1169,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -881,7 +1199,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -908,7 +1226,7 @@
         "title": "FileField",
         "type": "object"
       },
-      "FloatField": {
+      "framework__FloatField": {
         "additionalProperties": false,
         "description": "Represent a float numeric input field.\n\n:param field_type: The discriminator literal; always ``\"float\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"float\"]\n:param ge: Optional lower bound (inclusive) for accepted values. Defaults\n    to ``None``.\n:type ge: float | None\n:param le: Optional upper bound (inclusive) for accepted values. Defaults\n    to ``None``.\n:type le: float | None\n:param step: Optional step size for the input control. Defaults to\n    ``None``.\n:type step: float | None",
         "properties": {
@@ -937,7 +1255,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -989,7 +1307,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1027,7 +1345,7 @@
         "title": "FloatField",
         "type": "object"
       },
-      "FormSection": {
+      "framework__FormSection": {
         "additionalProperties": false,
         "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:type title: NonEmptyStr\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param fields: The list of fields belonging to this section. May include\n    :class:`OneOfGroup` containers alongside leaf fields.\n:type fields: list[AnyField]\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:type collapsible: bool\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:type collapsed_by_default: bool\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:type render_after_submit: bool\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.\n:type forbidden: list[FieldGate] | None",
         "properties": {
@@ -1035,7 +1353,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/CardinalityRule"
+                  "$ref": "#/components/schemas/framework__CardinalityRule"
                 },
                 "type": "array"
               },
@@ -1071,7 +1389,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FailRule"
+                  "$ref": "#/components/schemas/framework__FailRule"
                 },
                 "type": "array"
               },
@@ -1085,52 +1403,67 @@
             "items": {
               "oneOf": [
                 {
-                  "$ref": "#/components/schemas/BoolField"
+                  "$ref": "#/components/schemas/framework__BoolField"
                 },
                 {
-                  "$ref": "#/components/schemas/ChoiceField"
+                  "$ref": "#/components/schemas/framework__ChoiceField"
                 },
                 {
-                  "$ref": "#/components/schemas/DateTimeField"
+                  "$ref": "#/components/schemas/framework__DateTimeField"
                 },
                 {
-                  "$ref": "#/components/schemas/FileField"
+                  "$ref": "#/components/schemas/framework__FileField"
                 },
                 {
-                  "$ref": "#/components/schemas/FloatField"
+                  "$ref": "#/components/schemas/framework__FloatField"
                 },
                 {
-                  "$ref": "#/components/schemas/HostField"
+                  "$ref": "#/components/schemas/framework__HostField"
                 },
                 {
-                  "$ref": "#/components/schemas/IntegerField"
+                  "$ref": "#/components/schemas/framework__IntegerField"
                 },
                 {
-                  "$ref": "#/components/schemas/MultiChoiceField"
+                  "$ref": "#/components/schemas/framework__MultiChoiceField"
                 },
                 {
-                  "$ref": "#/components/schemas/SchemaField"
+                  "$ref": "#/components/schemas/framework__MultiHostField"
                 },
                 {
-                  "$ref": "#/components/schemas/ScriptPreviewField"
+                  "$ref": "#/components/schemas/framework__MultiSchemaField"
                 },
                 {
-                  "$ref": "#/components/schemas/ServiceField"
+                  "$ref": "#/components/schemas/framework__MultiServiceField"
                 },
                 {
-                  "$ref": "#/components/schemas/StringField"
+                  "$ref": "#/components/schemas/framework__MultiTableField"
                 },
                 {
-                  "$ref": "#/components/schemas/TableField"
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
                 },
                 {
-                  "$ref": "#/components/schemas/TextAreaField"
+                  "$ref": "#/components/schemas/framework__SchemaField"
                 },
                 {
-                  "$ref": "#/components/schemas/YamlField"
+                  "$ref": "#/components/schemas/framework__ScriptPreviewField"
                 },
                 {
-                  "$ref": "#/components/schemas/OneOfGroup"
+                  "$ref": "#/components/schemas/framework__ServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__StringField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TextAreaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__YamlField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__OneOfGroup"
                 }
               ]
             },
@@ -1141,7 +1474,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1169,22 +1502,9 @@
         "title": "FormSection",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "HostField": {
+      "framework__HostField": {
         "additionalProperties": false,
-        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). Host selection is not cascaded\nfrom another field — every dispatch form lists every available executor\ntarget.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -1206,6 +1526,18 @@
             ],
             "title": "Default"
           },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
+          },
           "description": {
             "anyOf": [
               {
@@ -1222,7 +1554,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1252,7 +1584,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1279,7 +1611,7 @@
         "title": "HostField",
         "type": "object"
       },
-      "IntegerField": {
+      "framework__IntegerField": {
         "additionalProperties": false,
         "description": "Represent an integer numeric input field.\n\n:param field_type: The discriminator literal; always ``\"integer\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"integer\"]\n:param ge: Optional lower bound (inclusive) for accepted values. Defaults\n    to ``None``.\n:type ge: int | None\n:param le: Optional upper bound (inclusive) for accepted values. Defaults\n    to ``None``.\n:type le: int | None\n:param step: Optional step size for the input control. Defaults to\n    ``None``.\n:type step: int | None",
         "properties": {
@@ -1308,7 +1640,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1360,7 +1692,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1398,13 +1730,13 @@
         "title": "IntegerField",
         "type": "object"
       },
-      "ListView": {
+      "framework__ListView": {
         "additionalProperties": false,
         "description": "Represent the list-view configuration for a plugin.\n\n:param columns: The ordered list of columns displayed in the list view.\n:type columns: list[Column]\n:param default_sort: Optional key of the column to sort by on first\n    render. Prefix with ``-`` for descending order (for example,\n    ``\"-lastRun\"``). The unprefixed key must match one of the declared\n    column keys. Defaults to ``None``.\n:type default_sort: NonEmptyStr | None\n:param overview_hidden_fields: Additional task-level keys to suppress\n    from the auto-rendered \"extras\" loop on the plugin detail Overview\n    tab. The framework always hides a baseline set of internal fields\n    (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,\n    ``last_updated_by``, ``connectivity_warning``); any keys listed here\n    are merged with that baseline. Defaults to ``[]``.\n:type overview_hidden_fields: list[str]",
         "properties": {
           "columns": {
             "items": {
-              "$ref": "#/components/schemas/Column"
+              "$ref": "#/components/schemas/framework__Column"
             },
             "title": "Columns",
             "type": "array"
@@ -1436,13 +1768,13 @@
         "title": "ListView",
         "type": "object"
       },
-      "MultiChoiceField": {
+      "framework__MultiChoiceField": {
         "additionalProperties": false,
         "description": "Represent a multi-select dropdown field.\n\n:param field_type: The discriminator literal; always ``\"multi_choice\"``\n    for this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"multi_choice\"]\n:param choices: The non-empty list of options the user can choose from.\n:type choices: list[Choice]",
         "properties": {
           "choices": {
             "items": {
-              "$ref": "#/components/schemas/Choice"
+              "$ref": "#/components/schemas/framework__Choice"
             },
             "minItems": 1,
             "title": "Choices",
@@ -1473,7 +1805,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1503,7 +1835,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1531,7 +1863,427 @@
         "title": "MultiChoiceField",
         "type": "object"
       },
-      "OneOfBranch": {
+      "framework__MultiHostField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\nCascade auto-select is single-host only (:class:`HostField`). ``depends_on``\nmay still be emitted when ``Ui(depends_on=...)`` is set so derivation stays\nuniform, but the multi-host renderer does not honour it today.\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional upstream field name mirrored from\n    ``Ui(depends_on=...)``. Emitted for wire uniformity with\n    :class:`HostField`; the current multi-host renderer ignores it (no\n    cascade). ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_host",
+            "default": "multi_host",
+            "enum": [
+              "multi_host"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "MultiHostField",
+        "type": "object"
+      },
+      "framework__MultiSchemaField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory database-schema selector field.\n\nThe multi-value counterpart of :class:`SchemaField`: the renderer commits a\nlist of schemas instead of a single one. Derived from a\n``SchemaRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the cascaded options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_schema",
+            "default": "multi_schema",
+            "enum": [
+              "multi_schema"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "MultiSchemaField",
+        "type": "object"
+      },
+      "framework__MultiServiceField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory service selector field.\n\nThe multi-value counterpart of :class:`ServiceField`: the renderer commits a\nlist of services instead of a single one. Derived from a\n``ServiceRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the inventory options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "service_types": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceTypeEnum"
+            },
+            "title": "Service Types",
+            "type": "array"
+          },
+          "type": {
+            "const": "multi_service",
+            "default": "multi_service",
+            "enum": [
+              "multi_service"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "service_types"
+        ],
+        "title": "MultiServiceField",
+        "type": "object"
+      },
+      "framework__MultiTableField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory table selector field.\n\nThe multi-value counterpart of :class:`TableField`: the renderer commits a\nlist of tables instead of a single one. Derived from a\n``TableRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_table\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the cascaded options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_table",
+            "default": "multi_table",
+            "enum": [
+              "multi_table"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "MultiTableField",
+        "type": "object"
+      },
+      "framework__OneOfBranch": {
         "additionalProperties": false,
         "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:param label: The human-readable label for the segmented-control option.\n:param fields: The leaf fields revealed when this branch is active.",
         "properties": {
@@ -1539,69 +2291,89 @@
             "items": {
               "discriminator": {
                 "mapping": {
-                  "bool": "#/components/schemas/BoolField",
-                  "choice": "#/components/schemas/ChoiceField",
-                  "datetime": "#/components/schemas/DateTimeField",
-                  "file": "#/components/schemas/FileField",
-                  "float": "#/components/schemas/FloatField",
-                  "host": "#/components/schemas/HostField",
-                  "integer": "#/components/schemas/IntegerField",
-                  "multi_choice": "#/components/schemas/MultiChoiceField",
-                  "schema": "#/components/schemas/SchemaField",
-                  "script_preview": "#/components/schemas/ScriptPreviewField",
-                  "service": "#/components/schemas/ServiceField",
-                  "string": "#/components/schemas/StringField",
-                  "table": "#/components/schemas/TableField",
-                  "textarea": "#/components/schemas/TextAreaField",
-                  "yaml": "#/components/schemas/YamlField"
+                  "bool": "#/components/schemas/framework__BoolField",
+                  "choice": "#/components/schemas/framework__ChoiceField",
+                  "datetime": "#/components/schemas/framework__DateTimeField",
+                  "file": "#/components/schemas/framework__FileField",
+                  "float": "#/components/schemas/framework__FloatField",
+                  "host": "#/components/schemas/framework__HostField",
+                  "integer": "#/components/schemas/framework__IntegerField",
+                  "multi_choice": "#/components/schemas/framework__MultiChoiceField",
+                  "multi_host": "#/components/schemas/framework__MultiHostField",
+                  "multi_schema": "#/components/schemas/framework__MultiSchemaField",
+                  "multi_service": "#/components/schemas/framework__MultiServiceField",
+                  "multi_table": "#/components/schemas/framework__MultiTableField",
+                  "remote_choice": "#/components/schemas/framework__RemoteChoiceField",
+                  "schema": "#/components/schemas/framework__SchemaField",
+                  "script_preview": "#/components/schemas/framework__ScriptPreviewField",
+                  "service": "#/components/schemas/framework__ServiceField",
+                  "string": "#/components/schemas/framework__StringField",
+                  "table": "#/components/schemas/framework__TableField",
+                  "textarea": "#/components/schemas/framework__TextAreaField",
+                  "yaml": "#/components/schemas/framework__YamlField"
                 },
                 "propertyName": "type"
               },
               "oneOf": [
                 {
-                  "$ref": "#/components/schemas/BoolField"
+                  "$ref": "#/components/schemas/framework__BoolField"
                 },
                 {
-                  "$ref": "#/components/schemas/ChoiceField"
+                  "$ref": "#/components/schemas/framework__ChoiceField"
                 },
                 {
-                  "$ref": "#/components/schemas/DateTimeField"
+                  "$ref": "#/components/schemas/framework__DateTimeField"
                 },
                 {
-                  "$ref": "#/components/schemas/FileField"
+                  "$ref": "#/components/schemas/framework__FileField"
                 },
                 {
-                  "$ref": "#/components/schemas/FloatField"
+                  "$ref": "#/components/schemas/framework__FloatField"
                 },
                 {
-                  "$ref": "#/components/schemas/HostField"
+                  "$ref": "#/components/schemas/framework__HostField"
                 },
                 {
-                  "$ref": "#/components/schemas/IntegerField"
+                  "$ref": "#/components/schemas/framework__IntegerField"
                 },
                 {
-                  "$ref": "#/components/schemas/MultiChoiceField"
+                  "$ref": "#/components/schemas/framework__MultiChoiceField"
                 },
                 {
-                  "$ref": "#/components/schemas/SchemaField"
+                  "$ref": "#/components/schemas/framework__MultiHostField"
                 },
                 {
-                  "$ref": "#/components/schemas/ScriptPreviewField"
+                  "$ref": "#/components/schemas/framework__MultiSchemaField"
                 },
                 {
-                  "$ref": "#/components/schemas/ServiceField"
+                  "$ref": "#/components/schemas/framework__MultiServiceField"
                 },
                 {
-                  "$ref": "#/components/schemas/StringField"
+                  "$ref": "#/components/schemas/framework__MultiTableField"
                 },
                 {
-                  "$ref": "#/components/schemas/TableField"
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
                 },
                 {
-                  "$ref": "#/components/schemas/TextAreaField"
+                  "$ref": "#/components/schemas/framework__SchemaField"
                 },
                 {
-                  "$ref": "#/components/schemas/YamlField"
+                  "$ref": "#/components/schemas/framework__ScriptPreviewField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__StringField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TextAreaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__YamlField"
                 }
               ]
             },
@@ -1628,13 +2400,13 @@
         "title": "OneOfBranch",
         "type": "object"
       },
-      "OneOfGroup": {
+      "framework__OneOfGroup": {
         "additionalProperties": false,
         "description": "Represent a labelled either/or field group with a segmented mode switch.\n\nThe React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,\nshows :attr:`description` as helper text, and renders only the active\nbranch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden\nat validation time via rules synthesised from the group's branch contract.\n\n:param field_type: The discriminator literal; always ``\"one_of\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param name: Stable group identifier used as the React list key. Not a\n    separate form value — :attr:`discriminator` names the mode field.\n:param label: The human-readable group heading above the segmented control.\n:param description: Optional helper text rendered beneath the group label.\n    Defaults to ``None``.\n:param discriminator: Dotted path to the mode field (for example,\n    ``\"source.mode\"``) whose value selects the active branch.\n:param default: Optional default branch :attr:`~OneOfBranch.value`. Must\n    match one of the declared branches when set. Defaults to ``None``.\n:param branches: Two or more named branches, each owning its own field list.",
         "properties": {
           "branches": {
             "items": {
-              "$ref": "#/components/schemas/OneOfBranch"
+              "$ref": "#/components/schemas/framework__OneOfBranch"
             },
             "minItems": 2,
             "title": "Branches",
@@ -1700,23 +2472,70 @@
         "title": "OneOfGroup",
         "type": "object"
       },
-      "PluginEntitySchema": {
+      "framework__RelatedApp": {
         "additionalProperties": false,
-        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:type name: NonEmptyStr\n:param display_name: Human-readable title for this entity's screens.\n:type display_name: NonEmptyStr\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:type description: NonEmptyStr | None\n:param forms: Form sections for create (and edit when the UI supports it).\n:type forms: list[FormSection]\n:param list_view: Column configuration for this entity's list table.\n:type list_view: ListView\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.\n:type fail_when: list[FailRule] | None",
+        "description": "Declare a separately registered app surfaced as a sibling tab in the UI.\n\nConsumed by the React ``SchemaDrivenPlugin`` shell to mount a nested\nschema-driven flow for the related registry entry (for example\n``mysql_backups/restore``) under ``{route_base}/{route_segment}`` without\nre-merging the child app's API router into the parent.\n\n:param app_key: The scoped registry key of the related app (for example\n    ``mysql_backups/restore``).\n:type app_key: NonEmptyStr\n:param label: The human-readable tab label (for example ``Restore``).\n:type label: NonEmptyStr\n:param route_segment: The React sub-path segment under the parent's\n    ``route_base`` (for example ``restores``). Must be a single URL path\n    segment — no slashes — and must not be a reserved single-entity route\n    keyword (``new``, ``schedule``, ``task``).\n:type route_segment: NonEmptyStr",
         "properties": {
-          "cardinality_rules": {
+          "app_key": {
+            "minLength": 1,
+            "title": "App Key",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "route_segment": {
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "title": "Route Segment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_key",
+          "label",
+          "route_segment"
+        ],
+        "title": "RelatedApp",
+        "type": "object"
+      },
+      "framework__RemoteChoiceField": {
+        "additionalProperties": false,
+        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field stays disabled/empty until the\ndependency has a value. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
             "anyOf": [
               {
-                "items": {
-                  "$ref": "#/components/schemas/CardinalityRule"
-                },
-                "type": "array"
+                "type": "boolean"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Cardinality Rules"
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
           },
           "description": {
             "anyOf": [
@@ -1730,23 +2549,16 @@
             ],
             "title": "Description"
           },
-          "detail_highlights": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/DetailHighlightLanguage"
-            },
-            "title": "Detail Highlights",
-            "type": "object"
-          },
-          "display_name": {
+          "endpoint_url": {
             "minLength": 1,
-            "title": "Display Name",
+            "title": "Endpoint Url",
             "type": "string"
           },
-          "fail_when": {
+          "forbidden": {
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FailRule"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1754,147 +2566,12 @@
                 "type": "null"
               }
             ],
-            "title": "Fail When"
+            "title": "Forbidden"
           },
-          "forms": {
-            "items": {
-              "$ref": "#/components/schemas/FormSection"
-            },
-            "title": "Forms",
-            "type": "array"
-          },
-          "list_view": {
-            "$ref": "#/components/schemas/ListView"
-          },
-          "name": {
+          "label": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
-            "title": "Name",
+            "title": "Label",
             "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "display_name",
-          "forms",
-          "list_view"
-        ],
-        "title": "PluginEntitySchema",
-        "type": "object"
-      },
-      "PluginSchema": {
-        "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:type entities: list[PluginEntitySchema] | None\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None",
-        "properties": {
-          "capabilities": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Capabilities"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "cardinality_rules": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CardinalityRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cardinality Rules"
-          },
-          "derived": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/DerivedTask"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Derived"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "detail_view": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DetailView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "display_name": {
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "entities": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/PluginEntitySchema"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entities"
-          },
-          "fail_when": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/FailRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fail When"
-          },
-          "forms": {
-            "items": {
-              "$ref": "#/components/schemas/FormSection"
-            },
-            "title": "Forms",
-            "type": "array"
-          },
-          "list_view": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ListView"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "name": {
             "minLength": 1,
@@ -1902,11 +2579,16 @@
             "title": "Name",
             "type": "string"
           },
-          "predecessors": {
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/ChainedPredecessor"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -1914,29 +2596,27 @@
                 "type": "null"
               }
             ],
-            "title": "Predecessors"
+            "title": "Requires"
           },
-          "task_type": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+          "type": {
+            "const": "remote_choice",
+            "default": "remote_choice",
+            "enum": [
+              "remote_choice"
             ],
-            "title": "Task Type"
+            "title": "Type",
+            "type": "string"
           }
         },
         "required": [
           "name",
-          "display_name"
+          "label",
+          "endpoint_url"
         ],
-        "title": "PluginSchema",
+        "title": "RemoteChoiceField",
         "type": "object"
       },
-      "SchemaField": {
+      "framework__SchemaField": {
         "additionalProperties": false,
         "description": "Represent an inventory database-schema selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``ServiceField``); the React renderer\ncascades schema options from the selected service. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"schema\"]\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:type depends_on: NonEmptyStr\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    cascaded inventory options. Optional, defaulting to ``None`` (options\n    only). Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas. The\n    built-in SchemaFormRenderer does not yet consume the flag; the\n    free-solo widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
         "properties": {
@@ -1981,7 +2661,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2011,7 +2691,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2039,9 +2719,9 @@
         "title": "SchemaField",
         "type": "object"
       },
-      "ScriptPreviewField": {
+      "framework__ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -2081,7 +2761,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2123,7 +2803,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2151,7 +2831,7 @@
         "title": "ScriptPreviewField",
         "type": "object"
       },
-      "ServiceField": {
+      "framework__ServiceField": {
         "additionalProperties": false,
         "description": "Represent an inventory service selector field.\n\n:param field_type: The discriminator literal; always ``\"service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"service\"]\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:type service_types: list[ServiceTypeEnum]\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    inventory options. Optional, defaulting to ``None`` (options only).\n    Typed ``bool | None`` so the discovery endpoint's ``exclude_none``\n    posture drops it from the wire until a plugin opts in, keeping the\n    addition byte-compatible with existing schemas. The built-in\n    SchemaFormRenderer does not yet consume the flag; the free-solo\n    widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
         "properties": {
@@ -2191,7 +2871,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2221,7 +2901,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2256,134 +2936,7 @@
         "title": "ServiceField",
         "type": "object"
       },
-      "ServiceTypeEnum": {
-        "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
-        "enum": [
-          "mysql",
-          "postgresql",
-          "mongodb",
-          "proxysql",
-          "haproxy",
-          "external",
-          "valkey"
-        ],
-        "title": "ServiceTypeEnum",
-        "type": "string"
-      },
-      "SnippetResponse": {
-        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
-        "properties": {
-          "approved_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Approved At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "description": {
-            "title": "Description",
-            "type": "string"
-          },
-          "filename": {
-            "minLength": 1,
-            "title": "Filename",
-            "type": "string"
-          },
-          "interpreter": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Interpreter"
-          },
-          "is_approved": {
-            "title": "Is Approved",
-            "type": "boolean"
-          },
-          "md5_digest": {
-            "title": "Md5 Digest",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "requires_sudo": {
-            "title": "Requires Sudo",
-            "type": "boolean"
-          },
-          "size": {
-            "title": "Size",
-            "type": "integer"
-          },
-          "sudo_default": {
-            "title": "Sudo Default",
-            "type": "boolean"
-          },
-          "sudo_optional": {
-            "title": "Sudo Optional",
-            "type": "boolean"
-          },
-          "title": {
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          },
-          "updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated By"
-          }
-        },
-        "required": [
-          "filename",
-          "title",
-          "description",
-          "size",
-          "md5_digest",
-          "is_approved",
-          "reason",
-          "requires_sudo",
-          "sudo_optional",
-          "sudo_default",
-          "created_at"
-        ],
-        "title": "SnippetResponse",
-        "type": "object"
-      },
-      "StringField": {
+      "framework__StringField": {
         "additionalProperties": false,
         "description": "Represent a single-line string input field.\n\n:param field_type: The discriminator literal; always ``\"string\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"string\"]\n:param min_length: Optional minimum character length. Defaults to\n    ``None``.\n:type min_length: int | None\n:param max_length: Optional maximum character length. Defaults to\n    ``None``.\n:type max_length: int | None\n:param pattern: Optional regular expression the value must match.\n    Defaults to ``None``.\n:type pattern: NonEmptyStr | None\n:param placeholder: Optional placeholder text displayed when the field is\n    empty. Defaults to ``None``.\n:type placeholder: NonEmptyStr | None",
         "properties": {
@@ -2412,7 +2965,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2490,7 +3043,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2517,7 +3070,7 @@
         "title": "StringField",
         "type": "object"
       },
-      "TableField": {
+      "framework__TableField": {
         "additionalProperties": false,
         "description": "Represent an inventory table selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``SchemaField``); the React renderer\ncascades table options from the selected schema. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"table\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"table\"]\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:type depends_on: NonEmptyStr\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    cascaded inventory options. Optional, defaulting to ``None`` (options\n    only). Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas. The\n    built-in SchemaFormRenderer does not yet consume the flag; the\n    free-solo widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
         "properties": {
@@ -2562,7 +3115,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2592,7 +3145,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2620,7 +3173,7 @@
         "title": "TableField",
         "type": "object"
       },
-      "TextAreaField": {
+      "framework__TextAreaField": {
         "additionalProperties": false,
         "description": "Represent a multi-line string input field.\n\n:param field_type: The discriminator literal; always ``\"textarea\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"textarea\"]\n:param rows: Optional number of visible text rows. Defaults to ``None``.\n:type rows: int | None\n:param placeholder: Optional placeholder text displayed when the field is\n    empty. Defaults to ``None``.\n:type placeholder: NonEmptyStr | None",
         "properties": {
@@ -2649,7 +3202,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2691,7 +3244,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2730,47 +3283,7 @@
         "title": "TextAreaField",
         "type": "object"
       },
-      "ValidationError": {
-        "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError",
-        "type": "object"
-      },
-      "YamlField": {
+      "framework__YamlField": {
         "additionalProperties": false,
         "description": "Represent a YAML-syntax multi-line text input field.\n\n:param field_type: The discriminator literal; always ``\"yaml\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"yaml\"]\n:param rows: Optional number of visible text rows. Defaults to ``None``.\n:type rows: int | None\n:param placeholder: Optional placeholder text displayed when the field is\n    empty. Defaults to ``None``.\n:type placeholder: NonEmptyStr | None",
         "properties": {
@@ -2799,7 +3312,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2841,7 +3354,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FieldGate"
+                  "$ref": "#/components/schemas/framework__FieldGate"
                 },
                 "type": "array"
               },
@@ -2879,23 +3392,147 @@
         ],
         "title": "YamlField",
         "type": "object"
+      },
+      "snippets__SnippetResponse": {
+        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:type service_type: str | None\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "filename": {
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "interpreter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interpreter"
+          },
+          "is_approved": {
+            "title": "Is Approved",
+            "type": "boolean"
+          },
+          "md5_digest": {
+            "title": "Md5 Digest",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requires_sudo": {
+            "title": "Requires Sudo",
+            "type": "boolean"
+          },
+          "service_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Type"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "sudo_default": {
+            "title": "Sudo Default",
+            "type": "boolean"
+          },
+          "sudo_optional": {
+            "title": "Sudo Optional",
+            "type": "boolean"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "filename",
+          "title",
+          "description",
+          "size",
+          "md5_digest",
+          "is_approved",
+          "reason",
+          "requires_sudo",
+          "sudo_optional",
+          "sudo_default",
+          "created_at"
+        ],
+        "title": "SnippetResponse",
+        "type": "object"
       }
     }
   },
   "paths": {
-    "/api/plugins/alert_troubleshooting/": {
+    "/api/apps/alert_troubleshooting/": {
       "get": {
         "description": "Return alerts grouped by service type.\n\n:param session: The database session.\n:type session: SessionDep\n:return: A list of alert groups, each containing alerts for a service type.\n:rtype: list[AlertGroup]",
-        "operationId": "alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get",
+        "operationId": "alert_troubleshooting_alert_troubleshooting_api_list_api_apps_alert_troubleshooting__get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/AlertGroup"
+                    "$ref": "#/components/schemas/alert_troubleshooting__AlertGroup"
                   },
-                  "title": "Response Alert Troubleshooting Alert Troubleshooting Api List Api Plugins Alert Troubleshooting  Get",
+                  "title": "Response Alert Troubleshooting Alert Troubleshooting Api List Api Apps Alert Troubleshooting  Get",
                   "type": "array"
                 }
               }
@@ -2909,16 +3546,16 @@
         ]
       }
     },
-    "/api/plugins/alert_troubleshooting/schema": {
+    "/api/apps/alert_troubleshooting/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get",
+        "operationId": "alert_troubleshooting_get_schema_api_apps_alert_troubleshooting_schema_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginSchema"
+                  "$ref": "#/components/schemas/framework__AppSchema"
                 }
               }
             },
@@ -2931,10 +3568,10 @@
         ]
       }
     },
-    "/api/plugins/alert_troubleshooting/{service_type}/{alert_name}": {
+    "/api/apps/alert_troubleshooting/{service_type}/{alert_name}": {
       "get": {
         "description": "Return alert info and associated snippets for a specific alert.\n\n:param service_type: The service type of the alert.\n:type service_type: AlertServiceType\n:param alert_name: The alert name identifier.\n:type alert_name: str\n:param session: The database session.\n:type session: SessionDep\n:return: Alert info and associated snippets.\n:rtype: AlertDetailResponse\n:raises HTTPNotFoundException: If no snippets match the alert.",
-        "operationId": "alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get",
+        "operationId": "alert_troubleshooting_alert_troubleshooting_api_detail_api_apps_alert_troubleshooting__service_type___alert_name__get",
         "parameters": [
           {
             "in": "path",
@@ -2961,7 +3598,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AlertDetailResponse"
+                  "$ref": "#/components/schemas/alert_troubleshooting__AlertDetailResponse"
                 }
               }
             },

@@ -19,9 +19,11 @@ from datetime import timedelta
 from enum import StrEnum
 from typing import Annotated, ClassVar
 
-from annotated_types import Gt
-from pydantic import PositiveInt
+from annotated_types import Gt, Le
+from pydantic import Field, PositiveInt
+from sqlalchemy_celery_beat.models import Period
 
+from app.core.celery.models import IntervalSchedule
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
@@ -32,6 +34,8 @@ from app.core.settings_override.registry import (
     nested_overridable_field,
 )
 from app.tasks.execution.executors.nomad import NomadExecutor
+
+MAX_LOG_RETENTION_DAYS = 365
 
 
 class PreExecutionCheckMode(StrEnum):
@@ -78,6 +82,23 @@ class TasksSettings(BaseYamlAppSettings):
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
     :type STALENESS_THRESHOLD_SECONDS: PositiveInt
+    :param LOG_RETENTION_DAYS: The age in days beyond which finished task-execution
+        logs (``taskhistory_log`` rows) are purged. Runtime-overridable; must be a
+        positive integer no greater than 365. Defaults to 90.
+    :param LOG_PURGE_BATCH_SIZE: The maximum number of ``taskhistory_log`` rows
+        deleted per commit by the purge job. Runtime-overridable; must be positive.
+        Defaults to 10,000.
+    :param LOG_PURGE_INTERVAL: The schedule on which the log-purge periodic task
+        runs. ``None`` disables seeding the task entirely. Read at startup (not
+        runtime-overridable). Defaults to once per day.
+    :param LOG_STREAM_CAP_BYTES: The maximum captured-log bytes retained per
+        ``(task_history_id, source, stream)``. As a stream grows past the cap
+        the writer drops the oldest chunks, keeping a bounded recent tail so a
+        long-running execution's logs cannot grow without limit. Must be
+        positive. Defaults to 104857600 (100 MiB).
+    :param LOG_STREAM_EVICTION_MAX_ROWS: The maximum number of chunk rows the
+        writer evicts per flush, bounding the per-append eviction work. Must be
+        positive. Defaults to 1000.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -88,12 +109,21 @@ class TasksSettings(BaseYamlAppSettings):
         SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
     )
     SYNC_LOCK_TTL: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
-        timedelta(minutes=5)
+        timedelta(minutes=5), advanced=True
     )
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
         PreExecutionCheckMode.WARN
     )
-    STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600)
+    STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600, advanced=True)
+    LOG_RETENTION_DAYS: Annotated[int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)] = hot_field(
+        90, advanced=True
+    )
+    LOG_PURGE_BATCH_SIZE: PositiveInt = hot_field(10_000, advanced=True)
+    LOG_PURGE_INTERVAL: IntervalSchedule | None = Field(
+        default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS)
+    )
+    LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600, advanced=True)
+    LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000, advanced=True)
 
 
 tasks_settings: TasksSettings = OverridableSettingsProxy(

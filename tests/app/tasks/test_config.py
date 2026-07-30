@@ -17,10 +17,18 @@
 
 from datetime import timedelta
 
+import pytest
+from pydantic import ValidationError
+from sqlalchemy_celery_beat.models import Period
+
+from app.core.celery.models import IntervalSchedule
 from app.core.db.config import DatabaseOptions
 from app.tasks.config import PreExecutionCheckMode, tasks_settings, TasksSettings
 
 EXPECTED_UVICORN_PORT = 8002
+EXPECTED_LOG_RETENTION_DAYS = 90
+EXPECTED_LOG_PURGE_BATCH_SIZE = 10_000
+MAX_LOG_RETENTION_DAYS = 365
 
 
 class TestTasksSettings:
@@ -55,4 +63,38 @@ class TestTasksSettings:
         assert (
             tasks_settings.PRE_EXECUTION_CONNECTIVITY_CHECK
             == PreExecutionCheckMode.WARN
+        )
+
+    def test_default_log_retention_days(self):
+        """Assert default LOG_RETENTION_DAYS is 90."""
+        assert tasks_settings.LOG_RETENTION_DAYS == EXPECTED_LOG_RETENTION_DAYS
+
+    def test_default_log_purge_batch_size(self):
+        """Assert default LOG_PURGE_BATCH_SIZE is 10,000."""
+        assert tasks_settings.LOG_PURGE_BATCH_SIZE == EXPECTED_LOG_PURGE_BATCH_SIZE
+
+    def test_default_log_purge_interval_is_daily(self):
+        """Assert default LOG_PURGE_INTERVAL runs once per day."""
+        interval = tasks_settings.LOG_PURGE_INTERVAL
+        assert isinstance(interval, IntervalSchedule)
+        assert interval.every == 1
+        assert interval.period == Period.DAYS
+
+    def test_log_retention_days_rejects_non_positive(self):
+        """Assert LOG_RETENTION_DAYS rejects zero and negative values."""
+        for value in (0, -1):
+            with pytest.raises(ValidationError):
+                TasksSettings(LOG_RETENTION_DAYS=value)
+
+    def test_log_retention_days_rejects_above_max(self):
+        """Assert LOG_RETENTION_DAYS rejects values above the 365-day ceiling."""
+        with pytest.raises(ValidationError):
+            TasksSettings(LOG_RETENTION_DAYS=MAX_LOG_RETENTION_DAYS + 1)
+
+    def test_log_retention_days_accepts_bounds(self):
+        """Assert LOG_RETENTION_DAYS accepts the inclusive 1..365 bounds."""
+        assert TasksSettings(LOG_RETENTION_DAYS=1).LOG_RETENTION_DAYS == 1
+        assert (
+            TasksSettings(LOG_RETENTION_DAYS=MAX_LOG_RETENTION_DAYS).LOG_RETENTION_DAYS
+            == MAX_LOG_RETENTION_DAYS
         )

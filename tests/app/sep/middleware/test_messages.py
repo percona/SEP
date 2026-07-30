@@ -21,7 +21,7 @@ from collections import OrderedDict
 from unittest.mock import ANY, Mock
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
@@ -254,3 +254,20 @@ class TestMessagesMiddleware:
             )
 
         assert default_max_cookie_size == MessagesMiddleware.MAX_COOKIE_SIZE
+
+    @pytest.mark.parametrize(
+        "bad_cookie",
+        [
+            "totally-invalid-signature",
+            "not-even-base64!@#$",
+            crypto_serializer.dumps(json.dumps([{"l": 1}])),
+        ],
+        ids=["bad_signature", "garbage", "validation_error"],
+    )
+    def test_middleware_clears_invalid_cookie(self, test_client, bad_cookie):
+        """Assert an invalid messages cookie yields a normal response with the cookie cleared."""
+        test_client.cookies["messages"] = bad_cookie
+        response = test_client.get("/no-message")
+        assert response.status_code == status.HTTP_200_OK
+        set_cookie = response.headers.get("set-cookie", "")
+        assert 'messages="";' in set_cookie

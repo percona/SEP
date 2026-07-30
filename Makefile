@@ -34,9 +34,6 @@ PYTEST_WORKERS?=auto
 COV?=1
 PYTEST_PATHS?=tests/
 PYTEST_MARKERS?=
-# Pin the hash seed so model-schema/dict ordering is deterministic across xdist
-# workers — an unpinned seed intermittently flakes a 422 in derived one-of routes.
-PYTHONHASHSEED?=0
 
 # WeasyPrint loads native libs (libgobject-2.0, libpango, libcairo) at import
 # time. Homebrew installs them under /opt/homebrew/lib (Apple Silicon) or
@@ -77,6 +74,11 @@ image: pack
 	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
 	@buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
 
+# docker format, not oci: OCI silently discards the HEALTHCHECK instruction
+image-sidecar: pack
+	@podman image exists "sep:${RELEASE_VER}-sidecar" && podman image rm "sep:${RELEASE_VER}-sidecar" || true
+	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}-sidecar"
+
 format: venv
 	@"${VENV_BIN}"/ruff format .
 	@"${VENV_BIN}"/djlint . --reformat
@@ -116,6 +118,10 @@ dev-frontend:
 build-frontend:
 	@cd frontend && pnpm --filter @sep/shell build
 
+# One-time legacy data['_form'] backfill for framework-migrated task apps.
+backfill-legacy-forms: venv
+	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_backfill $(BACKFILL_ARGS)
+
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
 		$$($(PYTHON) -c "import tomllib,pathlib;c=tomllib.loads(pathlib.Path('pyproject.toml').read_text());print(' '.join(f'--ignore-vuln {v}' for v in c.get('tool',{}).get('pip-audit',{}).get('ignore-vulnerabilities',[])))" 2>/dev/null)
@@ -124,6 +130,7 @@ bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
 
 makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py app/sep/models.py
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@for app in $(APPS); do \
 		capitalized=$$(echo $$app | sed 's/^./\U&/'); \
 		echo "Checking migrations for $$capitalized"; \
@@ -158,10 +165,12 @@ makemigrations-plugin: venv alembic.ini
 ifndef PLUGIN
 	$(error PLUGIN is required. Usage: make makemigrations-plugin PLUGIN=<plugin-name>)
 endif
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@read -p "Enter description for new $(PLUGIN) plugin migration: " desc; \
 	"${VENV_BIN}"/alembic --name sep revision --autogenerate --head=$(PLUGIN)@head -m "$$desc"
 
 migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations/versions app/sep/migrations/versions
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@for app in $(APPS); do \
 		"${VENV_BIN}"/alembic --name $$app upgrade heads; \
 	done
@@ -179,16 +188,22 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@$(DARWIN_DYLD) PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
 
 # Regenerate every derived API/form contract from the live app in one pass:
 # the route GET /schema + OpenAPI snapshot goldens, the synthetic form-DSL
 # goldens, the frontend OpenAPI spec, and the generated TS client. Run after
 # changing an app form model, review the diff, then commit.
 regen-specs: venv
-	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/plugins/framework/test_form_dsl_golden.py
+	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/apps/framework/test_form_dsl_golden.py
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/dump_openapi.py
 	@cd frontend && pnpm --filter @sep/api codegen && pnpm --filter @sep/api exec oxfmt --write src/generated
+
+regen-pbm-payloads: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_pbm_payloads.py
+
+regen-pbm-payloads-check: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_pbm_payloads.py --check
 
 changelog-add:
 ifndef TICKET
@@ -207,6 +222,34 @@ changelog-check:
 
 changelog-list:
 	@$(PYTHON) scripts/changelog.py list
+
+# Bare `make startapp` (no NAME) drops into the interactive wizard. Each value is
+# forwarded through the recipe shell environment as "$$VAR" — command-line
+# variables are auto-exported, so the shell (not Make's textual expansion) supplies
+# the value and embedded spaces/quotes stay intact; a literal `$` must be written
+# `$$` on the command line. $(if ...) gates presence. Recognised variables: NAME
+# TYPE DISPLAY_NAME DESCRIPTION GROUP SERVICE_TYPE NAV_ICON RUN_MODE COMMAND PAYLOAD
+# SCRIPT NO_INPUT ENABLE DERIVE_UPDATE DERIVE_DELETE.
+startapp:
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py \
+		$(if $(NAME),--name "$$NAME") \
+		$(if $(TYPE),--type "$$TYPE") \
+		$(if $(DISPLAY_NAME),--display-name "$$DISPLAY_NAME") \
+		$(if $(DESCRIPTION),--description "$$DESCRIPTION") \
+		$(if $(GROUP),--group "$$GROUP") \
+		$(if $(SERVICE_TYPE),--service-type "$$SERVICE_TYPE") \
+		$(if $(NAV_ICON),--nav-icon "$$NAV_ICON") \
+		$(if $(RUN_MODE),--run-mode "$$RUN_MODE") \
+		$(if $(COMMAND),--command "$$COMMAND") \
+		$(if $(PAYLOAD),--payload "$$PAYLOAD") \
+		$(if $(SCRIPT),--script "$$SCRIPT") \
+		$(if $(NO_INPUT),--no-input) \
+		$(if $(ENABLE),--enable) \
+		$(if $(filter false 0 no,$(DERIVE_UPDATE)),--no-derive-update) \
+		$(if $(filter false 0 no,$(DERIVE_DELETE)),--no-derive-delete)
+
+startapp-check:
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/startapp_check.py
 
 SIGN_FLAG := $(if $(SIGN_VIA_API),--sign-via-github-api,)
 PUSH_IMAGE_DOCKER ?= true
@@ -264,4 +307,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend build-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image image-sidecar format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend build-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check

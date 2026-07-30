@@ -1,0 +1,47 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Back the << display_name_doc >> app with the framework ``ScriptSource`` seam.
+
+``derive_script_routes`` builds the ``/snippet/*`` API surface from the hooks
+:func:`~app.sep.apps.shared.disk_script_source.build_disk_script_source` wires into
+:data:`<< name >>_source`. Drop the app's scripts into ``snippets/``, each declaring
+its parameters in a ``# ---`` frontmatter block. The target task and interpreter are
+derived per-file at runtime by ``BaseSnippet`` — a ``.sh`` (or a plain ``.py``) runs
+under ``exec-artifact``, and a ``.py`` declaring ``requires_packages`` under
+``exec-python-artifact``.
+"""
+
+from pathlib import Path
+from typing import ClassVar
+
+from app.sep.apps.<< name >>.constants import ARTIFACT_TYPE_<< name_upper >>, SCRIPT_DIR
+from app.sep.apps.shared.disk_script_source import build_disk_script_source
+from app.sep.snippets.models.snippet import BaseSnippet
+
+
+class << class_prefix >>Script(BaseSnippet):
+    """Load a << display_name_doc >> script from the app's script directory."""
+
+    BASE_DIR: ClassVar[Path] = SCRIPT_DIR
+
+
+<< name >>_source = build_disk_script_source(
+    script_dir=SCRIPT_DIR,
+    script_cls=<< class_prefix >>Script,
+    artifact_type=ARTIFACT_TYPE_<< name_upper >>,
+    name="<< name >>",
+    display_name=<< display_name_repr >>,
+)

@@ -33,8 +33,8 @@ export interface ConditionalSectionState {
  * submission payload.
  *
  * Cardinality (repeated) sections are out of scope for this hook — none
- * of the current schema-driven plugins gate a cardinality_rules-driven
- * section. Revisit if a future plugin needs the combination.
+ * of the current app schemas gate a cardinality_rules-driven
+ * section. Revisit if a future app needs the combination.
  */
 export function useConditionalSection(section: FormSection): ConditionalSectionState {
   const { control, unregister } = useFormContext();

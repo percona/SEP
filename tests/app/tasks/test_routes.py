@@ -18,7 +18,7 @@
 import base64
 import gzip
 import json as json_lib
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,12 +29,14 @@ from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, SERVICE_PRINCIPAL_ID
+from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
 from app.core.utils.date_time import make_datetime_utc
+from app.tasks import hook_resolver
 from app.tasks.config import PreExecutionCheckMode, tasks_settings
 from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import _cached_check_connectivity
@@ -47,6 +49,8 @@ from app.tasks.main import tasks_app
 from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
+    SYSTEM_USER,
     Task,
     TaskBackendEnum,
     TaskExecutionRequest,
@@ -55,7 +59,7 @@ from app.tasks.models import (
     TaskLogType,
     TaskWrite,
 )
-from tests.app.factories import TaskFactory
+from tests.app.factories import build_task_history, TaskFactory
 
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
@@ -138,6 +142,49 @@ async def test_delete_task_forbidden_when_protected(test_client, session):
 
 
 @pytest.mark.asyncio
+async def test_delete_running_task_returns_409(test_client, session, created_task):
+    """Assert deleting a task with a running execution returns 409, not 500.
+
+    ``PeriodicTaskManager.delete_where`` is deliberately left unmocked and its
+    session pointed at the test database, which has no ``celery_periodictask``
+    table: if the running guard failed to short-circuit, the delete would fall
+    through to that call and surface the reported 500. A clean 409 therefore
+    proves the guard fires at the HTTP boundary before any downstream that could
+    raise.
+    """
+    tasks_app.dependency_overrides[get_celery_beat_session] = lambda: session
+    await TaskHistoryManager.save(
+        session,
+        build_task_history(created_task, status=TaskHistoryStatusEnum.RUNNING),
+    )
+
+    response = test_client.delete(f"/{created_task.name}")
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert "running" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_pending_task_returns_409(test_client, session, created_task):
+    """Assert deleting a task with a pending execution returns 409, not 500.
+
+    Mirrors :func:`test_delete_running_task_returns_409` for the pending branch:
+    ``delete_where`` is unmocked against the celery-less test database, so a 409
+    (rather than a 500) proves the pending guard short-circuits the delete.
+    """
+    tasks_app.dependency_overrides[get_celery_beat_session] = lambda: session
+    await TaskHistoryManager.save(
+        session,
+        build_task_history(created_task, status=TaskHistoryStatusEnum.PENDING),
+    )
+
+    response = test_client.delete(f"/{created_task.name}")
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert "pending" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_create_task_success(test_client):
     """Assert creating a valid task returns 201."""
     task_data = TaskFactory.build(name="new-task")
@@ -145,6 +192,18 @@ async def test_create_task_success(test_client):
     response = test_client.post("/", json=payload)
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()["name"] == "new-task"
+
+
+@pytest.mark.asyncio
+async def test_create_task_persists_run_result_recorder(test_client):
+    """Assert a created task's run_result_recorder round-trips through the POST body."""
+    task_data = TaskFactory.build(
+        name="recorder-task", run_result_recorder="pkg.mod:recorder"
+    )
+    payload = TaskWrite.model_validate(task_data).model_dump(mode="json")
+    response = test_client.post("/", json=payload)
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()["run_result_recorder"] == "pkg.mod:recorder"
 
 
 @pytest.mark.asyncio
@@ -179,39 +238,49 @@ async def test_update_task_not_found(test_client):
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
-@pytest.mark.asyncio
-async def test_latest_task_history_status_batch(test_client, session):
-    """Assert POST /history/latest returns latest status keyed by task name."""
+async def _seed_running_over_success(session, name: str, finished):
+    """Seed ``name`` with an earlier SUCCESS run then a newer in-progress RUNNING.
+
+    :param session: The asynchronous session used to persist the rows.
+    :param name: The task name to create history for.
+    :param finished: The completion time of the SUCCESS run.
+    :return: The created task.
+    """
     task = await TaskManager.create(
         session,
-        TaskWrite.model_validate(TaskFactory.build(name="route-latest-status")),
+        TaskWrite.model_validate(TaskFactory.build(name=name)),
     )
-    await TaskHistoryManager.save(
-        session,
-        TaskHistory(
-            task_id=task.id,
-            status=TaskHistoryStatusEnum.SUCCESS,
-            execution_request={
-                "task": task.name,
-                "target": "localhost",
-                "meta": {},
-                "tracking": {"allocation_id": None, "evaluation_id": None},
-            },
-        ),
-    )
-    await TaskHistoryManager.save(
-        session,
-        TaskHistory(
-            task_id=task.id,
-            status=TaskHistoryStatusEnum.RUNNING,
-            execution_request={
-                "task": task.name,
-                "target": "localhost",
-                "meta": {},
-                "tracking": {"allocation_id": None, "evaluation_id": None},
-            },
-        ),
-    )
+    for task_status, finished_at in (
+        (TaskHistoryStatusEnum.SUCCESS, finished),
+        (TaskHistoryStatusEnum.RUNNING, None),
+    ):
+        await TaskHistoryManager.save(
+            session,
+            TaskHistory(
+                task_id=task.id,
+                status=task_status,
+                finished_at=finished_at,
+                execution_request={
+                    "task": task.name,
+                    "target": "localhost",
+                    "meta": {},
+                    "tracking": {"allocation_id": None, "evaluation_id": None},
+                },
+            ),
+        )
+    return task
+
+
+@pytest.mark.asyncio
+async def test_latest_task_history_batch(test_client, session):
+    """Assert POST /history/latest returns the latest projection per name.
+
+    The newest row is an in-progress RUNNING run (no finish time), while an
+    earlier SUCCESS run has one — so the projection reports RUNNING status but
+    the prior (max) finish time.
+    """
+    finished = utc_now() - timedelta(hours=1)
+    task = await _seed_running_over_success(session, "route-latest-full", finished)
 
     response = test_client.post(
         "/history/latest",
@@ -219,10 +288,15 @@ async def test_latest_task_history_status_batch(test_client, session):
     )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {
-        task.name: TaskHistoryStatusEnum.RUNNING.value,
-        "route-latest-missing": None,
-    }
+    body = response.json()
+    assert body["route-latest-missing"] is None
+    assert body[task.name]["status"] == TaskHistoryStatusEnum.RUNNING.value
+    # The newest (RUNNING) row has no finish time; a non-null value proves the
+    # projection reports the prior run's max(finished_at), not the newest row.
+    assert body[task.name]["finished_at"] is not None
+    assert datetime.fromisoformat(body[task.name]["finished_at"]).replace(
+        tzinfo=None
+    ) == finished.replace(tzinfo=None)
 
 
 @pytest.mark.asyncio
@@ -442,6 +516,130 @@ async def test_list_task_history_empty_does_not_crash(test_client):
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_excludes_internal_rows_before_pagination(
+    test_client, session
+) -> None:
+    """Assert ``exclude_internal=true`` omits internal task names before applying ``limit``.
+
+    Creates two user-facing tasks followed by one internal task
+    (``inventory-sync``). With ``limit=2`` and no filtering, the newest internal
+    row occupies one page slot. With ``exclude_internal=true`` and ``limit=2``,
+    both user-facing rows are returned and the total reflects the filtered count.
+    """
+    user_task_a = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="user-task-a")),
+    )
+    user_task_b = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="user-task-b")),
+    )
+    internal_task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="inventory-sync")),
+    )
+
+    await TaskHistoryManager.save(session, build_task_history(user_task_a))
+    await TaskHistoryManager.save(session, build_task_history(user_task_b))
+    await TaskHistoryManager.save(session, build_task_history(internal_task))
+
+    unfiltered_response = test_client.get("/history/", params={"limit": 2})
+    assert unfiltered_response.status_code == status.HTTP_200_OK
+    unfiltered_names = {
+        item["task"]["name"] for item in unfiltered_response.json()["items"]
+    }
+    assert "inventory-sync" in unfiltered_names
+
+    response = test_client.get(
+        "/history/", params={"exclude_internal": "true", "limit": 2}
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    returned_names = {item["task"]["name"] for item in data["items"]}
+    expected_user_task_count = 2
+    assert "inventory-sync" not in returned_names
+    assert "user-task-a" in returned_names
+    assert "user-task-b" in returned_names
+    assert data["total"] == expected_user_task_count
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_internal_rows_visible_without_flag(
+    test_client, session
+) -> None:
+    """Assert the default ``GET /history/`` still returns internal task rows."""
+    internal_task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="inventory-sync")),
+    )
+
+    await TaskHistoryManager.save(session, build_task_history(internal_task))
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    returned_names = {item["task"]["name"] for item in data["items"]}
+    assert "inventory-sync" in returned_names
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_excludes_system_run_generic_executor_rows(
+    test_client, session
+) -> None:
+    """Assert ``exclude_internal`` drops system-run generic-executor rows, keeps user ones.
+
+    A ``run-python`` execution by a real user is a snippet run and stays visible;
+    the same template run by a system identity (``SYSTEM`` or the service
+    principal, e.g. connectivity checks and scheduler syncs) is dropped.
+    """
+    user_task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="user-task")),
+    )
+    run_python = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="run-python")),
+    )
+
+    user_snippet_run = build_task_history(run_python)
+    user_snippet_run.executed_by = "alice"
+    await TaskHistoryManager.save(session, user_snippet_run)
+
+    system_run = build_task_history(run_python)
+    system_run.executed_by = SYSTEM_USER
+    await TaskHistoryManager.save(session, system_run)
+
+    service_run = build_task_history(run_python)
+    service_run.executed_by = str(SERVICE_PRINCIPAL_ID)
+    await TaskHistoryManager.save(session, service_run)
+
+    await TaskHistoryManager.save(session, build_task_history(user_task))
+
+    unfiltered = test_client.get("/history/", params={"limit": 10})
+    assert unfiltered.status_code == status.HTTP_200_OK
+    unfiltered_executors = {item["executed_by"] for item in unfiltered.json()["items"]}
+    assert SYSTEM_USER in unfiltered_executors
+    assert str(SERVICE_PRINCIPAL_ID) in unfiltered_executors
+
+    response = test_client.get(
+        "/history/", params={"exclude_internal": "true", "limit": 10}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    executors = [item["executed_by"] for item in data["items"]]
+    names = [item["task"]["name"] for item in data["items"]]
+    expected_visible_count = 2
+    assert SYSTEM_USER not in executors
+    assert str(SERVICE_PRINCIPAL_ID) not in executors
+    assert "alice" in executors
+    assert names.count("run-python") == 1
+    assert "user-task" in names
+    assert data["total"] == expected_visible_count
 
 
 @pytest.mark.asyncio
@@ -1782,6 +1980,65 @@ async def test_execute_task_name_response_serializes_deferred_execution_request(
 
 
 @pytest.mark.asyncio
+async def test_execute_task_name_unresolvable_payload_fails_terminally(
+    test_client, session, mocker
+):
+    """Assert POST /execute/{task_name} with an unresolvable payload returns FAILED.
+
+    The prepared ``queue_item`` (and its ``task`` relationship) is attached to the
+    request session, so the payload gate must persist the terminal FAILED row
+    through that same session — persisting through a second one would raise
+    ``InvalidRequestError`` and surface as an HTTP 500. The route must also still
+    eagerly load the deferred ``execution_request`` before serialization. The real
+    ``dispatch_queue_item`` runs here (only the internal dispatch is stubbed) so
+    the gate short-circuit stays observable.
+    """
+    await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="wrapped-root",
+                backend=TaskBackendEnum.NOMAD,
+                anonymize_mask=0,
+            )
+        ),
+    )
+    task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(
+            TaskFactory.build(
+                name="proxy-task",
+                backend=TaskBackendEnum.PROXY,
+                alert_on_fail=False,
+                anonymize_mask=0,
+                data={
+                    "task": "wrapped-root",
+                    "payload": "file:///nonexistent/x_payload",
+                },
+            )
+        ),
+    )
+
+    fake_executor = MagicMock(spec=BaseExecutor)
+    fake_executor.get_hosts.return_value = {"node1": "10.0.0.1"}
+    mocker.patch("app.tasks.routes.get_executor_for_task", return_value=fake_executor)
+    spy_internal = mocker.patch(
+        "app.tasks.celery._dispatch_queue_item", new_callable=AsyncMock
+    )
+
+    response = test_client.post(
+        f"/execute/{task.name}",
+        json={"meta_target": "node1"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["status"] == TaskHistoryStatusEnum.FAILED.value
+    assert data["execution_request"]["task"] == task.name
+    spy_internal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_execute_task_name_with_eta_serializes_deferred_execution_request(
     test_client, session, mocker
 ):
@@ -2524,3 +2781,84 @@ class TestSyncTaskHistoryRealSession:
         assert "writer_session" in call_kwargs
         assert call_kwargs["writer_session"] is not None
         assert await TaskHistoryLogManager.exists_for_task(session, saved_history.id)
+
+    async def test_sync_hands_the_run_result_to_the_recorder(
+        self,
+        regular_user,
+        session: AsyncSession,
+        mock_executor: AsyncMock,
+        mocker,
+    ):
+        """Verify a terminal sync reads the run result and feeds it to the recorder."""
+        test_session_maker = get_async_session_maker_from_engine(session.bind)
+        result = {
+            "backup_dir": "/data/backup/20260727",
+            "size_bytes": 20260727,
+            "upload_destination": "s3://bucket/backup",
+        }
+        recorded = []
+
+        async def _recorder(recorder_session, history, run_result):
+            recorded.append(run_result)
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder}, clear=True)
+
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name="run-python",
+                    backend=TaskBackendEnum.NOMAD,
+                    is_template=False,
+                    protected=False,
+                    alert_on_fail=False,
+                    run_result_recorder="pkg:rec",
+                    output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
+                )
+            ),
+        )
+        saved_history = await TaskHistoryManager.save(
+            session,
+            build_task_history(task, status=TaskHistoryStatusEnum.RUNNING),
+        )
+
+        async def fake_sync(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            queue_item.finished_at = utc_now()
+            return queue_item
+
+        async def fake_stream_file(*args, **kwargs):
+            yield json_lib.dumps(result).encode()
+
+        mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+        mock_executor.stream_file = MagicMock(side_effect=fake_stream_file)
+
+        tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
+        tasks_app.dependency_overrides[get_session] = lambda: session
+        tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
+
+        try:
+            with (
+                patch(
+                    "app.tasks.routes.get_async_session_maker",
+                    return_value=test_session_maker,
+                ),
+                patch(
+                    "app.tasks.run_result.get_async_session_maker",
+                    return_value=test_session_maker,
+                ),
+            ):
+                transport = ASGITransport(app=tasks_app)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as client:
+                    response = await client.post(f"/history/{saved_history.id}/sync/")
+        finally:
+            tasks_app.dependency_overrides = {}
+
+        assert response.status_code == status.HTTP_200_OK
+        assert recorded == [result]
+        assert mock_executor.stream_file.call_args.kwargs["anonymize"] is False

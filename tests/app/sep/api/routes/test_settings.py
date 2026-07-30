@@ -29,15 +29,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
+from app.core.alerts.config import alert_settings
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
 from app.core.settings_override.api import routes as settings_routes
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
-from app.core.settings_override.registry import ReloadClassification
+from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
+from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
     get_api_authenticated_user,
@@ -49,7 +51,22 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app, sep_overrides_lifespan
 from app.sep.middleware.messages.config import messages_settings
-from app.sep.snippets.config import snippets_settings
+from app.sep.models import AppLifecycleEnum, AppState
+from app.sep.snippets.config import (
+    SnippetFilter,
+    SnippetFilterType,
+    snippets_settings,
+)
+
+_DELIVERY_PLAN_PAYLOAD: dict[str, Any] = {
+    "endpoint": "https://snow.example.com/",
+    "secrets": {"api_key": "plan-secret"},
+    "upload": {
+        "path": "attachment/upload",
+        "headers": {"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+        "fields": {"table_name": {"source": "literal", "value": "case"}},
+    },
+}
 
 
 def _mock_tasks_api() -> AsyncMock:
@@ -80,8 +97,11 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
-    async with async_session_maker() as session:
-        yield session
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(name="api_admin_client")
@@ -143,6 +163,14 @@ def api_unauthenticated_client_fixture(
     sep_app.dependency_overrides = {}
 
 
+def _find_group(payload: dict[str, Any], setting_class: str) -> dict[str, Any]:
+    """Locate one settings-class group in the LIST response payload."""
+    for group in payload["groups"]:
+        if group["setting_class"] == setting_class:
+            return group
+    raise AssertionError(f"group {setting_class!r} not in payload")
+
+
 def _find_setting(
     payload: dict[str, Any], setting_class: str, key: str
 ) -> dict[str, Any]:
@@ -159,13 +187,14 @@ def _find_setting(
 class TestSepSettingsList:
     """Tests for ``GET /api/sep/admin/settings/``."""
 
-    async def test_returns_local_and_proxied_groups(
+    async def test_returns_local_proxied_and_app_owned_groups(
         self, api_admin_client: TestClient
     ) -> None:
-        """Returns the three local groups plus the proxied TasksSettings group.
+        """Return core, proxied TasksSettings, and app-owned groups.
 
-        SEP serves its own classes locally and proxies ``TasksSettings`` from the
-        Tasks sub-app, so the LIST carries all four groups.
+        SEP serves its own classes locally (including ``AlertsSettings``),
+        proxies ``TasksSettings`` from the Tasks sub-app, and appends
+        app-owned classes such as ``AlertSettings``.
         """
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -175,13 +204,71 @@ class TestSepSettingsList:
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.MESSAGES_SETTINGS.value,
+            SettingClassEnum.ALERTS_SETTINGS.value,
+            SettingClassEnum.SETTINGS.value,
+            SettingClassEnum.TASKS_SETTINGS.value,
+            SettingClassEnum.ALERT_SETTINGS.value,
+        }
+
+    async def test_core_groups_are_not_app_owned(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Leave core and proxied groups free of app-ownership metadata."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        core_and_remote = {
+            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.SNIPPETS_SETTINGS.value,
+            SettingClassEnum.MESSAGES_SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
         }
+        for group in response.json()["groups"]:
+            if group["setting_class"] in core_and_remote:
+                assert group["is_app_owned"] is False
+                assert group["app_id"] is None
+                assert group["app_display_name"] is None
+                assert group["app_enabled"] is None
+
+    async def test_alert_settings_group_carries_app_metadata(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Tag ``AlertSettings`` as owned by the alerts app when enabled."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        alert_group = _find_group(
+            response.json(),
+            SettingClassEnum.ALERT_SETTINGS.value,
+        )
+        assert alert_group["is_app_owned"] is True
+        assert alert_group["app_id"] == "alerts"
+        assert alert_group["app_display_name"] == "Alert Templates"
+        assert alert_group["app_enabled"] is True
+
+    async def test_alert_settings_group_reports_disabled_app(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """List a disabled owning app with ``app_enabled=False``."""
+        override_session.add(
+            AppState(app_key="alerts", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        alert_group = _find_group(
+            response.json(),
+            SettingClassEnum.ALERT_SETTINGS.value,
+        )
+        assert alert_group["is_app_owned"] is True
+        assert alert_group["app_id"] == "alerts"
+        assert alert_group["app_enabled"] is False
 
     async def test_lists_hot_and_not_overridable_entries(
         self, api_admin_client: TestClient
     ) -> None:
-        """A SEPSettings group exposes HOT and NOT_OVERRIDABLE entries.
+        """Assert a SEPSettings group exposes HOT and NOT_OVERRIDABLE entries.
 
         NESTED_ONLY parents (``SESSION`` / ``SESSION_REFRESH``) are expanded into
         their per-leaf entries, each classified ``HOT``, so the LIST projection no
@@ -204,7 +291,7 @@ class TestSepSettingsList:
     async def test_no_override_marks_has_override_false(
         self, api_admin_client: TestClient
     ) -> None:
-        """A field with no override row reports ``has_override=False``."""
+        """Assert a field with no override row reports ``has_override=False``."""
         response = api_admin_client.get("/api/sep/admin/settings/")
         sep_setting = _find_setting(
             response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
@@ -214,7 +301,7 @@ class TestSepSettingsList:
     async def test_session_parent_expanded_into_leaves(
         self, api_admin_client: TestClient
     ) -> None:
-        """``SESSION`` is replaced by one editable entry per leaf, no summary entry."""
+        """Assert ``SESSION`` is replaced by one editable entry per leaf, no summary entry."""
         response = api_admin_client.get("/api/sep/admin/settings/")
         sep_settings_group = next(
             group
@@ -240,7 +327,7 @@ class TestSepSettingsList:
     async def test_scalar_hot_field_kept_single(
         self, api_admin_client: TestClient
     ) -> None:
-        """A scalar HOT field stays one entry — expansion must not drop it.
+        """Assert a scalar HOT field stays one entry — expansion must not drop it.
 
         ``SnippetsSettings.PREVIEW_MAX_CHARS`` is a nested-overridable parent
         (HOT) with no submodel, so the enumerator yields nothing; the entry must
@@ -264,7 +351,7 @@ class TestSepSettingsGet:
     async def test_existing_field_returns_metadata(
         self, api_admin_client: TestClient
     ) -> None:
-        """Returns a single setting's metadata and current value."""
+        """Return a single setting's metadata and current value."""
         response = api_admin_client.get(
             "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )
@@ -278,7 +365,7 @@ class TestSepSettingsGet:
     async def test_top_level_field_carries_single_element_key_path(
         self, api_admin_client: TestClient
     ) -> None:
-        """A top-level DETAIL response carries a single-element ``key_path``."""
+        """Assert a top-level DETAIL response carries a single-element ``key_path``."""
         response = api_admin_client.get(
             "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )
@@ -288,7 +375,7 @@ class TestSepSettingsGet:
     async def test_nested_leaf_detail_carries_key_path(
         self, api_admin_client: TestClient
     ) -> None:
-        """A nested-leaf DETAIL response carries its canonical ``key_path`` chain."""
+        """Assert a nested-leaf DETAIL response carries its canonical ``key_path`` chain."""
         response = api_admin_client.get(
             "/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE"
         )
@@ -300,14 +387,14 @@ class TestSepSettingsGet:
     async def test_unknown_class_returns_422(
         self, api_admin_client: TestClient
     ) -> None:
-        """FastAPI's enum validation rejects an unknown settings class with 422."""
+        """Reject an unknown settings class with 422 via FastAPI's enum validation."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/InventorySettings/SYNC_REFRESH_TIME"
+            "/api/sep/admin/settings/NonExistentSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     async def test_unknown_key_returns_404(self, api_admin_client: TestClient) -> None:
-        """An unknown key on a wired class returns 404."""
+        """Return 404 for an unknown key on a wired class."""
         response = api_admin_client.get(
             "/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST"
         )
@@ -323,7 +410,7 @@ class TestSepSettingsPatch:
         api_admin_client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """Persisting one key creates exactly one row and reflects in next read."""
+        """Persist one key, creating exactly one row that reflects in next read."""
         new_value = 10
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
@@ -349,7 +436,7 @@ class TestSepSettingsPatch:
         api_admin_client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """A ``FOOTER_TEMPLATE`` override is accepted and stored as raw JSON.
+        """Accept a ``FOOTER_TEMPLATE`` override and store it as raw JSON.
 
         Regression: ``FOOTER_TEMPLATE`` declares a materializer because
         ``TypeAdapter(Template)`` raises ``PydanticSchemaGenerationError``; the
@@ -380,7 +467,7 @@ class TestSepSettingsPatch:
         self,
         api_admin_client: TestClient,
     ) -> None:
-        """A non-string ``FOOTER_TEMPLATE`` override is rejected with HTTP 422.
+        """Reject a non-string ``FOOTER_TEMPLATE`` override with HTTP 422.
 
         Regression: the materializer must reject a non-string payload (which
         would otherwise be published and crash the next ``safe_substitute`` read)
@@ -397,7 +484,7 @@ class TestSepSettingsPatch:
         api_admin_client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """Patching an already-overridden key updates the row instead of inserting."""
+        """Update the row instead of inserting when patching an already-overridden key."""
         first_value = 10
         second_value = 20
         api_admin_client.patch(
@@ -419,7 +506,7 @@ class TestSepSettingsPatch:
     async def test_multiple_keys_persist_atomically(
         self, api_admin_client: TestClient
     ) -> None:
-        """Patching three valid keys creates three rows, all visible on the next GET."""
+        """Persist three valid keys as three rows, all visible on the next GET."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={
@@ -455,7 +542,7 @@ class TestSepSettingsPatch:
         api_admin_client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """A single invalid key rejects the whole batch — zero rows are written."""
+        """Reject the whole batch on a single invalid key — zero rows are written."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 10, "ARTIFACT_DOWNLOAD_TTL": "not-a-number"},
@@ -469,7 +556,7 @@ class TestSepSettingsPatch:
     async def test_inline_refresh_reflects_in_proxy(
         self, api_admin_client: TestClient
     ) -> None:
-        """After PATCH, the proxy returns the new value without the background refresher."""
+        """Return the new value from the proxy after PATCH without the background refresher."""
         original = sep_settings.SYNC_REFRESH_TIME
         api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
@@ -481,7 +568,7 @@ class TestSepSettingsPatch:
             sep_settings._set_snapshot({})
 
     async def test_unknown_key_returns_422(self, api_admin_client: TestClient) -> None:
-        """An unknown key is rejected with ``type='unknown_key'`` in the per-key error."""
+        """Reject an unknown key with ``type='unknown_key'`` in the per-key error."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"NONEXISTENT": 1},
@@ -493,7 +580,7 @@ class TestSepSettingsPatch:
     async def test_not_overridable_field_returns_422(
         self, api_admin_client: TestClient
     ) -> None:
-        """Patching a NOT_OVERRIDABLE field returns 422 with ``type='not_overridable'``."""
+        """Reject a NOT_OVERRIDABLE field PATCH with 422 and ``type='not_overridable'``."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"PROXY_HEADERS": True},
@@ -508,19 +595,168 @@ class TestSepSettingsPatch:
     async def test_constraint_violation_returns_422(
         self, api_admin_client: TestClient
     ) -> None:
-        """A ``PositiveInt`` violation surfaces the Pydantic constraint error."""
+        """Surface the Pydantic constraint error on a ``PositiveInt`` violation."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"ARTIFACT_DOWNLOAD_TTL": -1},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("DIAGNOSTICS_DELIVERY", _DELIVERY_PLAN_PAYLOAD),
+            ("DIAGNOSTICS_DELIVERY__secrets", {"api_key": "plan-secret"}),
+            ("DIAGNOSTICS_DELIVERY__upload__path", "elsewhere"),
+        ],
+    )
+    async def test_diagnostics_delivery_patch_rejected(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        key: str,
+        value: Any,
+    ) -> None:
+        """Reject whole-plan and per-leaf overrides of the delivery plan alike.
+
+        A per-leaf override would merge without re-running the plan's
+        cross-reference validator, so no row may be written for this block.
+        """
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={key: value},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            entry["type"] == ReloadClassification.NOT_OVERRIDABLE.value
+            for entry in detail
+        )
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert rows == []
+
+    async def test_diagnostics_delivery_secrets_are_masked_on_read(
+        self, api_admin_client: TestClient, mocker
+    ) -> None:
+        """Mask every plan secret in the settings LIST projection."""
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY",
+            DeliveryPlan(**_DELIVERY_PLAN_PAYLOAD),
+        )
+        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        entry = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, "DIAGNOSTICS_DELIVERY"
+        )
+
+        assert entry["value"]["secrets"]["api_key"] == "**********"
+        assert "plan-secret" not in json_serializer(list_payload)
+
+    async def test_app_drain_nested_leaf_patch_creates_override(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert ``APP_DRAIN`` is NESTED_ONLY, so a leaf PATCH persists a row."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"APP_DRAIN__stale_task_ttl": 7200},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert [r.key for r in rows] == ["APP_DRAIN__stale_task_ttl"]
+
+    async def test_app_drain_whole_object_patch_rejected(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Reject a whole-object PATCH of the NESTED_ONLY ``APP_DRAIN`` parent."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"APP_DRAIN": {"stale_task_ttl": 7200}},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert rows == []
+
+    async def test_app_drain_non_positive_ttl_rejected(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Surface the ``stale_task_ttl`` positive-duration validator as 422."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"APP_DRAIN__stale_task_ttl": 0},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    async def test_snippets_base_url_hot_patch(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert ``SNIPPETS_BASE_URL`` is HOT and accepts a PATCH."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SnippetsSettings",
+            json={"SNIPPETS_BASE_URL": "https://snippets.example.com/"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
+        )
+        assert [r.key for r in rows] == ["SNIPPETS_BASE_URL"]
+
+    async def test_sync_filter_hot_patch_round_trip(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert ``SYNC_FILTER`` is HOT; a valid PATCH persists and reflects."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SnippetsSettings",
+            json={"SYNC_FILTER": [".sh"]},
+        )
+        try:
+            assert response.status_code == status.HTTP_200_OK
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
+            )
+            assert [r.key for r in rows] == ["SYNC_FILTER"]
+            assert {
+                SnippetFilter(".sh", SnippetFilterType.EXTENSION)
+            } == snippets_settings.SYNC_FILTER
+        finally:
+            snippets_settings._set_snapshot({})
+
+    async def test_sync_filter_bad_member_rejected(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Reject a malformed ``SYNC_FILTER`` set member with 422 and no row."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SnippetsSettings",
+            json={"SYNC_FILTER": [12345]},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
+        )
+        assert rows == []
+
     async def test_mixed_failure_modes_aggregate_in_detail(
         self,
         api_admin_client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """Three error types in one batch produce three matching ``detail`` entries."""
+        """Aggregate three error types in one batch into three matching ``detail`` entries."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={
@@ -542,7 +778,7 @@ class TestSepSettingsPatch:
         assert rows == []
 
     async def test_empty_body_returns_422(self, api_admin_client: TestClient) -> None:
-        """An empty PATCH body fails the ``min_length=1`` root model constraint."""
+        """Reject an empty PATCH body via the ``min_length=1`` root model constraint."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings", json={}
         )
@@ -553,7 +789,7 @@ class TestSepSettingsPatch:
         api_admin_client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """A concurrent-PATCH IntegrityError causes one rollback + replay; the row lands."""
+        """Retry once on a concurrent-PATCH IntegrityError (one rollback + replay); the row lands."""
         new_value = 17
         original = settings_routes._stage_and_commit_overrides
         raised = False
@@ -594,7 +830,7 @@ class TestSepSettingsDelete:
         api_admin_client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """Deleting an override row succeeds with 204 and clears ``has_override``."""
+        """Delete an override row, returning 204 and clearing ``has_override``."""
         api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 11},
@@ -612,7 +848,7 @@ class TestSepSettingsDelete:
     async def test_delete_idempotent_when_no_row(
         self, api_admin_client: TestClient
     ) -> None:
-        """Deleting a HOT field with no override row still returns 204."""
+        """Return 204 when deleting a HOT field with no override row."""
         response = api_admin_client.delete(
             "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )
@@ -621,7 +857,7 @@ class TestSepSettingsDelete:
     async def test_delete_not_overridable_returns_409(
         self, api_admin_client: TestClient
     ) -> None:
-        """Deleting a NOT_OVERRIDABLE field returns 409 — the row can't exist."""
+        """Return 409 when deleting a NOT_OVERRIDABLE field — the row can't exist."""
         response = api_admin_client.delete(
             "/api/sep/admin/settings/SEPSettings/PROXY_HEADERS"
         )
@@ -630,7 +866,7 @@ class TestSepSettingsDelete:
     async def test_delete_unknown_key_returns_404(
         self, api_admin_client: TestClient
     ) -> None:
-        """Deleting an unknown key returns 404."""
+        """Return 404 when deleting an unknown key."""
         response = api_admin_client.delete(
             "/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST"
         )
@@ -650,7 +886,7 @@ class TestSepSettingsNestedOverrides:
     async def test_patch_nested_override_persists_and_marks_parent(
         self, api_admin_client: TestClient
     ) -> None:
-        """A nested PATCH persists, echoes the nested key, and marks the parent."""
+        """Persist a nested PATCH, echo the nested key, and mark the parent."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SESSION__SAMESITE": "strict"},
@@ -672,7 +908,7 @@ class TestSepSettingsNestedOverrides:
     async def test_patch_nested_echoes_key_path(
         self, api_admin_client: TestClient
     ) -> None:
-        """A nested PATCH echoes the leaf's canonical ``key_path`` chain."""
+        """Echo the leaf's canonical ``key_path`` chain on a nested PATCH."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SESSION__SAMESITE": "strict"},
@@ -685,7 +921,7 @@ class TestSepSettingsNestedOverrides:
     async def test_patch_nested_coerces_int_to_timedelta(
         self, api_admin_client: TestClient
     ) -> None:
-        """``SESSION__MAX_AGE`` accepts a JSON int and coerces it to a timedelta."""
+        """Coerce a JSON int on ``SESSION__MAX_AGE`` to a timedelta."""
         override_seconds = 7200
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
@@ -697,7 +933,7 @@ class TestSepSettingsNestedOverrides:
     async def test_patch_nested_rejects_unknown_nested_field(
         self, api_admin_client: TestClient
     ) -> None:
-        """An unknown nested leaf is rejected with ``unknown_nested_field``."""
+        """Reject an unknown nested leaf with ``unknown_nested_field``."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SESSION__BOGUS": 1},
@@ -709,7 +945,7 @@ class TestSepSettingsNestedOverrides:
     async def test_patch_nested_rejects_not_overridable_parent(
         self, api_admin_client: TestClient
     ) -> None:
-        """A nested key under a non-overridable parent is rejected as not_overridable."""
+        """Reject a nested key under a non-overridable parent as not_overridable."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"DATABASE__NAME": "other.db"},
@@ -721,7 +957,7 @@ class TestSepSettingsNestedOverrides:
     async def test_patch_whole_parent_rejected_for_nested_only(
         self, api_admin_client: TestClient
     ) -> None:
-        """Replacing the whole NESTED_ONLY parent object is rejected."""
+        """Reject replacing the whole NESTED_ONLY parent object."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SESSION": {"MAX_AGE": 3600}},
@@ -736,7 +972,7 @@ class TestSepSettingsNestedOverrides:
     async def test_delete_whole_parent_rejected_for_nested_only(
         self, api_admin_client: TestClient
     ) -> None:
-        """DELETE on the whole NESTED_ONLY parent returns 422 (not 404)."""
+        """Return 422 (not 404) on DELETE of the whole NESTED_ONLY parent."""
         response = api_admin_client.delete(
             "/api/sep/admin/settings/SEPSettings/SESSION"
         )
@@ -747,7 +983,7 @@ class TestSepSettingsNestedOverrides:
     async def test_get_whole_parent_returns_merged_value(
         self, api_admin_client: TestClient
     ) -> None:
-        """GET on the whole parent is allowed and returns the merged value."""
+        """Allow GET on the whole parent and return the merged value."""
         api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SESSION__SAMESITE": "strict"},
@@ -759,7 +995,7 @@ class TestSepSettingsNestedOverrides:
     async def test_delete_nested_override_clears_merged_value(
         self, api_admin_client: TestClient
     ) -> None:
-        """Deleting a nested override reverts the leaf to its YAML/env value (AC #3)."""
+        """Revert the leaf to its YAML/env value when deleting a nested override (AC #3)."""
         override_seconds = 7200
         original = sep_settings.SESSION.MAX_AGE
         api_admin_client.patch(
@@ -776,7 +1012,7 @@ class TestSepSettingsNestedOverrides:
     async def test_delete_nested_override_idempotent_when_absent(
         self, api_admin_client: TestClient
     ) -> None:
-        """Deleting a never-set nested override still returns 204."""
+        """Return 204 when deleting a never-set nested override."""
         response = api_admin_client.delete(
             "/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE"
         )
@@ -785,7 +1021,7 @@ class TestSepSettingsNestedOverrides:
     async def test_list_marks_overridden_leaf_independently_of_siblings(
         self, api_admin_client: TestClient
     ) -> None:
-        """Each leaf carries its own ``has_override``; a sibling stays ``False``."""
+        """Assert each leaf carries its own ``has_override``; a sibling stays ``False``."""
         api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SESSION__SAMESITE": "strict"},
@@ -808,7 +1044,7 @@ class TestSepSettingsAuth:
     async def test_unauthenticated_get_returns_401(
         self, api_unauthenticated_client: TestClient
     ) -> None:
-        """An unauthenticated GET responds with a JSON 401."""
+        """Respond with a JSON 401 to an unauthenticated GET."""
         response = api_unauthenticated_client.get(
             "/api/sep/admin/settings/", follow_redirects=False
         )
@@ -818,14 +1054,14 @@ class TestSepSettingsAuth:
     async def test_non_admin_get_returns_403(
         self, api_non_admin_client: TestClient
     ) -> None:
-        """A non-admin user is rejected with 403 on every endpoint."""
+        """Reject a non-admin user with 403 on every endpoint."""
         response = api_non_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_non_admin_patch_returns_403(
         self, api_non_admin_client: TestClient
     ) -> None:
-        """A non-admin user cannot mutate settings."""
+        """Reject a non-admin user's attempt to mutate settings."""
         response = api_non_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 10},
@@ -835,7 +1071,7 @@ class TestSepSettingsAuth:
     async def test_cookie_admin_patch_without_bearer_returns_401(
         self, api_admin_cookie_client: TestClient
     ) -> None:
-        """Cookie-authenticated admin cannot PATCH without a Bearer header (CSRF defense)."""
+        """Reject a cookie-authenticated admin PATCH without a Bearer header (CSRF defense)."""
         response = api_admin_cookie_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 10},
@@ -845,7 +1081,7 @@ class TestSepSettingsAuth:
     async def test_cookie_admin_delete_without_bearer_returns_401(
         self, api_admin_cookie_client: TestClient
     ) -> None:
-        """Cookie-authenticated admin cannot DELETE without a Bearer header (CSRF defense)."""
+        """Reject a cookie-authenticated admin DELETE without a Bearer header (CSRF defense)."""
         response = api_admin_cookie_client.delete(
             "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )
@@ -854,7 +1090,7 @@ class TestSepSettingsAuth:
     async def test_cookie_admin_can_still_read(
         self, api_admin_cookie_client: TestClient
     ) -> None:
-        """GET endpoints remain accessible via cookie auth — only mutations require Bearer."""
+        """Allow GET via cookie auth — only mutations require Bearer."""
         response = api_admin_cookie_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
 
@@ -864,7 +1100,7 @@ class TestSepSettingsSecondaryClasses:
     """Smoke tests for the Snippets and Messages classes wired alongside SEP."""
 
     async def test_patch_snippets_setting(self, api_admin_client: TestClient) -> None:
-        """A Snippets HOT field is patchable via the SEP router."""
+        """Assert a Snippets HOT field is patchable via the SEP router."""
         original = snippets_settings.ENABLE_MANUAL_SYNC
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SnippetsSettings",
@@ -877,7 +1113,7 @@ class TestSepSettingsSecondaryClasses:
             snippets_settings._set_snapshot({})
 
     async def test_patch_messages_setting(self, api_admin_client: TestClient) -> None:
-        """A Messages HOT field is patchable via the SEP router."""
+        """Assert a Messages HOT field is patchable via the SEP router."""
         target_level = 30
         response = api_admin_client.patch(
             "/api/sep/admin/settings/MessagesSettings",
@@ -888,6 +1124,135 @@ class TestSepSettingsSecondaryClasses:
             assert target_level == messages_settings.LEVEL
         finally:
             messages_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestSepSettingsAlertSettings:
+    """Smoke-test the app-owned AlertSettings class."""
+
+    async def test_get_alert_setting(self, api_admin_client: TestClient) -> None:
+        """Return one alert field from ``GET /settings/AlertSettings/{key}``."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/AlertSettings/SOURCE_PREFIX"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["setting_class"] == SettingClassEnum.ALERT_SETTINGS.value
+        assert payload["key"] == "SOURCE_PREFIX"
+
+    async def test_patch_alert_setting(self, api_admin_client: TestClient) -> None:
+        """Patch an AlertSettings HOT field via the SEP router."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/AlertSettings",
+            json={"SOURCE_PREFIX": "test-prefix-"},
+        )
+        try:
+            assert response.status_code == status.HTTP_200_OK
+            assert alert_settings.SOURCE_PREFIX == "test-prefix-"
+        finally:
+            alert_settings._set_snapshot({})
+
+    async def test_providers_masked_patch_preserves_routing_key(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep a stored PagerDuty routing key when PROVIDERS is resubmitted masked."""
+        secret = "sep-1615-pagerduty-routing-key"
+        try:
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/AlertSettings",
+                    json={
+                        "PROVIDERS": [
+                            {"PROVIDER": "pagerduty", "routing_key": secret},
+                        ]
+                    },
+                ).status_code
+                == status.HTTP_200_OK
+            )
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/AlertSettings",
+                json={
+                    "PROVIDERS": [
+                        {
+                            "PROVIDER": "pagerduty",
+                            "routing_key": SECRET_STR_MASK,
+                            "api_endpoint": "https://events.pagerduty.com/v2/",
+                        }
+                    ]
+                },
+            )
+            assert response.status_code == status.HTTP_200_OK
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.ALERT_SETTINGS
+            )
+            providers_row = next(row for row in rows if row.key == "PROVIDERS")
+            assert providers_row.value[0]["routing_key"] == secret
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
+            alert_settings._set_snapshot({})
+
+    async def test_providers_masked_patch_preserves_two_routing_keys(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep each PagerDuty routing key when two PROVIDERS are resubmitted masked."""
+        secret_a = "sep-1615-pagerduty-routing-key-a"
+        secret_b = "sep-1615-pagerduty-routing-key-b"
+        endpoint_a = "https://events-a.example/v2/"
+        endpoint_b = "https://events-b.example/v2/"
+        try:
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/AlertSettings",
+                    json={
+                        "PROVIDERS": [
+                            {
+                                "PROVIDER": "pagerduty",
+                                "routing_key": secret_a,
+                                "api_endpoint": endpoint_a,
+                            },
+                            {
+                                "PROVIDER": "pagerduty",
+                                "routing_key": secret_b,
+                                "api_endpoint": endpoint_b,
+                            },
+                        ]
+                    },
+                ).status_code
+                == status.HTTP_200_OK
+            )
+            # Resubmit in reverse endpoint order so positional pairing against
+            # an unstable set iteration would swap the routing keys.
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/AlertSettings",
+                json={
+                    "PROVIDERS": [
+                        {
+                            "PROVIDER": "pagerduty",
+                            "routing_key": SECRET_STR_MASK,
+                            "api_endpoint": endpoint_b,
+                        },
+                        {
+                            "PROVIDER": "pagerduty",
+                            "routing_key": SECRET_STR_MASK,
+                            "api_endpoint": endpoint_a,
+                        },
+                    ]
+                },
+            )
+            assert response.status_code == status.HTTP_200_OK
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.ALERT_SETTINGS
+            )
+            providers_row = next(row for row in rows if row.key == "PROVIDERS")
+            by_endpoint = {
+                entry["api_endpoint"]: entry["routing_key"]
+                for entry in providers_row.value
+            }
+            assert by_endpoint[endpoint_a] == secret_a
+            assert by_endpoint[endpoint_b] == secret_b
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
+            alert_settings._set_snapshot({})
 
 
 @pytest.mark.asyncio
@@ -905,7 +1270,7 @@ class TestSepSettingsCredentialUrlRedaction:
     async def test_list_redacts_inventory_endpoint(
         self, api_admin_client: TestClient
     ) -> None:
-        """``GET /settings/`` masks ``INVENTORY_ENDPOINT`` password components."""
+        """Assert ``GET /settings/`` masks ``INVENTORY_ENDPOINT`` password components."""
         sep_settings._set_snapshot({"INVENTORY_ENDPOINT": self._FULL_URL})
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -921,7 +1286,7 @@ class TestSepSettingsCredentialUrlRedaction:
     async def test_detail_redacts_inventory_endpoint(
         self, api_admin_client: TestClient
     ) -> None:
-        """``GET /settings/{class}/{key}`` masks ``INVENTORY_ENDPOINT`` passwords."""
+        """Assert ``GET /settings/{class}/{key}`` masks ``INVENTORY_ENDPOINT`` passwords."""
         sep_settings._set_snapshot({"INVENTORY_ENDPOINT": self._FULL_URL})
         response = api_admin_client.get(
             "/api/sep/admin/settings/SEPSettings/INVENTORY_ENDPOINT"
@@ -940,7 +1305,7 @@ class TestSepSettingsCredentialUrlWriteback:
     async def test_patch_redacted_inventory_endpoint_preserves_password(
         self, api_admin_client: TestClient
     ) -> None:
-        """Saving an unchanged redacted ``INVENTORY_ENDPOINT`` keeps the real password."""
+        """Keep the real password when saving an unchanged redacted ``INVENTORY_ENDPOINT``."""
         full_url = "http://inv-user:inv-secret@inventory.internal:8080"
         redacted_url = "http://inv-user:****@inventory.internal:8080"
         try:
@@ -982,7 +1347,7 @@ class TestSepSettingsInlineRebind:
     async def test_patch_inventory_endpoint_fires_rebind_callback(
         self, api_admin_client: TestClient, endpoint_callback_spy: AsyncMock
     ) -> None:
-        """PATCHing ``INVENTORY_ENDPOINT`` fires its rebind callback inline."""
+        """Fire the ``INVENTORY_ENDPOINT`` rebind callback inline on PATCH."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"INVENTORY_ENDPOINT": "https://new-inventory.example.org"},
@@ -993,7 +1358,7 @@ class TestSepSettingsInlineRebind:
     async def test_patch_unrelated_key_does_not_fire_endpoint_callback(
         self, api_admin_client: TestClient, endpoint_callback_spy: AsyncMock
     ) -> None:
-        """PATCHing an unrelated SEP key leaves the endpoint rebinder untouched."""
+        """Leave the endpoint rebinder untouched when PATCHing an unrelated SEP key."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 17},
@@ -1010,7 +1375,7 @@ class TestSepOverridesLifespanWiring:
     """Publish the rebind registry on ``sep_app.state`` from the overrides lifespan."""
 
     async def test_lifespan_publishes_override_callbacks_on_sep_app_state(self) -> None:
-        """``sep_overrides_lifespan`` exposes the endpoint/PMM rebinders on state.
+        """Assert ``sep_overrides_lifespan`` exposes the endpoint/PMM rebinders on state.
 
         The handler reads ``request.app.state.override_callbacks``; for SEP routes
         ``request.app`` resolves to the module-level ``sep_app`` mount, so the
@@ -1025,6 +1390,144 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"),
                 (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"),
                 (SettingClassEnum.SETTINGS, "PMM"),
+                (SettingClassEnum.SETTINGS, "LOGGING"),
+                (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
+                (SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL"),
+                (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
             }
         finally:
             sep_app.state.override_callbacks = original
+
+
+@pytest.mark.asyncio
+class TestGlobalSettingsClass:
+    """The global ``Settings`` class is reachable via the SEP router."""
+
+    async def test_settings_group_listed(self, api_admin_client: TestClient) -> None:
+        """Assert the ``Settings`` group appears in the LIST projection."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        groups = {g["setting_class"] for g in response.json()["groups"]}
+        assert SettingClassEnum.SETTINGS.value in groups
+
+    async def test_pmm_leaf_patch_persists(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Accept a per-child PATCH on a PMM leaf (HOT parent)."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"PMM__verify_ssl": False},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SETTINGS
+        )
+        assert [r.key for r in rows] == ["PMM__verify_ssl"]
+
+    async def test_pmm_api_key_patch_persists_plaintext(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Persist the real secret string, not Pydantic's ``**********`` JSON mask."""
+        secret = "sep-1615-persist-plaintext"
+        try:
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__api_key": secret},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json()[0]["value"] == "**********"
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.SETTINGS
+            )
+            assert len(rows) == 1
+            assert rows[0].key == "PMM__api_key"
+            assert rows[0].value == secret
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
+
+    async def test_pmm_api_key_masked_patch_preserves_stored_secret(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep the stored secret when the client resubmits the redacted mask."""
+        secret = "sep-1615-mask-roundtrip"
+        try:
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/Settings",
+                    json={"PMM__api_key": secret},
+                ).status_code
+                == status.HTTP_200_OK
+            )
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__api_key": SECRET_STR_MASK},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json()[0]["value"] == "**********"
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.SETTINGS
+            )
+            assert len(rows) == 1
+            assert rows[0].value == secret
+        finally:
+            api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
+
+    async def test_logging_hot_patch_persists(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Assert ``LOGGING`` is HOT and accepts a PATCH."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"LOGGING": "DEBUG"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SETTINGS
+        )
+        assert [r.key for r in rows] == ["LOGGING"]
+
+    async def test_logging_invalid_level_rejected(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Reject an invalid ``LOGGING`` level with 422 and write no row."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"LOGGING": "NOTALEVEL"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SETTINGS
+        )
+        assert rows == []
+
+    @pytest.mark.parametrize("field", ["SECRET_KEY", "CELERY", "LOGGING_CONFIG"])
+    async def test_restart_only_fields_reject_patch(
+        self, api_admin_client: TestClient, field: str
+    ) -> None:
+        """Assert restart-only fields stay NOT_OVERRIDABLE and reject a PATCH with 422."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={field: "whatever"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert ReloadClassification.NOT_OVERRIDABLE.value in types
+
+    async def test_secret_key_value_not_leaked(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Assert the ``SECRET_KEY`` value is never serialised in the LIST payload."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        entry = _find_setting(
+            response.json(), SettingClassEnum.SETTINGS.value, "SECRET_KEY"
+        )
+        # SecretStr is redacted by Pydantic's secret-aware JSON dump.
+        assert entry["value"] in (None, "**********")
+
+    async def test_pmm_api_key_not_leaked(self, api_admin_client: TestClient) -> None:
+        """Assert the nested PMM ``api_key`` secret is not serialised in the LIST."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        entry = _find_setting(
+            response.json(), SettingClassEnum.SETTINGS.value, "PMM__api_key"
+        )
+        assert entry["value"] in (None, "**********")

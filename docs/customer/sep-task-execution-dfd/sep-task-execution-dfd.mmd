@@ -1,5 +1,5 @@
 %% SEP Task Execution — Level-1 Data Flow Diagram
-%% Path A: Snippets (one-shot). Path B: Proxy plugins e.g. checksums (create then execute).
+%% Path A: Snippets (one-shot). Path B: Proxy apps e.g. checksums (create then execute).
 %% Auth: Casdoor OAuth/JWT; mTLS on inter-service links only.
 
 flowchart LR
@@ -29,14 +29,14 @@ flowchart LR
 
     subgraph pathA ["Path A — Snippets (one-shot execute)"]
         direction TB
-        P_SnippetAPI["P4a: Snippets plugin API"]
+        P_SnippetAPI["P4a: Snippets app API"]
         SnippetStore[("D1: Approved snippets")]
     end
 
-    subgraph pathB ["Path B — Proxy plugins e.g. Checksums (create, then execute)"]
+    subgraph pathB ["Path B — Proxy apps e.g. Checksums (create, then execute)"]
         direction TB
-        P_ProxyCreate["P4b: Plugin API create<br/>checksums, alters"]
-        P_ProxyExecute["P4c: Plugin API execute<br/>no new command from UI"]
+        P_ProxyCreate["P4b: App API create<br/>checksums, alters"]
+        P_ProxyExecute["P4c: App API execute<br/>no new command from UI"]
         TaskDefs[("D4: Task definitions<br/>PROXY → run-command")]
     end
 
@@ -62,19 +62,19 @@ flowchart LR
     P_Validate --> P_UI
 
     %% Path A — snippets
-    P_UI -->|"POST /api/plugins/snippets/snippet/execute<br/>?snippet_filename=...<br/>JSON: form args"| P_SnippetAPI
+    P_UI -->|"POST /api/apps/snippets/snippet/execute<br/>?snippet_filename=...<br/>JSON: form args"| P_SnippetAPI
     P_SnippetAPI --> SnippetStore
     SnippetStore --> P_SnippetAPI
     P_SnippetAPI -->|"meta: target, interpreter,<br/>signed snippet_source"| P_TasksAPI
 
     %% Path B — checksums (two phases)
-    P_UI -->|"POST /api/plugins/checksums/<br/>JSON: create form"| P_ProxyCreate
+    P_UI -->|"POST /api/apps/checksums/<br/>JSON: create form"| P_ProxyCreate
     P_ProxyCreate -->|"resolve MySQL service,<br/>databases, tables"| Inventory
     Inventory --> P_ProxyCreate
     P_ProxyCreate -->|"TaskWrite: command pt-table-checksum,<br/>args, target in meta"| TaskDefs
     P_ProxyCreate -->|"POST /tasks/ persist definition"| TasksDB
 
-    P_UI -->|"POST /api/plugins/checksums/{task_name}/execute<br/>body: eta, chain_task_names, chain_on_failure"| P_ProxyExecute
+    P_UI -->|"POST /api/apps/checksums/{task_name}/execute<br/>body: eta, chain_task_names, chain_on_failure"| P_ProxyExecute
     P_ProxyExecute -->|"POST /execute/{task_name}"| P_TasksAPI
     TaskDefs -->|"PROXY: merge stored meta<br/>command + args + target"| P_TasksAPI
 

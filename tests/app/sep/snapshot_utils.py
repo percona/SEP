@@ -24,12 +24,15 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
-from app.core.utils.openapi import generate_tag_prefixed_unique_id
+from app.core.utils.openapi import (
+    generate_tag_prefixed_unique_id,
+    namespaced_openapi,
+)
 from app.sep.api.router import api_router
-from app.sep.plugins.framework.registry import get_app_registry
+from app.sep.apps.framework.registry import get_app_registry
 
 SNAPSHOTS_DIR = Path(__file__).parent / "snapshots"
-PLUGIN_PREFIX = "/api/plugins"
+PLUGIN_PREFIX = "/api/apps"
 SCHEMA_REF_PREFIX = "#/components/schemas/"
 UPDATE = os.environ.get("SEP_UPDATE_SNAPSHOTS") not in (None, "", "0", "false", "False")
 
@@ -83,15 +86,15 @@ def slice_openapi_subtree(
 
     Exclude any path owned by a more-specific nested sub-app listed in
     ``child_prefixes`` so a parent app whose URL prefix is a prefix of a scoped
-    sub-app's does not over-capture it (``/api/plugins/mysql_backups`` must not
-    absorb the ``/api/plugins/mysql_backups/restore/…`` routes that belong to
+    sub-app's does not over-capture it (``/api/apps/mysql_backups`` must not
+    absorb the ``/api/apps/mysql_backups/restore/…`` routes that belong to
     the separately keyed ``mysql_backups/restore`` app).
 
     :param openapi: The full OpenAPI document to slice.
     :type openapi: dict[str, Any]
-    :param prefix: The ``/api/plugins/{key}`` path prefix to select.
+    :param prefix: The ``/api/apps/{key}`` path prefix to select.
     :type prefix: str
-    :param child_prefixes: ``/api/plugins/{key}`` prefixes of nested sub-apps to
+    :param child_prefixes: ``/api/apps/{key}`` prefixes of nested sub-apps to
         exclude from this slice.
     :type child_prefixes: Iterable[str]
     :return: A subtree holding the selected ``paths`` and their referenced schemas.
@@ -123,7 +126,7 @@ def configured_plugin_keys() -> list[str]:
     """Return registry keys for plugins that expose a JSON API router, sorted.
 
     Read from the cached :func:`get_app_registry` (built once from
-    ``sep_settings.PLUGINS`` and never mutated) rather than ``sep_settings``
+    ``sep_settings.APPS`` and never mutated) rather than ``sep_settings``
     directly, so a definition-based app whose JSON router is the derived
     ``api_router`` (no ``api_router_path``) is counted alongside legacy
     ``api_router_path`` plugins. Reading the registry keeps the inventory
@@ -137,7 +140,7 @@ def configured_plugin_keys() -> list[str]:
 
 
 def build_plugins_openapi() -> dict[str, Any]:
-    """Build the OpenAPI document for the configured ``/api/plugins`` surface.
+    """Build the OpenAPI document for the configured ``/api/apps`` surface.
 
     Mount the config-built ``api_router`` on a throwaway ``FastAPI`` app rather
     than reading the process-global ``sep_app``. Sibling conftests mutate
@@ -145,7 +148,7 @@ def build_plugins_openapi() -> dict[str, Any]:
     freezes ``sep_app``'s cached schema for other tests and perturbs shared
     ``components/schemas`` names — so a snapshot taken from it would depend on
     test-suite composition. ``api_router`` is built once from
-    ``sep_settings.PLUGINS`` and never mutated, so its schema is deterministic.
+    ``sep_settings.APPS`` and never mutated, so its schema is deterministic.
     ``generate_tag_prefixed_unique_id`` matches the ``operationId`` scheme that
     ``create_app`` installs on ``sep_app``.
 
@@ -154,7 +157,7 @@ def build_plugins_openapi() -> dict[str, Any]:
     """
     app = FastAPI(generate_unique_id_function=generate_tag_prefixed_unique_id)
     app.include_router(api_router)
-    return app.openapi()
+    return namespaced_openapi(app)
 
 
 def discover_schema_paths(openapi: dict[str, Any], allowed_keys: set[str]) -> list[str]:
@@ -187,9 +190,9 @@ def discover_schema_paths(openapi: dict[str, Any], allowed_keys: set[str]) -> li
 def schema_path_to_slug(path: str) -> str:
     """Return the golden-file slug for a schema ``path``.
 
-    Strip the ``/api/plugins/`` prefix and ``/schema`` suffix, then replace
+    Strip the ``/api/apps/`` prefix and ``/schema`` suffix, then replace
     inner slashes with ``__`` so a nested route maps to a flat filename
-    (``/api/plugins/backup_mongo/restores/schema`` -> ``backup_mongo__restores``).
+    (``/api/apps/backup_mongo/restore/schema`` -> ``backup_mongo__restore``).
 
     :param path: The discovered ``…/schema`` path.
     :type path: str

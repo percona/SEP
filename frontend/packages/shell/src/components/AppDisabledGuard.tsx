@@ -22,23 +22,23 @@ import { useEnabledApps } from '@sep/api';
 import AppDisabledPage from '../pages/AppDisabledPage';
 
 interface AppDisabledGuardProps {
-  /** Backend plugin key (the last dotted segment of the plugin's MODULE_NAME). */
+  /** Backend app key (the last dotted segment of the app's MODULE_NAME). */
   appKey: string;
   children: ReactNode;
 }
 
 /**
- * Gate a plugin-owned route on its runtime enabled state.
+ * Gate an app-owned route on its runtime enabled state.
  *
  * Consults the same `GET /api/apps/` query that drives sidebar filtering. When
  * the matching app is explicitly disabled, the `AppDisabledPage` splash renders
- * *instead of* `children` — so the wrapped plugin never mounts and no 503-prone
+ * *instead of* `children` — so the wrapped app never mounts and no 503-prone
  * API calls fire.
  *
  * On a cold load (bookmark / email link / hard reload) the query has no cached
  * data, so we hold a brief spinner until it resolves rather than optimistically
- * mounting the plugin. Optimistic render would race `/api/apps/` against the
- * lazy plugin chunk + its first API call, making the very 503 cascade this
+ * mounting the app. Optimistic render would race `/api/apps/` against the
+ * lazy app chunk + its first API call, making the very 503 cascade this
  * guard exists to prevent nondeterministic. Gating on `isLoading` keeps the
  * disabled-URL outcome deterministic; the spinner only appears on the first
  * uncached fetch (a warm cache decides instantly).
@@ -61,7 +61,7 @@ export default function AppDisabledGuard({ appKey, children }: AppDisabledGuardP
   }
 
   // Cold load with no cached data yet: hold a spinner so the disabled-URL
-  // outcome is deterministic instead of racing the plugin mount.
+  // outcome is deterministic instead of racing the app mount.
   if (isLoading) {
     return (
       <Box
@@ -79,7 +79,18 @@ export default function AppDisabledGuard({ appKey, children }: AppDisabledGuardP
 
   const app = apps?.find((a) => a.app_key === appKey);
   if (app && !app.enabled) {
-    return <AppDisabledPage />;
+    // Drop an unmappable key so a raw app key never reaches the UI; if none map
+    // (e.g. self-disabled, so no blockers) the splash stays generic.
+    const nameByKey = new Map((apps ?? []).map((a) => [a.app_key, a.display_name]));
+    const blockingDependencyNames = (app.blocking_dependencies ?? [])
+      .map((key) => nameByKey.get(key))
+      .filter((name): name is string => name !== undefined);
+    return (
+      <AppDisabledPage
+        appDisplayName={app.display_name}
+        blockingDependencyNames={blockingDependencyNames}
+      />
+    );
   }
 
   return <>{children}</>;

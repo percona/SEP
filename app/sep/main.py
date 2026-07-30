@@ -18,8 +18,10 @@
 import logging.config
 from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from traceback import format_exception
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -30,11 +32,15 @@ from pydantic import HttpUrl, ValidationError
 from starlette.staticfiles import StaticFiles
 
 from app import __summary__, __version__
+from app.api.main import api_router as top_level_api_router
 from app.core.alerts.config import alert_settings, AlertSettings
+from app.core.auth import config as auth_config
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
+from app.core.celery.utils import init_periodic_tasks_db
 from app.core.config import create_app, default_lifespan, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
+from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.settings_override.lifecycle import (
@@ -48,10 +54,13 @@ from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.api.main import api_router as core_api_router
 from app.sep.api.router import api_router
-from app.sep.celery import sync_snippets
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
+from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.apps.snippets.celery import sync_snippets
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.db import get_async_session_maker
-from app.sep.db.seed import init_sep_db
+from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
@@ -64,13 +73,12 @@ from app.sep.deps import (
     IsNotAuthenticated,
     PROTECTED_APP_KEYS,
     require_app_enabled,
+    resolve_ambient_session_token,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
-from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
-from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
@@ -78,7 +86,6 @@ from app.tasks.config import tasks_settings
 logger = logging.getLogger(__name__)
 
 JSON_API_PATH_PREFIXES: tuple[str, ...] = (
-    "/api/plugins/",
     "/api/sep/",
     "/api/admin/",
     "/api/apps/",
@@ -88,15 +95,34 @@ JSON_API_PATH_PREFIXES: tuple[str, ...] = (
 )
 
 
+def warn_if_ambient_sso_inert() -> None:
+    """Emit a warning when ambient SSO is enabled but the active provider can't honor it.
+
+    Catch the static (env/YAML) misconfiguration at startup; the admin-UI
+    applicability toggle covers the live case. Advisory only -- the runtime
+    resolver no-ops regardless.
+    """
+    if (
+        sep_settings.AMBIENT_SESSION_SSO_ENABLED
+        and not auth_config.get_active_auth_provider().supports_ambient_session
+    ):
+        logger.warning(
+            "AMBIENT_SESSION_SSO_ENABLED is on but the active auth provider does "
+            "not support ambient sessions; ambient auto-login will not occur."
+        )
+
+
 async def sep_startup() -> None:
     """Define actions to perform on SEP startup.
 
-    Initialize the SEP periodic task database and trigger the initial
-    synchronization of snippets if configured to do so.
+    Initialize the SEP periodic task database, trigger the initial snippets
+    synchronization if configured, and warn when ambient SSO is enabled under a
+    provider that cannot honor it.
     """
     await init_sep_db()
     if snippets_settings.SYNC_ON_STARTUP:
         sync_snippets.delay()
+    warn_if_ambient_sso_inert()
 
 
 def _make_remote_api_rebinder(
@@ -166,17 +192,64 @@ async def _invalidate_pmm_clients(_: Mapping[str, object]) -> None:
         await settings.invalidate_client(str(endpoint))
 
 
+async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
+    """Re-apply ``logging.config.dictConfig`` after a global ``LOGGING`` override.
+
+    ``LOGGING`` is a HOT field, but ``LOGGING_CONFIG`` (the dict handed to
+    ``dictConfig``) is not: the override snapshot replaces only the ``LOGGING``
+    key, so ``settings.LOGGING_CONFIG`` still carries the level baked in by the
+    ``set_log_level`` model validator at construction time. This callback mirrors
+    that validator -- inject the now-live ``settings.LOGGING`` into a copy of the
+    config and re-apply it -- so a log-level change takes effect in the SEP web
+    process without a restart. Failures are logged and swallowed: a malformed
+    config must not take the process down mid-request.
+
+    :param _: The new effective ``Settings`` snapshot mapping (unused -- the level
+        is re-read from the proxy).
+    """
+    try:
+        config = deepcopy(settings.LOGGING_CONFIG)
+        config["loggers"][""]["level"] = settings.LOGGING
+        config["loggers"]["app"]["level"] = settings.LOGGING
+        logging.config.dictConfig(config)
+    except Exception:
+        logger.exception("Failed to re-apply logging config after LOGGING override")
+
+
+async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
+    """Re-seed the SEP beat schedule after a hot interval override.
+
+    Wired for both ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``) and
+    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``). Rebuilds the
+    system periodic-task set via
+    :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
+    interval from the refreshed proxy snapshot -- and re-invokes
+    :func:`app.core.celery.utils.init_periodic_tasks_db` under the ``sep__`` prefix.
+    The seeding is idempotent (get-or-create plus upsert by task name); its update
+    path reassigns only ``task`` / ``schedule_model`` / extra kwargs, so the
+    ``enabled`` gating state written by
+    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating` is preserved.
+    Updating the ``IntervalSchedule`` bumps ``PeriodicTaskChanged.last_update``, so
+    Celery beat reloads the schedule on its next scheduler tick without a restart.
+
+    :param _: The new effective settings snapshot mapping (unused -- the interval is
+        re-read from the proxy by the task-set builder).
+    """
+    await init_periodic_tasks_db(get_system_periodic_tasks(), "sep__")
+
+
 @asynccontextmanager
 async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Wire the SEP-side settings override refresher into a lifespan.
 
     Force-resolves ``messages_settings`` (fail-fast validation), then starts the
     background refresher for the ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``,
-    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global) and ``ALERT_SETTINGS`` proxies
-    for the duration of the wrapped block. ``SETTINGS`` and ``ALERT_SETTINGS``
-    wrap shared module-level proxies (``settings`` / ``alert_settings``); the SEP
-    refresher is their **sole** owner so that under the combined ``app.main:app``
-    the Tasks refresher does not also publish into them from the Tasks database.
+    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global), ``ALERT_SETTINGS`` and
+    ``ALERTS_SETTINGS`` proxies for the duration of the wrapped block.
+    ``SETTINGS`` and ``ALERT_SETTINGS`` wrap shared module-level proxies
+    (``settings`` / ``alert_settings``); the SEP refresher is their **sole**
+    owner so that under the combined ``app.main:app`` the Tasks refresher does
+    not also publish into them from the Tasks database.
     Endpoint and PMM rebind callbacks are built here -- where ``app`` is
     available -- so both run modes wire them.
 
@@ -223,6 +296,19 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ssl_certfile=tasks_settings.SSL_CERTFILE,
         ),
         (SettingClassEnum.SETTINGS, "PMM"): _invalidate_pmm_clients,
+        (SettingClassEnum.SETTINGS, "LOGGING"): _apply_logging_dictconfig,
+        (
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            "SYNC_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+        (
+            SettingClassEnum.ALERTS_SETTINGS,
+            "BACKUP_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+        (
+            SettingClassEnum.SEP_SETTINGS,
+            "APP_DRAIN",
+        ): _reseed_system_periodic_tasks,
     }
     # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to
     # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
@@ -240,6 +326,9 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ),
             SettingClassEnum.SETTINGS: ProxyEntry(settings, Settings),
             SettingClassEnum.ALERT_SETTINGS: ProxyEntry(alert_settings, AlertSettings),
+            SettingClassEnum.ALERTS_SETTINGS: ProxyEntry(
+                alerts_settings, AlertsSettings
+            ),
         },
         settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
         enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
@@ -294,6 +383,7 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 lifespan = sep_lifespan
 sep_app = create_app(
+    build_health_router(get_async_session_maker),
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
@@ -314,7 +404,9 @@ for app in get_app_registry():
     if app.jinja_router is None:
         continue
     plugin_deps = (
-        [] if app.key in PROTECTED_APP_KEYS else [Depends(require_app_enabled(app.key))]
+        []
+        if app.state_key in PROTECTED_APP_KEYS
+        else [Depends(require_app_enabled(app.key))]
     )
     sep_app.include_router(
         app.jinja_router, prefix=app.uri_path, dependencies=plugin_deps
@@ -352,13 +444,14 @@ if (_TASK_INFRA_PLUGINS | {"inventory"}) & imported_plugins:
 
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
 
-if {"snippets", "dipper"} & imported_plugins:
+if any(app.artifact_base_dirs for app in get_app_registry()):
     from app.sep.routes.artifacts import router as artifacts_router
 
     sep_app.include_router(artifacts_router, prefix="/artifacts")
 
 sep_app.include_router(core_api_router)
 sep_app.include_router(api_router)
+sep_app.include_router(top_level_api_router, include_in_schema=False)
 
 if "snippets" in imported_plugins:
     sep_app.mount(
@@ -389,14 +482,24 @@ templates = sep_settings.TEMPLATES
 async def internal_error_handler(
     request: Request,
     exc: BaseException,
-) -> HTMLResponse:
+) -> HTMLResponse | JSONResponse | RedirectResponse:
     """Load custom error page."""
-    base_url = get_base_url(request)
     logger.exception("Unhandled exception:", exc_info=exc)
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES):
+        return JSONResponse(
+            {"detail": "Internal Server Error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    base_url = get_base_url(request)
     try:
         user = await get_current_user(request)
-    except Exception:
-        user = None
+    except LoginRedirectException as redirect_exc:
+        return RedirectResponse(
+            redirect_exc.location,
+            status_code=redirect_exc.status_code,
+            headers=redirect_exc.headers,
+        )
     messages.error(
         request,
         "Internal Server Error. Please contact the administrators for help.",
@@ -437,6 +540,7 @@ async def custom_404_handler(
         return RedirectResponse(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
+            headers=redirect_exc.headers,
         )
     async with get_async_session_maker()() as session:
         default_context = await get_default_context(request, user, base_url, session)
@@ -554,11 +658,61 @@ async def request_validation_exception_handler(
     )
 
 
-@sep_app.get("/login", dependencies=[IsNotAuthenticated])
+def _safe_next_path(next_path: str) -> str:
+    r"""Validate a ``next`` redirect target, collapsing unsafe values to ``/``.
+
+    Validate ``next_path`` as a same-origin ``URIPath`` so the password login and
+    the ambient auto-login reject open-redirect targets identically. ``URIPath``
+    alone still admits scheme-relative (``//host``) and backslash (``/\host``)
+    targets that a browser follows off-origin, so also reject any value that a
+    browser would resolve to a foreign host.
+
+    :param next_path: The raw ``next`` query value.
+    :return: The validated relative path, or ``/`` when ``next_path`` is not a
+        safe same-origin path.
+    """
+    try:
+        validated = run_pydantic_type_validator(URIPath, next_path)
+    except ValidationError:
+        return "/"
+    if validated.startswith(("//", "/\\")) or urlsplit(validated).netloc:
+        return "/"
+    return validated
+
+
+@sep_app.get(
+    "/login",
+    dependencies=[IsNotAuthenticated],
+    include_in_schema=False,
+    response_model=None,
+)
 async def login_form(
     request: Request, next_path: Annotated[str, Query(alias="next")] = "/"
-) -> HTMLResponse:
-    """Display login form."""
+) -> HTMLResponse | RedirectResponse:
+    """Serve the login form, or auto-login from an ambient Grafana session.
+
+    Attempt ambient Grafana SSO before rendering: on a valid ambient session,
+    redirect to the sanitized ``next`` target with the SEP session cookie set;
+    otherwise render the login form unchanged.
+
+    :param request: The incoming request, carrying any ambient Grafana session
+        cookie.
+    :param next_path: The post-login redirect target (the ``next`` query param).
+    :return: A redirect carrying the session cookie on ambient auto-login, else
+        the rendered login form.
+    """
+    oauth_token = await resolve_ambient_session_token(request)
+    if oauth_token is not None:
+        response = RedirectResponse(
+            _safe_next_path(next_path), status_code=status.HTTP_303_SEE_OTHER
+        )
+        response.set_cookie(
+            **sep_settings.SESSION.model_dump(by_alias=True),
+            value=crypto_timestamp_serializer.dumps(oauth_token.access_token),
+            httponly=True,
+        )
+        response.delete_cookie(CSRF_COOKIE_NAME)
+        return response
     return templates.TemplateResponse(
         request=request,
         name="login.html.j2",
@@ -569,7 +723,11 @@ async def login_form(
     )
 
 
-@sep_app.post("/login", dependencies=[IsNotAuthenticated, IsCsrfValidated])
+@sep_app.post(
+    "/login",
+    dependencies=[IsNotAuthenticated, IsCsrfValidated],
+    include_in_schema=False,
+)
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     next_path: Annotated[str, Query(alias="next")] = "/",
@@ -584,11 +742,9 @@ async def login(
         await User.invalidate_tokens_for_user(
             form_data.username, exclude_tokens=[oauth_token.access_token]
         )
-    try:
-        next_path = run_pydantic_type_validator(URIPath, next_path)
-    except ValidationError:
-        next_path = "/"
-    response = RedirectResponse(next_path, status_code=status.HTTP_303_SEE_OTHER)
+    response = RedirectResponse(
+        _safe_next_path(next_path), status_code=status.HTTP_303_SEE_OTHER
+    )
     response.set_cookie(
         **sep_settings.SESSION.model_dump(by_alias=True),
         value=crypto_timestamp_serializer.dumps(oauth_token.access_token),
@@ -598,7 +754,9 @@ async def login(
     return response
 
 
-@sep_app.post("/logout", dependencies=[IsAuthenticated, IsCsrfValidated])
+@sep_app.post(
+    "/logout", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False
+)
 async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     """Logout route."""
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
@@ -611,7 +769,7 @@ async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     return response
 
 
-@sep_app.get("/", response_class=HTMLResponse)
+@sep_app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def read_root(
     request: Request,
     context: Annotated[dict[str, Any], Depends(get_tasks_index_context)],

@@ -35,6 +35,7 @@ export function makeSetting(overrides: Partial<SettingResponse> = {}): SettingRe
     is_complex: false,
     has_override: false,
     is_advanced: false,
+    is_applicable: true,
     ...overrides,
   };
 }
@@ -44,6 +45,7 @@ export const sepListResponse = {
   groups: [
     {
       setting_class: 'SEPSettings',
+      is_app_owned: false,
       settings: [
         makeSetting({ key: 'SYNC_REFRESH_TIME', value: 5, default_value: 5, type: 'int' }),
         makeSetting({
@@ -76,6 +78,7 @@ export const sepListResponse = {
     },
     {
       setting_class: 'SnippetsSettings',
+      is_app_owned: false,
       settings: [
         makeSetting({
           setting_class: 'SnippetsSettings',
@@ -94,6 +97,7 @@ export const tasksListResponse = {
   groups: [
     {
       setting_class: 'TasksSettings',
+      is_app_owned: false,
       settings: [
         makeSetting({
           setting_class: 'TasksSettings',
@@ -109,6 +113,47 @@ export const tasksListResponse = {
           value: 'warn',
           default_value: 'warn',
           type: "Literal['warn', 'fail', 'skip']",
+        }),
+      ],
+    },
+  ],
+} satisfies { groups: SettingClassGroup[] };
+
+/**
+ * App-owned groups: one whose owning app is enabled (must render under the
+ * "App settings" region) and one whose app is disabled (must be hidden).
+ */
+export const appsListResponse = {
+  groups: [
+    {
+      setting_class: 'AlertsSettings',
+      is_app_owned: true,
+      app_id: 'alerts',
+      app_display_name: 'Alerts',
+      app_enabled: true,
+      settings: [
+        makeSetting({
+          setting_class: 'AlertsSettings',
+          key: 'ALERTS_RETENTION_DAYS',
+          value: 30,
+          default_value: 30,
+          type: 'int',
+        }),
+      ],
+    },
+    {
+      setting_class: 'InventorySettings',
+      is_app_owned: true,
+      app_id: 'inventory',
+      app_display_name: 'Inventory',
+      app_enabled: false,
+      settings: [
+        makeSetting({
+          setting_class: 'InventorySettings',
+          key: 'INVENTORY_SCAN_INTERVAL',
+          value: 60,
+          default_value: 60,
+          type: 'int',
         }),
       ],
     },

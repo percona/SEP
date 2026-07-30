@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { useState, type ReactNode } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
@@ -216,6 +216,24 @@ describe('SchemaFormRenderer — field rendering', () => {
     renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
     const legend = screen.getByText('Basics');
     expect(legend.tagName.toLowerCase()).toBe('legend');
+  });
+
+  it('shows a help icon only when a field has a description', () => {
+    const helpSections: FormSection[] = [
+      {
+        title: 'Basics',
+        fields: [
+          { type: 'string', name: 'title', label: 'Title', description: 'A title' },
+          { type: 'string', name: 'code', label: 'Code' },
+        ],
+      },
+    ];
+    renderWithProviders(<SchemaFormRenderer sections={helpSections} onSubmit={() => {}} />);
+
+    // Notched-outline clone is aria-hidden; pin count + require a visible <label> hit.
+    expect(document.querySelectorAll('[data-help-for="Title"]')).toHaveLength(2);
+    expect(document.querySelectorAll('label [data-help-for="Title"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-help-for="Code"]')).toHaveLength(0);
   });
 });
 
@@ -1810,7 +1828,7 @@ describe('SchemaFormRenderer — section-level visibility', () => {
 // ── multi_choice discriminator regression (SEP-1293) ─────────────────────────
 //
 // Guards against future drift between the hand-maintained `MultiChoiceField.type`
-// literal in plugin-schema.ts and the switch branches that consume it. A wrong
+// literal in app-schema.ts and the switch branches that consume it. A wrong
 // literal silently falls through to `default: return null` — these tests make
 // that failure loud.
 

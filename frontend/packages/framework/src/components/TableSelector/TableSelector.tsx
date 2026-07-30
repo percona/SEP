@@ -19,9 +19,9 @@ import { useEffect, useRef } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useTables, type TableOption } from '../../hooks/useTables';
-import type { SchemaOption } from '../../hooks/useSchemas';
-import { extractId } from '../../utils/extractId';
+import { parseCascadeParentValue } from '../../utils/parseCascadeParentValue';
 import { FreeSoloSelect } from '../FreeSoloSelect';
+import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 
 const EMPTY_OPTIONS: TableOption[] = [];
 
@@ -42,6 +42,12 @@ export interface TableSelectorProps {
   disabled?: boolean;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allowCustom?: boolean;
+  /**
+   * Render a multi-value selector committing a `(number | string)[]`. Combined
+   * with `allowCustom`, yields a free-solo multi-select; otherwise a closed
+   * multi-select combobox.
+   */
+  multiple?: boolean;
 }
 
 const getOptionLabel = (opt: TableOption | string) => (typeof opt === 'string' ? opt : opt.name);
@@ -56,34 +62,34 @@ export function TableSelector({
   dependsOn,
   disabled,
   allowCustom,
+  multiple,
 }: TableSelectorProps) {
   const { control, setValue } = useFormContext();
 
-  const parent = useWatch({ control, name: dependsOn }) as
-    | SchemaOption
-    | number
-    | string
-    | null
-    | undefined;
-  const parentText = typeof parent === 'string' ? parent.trim() : '';
-  const parentIsCustom = Boolean(allowCustom) && parentText !== '';
-  const schemaId = parentIsCustom ? null : extractId(parent);
-  // A parent that resolves to no inventory id but holds a non-empty string is a
-  // free-typed (custom) parent value, not an absent one. A free-solo child can
-  // still accept a typed value in that case (it just has no options to offer).
-  const parentResetKey = parentIsCustom ? `custom:${parentText}` : `id:${schemaId ?? 'none'}`;
+  const parent = useWatch({ control, name: dependsOn });
+  const parentState = parseCascadeParentValue(parent, { allowCustom });
+  const parentIsCustom = parentState.isCustomOnly;
+  const parentResetKey = parentState.resetKey;
 
   const prevParentKeyRef = useRef(parentResetKey);
   useEffect(() => {
     if (prevParentKeyRef.current !== parentResetKey) {
       prevParentKeyRef.current = parentResetKey;
-      setValue(name, null, { shouldDirty: true, shouldValidate: false });
+      setValue(name, multiple ? [] : null, { shouldDirty: true, shouldValidate: false });
     }
-  }, [parentResetKey, name, setValue]);
+  }, [parentResetKey, name, setValue, multiple]);
 
-  const { data: tables = EMPTY_OPTIONS, isLoading, isError, error } = useTables({ schemaId });
+  const {
+    data: tables = EMPTY_OPTIONS,
+    isLoading,
+    isError,
+    error,
+  } = useTables({
+    schemaIds: parentState.ids,
+    enabled: parentState.ids.length > 0,
+  });
 
-  const noSchema = schemaId === null || schemaId === undefined;
+  const noSchema = parentState.ids.length === 0;
   const empty = !noSchema && !isLoading && !isError && tables.length === 0;
 
   const helperText = noSchema
@@ -94,10 +100,37 @@ export function TableSelector({
         ? 'No tables in this schema'
         : undefined;
 
+  // Only a truly absent parent disables the control; a custom (free-typed)
+  // parent keeps it enabled so the user can type a custom table too.
+  const parentMissing = parentState.isMissing;
+
+  if (multiple) {
+    return (
+      <FreeSoloMultiSelect<TableOption>
+        name={name}
+        label={label}
+        options={tables}
+        getOptionLabel={getOptionName}
+        allowCustom={Boolean(allowCustom)}
+        required={required}
+        disabled={disabled || parentMissing || isError}
+        loading={isLoading}
+        helperText={parentMissing ? 'Select a schema first' : isError ? helperText : undefined}
+        error={isError}
+        noOptionsText={
+          parentMissing
+            ? 'Select a schema first'
+            : parentIsCustom
+              ? 'Custom schema — type a table name'
+              : isLoading
+                ? 'Loading tables…'
+                : 'No tables in this schema'
+        }
+      />
+    );
+  }
+
   if (allowCustom) {
-    // Only a truly absent parent disables the control; a custom (free-typed)
-    // parent keeps it enabled so the user can type a custom table too.
-    const parentMissing = noSchema && !parentIsCustom;
     return (
       <FreeSoloSelect<TableOption>
         name={name}

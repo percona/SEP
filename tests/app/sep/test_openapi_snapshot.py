@@ -24,7 +24,7 @@ KEYS = su.configured_plugin_keys()
 
 
 def _child_prefixes(key):
-    """Return the ``/api/plugins`` prefixes of scoped sub-apps nested under ``key``."""
+    """Return the ``/api/apps`` prefixes of scoped sub-apps nested under ``key``."""
     return [
         f"{su.PLUGIN_PREFIX}/{other}"
         for other in KEYS

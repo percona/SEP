@@ -25,6 +25,7 @@ import {
   describePeriod,
   formatAbsoluteTime,
   formatRelativeTime,
+  LastRunStatus,
   type PeriodicTaskResponse,
 } from '../ScheduledTasksPanel';
 
@@ -48,7 +49,7 @@ export interface ScheduleCellProps {
  * Shows the next run as relative time (with the absolute timestamp on hover)
  * plus a periodicity icon whose tooltip describes the recurrence in plain
  * language. Renders a muted "Not scheduled" chip when the row's task has no
- * periodic schedule. Framework component shared by any plugin that declares a
+ * periodic schedule. Framework component shared by any app that declares a
  * `schedule`-format column; it is not archives-specific.
  */
 export function ScheduleCell({ task, isLoading = false }: ScheduleCellProps) {
@@ -96,6 +97,7 @@ export function ScheduleCell({ task, isLoading = false }: ScheduleCellProps) {
           sx={{ color: 'text.secondary' }}
         />
       </Tooltip>
+      <LastRunStatus status={task.last_run_status} lastRunAt={task.last_run_at} />
     </Stack>
   );
 }
