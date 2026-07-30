@@ -4,8 +4,6 @@ The script for creating Xtrabackup backups.
 
 It creates Xtrabackup backup and purges old backups.
 """
-from glob import iglob
-
 import resource
 
 import argparse
@@ -15,6 +13,7 @@ import hashlib
 import json
 import logging
 import multiprocessing
+import multiprocessing.pool as thread_pool
 import os
 import pwd
 import re
@@ -71,6 +70,19 @@ def _replica_backup_flags(replica_info: bool, stop_replica: bool) -> list[str]:
     if stop_replica:
         flags.append('--safe-slave-backup')
     return flags
+
+
+def _should_inline_encrypt(bin_cmd: str, keyfile: str | None) -> bool:
+    """Return whether ``_run_backup_cmd`` should append the inline AES-256 flags.
+
+    ``mariadb-backup`` has no ``--encrypt`` option; it is encrypted post-run by
+    ``encrypt_files_aes256`` instead, so it keeps inline verify (``verify_innodb``).
+
+    :param bin_cmd: The selected backup binary command name.
+    :param keyfile: Path to the AES-256 keyfile, or falsy if not configured.
+    :return: True if the inline ``--encrypt=AES256`` flags should be appended.
+    """
+    return keyfile and bin_cmd != 'mariadb-backup'
 
 BACKUP_DIR_REGEX = {
     "X": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$",
@@ -137,6 +149,11 @@ STATUS_WARNING = 1
 UPLOADME_FILE = ".uploadme"
 XTRABACKUP_INFO = "xtrabackup_info"
 XTRABACKUP_CHECKPOINTS = "xtrabackup_checkpoints"
+# Backup metadata SEP keeps in plaintext to read post-backup; excluded from
+# every encryption/verification pass regardless of method.
+PLAINTEXT_METADATA_FILES = (
+    MD5SUM_FILE, UPLOADME_FILE, XTRABACKUP_INFO, XTRABACKUP_CHECKPOINTS,
+)
 
 # Backup binary dependency constants
 DU_BIN = os.getenv("PERCONA_BACKUP_DU_BIN", "/usr/bin/du")
@@ -587,12 +604,7 @@ def encrypt_dir(path: str, logger: logging.Logger | None = None, **cfg: Any) -> 
 
 def is_encrypted_dir(
     path: str,
-    exclude_files: tuple[str, ...] = (
-        MD5SUM_FILE,
-        UPLOADME_FILE,
-        XTRABACKUP_INFO,
-        XTRABACKUP_CHECKPOINTS,
-    ),
+    exclude_files: tuple[str, ...] = PLAINTEXT_METADATA_FILES,
     logger: logging.Logger | None = None,
     method: str = "gpg",
 ) -> bool:
@@ -618,6 +630,8 @@ def is_encrypted_dir(
         if p.is_file() and p.name not in exclude_files:
             if method == "aes256":
                 if p.suffix != ".xbcrypt":
+                    if logger:
+                        logger.error('Unencrypted file in AES-256 dir: "%s"', p.name)
                     return False
                 continue
             cmd = [
@@ -810,18 +824,11 @@ class DirectoryEncryptor:
         enc_procs = {}
         all_ok = True
 
-        exclude_names = {
-            "md5sum",
-            ".uploadme",
-            "xtrabackup_info",
-            "xtrabackup_checkpoints",
-        }
-
         for file_path in encr_dir.rglob("*"):
             if (
                 not file_path.is_file()
                 or file_path.name.endswith(".gpg")
-                or file_path.name in exclude_names
+                or file_path.name in PLAINTEXT_METADATA_FILES
             ):
                 continue
 
@@ -2190,8 +2197,6 @@ class Xtrabackup(Backup):
         if self.host == 'localhost' and not self.incremental:
             self.backup_mycnf(self.last_backup_dir)
             self.backup_certs(self.last_backup_dir)
-            if self.xtrabackup_aes256_keyfile:
-                self.encrypt_files_aes256(self.last_backup_dir, '*.pem')
 
         # Purge changed page tracking
         if self._is_track_changed_pages():
@@ -2273,24 +2278,29 @@ class Xtrabackup(Backup):
             except Exception:
                 self.logger.exception("Failed to write the run-result file.")
 
-    def encrypt_files_aes256(self, dir_path, file_filter='*'):
-        """Encrypt matching plaintext files under a directory with xbcrypt/AES-256.
+    def encrypt_files_aes256(self, dir_path):
+        """Encrypt plaintext files under a directory with xbcrypt/AES-256.
 
         Recurses ``dir_path``, skipping files already carrying a ``.xbcrypt``
         suffix and the backup metadata SEP keeps in plaintext to read post-backup.
-        With the default ``file_filter`` this is the xbcrypt analogue of the gpg
-        :func:`encrypt_dir`: for ``mariadb-backup`` (no inline encryption) it
-        encrypts the whole finished directory; for ``xtrabackup`` it only mops up
-        plaintext stragglers (e.g. the copied ``my.cnf``).
+        This is the xbcrypt analogue of the gpg :func:`encrypt_dir`: for
+        ``mariadb-backup`` (no inline encryption) it encrypts the whole finished
+        directory; for ``xtrabackup`` it only mops up plaintext stragglers (e.g.
+        the copied ``my.cnf``). Files are encrypted a handful at a time,
+        mirroring :meth:`DirectoryEncryptor.encrypt_dir`.
 
-        :param dir_path: Directory whose matching plaintext files are encrypted.
-        :param file_filter: ``rglob`` pattern selecting which files to encrypt.
+        :param dir_path: Directory whose plaintext files are encrypted.
+        :raises BackupError: If any file fails to encrypt.
         """
-        exclude = (MD5SUM_FILE, UPLOADME_FILE, XTRABACKUP_INFO, XTRABACKUP_CHECKPOINTS)
-        if dir_path:
-            for p in sorted(Path(dir_path).rglob(file_filter)):
-                if p.is_file() and p.suffix != '.xbcrypt' and p.name not in exclude:
-                    self._run_encrypt_file_aes256(str(p))
+        if not dir_path:
+            return
+        # A list comprehension (not a generator) fully drains rglob() before any
+        # file is touched, so the walk can't re-yield the .xbcrypt files the pool
+        # is creating underneath it.
+        thread_pool.ThreadPool(5).map(self._run_encrypt_file_aes256, [
+            p for p in Path(dir_path).rglob('*')
+            if p.is_file() and p.suffix != '.xbcrypt' and p.name not in PLAINTEXT_METADATA_FILES
+        ])
 
     def _run_xbcrypt(self, cmd, remove_path):
         """Run an ``xbcrypt`` command, then delete ``remove_path`` on success.
@@ -2305,7 +2315,7 @@ class Xtrabackup(Backup):
         _, err = proc.communicate()
         if proc.returncode != 0:
             self._clean_after_error()
-            raise BackupError('xbcrypt failed: %s' % (err,))
+            raise BackupError('xbcrypt failed on %s: %s' % (remove_path, err))
         os.remove(remove_path)
 
     def _run_encrypt_file_aes256(self, file_path):
@@ -2392,9 +2402,7 @@ class Xtrabackup(Backup):
             self.logger.info('Enabling compression using %s', self.compression_algorithm)
             xtrabackup_cmd.append('--compress={}'.format(self.compression_algorithm))
 
-        # mariadb-backup has no --encrypt option; it is encrypted post-run by
-        # encrypt_files_aes256 instead, so it keeps inline verify (verify_innodb).
-        if self.xtrabackup_aes256_keyfile and self.xtrabackup_bin_cmd != 'mariadb-backup':
+        if _should_inline_encrypt(self.xtrabackup_bin_cmd, self.xtrabackup_aes256_keyfile):
             self.verify_innodb = False
             xtrabackup_cmd.append('--encrypt=AES256')
             xtrabackup_cmd.append('--encrypt-key-file=%s' % (self.xtrabackup_aes256_keyfile,))
