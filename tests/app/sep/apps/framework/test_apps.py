@@ -22,6 +22,7 @@ end-to-end. The create test issues a real form POST and never overrides the
 body resolution it exists to cover is genuinely executed.
 """
 
+from pathlib import Path
 from typing import Annotated, Any, get_args
 from unittest.mock import AsyncMock
 
@@ -39,6 +40,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import (
     BaseTaskResponse,
     ConnectivityWarning,
+    StaticMount,
     TaskExecuteWrite,
     TaskExecutionResponse,
 )
@@ -1592,3 +1594,20 @@ class TestRegistryBinding:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["name"] == "synthetic-app"
         assert bound.api_router is app_def.api_router
+
+
+class TestInheritedBaseAppFields:
+    """Cover the fields ``TaskExecutionApp`` inherits from ``BaseApp``."""
+
+    def test_defaults_uses_task_data_true(self) -> None:
+        """Carry ``True`` by default: a derived task app always renders task data."""
+        assert _synth_app().uses_task_data is True
+
+    def test_static_mounts_round_trip_after_inheriting(self) -> None:
+        """Accept and carry ``static_mounts`` now that the field lives on the parent."""
+        mount = StaticMount(
+            path="/static/synthetic",
+            directory=Path("/tmp/payloads"),
+            name="synthetic_files",
+        )
+        assert _synth_app(static_mounts=(mount,)).static_mounts == (mount,)
