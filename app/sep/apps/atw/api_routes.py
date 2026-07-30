@@ -503,7 +503,7 @@ async def atw_start_send_job(
     current_user: ApiCurrentUser,
     body: AtwSendJobWrite,
 ) -> AtwSendLogResponse:
-    """Start delivering the selected executions' output files to the support case.
+    """Start delivering the selected executions' output files and logs to the support case.
 
     The row is created before the task is queued so a broker failure is still
     recorded as a failed attempt rather than vanishing: the row is the only place

@@ -3492,7 +3492,7 @@
         "type": "object"
       },
       "atw__AtwSendJobWrite": {
-        "description": "Define the payload starting one diagnostics send.\n\n:param case_ref: The support-case reference to attach the bundle to.\n:param execution_ids: The incident executions whose output files to send.",
+        "description": "Define the payload starting one diagnostics send.\n\n:param case_ref: The support-case reference to attach the bundle to.\n:param execution_ids: The incident executions whose output files and logs to\n    send.",
         "properties": {
           "case_ref": {
             "minLength": 1,
@@ -15233,7 +15233,7 @@
         ]
       },
       "post": {
-        "description": "Start delivering the selected executions' output files to the support case.\n\nThe row is created before the task is queued so a broker failure is still\nrecorded as a failed attempt rather than vanishing: the row is the only place\na support engineer can see that a send was ever tried.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param current_user: The authenticated user, stamped as ``requested_by``.\n:param body: The send payload naming the case reference and executions.\n:return: The created send log, pending.\n:raises HTTPUnprocessableEntityException: When an execution id does not belong\n    to this incident.\n:raises HTTPServiceUnavailableException: When the send could not be queued.\n:raises HTTPBadRequestException: Propagated from the manager when the row\n    cannot be written.",
+        "description": "Start delivering the selected executions' output files and logs to the support case.\n\nThe row is created before the task is queued so a broker failure is still\nrecorded as a failed attempt rather than vanishing: the row is the only place\na support engineer can see that a send was ever tried.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param current_user: The authenticated user, stamped as ``requested_by``.\n:param body: The send payload naming the case reference and executions.\n:return: The created send log, pending.\n:raises HTTPUnprocessableEntityException: When an execution id does not belong\n    to this incident.\n:raises HTTPServiceUnavailableException: When the send could not be queued.\n:raises HTTPBadRequestException: Propagated from the manager when the row\n    cannot be written.",
         "operationId": "atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post",
         "parameters": [
           {

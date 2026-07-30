@@ -64,7 +64,7 @@ interface ResendContext {
 }
 
 /**
- * Task statuses whose execution has output files worth sending.
+ * Task statuses whose execution is finished and therefore sendable.
  *
  * Mirrors the backend's own `TaskHistoryStatusEnum.is_finished()`; typing it
  * against the generated status union keeps a renamed or added status a compile
