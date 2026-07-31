@@ -10,6 +10,10 @@
 # Per-deployment inputs (database password, Grafana token, PMM/Nomad endpoints,
 # SECRET_KEY) arrive as environment variables, which outrank this file. See
 # sidecar/README.md for the contract.
+#
+# TLS verification is off on every PMM-facing client below: PMM terminates TLS
+# with a self-signed certificate the side-car cannot validate from inside the
+# container.
 
 default:
   # PMM's nginx forwards the browser's Host verbatim and PMM's public address is
@@ -34,8 +38,8 @@ default:
   PMM:
     ENDPOINT: https://pmm-server:8443
     VERIFY_SSL: false
-    # Task-lifecycle annotations onto PMM. create_annotation returns early when
-    # API_KEY is unset, so this stays a silent no-op until a token is supplied.
+    # Task-lifecycle annotations onto PMM. create_pmm_annotation returns early
+    # when API_KEY is unset, so this stays a silent no-op until a token is supplied.
     ANNOTATIONS_ENABLED: true
 
   CELERY:
