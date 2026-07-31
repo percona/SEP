@@ -122,7 +122,21 @@ class TestSettingDeclaration:
             "SEPSettings.SYNC_REFRESH_TIME",
         } == Settings().SETTINGS_OVERRIDE_ALLOWED_KEYS
 
-    @pytest.mark.parametrize("entry", ["no-dot", ".KEY", "Class.", "Too.Many.Dots", ""])
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "no-dot",
+            ".KEY",
+            "Class.",
+            "Too.Many.Dots",
+            "",
+            "Settings.LOGGING ",
+            " Settings.LOGGING",
+            "Settings. LOGGING",
+            "Settings.LOG GING",
+            "Settings.LOGGING\t",
+        ],
+    )
     def test_rejects_malformed_entry(
         self, monkeypatch: pytest.MonkeyPatch, entry: str
     ) -> None:

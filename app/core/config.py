@@ -458,17 +458,28 @@ class Settings(BaseYamlSettings):
         here: this module cannot import the per-service settings classes. An
         entry naming neither resolves to nothing and therefore allows nothing.
 
+        Whitespace anywhere in an entry is rejected rather than tolerated. No
+        class or key token can legitimately contain any, and an entry carrying
+        it fails the lookup while reading correct, so an operator who meant to
+        unlock a key would instead be silently locked out of it.
+
         :param value: The configured entry set, or ``None`` when unrestricted.
         :return: The validated entry set unchanged.
-        :raises ValueError: If any entry is not exactly one class token, one
-            dot, and one non-empty key token.
+        :raises ValueError: If any entry carries whitespace, or is not exactly
+            one class token, one dot, and one non-empty key token.
         """
         if value is None:
             return value
         malformed: list[str] = []
         for entry in value:
             class_token, dot, key_token = entry.partition(".")
-            if not class_token or not dot or not key_token or "." in key_token:
+            if (
+                not class_token
+                or not dot
+                or not key_token
+                or "." in key_token
+                or any(char.isspace() for char in entry)
+            ):
                 malformed.append(entry)
         if malformed:
             raise ValueError(
