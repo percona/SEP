@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.apps.inventory.routes module."""
 
+import json
 import re
 from unittest.mock import AsyncMock
 
@@ -25,6 +26,7 @@ from pydantic import SecretStr
 from app.core.config import settings
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.core.requests import RemoteAPI
+from app.core.security import crypto_serializer
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.apps.inventory.deps import AvailableSyncer, get_syncers
 from app.sep.deps import (
@@ -618,6 +620,19 @@ def test_table_delete(test_client, created_table, mock_inventory_api_dep):
     assert response.headers["location"] == f"/inventory/schemas/{returned_schema_id}"
 
 
+def _flashed_texts(response) -> list[str]:
+    """Return the flash-message texts the response serialised into the cookie.
+
+    The messages middleware round-trips the queue through a signed ``messages``
+    cookie, so this is the only place a redirect's user-visible text is
+    observable from a test.
+    """
+    cookie = response.cookies.get("messages")
+    if cookie is None:
+        return []
+    return [message["t"] for message in json.loads(crypto_serializer.loads(cookie))]
+
+
 class TestCheckServiceConnectivity:
     """Test the check_service_connectivity route."""
 
@@ -692,6 +707,9 @@ class TestCheckServiceConnectivity:
             sep_app.dependency_overrides.pop(get_created_service, None)
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{service.id}"
+        assert _flashed_texts(response) == [
+            f"Connectivity check passed for {service.name}"
+        ]
         mock_tasks_api_dep.get.assert_awaited_once_with("/hosts/")
         mock_tasks_api_dep.post.assert_awaited_once_with(
             "/connectivity-check/",
@@ -758,6 +776,11 @@ class TestCheckServiceConnectivity:
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+        assert _flashed_texts(response) == [
+            f"Connectivity check failed for {mysql_service.name}: "
+            f"no executor host is registered for address "
+            f"{mysql_service.node.address!r} (inventory node {mysql_service.node.name!r})."
+        ]
         mock_tasks_api_dep.post.assert_not_awaited()
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep")
@@ -771,6 +794,10 @@ class TestCheckServiceConnectivity:
             follow_redirects=False,
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert _flashed_texts(response) == [
+            f"Connectivity check failed for {mysql_service.name}: "
+            "could not reach the Tasks API"
+        ]
         mock_tasks_api_dep.post.assert_not_awaited()
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep")
@@ -795,6 +822,9 @@ class TestCheckServiceConnectivity:
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+        assert _flashed_texts(response) == [
+            f"Connectivity check failed for {mysql_service.name}: Nomad unavailable"
+        ]
         mock_tasks_api_dep.post.assert_not_awaited()
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep", "_mock_executor_hosts")
@@ -813,6 +843,9 @@ class TestCheckServiceConnectivity:
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+        assert _flashed_texts(response) == [
+            f"Connectivity check failed for {mysql_service.name}: Connection refused"
+        ]
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep", "_mock_executor_hosts")
     def test_connectivity_check_tasks_api_error(
@@ -826,6 +859,10 @@ class TestCheckServiceConnectivity:
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+        assert _flashed_texts(response) == [
+            f"Connectivity check failed for {mysql_service.name}: "
+            "could not reach the Tasks API"
+        ]
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep")
     def test_connectivity_check_service_without_node(
@@ -838,6 +875,10 @@ class TestCheckServiceConnectivity:
             follow_redirects=False,
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert _flashed_texts(response) == [
+            f"Connectivity check failed for {mysql_service.name}: "
+            "missing node or port information"
+        ]
         mock_tasks_api_dep.post.assert_not_awaited()
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep")
@@ -851,6 +892,10 @@ class TestCheckServiceConnectivity:
             follow_redirects=False,
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert _flashed_texts(response) == [
+            f"Connectivity check failed for {mysql_service.name}: "
+            "missing node or port information"
+        ]
         mock_tasks_api_dep.post.assert_not_awaited()
 
     @pytest.mark.parametrize(
@@ -881,6 +926,9 @@ class TestCheckServiceConnectivity:
             sep_app.dependency_overrides.pop(get_created_service, None)
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{service.id}"
+        assert _flashed_texts(response) == [
+            f"Connectivity check is not supported for {service_type.name} services"
+        ]
         mock_tasks_api_dep.post.assert_not_awaited()
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep", "_mock_executor_hosts")
@@ -898,6 +946,9 @@ class TestCheckServiceConnectivity:
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/inventory/services/{mysql_service.id}"
+        assert _flashed_texts(response) == [
+            f"Connectivity check failed for {mysql_service.name}: Nomad unavailable"
+        ]
 
     @pytest.mark.parametrize(
         "service_type",

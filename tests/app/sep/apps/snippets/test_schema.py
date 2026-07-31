@@ -54,6 +54,19 @@ def test_static_schema_has_no_forms_and_keyed_columns():
     assert "isApproved" in column_keys
 
 
+def test_static_schema_declares_every_capability_unsupported():
+    """Declare every capability explicitly as unsupported.
+
+    Chaining, scheduling and alerting were never offered by the legacy Jinja UI
+    either, so the declaration records their absence rather than a gap.
+    """
+    capabilities = SNIPPETS_PLUGIN_SCHEMA.capabilities
+    assert capabilities is not None
+    assert capabilities.chaining is False
+    assert capabilities.scheduling is False
+    assert capabilities.alert_on_fail is False
+
+
 def _execution_section(schema):
     return next(section for section in schema.forms if section.title == "Execution")
 
