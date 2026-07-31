@@ -24,7 +24,11 @@ from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
 from app.sep.crud import SEPPluginPeriodicTaskManager
 from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
-from app.sep.periodic_tasks import apply_effective_enabled, seed_app_periodic_task_rows
+from app.sep.periodic_tasks import (
+    apply_effective_enabled,
+    release_unowned_task_gating,
+    seed_app_periodic_task_rows,
+)
 
 SNIPPETS_TASK = "sep__sync_snippets"
 ALERTS_TASK = "sep__backup_alert_config"
@@ -387,3 +391,72 @@ class TestApplyEffectiveEnabled:
 
         with pytest.raises(RuntimeError, match="beat down"):
             await apply_effective_enabled(session, celery_beat_session)
+
+
+@pytest.mark.asyncio
+class TestReleaseUnownedTaskGating:
+    """Cover :func:`app.sep.periodic_tasks.release_unowned_task_gating`."""
+
+    @staticmethod
+    def _unowned_schedule() -> list[SystemPeriodicTaskSchedule]:
+        """Build a one-entry system-task list carrying no ``owner_app_key``."""
+        return [
+            SystemPeriodicTaskSchedule(
+                schedule=IntervalSchedule(every=10, period=Period.MINUTES),
+                tasks=[
+                    SystemPeriodicTaskData(
+                        name=SNIPPETS_TASK,
+                        task_name="app.sep.snippets.celery.sync_snippets",
+                    ),
+                ],
+            ),
+        ]
+
+    async def test_stale_disable_is_released(
+        self, celery_beat_session: AsyncSession
+    ) -> None:
+        """Enable an unowned schedule's beat row when a past gate left it off."""
+        await _seed_periodic_task(celery_beat_session, SNIPPETS_TASK, enabled=False)
+
+        await release_unowned_task_gating(celery_beat_session, self._unowned_schedule())
+
+        task = await BasePeriodicTaskManager.first(
+            celery_beat_session, name=SNIPPETS_TASK
+        )
+        assert task.enabled is True
+
+    async def test_owned_schedule_is_left_alone(
+        self, celery_beat_session: AsyncSession
+    ) -> None:
+        """Leave an owned schedule to ``apply_effective_enabled`` rather than forcing it."""
+        await _seed_periodic_task(celery_beat_session, ALERTS_TASK, enabled=False)
+        owned = [
+            SystemPeriodicTaskSchedule(
+                schedule=IntervalSchedule(every=10, period=Period.MINUTES),
+                tasks=[
+                    SystemPeriodicTaskData(
+                        name=ALERTS_TASK,
+                        task_name="app.sep.apps.alerts.celery.backup_alert_config",
+                        owner_app_key="alerts",
+                    ),
+                ],
+            ),
+        ]
+
+        await release_unowned_task_gating(celery_beat_session, owned)
+
+        task = await BasePeriodicTaskManager.first(
+            celery_beat_session, name=ALERTS_TASK
+        )
+        assert task.enabled is False
+
+    async def test_already_enabled_row_skips_the_write(
+        self, celery_beat_session: AsyncSession, mocker
+    ) -> None:
+        """Skip the commit (and the beat reload it signals) when nothing changes."""
+        await _seed_periodic_task(celery_beat_session, SNIPPETS_TASK, enabled=True)
+        commit_spy = mocker.spy(celery_beat_session, "commit")
+
+        await release_unowned_task_gating(celery_beat_session, self._unowned_schedule())
+
+        commit_spy.assert_not_called()

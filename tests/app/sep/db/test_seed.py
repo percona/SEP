@@ -35,7 +35,7 @@ from app.sep.apps.framework.registry import get_app_registry
 from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
-from app.sep.models import AppLifecycleEnum, AppState
+from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
 
 SNIPPETS_TASK = "sep__sync_snippets"
 ALERTS_TASK = "sep__backup_alert_config"
@@ -353,8 +353,10 @@ class TestInitSepDbPeriodicTaskGating:
     """Tests for the periodic-task gating wired into ``init_sep_db``."""
 
     @staticmethod
-    async def _seed_beat_row(beat_maker, name: str, task_name: str) -> None:
-        """Insert an enabled beat row so the gate has something to write through."""
+    async def _seed_beat_row(
+        beat_maker, name: str, task_name: str, *, enabled: bool = True
+    ) -> None:
+        """Insert a beat row so the gate has something to write through."""
         async with beat_maker() as session:
             schedule = IntervalSchedule(every=10, period=Period.MINUTES)
             session.add(schedule)
@@ -363,7 +365,7 @@ class TestInitSepDbPeriodicTaskGating:
                 PeriodicTask(
                     name=name,
                     task=task_name,
-                    enabled=True,
+                    enabled=enabled,
                     schedule_model=schedule,
                 )
             )
@@ -440,6 +442,50 @@ class TestInitSepDbPeriodicTaskGating:
         await self._seed_beat_row(
             beat_maker, SNIPPETS_TASK, "app.sep.snippets.celery.sync_snippets"
         )
+        self._patch_gate_session_makers(mocker, seed_maker, beat_maker)
+        mocker.patch.object(
+            seed_module.sep_settings,
+            "APPS",
+            [_plugin("snippets", enabled=False)],
+        )
+
+        await seed_module.init_sep_db()
+
+        async with seed_maker() as session:
+            rows = await SEPPluginPeriodicTaskManager.list(session)
+        assert SNIPPETS_TASK not in {r.periodic_task_name for r in rows}
+
+        async with beat_maker() as session:
+            task = await BasePeriodicTaskManager.first(session, name=SNIPPETS_TASK)
+        assert task.enabled is True
+
+    async def test_upgrade_releases_a_gate_left_by_the_previous_owner(
+        self, mocker, seed_maker, beat_maker
+    ) -> None:
+        """Enable a snippet-sync beat row an earlier owned regime left disabled.
+
+        An instance upgrading with the snippets app already disabled carries a
+        ``PeriodicTask.enabled = False`` written by the gate back when the schedule
+        was owned, plus its now-orphan wrapper row. Seeding drops the wrapper, which
+        leaves ``apply_effective_enabled`` nothing to iterate -- so without an
+        explicit release the stale ``False`` is permanent and ingestion never
+        restarts.
+        """
+        await self._seed_beat_row(
+            beat_maker,
+            SNIPPETS_TASK,
+            "app.sep.snippets.celery.sync_snippets",
+            enabled=False,
+        )
+        async with seed_maker() as session:
+            session.add(
+                SEPPluginPeriodicTask(
+                    periodic_task_name=SNIPPETS_TASK,
+                    app_key="snippets",
+                    user_enabled=True,
+                )
+            )
+            await session.commit()
         self._patch_gate_session_makers(mocker, seed_maker, beat_maker)
         mocker.patch.object(
             seed_module.sep_settings,
