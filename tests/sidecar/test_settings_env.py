@@ -193,6 +193,16 @@ def test_pmm_endpoint_reaches_the_client_and_the_grafana_provider():
     assert environment["AUTH__PROVIDER__GRAFANA__ENDPOINT"] == "https://h:1/graph"
 
 
+def test_pmm_endpoint_trailing_slash_does_not_double():
+    """Trim a trailing slash before appending the Grafana provider's prefix."""
+    environment = exported(
+        source_helper(SECRET_KEY="k", SEP_PMM_ENDPOINT="https://h:1/")
+    )
+
+    assert environment["PMM__ENDPOINT"] == "https://h:1"
+    assert environment["AUTH__PROVIDER__GRAFANA__ENDPOINT"] == "https://h:1/graph"
+
+
 def test_nomad_endpoint_is_forwarded_verbatim():
     """Forward the Nomad endpoint verbatim, since its credentials live in the URL."""
     endpoint = "https://a:b@h/nomad"

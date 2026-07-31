@@ -64,7 +64,10 @@ Already canonical, so they are passed straight through with no expansion:
 | `BASE_URL` | no* | The side-car's address as reachable from Nomad task executors. *Required when tasks download scripts or artifacts. |
 
 Any canonical variable can also be set directly — an explicit
-`TASKS__DATABASE__HOST` outranks the one derived from `SEP_DB_HOST`.
+`TASKS__DATABASE__HOST` outranks the one derived from `SEP_DB_HOST`. It overrides
+only itself, though: setting `SEP__DATABASE__PASSWORD` by hand leaves the other
+two services and `CELERY__BEAT_DBURI` on whatever `SEP_DB_PASSWORD` supplied, so
+prefer the deployment input when you want the value to fan out.
 
 ### Not deployment inputs
 

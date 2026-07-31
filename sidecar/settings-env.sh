@@ -54,8 +54,10 @@ if [[ -n ${SEP_GRAFANA_TOKEN:-} ]]; then
 fi
 
 if [[ -n ${SEP_PMM_ENDPOINT:-} ]]; then
-    : "${PMM__ENDPOINT:=${SEP_PMM_ENDPOINT}}"
-    : "${AUTH__PROVIDER__GRAFANA__ENDPOINT:=${SEP_PMM_ENDPOINT}/graph}"
+    # Trailing slash trimmed so the appended Grafana prefix cannot double it.
+    pmm_endpoint="${SEP_PMM_ENDPOINT%/}"
+    : "${PMM__ENDPOINT:=${pmm_endpoint}}"
+    : "${AUTH__PROVIDER__GRAFANA__ENDPOINT:=${pmm_endpoint}/graph}"
     export PMM__ENDPOINT AUTH__PROVIDER__GRAFANA__ENDPOINT
 fi
 

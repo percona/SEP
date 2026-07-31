@@ -72,6 +72,10 @@ jobs:
               - 'poetry.toml'
               - 'settings.yaml'
               - 'sidecar/settings.embedded.yaml'
+              - 'sidecar/settings-env.sh'
+              - 'sidecar/supervisord.conf'
+              - 'sidecar/healthcheck.sh'
+              - 'Makefile'
               - 'frontend/packages/api/specs/**'
             precommit:
               - '.pre-commit-config.yaml'
