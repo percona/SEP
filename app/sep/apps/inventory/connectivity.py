@@ -22,6 +22,7 @@ own infrastructure endpoints rather than an inventory service's database.
 import logging
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.core.exceptions import HTTPBadGatewayException, HTTPBadRequestException
 from app.core.requests import RemoteAPI
@@ -35,6 +36,7 @@ __all__ = ["probe_service_connectivity"]
 logger = logging.getLogger(__name__)
 
 _UNREACHABLE_TASKS_API = "could not reach the Tasks API"
+_UNPARSEABLE_PROBE_RESULT = "the Tasks API answered with an unrecognized result"
 
 
 def _failure(service: CreatedService, reason: str) -> str:
@@ -129,6 +131,14 @@ async def probe_service_connectivity(
             exc.detail,
         )
         raise HTTPBadGatewayException(_failure(service, exc.detail)) from exc
+    except ValidationError as exc:
+        logger.exception(
+            "Tasks API returned an unrecognized connectivity result for service %s",
+            service.id,
+        )
+        raise HTTPBadGatewayException(
+            _failure(service, _UNPARSEABLE_PROBE_RESULT)
+        ) from exc
     except Exception as exc:
         logger.exception("Connectivity check failed for service %s", service.id)
         raise HTTPBadGatewayException(

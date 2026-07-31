@@ -247,6 +247,7 @@ async def test_maps_unreachable_probe_onto_bad_gateway(mysql_service, tasks_api)
         await probe_service_connectivity(mysql_service, tasks_api)
 
     assert "timeout" not in exc_info.value.detail
+    assert "could not reach" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -260,3 +261,35 @@ async def test_maps_malformed_upstream_payload_onto_bad_gateway(
         await probe_service_connectivity(mysql_service, tasks_api)
 
     assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+
+
+@pytest.mark.asyncio
+async def test_distinguishes_malformed_payload_from_unreachable_tasks_api(
+    mysql_service, tasks_api
+):
+    """Report a reached-but-unparseable answer differently from an unreachable API.
+
+    Both causes are documented as 502s, so the status alone cannot tell them
+    apart; only the detail distinguishes a response-shape regression from a
+    transport failure.
+    """
+    tasks_api.post.return_value = {"unexpected": "shape"}
+
+    with pytest.raises(HTTPBadGatewayException) as exc_info:
+        await probe_service_connectivity(mysql_service, tasks_api)
+
+    assert "could not reach" not in exc_info.value.detail
+    assert "unrecognized result" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_maps_empty_upstream_body_onto_unrecognized_result(
+    mysql_service, tasks_api
+):
+    """Treat a 204-style empty body as an unrecognized result, not a reachability failure."""
+    tasks_api.post.return_value = None
+
+    with pytest.raises(HTTPBadGatewayException) as exc_info:
+        await probe_service_connectivity(mysql_service, tasks_api)
+
+    assert "unrecognized result" in exc_info.value.detail
