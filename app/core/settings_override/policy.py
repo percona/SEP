@@ -13,33 +13,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Answer which ``(settings class, key)`` pairs a deployment leaves overridable.
+"""Answer which ``(settings class, key)`` pairs stay overridable.
 
-``Settings.SETTINGS_OVERRIDE_ALLOWED_KEYS`` drives every predicate here. ``None``
--- the default -- means *unrestricted*: every classification behaves exactly as
-if this module did not exist. A set activates a **default-locked allowlist**:
-only the pairs it names stay overridable, and anything else -- including a field
-marked overridable by later work -- is refused until an entry deliberately
-allows it.
+``Settings.SETTINGS_OVERRIDE_ALLOWED_KEYS`` drives every predicate here.
+``None``, the default, means unrestricted: every classification behaves exactly
+as if this module did not exist. A set activates a default-locked allowlist, so
+only the pairs it names stay overridable. Anything else is refused until an
+entry deliberately allows it, including a field marked overridable by later
+work.
 
 Each entry is spelled ``"<SettingsClassName>.<KEY>"``, where the class token is
 the Pydantic class ``__name__`` (the value of a
 :class:`~app.core.settings_override.models.SettingClassEnum` member) and the key
 token is either a top-level field name or a ``__``-delimited canonical nested
-path -- the same spelling an override row carries.
-
-**The allowlist only restricts; it never grants.** Every gate composes as
-"statically overridable AND allowed", so naming a field that is already not
-overridable changes nothing.
-
-**Choosing entries.** A key belongs in a hardened deployment's allowlist only
-when it configures user-facing product behaviour an administrator plausibly
-manages at runtime -- feature toggles, alerting policy, data retention, display
-options -- *and* is not coupled to anything the deployment provisions:
-endpoints, credentials, TLS material, sessions, brokers, executors, or internal
-lifecycle machinery. When in doubt, leave it out; a locked key is recoverable by
-editing the deployment's configuration, an unlocked one is a topology an
-operator can break from the UI.
+path, the same spelling an override row carries.
 """
 
 __all__ = ["has_allowed_key_under", "is_key_allowed", "is_restriction_active"]
@@ -52,8 +39,8 @@ from app.core.settings_override.models import SettingClassEnum
 def _allowed_entries() -> frozenset[str] | None:
     """Return the configured entries as a hashable set, or ``None`` when unset.
 
-    :return: The entry set projected to a ``frozenset``, or ``None`` when the
-        deployment places no restriction.
+    :return: The entry set projected to a ``frozenset``, or ``None`` when
+        ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` places no restriction.
     """
     # circular import: config imports registry imports policy (this module)
     from app.core.config import settings
@@ -81,8 +68,8 @@ def _allowed_keys_for(setting_class: SettingClassEnum) -> frozenset[str] | None:
     """Return the keys allowed on one settings class, or ``None`` when unset.
 
     :param setting_class: The settings class identifier to look up.
-    :return: The allowed keys, or ``None`` when the deployment places no
-        restriction (which every caller reads as "allow everything").
+    :return: The allowed keys, or ``None`` when ``SETTINGS_OVERRIDE_ALLOWED_KEYS``
+        places no restriction, which every caller reads as "allow everything".
     """
     entries = _allowed_entries()
     if entries is None:
@@ -91,7 +78,7 @@ def _allowed_keys_for(setting_class: SettingClassEnum) -> frozenset[str] | None:
 
 
 def is_restriction_active() -> bool:
-    """Return whether the deployment restricts which settings may be overridden.
+    """Return whether ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` restricts anything.
 
     :return: ``True`` when an allowlist is configured, ``False`` when every
         statically overridable field stays overridable.
@@ -103,10 +90,10 @@ def is_key_allowed(setting_class: SettingClassEnum, key: str) -> bool:
     """Return whether one settings key may be overridden.
 
     :param setting_class: The settings class the key belongs to.
-    :param key: The canonical override key -- a top-level field name or a
+    :param key: The canonical override key: a top-level field name or a
         ``__``-delimited nested path.
-    :return: ``True`` when the deployment is unrestricted or the allowlist names
-        this exact pair.
+    :return: ``True`` when no allowlist is configured, or when it names this
+        exact pair.
     """
     allowed = _allowed_keys_for(setting_class)
     return allowed is None or key in allowed
@@ -121,8 +108,8 @@ def has_allowed_key_under(setting_class: SettingClassEnum, parent: str) -> bool:
 
     :param setting_class: The settings class the parent belongs to.
     :param parent: The top-level field name of the nested parent.
-    :return: ``True`` when the deployment is unrestricted, an entry names the
-        parent itself, or an entry names a key beneath it.
+    :return: ``True`` when no allowlist is configured, when an entry names the
+        parent itself, or when an entry names a key beneath it.
     """
     allowed = _allowed_keys_for(setting_class)
     if allowed is None:
