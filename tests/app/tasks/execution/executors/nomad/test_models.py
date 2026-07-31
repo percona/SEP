@@ -94,6 +94,7 @@ WITHHELD_PARTIAL_FRAME_EOF_OFFSET = 12  # raw EOF of "ok\ncard=41"
 WITHHELD_PARTIAL_RESUME_OFFSET = 5  # cursor rolled back over the withheld "card=41"
 MULTIBYTE_LINE_EOF_OFFSET = 12  # raw EOF of "café\n€uro" (6 + 6 UTF-8 bytes)
 MULTIBYTE_WITHHELD_BYTES = 6  # raw byte length of the withheld "€uro"
+NEWLINELESS_TAIL_FRAME_EOF_OFFSET = 21  # raw EOF of "card=4111111111111111"
 
 
 def _redact_card_token(text: str, _entities: set[PIIEntity]) -> str:
@@ -2401,23 +2402,35 @@ class TestNomadLogStreaming:
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
-    @patch.object(NomadExecutor, "_consume_nomad_log_stream", new_callable=AsyncMock)
-    async def test_push_logs_flushes_withheld_tail_on_stream_end(
-        self, mock_consume, mock_anonymize
-    ):
+    async def test_push_logs_flushes_withheld_tail_on_stream_end(self, mock_anonymize):
         """Assert a newline-less withheld tail is flushed before the end sentinel."""
         mock_anonymize.side_effect = _redact_card_token
 
-        async def fake_consume(**kwargs):
-            kwargs["pending"].extend(b"card=4111111111111111")
-            return (_NOMAD_LOG_STREAM_SOCK_TIMEOUT, kwargs["alloc"], None)
+        async def iter_chunks():
+            yield (
+                self._nomad_log_frame(
+                    msg="card=4111111111111111",
+                    offset=NEWLINELESS_TAIL_FRAME_EOF_OFFSET,
+                ),
+                None,
+            )
+            raise TimeoutError
 
-        mock_consume.side_effect = fake_consume
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = iter_chunks
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
         executor = _build_executor()
         queue = asyncio.Queue()
 
-        with patch.object(executor, "_log_stream_timeout"):
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx),
+            patch.object(executor, "_log_stream_timeout"),
+        ):
             await executor._push_logs_to_queue(
                 self._alloc_for_logs(),
                 "run-script",
@@ -3927,7 +3940,7 @@ class TestDrainTerminalLogs:
         history.anonymize_mask = PIIEntity.CREDIT_CARD.value
         history.status = TaskHistoryStatusEnum.SUCCESS
         executor = _build_executor(
-            terminal_log_drain_max_attempts=self.DRAIN_MAX_ATTEMPTS
+            terminal_log_drain_max_attempts=self.SHORT_DRAIN_MAX_ATTEMPTS
         )
 
         await executor._persist_nomad_task_logs(
@@ -3942,7 +3955,7 @@ class TestDrainTerminalLogs:
         )
         assert stdout == "tail1\ncard=[REDACTED]"
         assert "4111" not in stdout
-        assert mock_sleep.await_count == self.DRAIN_MAX_ATTEMPTS
+        assert mock_sleep.await_count == self.SHORT_DRAIN_MAX_ATTEMPTS
 
     @pytest.mark.asyncio
     @patch(
@@ -4052,6 +4065,53 @@ class TestDrainTerminalLogs:
             session, history.id, "run-script", TaskLogType.STDOUT
         )
         assert content == "partial\n"
+        mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_max_attempts_zero_still_flushes_anonymized_tail(
+        self,
+        mock_nomad_cls,
+        mock_sleep,
+        mock_anonymize,
+        session,
+        created_task_with_history,
+    ):
+        """Assert AC3's no-loss promise holds even when the drain is disabled.
+
+        ``max_attempts=0`` skips the polling loop entirely, but the terminal
+        flush is gated on whether withholding was possible at all, not on the
+        drain's polling budget -- so an anonymized step's newline-less tail
+        must still be persisted rather than dropped.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = _redact_card_token
+        mock_backend.client.stream_logs.stream.side_effect = self._growing_stream(
+            {("run-script", TaskLogType.STDOUT): ["card=4111111111111111"]}
+        )
+        history = created_task_with_history
+        history.anonymize_mask = PIIEntity.CREDIT_CARD.value
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._terminal_alloc("run-script"),
+            previous_allocation_id="alloc-1",
+        )
+
+        content = await self._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        assert content == "card=[REDACTED]"
+        assert "4111" not in content
         mock_sleep.assert_not_awaited()
 
     @pytest.mark.asyncio

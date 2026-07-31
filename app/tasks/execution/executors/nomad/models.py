@@ -788,8 +788,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         Presidio and would escape redaction. The trailing partial line is
         therefore withheld from anonymization -- the returned Nomad offset is
         rolled back by its raw byte length so it is simply re-fetched next cycle
-        and joined with the new bytes. The writer's producer-offset dedup makes
-        that overlapping re-fetch idempotent. ``flush_partial`` disables the
+        and joined with the new bytes. That re-fetch is idempotent because the
+        withheld bytes were never emitted, so ``producer_offset`` never advanced
+        past them; the writer's dedup covers a different case -- a retry after a
+        concurrent state update. ``flush_partial`` disables the
         withholding so a terminal drain can emit a newline-less final line
         instead of losing it forever.
 
@@ -841,9 +843,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if anonymizing and not flush_partial:
             complete, remainder = split_complete_lines(raw_buf)
             withheld = len(remainder)
-            # Two byte spaces must not be mixed: the withheld remainder is
-            # measured in raw Nomad bytes for the cursor rollback, while the
-            # emitted delta is measured in post-anonymization bytes below.
             nomad_offset -= withheld
         else:
             complete = raw_buf
@@ -1166,9 +1165,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 for log_type in TaskLogType
                 if task_logs[step].get(log_type)
             }
-            # A stream withholding a partial line looks quiet (empty delta) but
-            # is not done: keep polling so ``logmon`` can deliver the newline
-            # that completes the line rather than flushing a fragment early.
             withholding = {
                 (step, log_type)
                 for step in task_logs
@@ -1188,9 +1184,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 break
 
         # Terminal flush: emit any trailing line that never received a newline.
-        # Runs on both loop-exit branches so a withheld remainder is never lost,
-        # but is itself part of the drain -- ``max_attempts=0`` disables it too.
-        if not self.terminal_log_drain_max_attempts:
+        # Runs on both loop-exit branches so a withheld remainder is never lost.
+        # Gated on whether withholding was even possible, not on the drain's
+        # polling budget -- ``_should_anonymize`` requires truthy entities, so
+        # this is an exact substitution that keeps AC3's no-loss guarantee
+        # independent of ``terminal_log_drain_max_attempts``.
+        if not queue_item.anonymized_entities:
             return
         final_offsets = await self._build_initial_log_offsets(
             writer_session, queue_item.id, alloc_epoch
@@ -1512,16 +1511,21 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     ) -> None:
         """Push logs to the asynchronous queue for processing.
 
+        Anonymization runs on complete lines only, so the trailing partial line
+        of each frame is withheld in ``pending`` and carried across reconnects
+        until a newline completes it (see :meth:`_decode_live_frame`). When the
+        stream ends with a withheld remainder still pending -- a process
+        exiting without a trailing newline -- it is redacted and pushed to the
+        queue before the ``msg=None`` sentinel, so it is delivered rather than
+        dropped.
+
         :param alloc: The allocation details containing the task states.
-        :type alloc: dict[str, Any]
         :param step: The task step name.
-        :type step: str
         :param log_type: The type of log to stream ('stdout' or 'stderr').
-        :type log_type: TaskLogType
         :param queue: The asyncio queue to push log lines into.
-        :type queue: asyncio.Queue
         :param start_offset: The offset to start reading logs from. Defaults to 0.
-        :type start_offset: int
+        :param anonymize_entities: PII entities to anonymize in run-script /
+            step1 output. When ``None``, no anonymization is performed.
         """
         timeout = ClientTimeout(sock_read=self.log_socket_read_timeout)
         params = {
@@ -1531,8 +1535,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             "offset": start_offset,
         }
         state = "running"
-        # Trailing partial line withheld from anonymization, carried across
-        # reconnects so a PII token split at a frame boundary is redacted whole.
         pending = bytearray()
         while state == "running":
             alloc_id = alloc["ID"]
@@ -1579,8 +1581,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     start_offset,
                 )
                 break
-        # Flush a final line that never received a newline so the withheld tail
-        # is redacted and delivered rather than dropped when the stream ends.
         if pending:
             decoded_msg = _decode_and_anonymize(
                 bytes(pending), anonymize_entities or None
@@ -1741,8 +1741,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                             pending, msg, step, offset, anonymize_entities
                         )
                         if decoded_msg is None:
-                            # Whole buffer is a partial line; withhold it until a
-                            # later frame supplies the newline.
                             continue
                         await queue.put(
                             TaskLog(
