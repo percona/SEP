@@ -26,7 +26,7 @@ from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Self, TypeVar
+from typing import Annotated, Any, ClassVar, Literal, Self, TypeVar
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, FastAPI
@@ -41,6 +41,7 @@ from pydantic import (
     model_validator,
     PositiveInt,
     SecretStr,
+    StringConstraints,
     validate_call,
 )
 from pydantic_settings import (
@@ -344,6 +345,8 @@ class PMMSettings(BaseLowercaseModel):
 
 _INTERNAL_TOKEN_LABEL = b"sep-internal-token"
 
+SettingsOverrideKey = Annotated[str, StringConstraints(pattern=r"^[^\s.]+\.[^\s.]+$")]
+
 
 class Settings(BaseYamlSettings):
     """Define the main application settings.
@@ -379,10 +382,13 @@ class Settings(BaseYamlSettings):
     :param SETTINGS_OVERRIDE_ALLOWED_KEYS: The exhaustive set of settings keys the
         override API may write, each spelled ``"<SettingsClassName>.<KEY>"`` (the
         key being a top-level field name or a ``__``-delimited nested path).
-        ``None`` -- the default -- leaves every deployment unrestricted. A set
-        activates a default-locked allowlist: any pair it does not name is
-        refused. The allowlist only ever *restricts*: a field that is already not
-        overridable stays that way even when listed.
+        ``None``, the default, places no restriction. A set activates a
+        default-locked allowlist: any pair it does not name is refused. The
+        allowlist only ever *restricts*: a field that is already not overridable
+        stays that way even when listed. Whether the named class and field exist
+        is not checked at load time, so a typo'd entry allows nothing rather than
+        raising; whitespace anywhere in an entry is rejected outright, since such
+        an entry reads correct but matches nothing.
     """
 
     CELERY: CeleryOptions
@@ -399,7 +405,9 @@ class Settings(BaseYamlSettings):
     PMM: PMMSettings = hot_field(PMMSettings())
     SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
     SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
-    SETTINGS_OVERRIDE_ALLOWED_KEYS: set[str] | None = not_overridable_field(None)
+    SETTINGS_OVERRIDE_ALLOWED_KEYS: set[SettingsOverrideKey] | None = (
+        not_overridable_field(None)
+    )
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
     @computed_field
@@ -446,45 +454,6 @@ class Settings(BaseYamlSettings):
         if value.total_seconds() <= 0:
             raise ValueError(
                 "SETTINGS_OVERRIDE_REFRESH_INTERVAL must be a positive duration"
-            )
-        return value
-
-    @field_validator("SETTINGS_OVERRIDE_ALLOWED_KEYS")
-    @classmethod
-    def _validate_allowed_key_entries(cls, value: set[str] | None) -> set[str] | None:
-        """Reject entries that are not ``<SettingsClassName>.<KEY>`` shaped.
-
-        Whether the named class and field *exist* is deliberately not checked
-        here: this module cannot import the per-service settings classes. An
-        entry naming neither resolves to nothing and therefore allows nothing.
-
-        Whitespace anywhere in an entry is rejected rather than tolerated. No
-        class or key token can legitimately contain any, and an entry carrying
-        it fails the lookup while reading correct, so an operator who meant to
-        unlock a key would instead be silently locked out of it.
-
-        :param value: The configured entry set, or ``None`` when unrestricted.
-        :return: The validated entry set unchanged.
-        :raises ValueError: If any entry carries whitespace, or is not exactly
-            one class token, one dot, and one non-empty key token.
-        """
-        if value is None:
-            return value
-        malformed: list[str] = []
-        for entry in value:
-            class_token, dot, key_token = entry.partition(".")
-            if (
-                not class_token
-                or not dot
-                or not key_token
-                or "." in key_token
-                or any(char.isspace() for char in entry)
-            ):
-                malformed.append(entry)
-        if malformed:
-            raise ValueError(
-                "SETTINGS_OVERRIDE_ALLOWED_KEYS entries must be spelled "
-                f"'<SettingsClassName>.<KEY>'; got {sorted(malformed)}"
             )
         return value
 
