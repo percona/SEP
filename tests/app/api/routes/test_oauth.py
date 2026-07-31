@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from app.api.deps import RefreshTokenCookie
 from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.providers.grafana.models import GrafanaUser
+from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.auth.utils import get_user_model
 from app.main import app
 from app.sep.config import sep_settings
@@ -529,3 +530,160 @@ def test_grafana_spa_login_then_refresh(
 
     assert refreshed.status_code == status.HTTP_200_OK
     assert refreshed.json()["access_token"]
+
+
+EXCHANGE_PATH = "/api/oauth/session/exchange"
+
+
+@pytest.fixture
+def _ambient_exchange(grafana_mock, mocker):
+    """Enable ambient SSO and point the Bearer path at the real Grafana user model."""
+    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+    mocker.patch("app.api.deps.User", GrafanaUser)
+
+
+@pytest.mark.usefixtures("_ambient_exchange")
+class TestSpaSessionExchange:
+    """Exercise ``POST /api/oauth/session/exchange`` end to end through the app."""
+
+    def test_success_returns_a_short_lived_token(self, test_client, grafana_mock):
+        """Assert a valid ambient session is exchanged for a bearer plus its TTL."""
+        test_client.cookies.set("grafana_session", "ambient")
+
+        response = test_client.post(EXCHANGE_PATH)
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["access_token"]
+        assert body["expires_in"] == grafana_mock.exchange_token_max_age.total_seconds()
+
+    def test_sets_no_cookie_at_all(self, test_client):
+        """Assert the exchange sets no cookie of any name, refresh or otherwise."""
+        test_client.cookies.set("grafana_session", "ambient")
+
+        response = test_client.post(EXCHANGE_PATH)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers.get_list("set-cookie") == []
+
+    def test_response_is_not_cacheable(self, test_client):
+        """Assert the bearer is not stored by an intermediary or the browser."""
+        test_client.cookies.set("grafana_session", "ambient")
+
+        response = test_client.post(EXCHANGE_PATH)
+
+        assert response.headers["cache-control"] == "no-store"
+
+    def test_body_carries_no_refresh_token(self, test_client):
+        """Assert no refresh credential is issued on the exchange path."""
+        test_client.cookies.set("grafana_session", "ambient")
+
+        response = test_client.post(EXCHANGE_PATH)
+
+        assert "refresh_token" not in response.json()
+
+    def test_absent_session_returns_401(self, test_client):
+        """Assert a request with no ambient cookie is denied."""
+        response = test_client.post(EXCHANGE_PATH)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.headers.get_list("set-cookie") == []
+
+    def test_grafana_rejects_the_session_returns_401(self, test_client, grafana_mock):
+        """Assert a Grafana-rejected session is denied."""
+        grafana_mock.get_current_user.side_effect = HTTPUnauthorizedException()
+        test_client.cookies.set("grafana_session", "stale")
+
+        response = test_client.post(EXCHANGE_PATH)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_grafana_unreachable_fails_closed(self, test_client, grafana_mock):
+        """Assert an upstream outage denies with 401 rather than leaking a 502.
+
+        An absent session and a Grafana outage are deliberately
+        indistinguishable to the caller, and neither may yield a token.
+        """
+        grafana_mock.get_current_user.side_effect = GrafanaException()
+        test_client.cookies.set("grafana_session", "ambient")
+
+        response = test_client.post(EXCHANGE_PATH)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "access_token" not in response.json()
+
+    def test_exchange_token_authenticates_an_api_call(self, test_client):
+        """Assert the minted bearer is accepted by an authentication-gated route."""
+        test_client.cookies.set("grafana_session", "ambient")
+        token = test_client.post(EXCHANGE_PATH).json()["access_token"]
+
+        gated = test_client.get(
+            "/api/config/alerts", headers={"Authorization": f"Bearer {token}"}
+        )
+
+        assert gated.status_code == status.HTTP_200_OK
+
+    def test_an_unexchanged_request_is_refused_by_the_same_route(self, test_client):
+        """Assert the gated route rejects a caller holding no bearer."""
+        gated = test_client.get("/api/config/alerts")
+
+        assert gated.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @pytest.mark.parametrize("role", ["Editor", "Viewer"])
+    def test_non_admin_role_is_refused_by_an_admin_gated_endpoint(
+        self, test_client, grafana_mock, role
+    ):
+        """Assert a non-admin Grafana role gains no admin surface via the exchange.
+
+        The admin-granted direction is asserted against ``get_current_admin`` in
+        ``tests/app/api/test_deps.py``: every admin-gated route under
+        ``app/api`` serializes through ``response_model=User``, which binds to
+        the Casdoor model at import and cannot represent a ``GrafanaUser``.
+        """
+        grafana_mock.get_current_user_orgs.return_value = [
+            {"orgId": 1, "name": "Main Org.", "role": role}
+        ]
+        test_client.cookies.set("grafana_session", "ambient")
+        token = test_client.post(EXCHANGE_PATH).json()["access_token"]
+
+        listed = test_client.get(
+            "/api/users/", headers={"Authorization": f"Bearer {token}"}
+        )
+
+        assert listed.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_spa_session_exchange_toggle_off_returns_401(test_client, grafana_mock):
+    """Assert the exchange is denied when ambient SSO is disabled (the default)."""
+    test_client.cookies.set("grafana_session", "ambient")
+
+    response = test_client.post(EXCHANGE_PATH)
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_spa_session_login_contract_survives_the_extraction(
+    test_client, grafana_mock, mocker
+):
+    """Assert ``POST /session`` is byte-compatible after the shared-read extraction.
+
+    ``oauth_token_from_session`` and the new exchange grant now share one
+    ambient-session read; this pins the sibling route's response shape and its
+    refresh cookie against drift.
+    """
+    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+    test_client.cookies.set("grafana_session", "ambient")
+
+    response = test_client.post("/api/oauth/session")
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["access_token"]
+    assert "expires_in" in body
+    assert "refresh_token" not in body
+    refresh_headers = _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(refresh_headers) == 1
+    assert "HttpOnly" in refresh_headers[0]
+    assert "Path=/api/oauth" in refresh_headers[0]
