@@ -214,6 +214,38 @@
         "title": "AppStateWrite",
         "type": "object"
       },
+      "BatchApprovalResponse": {
+        "description": "Successful response for the batch-approve endpoint.\n\n:param approved: Filenames whose approval state was toggled by this\n    request (newly approved as a result of the call).\n:type approved: list[str]\n:param skipped_already_approved: Filenames that were already approved\n    when the call started; the request is treated as a soft-skip\n    (idempotent).\n:type skipped_already_approved: list[str]",
+        "properties": {
+          "approved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approved",
+            "type": "array"
+          },
+          "count": {
+            "description": "Return the number of newly approved snippets.\n\n:return: Length of ``approved``.\n:rtype: int",
+            "readOnly": true,
+            "title": "Count",
+            "type": "integer"
+          },
+          "skipped_already_approved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped Already Approved",
+            "type": "array"
+          }
+        },
+        "required": [
+          "approved",
+          "skipped_already_approved",
+          "count"
+        ],
+        "title": "BatchApprovalResponse",
+        "type": "object"
+      },
       "ConnectivityCheckRequest": {
         "description": "Carry the required set of services to probe.\n\n:param targets: The services to probe. Must name at least one; duplicates are\n    collapsed so a shared probe (Tasks/Nomad) still runs once.",
         "properties": {
@@ -561,6 +593,37 @@
         "title": "PaginatedResponse[ServiceResponse]",
         "type": "object"
       },
+      "PaginatedResponse_SnippetResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SnippetResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[SnippetResponse]",
+        "type": "object"
+      },
       "PaginatedResponse_TaskHistoryResponse_": {
         "properties": {
           "items": {
@@ -621,6 +684,21 @@
           "limit"
         ],
         "title": "PaginatedResponse[dict[str, Any]]",
+        "type": "object"
+      },
+      "RefreshResponse": {
+        "description": "Represent the successful result of a manual snippets-refresh operation.\n\n:param refreshed_at: UTC timestamp at which the refresh completed.\n:type refreshed_at: datetime",
+        "properties": {
+          "refreshed_at": {
+            "format": "date-time",
+            "title": "Refreshed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refreshed_at"
+        ],
+        "title": "RefreshResponse",
         "type": "object"
       },
       "ReloadClassification": {
@@ -1029,6 +1107,171 @@
         "title": "SnippetApprovalFilter",
         "type": "string"
       },
+      "SnippetBatchApproveRequest": {
+        "description": "Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.",
+        "properties": {
+          "filenames": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Filenames",
+            "type": "array"
+          }
+        },
+        "required": [
+          "filenames"
+        ],
+        "title": "SnippetBatchApproveRequest",
+        "type": "object"
+      },
+      "SnippetResponse": {
+        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:type service_type: str | None\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "filename": {
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "interpreter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interpreter"
+          },
+          "is_approved": {
+            "title": "Is Approved",
+            "type": "boolean"
+          },
+          "md5_digest": {
+            "title": "Md5 Digest",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requires_sudo": {
+            "title": "Requires Sudo",
+            "type": "boolean"
+          },
+          "service_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Type"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "sudo_default": {
+            "title": "Sudo Default",
+            "type": "boolean"
+          },
+          "sudo_optional": {
+            "title": "Sudo Optional",
+            "type": "boolean"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "filename",
+          "title",
+          "description",
+          "size",
+          "md5_digest",
+          "is_approved",
+          "reason",
+          "requires_sudo",
+          "sudo_optional",
+          "sudo_default",
+          "created_at"
+        ],
+        "title": "SnippetResponse",
+        "type": "object"
+      },
+      "SnippetServiceTypesResponse": {
+        "description": "Carry the whole-dataset service-type facet for the list filter.\n\nSourced across every snippet (not the loaded page) so the list page's\nservice-type dropdown can offer every value the dataset contains.\n\n:param service_types: The sorted distinct non-blank service types.\n:param has_uncategorized: Whether any snippet has an absent or blank service\n    type (surfaced as the \"Uncategorized\" filter option).",
+        "properties": {
+          "has_uncategorized": {
+            "title": "Has Uncategorized",
+            "type": "boolean"
+          },
+          "service_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Service Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "service_types",
+          "has_uncategorized"
+        ],
+        "title": "SnippetServiceTypesResponse",
+        "type": "object"
+      },
       "SnippetSortDirection": {
         "description": "Enumerate the sort direction.\n\n:cvar ASC: Ascending order.\n:cvar DESC: Descending order.",
         "enum": [
@@ -1049,6 +1292,20 @@
         ],
         "title": "SnippetSortKey",
         "type": "string"
+      },
+      "SnippetsCapabilitiesResponse": {
+        "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.apps.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
+        "properties": {
+          "manual_sync_enabled": {
+            "title": "Manual Sync Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "manual_sync_enabled"
+        ],
+        "title": "SnippetsCapabilitiesResponse",
+        "type": "object"
       },
       "SourceEnum": {
         "const": "pmm",
@@ -1485,7 +1742,7 @@
           },
           "snippets": {
             "items": {
-              "$ref": "#/components/schemas/snippets__SnippetResponse"
+              "$ref": "#/components/schemas/SnippetResponse"
             },
             "title": "Snippets",
             "type": "array"
@@ -12141,263 +12398,6 @@
         "title": "UptimeSection",
         "type": "object"
       },
-      "snippets__BatchApprovalResponse": {
-        "description": "Successful response for the batch-approve endpoint.\n\n:param approved: Filenames whose approval state was toggled by this\n    request (newly approved as a result of the call).\n:type approved: list[str]\n:param skipped_already_approved: Filenames that were already approved\n    when the call started; the request is treated as a soft-skip\n    (idempotent).\n:type skipped_already_approved: list[str]",
-        "properties": {
-          "approved": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Approved",
-            "type": "array"
-          },
-          "count": {
-            "description": "Return the number of newly approved snippets.\n\n:return: Length of ``approved``.\n:rtype: int",
-            "readOnly": true,
-            "title": "Count",
-            "type": "integer"
-          },
-          "skipped_already_approved": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Skipped Already Approved",
-            "type": "array"
-          }
-        },
-        "required": [
-          "approved",
-          "skipped_already_approved",
-          "count"
-        ],
-        "title": "BatchApprovalResponse",
-        "type": "object"
-      },
-      "snippets__PaginatedResponse_SnippetResponse_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/snippets__SnippetResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "PaginatedResponse[SnippetResponse]",
-        "type": "object"
-      },
-      "snippets__RefreshResponse": {
-        "description": "Represent the successful result of a manual snippets-refresh operation.\n\n:param refreshed_at: UTC timestamp at which the refresh completed.\n:type refreshed_at: datetime",
-        "properties": {
-          "refreshed_at": {
-            "format": "date-time",
-            "title": "Refreshed At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "refreshed_at"
-        ],
-        "title": "RefreshResponse",
-        "type": "object"
-      },
-      "snippets__SnippetBatchApproveRequest": {
-        "description": "Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.\n:type filenames: UniqueList[NonEmptyStr]",
-        "properties": {
-          "filenames": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Filenames",
-            "type": "array"
-          }
-        },
-        "required": [
-          "filenames"
-        ],
-        "title": "SnippetBatchApproveRequest",
-        "type": "object"
-      },
-      "snippets__SnippetResponse": {
-        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:type service_type: str | None\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
-        "properties": {
-          "approved_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Approved At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "description": {
-            "title": "Description",
-            "type": "string"
-          },
-          "filename": {
-            "minLength": 1,
-            "title": "Filename",
-            "type": "string"
-          },
-          "interpreter": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Interpreter"
-          },
-          "is_approved": {
-            "title": "Is Approved",
-            "type": "boolean"
-          },
-          "md5_digest": {
-            "title": "Md5 Digest",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "requires_sudo": {
-            "title": "Requires Sudo",
-            "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Service Type"
-          },
-          "size": {
-            "title": "Size",
-            "type": "integer"
-          },
-          "sudo_default": {
-            "title": "Sudo Default",
-            "type": "boolean"
-          },
-          "sudo_optional": {
-            "title": "Sudo Optional",
-            "type": "boolean"
-          },
-          "title": {
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          },
-          "updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated By"
-          }
-        },
-        "required": [
-          "filename",
-          "title",
-          "description",
-          "size",
-          "md5_digest",
-          "is_approved",
-          "reason",
-          "requires_sudo",
-          "sudo_optional",
-          "sudo_default",
-          "created_at"
-        ],
-        "title": "SnippetResponse",
-        "type": "object"
-      },
-      "snippets__SnippetServiceTypesResponse": {
-        "description": "Carry the whole-dataset service-type facet for the list filter.\n\nSourced across every snippet (not the loaded page) so the list page's\nservice-type dropdown can offer every value the dataset contains.\n\n:param service_types: The sorted distinct non-blank service types.\n:param has_uncategorized: Whether any snippet has an absent or blank service\n    type (surfaced as the \"Uncategorized\" filter option).",
-        "properties": {
-          "has_uncategorized": {
-            "title": "Has Uncategorized",
-            "type": "boolean"
-          },
-          "service_types": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Service Types",
-            "type": "array"
-          }
-        },
-        "required": [
-          "service_types",
-          "has_uncategorized"
-        ],
-        "title": "SnippetServiceTypesResponse",
-        "type": "object"
-      },
-      "snippets__SnippetsCapabilitiesResponse": {
-        "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.apps.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
-        "properties": {
-          "manual_sync_enabled": {
-            "title": "Manual Sync Enabled",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "manual_sync_enabled"
-        ],
-        "title": "SnippetsCapabilitiesResponse",
-        "type": "object"
-      },
       "tasks__ExecutorHostMetadata": {
         "description": "Represent one executor host option for display on the task detail page.\n\n:param value: The executor host value submitted with task execution\n    requests (Nomad node name).\n:type value: str\n:param label: The human-readable label for the host (often an inventory\n    display name).\n:type label: str",
         "properties": {
@@ -18473,7 +18473,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__PaginatedResponse_SnippetResponse_"
+                  "$ref": "#/components/schemas/PaginatedResponse_SnippetResponse_"
                 }
               }
             },
@@ -18504,7 +18504,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/snippets__SnippetBatchApproveRequest"
+                "$ref": "#/components/schemas/SnippetBatchApproveRequest"
               }
             }
           },
@@ -18515,7 +18515,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__BatchApprovalResponse"
+                  "$ref": "#/components/schemas/BatchApprovalResponse"
                 }
               }
             },
@@ -18547,7 +18547,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__SnippetsCapabilitiesResponse"
+                  "$ref": "#/components/schemas/SnippetsCapabilitiesResponse"
                 }
               }
             },
@@ -18569,7 +18569,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__RefreshResponse"
+                  "$ref": "#/components/schemas/RefreshResponse"
                 }
               }
             },
@@ -18613,7 +18613,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__SnippetServiceTypesResponse"
+                  "$ref": "#/components/schemas/SnippetServiceTypesResponse"
                 }
               }
             },
@@ -18684,7 +18684,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__SnippetResponse"
+                  "$ref": "#/components/schemas/SnippetResponse"
                 }
               }
             },

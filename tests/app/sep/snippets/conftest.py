@@ -31,6 +31,15 @@ from app.sep.snippets.models.meta import (
 SeedSnippet = Callable[..., Awaitable[Snippet]]
 
 
+@pytest.fixture(autouse=True)
+def _bind_request_less_session(request_less_session: AsyncSession) -> None:
+    """Apply the request-less session binding to every test in this subtree.
+
+    Autouse so the ``script_source`` tests see the seeded data; a no-op for tests
+    that never open a request-less session.
+    """
+
+
 @pytest.fixture
 def seed_snippet() -> SeedSnippet:
     """Return an async factory persisting a Snippet with given meta and approval.

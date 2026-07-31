@@ -1907,10 +1907,16 @@ class TestGetDefaultContextPluginFiltering:
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")
-    async def test_alert_troubleshooting_hidden_when_snippets_disabled(
+    async def test_snippet_consumers_stay_in_sidebar_when_snippets_disabled(
         self, session, dummy_request, regular_user
     ) -> None:
-        """Drop Alert Troubleshooting from the sidebar when snippets is disabled."""
+        """Keep Alert Troubleshooting and ATW in the sidebar past a snippets disable.
+
+        Both read snippet scripts from the library, which ships independently of
+        the snippets app, so neither declares ``requires_apps`` and hiding the
+        snippets UI must not hide them. The dependency-gating behaviour itself
+        stays covered by the synthetic cases above.
+        """
         session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
@@ -1922,9 +1928,8 @@ class TestGetDefaultContextPluginFiltering:
             )
 
         keys = {p.key for p in context["plugins"]}
-        assert "alert_troubleshooting" not in keys
         assert "snippets" not in keys
-        assert "inventory" in keys
+        assert {"alert_troubleshooting", "atw", "inventory"} <= keys
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")
