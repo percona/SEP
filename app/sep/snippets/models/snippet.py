@@ -962,7 +962,7 @@ class BaseSnippet(BaseModel):
                     validation_alias=AliasChoices(
                         EXTRA_ARGS_INPUT_NAME, EXTRA_ARGS_FIELD_NAME
                     ),
-                    serialization_alias=EXTRA_ARGS_INPUT_NAME,
+                    serialization_alias=EXTRA_ARGS_FIELD_NAME,
                 ),
             )
 
