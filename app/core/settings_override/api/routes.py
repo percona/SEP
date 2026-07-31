@@ -58,6 +58,7 @@ from app.core.settings_override.registry import (
     _resolve_field_in_model,
     canonical_override_key,
     chain_has_explicit_not_overridable,
+    chain_is_locked,
     coerce_field_value,
     dump_field_value,
     field_materializer,
@@ -571,9 +572,10 @@ def _validate_nested_key(
     Gates the key in four steps, each mapping to a distinct 422 ``type``:
     the parent must exist (``unknown_key``) and be nested-overridable
     (``not_overridable``); the leaf must resolve (``unknown_nested_field``)
-    and no segment along the path may be explicitly not-overridable
-    (``not_overridable``); finally the value is coerced to the leaf type
-    (structured Pydantic error on failure).
+    and its chain must be open -- neither explicitly not-overridable at any
+    segment nor withheld by the deployment's allowlist (``not_overridable``);
+    finally the value is coerced to the leaf type (structured Pydantic error on
+    failure).
 
     :param settings_cls: The Pydantic settings class to validate against.
     :param proxy: The proxy whose attribute access yields current field values.
@@ -614,7 +616,7 @@ def _validate_nested_key(
         )
         return
     chain, leaf_info = resolved
-    if chain_has_explicit_not_overridable(settings_cls, key):
+    if chain_is_locked(settings_cls, key):
         errors.append(
             {
                 "loc": ["body", key],
@@ -1055,9 +1057,12 @@ def build_settings_router(
         ``detail`` are preserved through the proxy.
 
         For a local class: idempotent -- deleting a (class, key) pair that has no
-        override row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE
-        field responds 409 -- the field cannot have an override row in the first
-        place, so the operator's intent is unsatisfiable.
+        override row succeeds with 204. Attempting to delete a field the code
+        declares NOT_OVERRIDABLE responds 409 -- it cannot have an override row
+        in the first place, so the operator's intent is unsatisfiable. A field
+        the *deployment* withheld may still carry a row written before the
+        restriction applied, so that row is deleted normally and only the
+        no-row case answers 409.
 
         After republishing the snapshot, fires the rebind callbacks for the
         reverted key so a HOT target rebinds to its restored value without
@@ -1072,7 +1077,8 @@ def build_settings_router(
             the router wires none).
         :raises HTTPNotFoundException: If the class isn't exposed or the key
             doesn't exist on the class.
-        :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+        :raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has
+            no row to delete.
         :raises HTTPUnprocessableEntityException: If ``key`` names a
             ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
             target an individual ``parent__leaf`` instead).
@@ -1088,7 +1094,15 @@ def build_settings_router(
         settings_cls, proxy = _resolve(setting_class)
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
-        _assert_key_deletable(settings_cls, field_meta)
+        has_override_row = (
+            await SettingsOverrideManager.count(
+                session, setting_class=setting_class, key=key
+            )
+            > 0
+        )
+        _assert_key_deletable(
+            settings_cls, field_meta, has_override_row=has_override_row
+        )
         await SettingsOverrideManager.delete_where(
             session, setting_class=setting_class, key=key
         )
@@ -1150,29 +1164,59 @@ def _applied_field_meta(
     return field_meta_by_key
 
 
+def _is_statically_locked(settings_cls: type[BaseYamlSettings], key: str) -> bool:
+    """Return whether the code -- not the deployment -- refuses overrides of ``key``.
+
+    Reads the classification with the policy gate switched off, so a key the
+    deployment merely withheld reports ``False`` here. That distinction is what
+    lets DELETE clear a row written before a restriction applied while keeping
+    409 for a field no deployment could ever have overridden.
+
+    :param settings_cls: The Pydantic settings class the key belongs to.
+    :param key: The canonical key, top-level or ``__``-delimited.
+    :return: ``True`` iff the static declaration alone refuses the override.
+    """
+    if "__" in key:
+        return chain_has_explicit_not_overridable(settings_cls, key)
+    return not is_nested_overridable_parent(
+        settings_cls, key, include_policy_gate=False
+    )
+
+
 def _assert_key_deletable(
     settings_cls: type[BaseYamlSettings],
     field_meta: FieldMetadata,
+    *,
+    has_override_row: bool,
 ) -> None:
     """Raise the appropriate HTTP error when ``field_meta`` cannot be deleted.
 
-    A ``__``-delimited key whose top-level parent is not nested-overridable is
+    A ``__``-delimited key whose top-level parent is not *addressable* is
     rejected with 422 (``not_overridable``), mirroring the PATCH guard in
     :func:`_validate_nested_key` so DELETE and PATCH agree on which nested keys
-    are addressable. A ``NESTED_ONLY`` parent rejects whole-parent deletion with
-    422 (target a nested child instead); a ``NOT_OVERRIDABLE`` field rejects
-    deletion with 409 (no override row can exist). Overridable keys pass through
-    silently.
+    exist at all. The allowlist is deliberately excluded from that check: a
+    parent every one of whose leaves the deployment withheld must stay
+    reachable, or any row accumulated beneath it before the restriction applied
+    would be stuck. A ``NESTED_ONLY`` parent rejects whole-parent deletion with 422
+    (target a nested child instead). A ``NOT_OVERRIDABLE`` field rejects
+    deletion with 409 when no row can or does exist; when only the deployment
+    withheld it and a row survives, deletion proceeds. Overridable keys pass
+    through silently.
 
     :param settings_cls: The Pydantic settings class the field belongs to.
     :param field_meta: The resolved metadata for the key being deleted.
+    :param has_override_row: Whether an override row currently exists for the
+        key, which decides the not-overridable branch.
     :raises HTTPUnprocessableEntityException: If the key names a ``NESTED_ONLY``
-        parent, or a nested key under a non-nested-overridable parent.
-    :raises HTTPConflictException: If the key names a ``NOT_OVERRIDABLE`` field.
+        parent, or a nested key under an unaddressable parent.
+    :raises HTTPConflictException: If the key names a ``NOT_OVERRIDABLE`` field
+        with no row the operator could be asking to remove.
     """
     if "__" in field_meta.key:
         top = field_meta.key.split("__", 1)[0]
-        if not is_nested_overridable_parent(settings_cls, top):
+        if not is_nested_overridable_parent(
+            settings_cls, top, include_policy_gate=False
+        ):
             raise HTTPUnprocessableEntityException(
                 detail=[
                     {
@@ -1193,7 +1237,9 @@ def _assert_key_deletable(
                 }
             ]
         )
-    if field_meta.reload == ReloadClassification.NOT_OVERRIDABLE:
+    if field_meta.reload == ReloadClassification.NOT_OVERRIDABLE and (
+        _is_statically_locked(settings_cls, field_meta.key) or not has_override_row
+    ):
         raise HTTPConflictException(
             f"Setting {settings_cls.__name__}.{field_meta.key} cannot be"
             " overridden; no row to delete.",

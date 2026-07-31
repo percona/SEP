@@ -63,7 +63,7 @@ from app.core.models import BaseLowercaseModel
 from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import hot_field
+from app.core.settings_override.registry import hot_field, not_overridable_field
 from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
     LogLevel,
@@ -349,11 +349,9 @@ class Settings(BaseYamlSettings):
     """Define the main application settings.
 
     :param CELERY: Celery configuration options.
-    :type CELERY: CeleryOptions
     :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same
         user. Defaults to False, meaning all previous sessions will be invalidated once
         a new one is created.
-    :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
         ``secrets.token_urlsafe(32)``.
     :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
@@ -362,33 +360,29 @@ class Settings(BaseYamlSettings):
         every process sharing ``SECRET_KEY`` resolves the identical token.
         Generate an explicit value with ``openssl rand -hex 32`` to rotate it
         independently of ``SECRET_KEY``.
-    :type SEP_INTERNAL_TOKEN: SecretStr | None
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
-    :type LOGGING: LogLevel
     :param LOGGING_CONFIG: dictConfig logging configuration.
-    :type LOGGING_CONFIG: dict[str, Any]
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
-    :type SSL_CAFILE: RelativeFilePathField | None
     :param BASE_URL: The application's base URL.
-    :type BASE_URL: URL | None
     :param BACKEND_CORS_ORIGINS: A global list of allowed CORS origins, to be used as
         the default BACKEND_CORS_ORIGINS setting across all apps.
-    :type BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None
     :param ALLOWED_HOSTS: A global list of trusted domain names or wildcards, to be used
         as the default ALLOWED_HOSTS setting across all apps.
-    :type ALLOWED_HOSTS: list[str]
     :param SECURITY_HEADERS: Global options for the SecurityHeadersMiddleware, to be
         used as the default SECURITY_HEADERS setting across all apps.
-    :type SECURITY_HEADERS: SecurityHeadersOptions | None
     :param PMM: PMM connection and authentication configuration.
-    :type PMM: PMMSettings
     :param SETTINGS_OVERRIDE_REFRESH_INTERVAL: How often each service refreshes its
         DB-backed setting overrides. Defaults to 30 seconds.
-    :type SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds
     :param SETTINGS_OVERRIDE_REFRESHER_ENABLED: Master kill-switch for the DB-override
         background refresher. Tests set this to ``False`` to keep ``TestClient``
         lifespans hermetic; production leaves it ``True``.
-    :type SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool
+    :param SETTINGS_OVERRIDE_ALLOWED_KEYS: The exhaustive set of settings keys the
+        override API may write, each spelled ``"<SettingsClassName>.<KEY>"`` (the
+        key being a top-level field name or a ``__``-delimited nested path).
+        ``None`` -- the default -- leaves every deployment unrestricted. A set
+        activates a default-locked allowlist: any pair it does not name is
+        refused. The allowlist only ever *restricts*: a field that is already not
+        overridable stays that way even when listed.
     """
 
     CELERY: CeleryOptions
@@ -405,6 +399,7 @@ class Settings(BaseYamlSettings):
     PMM: PMMSettings = hot_field(PMMSettings())
     SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
     SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
+    SETTINGS_OVERRIDE_ALLOWED_KEYS: set[str] | None = not_overridable_field(None)
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
     @computed_field
@@ -451,6 +446,34 @@ class Settings(BaseYamlSettings):
         if value.total_seconds() <= 0:
             raise ValueError(
                 "SETTINGS_OVERRIDE_REFRESH_INTERVAL must be a positive duration"
+            )
+        return value
+
+    @field_validator("SETTINGS_OVERRIDE_ALLOWED_KEYS")
+    @classmethod
+    def _validate_allowed_key_entries(cls, value: set[str] | None) -> set[str] | None:
+        """Reject entries that are not ``<SettingsClassName>.<KEY>`` shaped.
+
+        Whether the named class and field *exist* is deliberately not checked
+        here: this module cannot import the per-service settings classes. An
+        entry naming neither resolves to nothing and therefore allows nothing.
+
+        :param value: The configured entry set, or ``None`` when unrestricted.
+        :return: The validated entry set unchanged.
+        :raises ValueError: If any entry is not exactly one class token, one
+            dot, and one non-empty key token.
+        """
+        if value is None:
+            return value
+        malformed: list[str] = []
+        for entry in value:
+            class_token, dot, key_token = entry.partition(".")
+            if not class_token or not dot or not key_token or "." in key_token:
+                malformed.append(entry)
+        if malformed:
+            raise ValueError(
+                "SETTINGS_OVERRIDE_ALLOWED_KEYS entries must be spelled "
+                f"'<SettingsClassName>.<KEY>'; got {sorted(malformed)}"
             )
         return value
 
