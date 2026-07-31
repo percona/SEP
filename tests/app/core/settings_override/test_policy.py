@@ -38,7 +38,6 @@ from app.core.settings_override.policy import (
     is_restriction_active,
 )
 from app.core.settings_override.registry import (
-    _policy_locked,
     field_reload_classification,
     ReloadClassification,
     resolve_nested_field,
@@ -193,18 +192,6 @@ class TestPredicates:
         """Assert a shared textual prefix does not make an unrelated parent open."""
         restrict("SEPSettings.SESSION_REFRESH__ENABLED")
         assert has_allowed_key_under(SettingClassEnum.SEP_SETTINGS, "SESSION") is False
-
-    def test_fail_closed_for_unknown_settings_class(
-        self, restrict: Callable[..., None]
-    ) -> None:
-        """Assert a class outside the enum is locked rather than silently allowed."""
-
-        class ProbeSettings(Settings):
-            """Stand in for a settings class the enum does not know."""
-
-        restrict("Settings.LOGGING")
-        assert _policy_locked(ProbeSettings, "LOGGING") is True
-        assert _policy_locked(Settings, "LOGGING") is False
 
 
 class TestShippedValue:

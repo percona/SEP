@@ -110,7 +110,7 @@ async def test_restricted_deployment_filters_withheld_rows(
     override_session_maker: async_sessionmaker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A withheld key's row never reaches the proxy while an allowed one still does."""
+    """Assert a withheld key's row is filtered while an allowed one still lands."""
     endpoint_baseline = sep_settings.INVENTORY_ENDPOINT
     connectivity_override = not sep_settings.CONNECTIVITY_CHECK_DEFAULT
     monkeypatch.setattr(

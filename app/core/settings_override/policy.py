@@ -55,10 +55,7 @@ def _allowed_entries() -> frozenset[str] | None:
     :return: The entry set projected to a ``frozenset``, or ``None`` when the
         deployment places no restriction.
     """
-    # imported here to avoid a circular import: app.core.config imports the
-    # settings-override registry at module scope, and the registry imports this
-    # module
-    from app.core.config import settings
+    from app.core.config import settings  # circular-import: config imports registry
 
     entries = settings.SETTINGS_OVERRIDE_ALLOWED_KEYS
     return None if entries is None else frozenset(entries)

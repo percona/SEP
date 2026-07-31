@@ -174,7 +174,7 @@ async def test_restricted_deployment_filters_withheld_rows(
     override_session_maker: async_sessionmaker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A withheld key's row never reaches the proxy while an allowed one still does."""
+    """Assert a withheld key's row is filtered while an allowed one still lands."""
     baseline = tasks_settings.STALENESS_THRESHOLD_SECONDS
     monkeypatch.setattr(
         settings,

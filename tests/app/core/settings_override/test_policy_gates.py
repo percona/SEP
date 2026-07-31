@@ -91,6 +91,18 @@ class TestTopLevelGate:
         assert is_hot_reloadable(AlertSettings, "PROVIDERS") is True
         assert is_hot_reloadable(AlertSettings, "SOURCE_PREFIX") is False
 
+    def test_fail_closed_for_unknown_settings_class(
+        self, restrict: Callable[..., None]
+    ) -> None:
+        """Assert a class the override table cannot name is locked, not allowed."""
+
+        class ProbeSettings(Settings):
+            """Stand in for a settings class the enum does not know."""
+
+        restrict("Settings.LOGGING")
+        assert is_hot_reloadable(Settings, "LOGGING") is True
+        assert is_hot_reloadable(ProbeSettings, "LOGGING") is False
+
     def test_listing_reports_the_gated_classification(
         self, restrict: Callable[..., None]
     ) -> None:

@@ -34,7 +34,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.settings_override.api.routes import build_settings_router, ClassEntry
+from app.core.settings_override.api.routes import build_settings_router
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.registry import ReloadClassification
@@ -82,7 +82,7 @@ def client_fixture(override_session: AsyncSession) -> Iterator[TestClient]:
     def allow_admin() -> None:
         return None
 
-    classes: list[ClassEntry] = [
+    classes = [
         (SettingClassEnum.SETTINGS, Settings, settings),
         (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
         (SettingClassEnum.TASKS_SETTINGS, TasksSettings, tasks_settings),
