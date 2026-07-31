@@ -71,6 +71,7 @@ jobs:
               - 'poetry.lock'
               - 'poetry.toml'
               - 'settings.yaml'
+              - 'sidecar/settings.embedded.yaml'
               - 'frontend/packages/api/specs/**'
             precommit:
               - '.pre-commit-config.yaml'
@@ -349,6 +350,8 @@ jobs:
             test -f /home/sep/app/supervisord.conf
             test -f /home/sep/app/healthcheck.sh
             test -x /home/sep/app/entrypoint.sh
+            test -f /home/sep/app/settings-env.sh
+            test -f /home/sep/app/settings.yaml
           '
 
       - name: Smoke test - verify HEALTHCHECK instruction
