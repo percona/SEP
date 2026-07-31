@@ -35,8 +35,9 @@ from app.core.db.utils import (
     func_json_extract,
     get_async_session_maker_from_engine,
     idempotent_insert,
+    NullsLastOrdering,
 )
-from app.core.utils.fields import AsyncDatabaseEngine
+from app.core.utils.fields import AsyncDatabaseEngine, DatabaseDialect
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.models import TaskExecutionRequestJSON, TaskHistory, TaskWrite
 from tests.app.factories import build_task_history, TaskFactory
@@ -151,6 +152,127 @@ def _assert_ordered(rendered: str, fragments: list[str]) -> None:
             f"{fragment!r} not found after position {pos} in {rendered!r}"
         )
         pos = index
+
+
+@pytest.fixture
+def ordering_table():
+    """Return a table with a nullable sort column, a JSON column, and a tie-breaker."""
+    metadata = MetaData()
+    return Table(
+        "item",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("parent_id", Integer),
+        Column("meta", JSON),
+    )
+
+
+class TestNullsLastOrdering:
+    """Cover the dialect-aware ``NullsLastOrdering`` construct and its two hooks."""
+
+    @pytest.mark.parametrize(
+        "dialect",
+        [postgresql.dialect(), sqlite.dialect()],
+        ids=["postgresql", "sqlite"],
+    )
+    @pytest.mark.parametrize("descending", [False, True], ids=["asc", "desc"])
+    def test_renders_nulls_last_on_postgresql_and_sqlite(
+        self, ordering_table, dialect, descending
+    ):
+        """Reproduce the ``.nulls_last()`` baseline rendering on both dialects."""
+        sort_column = ordering_table.c.parent_id
+        baseline = sort_column.desc() if descending else sort_column.asc()
+
+        rendered = _compile(
+            NullsLastOrdering(sort_column, descending=descending), dialect
+        )
+
+        assert rendered == _compile(baseline.nulls_last(), dialect)
+
+    @pytest.mark.parametrize(
+        ("descending", "expected"),
+        [
+            (False, "ISNULL(item.parent_id) ASC, item.parent_id ASC"),
+            (True, "ISNULL(item.parent_id) ASC, item.parent_id DESC"),
+        ],
+        ids=["asc", "desc"],
+    )
+    def test_renders_isnull_prefix_on_mysql(self, ordering_table, descending, expected):
+        """Pin NULLs last on MySQL through a leading ``ISNULL(<expr>) ASC`` term."""
+        rendered = _compile(
+            NullsLastOrdering(ordering_table.c.parent_id, descending=descending),
+            mysql.dialect(),
+        )
+
+        assert rendered == expected
+
+    def test_tie_breaker_remains_final_order_by_term_on_mysql(self, ordering_table):
+        """Keep the tie-breaker final on MySQL even though the hook prepends a term."""
+        query = select(ordering_table.c.id).order_by(
+            NullsLastOrdering(ordering_table.c.parent_id, descending=True),
+            ordering_table.c.id.asc(),
+        )
+
+        rendered = _compile(query, mysql.dialect())
+
+        assert rendered.endswith(
+            "ORDER BY ISNULL(item.parent_id) ASC, item.parent_id DESC, item.id ASC"
+        )
+
+    def test_nulls_last_ordering_is_cacheable(self, ordering_table):
+        """Produce a real cache key that discriminates both column and direction."""
+
+        def cache_key(sort_column, *, descending):
+            return (
+                select(ordering_table.c.id)
+                .order_by(NullsLastOrdering(sort_column, descending=descending))
+                ._generate_cache_key()
+            )
+
+        ascending = cache_key(ordering_table.c.parent_id, descending=False)
+
+        assert ascending is not None
+        assert ascending == cache_key(ordering_table.c.parent_id, descending=False)
+        assert ascending != cache_key(ordering_table.c.parent_id, descending=True)
+        assert ascending != cache_key(ordering_table.c.id, descending=False)
+
+    def test_wrapped_expression_inlines_only_its_code_constant_path(
+        self, ordering_table
+    ):
+        """Render the ``literal_execute`` JSON path inline, identically in both terms.
+
+        ``func_json_extract`` builds its path with ``literal_execute``, so the
+        dialect's literal processor -- not a bound parameter -- emits it at
+        execution. The value is a code constant, and the wrapper renders the
+        expression once and reuses it, so both terms carry the same text.
+        """
+        extract = func_json_extract(
+            DatabaseDialect.MYSQL, ordering_table.c.meta, "title"
+        )
+        query = select(ordering_table.c.id).order_by(NullsLastOrdering(extract))
+
+        executed = query.compile(
+            dialect=mysql.dialect(), compile_kwargs={"render_postcompile": True}
+        )
+
+        assert str(executed).endswith(
+            "ORDER BY ISNULL(json_extract(item.meta, '$.title')) ASC, "
+            "json_extract(item.meta, '$.title') ASC"
+        )
+        assert executed.params == {}
+
+    def test_raw_string_column_becomes_a_bound_parameter(self, ordering_table):
+        """Bind a raw string argument instead of splicing it into the ORDER BY."""
+        injected = "parent_id; DROP TABLE item --"
+
+        compiled = (
+            select(ordering_table.c.id)
+            .order_by(NullsLastOrdering(injected))
+            .compile(dialect=mysql.dialect())
+        )
+
+        assert "DROP TABLE" not in str(compiled)
+        assert injected in compiled.params.values()
 
 
 @pytest.mark.parametrize(

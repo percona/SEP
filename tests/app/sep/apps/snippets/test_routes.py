@@ -97,6 +97,7 @@ class TestSnippetsApproveBatch:
         assert all(
             snippet.updated_by == str(admin_user.id)
             and snippet.reason == f"Batch approved by {admin_user.username}"
+            and snippet.is_human_revoked is False
             for snippet in approved
         )
 
@@ -445,6 +446,33 @@ class TestSnippetsRouterDeprecation:
     def test_router_uses_deprecated_route_class(self):
         """Confirm the router is constructed with ``DeprecatedJinja2Route``."""
         assert snippets_jinja_router.route_class is DeprecatedJinja2Route
+
+
+class TestSnippetsRemoveApprovalHumanRevocation:
+    """Verify Jinja remove-approval leaves ``updated_by`` set for sticky sync."""
+
+    @pytest.mark.asyncio
+    async def test_remove_approval_records_human_revocation(
+        self,
+        admin_client: TestClient,
+        session: AsyncSession,
+        create_snippet,
+        admin_user: CasdoorUser,
+    ):
+        """Assert administrator revoke keeps ``updated_by`` and ``is_human_revoked``."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = admin_client.post(
+            "/snippets/remove-approval",
+            params={"snippet_filename": snippet.filename},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        await session.refresh(snippet)
+        assert snippet.is_approved is False
+        assert snippet.updated_by == str(admin_user.id)
+        assert snippet.is_human_revoked is True
 
 
 class TestSnippetsApprovalRouteDeprecationHeaders:
