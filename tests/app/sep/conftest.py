@@ -31,6 +31,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.sep.snippets.crud import SnippetManager
@@ -86,7 +87,7 @@ def create_snippet(
 
 
 @pytest.fixture
-def request_less_session(session: AsyncSession, mocker: object) -> AsyncSession:
+def request_less_session(session: AsyncSession, mocker: MockerFixture) -> AsyncSession:
     """Bind the snippets request-less session maker to the test session.
 
     The derived listing / per-snippet / execute routes open their own
