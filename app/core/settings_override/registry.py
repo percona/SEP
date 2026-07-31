@@ -338,12 +338,20 @@ def is_hot_reloadable(
     the nested-override resolver consults this predicate against nested
     submodels (e.g. ``SessionOptions``) when classifying leaf fields.
 
+    The policy gate, however, only answers for a **top-level** settings class:
+    it keys the allowlist on the class ``__name__`` and the key as spelled, and
+    a submodel is named by no entry, so the gate withholds it unconditionally.
+    Pass ``include_policy_gate=False`` when inspecting a submodel, or ask
+    :func:`chain_is_locked` with the top-level class and the full
+    ``__``-delimited key instead.
+
     :param settings_cls: The Pydantic model class to inspect.
     :param field_name: The name of the field to check.
     :param include_policy_gate: Whether to also require the deployment's
         allowlist to permit the key. Pass ``False`` to read the static
         declaration alone, which is what distinguishes a field the deployment
-        locked from one the code declares not overridable.
+        locked from one the code declares not overridable, and which is
+        required when ``settings_cls`` is a submodel.
     :return: ``True`` when ``field_name`` exists on ``settings_cls``, is
         marked with ``{"reload": ReloadClassification.HOT}`` via
         :func:`app.core.utils.pydantic.field_with_metadata` or the class overlay,
@@ -380,7 +388,11 @@ def field_reload_classification(
     When both ``owner_cls`` and ``field_name`` are supplied the deployment's
     allowlist is consulted too, so a field the deployment withholds reports
     ``NOT_OVERRIDABLE`` and the settings API describes what it will actually
-    accept.
+    accept. That lookup only answers for a **top-level** settings class, and
+    this function exposes no way to skip it alone -- omitting ``owner_cls`` /
+    ``field_name`` drops the class overlay along with it. Classify a submodel
+    leaf through :func:`chain_is_locked` instead, passing the top-level class
+    and the full ``__``-delimited key.
 
     :param field_info: The Pydantic field metadata to classify.
     :param owner_cls: The class owning ``field_info``, for overlay lookup.
