@@ -211,9 +211,13 @@ def test_database_host_and_port_match_the_expansion_defaults(embedded_profile_cw
     """Assert the profile and the expansion state one truth about the server."""
     helper = SETTINGS_ENV_HELPER.read_text(encoding="utf-8")
     database = SEPSettings().DATABASE
+    host = re.search(r"SEP_DB_HOST:-([^}\"]+)", helper)
+    port = re.search(r"SEP_DB_PORT:-([^}\"]+)", helper)
 
-    assert re.search(r"SEP_DB_HOST:-([^}\"]+)", helper).group(1) == database.HOST
-    assert re.search(r"SEP_DB_PORT:-([^}\"]+)", helper).group(1) == str(database.PORT)
+    assert host is not None
+    assert port is not None
+    assert host.group(1) == database.HOST
+    assert port.group(1) == str(database.PORT)
 
 
 def test_profile_is_not_shipped_in_the_shared_bundle():

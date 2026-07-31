@@ -50,6 +50,17 @@ Expanded by `settings-env.sh` into the canonical settings variables:
 | `SEP_PMM_ENDPOINT` | no | `https://pmm-server:8443` | `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT` (with `/graph` appended) |
 | `SEP_NOMAD_ENDPOINT` | no | the profile's credential-free URL | `TASKS__NOMAD__ENDPOINT` |
 
+`SECRET_KEY` is the only input with no default — the container exits rather than
+start without one. It signs the framework's cookies and CSRF tokens and, when
+`SEP_INTERNAL_TOKEN` is unset, derives that token by HMAC, so it has to be both
+identical across the supervisord children and stable across restarts. The class
+default (`secrets.token_urlsafe(32)`) satisfies neither: it is evaluated per
+process, so each child would resolve a different key. Minting one per container
+run the way the bundled Valkey credential is minted would fix that and still
+break the second half — every session would be signed out and the inter-service
+token would rotate on each restart. Generate it once per deployment, persist it
+alongside the other deployment secrets, and pass it in.
+
 `SEP_GRAFANA_TOKEN` is optional and the container boots without it, but
 Grafana-backed sign-in and the PMM syncer stay inert until it is supplied — the
 profile ships an empty `service_account_token`, which is a valid `SecretStr`.
