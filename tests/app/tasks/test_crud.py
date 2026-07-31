@@ -60,6 +60,8 @@ PAGINATED_TASK_COUNT = 2
 PAGINATED_CUSTOM_TASK_COUNT = 3
 PBM_CONFIG_BACKUP_TYPE = "pbm_config"
 PARENT_FILTER_TASK_COUNT = 3
+SEARCH_MATCH_TOTAL = 2
+TIE_BREAK_TOTAL = 3
 CHUNKS_AT_OR_BELOW_OFFSET = 2
 RESOLVED_ORDER_BY_LENGTH = 2
 
@@ -679,7 +681,7 @@ class TestTaskManagerListQueryPaginated:
             list_query=_list_query(TaskManager, search="match"),
         )
 
-        assert result.total == PAGINATED_TASK_COUNT
+        assert result.total == SEARCH_MATCH_TOTAL
         assert len(result.items) == 1
         assert "match" in result.items[0].name
 
@@ -728,7 +730,7 @@ class TestTaskManagerListQueryPaginated:
 
         assert [task.id for task in page_1.items] == [first.id, second.id]
         assert [task.id for task in page_2.items] == [third.id]
-        assert page_1.total == page_2.total == PARENT_FILTER_TASK_COUNT
+        assert page_1.total == page_2.total == TIE_BREAK_TOTAL
 
 
 class TestTaskHistoryManagerListQueryPaginated:
@@ -757,7 +759,7 @@ class TestTaskHistoryManagerListQueryPaginated:
             list_query=_list_query(TaskHistoryManager, search="alice"),
         )
 
-        assert result.total == PAGINATED_TASK_COUNT
+        assert result.total == SEARCH_MATCH_TOTAL
         assert len(result.items) == 1
         assert "alice" in (result.items[0].executed_by or "")
 

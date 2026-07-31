@@ -64,6 +64,7 @@ from tests.app.factories import build_task_history, TaskFactory
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
 PARENT_FILTER_TASK_COUNT = 3
+SEARCH_MATCH_TOTAL = 2
 
 
 @pytest_asyncio.fixture
@@ -2025,7 +2026,7 @@ class TestListQueryRouteParams:
         )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data["total"] == PAGINATION_TASK_COUNT - 1
+        assert data["total"] == SEARCH_MATCH_TOTAL
         assert len(data["items"]) == 1
         assert "match" in data["items"][0]["name"]
 
@@ -2094,8 +2095,8 @@ class TestListQueryRouteParams:
         )
         assert all_history.status_code == status.HTTP_200_OK
         assert by_task.status_code == status.HTTP_200_OK
-        assert all_history.json()["total"] == PAGINATION_TASK_COUNT - 1
-        assert by_task.json()["total"] == PAGINATION_TASK_COUNT - 1
+        assert all_history.json()["total"] == SEARCH_MATCH_TOTAL
+        assert by_task.json()["total"] == SEARCH_MATCH_TOTAL
         assert len(all_history.json()["items"]) == 1
         assert len(by_task.json()["items"]) == 1
 
