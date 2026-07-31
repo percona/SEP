@@ -122,7 +122,11 @@ async def record_backup_run(
 
     task = history.task
     task_data = task.data if task else None
-    backup_type = extract_backup_type_marker(task_data)
+    marker = extract_backup_type_marker(task_data)
+    try:
+        backup_type = BackupType(marker)
+    except ValueError:
+        return
     if backup_type not in _CATALOGUED_TYPES:
         return
 
