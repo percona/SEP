@@ -27,11 +27,8 @@ from app.sep.apps.mysql_backups.deps import (
     get_backups_index_context,
     get_backups_task,
 )
-from app.sep.apps.mysql_backups.models import (
-    BackupCreate,
-    BackupType,
-    UploadProvider,
-)
+from app.sep.apps.mysql_backups.forms import BackupCreate, UploadProvider
+from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.connectivity import (
     CHECK_TIMEOUT,
     clear_connectivity_caches,
