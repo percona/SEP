@@ -661,6 +661,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/atw/config/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Config
+     * @description Report whether the incident send action is available.
+     *
+     *     Not gated by the send guard -- this endpoint is what reports that guard, so
+     *     it must answer whether or not a receiver is configured.
+     *
+     *     :return: The reasons the send action is withheld; empty when it is offered.
+     */
+    get: operations['atw_atw_config_api_apps_atw_config__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/atw/execution-schema/': {
     parameters: {
       query?: never;
@@ -774,11 +799,16 @@ export interface paths {
      * Atw List Incident Executions
      * @description List one incident's snippet executions, newest first, with live task status.
      *
+     *     Each row also reports the command line its snippet ran with, credential values
+     *     masked. A row whose snippet or upstream payload cannot supply what masking
+     *     needs reports its arguments as withheld; the page still returns.
+     *
      *     :param session: The database session.
      *     :param incident: The incident resolved from the ``incident_id`` path parameter.
      *     :param pagination: The offset/limit window for the page.
      *     :param tasks_api: The authenticated Tasks API client.
-     *     :return: A paginated page of executions hydrated from the Tasks API.
+     *     :return: A paginated page of executions hydrated from the Tasks API, each with
+     *         its masked arguments or the reason they are absent.
      */
     get: operations['atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get'];
     put?: never;
@@ -809,6 +839,76 @@ export interface paths {
      *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/send-jobs/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw List Send Jobs
+     * @description List one incident's diagnostics send attempts, newest first.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param pagination: The offset/limit window for the page.
+     *     :return: A paginated page of send attempts, newest first.
+     */
+    get: operations['atw_atw_list_send_jobs_api_apps_atw_incidents__incident_id__send_jobs__get'];
+    put?: never;
+    /**
+     * Atw Start Send Job
+     * @description Start delivering the selected executions' output files and logs to the support case.
+     *
+     *     The row is created before the task is queued so a broker failure is still
+     *     recorded as a failed attempt rather than vanishing: the row is the only place
+     *     a support engineer can see that a send was ever tried.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param current_user: The authenticated user, stamped as ``requested_by``.
+     *     :param body: The send payload naming the case reference and executions.
+     *     :return: The created send log, pending.
+     *     :raises HTTPUnprocessableEntityException: When an execution id does not belong
+     *         to this incident.
+     *     :raises HTTPServiceUnavailableException: When the send could not be queued.
+     *     :raises HTTPBadRequestException: Propagated from the manager when the row
+     *         cannot be written.
+     */
+    post: operations['atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/send-jobs/{send_job_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Get Send Job
+     * @description Retrieve one diagnostics send attempt, for the dialog to poll.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param send_job_id: The send attempt's UUID.
+     *     :return: The matching send attempt.
+     *     :raises HTTPNotFoundException: If this incident has no such attempt.
+     */
+    get: operations['atw_atw_get_send_job_api_apps_atw_incidents__incident_id__send_jobs__send_job_id__get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -996,7 +1096,7 @@ export interface paths {
      * @description Update a backup task group from a JSON payload request body.
      *
      *     Cascade-updates the parent ``pbm_config`` task and its derived logical,
-     *     physical, and status siblings, re-stamping ``_form`` so the edit page keeps
+     *     physical, status, and incremental siblings, re-stamping ``_form`` so the edit page keeps
      *     prefilling. The ``EditableBackupParent`` dependency resolves a satellite URL
      *     to the parent and blocks protected or in-flight groups before any write.
      *     Rejects a parent rename with a conflict and surfaces a partial cascade
@@ -1697,6 +1797,40 @@ export interface paths {
      *     :return: The plugin schema instance.
      */
     get: operations['mysql_backups_get_schema_api_apps_mysql_backups_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/mysql_backups/services/{service_id}/backups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Service Backups
+     * @description Return a page of a MySQL service's completed backup runs, newest run first.
+     *
+     *     The ``service_id`` path parameter is resolved by
+     *     :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an
+     *     unknown service surface as a ``404``. A resolvable service with no recorded
+     *     runs yields an empty page, so a caller building a restore selector is never
+     *     blocked by an empty catalog but is still told when the service itself is
+     *     unknown.
+     *
+     *     :param service: The inventory service resolved from the ``service_id`` path
+     *         parameter.
+     *     :param session: The database session the catalog is queried on.
+     *     :param pagination: The requested offset/limit window.
+     *     :return: The requested page of the service's recorded backup runs, newest
+     *         run first.
+     */
+    get: operations['mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -4053,6 +4187,11 @@ export interface components {
      *         auto-resolve it on subsequent success. Defaults to False.
      *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
      *         callable that enriches this task's failure alert, or None.
+     *     :param run_result_recorder: The ``"module:function"`` path of a plugin
+     *         callable that records this task's structured run result at terminal
+     *         status, or None.
+     *     :param output_files_path: The allocation-relative path where output files
+     *         generated by the task are expected, or None.
      *     :param deleted_at: The deletion timestamp, if applicable.
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the task. Defaults to 0 (no anonymization).
@@ -4102,6 +4241,8 @@ export interface components {
       last_updated_by: string | null;
       /** Name */
       name: string;
+      /** Output Files Path */
+      output_files_path?: string | null;
       /**
        * Owner
        * @default ANY
@@ -4112,6 +4253,8 @@ export interface components {
        * @default false
        */
       protected: boolean;
+      /** Run Result Recorder */
+      run_result_recorder?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -4678,11 +4821,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5029,8 +5169,20 @@ export interface components {
      *     :param started_at: When the upstream execution started.
      *     :param finished_at: When the upstream execution finished.
      *     :param has_logs: Whether the upstream execution has readable logs.
+     *     :param masked_args: The command line the snippet ran with, credential values
+     *         replaced by a fixed-width mask. ``None`` together with
+     *         ``args_withheld=False`` means the execution recorded no arguments.
+     *         Defaults to ``None``.
+     *     :param args_withheld: Whether the arguments were suppressed because they
+     *         could not be masked safely -- distinguishing that from an execution that
+     *         genuinely ran with none. Defaults to ``False``.
      */
     atw__ATWIncidentExecutionResponse: {
+      /**
+       * Args Withheld
+       * @default false
+       */
+      args_withheld: boolean;
       /**
        * Created At
        * Format: date-time
@@ -5045,6 +5197,8 @@ export interface components {
        * Format: uuid4
        */
       id: string;
+      /** Masked Args */
+      masked_args?: string | null;
       /** Snippet Filename */
       snippet_filename: string;
       /** Started At */
@@ -5150,6 +5304,17 @@ export interface components {
       title: string;
     };
     /**
+     * AtwConfigResponse
+     * @description Report whether the incident send action is available.
+     *
+     *     :param send_disabled_reasons: Why sending is unavailable; empty when the
+     *         receiver is configured and the action is offered.
+     */
+    atw__AtwConfigResponse: {
+      /** Send Disabled Reasons */
+      send_disabled_reasons: string[];
+    };
+    /**
      * AtwIncidentResponse
      * @description Represent a persisted diagnostic incident.
      *
@@ -5212,6 +5377,75 @@ export interface components {
       /** Name */
       name?: string;
     };
+    /**
+     * AtwSendJobWrite
+     * @description Define the payload starting one diagnostics send.
+     *
+     *     :param case_ref: The support-case reference to attach the bundle to.
+     *     :param execution_ids: The incident executions whose output files and logs to
+     *         send.
+     */
+    atw__AtwSendJobWrite: {
+      /** Case Ref */
+      case_ref: string;
+      /** Execution Ids */
+      execution_ids: string[];
+    };
+    /**
+     * AtwSendLogResponse
+     * @description Represent one recorded diagnostics send attempt.
+     *
+     *     Every field is always present on a stored attempt, so -- unlike returning the
+     *     :class:`AtwSendLog` table model directly -- the generated client types them as
+     *     required rather than optional.
+     *
+     *     :param id: The attempt's UUID primary key.
+     *     :param incident_id: The incident the attempt belongs to.
+     *     :param case_ref: The support-case reference the attempt targeted.
+     *     :param requested_by: Username of the support engineer who started it.
+     *     :param status: The attempt's lifecycle status.
+     *     :param started_at: When the worker picked it up, if it did.
+     *     :param finished_at: When it reached a terminal status, if it did.
+     *     :param created_at: When the attempt was requested.
+     *     :param detail: The attempt's recorded evidence.
+     */
+    atw__AtwSendLogResponse: {
+      /** Case Ref */
+      case_ref: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Detail */
+      detail: Record<string, never>;
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Id
+       * Format: uuid4
+       */
+      id: string;
+      /**
+       * Incident Id
+       * Format: uuid4
+       */
+      incident_id: string;
+      /** Requested By */
+      requested_by: string;
+      /** Started At */
+      started_at: string | null;
+      status: components['schemas']['atw__AtwSendStatusEnum'];
+    };
+    /**
+     * AtwSendStatusEnum
+     * @description Enumerate the lifecycle of one diagnostics send attempt.
+     *
+     *     The column stores member *names* (``PENDING``); the API serializes the
+     *     ``StrEnum`` *values* (``pending``).
+     * @enum {string}
+     */
+    atw__AtwSendStatusEnum: 'pending' | 'running' | 'success' | 'failed';
     /** PaginatedResponse[ATWIncidentExecutionResponse] */
     atw__PaginatedResponse_ATWIncidentExecutionResponse_: {
       /** Items */
@@ -5227,6 +5461,17 @@ export interface components {
     atw__PaginatedResponse_AtwIncidentResponse_: {
       /** Items */
       items: components['schemas']['atw__AtwIncidentResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[AtwSendLogResponse] */
+    atw__PaginatedResponse_AtwSendLogResponse_: {
+      /** Items */
+      items: components['schemas']['atw__AtwSendLogResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -5256,8 +5501,8 @@ export interface components {
      * BackupTaskDetailResponse
      * @description Represent a backup task detail API response.
      *
-     *     :param derived_tasks: Latest status for each derived logical, physical, and
-     *         status sibling.
+     *     :param derived_tasks: Latest status for each derived logical, physical,
+     *         status, and incremental sibling.
      *     :type derived_tasks: list[BackupDerivedTaskSummary]
      *     :param latest_pbm_status: Tail of the latest PBM status task stdout, if
      *         available.
@@ -5297,11 +5542,8 @@ export interface components {
       latest_pbm_status?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5342,11 +5584,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5357,7 +5596,7 @@ export interface components {
      *
      *     Mirrors :class:`BackupCreate` except ``backup_type``, which is always
      *     ``pbm_config`` on create. POST creates the parent config task plus derived
-     *     logical, physical, and status siblings.
+     *     logical, physical, status, and incremental siblings.
      *
      *     :param task_name: The name of the task to be created.
      *     :type task_name: NonEmptyStr
@@ -5398,6 +5637,10 @@ export interface components {
      *     :type backup_oplog_span_min: float | None
      *     :param backup_num_parallel_collections: Parallel collections for logical backup.
      *     :type backup_num_parallel_collections: int | None
+     *     :param backup_namespaces: Selective ``--ns`` namespaces for logical backups.
+     *     :type backup_namespaces: str | None
+     *     :param backup_with_users_and_roles: Opt-in ``--with-users-and-roles`` for ``db.*``.
+     *     :type backup_with_users_and_roles: bool
      *     :param credentials_path: Path to MongoDB URI credentials on the Nomad node.
      *     :type credentials_path: str | None
      */
@@ -5410,6 +5653,8 @@ export interface components {
       backup_compression?: components['schemas']['backup_mongo__CompressionAlgorithm'] | null;
       /** Backup Compression Level */
       backup_compression_level?: number | null;
+      /** Backup Namespaces */
+      backup_namespaces?: string | null;
       /** Backup Num Parallel Collections */
       backup_num_parallel_collections?: number | null;
       /** Backup Oplog Span Min */
@@ -5418,6 +5663,11 @@ export interface components {
       backup_priority?: string | null;
       /** Backup Timeouts Starting Status */
       backup_timeouts_starting_status?: number | null;
+      /**
+       * Backup With Users And Roles
+       * @default false
+       */
+      backup_with_users_and_roles: boolean;
       /** Credentials Path */
       credentials_path?: string | null;
       /** Hostname */
@@ -5456,6 +5706,7 @@ export interface components {
     backup_mongo__BackupType:
       | 'pbm_logical'
       | 'pbm_physical'
+      | 'pbm_incremental'
       | 'pbm_snapshot'
       | 'pbm_config'
       | 'pbm_status';
@@ -5542,11 +5793,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5596,11 +5844,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5776,13 +6021,10 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5823,11 +6065,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6040,11 +6279,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6079,11 +6315,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6254,13 +6487,10 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6270,16 +6500,20 @@ export interface components {
      * @description Represent the universal task-response surface for standard task apps.
      *
      *     Carry the fields shared by every standard ``TaskExecutionApp`` response:
-     *     the task identity and ownership, the resolved execution status, the stored
-     *     configuration, and the audit/anonymization metadata. A standard app whose
-     *     response has no app-specific fields uses this model directly; an app with
-     *     extras subclasses it. The model is parametrized by the task ``owner``, which
-     *     drives the ``anonymized_entities`` default-entity lookup.
+     *     the task identity, the resolved execution status, the stored configuration,
+     *     and the audit/anonymization metadata. A standard app whose response has no
+     *     app-specific fields uses this model directly; an app with extras subclasses
+     *     it. The model is parametrized by the task ``owner``, which drives the
+     *     ``anonymized_entities`` default-entity lookup but is excluded from the
+     *     serialized detail/list payload (as is ``service_type``).
      *
      *     :param name: The task name.
-     *     :param owner: The entity or user that owns the task.
+     *     :param owner: The task-category owner (for example ``BACKUPS``). Kept
+     *         as a model attribute for ``anonymized_entities`` and server-side
+     *         filtering; excluded from the serialized detail/list payload.
      *     :param service_type: The database service type, stamped by the builder;
-     *         ``None`` for an app without a fixed service type.
+     *         ``None`` for an app without a fixed service type. Excluded from the
+     *         serialized detail/list payload.
      *     :param status: The latest known execution status; ``None`` until the task
      *         runs.
      *     :param last_executed_at: The most recent time the task finished executing
@@ -6336,11 +6570,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -7412,11 +7643,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8320,6 +8548,45 @@ export interface components {
       xtrabackup_verify: boolean;
     };
     /**
+     * BackupRunResponse
+     * @description Expose one catalog record over the per-service query path.
+     *
+     *     :param id: The record's primary key.
+     *     :param service_name: The inventory service the backup was taken from.
+     *     :param hostname: The backup target host.
+     *     :param backup_type: The backup tool, ``"M"`` (mydumper) or ``"X"`` (xtrabackup).
+     *         Narrower than :class:`BackupType`: binlog runs are never catalogued, so
+     *         ``"B"`` never appears here.
+     *     :param location: The resolved on-disk directory the run produced.
+     *     :param upload_destination: The upload destination when one was configured.
+     *     :param size_bytes: The backup size in bytes, when the run reported it.
+     *     :param started_at: When the run started.
+     *     :param finished_at: When the run finished.
+     */
+    mysql_backups__BackupRunResponse: {
+      /**
+       * Backup Type
+       * @enum {string}
+       */
+      backup_type: 'M' | 'X';
+      /** Finished At */
+      finished_at: string | null;
+      /** Hostname */
+      hostname: string | null;
+      /** Id */
+      id: number;
+      /** Location */
+      location: string | null;
+      /** Service Name */
+      service_name: string | null;
+      /** Size Bytes */
+      size_bytes: number | null;
+      /** Started At */
+      started_at: string | null;
+      /** Upload Destination */
+      upload_destination: string | null;
+    };
+    /**
      * BackupTaskResponse
      * @description Represent a backup task API response.
      *
@@ -8354,11 +8621,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8375,6 +8639,17 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
+    /** PaginatedResponse[BackupRunResponse] */
+    mysql_backups__PaginatedResponse_BackupRunResponse_: {
+      /** Items */
+      items: components['schemas']['mysql_backups__BackupRunResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[BackupTaskResponse] */
     mysql_backups__PaginatedResponse_BackupTaskResponse_: {
       /** Items */
@@ -8594,13 +8869,10 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -10749,6 +11021,26 @@ export interface operations {
       };
     };
   };
+  atw_atw_config_api_apps_atw_config__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwConfigResponse'];
+        };
+      };
+    };
+  };
   atw_atw_execution_schema_api_apps_atw_execution_schema__get: {
     parameters: {
       query: {
@@ -10997,6 +11289,107 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['atw__ATWBatchExecuteResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_list_send_jobs_api_apps_atw_incidents__incident_id__send_jobs__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_AtwSendLogResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__AtwSendJobWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwSendLogResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_get_send_job_api_apps_atw_incidents__incident_id__send_jobs__send_job_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        send_job_id: string;
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwSendLogResponse'];
         };
       };
       /** @description Validation Error */
@@ -12686,6 +13079,40 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupRunResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

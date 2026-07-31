@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 from fastapi import Query
 from sqlalchemy import or_
 
+from app.core.db.utils import NullsLastOrdering
 from app.core.exceptions import HTTPUnprocessableEntityException
 
 if TYPE_CHECKING:
@@ -119,13 +120,14 @@ class ListQuerySpec:
         return bool(self.searchable)
 
     def resolve_sort(self, raw_sort: str | None) -> list[ColumnElement]:
-        """Resolve a raw sort value into a vetted, NULLS-LAST, tie-broken ordering.
+        """Resolve a raw sort value into a vetted, NULLs-last, tie-broken ordering.
 
         A leading ``-`` selects descending order; the remaining key is looked up in
         the allowlist. ``None`` resolves the default sort key.
 
         :param raw_sort: The client ``sort`` value, or ``None`` for the default.
-        :return: An ordering list ``[sort expression NULLS LAST, tie-breaker asc]``.
+        :return: An ordering list ``[dialect-aware NULLs-last sort expression,
+            tie-breaker asc]``.
         :raises UnknownSortKeyError: When the key is absent from the allowlist.
         """
         key = self.default_sort if raw_sort is None else raw_sort
@@ -136,8 +138,10 @@ class ListQuerySpec:
             column = self.sortable[key]
         except KeyError as exc:
             raise UnknownSortKeyError(key) from exc
-        ordered = column.desc() if descending else column.asc()
-        return [ordered.nulls_last(), self.tie_breaker.asc()]
+        return [
+            NullsLastOrdering(column, descending=descending),
+            self.tie_breaker.asc(),
+        ]
 
 
 @dataclass(frozen=True, slots=True)

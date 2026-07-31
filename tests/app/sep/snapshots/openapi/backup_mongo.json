@@ -122,7 +122,7 @@
         "type": "object"
       },
       "backup_mongo__BackupTaskDetailResponse": {
-        "description": "Represent a backup task detail API response.\n\n:param derived_tasks: Latest status for each derived logical, physical, and\n    status sibling.\n:type derived_tasks: list[BackupDerivedTaskSummary]\n:param latest_pbm_status: Tail of the latest PBM status task stdout, if\n    available.\n:type latest_pbm_status: str | None",
+        "description": "Represent a backup task detail API response.\n\n:param derived_tasks: Latest status for each derived logical, physical,\n    status, and incremental sibling.\n:type derived_tasks: list[BackupDerivedTaskSummary]\n:param latest_pbm_status: Tail of the latest PBM status task stdout, if\n    available.\n:type latest_pbm_status: str | None",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -259,23 +259,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -302,7 +288,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -433,23 +418,9 @@
             "title": "Name",
             "type": "string"
           },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
           "protected": {
             "title": "Protected",
             "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "anyOf": [
@@ -476,7 +447,6 @@
         },
         "required": [
           "name",
-          "owner",
           "backend",
           "data",
           "protected",
@@ -488,7 +458,7 @@
         "type": "object"
       },
       "backup_mongo__BackupTaskWrite": {
-        "description": "Represent a JSON request body for creating a backup task group.\n\nMirrors :class:`BackupCreate` except ``backup_type``, which is always\n``pbm_config`` on create. POST creates the parent config task plus derived\nlogical, physical, and status siblings.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the MongoDB service to connect to.\n:type service_id: int\n:param alert_on_fail: If True, send an alert if the task fails.\n:type alert_on_fail: bool\n:param pitr_oplog_span_min: PITR oplog span in minutes.\n:type pitr_oplog_span_min: int | None\n:param pitr_enabled: Whether PITR is enabled.\n:type pitr_enabled: bool\n:param pitr_compression: PITR compression algorithm.\n:type pitr_compression: str | None\n:param storage_type: Storage backend type (``s3`` or ``filesystem``); required.\n:type storage_type: str\n:param storage_s3_region: S3 region when ``storage_type`` is ``s3``.\n:type storage_s3_region: str | None\n:param storage_s3_bucket: S3 bucket when ``storage_type`` is ``s3``.\n:type storage_s3_bucket: str | None\n:param storage_s3_prefix: S3 key prefix when ``storage_type`` is ``s3``.\n:type storage_s3_prefix: str | None\n:param storage_s3_endpoint_url: S3 endpoint URL when ``storage_type`` is ``s3``.\n:type storage_s3_endpoint_url: str | None\n:param storage_filesystem_path: Filesystem path when ``storage_type`` is\n    ``filesystem``.\n:type storage_filesystem_path: str | None\n:param backup_priority: Node priority mapping as YAML.\n:type backup_priority: str | None\n:param backup_compression: Backup snapshot compression algorithm.\n:type backup_compression: CompressionAlgorithm | None\n:param backup_compression_level: Backup compression level.\n:type backup_compression_level: int | None\n:param backup_timeouts_starting_status: PBM starting-status timeout in seconds.\n:type backup_timeouts_starting_status: int | None\n:param backup_oplog_span_min: Logical backup oplog span in minutes.\n:type backup_oplog_span_min: float | None\n:param backup_num_parallel_collections: Parallel collections for logical backup.\n:type backup_num_parallel_collections: int | None\n:param credentials_path: Path to MongoDB URI credentials on the Nomad node.\n:type credentials_path: str | None",
+        "description": "Represent a JSON request body for creating a backup task group.\n\nMirrors :class:`BackupCreate` except ``backup_type``, which is always\n``pbm_config`` on create. POST creates the parent config task plus derived\nlogical, physical, status, and incremental siblings.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the MongoDB service to connect to.\n:type service_id: int\n:param alert_on_fail: If True, send an alert if the task fails.\n:type alert_on_fail: bool\n:param pitr_oplog_span_min: PITR oplog span in minutes.\n:type pitr_oplog_span_min: int | None\n:param pitr_enabled: Whether PITR is enabled.\n:type pitr_enabled: bool\n:param pitr_compression: PITR compression algorithm.\n:type pitr_compression: str | None\n:param storage_type: Storage backend type (``s3`` or ``filesystem``); required.\n:type storage_type: str\n:param storage_s3_region: S3 region when ``storage_type`` is ``s3``.\n:type storage_s3_region: str | None\n:param storage_s3_bucket: S3 bucket when ``storage_type`` is ``s3``.\n:type storage_s3_bucket: str | None\n:param storage_s3_prefix: S3 key prefix when ``storage_type`` is ``s3``.\n:type storage_s3_prefix: str | None\n:param storage_s3_endpoint_url: S3 endpoint URL when ``storage_type`` is ``s3``.\n:type storage_s3_endpoint_url: str | None\n:param storage_filesystem_path: Filesystem path when ``storage_type`` is\n    ``filesystem``.\n:type storage_filesystem_path: str | None\n:param backup_priority: Node priority mapping as YAML.\n:type backup_priority: str | None\n:param backup_compression: Backup snapshot compression algorithm.\n:type backup_compression: CompressionAlgorithm | None\n:param backup_compression_level: Backup compression level.\n:type backup_compression_level: int | None\n:param backup_timeouts_starting_status: PBM starting-status timeout in seconds.\n:type backup_timeouts_starting_status: int | None\n:param backup_oplog_span_min: Logical backup oplog span in minutes.\n:type backup_oplog_span_min: float | None\n:param backup_num_parallel_collections: Parallel collections for logical backup.\n:type backup_num_parallel_collections: int | None\n:param backup_namespaces: Selective ``--ns`` namespaces for logical backups.\n:type backup_namespaces: str | None\n:param backup_with_users_and_roles: Opt-in ``--with-users-and-roles`` for ``db.*``.\n:type backup_with_users_and_roles: bool\n:param credentials_path: Path to MongoDB URI credentials on the Nomad node.\n:type credentials_path: str | None",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -515,6 +485,17 @@
               }
             ],
             "title": "Backup Compression Level"
+          },
+          "backup_namespaces": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Namespaces"
           },
           "backup_num_parallel_collections": {
             "anyOf": [
@@ -560,6 +541,11 @@
               }
             ],
             "title": "Backup Timeouts Starting Status"
+          },
+          "backup_with_users_and_roles": {
+            "default": false,
+            "title": "Backup With Users And Roles",
+            "type": "boolean"
           },
           "credentials_path": {
             "anyOf": [
@@ -4266,7 +4252,7 @@
         ]
       },
       "put": {
-        "description": "Update a backup task group from a JSON payload request body.\n\nCascade-updates the parent ``pbm_config`` task and its derived logical,\nphysical, and status siblings, re-stamping ``_form`` so the edit page keeps\nprefilling. The ``EditableBackupParent`` dependency resolves a satellite URL\nto the parent and blocks protected or in-flight groups before any write.\nRejects a parent rename with a conflict and surfaces a partial cascade\nfailure as an HTTP 500 naming the failed legs.",
+        "description": "Update a backup task group from a JSON payload request body.\n\nCascade-updates the parent ``pbm_config`` task and its derived logical,\nphysical, status, and incremental siblings, re-stamping ``_form`` so the edit page keeps\nprefilling. The ``EditableBackupParent`` dependency resolves a satellite URL\nto the parent and blocks protected or in-flight groups before any write.\nRejects a parent rename with a conflict and surfaces a partial cascade\nfailure as an HTTP 500 naming the failed legs.",
         "operationId": "backup_mongo_backup_mongo_api_update_api_apps_backup_mongo__task_name__put",
         "parameters": [
           {

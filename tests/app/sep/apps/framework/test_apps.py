@@ -22,6 +22,7 @@ end-to-end. The create test issues a real form POST and never overrides the
 body resolution it exists to cover is genuinely executed.
 """
 
+from pathlib import Path
 from typing import Annotated, Any, get_args
 from unittest.mock import AsyncMock
 
@@ -39,6 +40,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import (
     BaseTaskResponse,
     ConnectivityWarning,
+    StaticMount,
     TaskExecuteWrite,
     TaskExecutionResponse,
 )
@@ -704,6 +706,29 @@ class TestCreateRoute:
             call for call in tasks_api.post.await_args_list if call.args[0] == "/"
         )
         assert create_call.kwargs["json"]["alert_detail_builder"] == "pkg.mod:builder"
+
+    def test_create_threads_run_result_recorder(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the app's ``run_result_recorder`` is stamped onto the posted task."""
+        tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
+        client = _client(
+            _synth_app(run_result_recorder="pkg.mod:recorder"),
+            tasks_api,
+            regular_user,
+            inventory_api=_make_inventory_api(),
+        )
+
+        response = client.post(
+            f"{_BASE}/",
+            json={"task_name": "new-task", "service_id": 1, "host": _EXECUTOR_HOST},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        create_call = next(
+            call for call in tasks_api.post.await_args_list if call.args[0] == "/"
+        )
+        assert create_call.kwargs["json"]["run_result_recorder"] == "pkg.mod:recorder"
 
     def test_create_response_model_with_context_provider_succeeds(
         self, regular_user: CasdoorUser
@@ -1569,3 +1594,20 @@ class TestRegistryBinding:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["name"] == "synthetic-app"
         assert bound.api_router is app_def.api_router
+
+
+class TestInheritedBaseAppFields:
+    """Cover the fields ``TaskExecutionApp`` inherits from ``BaseApp``."""
+
+    def test_defaults_uses_task_data_true(self) -> None:
+        """Carry ``True`` by default: a derived task app always renders task data."""
+        assert _synth_app().uses_task_data is True
+
+    def test_static_mounts_round_trip_after_inheriting(self) -> None:
+        """Accept and carry ``static_mounts`` now that the field lives on the parent."""
+        mount = StaticMount(
+            path="/static/synthetic",
+            directory=Path("/tmp/payloads"),
+            name="synthetic_files",
+        )
+        assert _synth_app(static_mounts=(mount,)).static_mounts == (mount,)

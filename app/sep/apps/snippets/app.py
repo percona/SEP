@@ -32,6 +32,7 @@ owner of its own — ``ANY`` is the honest "no owner restriction" value.
 """
 
 from app.sep.apps.framework.apps import TaskExecutionApp
+from app.sep.apps.framework.base import StaticMount
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.apps.snippets.extra_routes import (
@@ -76,4 +77,11 @@ app = TaskExecutionApp(
     extra_routes=(approval_router, maintenance_router, artifact_router),
     jinja_router=jinja_router,
     artifact_base_dirs={ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR},
+    static_mounts=(
+        StaticMount(
+            path="/static/snippets",
+            directory=snippets_settings.SNIPPETS_DIR,
+            name="snippets_files",
+        ),
+    ),
 )

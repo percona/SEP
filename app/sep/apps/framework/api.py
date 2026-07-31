@@ -57,6 +57,7 @@ from app.sep.apps.framework.list_query import make_in_memory_list_query_dep
 from app.sep.apps.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
+    dump_with_excluded_fields,
     TaskExecuteWrite,
     TaskExecutionResponse,
     TaskResponseBuilder,
@@ -597,7 +598,7 @@ def _register_create_route(
         base = builder(task, status=None)
         if warning is not None:
             return create_response_model(
-                **{**base.model_dump(), "connectivity_warning": warning}
+                **{**dump_with_excluded_fields(base), "connectivity_warning": warning}
             )
         return base
 
@@ -725,7 +726,7 @@ def _register_update_route(
         )
         if warning is not None:
             return create_response_model(
-                **{**base.model_dump(), "connectivity_warning": warning}
+                **{**dump_with_excluded_fields(base), "connectivity_warning": warning}
             )
         return base
 

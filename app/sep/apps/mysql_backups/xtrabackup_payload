@@ -4,8 +4,6 @@ The script for creating Xtrabackup backups.
 
 It creates Xtrabackup backup and purges old backups.
 """
-from glob import iglob
-
 import resource
 
 import argparse
@@ -15,6 +13,7 @@ import hashlib
 import json
 import logging
 import multiprocessing
+import multiprocessing.pool as thread_pool
 import os
 import pwd
 import re
@@ -34,10 +33,13 @@ import pymysql
 import pymysql.cursors
 import yaml
 from botocore.exceptions import ClientError
-from packaging.version import Version
-from pymysql import Error, InternalError, OperationalError, ProgrammingError
+from pymysql import InternalError, OperationalError, ProgrammingError
 
 BYTES_PER_MB = 1024**2
+
+# Restated inline from app.tasks.run_result.RUN_RESULT_FILENAME — this payload is
+# shipped standalone and cannot import project code; a CI test binds the two.
+RUN_RESULT_FILENAME = ".sep-run-result.json"
 
 # Matches xtrabackup per-file copy progress lines emitted during the backup
 # data phase.  Anchored at ^ so it cannot fire on mid-line content.  The
@@ -68,6 +70,20 @@ def _replica_backup_flags(replica_info: bool, stop_replica: bool) -> list[str]:
     if stop_replica:
         flags.append('--safe-slave-backup')
     return flags
+
+
+def _should_inline_encrypt(bin_cmd: str, keyfile: str | None) -> bool:
+    """Return whether ``_run_backup_cmd`` should append the inline AES-256 flags.
+
+    ``mariadb-backup`` has no ``--encrypt`` option; it is encrypted post-run by
+    ``encrypt_files_aes256`` instead, so it keeps inline verify (``verify_innodb``).
+
+    :param bin_cmd: The selected backup binary command name.
+    :param keyfile: Path to the AES-256 keyfile, or falsy if not configured.
+    :return: True if the inline ``--encrypt=AES256`` flags should be appended.
+    """
+    return bool(keyfile) and bin_cmd != 'mariadb-backup'
+
 
 BACKUP_DIR_REGEX = {
     "X": r"^2[0-9]{3}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$",
@@ -134,6 +150,11 @@ STATUS_WARNING = 1
 UPLOADME_FILE = ".uploadme"
 XTRABACKUP_INFO = "xtrabackup_info"
 XTRABACKUP_CHECKPOINTS = "xtrabackup_checkpoints"
+# Backup metadata SEP keeps in plaintext to read post-backup; excluded from
+# every encryption/verification pass regardless of method.
+PLAINTEXT_METADATA_FILES = (
+    MD5SUM_FILE, UPLOADME_FILE, XTRABACKUP_INFO, XTRABACKUP_CHECKPOINTS,
+)
 
 # Backup binary dependency constants
 DU_BIN = os.getenv("PERCONA_BACKUP_DU_BIN", "/usr/bin/du")
@@ -328,6 +349,32 @@ def get_dir_size(start_path: str, unit: str = "text") -> int | str:
     if mbyte < 1024:
         return f"{int(mbyte)} MB"
     return f"{int(mbyte / 1024)} GB"
+
+
+def _write_run_result(
+    backup_dir: str, size_bytes: int, upload_destination: str | None
+) -> None:
+    """Write the run-result JSON file for a produced backup.
+
+    The path is relative to the run's working directory, which the ``run-python``
+    job spec pins to the task's output-files directory — the location SEP reads
+    results back from.  Written to a sibling temp file and renamed so a reader
+    never observes a partial write.
+
+    :param backup_dir: The resolved backup directory on the remote host.
+    :param size_bytes: The backup size in bytes.
+    :param upload_destination: The remote upload path, or ``None`` when the
+        backup was not uploaded.
+    """
+    payload = {
+        "backup_dir": backup_dir,
+        "size_bytes": size_bytes,
+        "upload_destination": upload_destination,
+    }
+    tmp_path = RUN_RESULT_FILENAME + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as result_file:
+        json.dump(payload, result_file, separators=(",", ":"))
+    os.replace(tmp_path, RUN_RESULT_FILENAME)
 
 
 def logging_setup(
@@ -558,24 +605,37 @@ def encrypt_dir(path: str, logger: logging.Logger | None = None, **cfg: Any) -> 
 
 def is_encrypted_dir(
     path: str,
-    exclude_files: tuple[str, ...] = (
-        MD5SUM_FILE,
-        UPLOADME_FILE,
-        XTRABACKUP_INFO,
-        XTRABACKUP_CHECKPOINTS,
-    ),
+    exclude_files: tuple[str, ...] = PLAINTEXT_METADATA_FILES,
     logger: logging.Logger | None = None,
+    method: str = "gpg",
 ) -> bool:
     """Check if all files in the directory are encrypted.
+
+    For ``method == "gpg"`` every non-excluded file is probed with
+    ``gpg --list-only --decrypt``. For ``method == "aes256"`` verification is by
+    file extension (every non-excluded file must end in ``.xbcrypt``), because
+    ``xbcrypt`` has no cheap header-only listing mode and this matches how the
+    restore side detects encryption. Excluded files are the backup metadata SEP
+    keeps in plaintext to read post-backup.
 
     :param path: Directory path.
     :param exclude_files: Files to exclude from the check.
     :param logger: Logger instance.
+    :param method: Encryption format to verify against (``"gpg"`` or ``"aes256"``).
     :return: True if all files are encrypted, False otherwise.
+    :raises BackupError: If ``method`` is not ``"gpg"`` or ``"aes256"``.
     """
+    if method not in ("gpg", "aes256"):
+        raise BackupError("Unknown encryption method: %s" % (method,))
     ppath = Path(path)
     for p in ppath.rglob("*"):
         if p.is_file() and p.name not in exclude_files:
+            if method == "aes256":
+                if p.suffix != ".xbcrypt":
+                    if logger:
+                        logger.error('Not encrypted: %s', p.name)
+                    return False
+                continue
             cmd = [
                 GPG_BIN,
                 "--batch",
@@ -766,18 +826,11 @@ class DirectoryEncryptor:
         enc_procs = {}
         all_ok = True
 
-        exclude_names = {
-            "md5sum",
-            ".uploadme",
-            "xtrabackup_info",
-            "xtrabackup_checkpoints",
-        }
-
         for file_path in encr_dir.rglob("*"):
             if (
                 not file_path.is_file()
                 or file_path.name.endswith(".gpg")
-                or file_path.name in exclude_names
+                or file_path.name in PLAINTEXT_METADATA_FILES
             ):
                 continue
 
@@ -846,12 +899,8 @@ class BaseBackup:
         :raises BackupError: If the algorithm is not compatible.
         """
         if not self.compress:
-            self.logger.debug("Compression is disabled, skipping check")
             return
         if algorithm in COMPRESSION_ALGORITHMS[self.backup_code]:
-            self.logger.debug(
-                "Algorithm %s accepted for backup type %s", algorithm, self.backup_code
-            )
             return
         raise BackupError(
             f"algorithm {algorithm} is not one of {COMPRESSION_ALGORITHMS[self.backup_code]}"
@@ -1131,7 +1180,6 @@ class Backup(BaseBackup):
 
         for filen in possible_files:
             if Path(filen).is_file():
-                self.logger.debug("my.cnf file found: %s", filen)
                 found_files.append(filen)
 
         return ",".join(found_files)
@@ -1596,7 +1644,6 @@ class Upload(Backup):
             self._collect_paths()
 
         if not self.paths:
-            self.logger.debug("Nothing to upload of %s backup.", self.backup_type)
             return "OK no new binlogs to upload." if self.backup_code == "B" else ""
 
         start_time = time.time()
@@ -1630,7 +1677,6 @@ class XtraBackupUpload(Upload):
         super(XtraBackupUpload, self).__init__(*args, **kwargs)
         if self.encrypt and not self.post_run_encrypt and not self.xtrabackup_aes256:
             self.encrypt_using_tmpdir = True
-            self.logger.debug('Enforced using tmpdir for xtrabackup upload because encryption is enabled.')
 
 
 
@@ -2153,8 +2199,6 @@ class Xtrabackup(Backup):
         if self.host == 'localhost' and not self.incremental:
             self.backup_mycnf(self.last_backup_dir)
             self.backup_certs(self.last_backup_dir)
-            if self.xtrabackup_aes256_keyfile:
-                self.encrypt_files_aes256(self.last_backup_dir, '*.pem')
 
         # Purge changed page tracking
         if self._is_track_changed_pages():
@@ -2164,6 +2208,16 @@ class Xtrabackup(Backup):
 
         # Purge old backups
         self._purge_old_backups()
+
+        # Runs for xtrabackup too (not just mariadb-backup): it mops up plaintext
+        # stragglers inline encryption misses (the copied my.cnf) and closes the
+        # gap where the aes256 path shipped entirely unverified.
+        if self.xtrabackup_aes256_keyfile:
+            self.encrypt_files_aes256(self.last_backup_dir)
+            if not is_encrypted_dir(
+                self.last_backup_dir, method='aes256', logger=self.logger
+            ):
+                raise BackupError('AES-256 verify failed: %s' % (self.last_backup_dir,))
 
         # Encrypt backup w/o upload as a separate option.
         # No hardlinking or rsync upload to avoid the mess.
@@ -2179,31 +2233,28 @@ class Xtrabackup(Backup):
                 self._save_disk_space()
 
         # Upload if needed
-        for upload_type in self.upload_type:
+        upload_providers = {
+            "rsync": RsyncUploadProvider,
+            "s3": S3UploadProvider,
+            "gsutil": GSUploadProvider,
+        }
+        upload_destination = None
+        for upload_type in sorted(self.upload_type):
             self.enable_upload(self.last_backup_dir)
-            if upload_type == "rsync":
-                XtraBackupUpload(
-                    upload_type=upload_type,
-                    upload_provider=RsyncUploadProvider,
-                    settings=self.server_setting,
-                    logger=self.logger,
-                ).run()
-            elif upload_type == "s3":
-                XtraBackupUpload(
-                    upload_type=upload_type,
-                    upload_provider=S3UploadProvider,
-                    settings=self.server_setting,
-                    logger=self.logger,
-                ).run()
-            elif upload_type == "gsutil":
-                XtraBackupUpload(
-                    upload_type=upload_type,
-                    upload_provider=GSUploadProvider,
-                    settings=self.server_setting,
-                    logger=self.logger,
-                ).run()
-            else:
+            provider = upload_providers.get(upload_type)
+            if provider is None:
                 self.logger.warning("Unsupported upload type: %r", upload_type)
+                continue
+            uploader = XtraBackupUpload(
+                upload_type=upload_type,
+                upload_provider=provider,
+                settings=self.server_setting,
+                logger=self.logger,
+            )
+            uploader.run()
+            remote_path = uploader.report_options.get("options", {}).get("remote_path")
+            if remote_path:
+                upload_destination = remote_path
 
         # Report we are OK :)
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
@@ -2219,33 +2270,74 @@ class Xtrabackup(Backup):
         self.logger.info(msg)
         self.notify(notify_status, msg)
 
+        if self.last_backup_dir and os.path.isdir(self.last_backup_dir):
+            try:
+                _write_run_result(
+                    self.last_backup_dir,
+                    get_dir_size(self.last_backup_dir, "bytes"),
+                    upload_destination,
+                )
+            except Exception:
+                self.logger.exception("Failed to write the run-result file.")
 
-    def encrypt_files_aes256(self, dir_path, file_filter='*'):
-        """"aes256 encryption for specific file"""
+    def encrypt_files_aes256(self, dir_path: str | None) -> None:
+        """Encrypt plaintext files under a directory with xbcrypt/AES-256.
 
-        if dir_path:
-            files = iglob(os.path.join(dir_path, file_filter))
-            for filename in files:
-                self._run_encrypt_file_aes256(filename)
+        Recurses ``dir_path``, skipping files already carrying a ``.xbcrypt``
+        suffix and the backup metadata SEP keeps in plaintext to read post-backup.
+        This is the xbcrypt analogue of the gpg :func:`encrypt_dir`: for
+        ``mariadb-backup`` (no inline encryption) it encrypts the whole finished
+        directory; for ``xtrabackup`` it only mops up plaintext stragglers (e.g.
+        the copied ``my.cnf``). Files are encrypted a handful at a time,
+        mirroring :meth:`DirectoryEncryptor.encrypt_dir`.
 
-    def _run_encrypt_file_aes256(self, file_path):
-        """Encrypt xtrabackup_checkpoints after backup."""
+        :param dir_path: Directory whose plaintext files are encrypted.
+        :raises BackupError: If any file fails to encrypt.
+        """
+        if not dir_path:
+            return
+        # A list comprehension (not a generator) fully drains rglob() before any
+        # file is touched, so the walk can't re-yield the .xbcrypt files the pool
+        # is creating underneath it. Bounded by CPU count so xbcrypt can't starve
+        # the host on small hosts.
+        thread_pool.ThreadPool(min(5, os.cpu_count() or 5)).map(self._run_encrypt_file_aes256, [
+            p for p in Path(dir_path).rglob('*')
+            if p.is_file() and p.suffix != '.xbcrypt' and p.name not in PLAINTEXT_METADATA_FILES
+        ])
 
+    def _run_xbcrypt(self, cmd: list[str], remove_path: str | Path) -> None:
+        """Run an ``xbcrypt`` command, then delete ``remove_path`` on success.
+
+        :param cmd: The ``xbcrypt`` argument list to execute.
+        :param remove_path: File removed once the command succeeds (the plaintext
+            input on encrypt, the ``.xbcrypt`` input on decrypt).
+        :raises BackupError: If the command exits non-zero.
+        """
+        self.logger.info('Running: %s', ' '.join(cmd))
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _, err = proc.communicate()
+        if proc.returncode != 0:
+            # Concurrent ThreadPool workers (encrypt_files_aes256) can race here on
+            # simultaneous xbcrypt failures; unguarded deliberately, a lock doesn't
+            # fit the 16 KiB Nomad payload budget. Low likelihood, low blast radius.
+            self._clean_after_error()
+            raise BackupError('xbcrypt failed on %s: %s' % (remove_path, err))
+        os.remove(remove_path)
+
+    def _run_encrypt_file_aes256(self, file_path: str | Path) -> None:
+        """Encrypt a single file in place with xbcrypt/AES-256.
+
+        :param file_path: Plaintext file to encrypt; no-ops when it is absent.
+        :raises BackupError: If the underlying xbcrypt run fails (propagated
+            from :meth:`_run_xbcrypt`).
+        """
         if os.path.exists(file_path):
-            cmd = [XBCRYPT_BIN, '--encrypt-algo=AES256']
-            cmd.append('--encrypt-key-file=%s' % (self.xtrabackup_aes256_keyfile,))
-            cmd.append('--input=%s' % (file_path,))
-            cmd.append('--output=%s.xbcrypt' % (file_path,))
-
-            self.logger.info('Running: %s', ' '.join(cmd))
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            _, err = proc.communicate()
-            if proc.returncode != 0:
-                msg = 'Encrypting file failed: %s' % (err)
-                self._clean_after_error()
-                raise BackupError(msg)
-            else:
-                os.remove(file_path)
+            self._run_xbcrypt(
+                [XBCRYPT_BIN, '--encrypt-algo=AES256',
+                 '--encrypt-key-file=%s' % (self.xtrabackup_aes256_keyfile,),
+                 '--input=%s' % (file_path,), '--output=%s.xbcrypt' % (file_path,)],
+                file_path,
+            )
 
     def _check_ssh(self):
         """
@@ -2318,7 +2410,7 @@ class Xtrabackup(Backup):
             self.logger.info('Enabling compression using %s', self.compression_algorithm)
             xtrabackup_cmd.append('--compress={}'.format(self.compression_algorithm))
 
-        if self.xtrabackup_aes256_keyfile:
+        if _should_inline_encrypt(self.xtrabackup_bin_cmd, self.xtrabackup_aes256_keyfile):
             self.verify_innodb = False
             xtrabackup_cmd.append('--encrypt=AES256')
             xtrabackup_cmd.append('--encrypt-key-file=%s' % (self.xtrabackup_aes256_keyfile,))
@@ -2420,57 +2512,48 @@ class Xtrabackup(Backup):
 
         self.logger.info('OK Xtrabackup complete: %s', self.last_backup_dir)
 
+    def _decrypt_file_aes256(
+        self, keyfile: str, input_path: str, output_path: str
+    ) -> None:
+        """Decrypt one xbcrypt/AES-256 file to ``output_path`` and drop the input.
+
+        No-ops when ``input_path`` is absent, so callers need not pre-check.
+
+        :param keyfile: Path to the AES-256 key file.
+        :param input_path: Path to the ``.xbcrypt`` file to decrypt.
+        :param output_path: Path the decrypted plaintext is written to.
+        :raises BackupError: If decryption fails.
+        """
+        if os.path.exists(input_path):
+            self._run_xbcrypt(
+                [XBCRYPT_BIN, '-d', '--encrypt-algo=AES256',
+                 '--encrypt-key-file=%s' % (keyfile,),
+                 '--input=%s' % (input_path,), '--output=%s' % (output_path,)],
+                input_path,
+            )
+
     def _decrypt_checkpoint_file(self, keyfile, path):
         """Decrypt xtrabackup_checkpoints after backup."""
-
-        if os.path.exists('%s/xtrabackup_checkpoints.xbcrypt' % (path,)):
-            cmd = [XBCRYPT_BIN, '-d', '--encrypt-algo=AES256', '--encrypt-key-file=%s' % (keyfile,),
-                   '--input=%s/xtrabackup_checkpoints.xbcrypt' % (path,),
-                   '--output=%s/xtrabackup_checkpoints' % (path,)]
-            self.logger.info('Running: %s', ' '.join(cmd))
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            _, err = proc.communicate()
-            if proc.returncode != 0:
-                msg = 'Checkpoint file decrypt failed: %s' % (err)
-                self._clean_after_error()
-                raise BackupError(msg)
-            else:
-                os.remove(os.path.join(path, 'xtrabackup_checkpoints.xbcrypt'))
+        self._decrypt_file_aes256(
+            keyfile,
+            '%s/xtrabackup_checkpoints.xbcrypt' % (path,),
+            '%s/xtrabackup_checkpoints' % (path,),
+        )
 
     def _decrypt_info_file(self, keyfile, path):
         """Decrypt xtrabackup_info after backup."""
-        self.logger.debug('Checking for xtrabackup_info in %s', path)
-        if self.compress:
-            self.logger.debug('Compression detected')
-            ext = self.get_compression_ext()
-            input_file = "xtrabackup_info{}.xbcrypt".format(ext)
-            output_file = "xtrabackup_info{}".format(ext)
-        else:
-            input_file = "xtrabackup_info.xbcrypt"
-            output_file = "xtrabackup_info"
-
-        self.logger.debug('Expected path for xtrabackup_info: %s', input_file)
-        if os.path.exists('%s/%s' % (path, input_file)):
-            cmd = [XBCRYPT_BIN, '-d', '--encrypt-algo=AES256', '--encrypt-key-file=%s' % (keyfile,),
-                   '--input=%s/%s' % (path, input_file), '--output=%s/%s' % (path, output_file)]
-            self.logger.info('Running: %s', ' '.join(cmd))
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            _, err = proc.communicate()
-            if proc.returncode != 0:
-                msg = 'Info file decrypt failed: %s' % (err)
-                self._clean_after_error()
-                raise BackupError(msg)
-            else:
-                os.remove(os.path.join(path, input_file))
+        ext = self.get_compression_ext() if self.compress else ''
+        self._decrypt_file_aes256(
+            keyfile,
+            '%s/xtrabackup_info%s.xbcrypt' % (path, ext),
+            '%s/xtrabackup_info%s' % (path, ext),
+        )
 
     def _decompress_info_file(self, path):
         """Decompress xtrabackup_info after backup."""
-        self.logger.debug('Checking for compressed xtrabackup_info in %s', path)
         tool, ext = self.get_compression_tool(), self.get_compression_ext()
-        self.logger.debug('Tool = %s, extension = %s', tool, ext)
         info_file_out = 'xtrabackup_info'
         info_file = os.path.join(path, '{}{}'.format(info_file_out, ext))
-        self.logger.debug('Path determined to be %s', info_file)
         if tool == QPRESS_BIN:
             cmd = [QPRESS_BIN, '-d', info_file, path]
         elif tool == ZSTD_BIN:
@@ -2647,20 +2730,6 @@ class Xtrabackup(Backup):
             raise BackupError(msg)
 
         self.logger.info('OK Preparing complete.')
-
-    def _rsync_upload(self):
-        """Rsync backup to other location.
-
-        To keep backward compatibility we need to rsync here.
-        """
-        # Disable double Nagios reporting
-        self.server_setting['UPLOAD'] = 'rsync'
-        self.server_setting['RSYNC_PATH'] = self.rsync_dir
-        self.server_setting['ENCRYPT'] = False
-        self.server_setting['ENCRYPT_USING_TMPDIR'] = False
-        self.server_setting['UPLOAD_INTERVAL'] = 'daily'
-
-        XtraBackupUpload(upload_provider=RsyncUploadProvider, settings=self.server_setting).run()
 
     def _purge_old_backups(self):
         """Purge old backups.
