@@ -53,7 +53,6 @@ def embedded_profile_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
     :param tmp_path: The per-test temporary directory.
     :param monkeypatch: The environment and CWD patcher.
     :return: The directory holding the profile copy.
-    :rtype: Path
     """
     (tmp_path / "settings.yaml").write_text(
         EMBEDDED_PROFILE.read_text(encoding="utf-8"), encoding="utf-8"
@@ -70,6 +69,5 @@ def embedded_profile_data() -> dict:
     """Return the parsed baked profile.
 
     :return: The profile's YAML content.
-    :rtype: dict
     """
     return yaml.safe_load(EMBEDDED_PROFILE.read_text(encoding="utf-8"))

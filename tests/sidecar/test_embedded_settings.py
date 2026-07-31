@@ -59,7 +59,6 @@ def uncommented(text: str) -> str:
 
     :param text: The profile source.
     :return: The source lines that carry configuration.
-    :rtype: str
     """
     return "\n".join(
         line for line in text.splitlines() if not line.lstrip().startswith("#")
@@ -71,7 +70,6 @@ def secret_valued_leaves(data: Any) -> list[tuple[str, Any]]:
 
     :param data: A node of the parsed profile.
     :return: The secret-typed keys paired with their configured values.
-    :rtype: list[tuple[str, Any]]
     """
     if isinstance(data, dict):
         return [
@@ -91,7 +89,6 @@ def resolved_profile() -> dict[str, dict[str, Any]]:
     """Return every prefixed settings class as resolved from the profile.
 
     :return: The resolved settings, keyed by service.
-    :rtype: dict[str, dict[str, Any]]
     """
     return {
         "global": Settings().model_dump(exclude=UNCOMPARABLE_FIELDS),
@@ -103,7 +100,7 @@ def resolved_profile() -> dict[str, dict[str, Any]]:
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_profile_constructs_every_settings_class():
-    """Every settings class the side-car builds resolves from the profile alone."""
+    """Assert every settings class the side-car builds resolves from the profile."""
     assert Settings().CELERY.broker_url
     assert AuthSettings().PROVIDER
     assert SEPSettings().DATABASE.NAME == SHARED_DATABASE_NAME
@@ -113,7 +110,7 @@ def test_profile_constructs_every_settings_class():
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_pmm_annotations_stay_enabled_without_an_api_key():
-    """Annotations are configured on, and inert, until a token is supplied."""
+    """Assert annotations are configured on, and inert, until a token arrives."""
     settings = Settings()
 
     assert settings.PMM.annotations_enabled is True
@@ -122,25 +119,25 @@ def test_pmm_annotations_stay_enabled_without_an_api_key():
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_grafana_provider_constructs_with_an_empty_token():
-    """The provider is configured but inert until ``SEP_GRAFANA_TOKEN`` arrives."""
+    """Assert the provider constructs, inert, until ``SEP_GRAFANA_TOKEN`` arrives."""
     provider = AuthSettings().PROVIDER["grafana"]
 
     assert provider.service_account_token.get_secret_value() == ""
 
 
 def test_profile_carries_a_single_default_block(embedded_profile_data):
-    """One block keeps the profile independent of the selected ``FASTAPI_ENV``."""
+    """Assert one block keeps the profile independent of ``FASTAPI_ENV``."""
     assert set(embedded_profile_data) == {"default"}
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_exactly_one_auth_provider_is_configured():
-    """A second provider copy would trip ``AuthSettings._exactly_one_provider``."""
+    """Reject a second provider copy, which trips the exactly-one-provider check."""
     assert list(AuthSettings().PROVIDER) == ["grafana"]
 
 
 def test_no_url_carries_a_password():
-    """No URL in the profile embeds credentials in its authority."""
+    """Reject any URL embedding credentials in its authority."""
     profile = uncommented(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
 
     assert PASSWORD_BEARING_USERINFO.search(profile) is None
@@ -148,7 +145,7 @@ def test_no_url_carries_a_password():
 
 
 def test_every_secret_typed_field_is_empty(embedded_profile_data):
-    """Secret-typed keys are present only as empty values."""
+    """Assert secret-typed keys are present only as empty values."""
     assert [
         (key, value)
         for key, value in secret_valued_leaves(embedded_profile_data)
@@ -157,7 +154,7 @@ def test_every_secret_typed_field_is_empty(embedded_profile_data):
 
 
 def test_no_placeholder_markers_remain():
-    """The profile is a working default, not a template awaiting substitution."""
+    """Reject placeholder markers: the profile is a default, not a template."""
     profile = uncommented(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
 
     assert PLACEHOLDER_MARKER.search(profile) is None
@@ -167,7 +164,7 @@ def test_no_placeholder_markers_remain():
 def test_database_password_merges_into_the_profile_block(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """An environment password lands without displacing the YAML siblings."""
+    """Assert an environment password lands without displacing its YAML siblings."""
     monkeypatch.setenv("SEP__DATABASE__PASSWORD", "pw")
 
     database = SEPSettings().DATABASE
@@ -178,7 +175,7 @@ def test_database_password_merges_into_the_profile_block(
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_grafana_token_merges_into_the_profile_block(monkeypatch: pytest.MonkeyPatch):
-    """An environment token lands without displacing the YAML siblings."""
+    """Assert an environment token lands without displacing its YAML siblings."""
     monkeypatch.setenv("AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN", "glsa_x")
 
     provider = AuthSettings().PROVIDER["grafana"]
@@ -191,14 +188,14 @@ def test_grafana_token_merges_into_the_profile_block(monkeypatch: pytest.MonkeyP
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_activation_list_builds_an_app_registry():
-    """The baked activation list satisfies every declared app dependency."""
+    """Assert the baked activation list satisfies every declared app dependency."""
     registry = build_app_registry(SEPSettings().APPS)
 
     assert {"inventory", "snippets", "atw", "mysql_backups"} <= set(registry.keys())
 
 
 def test_uvicorn_ports_match_the_healthcheck_probe(embedded_profile_cwd):
-    """The probe's hardcoded ports are image contract, so the profile follows them."""
+    """Assert the profile follows the probe's hardcoded ports, which are contract."""
     healthcheck = (SIDECAR_DIR / "healthcheck.sh").read_text(encoding="utf-8")
     probed = re.search(r"for port in \(([^)]*)\)", healthcheck)
 
@@ -211,7 +208,7 @@ def test_uvicorn_ports_match_the_healthcheck_probe(embedded_profile_cwd):
 
 
 def test_database_host_and_port_match_the_expansion_defaults(embedded_profile_cwd):
-    """The profile and the entrypoint expansion state one truth about the server."""
+    """Assert the profile and the expansion state one truth about the server."""
     helper = SETTINGS_ENV_HELPER.read_text(encoding="utf-8")
     database = SEPSettings().DATABASE
 
@@ -220,7 +217,7 @@ def test_database_host_and_port_match_the_expansion_defaults(embedded_profile_cw
 
 
 def test_profile_is_not_shipped_in_the_shared_bundle():
-    """``make pack`` feeds both images, so the profile stays a side-car-only copy."""
+    """Assert the profile stays a side-car-only copy of the shared bundle."""
     pack_recipe = re.search(
         r"^\s*@?git archive .*$",
         (BASE_DIR / "Makefile").read_text(encoding="utf-8"),
@@ -234,7 +231,7 @@ def test_profile_is_not_shipped_in_the_shared_bundle():
 def test_profile_resolves_identically_outside_production_docker(
     embedded_profile_cwd, monkeypatch: pytest.MonkeyPatch
 ):
-    """A single block leaves nothing for the ``FASTAPI_ENV`` selection to change."""
+    """Assert the ``FASTAPI_ENV`` selection has nothing left to change."""
     baked = resolved_profile()
     monkeypatch.setenv("FASTAPI_ENV", "development")
 

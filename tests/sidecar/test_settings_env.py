@@ -40,11 +40,10 @@ DATABASE_PREFIXES = ("SEP", "INVENTORY", "TASKS")
 
 
 def source_helper(**inputs: str) -> subprocess.CompletedProcess[str]:
-    """Source the helper from an otherwise empty environment.
+    """Run the helper from an otherwise empty environment.
 
     :param inputs: The deployment inputs to place in the environment.
     :return: The completed ``bash`` run, whose stdout is a NUL-delimited ``env``.
-    :rtype: subprocess.CompletedProcess[str]
     """
     script = (
         f"{CALLER_SHELL_OPTIONS}\n. {shlex.quote(str(SETTINGS_ENV_HELPER))}\nenv -0"
@@ -63,7 +62,6 @@ def exported(result: subprocess.CompletedProcess[str]) -> dict[str, str]:
 
     :param result: A completed :func:`source_helper` run.
     :return: The exported variables.
-    :rtype: dict[str, str]
     """
     assert result.returncode == 0, result.stderr
     return dict(
@@ -73,7 +71,7 @@ def exported(result: subprocess.CompletedProcess[str]) -> dict[str, str]:
 
 @pytest.mark.parametrize("secret_key", [{}, {"SECRET_KEY": ""}], ids=["unset", "empty"])
 def test_missing_secret_key_aborts_with_an_actionable_message(secret_key):
-    """Without an explicit key each supervisord child would derive a different one."""
+    """Reject a missing key, which each supervisord child would resolve differently."""
     result = source_helper(**secret_key)
 
     assert result.returncode != 0
@@ -82,7 +80,7 @@ def test_missing_secret_key_aborts_with_an_actionable_message(secret_key):
 
 
 def test_database_host_and_port_defaults_are_exported():
-    """The host and port defaults reach supervisord's own environment.
+    """Assert the host and port defaults reach supervisord's own environment.
 
     ``%(ENV_...)s`` expands from there, so a bare assignment would leave the
     migration wait loops pointing at undefined names.
@@ -99,7 +97,7 @@ def test_database_host_and_port_defaults_are_exported():
 
 
 def test_supervisord_expansions_are_exported_unconditionally():
-    """Every name supervisord expands is exported outside any conditional branch.
+    """Assert every name supervisord expands is exported outside a conditional.
 
     An undefined ``%(ENV_...)s`` name aborts supervisord rather than starting it.
     """
@@ -116,7 +114,7 @@ def test_supervisord_expansions_are_exported_unconditionally():
 
 
 def test_password_reaches_every_canonical_destination():
-    """One input fans out to the three services and the beat store."""
+    """Assert one input fans out to the three services and the beat store."""
     environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw"))
 
     assert [
@@ -132,7 +130,7 @@ def test_password_reaches_every_canonical_destination():
 
 
 def test_password_is_percent_encoded_into_the_beat_uri():
-    """A password containing URI syntax would otherwise corrupt the authority."""
+    """Encode a password containing URI syntax, which would corrupt the authority."""
     environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="p@ss:w/rd"))
 
     assert (
@@ -143,7 +141,7 @@ def test_password_is_percent_encoded_into_the_beat_uri():
 
 
 def test_explicit_canonical_variable_outranks_the_derived_one():
-    """An operator addressing one service directly keeps that value."""
+    """Keep the value an operator sets directly on one service."""
     environment = exported(
         source_helper(SECRET_KEY="k", SEP_DB_HOST="a", TASKS__DATABASE__HOST="b")
     )
@@ -153,7 +151,7 @@ def test_explicit_canonical_variable_outranks_the_derived_one():
 
 
 def test_explicit_beat_uri_is_left_untouched():
-    """The beat store can be pointed away from the service database."""
+    """Keep an explicit beat store, which may point away from the service database."""
     environment = exported(
         source_helper(SECRET_KEY="k", CELERY__BEAT_DBURI="postgresql://x@y/z")
     )
@@ -162,7 +160,7 @@ def test_explicit_beat_uri_is_left_untouched():
 
 
 def test_beat_uri_is_derived_without_a_password():
-    """The beat store still follows the host/port input when no password is set."""
+    """Derive the beat store from the host/port input when no password is set."""
     environment = exported(source_helper(SECRET_KEY="k"))
 
     assert environment["CELERY__BEAT_DBURI"] == "postgresql://sep@pmm-server:5432/sep"
@@ -170,7 +168,7 @@ def test_beat_uri_is_derived_without_a_password():
 
 
 def test_grafana_token_reaches_the_provider_and_the_pmm_client():
-    """One minted token serves both Grafana sign-in and the PMM syncer."""
+    """Assert one minted token serves both Grafana sign-in and the PMM syncer."""
     environment = exported(source_helper(SECRET_KEY="k", SEP_GRAFANA_TOKEN="glsa_x"))
 
     assert environment["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"] == "glsa_x"
@@ -178,7 +176,7 @@ def test_grafana_token_reaches_the_provider_and_the_pmm_client():
 
 
 def test_no_grafana_variables_without_a_token():
-    """The profile's empty token stands rather than being overwritten with one."""
+    """Leave the profile's empty token standing when no token is supplied."""
     environment = exported(source_helper(SECRET_KEY="k"))
 
     assert "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN" not in environment
@@ -186,7 +184,7 @@ def test_no_grafana_variables_without_a_token():
 
 
 def test_pmm_endpoint_reaches_the_client_and_the_grafana_provider():
-    """Grafana is served under PMM's ``/graph`` prefix on the same endpoint."""
+    """Append PMM's ``/graph`` prefix for the Grafana provider's endpoint."""
     environment = exported(
         source_helper(SECRET_KEY="k", SEP_PMM_ENDPOINT="https://h:1")
     )
@@ -196,7 +194,7 @@ def test_pmm_endpoint_reaches_the_client_and_the_grafana_provider():
 
 
 def test_nomad_endpoint_is_forwarded_verbatim():
-    """Nomad credentials live in the URL, so the input cannot be split up."""
+    """Forward the Nomad endpoint verbatim, since its credentials live in the URL."""
     endpoint = "https://a:b@h/nomad"
 
     environment = exported(source_helper(SECRET_KEY="k", SEP_NOMAD_ENDPOINT=endpoint))
@@ -207,7 +205,7 @@ def test_nomad_endpoint_is_forwarded_verbatim():
 def test_derived_environment_resolves_against_the_baked_profile(
     embedded_profile_cwd, monkeypatch: pytest.MonkeyPatch
 ):
-    """The shell contract and the settings contract agree across their seam."""
+    """Assert the shell contract and the settings contract agree at their seam."""
     environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw"))
     for name, value in environment.items():
         if name not in SHELL_LOCAL_NAMES:
