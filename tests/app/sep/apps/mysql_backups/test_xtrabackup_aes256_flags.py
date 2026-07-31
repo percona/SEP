@@ -86,7 +86,7 @@ class TestShouldInlineEncrypt:
         ],
     )
     def test_gate_per_binary_and_keyfile(
-        self, bin_cmd: str, keyfile: str | None, expected: bool | None
+        self, bin_cmd: str, keyfile: str | None, *, expected: bool
     ) -> None:
         """Assert each (bin_cmd, keyfile) combination yields the expected gate result."""
         assert _should_inline_encrypt(bin_cmd, keyfile) is expected

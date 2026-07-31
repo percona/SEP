@@ -33,15 +33,15 @@ import types
 
 import pytest
 
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    load_function as _load_backup_function,
+)
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    payload_instance as _payload_instance,
+)
 from tests.app.sep.apps.mysql_backups.restore.conftest import (
     RESTORE_PAYLOAD_PATH,
     restore_payload_tree,
-)
-from tests.app.sep.apps.mysql_backups.test_xtrabackup_aes256_encrypt import (
-    _load_function as _load_backup_function,
-)
-from tests.app.sep.apps.mysql_backups.test_xtrabackup_aes256_encrypt import (
-    _payload_instance,
 )
 
 _FAKE_XBCRYPT_SCRIPT = """\

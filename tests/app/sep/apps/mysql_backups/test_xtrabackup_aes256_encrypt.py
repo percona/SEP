@@ -25,11 +25,7 @@ module constants, a fake ``subprocess`` recording commands, and a stub
 """
 
 import ast
-import logging
-import multiprocessing.pool
 import os
-import pathlib
-import subprocess
 import types
 
 import pytest
@@ -38,181 +34,21 @@ from tests.app.sep.apps.mysql_backups.conftest import (
     XTRABACKUP_PAYLOAD_PATH,
     xtrabackup_payload_tree,
 )
-
-_PAYLOAD_PATH = XTRABACKUP_PAYLOAD_PATH
-
-# Module-level constants the extracted symbols read (default args / bodies).
-_CONST_NAMES = frozenset(
-    {
-        "MD5SUM_FILE",
-        "UPLOADME_FILE",
-        "XTRABACKUP_INFO",
-        "XTRABACKUP_CHECKPOINTS",
-        "PLAINTEXT_METADATA_FILES",
-        "XBCRYPT_BIN",
-        "GPG_BIN",
-        "XTRABACKUP_BIN",
-        "XTRABACKUP_BIN_REAL",
-        "XTRABACKUP_BIN_MARIADB",
-    }
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    base_namespace as _base_namespace,
 )
-
-
-def _const_nodes(tree: ast.Module) -> list[ast.stmt]:
-    """Return the whitelisted module-level constant assignments from the payload AST."""
-    return [
-        node
-        for node in tree.body
-        if isinstance(node, ast.Assign)
-        and len(node.targets) == 1
-        and isinstance(node.targets[0], ast.Name)
-        and node.targets[0].id in _CONST_NAMES
-    ]
-
-
-def _base_namespace() -> dict:
-    """Return an exec namespace seeded with real modules and a stub ``BackupError``."""
-    namespace: dict = {
-        "os": os,
-        "subprocess": subprocess,
-        "logging": logging,
-        "Path": pathlib.Path,
-        "Any": object,
-        "thread_pool": multiprocessing.pool,
-    }
-    exec("class BackupError(Exception):\n    pass", namespace)
-    return namespace
-
-
-def _load_constant(name: str) -> object:
-    """Return a whitelisted module-level constant's value from the payload source."""
-    namespace = _base_namespace()
-    exec(
-        compile(
-            ast.Module(body=_const_nodes(xtrabackup_payload_tree()), type_ignores=[]),
-            str(_PAYLOAD_PATH),
-            "exec",
-        ),
-        namespace,
-    )
-    return namespace[name]
-
-
-_XBCRYPT_BIN = _load_constant("XBCRYPT_BIN")
-
-
-def _load_function(name: str) -> object:
-    """Exec a single module-level payload function with its constants seeded."""
-    tree = xtrabackup_payload_tree()
-    namespace = _base_namespace()
-    body = _const_nodes(tree)
-    fn_nodes = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == name
-    ]
-    if not fn_nodes:
-        raise RuntimeError(f"{name} not found in {_PAYLOAD_PATH}. Renamed or removed?")
-    body = body + fn_nodes
-    exec(
-        compile(ast.Module(body=body, type_ignores=[]), str(_PAYLOAD_PATH), "exec"),
-        namespace,
-    )
-    return namespace[name]
-
-
-class _FakeProc:
-    """Stand in for a ``Popen`` result with a fixed return code and canned stderr."""
-
-    def __init__(self, returncode: int) -> None:
-        self.returncode = returncode
-
-    def communicate(self):
-        """Return ``(stdout, stderr)`` -- stderr is non-empty so error paths format it."""
-        return b"", b"boom"
-
-
-def _payload_instance(
-    method_names: tuple[str, ...],
-    *,
-    returncode: int = 0,
-    extra_namespace: dict[str, object] | None = None,
-    real_subprocess: bool = False,
-):
-    """Build an instance of a synthetic class carrying the named payload methods.
-
-    The methods are lifted verbatim from the payload and exec'd into a class over
-    a namespace whose ``subprocess`` is faked (recording every command and
-    returning ``returncode``). Returns ``(instance, BackupError, calls)`` where
-    ``calls`` is the list of xbcrypt argv lists the code tried to run.
-
-    :param method_names: The payload method names to lift into the synthetic class.
-    :param returncode: The return code the faked ``subprocess.Popen`` reports.
-    :param extra_namespace: Extra globals (e.g. a fake module-level function, or a
-        payload constant override such as ``XBCRYPT_BIN``) merged into the exec
-        namespace after the payload's own constants are loaded (so this wins),
-        before the class is compiled.
-    :param real_subprocess: When True, keep the real ``subprocess`` module instead
-        of faking ``Popen`` -- for integration tests that need a real process (e.g.
-        a stand-in ``xbcrypt`` executable) to actually run. ``calls`` is unused
-        (always ``[]``) in this mode.
-    """
-    tree = xtrabackup_payload_tree()
-    method_nodes = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name in method_names
-    ]
-    missing = set(method_names) - {node.name for node in method_nodes}
-    if missing:
-        raise RuntimeError(f"{sorted(missing)} not found in {_PAYLOAD_PATH}.")
-
-    calls: list[list[str]] = []
-
-    class _FakeSubprocess:
-        PIPE = -1
-
-        # N802: signature mirrors ``subprocess.Popen`` verbatim so the payload's
-        # real call site binds unchanged. ``list.append`` is GIL-atomic, so this
-        # stays safe when ``encrypt_files_aes256`` calls it from pool threads.
-        @staticmethod
-        def Popen(cmd, **_kwargs):  # noqa: N802
-            calls.append(list(cmd))
-            return _FakeProc(returncode)
-
-    namespace = _base_namespace()
-    if not real_subprocess:
-        namespace["subprocess"] = _FakeSubprocess
-    exec(
-        compile(
-            ast.Module(body=_const_nodes(tree), type_ignores=[]),
-            str(_PAYLOAD_PATH),
-            "exec",
-        ),
-        namespace,
-    )
-    namespace.update(extra_namespace or {})
-    cls = ast.ClassDef(
-        name="_Payload",
-        bases=[],
-        keywords=[],
-        body=list(method_nodes),
-        decorator_list=[],
-    )
-    module = ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[]))
-    exec(compile(module, str(_PAYLOAD_PATH), "exec"), namespace)
-
-    inst = namespace["_Payload"]()
-    inst.logger = types.SimpleNamespace(
-        info=lambda *_a, **_k: None,
-        debug=lambda *_a, **_k: None,
-        error=lambda *_a, **_k: None,
-    )
-    inst._clean_after_error = lambda: None
-    inst.xtrabackup_aes256_keyfile = "/keys/aes.key"
-    inst.compress = False
-    inst.get_compression_ext = lambda: ""
-    return inst, namespace["BackupError"], calls
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    const_nodes as _const_nodes,
+)
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    load_function as _load_function,
+)
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    payload_instance as _payload_instance,
+)
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    XBCRYPT_BIN as _XBCRYPT_BIN,
+)
 
 
 class TestIsEncryptedDirAes256:
@@ -281,7 +117,7 @@ class TestIsEncryptedDirGpgUnchanged:
         exec(
             compile(
                 ast.Module(body=_const_nodes(tree) + fn_nodes, type_ignores=[]),
-                str(_PAYLOAD_PATH),
+                str(XTRABACKUP_PAYLOAD_PATH),
                 "exec",
             ),
             namespace,

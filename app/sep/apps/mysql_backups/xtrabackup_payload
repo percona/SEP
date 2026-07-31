@@ -2305,7 +2305,7 @@ class Xtrabackup(Backup):
             if p.is_file() and p.suffix != '.xbcrypt' and p.name not in PLAINTEXT_METADATA_FILES
         ])
 
-    def _run_xbcrypt(self, cmd: list[str], remove_path: str) -> None:
+    def _run_xbcrypt(self, cmd: list[str], remove_path: str | Path) -> None:
         """Run an ``xbcrypt`` command, then delete ``remove_path`` on success.
 
         :param cmd: The ``xbcrypt`` argument list to execute.
@@ -2324,7 +2324,7 @@ class Xtrabackup(Backup):
             raise BackupError('xbcrypt failed on %s: %s' % (remove_path, err))
         os.remove(remove_path)
 
-    def _run_encrypt_file_aes256(self, file_path: str) -> None:
+    def _run_encrypt_file_aes256(self, file_path: str | Path) -> None:
         """Encrypt a single file in place with xbcrypt/AES-256.
 
         :param file_path: Plaintext file to encrypt; no-ops when it is absent.
