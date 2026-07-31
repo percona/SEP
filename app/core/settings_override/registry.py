@@ -294,12 +294,24 @@ def _effective_field_markers(
     return {**entry, **markers}
 
 
+def _setting_class_or_none(settings_cls: type[BaseModel]) -> SettingClassEnum | None:
+    """Return the override-table identifier for a settings class, if it has one.
+
+    Every class a settings router exposes is an enum member, so ``None`` means
+    the class can carry no override row at all -- which each policy gate reads
+    as "withhold", closing rather than widening the overridable surface.
+
+    :param settings_cls: The Pydantic settings class to identify.
+    :return: The matching enum member, or ``None`` when the class has none.
+    """
+    try:
+        return SettingClassEnum(settings_cls.__name__)
+    except ValueError:
+        return None
+
+
 def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
     """Return whether the deployment's allowlist withholds one canonical key.
-
-    Fails closed: a class the override table cannot even name is treated as
-    locked, so a restricted deployment never widens its surface through a
-    settings class nothing exposes.
 
     :param settings_cls: The top-level Pydantic settings class owning the key.
     :param canonical_key: The canonical override key -- a top-level field name
@@ -308,9 +320,8 @@ def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
     """
     if not is_restriction_active():
         return False
-    try:
-        setting_class = SettingClassEnum(settings_cls.__name__)
-    except ValueError:
+    setting_class = _setting_class_or_none(settings_cls)
+    if setting_class is None:
         return True
     return not is_key_allowed(setting_class, canonical_key)
 
@@ -735,9 +746,8 @@ def is_nested_overridable_parent(
         return False
     if not include_policy_gate or not is_restriction_active():
         return True
-    try:
-        setting_class = SettingClassEnum(settings_cls.__name__)
-    except ValueError:
+    setting_class = _setting_class_or_none(settings_cls)
+    if setting_class is None:
         return False
     return has_allowed_key_under(setting_class, field_name)
 

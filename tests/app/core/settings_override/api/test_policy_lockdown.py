@@ -370,3 +370,46 @@ class TestDeleteGate:
         """Assert the default keeps DELETE idempotent for an overridable key."""
         response = client.delete(f"{SEP_URL}/INVENTORY_ENDPOINT")
         assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_fully_locked_parent_with_row_is_deleted(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+        restrict: Callable[..., None],
+    ) -> None:
+        """Assert a whole-parent row survives every leaf beneath it being withheld."""
+        await _seed_row(
+            override_session,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key="NOMAD",
+            value={"timeout": 30},
+            is_active=True,
+        )
+        restrict(LOGGING_KEY)
+        response = client.delete(f"{TASKS_URL}/NOMAD")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert (
+            await SettingsOverrideManager.count(
+                override_session,
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="NOMAD",
+            )
+            == 0
+        )
+
+    def test_fully_locked_parent_without_row_conflicts(
+        self, client: TestClient, restrict: Callable[..., None]
+    ) -> None:
+        """Assert a withheld parent with nothing to remove reports a conflict."""
+        restrict(LOGGING_KEY)
+        response = client.delete(f"{TASKS_URL}/NOMAD")
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_unrestricted_whole_parent_delete_is_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Assert the default keeps whole-parent deletion a 422, not a conflict."""
+        response = client.delete(f"{TASKS_URL}/NOMAD")
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert _error_types(response.json()) == {"not_overridable"}

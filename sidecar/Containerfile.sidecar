@@ -65,7 +65,7 @@ ENV FASTAPI_ENV=production_docker
 # keep `docker logs` complete when a program dies
 ENV PYTHONUNBUFFERED=1
 
-# The settings the embedded deployment leaves an administrator; everything else
+# The settings the embedded deployment leaves to an administrator; everything else
 # is refused by the override API because this image provisions it. Carried as an
 # env var only until it can move into the baked profile -- env outranks YAML
 # permanently, so the two cannot coexist
