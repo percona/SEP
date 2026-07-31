@@ -54,17 +54,18 @@ class SnippetManager(BaseSQLModelManager):
 
     :cvar Model: The SQLModel class this manager is responsible for (`Snippet`).
     :vartype Model: type[Snippet]
-    :cvar ordering: The approved-first ordering (``approved_at`` desc, then
-        ``created_at``). ``list_query_spec`` reproduces it as the spec default, so
-        this attribute is redundant and a follow-up removes it; until then, callers
-        that want the historical ordering byte-for-byte pass it as an explicit
-        ``order_by``.
+    :cvar ordering: The legacy approved-first ordering (``approved_at`` desc, then
+        ``created_at``). ``list_query_spec`` keeps the approved-first intent but not
+        this exact clause list — it breaks ties on ``id`` rather than ``created_at``
+        — so callers that need the historical ordering clause-for-clause pass this
+        attribute as an explicit ``order_by``. A follow-up removes it once every
+        such caller has moved onto the spec.
     :cvar list_query_spec: The request-boundary sort/search allowlist backing the
         derived list route, and the single authority for the default ordering.
         First-class columns sort and search directly; ``title`` and ``service_type``
-        resolve through :func:`_meta_text`. The default sort reproduces the
-        historical approved-first ordering, and the unique ``id`` tie-breaker keeps
-        pagination deterministic.
+        resolve through :func:`_meta_text`. The default sort keeps the approved-first
+        intent of ``ordering``, and the unique ``id`` tie-breaker — in place of
+        the legacy non-unique ``created_at`` — keeps pagination deterministic.
     """
 
     Model = Snippet

@@ -225,27 +225,33 @@ async def _list_scripts(
     data queries share predicates and the ``total`` matches the visible page. The rows
     are expunged so they stay usable after the request-less session closes, mirroring
     :func:`_load_script`. The snippets list route always derives a query, so
-    ``list_query`` and ``pagination`` are always supplied; the ``None`` fallbacks keep
-    the hook honest against the framework's non-query call shapes.
+    ``list_query`` and ``pagination`` are always supplied; the ``None`` branches keep
+    the hook honest against the framework's non-query call shapes, where an absent
+    ``pagination`` means the whole set rather than a default-sized first page.
 
     :param list_query: The resolved sort/search/filter selections, or ``None`` for the
         manager's default ordering with no filters.
-    :param pagination: The validated offset/limit window, or ``None`` for the first
-        default page.
-    :return: The page's wrapped snippets and the filtered total across all pages.
+    :param pagination: The validated offset/limit window, or ``None`` for every
+        matching snippet.
+    :return: The wrapped snippets and the filtered total across all pages.
     """
-    window = pagination if pagination is not None else Pagination()
     async_session = get_async_session_maker()
     async with async_session() as session:
-        if list_query is not None:
-            page = await SnippetManager.snippet_list_page(
-                session, list_query=list_query, pagination=window
-            )
+        if pagination is None:
+            rows = await SnippetManager.list(session)
+            total = len(rows)
         else:
-            page = await SnippetManager.list_paginated(session, pagination=window)
-        for snippet in page.items:
+            page = (
+                await SnippetManager.snippet_list_page(
+                    session, list_query=list_query, pagination=pagination
+                )
+                if list_query is not None
+                else await SnippetManager.list_paginated(session, pagination=pagination)
+            )
+            rows, total = page.items, page.total
+        for snippet in rows:
             session.expunge(snippet)
-    return [SnippetScript(snippet) for snippet in page.items], page.total
+    return [SnippetScript(snippet) for snippet in rows], total
 
 
 async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:

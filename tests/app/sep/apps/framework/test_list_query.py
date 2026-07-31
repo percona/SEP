@@ -35,7 +35,7 @@ from app.sep.apps.framework.list_query import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _Row:
     """Stand in for a materialized in-memory script row."""
 

@@ -153,6 +153,21 @@ class TestLoadAndListScripts:
         assert sorted(script.filename for script in scripts) == ["a.sh", "b.sh"]
         assert total == len(scripts)
 
+    async def test_list_scripts_without_pagination_is_not_capped_at_a_page(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Return every row when ``pagination`` is ``None``, past one default page."""
+        count = Pagination().limit + 5
+        for index in range(count):
+            await create_snippet(f"s{index:03d}.sh")
+
+        scripts, total = await snippet_source.list_scripts(None, None)
+
+        assert len(scripts) == count
+        assert total == count
+
     async def test_list_scripts_pushes_query_down_to_sql(
         self,
         request_less_session: AsyncSession,
