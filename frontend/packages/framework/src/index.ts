@@ -164,6 +164,7 @@ export type {
   DownloadLog,
   FileMetadata,
   TaskHistoryFilesMap,
+  UseTaskHistoryFilesOptions,
   TaskFileDownloadParams,
   UseSnippetAppExecutionOptions,
 } from './hooks';
