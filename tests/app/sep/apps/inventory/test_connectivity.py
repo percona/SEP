@@ -36,11 +36,9 @@ from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 
 _MYSQL_PORT = 3306
 _TASK_HISTORY_ID = 42
-_UNSUPPORTED_SERVICE_TYPES = [
-    ServiceTypeEnum.PROXYSQL,
-    ServiceTypeEnum.HAPROXY,
-    ServiceTypeEnum.EXTERNAL,
-]
+_UNSUPPORTED_SERVICE_TYPES = sorted(
+    set(ServiceTypeEnum) - CONNECTABLE_SERVICE_TYPES, key=str
+)
 
 
 @pytest.fixture
@@ -254,30 +252,18 @@ async def test_maps_unreachable_probe_onto_bad_gateway(mysql_service, tasks_api)
 async def test_maps_malformed_upstream_payload_onto_bad_gateway(
     mysql_service, tasks_api
 ):
-    """Convert an unparseable upstream body into 502 rather than a validation error."""
-    tasks_api.post.return_value = {"unexpected": "shape"}
+    """Convert an unparseable upstream body into 502 rather than a validation error.
 
-    with pytest.raises(HTTPBadGatewayException) as exc_info:
-        await probe_service_connectivity(mysql_service, tasks_api)
-
-    assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
-
-
-@pytest.mark.asyncio
-async def test_distinguishes_malformed_payload_from_unreachable_tasks_api(
-    mysql_service, tasks_api
-):
-    """Report a reached-but-unparseable answer differently from an unreachable API.
-
-    Both causes are documented as 502s, so the status alone cannot tell them
-    apart; only the detail distinguishes a response-shape regression from a
-    transport failure.
+    Both this and an unreachable Tasks API are documented as 502s, so the status
+    alone cannot tell them apart; only the detail distinguishes a response-shape
+    regression from a transport failure.
     """
     tasks_api.post.return_value = {"unexpected": "shape"}
 
     with pytest.raises(HTTPBadGatewayException) as exc_info:
         await probe_service_connectivity(mysql_service, tasks_api)
 
+    assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
     assert "could not reach" not in exc_info.value.detail
     assert "unrecognized result" in exc_info.value.detail
 

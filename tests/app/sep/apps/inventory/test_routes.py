@@ -28,6 +28,7 @@ from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_serializer
 from app.inventory.models import ServiceTypeEnum, SourceEnum
+from app.sep.apps.inventory.constants import CONNECTABLE_SERVICE_TYPES
 from app.sep.apps.inventory.deps import AvailableSyncer, get_syncers
 from app.sep.deps import (
     AVAILABLE_TIMEZONES,
@@ -54,6 +55,10 @@ from tests.app.sep.apps.inventory.conftest import (
     PMM_STUB_NAME,
     StubMySQLSyncer,
     StubPMMSyncer,
+)
+
+_UNSUPPORTED_SERVICE_TYPES = sorted(
+    set(ServiceTypeEnum) - CONNECTABLE_SERVICE_TYPES, key=str
 )
 
 
@@ -898,14 +903,7 @@ class TestCheckServiceConnectivity:
         ]
         mock_tasks_api_dep.post.assert_not_awaited()
 
-    @pytest.mark.parametrize(
-        "service_type",
-        [
-            ServiceTypeEnum.PROXYSQL,
-            ServiceTypeEnum.HAPROXY,
-            ServiceTypeEnum.EXTERNAL,
-        ],
-    )
+    @pytest.mark.parametrize("service_type", _UNSUPPORTED_SERVICE_TYPES)
     def test_connectivity_check_rejects_unsupported_service_type(
         self,
         test_client,
@@ -976,14 +974,7 @@ class TestCheckServiceConnectivity:
         finally:
             sep_app.dependency_overrides.pop(get_created_service, None)
 
-    @pytest.mark.parametrize(
-        "service_type",
-        [
-            ServiceTypeEnum.PROXYSQL,
-            ServiceTypeEnum.HAPROXY,
-            ServiceTypeEnum.EXTERNAL,
-        ],
-    )
+    @pytest.mark.parametrize("service_type", _UNSUPPORTED_SERVICE_TYPES)
     @pytest.mark.usefixtures("mock_sync_item_manager", "mock_get_username_mapping")
     def test_connectivity_button_hidden_for_non_connectable_types(
         self,
