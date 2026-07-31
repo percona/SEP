@@ -13,26 +13,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define test fixtures for mysql_backups plugin tests."""
+"""Define test fixtures for mysql_backups restore payload tests."""
 
 import ast
 import pathlib
 
-from tests.app.sep.conftest import (  # noqa: F401
-    mock_inventory_api_dep,
-    mock_task_api_dep,
-    unauthenticated_client,
-)
-
-XTRABACKUP_PAYLOAD_PATH = (
-    pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups/xtrabackup_payload"
+RESTORE_PAYLOAD_PATH = (
+    pathlib.Path(__file__).parents[6]
+    / "app/sep/apps/mysql_backups/restore/xtrabackup_payload"
 )
 
 
-def xtrabackup_payload_tree() -> ast.Module:
-    """Parse and return the xtrabackup payload's AST, fresh on every call.
+def restore_payload_tree() -> ast.Module:
+    """Parse and return the restore payload's AST, fresh on every call.
 
     Centralizes the payload-path lookup so the per-file AST-extraction helpers
     in this directory's test modules do not each re-derive it independently.
     """
-    return ast.parse(XTRABACKUP_PAYLOAD_PATH.read_text())
+    return ast.parse(RESTORE_PAYLOAD_PATH.read_text())
