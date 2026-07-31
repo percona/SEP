@@ -415,7 +415,9 @@ def _field_responses(
     """
     leaves = (
         list(iter_nested_leaf_keys(settings_cls, field_meta.key))
-        if is_nested_overridable_parent(settings_cls, field_meta.key)
+        if is_nested_overridable_parent(
+            settings_cls, field_meta.key, include_policy_gate=False
+        )
         else []
     )
     if not leaves:

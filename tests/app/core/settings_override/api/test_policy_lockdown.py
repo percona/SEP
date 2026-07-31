@@ -16,8 +16,8 @@
 """Cover the settings HTTP surface under an active override restriction.
 
 Drive a real ``build_settings_router`` through ``TestClient`` so the PATCH,
-LIST, DETAIL and DELETE gates are exercised end to end, including the
-criterion-7 rework that keeps a stale row deletable while its key is locked.
+LIST, DETAIL and DELETE gates are exercised end to end, including the rework
+that keeps a stale row deletable while its key is locked.
 """
 
 from collections.abc import AsyncIterator, Callable, Iterator
@@ -106,6 +106,18 @@ async def _seed_row(session: AsyncSession, **kwargs: object) -> None:
 def _error_types(response_json: dict) -> set[str]:
     """Return the distinct ``type`` values of a structured 422 detail payload."""
     return {entry["type"] for entry in response_json["detail"]}
+
+
+def _nomad_leaf_reloads(client: TestClient) -> dict[str, str]:
+    """Return the reload classification LIST reports for each ``NOMAD__`` leaf."""
+    response = client.get("/settings/")
+    assert response.status_code == status.HTTP_200_OK
+    groups = {group["setting_class"]: group for group in response.json()["groups"]}
+    return {
+        field["key"]: field["reload"]
+        for field in groups[SettingClassEnum.TASKS_SETTINGS.value]["settings"]
+        if field["key"].startswith("NOMAD__")
+    }
 
 
 class TestRemotePassThrough:
@@ -288,9 +300,21 @@ class TestReporting:
         )
         assert reloads["SYNC_REFRESH_TIME"] == ReloadClassification.HOT.value
 
+    def test_list_still_enumerates_leaves_of_a_fully_locked_parent(
+        self, client: TestClient, restrict: Callable[..., None]
+    ) -> None:
+        """Assert a withheld parent's leaves stay listed, each reported read-only."""
+        unrestricted = set(_nomad_leaf_reloads(client))
+        assert unrestricted
+
+        restrict(ANNOTATIONS_KEY)
+        restricted = _nomad_leaf_reloads(client)
+        assert set(restricted) == unrestricted
+        assert set(restricted.values()) == {ReloadClassification.NOT_OVERRIDABLE.value}
+
 
 class TestDeleteGate:
-    """Cover the criterion-7 rework: stale rows stay deletable, absent rows 409."""
+    """Cover the delete rework: stale rows stay deletable, absent rows 409."""
 
     @pytest.mark.asyncio
     async def test_locked_key_with_row_is_deleted(
