@@ -49,24 +49,7 @@ function renderPane(ui: React.ReactNode) {
 describe('CollectPane', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedApi.get.mockImplementation(async (url: string) => {
-      if (typeof url === 'string' && (url === '/apps/atw/' || url === '/apps/atw')) {
-        return {
-          data: [
-            {
-              category_root: 'MySQL',
-              parent_category: 'PERFORMANCE_ISSUES',
-              parent_category_label: 'Performance Issues',
-              category: 'OVERALL_SLOWNESS',
-              category_label: 'Overall Slowness',
-              snippet_count: 0,
-              snippets: [],
-            },
-          ],
-        };
-      }
-      return { data: { shared: [], per_snippet: [] } };
-    });
+    mockedApi.get.mockResolvedValue({ data: { shared: [], per_snippet: [] } });
   });
 
   it('shows a closed message and disables collection controls when the incident is closed', async () => {
@@ -76,12 +59,7 @@ describe('CollectPane', () => {
       expect(screen.getByText(/This incident is closed/i)).toBeTruthy();
     });
     expect(screen.queryByRole('button', { name: /Execute batch/i })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Subcategory 1' })).toBeNull();
     expect(screen.getByRole('combobox', { name: 'Snippets' })).toBeDisabled();
-    await waitFor(() => {
-      expect(screen.getByRole('combobox', { name: 'Subcategory 1' })).toHaveAttribute(
-        'aria-disabled',
-        'true',
-      );
-    });
   });
 });

@@ -43,11 +43,10 @@ import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 import { Link } from 'react-router';
 import {
   ATW_PAGE_SIZE,
+  useAtwIncidentLifecycle,
   useAtwIncidents,
-  useCloseAtwIncident,
   useCreateAtwIncident,
   useDeleteAtwIncident,
-  useReopenAtwIncident,
   useUpdateAtwIncident,
 } from './hooks';
 import type { AtwIncident } from './types';
@@ -64,18 +63,7 @@ export function IncidentListPage() {
   const createMutation = useCreateAtwIncident();
   const updateMutation = useUpdateAtwIncident();
   const deleteMutation = useDeleteAtwIncident();
-  const closeMutation = useCloseAtwIncident();
-  const reopenMutation = useReopenAtwIncident();
-  const lifecycleError = closeMutation.isError
-    ? (closeMutation.error?.message ?? 'Failed to close incident')
-    : reopenMutation.isError
-      ? (reopenMutation.error?.message ?? 'Failed to reopen incident')
-      : null;
-  const pendingLifecycleId = closeMutation.isPending
-    ? closeMutation.variables
-    : reopenMutation.isPending
-      ? reopenMutation.variables
-      : null;
+  const lifecycle = useAtwIncidentLifecycle();
 
   useEffect(() => {
     if (data && data.total > 0 && data.offset >= data.total) {
@@ -151,16 +139,9 @@ export function IncidentListPage() {
 
       {error && <Alert severity="error">Failed to load incidents: {error.message}</Alert>}
 
-      {lifecycleError && (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-          onClose={() => {
-            closeMutation.reset();
-            reopenMutation.reset();
-          }}
-        >
-          {lifecycleError}
+      {lifecycle.error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={lifecycle.reset}>
+          {lifecycle.error}
         </Alert>
       )}
 
@@ -201,12 +182,8 @@ export function IncidentListPage() {
                 <Tooltip title="Reopen">
                   <IconButton
                     aria-label={`Reopen ${incident.name}`}
-                    disabled={pendingLifecycleId === incident.id}
-                    onClick={() => {
-                      closeMutation.reset();
-                      reopenMutation.reset();
-                      reopenMutation.mutate(incident.id);
-                    }}
+                    disabled={lifecycle.pendingIncidentId === incident.id}
+                    onClick={() => lifecycle.reopen(incident.id)}
                   >
                     <LockOpenOutlinedIcon fontSize="small" />
                   </IconButton>
@@ -215,12 +192,8 @@ export function IncidentListPage() {
                 <Tooltip title="Close">
                   <IconButton
                     aria-label={`Close ${incident.name}`}
-                    disabled={pendingLifecycleId === incident.id}
-                    onClick={() => {
-                      closeMutation.reset();
-                      reopenMutation.reset();
-                      closeMutation.mutate(incident.id);
-                    }}
+                    disabled={lifecycle.pendingIncidentId === incident.id}
+                    onClick={() => lifecycle.close(incident.id)}
                   >
                     <LockOutlinedIcon fontSize="small" />
                   </IconButton>

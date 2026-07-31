@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Autocomplete, Box, CircularProgress, TextField, Typography } from '@mui/material';
 import { SchemaFormRenderer, SNIPPET_FORM_RESERVED_FIELD_NAMES } from '@sep/framework';
 import type { FormSection, SectionField } from '@sep/api';
@@ -133,8 +133,17 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
     setAvailable(snippets);
   }, []);
 
+  useEffect(() => {
+    if (!isClosed) {
+      return;
+    }
+    setSelected([]);
+    setAvailable([]);
+    setItemErrors([]);
+  }, [isClosed]);
+
   const selectedNames = useMemo(() => selected.map((snippet) => snippet.name), [selected]);
-  const schemaQuery = useAtwMergedSchema(selectedNames);
+  const schemaQuery = useAtwMergedSchema(isClosed ? [] : selectedNames);
   const batchMutation = useAtwBatchExecute(incidentId);
 
   // Options merge the current category's snippets with the current selection so
@@ -218,7 +227,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
         </Alert>
       )}
 
-      <CategoryBrowser onSnippetsChange={handleSnippetsChange} disabled={isClosed} />
+      {!isClosed && <CategoryBrowser onSnippetsChange={handleSnippetsChange} />}
 
       <Autocomplete
         multiple

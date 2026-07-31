@@ -149,8 +149,7 @@ export function useUpdateAtwIncident() {
       return data;
     },
     onSuccess: (incident) => {
-      queryClient.invalidateQueries({ queryKey: incidentsKey });
-      queryClient.invalidateQueries({ queryKey: ['atw', 'incidents', incident.id] });
+      invalidateAtwIncidentQueries(queryClient, incident);
     },
   });
 }
@@ -167,36 +166,68 @@ export function useDeleteAtwIncident() {
   });
 }
 
-export function useCloseAtwIncident() {
+function invalidateAtwIncidentQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  incident: AtwIncident,
+) {
+  queryClient.invalidateQueries({ queryKey: incidentsKey });
+  queryClient.invalidateQueries({ queryKey: ['atw', 'incidents', incident.id] });
+}
+
+function useAtwIncidentLifecycleAction(action: 'close' | 'reopen') {
   const queryClient = useQueryClient();
   return useMutation<AtwIncident, Error, string>({
     mutationFn: async (incidentId) => {
       const { data } = await apiClient.post<AtwIncident>(
-        `${ATW_BASE}/incidents/${incidentId}/close/`,
+        `${ATW_BASE}/incidents/${incidentId}/${action}/`,
       );
       return data;
     },
     onSuccess: (incident) => {
-      queryClient.invalidateQueries({ queryKey: incidentsKey });
-      queryClient.invalidateQueries({ queryKey: ['atw', 'incidents', incident.id] });
+      invalidateAtwIncidentQueries(queryClient, incident);
     },
   });
 }
 
+export function useCloseAtwIncident() {
+  return useAtwIncidentLifecycleAction('close');
+}
+
 export function useReopenAtwIncident() {
-  const queryClient = useQueryClient();
-  return useMutation<AtwIncident, Error, string>({
-    mutationFn: async (incidentId) => {
-      const { data } = await apiClient.post<AtwIncident>(
-        `${ATW_BASE}/incidents/${incidentId}/reopen/`,
-      );
-      return data;
+  return useAtwIncidentLifecycleAction('reopen');
+}
+
+/** Shared close/reopen mutations, error text, and pending id for list and workspace. */
+export function useAtwIncidentLifecycle() {
+  const closeMutation = useCloseAtwIncident();
+  const reopenMutation = useReopenAtwIncident();
+
+  const reset = () => {
+    closeMutation.reset();
+    reopenMutation.reset();
+  };
+
+  return {
+    close: (incidentId: string) => {
+      reset();
+      closeMutation.mutate(incidentId);
     },
-    onSuccess: (incident) => {
-      queryClient.invalidateQueries({ queryKey: incidentsKey });
-      queryClient.invalidateQueries({ queryKey: ['atw', 'incidents', incident.id] });
+    reopen: (incidentId: string) => {
+      reset();
+      reopenMutation.mutate(incidentId);
     },
-  });
+    reset,
+    error: closeMutation.isError
+      ? (closeMutation.error?.message ?? 'Failed to close incident')
+      : reopenMutation.isError
+        ? (reopenMutation.error?.message ?? 'Failed to reopen incident')
+        : null,
+    pendingIncidentId: closeMutation.isPending
+      ? closeMutation.variables
+      : reopenMutation.isPending
+        ? reopenMutation.variables
+        : null,
+  };
 }
 
 // ── Merged execution schema ──────────────────────────────────────────────

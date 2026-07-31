@@ -109,7 +109,8 @@ describe('IncidentWorkspacePage', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Reopen incident/i })).toBeTruthy();
-      expect(screen.getAllByText(/This incident is closed/i).length).toBeGreaterThan(0);
+      expect(screen.getByText('Closed')).toBeTruthy();
+      expect(screen.getByText(/This incident is closed/i)).toBeTruthy();
     });
   });
 
