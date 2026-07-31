@@ -237,12 +237,22 @@ default:
       MINIFY_PAYLOAD: True  # Minify payloads before dispatch
       LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
     ANONYMIZER:
-      DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
+      DEFAULT_ENTITIES:
+        - CREDIT_CARD
+        - EMAIL_ADDRESS
+        - IBAN_CODE
+        - IP_ADDRESS
+        - PHONE_NUMBER
+        - US_SSN
+        - US_ITIN
 
 development:
   PMM:
     ENDPOINT: https://127.0.0.1:8443
     VERIFY_SSL: false
+  TASKS:
+    ANONYMIZER:
+      DEFAULT_ENTITIES: []
   SEP:
     UVICORN_RELOAD: true
     # UVICORN_EXTRA_RELOAD_DIRS:

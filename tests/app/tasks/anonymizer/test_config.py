@@ -16,13 +16,58 @@
 """Define tests for the app.tasks.anonymizer.config module."""
 
 from collections import defaultdict
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+from app.core.config import YamlPrefixConfigSettingsSource
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
 from app.tasks.anonymizer.entities import PIIEntity
+
+HIGH_CONFIDENCE_DEFAULT_ENTITIES = {
+    PIIEntity.CREDIT_CARD,
+    PIIEntity.EMAIL_ADDRESS,
+    PIIEntity.IBAN_CODE,
+    PIIEntity.IP_ADDRESS,
+    PIIEntity.PHONE_NUMBER,
+    PIIEntity.US_SSN,
+    PIIEntity.US_ITIN,
+}
+PII_ENTITY_MEMBER_COUNT = 14
+SETTINGS_YAML = Path("settings.yaml")
+
+
+def _entities_for_profile(profile: str) -> set[PIIEntity]:
+    """Resolve ``DEFAULT_ENTITIES`` for a settings.yaml profile via the YAML merge.
+
+    :param profile: Settings profile name (for example ``default`` or ``development``).
+    :return: Entity set returned for any task owner under that profile.
+    """
+    source = YamlPrefixConfigSettingsSource(
+        AnonymizerSettings,
+        yaml_file=SETTINGS_YAML,
+        prefixes=(profile, *AnonymizerSettings.SETTINGS_PREFIXES),
+    )
+    settings = AnonymizerSettings(DEFAULT_ENTITIES=source.yaml_data["DEFAULT_ENTITIES"])
+    return settings.DEFAULT_ENTITIES["any_owner"]
+
+
+class TestSettingsYamlAnonymizerProfiles:
+    """Assert shipped settings.yaml profiles resolve the expected entity sets."""
+
+    def test_default_profile_resolves_high_confidence_entities(self):
+        """Assert ``default:`` resolves to exactly the seven high-confidence entities."""
+        assert _entities_for_profile("default") == HIGH_CONFIDENCE_DEFAULT_ENTITIES
+
+    def test_development_profile_resolves_empty_entities(self):
+        """Assert ``development:`` overrides to an empty entity set for every owner."""
+        assert _entities_for_profile("development") == set()
+
+    def test_pii_entity_retains_all_fourteen_members(self):
+        """Assert narrowing is configuration-only; ``PIIEntity`` still has 14 members."""
+        assert len(PIIEntity) == PII_ENTITY_MEMBER_COUNT
 
 
 class TestValidateEntitiesDefaultdict:

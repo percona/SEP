@@ -147,7 +147,7 @@ These are some, but not all, the possible settings you can have, per app:
 | TASKS__NOMAD__MINIFY_PAYLOAD | tasks   | no       | True                                                | True                                             |
 | TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT | tasks | no | 10                                        | 10                                               |
 | TASKS__SYNC_LOCK_TTL       | tasks     | no       | 300                                                 | 300                                              |
-| TASKS__ANONYMIZER__DEFAULT_ENTITIES | tasks | no | "*"                                         | "*"                                              |
+| TASKS__ANONYMIZER__DEFAULT_ENTITIES | tasks | no | seven high-confidence entities (see below) | `[]` (anonymization disabled) |
 | TASKS__EXECUTE_MODE        | tasks     | no       | background                                          | N/A                                              |
 | TASKS__DATABASE__ENGINE    | tasks     | no       | sqlite                                              | N/A                                              |
 | TASKS__DATABASE__NAME      | tasks     | no       | tasks.db                                            | N/A                                              |
@@ -248,10 +248,19 @@ The anonymizer plugin can be configured through the `TASKS__ANONYMIZER` section:
 ```yaml
 TASKS:
   ANONYMIZER:
-    DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
+    DEFAULT_ENTITIES:
+      - CREDIT_CARD
+      - EMAIL_ADDRESS
+      - IBAN_CODE
+      - IP_ADDRESS
+      - PHONE_NUMBER
+      - US_SSN
+      - US_ITIN
 ```
 
-The `DEFAULT_ENTITIES` setting specifies which Personally Identifiable Information (PII) entities should be anonymized by default.
+The `DEFAULT_ENTITIES` setting specifies which Personally Identifiable Information (PII) entities should be anonymized by default when a task does not set an explicit `anonymize_mask`. The shipped `default:` profile uses the seven high-confidence entities above (checksum-validated or strong-regex recognizers). The `development:` profile sets `DEFAULT_ENTITIES` to an empty list so local task logs stay readable and no Presidio/spaCy engine is constructed.
+
+Profile overlays merge onto `default:`: a non-empty list prepends to the inherited list, and an empty list clears it. To narrow the set relative to `default:`, edit the `default:` block or use a runtime settings override (do not rely on a shorter non-empty profile list alone). Operators can restore any of the fourteen `PIIEntity` members through `settings.yaml` or a runtime settings override without a code change. Use `"*"` to select every supported entity.
 
 ### Sync Configuration
 
