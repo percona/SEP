@@ -70,7 +70,9 @@ def exported(result: subprocess.CompletedProcess[str]) -> dict[str, str]:
 
 
 @pytest.mark.parametrize("secret_key", [{}, {"SECRET_KEY": ""}], ids=["unset", "empty"])
-def test_missing_secret_key_aborts_with_an_actionable_message(secret_key):
+def test_missing_secret_key_aborts_with_an_actionable_message(
+    secret_key: dict[str, str],
+):
     """Reject a missing key, which each supervisord child would resolve differently."""
     result = source_helper(**secret_key)
 
@@ -183,21 +185,12 @@ def test_no_grafana_variables_without_a_token():
     assert "PMM__API_KEY" not in environment
 
 
-def test_pmm_endpoint_reaches_the_client_and_the_grafana_provider():
-    """Append PMM's ``/graph`` prefix for the Grafana provider's endpoint."""
-    environment = exported(
-        source_helper(SECRET_KEY="k", SEP_PMM_ENDPOINT="https://h:1")
-    )
-
-    assert environment["PMM__ENDPOINT"] == "https://h:1"
-    assert environment["AUTH__PROVIDER__GRAFANA__ENDPOINT"] == "https://h:1/graph"
-
-
-def test_pmm_endpoint_trailing_slash_does_not_double():
-    """Trim a trailing slash before appending the Grafana provider's prefix."""
-    environment = exported(
-        source_helper(SECRET_KEY="k", SEP_PMM_ENDPOINT="https://h:1/")
-    )
+@pytest.mark.parametrize(
+    "endpoint", ["https://h:1", "https://h:1/"], ids=["bare", "trailing-slash"]
+)
+def test_pmm_endpoint_reaches_the_client_and_the_grafana_provider(endpoint: str):
+    """Append PMM's ``/graph`` prefix, trimming a trailing slash that would double it."""
+    environment = exported(source_helper(SECRET_KEY="k", SEP_PMM_ENDPOINT=endpoint))
 
     assert environment["PMM__ENDPOINT"] == "https://h:1"
     assert environment["AUTH__PROVIDER__GRAFANA__ENDPOINT"] == "https://h:1/graph"
@@ -212,8 +205,9 @@ def test_nomad_endpoint_is_forwarded_verbatim():
     assert environment["TASKS__NOMAD__ENDPOINT"] == endpoint
 
 
+@pytest.mark.usefixtures("embedded_profile_cwd")
 def test_derived_environment_resolves_against_the_baked_profile(
-    embedded_profile_cwd, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Assert the shell contract and the settings contract agree at their seam."""
     environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw"))

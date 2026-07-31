@@ -125,7 +125,7 @@ def test_grafana_provider_constructs_with_an_empty_token():
     assert provider.service_account_token.get_secret_value() == ""
 
 
-def test_profile_carries_a_single_default_block(embedded_profile_data):
+def test_profile_carries_a_single_default_block(embedded_profile_data: dict):
     """Assert one block keeps the profile independent of ``FASTAPI_ENV``."""
     assert set(embedded_profile_data) == {"default"}
 
@@ -144,13 +144,12 @@ def test_no_url_carries_a_password():
     assert "postgresql://sep@pmm-server:5432/sep" in profile
 
 
-def test_every_secret_typed_field_is_empty(embedded_profile_data):
+def test_every_secret_typed_field_is_empty(embedded_profile_data: dict):
     """Assert secret-typed keys are present only as empty values."""
-    assert [
-        (key, value)
-        for key, value in secret_valued_leaves(embedded_profile_data)
-        if value != ""
-    ] == []
+    leaves = secret_valued_leaves(embedded_profile_data)
+
+    assert leaves
+    assert [(key, value) for key, value in leaves if value != ""] == []
 
 
 def test_no_placeholder_markers_remain():
@@ -194,7 +193,8 @@ def test_activation_list_builds_an_app_registry():
     assert {"inventory", "snippets", "atw", "mysql_backups"} <= set(registry.keys())
 
 
-def test_uvicorn_ports_match_the_healthcheck_probe(embedded_profile_cwd):
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_uvicorn_ports_match_the_healthcheck_probe():
     """Assert the profile follows the probe's hardcoded ports, which are contract."""
     healthcheck = (SIDECAR_DIR / "healthcheck.sh").read_text(encoding="utf-8")
     probed = re.search(r"for port in \(([^)]*)\)", healthcheck)
@@ -207,7 +207,8 @@ def test_uvicorn_ports_match_the_healthcheck_probe(embedded_profile_cwd):
     ]
 
 
-def test_database_host_and_port_match_the_expansion_defaults(embedded_profile_cwd):
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_database_host_and_port_match_the_expansion_defaults():
     """Assert the profile and the expansion state one truth about the server."""
     helper = SETTINGS_ENV_HELPER.read_text(encoding="utf-8")
     database = SEPSettings().DATABASE
@@ -232,8 +233,9 @@ def test_profile_is_not_shipped_in_the_shared_bundle():
     assert "settings.yaml" not in pack_recipe.group(0)
 
 
+@pytest.mark.usefixtures("embedded_profile_cwd")
 def test_profile_resolves_identically_outside_production_docker(
-    embedded_profile_cwd, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Assert the ``FASTAPI_ENV`` selection has nothing left to change."""
     baked = resolved_profile()
