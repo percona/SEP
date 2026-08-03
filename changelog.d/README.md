@@ -46,6 +46,38 @@ lacks sentence punctuation (recognising `.`, `!` and `?`, and looking past a tra
 is the only way to end up without one. Capitalise the first word; do not add a
 `- SEP-XXX:` prefix, which assembly supplies.
 
+## What the fragment must say
+
+The rules above govern the fragment's *form*. This one governs its *content*:
+**state the shipped state per deployment, and the preconditions an operator must
+satisfy — not merely the code default.** Write from the operator's position, not
+the code's. Before committing the fragment, answer two questions:
+
+1. **Does every deployment see this?** If any shipped artifact — the side-car
+   image, a packaged profile, a default-on env — carries a different value than
+   the code default, name it. `SETTINGS_OVERRIDE_ALLOWED_KEYS` defaults to
+   unrestricted, but `sidecar/Containerfile.sidecar` bakes a 15-entry allowlist,
+   so a fragment saying only *"unset (the default) leaves every deployment
+   unrestricted"* tells the side-car operator the opposite of what they will see:
+   a mostly read-only settings UI, with no signal in the release notes. See
+   `.claude/skills/shared/backwards-compatibility.md § "Behavioral Asymmetry
+   Across Processes / Deployments / Install-States"` for the full axis list
+   (process, deployment, install-state, version) and the shapes that recur.
+
+2. **What must the operator already have?** Name settings that are *required*,
+   not merely available. *"Per-deployment values are supplied as environment
+   variables"* reads as optional configuration; `SECRET_KEY` and
+   `SEP_DB_PASSWORD` are start-up preconditions, and a container missing them
+   exits immediately. Name them, or point at the doc that carries the full
+   contract.
+
+Silence on either axis reads as *"works uniformly, needs nothing"* — the
+operator's default assumption, and the one they act on.
+
+This does not apply when the change behaves identically everywhere and adds no
+precondition, nor to a new optional setting that defaults off uniformly — there
+the code default genuinely is the operator's experience.
+
 **Skip this step when any of these applies:**
 
 1. **Purely internal changes** — CI, refactoring, tooling, docs with no
