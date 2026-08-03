@@ -17,7 +17,7 @@
 
 These Jinja2 routes are deprecated. The JSON API equivalents live under
 ``/api/apps/backup_mongo/`` and the React UI at ``/backups/mongodb/backups``
-(``frontend/packages/plugins/backup_mongo``). Every response from this router
+(``frontend/packages/apps/backup_mongo``). Every response from this router
 carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on hit;
 the routes remain mounted for Wave 1 cutover and will be removed in Wave 3.
 """

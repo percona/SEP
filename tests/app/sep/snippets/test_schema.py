@@ -29,12 +29,6 @@ from app.sep.apps.framework.schema import (
     ScriptPreviewField,
     StringField,
 )
-from app.sep.apps.snippets.schema import (
-    build_snippet_schema,
-    evaluate_snippet_gates,
-    field_for,
-    SNIPPETS_PLUGIN_SCHEMA,
-)
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
@@ -42,6 +36,12 @@ from app.sep.snippets.models.meta import (
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     Snippet,
+)
+from app.sep.snippets.schema import (
+    build_snippet_schema,
+    evaluate_snippet_gates,
+    field_for,
+    SNIPPETS_PLUGIN_SCHEMA,
 )
 
 
@@ -52,6 +52,21 @@ def test_static_schema_has_no_forms_and_keyed_columns():
     column_keys = [column.key for column in SNIPPETS_PLUGIN_SCHEMA.list_view.columns]
     assert "filename" in column_keys
     assert "isApproved" in column_keys
+
+
+def test_static_schema_declares_every_capability_unsupported():
+    """Declare every capability unsupported, including the ones left at default.
+
+    Chaining, scheduling and alerting were never offered by the legacy Jinja UI
+    either, so the declaration records their absence rather than a gap. Derive
+    the field list from the model so a capability added later has to be decided
+    here rather than defaulting in unnoticed.
+    """
+    capabilities = SNIPPETS_PLUGIN_SCHEMA.capabilities
+    assert capabilities is not None
+    assert {
+        name: getattr(capabilities, name) for name in type(capabilities).model_fields
+    } == dict.fromkeys(type(capabilities).model_fields, False)
 
 
 def _execution_section(schema):
