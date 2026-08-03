@@ -108,6 +108,34 @@ container's PID namespace. A container restart mints a fresh one, which is safe:
 the broker runs with `save ""` and `appendonly no`, so no broker state crosses
 restarts.
 
+## What the settings API will and will not change
+
+The image bakes `SETTINGS_OVERRIDE_ALLOWED_KEYS` — the exhaustive list of
+settings an administrator may change from the settings UI or API. Everything
+this container provisions is refused with `422`: the loopback endpoints and
+ports from the table above, the PMM connection and its API key, the whole Nomad
+subtree, the snippets source, sessions, security headers, and auth. What stays
+tunable is product behaviour: log level, PMM annotations, sync cadence, the
+footer and message-level display options, alerting policy and retention,
+anonymizer entities, and the task connectivity-check and log-retention
+settings.
+
+Rows written before the restriction applied — by a standalone deployment whose
+database was carried over, or by direct table access — are **inert**: the
+snapshot builder skips them, so the baked value is what the services read. They
+remain deletable through `DELETE /settings/<class>/<key>`, which is how an
+operator clears one; deleting a locked key that has no row answers `409`
+instead, since there is nothing to remove.
+
+`SETTINGS_OVERRIDE_ALLOWED_KEYS` is a general capability, not a side-car
+special case: any deployment can set it (bare env var, or a `default:` key in
+`settings.yaml`) to harden its own override surface. Leaving it unset — the
+default everywhere else — keeps every overridable setting overridable. It can
+never be changed through the API, only through the deployment's own
+configuration. Note that if this value later moves into the mounted profile,
+the `ENV` line in the Containerfile has to go: environment outranks
+`settings.yaml`, so the baked value would otherwise win permanently.
+
 ## Volumes
 
 Everything shipped into `$APP_HOME` is `root:sep` and read-only to the `sep`

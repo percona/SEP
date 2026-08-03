@@ -40,7 +40,7 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL, HostField, StringField
-from app.sep.apps.mysql_backups.models import BackupCreate
+from app.sep.apps.mysql_backups.forms import BackupCreate
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate
 
 _TASK_LAYOUT = FormLayout(sections=[SectionLayout(key="Task", title="Task")])
