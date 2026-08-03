@@ -34,9 +34,8 @@ class NodeManager(BaseSQLModelManager):
 
     :ivar Model: The SQLModel class this manager is responsible for (`Node`).
     :vartype Model: type[Node]
-    :ivar list_query_spec: The list-query spec declaring this entity's sortable
+    :cvar list_query_spec: The list-query spec declaring this entity's sortable
         allowlist, searchable columns, and default sort.
-    :vartype list_query_spec: ListQuerySpec
     """
 
     Model = Node
@@ -62,9 +61,8 @@ class ServiceManager(BaseSQLModelChildManager):
     :ivar connected_by: The field name that connects the child model to the parent
         model (`node_id`).
     :vartype connected_by: str
-    :ivar list_query_spec: The list-query spec declaring this entity's sortable
+    :cvar list_query_spec: The list-query spec declaring this entity's sortable
         allowlist, searchable columns, and default sort.
-    :vartype list_query_spec: ListQuerySpec
     """
 
     Model = Service
@@ -92,9 +90,8 @@ class SchemaManager(BaseSQLModelChildManager):
     :ivar connected_by: The field name that connects the child model to the parent
         model (`service_id`).
     :vartype connected_by: str
-    :ivar list_query_spec: The list-query spec declaring this entity's sortable
+    :cvar list_query_spec: The list-query spec declaring this entity's sortable
         allowlist, searchable columns, and default sort.
-    :vartype list_query_spec: ListQuerySpec
     """
 
     Model = Schema
@@ -122,9 +119,8 @@ class TableManager(BaseSQLModelChildManager):
     :ivar connected_by: The field name that connects the child model to the parent
         model (`schema_id`).
     :vartype connected_by: str
-    :ivar list_query_spec: The list-query spec declaring this entity's sortable
+    :cvar list_query_spec: The list-query spec declaring this entity's sortable
         allowlist, searchable columns, and default sort.
-    :vartype list_query_spec: ListQuerySpec
     """
 
     Model = Table
