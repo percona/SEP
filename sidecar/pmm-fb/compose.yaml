@@ -46,6 +46,9 @@ services:
   sep-sidecar:
     image: docker.io/percona/percona-sep:pmm-a2db4ac
     depends_on: [pmm-server]
+    environment:
+      SECRET_KEY: ${SEP_SECRET_KEY:?run ./bootstrap.sh first}
+      SEP_DB_PASSWORD: ${SEP_PG_PASSWORD:?run ./bootstrap.sh first}
     volumes:
       - ./settings.yaml:/home/sep/app/settings.yaml:ro
     ports:
