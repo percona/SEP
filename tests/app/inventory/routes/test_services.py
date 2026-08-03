@@ -15,10 +15,15 @@
 
 """Define tests for inventory service routes."""
 
+from datetime import datetime, UTC
+
+import pytest
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
+from app.inventory.crud import SchemaManager
 from app.inventory.models import Node, Schema, Service, ServiceSystemObservation
 from tests.app.factories import (
     NodeWriteFactory,
@@ -492,31 +497,42 @@ class TestListSchemasByService:
         assert data["total"] == LIST_QUERY_MATCH_TOTAL
         assert len(data["items"]) == 1
 
-    def test_list_schemas_by_service_deterministic_ordering_across_pages(
-        self, test_client: TestClient, service: Service
+    @pytest.mark.asyncio
+    async def test_list_schemas_by_service_deterministic_ordering_across_pages(
+        self, test_client: TestClient, session: AsyncSession, service: Service
     ) -> None:
-        """Order by name stably across pages."""
-        ordered_names = ("aaa_lq_schema", "bbb_lq_schema")
-        for name in ordered_names:
-            payload = SchemaWriteFactory.build(name=name)
-            create_response = test_client.post(
-                f"/services/{service.id}/schemas/",
-                json=payload.model_dump(mode="json"),
+        """Order equal created_at stably across pages via the id tie-breaker.
+
+        Schema names are unique per service, so name ties cannot occur in this
+        nested list; exercise the tie-breaker on created_at instead.
+        """
+        shared_created_at = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+        created_ids: list[int] = []
+        for name in ("tie_schema_a", "tie_schema_b"):
+            row = await SchemaManager.create(
+                session,
+                SchemaWriteFactory.build(name=name),
+                service_id=service.id,
             )
-            assert create_response.status_code == status.HTTP_201_CREATED
+            row.created_at = shared_created_at
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            created_ids.append(row.id)
+        created_ids.sort()
 
         first_page = test_client.get(
             f"/services/{service.id}/schemas/",
-            params={"sort": "name", "search": "lq_schema", "limit": 1, "offset": 0},
+            params={"sort": "created_at", "limit": 1, "offset": 0},
         )
         second_page = test_client.get(
             f"/services/{service.id}/schemas/",
-            params={"sort": "name", "search": "lq_schema", "limit": 1, "offset": 1},
+            params={"sort": "created_at", "limit": 1, "offset": 1},
         )
         assert first_page.status_code == status.HTTP_200_OK
         assert second_page.status_code == status.HTTP_200_OK
-        assert first_page.json()["items"][0]["name"] == ordered_names[0]
-        assert second_page.json()["items"][0]["name"] == ordered_names[1]
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
     def test_list_schemas_by_service_include_tables_with_pagination(
         self, test_client: TestClient, service: Service, schema: Schema

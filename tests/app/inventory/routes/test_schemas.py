@@ -15,12 +15,18 @@
 
 """Define tests for inventory schema routes."""
 
+from datetime import datetime, UTC
+
+import pytest
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
+from app.inventory.crud import TableManager
 from app.inventory.models import Node, Schema, Service, Table
 from tests.app.factories import (
+    NodeWriteFactory,
     SchemaWriteFactory,
     ServiceWriteFactory,
     TableWriteFactory,
@@ -140,28 +146,46 @@ class TestListSchemas:
     def test_list_schemas_deterministic_ordering_across_pages(
         self, test_client: TestClient, service: Service
     ) -> None:
-        """Order by name stably across pages."""
-        ordered_names = ("aaa_lq_schema", "bbb_lq_schema")
-        for name in ordered_names:
-            payload = SchemaWriteFactory.build(name=name)
+        """Order equal names stably across pages via the id tie-breaker.
+
+        Schema names are unique per service, so the shared name is created on a
+        second service to produce a name tie in the top-level list.
+        """
+        shared_name = "SameSortSchema"
+        node_response = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert node_response.status_code == status.HTTP_201_CREATED
+        other_service_response = test_client.post(
+            f"/nodes/{node_response.json()['id']}/services/",
+            json=ServiceWriteFactory.build(port=5101).model_dump(mode="json"),
+        )
+        assert other_service_response.status_code == status.HTTP_201_CREATED
+        other_service_id = other_service_response.json()["id"]
+
+        created_ids: list[int] = []
+        for service_id in (service.id, other_service_id):
+            payload = SchemaWriteFactory.build(name=shared_name)
             create_response = test_client.post(
-                f"/services/{service.id}/schemas/",
+                f"/services/{service_id}/schemas/",
                 json=payload.model_dump(mode="json"),
             )
             assert create_response.status_code == status.HTTP_201_CREATED
+            created_ids.append(create_response.json()["id"])
+        created_ids.sort()
 
         first_page = test_client.get(
             "/schemas/",
-            params={"sort": "name", "search": "lq_schema", "limit": 1, "offset": 0},
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 0},
         )
         second_page = test_client.get(
             "/schemas/",
-            params={"sort": "name", "search": "lq_schema", "limit": 1, "offset": 1},
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 1},
         )
         assert first_page.status_code == status.HTTP_200_OK
         assert second_page.status_code == status.HTTP_200_OK
-        assert first_page.json()["items"][0]["name"] == ordered_names[0]
-        assert second_page.json()["items"][0]["name"] == ordered_names[1]
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
 
 class TestRetrieveSchema:
@@ -409,31 +433,42 @@ class TestListTablesBySchema:
         assert data["total"] == LIST_QUERY_MATCH_TOTAL
         assert len(data["items"]) == 1
 
-    def test_list_tables_by_schema_deterministic_ordering_across_pages(
-        self, test_client: TestClient, schema: Schema
+    @pytest.mark.asyncio
+    async def test_list_tables_by_schema_deterministic_ordering_across_pages(
+        self, test_client: TestClient, session: AsyncSession, schema: Schema
     ) -> None:
-        """Order by name stably across pages."""
-        ordered_names = ("aaa_lq_table", "bbb_lq_table")
-        for name in ordered_names:
-            payload = TableWriteFactory.build(name=name)
-            create_response = test_client.post(
-                f"/schemas/{schema.id}/tables/",
-                json=payload.model_dump(mode="json"),
+        """Order equal created_at stably across pages via the id tie-breaker.
+
+        Table names are unique per schema, so name ties cannot occur in this
+        nested list; exercise the tie-breaker on created_at instead.
+        """
+        shared_created_at = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+        created_ids: list[int] = []
+        for name in ("tie_table_a", "tie_table_b"):
+            row = await TableManager.create(
+                session,
+                TableWriteFactory.build(name=name),
+                schema_id=schema.id,
             )
-            assert create_response.status_code == status.HTTP_201_CREATED
+            row.created_at = shared_created_at
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            created_ids.append(row.id)
+        created_ids.sort()
 
         first_page = test_client.get(
             f"/schemas/{schema.id}/tables/",
-            params={"sort": "name", "search": "lq_table", "limit": 1, "offset": 0},
+            params={"sort": "created_at", "limit": 1, "offset": 0},
         )
         second_page = test_client.get(
             f"/schemas/{schema.id}/tables/",
-            params={"sort": "name", "search": "lq_table", "limit": 1, "offset": 1},
+            params={"sort": "created_at", "limit": 1, "offset": 1},
         )
         assert first_page.status_code == status.HTTP_200_OK
         assert second_page.status_code == status.HTTP_200_OK
-        assert first_page.json()["items"][0]["name"] == ordered_names[0]
-        assert second_page.json()["items"][0]["name"] == ordered_names[1]
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
 
 class TestCreateTableForSchema:

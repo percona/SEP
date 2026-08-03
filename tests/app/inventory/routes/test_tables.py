@@ -125,30 +125,46 @@ class TestListTables:
         assert len(data["items"]) == 1
 
     def test_list_tables_deterministic_ordering_across_pages(
-        self, test_client: TestClient, schema: Schema
+        self, test_client: TestClient, schema: Schema, service: Service
     ) -> None:
-        """Order by name stably across pages."""
-        ordered_names = ("aaa_lq_table", "bbb_lq_table")
-        for name in ordered_names:
-            payload = TableWriteFactory.build(name=name)
+        """Order equal names stably across pages via the id tie-breaker.
+
+        Table names are unique per schema, so the shared name is created on a
+        second schema to produce a name tie in the top-level list.
+        """
+        shared_name = "SameSortTable"
+        other_schema_response = test_client.post(
+            f"/services/{service.id}/schemas/",
+            json=SchemaWriteFactory.build(name="other_same_sort_schema").model_dump(
+                mode="json"
+            ),
+        )
+        assert other_schema_response.status_code == status.HTTP_201_CREATED
+        other_schema_id = other_schema_response.json()["id"]
+
+        created_ids: list[int] = []
+        for schema_id in (schema.id, other_schema_id):
+            payload = TableWriteFactory.build(name=shared_name)
             create_response = test_client.post(
-                f"/schemas/{schema.id}/tables/",
+                f"/schemas/{schema_id}/tables/",
                 json=payload.model_dump(mode="json"),
             )
             assert create_response.status_code == status.HTTP_201_CREATED
+            created_ids.append(create_response.json()["id"])
+        created_ids.sort()
 
         first_page = test_client.get(
             "/tables/",
-            params={"sort": "name", "search": "lq_table", "limit": 1, "offset": 0},
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 0},
         )
         second_page = test_client.get(
             "/tables/",
-            params={"sort": "name", "search": "lq_table", "limit": 1, "offset": 1},
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 1},
         )
         assert first_page.status_code == status.HTTP_200_OK
         assert second_page.status_code == status.HTTP_200_OK
-        assert first_page.json()["items"][0]["name"] == ordered_names[0]
-        assert second_page.json()["items"][0]["name"] == ordered_names[1]
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
 
 class TestRetrieveTable:
