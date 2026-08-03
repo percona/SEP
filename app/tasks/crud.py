@@ -141,6 +141,7 @@ class TaskManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         pagination: Pagination,
+        *,
         list_query: ListQuery,
         owner: str | None = None,
         target: str | None = None,

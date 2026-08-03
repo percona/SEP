@@ -1963,8 +1963,8 @@ def _openapi_param(path: str, name: str) -> dict:
 class TestListQueryRouteParams:
     """Cover list-query sort/search on the three tasks-service list endpoints."""
 
-    def test_search_param_exposed_when_searchable_is_non_empty(self) -> None:
-        """Expose ``sort`` and ``search`` on each list endpoint with searchable specs."""
+    def test_sort_and_search_params_exposed_on_list_endpoints(self) -> None:
+        """Expose ``sort`` and ``search`` on each of the three tasks-service list endpoints."""
         for path in ("/", "/history/", "/{task}/history/"):
             names = _openapi_param_names(path)
             assert "sort" in names
@@ -2046,8 +2046,10 @@ class TestListQueryRouteParams:
 
         response = test_client.get("/", params={"sort": "name"})
         assert response.status_code == status.HTTP_200_OK
-        names = [item["name"] for item in response.json()["items"]]
-        assert names == sorted(names)
+        assert [item["name"] for item in response.json()["items"]] == [
+            "alpha-route",
+            "zeta-route",
+        ]
 
     @pytest.mark.asyncio
     async def test_list_tasks_search_composes_with_owner_filter(
