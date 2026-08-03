@@ -88,9 +88,6 @@ default:
     SSL_KEYFILE: null
     APPS:
       - MODULE_NAME: inventory
-      # Activated only to satisfy atw's requires_apps declaration; drop once that
-      # declaration goes away.
-      - MODULE_NAME: snippets
       - MODULE_NAME: atw
       - MODULE_NAME: mysql_backups
     SYNCERS:
