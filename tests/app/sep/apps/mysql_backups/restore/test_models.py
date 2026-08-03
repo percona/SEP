@@ -18,8 +18,11 @@
 import pytest
 from pydantic import ValidationError
 
+from app.sep.apps.framework.form_dsl.derivation import derive_form_sections
+from app.sep.apps.framework.schema import RemoteChoiceField
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.models import RestoreConfigServer, RestoreCreate
+from app.sep.apps.mysql_backups.restore.views import restore_views
 
 
 def _minimal_restore_create_body(**overrides: object) -> dict:
@@ -32,6 +35,22 @@ def _minimal_restore_create_body(**overrides: object) -> dict:
     }
     body.update(overrides)
     return body
+
+
+def test_backup_source_is_remote_choice_cascading_on_service_id() -> None:
+    """Derive backup_source as a RemoteChoices field cascading on service_id."""
+    sections = derive_form_sections(RestoreCreate, restore_views.layout)
+    fields_by_section = {
+        section.title: {field.name: field for field in section.fields}
+        for section in sections
+    }
+    backup_source = fields_by_section["General"]["backup_source"]
+    assert isinstance(backup_source, RemoteChoiceField)
+    assert backup_source.endpoint_url == "/apps/mysql_backups/backup-sources/choices"
+    assert backup_source.depends_on == "service_id"
+    assert backup_source.allow_custom is True
+    assert "service_id" in fields_by_section["General"]
+    assert "service_id" not in fields_by_section.get("Mydumper", {})
 
 
 def test_restore_create_coerces_int_reference_ids_to_str() -> None:

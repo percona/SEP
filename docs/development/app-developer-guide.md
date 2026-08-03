@@ -631,8 +631,9 @@ remains the app's `FormRules` responsibility (see the predicate DSL below).
 
 When the options cannot be listed statically at all, `RemoteChoices` marks a
 field whose options the form fetches live from an endpoint the app serves (with
-optional `depends_on` cascading). No app in the tree uses it yet — see its
-docstring in `app/sep/apps/framework/form_dsl/markers.py`.
+optional `depends_on` cascading). MySQL Restores uses it for `backup_source`
+(see `app/sep/apps/mysql_backups/restore/models.py`); the marker docstring in
+`app/sep/apps/framework/form_dsl/markers.py` covers the contract.
 
 ### `FieldWidget`
 
