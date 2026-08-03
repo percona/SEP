@@ -30,6 +30,7 @@ import {
   type AppSchema,
 } from '@sep/api';
 import { DeleteConfirmDialog, SchemaListView } from '@sep/framework';
+import { ConnectivityControl } from './ConnectivityControl';
 import {
   inventoryMountPrefix,
   parseFlatInventoryRoute,
@@ -660,6 +661,12 @@ export function renderInventoryDetailChildren({
     // Gate on the same numeric check the hook uses: a non-numeric id would
     // disable the query yet still render a misleading empty state.
     blocks.push(<SystemFactsPanel key="system-facts" entity={entityName} id={record.id} />);
+  }
+
+  if (entityName === 'services' && isIdLike(record.id) && /^\d+$/.test(String(record.id))) {
+    blocks.push(
+      <ConnectivityControl key="connectivity" serviceId={record.id} serviceType={record.type} />,
+    );
   }
 
   if (entityName === 'nodes' && isRecordArray(record.services) && prefix) {

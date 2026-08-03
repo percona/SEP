@@ -47,6 +47,7 @@ from app.sep.apps.framework.schema import (
     AnyField,
     AppSchema,
     BoolField,
+    Capabilities,
     Choice,
     ChoiceField,
     Column,
@@ -80,6 +81,7 @@ SNIPPETS_PLUGIN_SCHEMA = AppSchema(
         "registered executor hosts."
     ),
     forms=[],
+    capabilities=Capabilities(scheduling=False, alert_on_fail=False, chaining=False),
     list_view=ListView(
         columns=[
             Column(key="filename", label="Filename", sortable=True),

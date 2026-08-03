@@ -1528,6 +1528,42 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/inventory/services/{service_id}/check-connectivity/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Inventory Service Check Connectivity
+     * @description Run a database connectivity probe for a service from its executor host.
+     *
+     *     Backs the React connectivity control on the service detail page. A probe
+     *     that ran but could not connect is reported as HTTP 200 with
+     *     ``success=false`` and the upstream message in ``error``; only a probe that
+     *     could not be attempted at all is an error status. This three-segment
+     *     literal path cannot collide with the two-segment
+     *     ``/{entity}/{item_id:int}`` detail matcher.
+     *
+     *     :param service: The service to probe, resolved from the path id.
+     *     :param tasks_api: Authenticated Tasks ``RemoteAPI`` client.
+     *     :return: The upstream probe result.
+     *     :raises HTTPBadRequestException: When the service cannot be probed —
+     *         unsupported type, missing node or port, or no executor registered for
+     *         the node address.
+     *     :raises HTTPBadGatewayException: When the Tasks API is unreachable or
+     *         returns an unparseable body.
+     */
+    post: operations['inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/inventory/services/{service_id}/system-observation': {
     parameters: {
       query?: never;
@@ -3446,6 +3482,22 @@ export interface components {
     ConnectivityCheckRequest: {
       /** Targets */
       targets: components['schemas']['ServiceEnum'][];
+    };
+    /**
+     * ConnectivityCheckResponse
+     * @description Represent a connectivity check result.
+     *
+     *     :param success: Whether the connectivity check succeeded.
+     *     :param error: Error message if the check failed. Defaults to ``None``.
+     *     :param task_history_id: The ID of the task history record for this check.
+     */
+    ConnectivityCheckResponse: {
+      /** Error */
+      error?: string | null;
+      /** Success */
+      success: boolean;
+      /** Task History Id */
+      task_history_id: number;
     };
     /**
      * ConnectivityResult
@@ -12560,6 +12612,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ConnectivityCheckResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
