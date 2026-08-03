@@ -122,7 +122,7 @@ class TestWorkerRefresherStart:
     def test_disabled_starts_no_task_and_builds_no_registry(
         self, loop: asyncio.AbstractEventLoop, session_maker: async_sessionmaker
     ) -> None:
-        """Short-circuit before touching the proxy registry when disabled."""
+        """Skip the proxy registry entirely when the refresher is disabled."""
         builds = 0
 
         def _counting_registry() -> ProxyRegistry:
