@@ -15,17 +15,20 @@
 
 """Map MySQL backup-catalog rows onto restore ``backup_source`` Choice options."""
 
+from datetime import UTC
+
 from app.sep.apps.framework.schema import Choice
 from app.sep.apps.mysql_backups.models import BackupType, MysqlBackupRun
+from app.sep.apps.mysql_backups.restore.models import _validate_backup_source_shell_safe
 
 _TYPE_LABELS = {
     BackupType.MYDUMPER: "Mydumper",
     BackupType.XTRABACKUP: "XtraBackup",
-    BackupType.BINLOG: "Binlog",
 }
 
 _BYTES_PER_KIB = 1024
 _SIZE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB")
+_LABEL_PATH_MAX = 48
 
 
 def backup_source_value(run: MysqlBackupRun) -> str | None:
@@ -42,7 +45,7 @@ def backup_source_value(run: MysqlBackupRun) -> str | None:
     """
     for candidate in (run.upload_destination, run.location):
         if candidate is not None and candidate.strip():
-            return candidate
+            return candidate.strip()
     return None
 
 
@@ -64,22 +67,41 @@ def _format_size(size_bytes: int | None) -> str:
     return f"{size:.1f} {_SIZE_UNITS[unit_index]}"
 
 
-def backup_source_label(run: MysqlBackupRun) -> str:
+def _elide_path(path: str) -> str:
+    """Shorten a long path for the selector label while keeping head and tail.
+
+    :param path: The full backup-source location.
+    :return: ``path`` unchanged when short enough, else a middle-elided form.
+    """
+    if len(path) <= _LABEL_PATH_MAX:
+        return path
+    keep = (_LABEL_PATH_MAX - 1) // 2
+    return f"{path[:keep]}…{path[-keep:]}"
+
+
+def backup_source_label(run: MysqlBackupRun, *, value: str) -> str:
     """Build a human-readable selector label for a catalogued backup run.
 
     :param run: A catalogued backup run.
-    :return: A label combining backup type, finish time, and size.
+    :param value: The Choice value (restore-valid location) shown in the label.
+    :return: A label combining backup type, finish time, size, and location.
     """
     type_label = _TYPE_LABELS.get(run.backup_type, str(run.backup_type))
     if run.finished_at is None:
         finished = "unknown time"
     else:
-        finished = run.finished_at.strftime("%Y-%m-%d %H:%M UTC")
-    return f"{type_label} · {finished} · {_format_size(run.size_bytes)}"
+        finished = run.finished_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    return (
+        f"{type_label} · {finished} · {_format_size(run.size_bytes)} · "
+        f"{_elide_path(value)}"
+    )
 
 
 def backup_run_to_choice(run: MysqlBackupRun) -> Choice | None:
     """Map one catalog row to a ``Choice``, or ``None`` when it has no usable value.
+
+    Skips locations the restore form's shell-safety validator would reject, so
+    the selector never offers a value that 422s on submit.
 
     :param run: A catalogued backup run.
     :return: A ``Choice`` whose ``value`` is restore-valid, or ``None``.
@@ -87,4 +109,8 @@ def backup_run_to_choice(run: MysqlBackupRun) -> Choice | None:
     value = backup_source_value(run)
     if value is None:
         return None
-    return Choice(value=value, label=backup_source_label(run))
+    try:
+        _validate_backup_source_shell_safe(value)
+    except ValueError:
+        return None
+    return Choice(value=value, label=backup_source_label(run, value=value))

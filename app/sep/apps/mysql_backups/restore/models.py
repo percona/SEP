@@ -314,8 +314,8 @@ class RestoreCreate(TaskFormModel):
             section="General",
             depends_on="service_id",
             description=(
-                "Where the backup is stored. Pick a completed backup for the "
-                "selected service, or enter a local path "
+                "Where the backup is stored. Select a database service above to "
+                "list its completed backups, then pick one — or enter a local path "
                 "(/backups/mydumper/20240101), a remote host (db01:/path/to/backup), "
                 "s3://bucket/path, or gs://bucket/path. Add /latest to any of these "
                 "to restore the most recent backup. Avoid these characters: $ ; | & ( ) `"

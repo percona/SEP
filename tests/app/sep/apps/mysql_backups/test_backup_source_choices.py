@@ -20,12 +20,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import status
-from httpx import ASGITransport, AsyncClient, Response
+from httpx import Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.requests import RemoteAPI
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.mysql_backups.backup_source_choices import (
     backup_run_to_choice,
     backup_source_label,
@@ -33,42 +31,14 @@ from app.sep.apps.mysql_backups.backup_source_choices import (
 )
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import MysqlBackupRun
-from app.sep.deps import (
-    get_api_authenticated_user,
-    get_current_user,
-    get_inventory_api,
-    get_session,
-    require_bearer_for_unsafe_methods,
+from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
+from tests.app.sep.apps.mysql_backups.conftest import (
+    authenticated_get,
+    inventory_mock,
+    service_payload,
 )
-from app.sep.main import sep_app
 
 _URL = "/api/apps/mysql_backups/backup-sources/choices"
-
-
-def _service(
-    name: str,
-    service_id: int = 1,
-    service_type: ServiceTypeEnum = ServiceTypeEnum.MYSQL,
-) -> dict:
-    """Build a minimal inventory service payload the route can resolve."""
-    return {
-        "id": service_id,
-        "name": name,
-        "type": service_type.value,
-        "node_id": 1,
-    }
-
-
-def _inventory(
-    returns: dict | None = None, *, raises: Exception | None = None
-) -> AsyncMock:
-    """Build a mock InventoryAPI whose ``get`` returns or raises."""
-    mock = AsyncMock(spec=RemoteAPI)
-    if raises is not None:
-        mock.get.side_effect = raises
-    else:
-        mock.get.return_value = returns
-    return mock
 
 
 class TestBackupSourceMapper:
@@ -104,13 +74,13 @@ class TestBackupSourceMapper:
         )
         assert backup_source_value(run) is None
 
-    def test_value_ignores_blank_upload_destination(self) -> None:
-        """Treat a blank upload destination as unset and fall back to location."""
+    def test_value_strips_and_ignores_blank_upload_destination(self) -> None:
+        """Strip whitespace and treat a blank upload destination as unset."""
         run = MysqlBackupRun(
             task_history_id=1,
             service_name="svc",
             backup_type="X",
-            location="/data/xtrabackup/inc",
+            location=" /data/xtrabackup/inc ",
             upload_destination="  ",
         )
         assert backup_source_value(run) == "/data/xtrabackup/inc"
@@ -121,6 +91,16 @@ class TestBackupSourceMapper:
             task_history_id=1,
             service_name="svc",
             backup_type="M",
+        )
+        assert backup_run_to_choice(run) is None
+
+    def test_choice_skipped_when_shell_unsafe(self) -> None:
+        """Skip locations the restore shell-safety validator would reject."""
+        run = MysqlBackupRun(
+            task_history_id=1,
+            service_name="svc",
+            backup_type="M",
+            location="$(id)/evil",
         )
         assert backup_run_to_choice(run) is None
 
@@ -138,10 +118,11 @@ class TestBackupSourceMapper:
         choice = backup_run_to_choice(run)
         assert choice is not None
         assert choice.value == "/backups/mydumper/20240101"
-        assert choice.label == backup_source_label(run)
+        assert choice.label == backup_source_label(run, value=choice.value)
         assert "Mydumper" in choice.label
         assert "2026-07-29" in choice.label
-        assert "1.0 GiB" in choice.label or "1 GiB" in choice.label
+        assert "1.0 GiB" in choice.label
+        assert "/backups/mydumper/20240101" in choice.label
 
 
 class TestBackupSourceChoicesRoute:
@@ -150,24 +131,18 @@ class TestBackupSourceChoicesRoute:
     async def _get(
         self,
         session: AsyncSession,
-        service_id: int,
+        service_id: int | str,
         inventory: AsyncMock,
         regular_user: object,
     ) -> Response:
         """Drive the route with the given session + inventory mock, authenticated."""
-        sep_app.dependency_overrides[get_session] = lambda: session
-        sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-        sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
-        sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-        sep_app.dependency_overrides[get_inventory_api] = lambda: inventory
-        try:
-            transport = ASGITransport(app=sep_app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                return await client.get(_URL, params={"service_id": service_id})
-        finally:
-            sep_app.dependency_overrides = {}
+        return await authenticated_get(
+            _URL,
+            session=session,
+            inventory=inventory,
+            user=regular_user,
+            params={"service_id": service_id},
+        )
 
     @pytest.mark.asyncio
     async def test_returns_choices_newest_first(self, session, regular_user) -> None:
@@ -206,7 +181,7 @@ class TestBackupSourceChoicesRoute:
         )
 
         response = await self._get(
-            session, 1, _inventory(_service("svc-a")), regular_user
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -215,8 +190,8 @@ class TestBackupSourceChoicesRoute:
             "s3://bucket/base",
             "/data/mydumper/old",
         ]
-        assert body[0]["label"]
         assert "XtraBackup" in body[0]["label"]
+        assert "s3://bucket/base" in body[0]["label"]
 
     @pytest.mark.asyncio
     async def test_excludes_other_services(self, session, regular_user) -> None:
@@ -241,7 +216,7 @@ class TestBackupSourceChoicesRoute:
         )
 
         response = await self._get(
-            session, 1, _inventory(_service("svc-a")), regular_user
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
         )
 
         assert [item["value"] for item in response.json()] == ["/a"]
@@ -252,23 +227,61 @@ class TestBackupSourceChoicesRoute:
     ) -> None:
         """Return an empty list for a resolvable service with no recorded runs."""
         response = await self._get(
-            session, 1, _inventory(_service("svc-empty")), regular_user
+            session, 1, inventory_mock(service_payload("svc-empty")), regular_user
         )
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
     @pytest.mark.asyncio
-    async def test_unknown_service_propagates_404(self, session, regular_user) -> None:
-        """Surface an unknown service id as ``404``."""
+    async def test_unknown_service_returns_empty_list(
+        self, session, regular_user
+    ) -> None:
+        """Return ``[]`` for an unknown inventory id so free-text stays usable."""
         response = await self._get(
             session,
             999,
-            _inventory(raises=HTTPNotFoundException(detail="nope")),
+            inventory_mock(raises=HTTPNotFoundException(detail="nope")),
             regular_user,
         )
 
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_sentinel_service_returns_empty_list(
+        self, session, regular_user
+    ) -> None:
+        """Return ``[]`` for the unknown-service sentinel without hitting inventory."""
+        inventory = inventory_mock()
+        response = await self._get(
+            session, UNKNOWN_SERVICE_SENTINEL, inventory, regular_user
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+        inventory.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_custom_service_name_queries_catalog(
+        self, session, regular_user
+    ) -> None:
+        """Query the catalog by name when the cascade parent is a free-typed string."""
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="custom-svc",
+                backup_type="M",
+                location="/custom",
+            ),
+        )
+        inventory = inventory_mock()
+        response = await self._get(session, "custom-svc", inventory, regular_user)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["value"] for item in response.json()] == ["/custom"]
+        inventory.get.assert_not_called()
 
     def test_requires_authentication(self, unauthenticated_client) -> None:
         """Reject an unauthenticated caller."""

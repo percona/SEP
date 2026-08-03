@@ -13,11 +13,26 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define test fixtures for mysql_backups plugin tests."""
+"""Define test fixtures and shared helpers for mysql_backups plugin tests."""
 
 import ast
 import pathlib
+from typing import Any
+from unittest.mock import AsyncMock
 
+from httpx import ASGITransport, AsyncClient, Response
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core.requests import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
+from app.sep.deps import (
+    get_api_authenticated_user,
+    get_current_user,
+    get_inventory_api,
+    get_session,
+    require_bearer_for_unsafe_methods,
+)
+from app.sep.main import sep_app
 from tests.app.sep.conftest import (  # noqa: F401
     mock_inventory_api_dep,
     mock_task_api_dep,
@@ -36,3 +51,56 @@ def xtrabackup_payload_tree() -> ast.Module:
     in this directory's test modules do not each re-derive it independently.
     """
     return ast.parse(XTRABACKUP_PAYLOAD_PATH.read_text())
+
+
+def service_payload(
+    name: str,
+    service_id: int = 1,
+    service_type: ServiceTypeEnum = ServiceTypeEnum.MYSQL,
+) -> dict:
+    """Build a minimal inventory service payload a service-resolving route accepts."""
+    return {
+        "id": service_id,
+        "name": name,
+        "type": service_type.value,
+        "node_id": 1,
+    }
+
+
+def inventory_mock(
+    returns: dict | None = None, *, raises: Exception | None = None
+) -> AsyncMock:
+    """Build a mock InventoryAPI whose ``get`` returns or raises."""
+    mock = AsyncMock(spec=RemoteAPI)
+    if raises is not None:
+        mock.get.side_effect = raises
+    else:
+        mock.get.return_value = returns
+    return mock
+
+
+async def authenticated_get(
+    url: str,
+    *,
+    session: AsyncSession,
+    inventory: AsyncMock,
+    user: object,
+    params: dict[str, Any] | None = None,
+) -> Response:
+    """GET ``url`` against the sep app with the given session + inventory mock.
+
+    Installs the authentication overrides an ``/api/apps/*`` route needs, so a
+    route test asserts on the route's own behavior rather than on the auth gate,
+    and clears every override afterwards.
+    """
+    sep_app.dependency_overrides[get_session] = lambda: session
+    sep_app.dependency_overrides[get_current_user] = lambda: user
+    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[get_inventory_api] = lambda: inventory
+    try:
+        transport = ASGITransport(app=sep_app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.get(url, params=params)
+    finally:
+        sep_app.dependency_overrides = {}

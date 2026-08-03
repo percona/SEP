@@ -23,16 +23,19 @@ inherit the app's standard authenticated-user gate from the ``/api/apps/*``
 mount, so they introduce no mutating or unauthenticated surface.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, PaginatedResponse, Pagination
 from app.core.pagination.deps import PaginationDep
 from app.sep.apps.framework.schema import Choice
 from app.sep.apps.mysql_backups.backup_source_choices import backup_run_to_choice
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.deps import ResolvedMysqlService
+from app.sep.apps.mysql_backups.deps import resolve_mysql_service, ResolvedMysqlService
 from app.sep.apps.mysql_backups.models import BackupRunResponse
-from app.sep.deps import SessionDep
+from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
+from app.sep.deps import InventoryAPI, SessionDep
 
 router = APIRouter()
 
@@ -64,27 +67,18 @@ async def list_service_backups(
     )
 
 
-@router.get("/backup-sources/choices")
-async def list_backup_source_choices(
-    service: ResolvedMysqlService,
-    session: SessionDep,
+async def _choices_for_service_name(
+    session: AsyncSession, service_name: str
 ) -> list[Choice]:
-    """Return ``Choice`` options for a MySQL service's restore ``backup_source``.
+    """Return Choice options for ``service_name``, newest first, capped at one page.
 
-    The ``service_id`` query parameter (cascade parent name on the restore form)
-    is resolved by :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`.
-    Options are sourced from the completed-backup catalog, newest run first.
-    Rows without a usable location are skipped. An empty catalog yields ``[]``
-    so free-text entry via ``allow_custom`` is never blocked.
-
-    :param service: The inventory service resolved from the ``service_id`` query
-        parameter.
     :param session: The database session the catalog is queried on.
-    :return: Choice-compatible options for the restore backup-source selector.
+    :param service_name: The inventory service name to filter catalog rows by.
+    :return: Choice-compatible options; at most ``DEFAULT_PAGINATION_LIMIT`` items.
     """
     page = await MysqlBackupRunManager.list_for_service(
         session,
-        service.name,
+        service_name,
         pagination=Pagination(offset=0, limit=DEFAULT_PAGINATION_LIMIT),
     )
     return [
@@ -92,3 +86,44 @@ async def list_backup_source_choices(
         for run in page.items
         if (choice := backup_run_to_choice(run)) is not None
     ]
+
+
+@router.get("/backup-sources/choices")
+async def list_backup_source_choices(
+    session: SessionDep,
+    inventory_api: InventoryAPI,
+    service_id: str = Query(
+        ...,
+        description=(
+            "Cascade parent from the restore form. Inventory numeric ids are "
+            "resolved to a MySQL service name; custom names query the catalog "
+            "directly. Sentinel/blank/unknown values yield an empty list so "
+            "free-text entry is never blocked by a failed options fetch."
+        ),
+    ),
+) -> list[Choice]:
+    """Return ``Choice`` options for a MySQL service's restore ``backup_source``.
+
+    The ``service_id`` query parameter (cascade parent name on the restore form)
+    selects which catalog rows to map. Options are newest-first and capped at
+    :data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain
+    reachable via free-text). An empty or unresolvable parent yields ``[]`` —
+    never a ``4xx`` — so the RemoteChoices free-text escape hatch stays usable.
+
+    :param session: The database session the catalog is queried on.
+    :param inventory_api: The Inventory API client used to resolve numeric ids.
+    :param service_id: The cascade parent's submitted value.
+    :return: Choice-compatible options for the restore backup-source selector.
+    """
+    trimmed = service_id.strip()
+    if not trimmed or trimmed == UNKNOWN_SERVICE_SENTINEL:
+        return []
+    try:
+        numeric_id = int(trimmed)
+    except ValueError:
+        return await _choices_for_service_name(session, trimmed)
+    try:
+        service = await resolve_mysql_service(numeric_id, inventory_api)
+    except HTTPNotFoundException:
+        return []
+    return await _choices_for_service_name(session, service.name)

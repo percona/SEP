@@ -1752,14 +1752,14 @@ export interface paths {
      * @description Return ``Choice`` options for a MySQL service's restore ``backup_source``.
      *
      *     The ``service_id`` query parameter (cascade parent name on the restore form)
-     *     is resolved by :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`.
-     *     Options are sourced from the completed-backup catalog, newest run first.
-     *     Rows without a usable location are skipped. An empty catalog yields ``[]``
-     *     so free-text entry via ``allow_custom`` is never blocked.
+     *     selects which catalog rows to map. Options are newest-first and capped at
+     *     :data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain
+     *     reachable via free-text). An empty or unresolvable parent yields ``[]`` —
+     *     never a ``4xx`` — so the RemoteChoices free-text escape hatch stays usable.
      *
-     *     :param service: The inventory service resolved from the ``service_id`` query
-     *         parameter.
      *     :param session: The database session the catalog is queried on.
+     *     :param inventory_api: The Inventory API client used to resolve numeric ids.
+     *     :param service_id: The cascade parent's submitted value.
      *     :return: Choice-compatible options for the restore backup-source selector.
      */
     get: operations['mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get'];
@@ -12992,7 +12992,8 @@ export interface operations {
   mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get: {
     parameters: {
       query: {
-        service_id: number;
+        /** @description Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Sentinel/blank/unknown values yield an empty list so free-text entry is never blocked by a failed options fetch. */
+        service_id: string;
       };
       header?: never;
       path?: never;

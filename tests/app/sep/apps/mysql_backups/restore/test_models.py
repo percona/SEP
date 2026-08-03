@@ -50,7 +50,7 @@ def test_backup_source_is_remote_choice_cascading_on_service_id() -> None:
     assert backup_source.depends_on == "service_id"
     assert backup_source.allow_custom is True
     assert "service_id" in fields_by_section["General"]
-    assert "service_id" not in fields_by_section.get("Mydumper", {})
+    assert "service_id" not in fields_by_section["Mydumper"]
 
 
 def test_restore_create_coerces_int_reference_ids_to_str() -> None:
