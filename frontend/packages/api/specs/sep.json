@@ -17728,6 +17728,53 @@
         ]
       }
     },
+    "/api/apps/mysql_backups/backup-sources/choices": {
+      "get": {
+        "description": "Return ``Choice`` options for a MySQL service's restore ``backup_source``.\n\nThe ``service_id`` query parameter (cascade parent name on the restore form)\nis resolved by :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`.\nOptions are sourced from the completed-backup catalog, newest run first.\nRows without a usable location are skipped. An empty catalog yields ``[]``\nso free-text entry via ``allow_custom`` is never blocked.\n\n:param service: The inventory service resolved from the ``service_id`` query\n    parameter.\n:param session: The database session the catalog is queried on.\n:return: Choice-compatible options for the restore backup-source selector.",
+        "operationId": "mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/framework__Choice"
+                  },
+                  "title": "Response Mysql Backups List Backup Source Choices Api Apps Mysql Backups Backup Sources Choices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Backup Source Choices",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
     "/api/apps/mysql_backups/restore/": {
       "get": {
         "operationId": "mysql_backups_restore__list_paginated_api_apps_mysql_backups_restore__get",

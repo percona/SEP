@@ -1740,6 +1740,37 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/mysql_backups/backup-sources/choices': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Backup Source Choices
+     * @description Return ``Choice`` options for a MySQL service's restore ``backup_source``.
+     *
+     *     The ``service_id`` query parameter (cascade parent name on the restore form)
+     *     is resolved by :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`.
+     *     Options are sourced from the completed-backup catalog, newest run first.
+     *     Rows without a usable location are skipped. An empty catalog yields ``[]``
+     *     so free-text entry via ``allow_custom`` is never blocked.
+     *
+     *     :param service: The inventory service resolved from the ``service_id`` query
+     *         parameter.
+     *     :param session: The database session the catalog is queried on.
+     *     :return: Choice-compatible options for the restore backup-source selector.
+     */
+    get: operations['mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/mysql_backups/restore/': {
     parameters: {
       query?: never;
@@ -12945,6 +12976,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__MysqlBackupsCreateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get: {
+    parameters: {
+      query: {
+        service_id: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['framework__Choice'][];
         };
       };
       /** @description Validation Error */
