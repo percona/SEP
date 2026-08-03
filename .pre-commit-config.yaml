@@ -97,6 +97,7 @@ repos:
     rev: 745eface02aef23e168a8afb6b5737818efbea95  # v0.11.0.1
     hooks:
       - id: shellcheck
+        args: ["--external-sources"]
         types: [shell]
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: 2a30809d16bc7a60d9b97353c797f42b510d3368  # v3.12.0-2

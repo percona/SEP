@@ -144,14 +144,13 @@ def build_snippet_response(snippet: Snippet) -> SnippetResponse:
 class SnippetBatchApproveRequest(BaseModel):
     """Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.
 
-    Unlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`
+    Unlike the Form-bound :class:`~app.sep.snippets.deps.SnippetBatchApproveForm`
     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
     parses it as JSON.
 
     :param filenames: Unique, non-empty list of snippet filenames to approve in a
         single atomic operation. Duplicates are silently deduplicated by
         ``UniqueList``.
-    :type filenames: UniqueList[NonEmptyStr]
     """
 
     filenames: UniqueList[NonEmptyStr] = Field(min_length=1)

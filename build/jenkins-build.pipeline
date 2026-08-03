@@ -40,7 +40,7 @@ pipeline {
 		string(
 			name: 'customImageTag',
 			defaultValue: '',
-			description: 'Optional image tag override ([A-Za-z0-9._-]); skips git-tag naming, never pushes :latest'
+			description: 'Optional image tag override (OCI tag: starts [A-Za-z0-9_], then [A-Za-z0-9._-], max 128; the latest* family and release tags vX.Y.Z are reserved); skips git-tag naming, never pushes :latest'
 		)
 	}
 
@@ -114,15 +114,22 @@ pipeline {
 
 					def customTag = (params.customImageTag ?: '').trim()
 					if (customTag) {
-						if (!(customTag ==~ /^[A-Za-z0-9._-]+$/)) {
+						if (!(customTag ==~ /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/)) {
 							currentBuild.result = "FAILURE"
-							throw new Exception("Invalid customImageTag: ${customTag}")
+							throw new Exception("Invalid customImageTag '${customTag}': must match ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\$ (max 128 chars)")
+						}
+						// GIT_TAG drives the unguarded primary push, so a "latest" family or
+						// release-semver tag would republish an image the registry already
+						// maps to a different commit
+						if (customTag ==~ /^latest([._-].*)?$/ || customTag ==~ /^v\d+\.\d+\.\d+$/) {
+							currentBuild.result = "FAILURE"
+							throw new Exception("Reserved customImageTag: ${customTag}")
 						}
 						env.GIT_TAG = customTag
 						env.GIT_TAG_SHORT = customTag
+						env.RELEASE_VER = customTag
 						env.PUSH_LATEST = "false"
-						// Workspace-local tag so `git archive "${GIT_TAG}"` (make pack) resolves; never pushed
-						sh "git tag -f ${customTag} HEAD"
+						sh "git tag -f -- \"${customTag}\" HEAD"
 						echo "Using custom image tag: ${customTag}"
 					}
 				}

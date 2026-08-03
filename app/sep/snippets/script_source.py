@@ -17,7 +17,7 @@
 
 This adapter is the first real adoption of
 :class:`~app.sep.apps.framework.script_source.ScriptSource`: it wires the hooks
-``derive_script_routes`` needs around the existing snippets engine
+``derive_script_routes`` needs around the surrounding snippets engine
 (``app/sep/snippets/``), so :data:`~app.sep.apps.snippets.app.app` can declare
 ``script_source=`` instead of hand-wiring the listing / per-script schema /
 execute / history routes. Being DB-backed, it also opts into the server list-page
@@ -34,7 +34,7 @@ Three real couplings the synthetic kit deferred are bridged here:
   execute hook re-attaches the real host via ``model_construct``.
 * **The request-less listing.** ``load_script`` / ``list_scripts`` /
   ``load_scripts`` are plain callables with no request or session, so they open
-  their own request-less session (mirroring ``app/sep/apps/snippets/celery.py``).
+  their own request-less session (mirroring ``app/sep/snippets/celery.py``).
   ``load_scripts`` resolves a whole selection in one ``IN`` query. Only loaded
   columns and file/meta ``cached_property`` values are read after it closes —
   never a lazy relationship.
@@ -62,27 +62,27 @@ from app.core.pagination import PaginatedResponse, Pagination
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.framework.script_helpers import build_artifact_download_url
 from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
-from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
-from app.sep.apps.snippets.deps import (
+from app.sep.db import get_async_session_maker
+from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.deps import (
     build_snippet_execution_meta,
     get_snippet_list_query,
     validate_snippet_filename,
 )
-from app.sep.apps.snippets.models import build_snippet_response, SnippetResponse
-from app.sep.apps.snippets.schema import (
-    build_snippet_schema,
-    evaluate_snippet_gates,
-    SNIPPETS_PLUGIN_SCHEMA,
-)
-from app.sep.db import get_async_session_maker
-from app.sep.snippets.config import snippets_settings
-from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.list_query import SnippetListQuery
+from app.sep.snippets.models.responses import build_snippet_response, SnippetResponse
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
     EXECUTOR_HOSTS_INPUT_NAME,
     Snippet,
     SnippetExecutionMeta,
+)
+from app.sep.snippets.schema import (
+    build_snippet_schema,
+    evaluate_snippet_gates,
+    SNIPPETS_PLUGIN_SCHEMA,
 )
 
 
@@ -145,7 +145,7 @@ def build_snippet_source(snippet: Snippet) -> str:
     """Return a signed URL for the executor to download the snippet artifact.
 
     The request-less counterpart of
-    :func:`~app.sep.apps.snippets.deps.get_snippet_source`: it reads a
+    :func:`~app.sep.snippets.deps.get_snippet_source`: it reads a
     configured base URL rather than deriving one from the request, since the
     framework's ``build_execution_meta`` hook has no request.
 

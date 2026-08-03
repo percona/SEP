@@ -32,17 +32,15 @@ from pydantic import (
 from app.core.models import BaseLowercaseModel
 from app.core.utils.fields import StrCredentialAnyUrl, StrDatabaseUrl, StrRelativePath
 
-#: Service modules seeding the Celery ``include`` base. Not ``SEP.APPS`` apps, so
-#: they are not registry-derived; ``build_celery_include`` prepends them.
-#: ``snippets.celery`` is static rather than registry-derived because the sync
-#: task is the only path that ingests and approves the builtin snippet library,
-#: and apps that execute snippets (atw) must work with the snippets app itself
-#: deactivated: the startup ``sync_snippets.delay()`` needs a worker that has
-#: the task registered. The periodic re-sync stays activation-gated in
-#: ``app/sep/db/seed.py``.
+#: Modules seeding the Celery ``include`` base. Not ``SEP.APPS`` apps, so they are
+#: not registry-derived; ``build_celery_include`` prepends them. Every entry must
+#: register regardless of which apps an image ships -- the tasks service, the
+#: library-owned snippet ingestion, and the drain reconciler whose beat row is
+#: seeded unconditionally.
 STATIC_CELERY_INCLUDE: tuple[str, ...] = (
     "app.tasks.celery",
-    "app.sep.apps.snippets.celery",
+    "app.sep.snippets.celery",
+    "app.sep.app_drain",
 )
 
 

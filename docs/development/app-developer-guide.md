@@ -662,11 +662,9 @@ backup_priority: Annotated[
 
 Four markers bind a field to **inventory**: `ServiceRef`, `SchemaRef`, `TableRef`,
 and `HostRef`. They make the field a dropdown resolved from inventory —
-`ServiceRef`, `SchemaRef`, and `TableRef` optionally take `allow_custom=True`
-to also accept a typed name — and they drive the connectivity and cascade
-wiring. `HostRef` declares the same `allow_custom` flag and emits it on the
-wire, but the host selector does not yet honor it, so a free-typed host is
-not currently accepted by the UI. The Alters app uses all four together:
+each optionally takes `allow_custom=True` to also accept a typed name — and
+they drive the connectivity and cascade wiring. The Alters app uses all four
+together:
 
 <!-- src: app/sep/apps/alters/models.py :: AltersCreate -->
 ```python
@@ -816,7 +814,7 @@ Rules are often *generated* rather than written one by one. MySQL Backups
 stamps out the same rule per mode-owned boolean, failing validation when one is
 set outside its mode:
 
-<!-- src: app/sep/apps/mysql_backups/models.py :: BackupCreate -->
+<!-- src: app/sep/apps/mysql_backups/forms.py :: BackupCreate -->
 ```python
 __form_rules__: ClassVar[FormRules] = FormRules(
     fail_when=tuple(
@@ -841,7 +839,7 @@ itself: `Requires` makes the field mandatory when its predicate holds,
 Backups' encryption recipient is required exactly when encryption is on, and
 rejected when it is off:
 
-<!-- src: app/sep/apps/mysql_backups/models.py :: BackupCreate -->
+<!-- src: app/sep/apps/mysql_backups/forms.py :: BackupCreate -->
 ```python
 encryption_recipient: Annotated[
     NonEmptyStr | EmptyStrToNone,
@@ -1084,7 +1082,7 @@ extension point (`app/sep/apps/framework/script_source.py`): each script supplie
 its own form schema, and listing/execute/history derive from the source. Snippets
 wires one:
 
-<!-- src: app/sep/apps/snippets/script_source.py :: snippet_source -->
+<!-- src: app/sep/snippets/script_source.py :: snippet_source -->
 ```python
 snippet_source = ScriptSource(
     script_dir=snippets_settings.SNIPPETS_DIR,

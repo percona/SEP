@@ -17,11 +17,11 @@
 
 These Jinja2 routes are deprecated. The JSON API equivalents live under
 ``/api/apps/snippets/`` and the React UI consumes them via
-``frontend/packages/plugins/snippets``. Every response from this router
+``frontend/packages/apps/snippets``. Every response from this router
 carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
-hit; the routes remain mounted so users can fall back to the legacy UI
-for capabilities (chaining, scheduling, alerting) the React UI does not
-yet expose.
+hit; the routes remain mounted only until the Jinja layer is removed. The
+React UI is at parity: chaining, scheduling and alerting are absent from
+both surfaces, and the app declares them unsupported in its schema.
 
 Per-snippet HTML actions use fixed paths (``/detail``, ``/execute``,
 ``/approve``, ``/remove-approval``) and pass ``snippet_filename`` as a
@@ -40,16 +40,6 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.utils import utc_now
 from app.sep.app_drain import track_app_task
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
-from app.sep.apps.snippets.celery import update_snippets
-from app.sep.apps.snippets.deps import (
-    ApprovedSnippet,
-    check_snippet_batch_existence,
-    ExecutableSnippet,
-    SnippetBatchApproveForm,
-    SnippetExecutionRequestMeta,
-    UnapprovedSnippet,
-    ValidatedSnippet,
-)
 from app.sep.config import sep_settings
 from app.sep.deps import (
     AdminUser,
@@ -61,8 +51,18 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.middleware import messages
+from app.sep.snippets.celery import update_snippets
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.deps import (
+    ApprovedSnippet,
+    check_snippet_batch_existence,
+    ExecutableSnippet,
+    SnippetBatchApproveForm,
+    SnippetExecutionRequestMeta,
+    UnapprovedSnippet,
+    ValidatedSnippet,
+)
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
 

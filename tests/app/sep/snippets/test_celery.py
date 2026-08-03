@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.sep.apps.snippets.celery module."""
+"""Define tests for the app.sep.snippets.celery module."""
 
 import hashlib
 from pathlib import Path
@@ -21,17 +21,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import app.sep.apps.snippets.celery as sep_celery
-from app.sep.apps.snippets.builtin_manifest import BUILTIN_CHECKSUM_MANIFEST
-from app.sep.apps.snippets.celery import (
+import app.sep.snippets.celery as sep_celery
+from app.sep.snippets.celery import (
     BUILTIN_APPROVAL_REASON,
     BUILTIN_APPROVAL_USER_ID,
+    should_skip_snippet,
+    sync_snippets,
 )
+from app.sep.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST
 from app.sep.snippets.config import SnippetFilter, SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 
-MODULE = "app.sep.apps.snippets.celery"
+MODULE = "app.sep.snippets.celery"
 
 
 def _patch_session(mocker, session):
@@ -65,8 +67,6 @@ class TestShouldSkipSnippet:
 
     def test_no_filter_returns_false(self):
         """Assert no filtering when SYNC_FILTER is None."""
-        from app.sep.apps.snippets.celery import should_skip_snippet
-
         with patch(f"{MODULE}.snippets_settings") as mock_settings:
             mock_settings.SYNC_FILTER = None
             result = should_skip_snippet(Path("test.sh"))
@@ -75,8 +75,6 @@ class TestShouldSkipSnippet:
 
     def test_extension_matches_returns_false(self):
         """Assert file is not skipped when extension matches filter."""
-        from app.sep.apps.snippets.celery import should_skip_snippet
-
         with (
             patch(f"{MODULE}.snippets_settings") as mock_settings,
             patch(f"{MODULE}.guess_mime_type", return_value="text/plain"),
@@ -90,8 +88,6 @@ class TestShouldSkipSnippet:
 
     def test_mime_matches_returns_false(self):
         """Assert file is not skipped when MIME type matches filter."""
-        from app.sep.apps.snippets.celery import should_skip_snippet
-
         with (
             patch(f"{MODULE}.snippets_settings") as mock_settings,
             patch(
@@ -107,8 +103,6 @@ class TestShouldSkipSnippet:
 
     def test_no_match_returns_true(self):
         """Assert file is skipped when neither extension nor MIME matches."""
-        from app.sep.apps.snippets.celery import should_skip_snippet
-
         with (
             patch(f"{MODULE}.snippets_settings") as mock_settings,
             patch(f"{MODULE}.guess_mime_type", return_value="text/plain"),
@@ -126,8 +120,6 @@ class TestShouldSkipSnippet:
         ``should_skip_snippet`` lowercases ``suffix`` before comparing, so a
         case-variant file name must not be spuriously skipped.
         """
-        from app.sep.apps.snippets.celery import should_skip_snippet
-
         with (
             patch(f"{MODULE}.snippets_settings") as mock_settings,
             patch(f"{MODULE}.guess_mime_type", return_value="text/plain"),
@@ -564,8 +556,6 @@ class TestSyncSnippets:
 
     def test_calls_update_snippets(self):
         """Assert sync_snippets runs update_snippets via the event loop."""
-        from app.sep.apps.snippets.celery import sync_snippets
-
         mock_loop = MagicMock()
         sentinel_coro = MagicMock()
         mock_update = MagicMock(return_value=sentinel_coro)
@@ -582,54 +572,46 @@ class TestSyncSnippets:
             mock_loop.run_until_complete.assert_called_once_with(sentinel_coro)
 
 
-class TestUpdateSnippetsCooperativeCancel:
-    """``update_snippets`` honours the cooperative-cancel safe point."""
+class TestUpdateSnippetsIsDrainUnowned:
+    """``update_snippets`` runs to completion regardless of snippets app state.
+
+    The scheduled sync is a library task, not an app-owned one: it writes
+    library-owned ``Snippet`` rows that ATW and Alert Troubleshooting read
+    whether or not the snippets UI is mounted. It therefore carries no
+    ``should_cancel`` safe point and ``sync_snippets`` carries no ``owned_by``
+    tag, so a snippets drain neither gates nor interrupts it. The manual-refresh
+    routes keep their ``track_app_task`` wrapper — that is the app's own work and
+    is covered by ``test_refresh_registers_drain_counter``.
+    """
+
+    def test_sync_snippets_carries_no_owner_tag(self):
+        """Assert the scheduled task is not counted toward any app's drain."""
+        assert getattr(sep_celery.sync_snippets, "owner_app_key", None) is None
+
+    def test_module_imports_no_drain_helpers(self):
+        """Assert the cooperative-cancel seam is gone, not merely unused."""
+        assert not hasattr(sep_celery, "should_cancel")
+        assert not hasattr(sep_celery, "owned_by")
 
     @pytest.mark.asyncio
-    async def test_stops_at_safe_point_preserving_committed_creates(
+    async def test_completes_full_sync_without_consulting_drain_state(
         self, session, mocker, tmp_path
     ):
-        """Keep committed creates and skip post-loop writes on a mid-loop cancel."""
+        """Assert every file lands and orphan cleanup still runs to completion."""
         _patch_session(mocker, session)
         mocker.patch.object(snippets_settings, "SNIPPETS_DIR", tmp_path)
         mocker.patch.object(Snippet, "BASE_DIR", tmp_path)
-        (tmp_path / "a.sh").write_bytes(b"#!/bin/bash\necho a\n")
-        (tmp_path / "b.sh").write_bytes(b"#!/bin/bash\necho b\n")
-        mocker.patch(
-            f"{MODULE}.should_cancel", new=AsyncMock(side_effect=[False, True])
-        )
-        save_batch = mocker.spy(SnippetManager, "save_batch")
-        delete_where = mocker.spy(SnippetManager, "delete_where")
-
-        await sep_celery.update_snippets()
-
-        assert len(await SnippetManager.list(session)) == 1
-        save_batch.assert_not_called()
-        delete_where.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_stops_after_loop_skipping_post_loop_writes(
-        self, session, mocker, tmp_path
-    ):
-        """Skip the batch save and cleanup when the cancel is seen only after the loop."""
-        _patch_session(mocker, session)
-        mocker.patch.object(snippets_settings, "SNIPPETS_DIR", tmp_path)
-        mocker.patch.object(Snippet, "BASE_DIR", tmp_path)
-        await SnippetManager.create(
-            session, Snippet(filename="present.sh", size=1, md5_digest="0" * 32)
-        )
         await SnippetManager.create(
             session, Snippet(filename="orphan.sh", size=10, md5_digest="a" * 32)
         )
-        (tmp_path / "present.sh").write_bytes(b"#!/bin/bash\necho present\n")
-        mocker.patch(
-            f"{MODULE}.should_cancel", new=AsyncMock(side_effect=[False, True])
+        (tmp_path / "a.sh").write_bytes(b"#!/bin/bash\necho a\n")
+        (tmp_path / "b.sh").write_bytes(b"#!/bin/bash\necho b\n")
+        should_cancel = mocker.patch(
+            "app.sep.app_drain.should_cancel", new=AsyncMock(return_value=True)
         )
-        save_batch = mocker.spy(SnippetManager, "save_batch")
-        delete_where = mocker.spy(SnippetManager, "delete_where")
 
         await sep_celery.update_snippets()
 
-        save_batch.assert_not_called()
-        delete_where.assert_not_called()
-        assert await SnippetManager.first(session, filename="orphan.sh") is not None
+        should_cancel.assert_not_called()
+        filenames = {s.filename for s in await SnippetManager.list(session)}
+        assert filenames == {"a.sh", "b.sh"}

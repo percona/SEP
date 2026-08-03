@@ -81,10 +81,13 @@ async def get_current_user(token: AuthToken) -> User:
     sync) to authenticate with a stable deployment-level secret rather than a
     short-lived personal access token.
 
+    Otherwise the token is validated through ``User.from_bearer``, which accepts
+    the credential types the active provider honors on its Bearer surface -- for
+    Grafana, an access assertion or a short-lived session-exchange assertion. The
+    session-cookie surface stays narrower and validates through ``from_jwt``.
+
     :param token: The OAuth2 token to authenticate the user.
-    :type token: AuthToken
     :return: The authenticated user.
-    :rtype: User
     :raises HTTPUnauthorizedException: If the token is invalid and authentication fails.
     :raises InactiveUserException: If authentication succeeds but the user is not
         active.
@@ -95,7 +98,7 @@ async def get_current_user(token: AuthToken) -> User:
             set_log_context(user=_SERVICE_PRINCIPAL.username)
             return _build_service_principal(secret)
     try:
-        user = await User.from_jwt(token)
+        user = await User.from_bearer(token)
     except ValidationError:
         logger.exception("Failed to authenticate user")
         raise HTTPUnauthorizedException from None
