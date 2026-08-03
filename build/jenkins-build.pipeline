@@ -37,6 +37,11 @@ pipeline {
 			defaultValue: false,
 			description: 'Push the image to the Docker registry'
 		)
+		string(
+			name: 'customImageTag',
+			defaultValue: '',
+			description: 'Optional image tag override (OCI tag: starts [A-Za-z0-9_], then [A-Za-z0-9._-], max 128; the latest* family and release tags vX.Y.Z are reserved); skips git-tag naming, never pushes :latest'
+		)
 	}
 
 	options {
@@ -106,6 +111,27 @@ pipeline {
 
 					def isStableSemverTag = (env.GIT_TAG ==~ /^v\d+\.\d+\.\d+$/)
 					env.PUSH_LATEST = (env.GIT_TAG_COUNT.toInteger() > 0 && isStableSemverTag) ? "true" : "false"
+
+					def customTag = (params.customImageTag ?: '').trim()
+					if (customTag) {
+						if (!(customTag ==~ /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/)) {
+							currentBuild.result = "FAILURE"
+							throw new Exception("Invalid customImageTag: ${customTag}")
+						}
+						// GIT_TAG drives the unguarded primary push, so a "latest" family or
+						// release-semver tag would republish an image the registry already
+						// maps to a different commit
+						if (customTag ==~ /^latest([._-].*)?$/ || customTag ==~ /^v\d+\.\d+\.\d+$/) {
+							currentBuild.result = "FAILURE"
+							throw new Exception("Reserved customImageTag: ${customTag}")
+						}
+						env.GIT_TAG = customTag
+						env.GIT_TAG_SHORT = customTag
+						env.PUSH_LATEST = "false"
+						// Workspace-local tag so `git archive "${GIT_TAG}"` (make pack) resolves; never pushed
+						sh "git tag -f -- \"${customTag}\" HEAD"
+						echo "Using custom image tag: ${customTag}"
+					}
 				}
 			}
 		}
