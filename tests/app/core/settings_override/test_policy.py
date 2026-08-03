@@ -39,8 +39,12 @@ from app.core.settings_override.policy import (
 )
 from app.core.settings_override.registry import (
     field_reload_classification,
+    is_nested_overridable_parent,
+    iter_class_fields,
+    iter_nested_leaf_keys,
     ReloadClassification,
     resolve_nested_field,
+    resolve_nested_field_metadata,
 )
 from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
@@ -91,6 +95,36 @@ def shipped_allowed_keys() -> list[str]:
             raw = stripped.removeprefix(ENV_LINE_PREFIX).strip()
             return json.loads(raw.strip("'"))
     pytest.fail(f"No {ENV_LINE_PREFIX!r} line in {CONTAINERFILE}")
+
+
+def listed_hot_keys(settings_cls: type) -> set[str]:
+    """Return the keys the settings list renders HOT for one settings class.
+
+    Mirrors ``_field_responses``: a nested-overridable parent is replaced in the
+    listing by its enumerated leaves, so an entry naming such a parent addresses
+    no rendered row and unlocks none of its leaves.
+
+    :param settings_cls: The Pydantic settings class to render.
+    :return: The rendered keys that are currently overridable.
+    """
+    hot: set[str] = set()
+    for field_meta in iter_class_fields(settings_cls):
+        leaves = (
+            list(iter_nested_leaf_keys(settings_cls, field_meta.key))
+            if is_nested_overridable_parent(
+                settings_cls, field_meta.key, include_policy_gate=False
+            )
+            else []
+        )
+        if not leaves:
+            if field_meta.reload is ReloadClassification.HOT:
+                hot.add(field_meta.key)
+            continue
+        for leaf_key, _chain in leaves:
+            leaf_meta = resolve_nested_field_metadata(settings_cls, leaf_key)
+            if leaf_meta is not None and leaf_meta.reload is ReloadClassification.HOT:
+                hot.add(leaf_key)
+    return hot
 
 
 class TestSettingDeclaration:
@@ -223,6 +257,16 @@ class TestShippedValue:
                 assert "__".join(resolved[0]) == key, f"{entry} is not canonical"
             else:
                 assert key in settings_cls.model_fields, f"{entry} does not resolve"
+
+    def test_every_entry_unlocks_a_listed_key(
+        self, restrict: Callable[..., None]
+    ) -> None:
+        """Assert each shipped entry leaves a key the settings list renders HOT."""
+        for entry in shipped_allowed_keys():
+            class_token, _, _key = entry.partition(".")
+            settings_cls = SETTINGS_CLASSES[SettingClassEnum(class_token)]
+            restrict(entry)
+            assert listed_hot_keys(settings_cls), f"{entry} unlocks no listed key"
 
     def test_entries_are_unique(self) -> None:
         """Assert the shipped list carries no duplicate entry."""
