@@ -130,6 +130,17 @@ def test_pmm_annotations_stay_enabled_without_an_api_key():
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
+def test_connectivity_check_defaults_to_unchecked():
+    """Assert the connectivity checkbox resolves unchecked from the profile.
+
+    The profile allowlists ``CONNECTIVITY_CHECK_DEFAULT`` without setting it, so
+    the resolved value is the declared field default -- which a repository
+    checkout masks, because its own ``settings.yaml`` supplies one.
+    """
+    assert SEPSettings().CONNECTIVITY_CHECK_DEFAULT is False
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
 def test_grafana_provider_constructs_with_an_empty_token():
     """Assert the provider constructs, inert, until ``SEP_GRAFANA_TOKEN`` arrives."""
     provider = AuthSettings().PROVIDER["grafana"]
