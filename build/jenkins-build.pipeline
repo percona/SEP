@@ -116,7 +116,7 @@ pipeline {
 					if (customTag) {
 						if (!(customTag ==~ /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/)) {
 							currentBuild.result = "FAILURE"
-							throw new Exception("Invalid customImageTag: ${customTag}")
+							throw new Exception("Invalid customImageTag '${customTag}': must match ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ (max 128 chars)")
 						}
 						// GIT_TAG drives the unguarded primary push, so a "latest" family or
 						// release-semver tag would republish an image the registry already
