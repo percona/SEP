@@ -46,7 +46,7 @@ from app.sep.apps.framework.registry import (
     resolve_app_settings_metadata,
 )
 from app.sep.bundle_upload.plan import DeliveryPlan
-from app.sep.config import App, sep_settings, SEPSettings
+from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -64,13 +64,9 @@ from app.sep.snippets.config import (
     SnippetFilterType,
     snippets_settings,
 )
+from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 REDUCED_SETTINGS_PREFIX = "/settings"
-
-REDUCED_ACTIVATION = [
-    App(module_name=name) for name in ("inventory", "snippets", "atw", "mysql_backups")
-]
-"""The PMM-embedded side-car activation list (``sidecar/settings.embedded.yaml``)."""
 
 _DELIVERY_PLAN_PAYLOAD: dict[str, Any] = {
     "endpoint": "https://snow.example.com/",

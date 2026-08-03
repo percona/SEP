@@ -24,6 +24,14 @@ because the snippets engine is library-owned (``app/sep/snippets/``) while its H
 surface stays in the app package, so ``tests/app/sep/snippets/`` and
 ``tests/app/sep/apps/snippets/`` both consume them and this is their nearest common
 ancestor.
+
+This module also holds shared SEP-subtree test constants. ``REDUCED_ACTIVATION`` is
+defined once here, rather than copied per module, because it is consumed by three
+modules across the subtree (``tests/app/sep/test_main.py``,
+``tests/app/sep/apps/framework/test_registry.py``,
+``tests/app/sep/api/routes/test_settings.py``) and mirrors the side-car embedded
+activation profile (``sidecar/settings.embedded.yaml``); a single definition keeps
+the three call sites from drifting apart.
 """
 
 from collections.abc import Awaitable, Callable
@@ -34,6 +42,7 @@ import pytest
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.sep.config import App
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from tests.app.conftest import (  # noqa: F401
@@ -48,6 +57,11 @@ from tests.app.conftest import (  # noqa: F401
     test_client,
     unauthenticated_client,
 )
+
+REDUCED_ACTIVATION = [
+    App(module_name=name) for name in ("inventory", "snippets", "atw", "mysql_backups")
+]
+"""The PMM-embedded side-car activation list (``sidecar/settings.embedded.yaml``)."""
 
 
 @pytest.fixture

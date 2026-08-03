@@ -60,11 +60,7 @@ from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.snippets.config import snippets_settings
 from tests.app.factories import OAuthTokenFactory
-
-REDUCED_ACTIVATION = [
-    App(module_name=name) for name in ("inventory", "snippets", "atw", "mysql_backups")
-]
-"""The PMM-embedded side-car activation list (``sidecar/settings.embedded.yaml``)."""
+from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
 def _route_has_app_guard(route) -> bool:

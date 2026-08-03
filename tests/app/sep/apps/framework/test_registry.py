@@ -51,11 +51,7 @@ from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.config import App, sep_settings
 from app.sep.models import AppLifecycleEnum, AppState
-
-REDUCED_ACTIVATION = [
-    App(module_name=name) for name in ("inventory", "snippets", "atw", "mysql_backups")
-]
-"""The PMM-embedded side-car activation list (``sidecar/settings.embedded.yaml``)."""
+from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
 @pytest.fixture(autouse=True)
