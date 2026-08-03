@@ -63,7 +63,6 @@ PARENT_FILTER_TASK_COUNT = 3
 SEARCH_MATCH_TOTAL = 2
 TIE_BREAK_TOTAL = 3
 CHUNKS_AT_OR_BELOW_OFFSET = 2
-RESOLVED_ORDER_BY_LENGTH = 2
 
 
 def _default_list_query(
@@ -578,26 +577,16 @@ class TestTaskAndHistoryManagerGetOrdering:
     """Cover spec-derived default ordering used by non-HTTP list callers."""
 
     def test_task_manager_derives_default_sort_from_spec(self) -> None:
-        """Derive ``created_at`` DESC NULLS LAST plus ``id`` ASC from the Task spec."""
-        ordering = list(TaskManager._get_ordering())
-
-        assert len(ordering) == RESOLVED_ORDER_BY_LENGTH
-        assert "created_at" in str(ordering[0])
-        assert "DESC" in str(ordering[0])
-        assert "NULLS LAST" in str(ordering[0])
-        assert ".id" in str(ordering[1])
-        assert "ASC" in str(ordering[1])
+        """Return the Task ``list_query_spec`` default sort via ``_get_ordering``."""
+        assert list(
+            TaskManager._get_ordering()
+        ) == TaskManager.list_query_spec.resolve_sort(None)
 
     def test_task_history_manager_derives_default_sort_from_spec(self) -> None:
-        """Derive ``created_at`` DESC NULLS LAST plus ``id`` ASC from the history spec."""
-        ordering = list(TaskHistoryManager._get_ordering())
-
-        assert len(ordering) == RESOLVED_ORDER_BY_LENGTH
-        assert "created_at" in str(ordering[0])
-        assert "DESC" in str(ordering[0])
-        assert "NULLS LAST" in str(ordering[0])
-        assert ".id" in str(ordering[1])
-        assert "ASC" in str(ordering[1])
+        """Return the history ``list_query_spec`` default sort via ``_get_ordering``."""
+        assert list(
+            TaskHistoryManager._get_ordering()
+        ) == TaskHistoryManager.list_query_spec.resolve_sort(None)
 
 
 class TestTaskHistoryManagerListByTaskNameOrdering:
