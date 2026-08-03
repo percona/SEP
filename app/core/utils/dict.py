@@ -54,12 +54,9 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
         elif (
             key in main_dict
             and isinstance(main_dict[key], list)
-            and isinstance(update_dict[key], list)
+            and isinstance(value, list)
         ):
-            if update_dict[key]:
-                main_dict[key] = update_dict[key] + main_dict[key]
-            else:
-                main_dict[key] = []
+            main_dict[key] = value + main_dict[key] if value else []
         else:
             main_dict[key] = value
 

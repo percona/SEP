@@ -35,19 +35,15 @@ HIGH_CONFIDENCE_DEFAULT_ENTITIES = {
     PIIEntity.US_SSN,
     PIIEntity.US_ITIN,
 }
+
 PII_ENTITY_MEMBER_COUNT = 14
-SETTINGS_YAML = Path("settings.yaml")
 
 
 def _entities_for_profile(profile: str) -> set[PIIEntity]:
-    """Resolve ``DEFAULT_ENTITIES`` for a settings.yaml profile via the YAML merge.
-
-    :param profile: Settings profile name (for example ``default`` or ``development``).
-    :return: Entity set returned for any task owner under that profile.
-    """
+    """Load ``DEFAULT_ENTITIES`` for a settings.yaml profile via the production merge."""
     source = YamlPrefixConfigSettingsSource(
         AnonymizerSettings,
-        yaml_file=SETTINGS_YAML,
+        yaml_file=Path("settings.yaml"),
         prefixes=(profile, *AnonymizerSettings.SETTINGS_PREFIXES),
     )
     settings = AnonymizerSettings(DEFAULT_ENTITIES=source.yaml_data["DEFAULT_ENTITIES"])
@@ -57,15 +53,21 @@ def _entities_for_profile(profile: str) -> set[PIIEntity]:
 class TestSettingsYamlAnonymizerProfiles:
     """Assert shipped settings.yaml profiles resolve the expected entity sets."""
 
-    def test_default_profile_resolves_high_confidence_entities(self):
-        """Assert ``default:`` resolves to exactly the seven high-confidence entities."""
-        assert _entities_for_profile("default") == HIGH_CONFIDENCE_DEFAULT_ENTITIES
+    @pytest.mark.parametrize(
+        ("profile", "expected"),
+        [
+            ("default", HIGH_CONFIDENCE_DEFAULT_ENTITIES),
+            ("development", set()),
+        ],
+        ids=["default-high-confidence", "development-empty"],
+    )
+    def test_profile_resolves_expected_entities(
+        self, profile: str, expected: set[PIIEntity]
+    ) -> None:
+        """Assert each shipped profile resolves to the expected DEFAULT_ENTITIES set."""
+        assert _entities_for_profile(profile) == expected
 
-    def test_development_profile_resolves_empty_entities(self):
-        """Assert ``development:`` overrides to an empty entity set for every owner."""
-        assert _entities_for_profile("development") == set()
-
-    def test_pii_entity_retains_all_fourteen_members(self):
+    def test_pii_entity_retains_all_fourteen_members(self) -> None:
         """Assert narrowing is configuration-only; ``PIIEntity`` still has 14 members."""
         assert len(PIIEntity) == PII_ENTITY_MEMBER_COUNT
 

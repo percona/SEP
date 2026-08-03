@@ -16,6 +16,8 @@
 """Tests for restore JSON API routes under /api/apps/backup_mongo/restore/."""
 
 from collections import defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, call, patch
 
@@ -42,6 +44,18 @@ FALLBACK_DEFAULT_ENTITY_SET = {PIIEntity.CREDIT_CARD, PIIEntity.EMAIL_ADDRESS}
 EXPECTED_FALLBACK_DEFAULT_ENTITIES = sorted(
     entity.name for entity in FALLBACK_DEFAULT_ENTITY_SET
 )
+
+
+@contextmanager
+def patch_fallback_default_entities() -> Iterator[None]:
+    """Patch response defaults to a known non-empty entity set for mask=None tests."""
+    with patch("app.sep.apps.framework.responses.anonymizer_settings") as mock_settings:
+        mock_settings.DEFAULT_ENTITIES = defaultdict(
+            lambda: FALLBACK_DEFAULT_ENTITY_SET
+        )
+        yield
+
+
 EXPECTED_LOGICAL_RESTORE_POSTS = 3
 EXPECTED_PHYSICAL_RESTORE_POSTS = 4
 DEFAULT_PAGE_LIMIT = 50
@@ -317,12 +331,7 @@ class TestRestoreMongoApiList:
         mock_task_api_dep.get = mock_task_api_parent_list(parent)
         mock_task_api_dep.post = AsyncMock(return_value={})
 
-        with patch(
-            "app.sep.apps.framework.responses.anonymizer_settings"
-        ) as mock_settings:
-            mock_settings.DEFAULT_ENTITIES = defaultdict(
-                lambda: FALLBACK_DEFAULT_ENTITY_SET
-            )
+        with patch_fallback_default_entities():
             response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
@@ -686,12 +695,7 @@ class TestRestoreMongoApiDetail:
         parent = build_restore_task("parent-restore", anonymize_mask=None)
         mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-restore": parent})
 
-        with patch(
-            "app.sep.apps.framework.responses.anonymizer_settings"
-        ) as mock_settings:
-            mock_settings.DEFAULT_ENTITIES = defaultdict(
-                lambda: FALLBACK_DEFAULT_ENTITY_SET
-            )
+        with patch_fallback_default_entities():
             response = test_client.get(f"{API_BASE}/parent-restore")
 
         assert response.status_code == status.HTTP_200_OK
