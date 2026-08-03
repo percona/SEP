@@ -16,8 +16,8 @@
 """Declare the alerts app's own settings class.
 
 ``AlertSettings`` (prefix ``ALERTING``) is *not* declared here: it carries
-alert-delivery config that the Tasks worker and seven non-alerts apps read, so
-it stays a core class reachable in every deployment.
+alert-delivery config that the Tasks worker and every app offering
+``alert_on_fail`` read, so it stays a core class reachable in every deployment.
 """
 
 from app.core.settings_override.api.routes import AppOwnedClassEntry

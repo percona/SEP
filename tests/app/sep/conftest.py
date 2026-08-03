@@ -25,13 +25,11 @@ surface stays in the app package, so ``tests/app/sep/snippets/`` and
 ``tests/app/sep/apps/snippets/`` both consume them and this is their nearest common
 ancestor.
 
-This module also holds shared SEP-subtree test constants. ``REDUCED_ACTIVATION`` is
-defined once here, rather than copied per module, because it is consumed by three
-modules across the subtree (``tests/app/sep/test_main.py``,
-``tests/app/sep/apps/framework/test_registry.py``,
-``tests/app/sep/api/routes/test_settings.py``) and mirrors the side-car embedded
-activation profile (``sidecar/settings.embedded.yaml``); a single definition keeps
-the three call sites from drifting apart.
+This module also holds shared SEP-subtree test constants. ``REDUCED_ACTIVATION``
+mirrors the side-car embedded activation profile
+(``sidecar/settings.embedded.yaml``), which several modules across the subtree
+assert against; defining it once here keeps those copies from drifting away from
+the profile as apps are activated or dropped.
 """
 
 from collections.abc import Awaitable, Callable

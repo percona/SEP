@@ -1244,7 +1244,7 @@ class TestSepSettingsSecondaryClasses:
 
 @pytest.mark.asyncio
 class TestSepSettingsAlertSettings:
-    """Smoke-test the app-owned AlertSettings class."""
+    """Exercise the core ``AlertSettings`` class through the SEP router."""
 
     async def test_get_alert_setting(self, api_admin_client: TestClient) -> None:
         """Return one alert field from ``GET /settings/AlertSettings/{key}``."""
