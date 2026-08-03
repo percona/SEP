@@ -20,7 +20,12 @@ from contextlib import asynccontextmanager
 from typing import ClassVar
 
 from app.core.auth.base import BaseAuthProvider
-from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken
+from app.core.auth.models import (
+    BaseTokenPayload,
+    BaseUser,
+    OAuthToken,
+    SessionExchangeTokenResponse,
+)
 from app.core.auth.providers.grafana.models import GrafanaTokenPayload, GrafanaUser
 from app.core.auth.providers.grafana.sdk import GrafanaSDK
 
@@ -69,3 +74,23 @@ class GrafanaAuthProvider(GrafanaSDK, BaseAuthProvider):
         if not session:
             return None
         return await GrafanaUser.oauth_token_from_session(session)
+
+    async def exchange_ambient_session(
+        self, cookies: Mapping[str, str]
+    ) -> SessionExchangeTokenResponse | None:
+        """Mint a short-lived SEP bearer from an ambient Grafana session cookie.
+
+        Read the Grafana session cookie (named per :attr:`session_cookie_name`)
+        off ``cookies`` and validate it against Grafana; an absent cookie yields
+        ``None``.
+
+        :param cookies: The request cookies, keyed by name.
+        :return: The minted bearer on a valid ambient session, else ``None``.
+        :raises HTTPException: For a non-401 upstream error, including the
+            ``GrafanaException`` raised when Grafana is unreachable. The caller
+            swallows it so the exchange denies rather than surfacing a 502.
+        """
+        session = cookies.get(self.session_cookie_name)
+        if not session:
+            return None
+        return await GrafanaUser.exchange_token_from_session(session)
