@@ -13,10 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define Celery tasks for the snippets app.
+"""Define the snippet-ingestion Celery task.
 
-This module is registered through the Celery ``include`` list so its
-``@owned_by("snippets")`` task registers at worker startup.
+This module is named directly in ``STATIC_CELERY_INCLUDE`` rather than derived
+from the snippets app's activation entry, so snippet ingestion keeps running in
+an image that never mounts the snippets UI. The task is deliberately unowned --
+it writes library-owned ``Snippet`` rows, not app-owned state -- so disabling
+the snippets app neither gates nor cancels it.
 """
 
 import logging
@@ -26,14 +29,13 @@ from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.celery import celery
-from app.sep.app_drain import owned_by, should_cancel
-from app.sep.apps.snippets.builtin_manifest import (
+from app.sep.db import get_async_session_maker
+from app.sep.snippets.builtin_manifest import load_builtin_checksum_manifest
+from app.sep.snippets.checksums import (
     BUILTIN_CHECKSUM_MANIFEST,
-    load_builtin_checksum_manifest,
     manifest_relative_path,
     sha256_file,
 )
-from app.sep.db import get_async_session_maker
 from app.sep.snippets.config import SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import Snippet
@@ -50,7 +52,6 @@ BUILTIN_APPROVAL_USER_ID = "system"
 BUILTIN_APPROVAL_REASON = "Auto-approved: matches built-in checksum manifest"
 
 
-@owned_by("snippets")
 @celery.task
 def sync_snippets() -> None:
     """Define Celery task to sync snippets from `sep_setting.SNIPPETS.SNIPPETS_DIR`."""
@@ -78,9 +79,6 @@ async def update_snippets() -> None:
             else {}
         )
         for snippet_path in snippets_settings.SNIPPETS_DIR.rglob("*"):
-            if await should_cancel("snippets", session=session):
-                logger.info("Snippets app disabling; stopping snippet sync early.")
-                return
             if not snippet_path.is_file():
                 continue
             snippet_name = manifest_relative_path(
@@ -103,9 +101,6 @@ async def update_snippets() -> None:
             )
             if created:
                 created_count += 1
-        if await should_cancel("snippets", session=session):
-            logger.info("Snippets app disabling; skipping post-sync snippet writes.")
-            return
         await _persist_snippet_sync_batches(
             session,
             created_count=created_count,
@@ -224,8 +219,8 @@ def _apply_builtin_approval_policy(
 
     Owns the full branch: leave administrator revocations untouched; auto-approve
     on a manifest match; clear approval when contents changed and no longer match.
-    Lives in the snippets app (not on ``Snippet``) because the reason string and
-    sentinel user id are app-level constants for the manifest feature.
+    Lives here (not on ``Snippet``) because the reason string and sentinel user id
+    are constants of the manifest feature rather than of the snippet entity.
 
     :param snippet: The snippet row to transition.
     :param manifest_match: Whether the on-disk file matches the built-in manifest.

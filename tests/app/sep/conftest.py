@@ -16,10 +16,26 @@
 """Re-export the shared SEP test fixtures for the ``tests/app/sep`` subtree.
 
 These fixtures are defined in the always-loaded ancestor ``tests/app/conftest.py`` so they
-resolve regardless of single-process pytest collection order (SEP-1417). They are re-exported
+resolve regardless of single-process pytest collection order. They are re-exported
 here so app-subtree conftests can keep importing them from ``tests.app.sep.conftest``.
+
+The snippet-seeding fixtures below are defined here rather than in a leaf conftest
+because the snippets engine is library-owned (``app/sep/snippets/``) while its HTTP
+surface stays in the app package, so ``tests/app/sep/snippets/`` and
+``tests/app/sep/apps/snippets/`` both consume them and this is their nearest common
+ancestor.
 """
 
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from pytest_mock import MockerFixture
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.models import Snippet
 from tests.app.conftest import (  # noqa: F401
     api_admin_client_no_bearer,
     async_test_client,
@@ -32,3 +48,61 @@ from tests.app.conftest import (  # noqa: F401
     test_client,
     unauthenticated_client,
 )
+
+
+@pytest.fixture
+def snippets_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect :attr:`Snippet.BASE_DIR` to a temporary directory for the test."""
+    monkeypatch.setattr(Snippet, "BASE_DIR", tmp_path)
+    return tmp_path
+
+
+@pytest.fixture
+def create_snippet(
+    session: AsyncSession, snippets_dir: Path
+) -> Callable[..., Awaitable[Snippet]]:
+    """Return an async callable that seeds a Snippet row + its file on disk.
+
+    The callable accepts ``filename`` plus keyword arguments ``approved`` and
+    ``create_file`` (both default-friendly) and returns the persisted instance.
+
+    :param session: The in-memory test session.
+    :param snippets_dir: The tmp directory aliased as ``Snippet.BASE_DIR``.
+    :return: An async factory function.
+    """
+
+    async def _factory(
+        filename: str, *, approved: bool = False, create_file: bool = True
+    ) -> Snippet:
+        if create_file:
+            target = snippets_dir / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("#!/bin/sh\necho hi\n")
+        snippet = Snippet(filename=filename, size=20, md5_digest="a" * 32)
+        if approved:
+            snippet.approve("Seeded as approved", "seed-user")
+        return await SnippetManager.create(session, snippet)
+
+    return _factory
+
+
+@pytest.fixture
+def request_less_session(session: AsyncSession, mocker: MockerFixture) -> AsyncSession:
+    """Bind the snippets request-less session maker to the test session.
+
+    The derived listing / per-snippet / execute routes open their own
+    request-less session via ``get_async_session_maker`` rather than the
+    request-scoped ``get_session`` the other fixtures override, so the maker is
+    patched to yield the same in-memory ``session`` the rows are seeded through
+    (mirroring ``tests/app/sep/snippets/test_celery.py``). The two snippets
+    subtrees opt in autouse; it is not autouse here so unrelated SEP tests do not
+    pay for a session they never touch.
+    """
+    maker = MagicMock()
+    maker.return_value.__aenter__ = AsyncMock(return_value=session)
+    maker.return_value.__aexit__ = AsyncMock(return_value=False)
+    mocker.patch(
+        "app.sep.snippets.script_source.get_async_session_maker",
+        return_value=maker,
+    )
+    return session

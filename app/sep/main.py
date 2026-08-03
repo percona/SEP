@@ -55,7 +55,6 @@ from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.framework.registry import get_app_registry
-from app.sep.apps.snippets.celery import sync_snippets
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
@@ -77,6 +76,7 @@ from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
+from app.sep.snippets.celery import sync_snippets
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings

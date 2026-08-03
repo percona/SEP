@@ -41,9 +41,9 @@ from app.sep.apps.framework.schema import (
     ServiceField,
     SUDO_FIELD_NAME,
 )
-from app.sep.apps.snippets.schema import field_for
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippet
+from app.sep.snippets.schema import field_for
 
 _SERVICE_FIELD_NAME = "service_id"
 _COLLECTOR_FIELD_NAME = "collector_type"
