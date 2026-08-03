@@ -16,13 +16,15 @@
 """Define tests for the app.sep.main module."""
 
 import importlib
-from unittest.mock import Mock
+from contextlib import contextmanager
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
+from starlette.routing import Mount
 
 import app.sep.main as main_module
 from app.core.auth.exceptions import (
@@ -32,7 +34,13 @@ from app.core.auth.exceptions import (
 )
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.sep.api.router import apps_router
-from app.sep.apps.framework.registry import get_app_registry
+from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
+from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.registry import (
+    AppRegistry,
+    build_app_registry,
+    get_app_registry,
+)
 from app.sep.config import App, sep_settings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.exceptions import LoginRedirectException
@@ -46,6 +54,7 @@ from app.sep.main import (
 )
 from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
+from app.sep.snippets.config import snippets_settings
 from tests.app.factories import OAuthTokenFactory
 
 
@@ -472,6 +481,166 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
         importlib.reload(main_module)
+
+
+@contextmanager
+def _reloaded_against(mocker, registry):
+    """Rebuild ``sep_app`` over ``registry``, restoring the real one on exit.
+
+    Patches the registry accessor at its **source** module: ``importlib.reload``
+    re-executes ``main``'s ``from ... import get_app_registry``, which would
+    rebind over a patch applied to ``app.sep.main``.
+
+    :param mocker: The ``pytest-mock`` fixture used to install the patch.
+    :param registry: The registry ``app.sep.main`` should be rebuilt over.
+    :return: The ``sep_app`` built from ``registry``.
+    """
+    mocker.patch(
+        "app.sep.apps.framework.registry.get_app_registry", return_value=registry
+    )
+    try:
+        importlib.reload(main_module)
+        yield main_module.sep_app
+    finally:
+        mocker.stopall()
+        get_app_registry.cache_clear()
+        importlib.reload(main_module)
+
+
+@pytest.fixture
+def jinja_free_registry() -> AppRegistry:
+    """Return the real registry with every ``jinja_router`` stripped."""
+    get_app_registry.cache_clear()
+    return AppRegistry(
+        [
+            app.model_copy(update={"jinja_router": None})
+            for app in build_app_registry(sep_settings.APPS)
+        ]
+    )
+
+
+class TestJinjaDecoupledMounts:
+    """Cover the shared data surface's independence from Jinja-router mounting."""
+
+    def test_task_data_surface_survives_zero_jinja_routers(
+        self, mocker, jinja_free_registry: AppRegistry
+    ) -> None:
+        """Mount the shared task-data routes and payload dirs with no Jinja UI at all."""
+        with _reloaded_against(mocker, jinja_free_registry) as app:
+            route_names = {route.name for route in app.routes}
+            assert "list_task_history_files" in route_names
+            assert "task_logs_event_stream" in route_names
+            assert "list_task_execution_events" in route_names
+
+            mounts = {
+                route.path: route.name
+                for route in app.routes
+                if isinstance(route, Mount)
+            }
+            assert mounts["/static/snippets"] == "snippets_files"
+            assert mounts["/static/dipper"] == "dipper_files"
+
+            assert "periodic_task_create" not in route_names
+            assert "stop_task_execution" not in route_names
+
+    def test_payload_mounts_precede_catch_all_static(
+        self, mocker, jinja_free_registry: AppRegistry
+    ) -> None:
+        """Register both payload mounts ahead of the catch-all ``/static`` mount."""
+        with _reloaded_against(mocker, jinja_free_registry) as app:
+            paths = [route.path for route in app.routes if isinstance(route, Mount)]
+
+            assert paths.index("/static/snippets") < paths.index("/static")
+            assert paths.index("/static/dipper") < paths.index("/static")
+
+    def test_task_data_routers_absent_without_a_declaring_app(self, mocker) -> None:
+        """Withhold the shared task-data routes when no app declares it needs them."""
+        registry = AppRegistry(
+            [
+                BaseApp(
+                    key="legacy",
+                    name="Legacy",
+                    uri_path="/legacy",
+                    jinja_router=APIRouter(),
+                )
+            ]
+        )
+
+        with _reloaded_against(mocker, registry) as app:
+            route_names = {route.name for route in app.routes}
+            assert "list_task_history_files" not in route_names
+            assert "task_logs_event_stream" not in route_names
+            assert "list_task_execution_events" not in route_names
+
+            assert "periodic_task_create" in route_names
+            assert "stop_task_execution" in route_names
+
+    def test_empty_registry_mounts_neither_surface(self, mocker) -> None:
+        """Mount no shared routers and no payload dirs when no app is activated."""
+        with _reloaded_against(mocker, AppRegistry([])) as app:
+            route_names = {route.name for route in app.routes}
+            assert "list_task_history_files" not in route_names
+            assert "periodic_task_create" not in route_names
+
+            mounts = {route.path for route in app.routes if isinstance(route, Mount)}
+            assert "/static/snippets" not in mounts
+            assert "/static/dipper" not in mounts
+            assert "/static" in mounts
+
+    def test_child_apps_inherit_uses_task_data(self) -> None:
+        """Cover a child app inheriting the opt-in with no declaration of its own."""
+        get_app_registry.cache_clear()
+        registry = build_app_registry(sep_settings.APPS)
+
+        assert registry.get("mysql_backups/restore").uses_task_data is True
+
+
+class TestPayloadStaticMounts:
+    """Cover the authenticated payload mounts end-to-end over real HTTP."""
+
+    def test_snippets_payload_mount_serves_authenticated(
+        self, mocker, test_client: TestClient
+    ) -> None:
+        """Serve a snippets payload file to an authenticated caller."""
+        mocker.patch("app.sep.utils.static.get_current_user", new=AsyncMock())
+        filename = next(p.name for p in snippets_settings.SNIPPETS_DIR.glob("*.sh"))
+
+        response = test_client.get(f"/static/snippets/{filename}")
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_snippets_payload_mount_rejects_anonymous(
+        self, test_client: TestClient
+    ) -> None:
+        """Refuse an anonymous request for a snippets payload file."""
+        filename = next(p.name for p in snippets_settings.SNIPPETS_DIR.glob("*.sh"))
+
+        response = test_client.get(
+            f"/static/snippets/{filename}", follow_redirects=False
+        )
+
+        assert response.status_code != status.HTTP_200_OK
+
+    def test_dipper_payload_mount_serves_authenticated(
+        self, mocker, test_client: TestClient
+    ) -> None:
+        """Serve a dipper payload file to an authenticated caller."""
+        mocker.patch("app.sep.utils.static.get_current_user", new=AsyncMock())
+        filename = next(p.name for p in DIPPER_PAYLOADS_DIR.glob("*.sh"))
+
+        response = test_client.get(f"/static/dipper/{filename}")
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_dipper_payload_mount_rejects_anonymous(
+        self, test_client: TestClient
+    ) -> None:
+        """Refuse an anonymous request for a dipper payload file."""
+        filename = next(p.name for p in DIPPER_PAYLOADS_DIR.glob("*.sh"))
+
+        response = test_client.get(f"/static/dipper/{filename}", follow_redirects=False)
+
+        assert response.status_code != status.HTTP_200_OK
 
 
 class TestExceptionHandlers:
@@ -954,6 +1123,45 @@ class TestAppStateGuards:
         response = guarded_client.get("/api/apps/atw/")
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
+
+    @pytest.mark.parametrize(
+        "route",
+        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
+    )
+    @pytest.mark.asyncio
+    async def test_alert_troubleshooting_routes_503_when_snippets_disabled(
+        self, guarded_client: TestClient, session, route: str
+    ) -> None:
+        """Return 503 from Alert Troubleshooting routes when snippets is disabled.
+
+        The gate names ``alert_troubleshooting`` itself so callers never see the
+        raw ``App 'snippets' is currently disabled`` leak from the snippets path.
+        """
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get(route)
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert (
+            response.json()["detail"]
+            == "App 'alert_troubleshooting' is currently disabled."
+        )
+
+    @pytest.mark.parametrize(
+        "route",
+        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
+    )
+    @pytest.mark.asyncio
+    async def test_alert_troubleshooting_routes_reachable_when_snippets_enabled(
+        self, guarded_client: TestClient, session, route: str
+    ) -> None:
+        """Keep Alert Troubleshooting routes reachable when snippets is enabled."""
+        response = guarded_client.get(route)
+
+        assert response.status_code == status.HTTP_200_OK
 
     def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
         """Every non-protected UI plugin route carries the app-state guard."""

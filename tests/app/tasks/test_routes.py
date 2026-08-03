@@ -36,6 +36,7 @@ from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
 from app.core.utils.date_time import make_datetime_utc
+from app.tasks import hook_resolver
 from app.tasks.config import PreExecutionCheckMode, tasks_settings
 from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import _cached_check_connectivity
@@ -48,6 +49,7 @@ from app.tasks.main import tasks_app
 from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
@@ -148,7 +150,7 @@ async def test_delete_running_task_returns_409(test_client, session, created_tas
     table: if the running guard failed to short-circuit, the delete would fall
     through to that call and surface the reported 500. A clean 409 therefore
     proves the guard fires at the HTTP boundary before any downstream that could
-    raise -- the exact regression SEP-1547 tracks.
+    raise.
     """
     tasks_app.dependency_overrides[get_celery_beat_session] = lambda: session
     await TaskHistoryManager.save(
@@ -190,6 +192,18 @@ async def test_create_task_success(test_client):
     response = test_client.post("/", json=payload)
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()["name"] == "new-task"
+
+
+@pytest.mark.asyncio
+async def test_create_task_persists_run_result_recorder(test_client):
+    """Assert a created task's run_result_recorder round-trips through the POST body."""
+    task_data = TaskFactory.build(
+        name="recorder-task", run_result_recorder="pkg.mod:recorder"
+    )
+    payload = TaskWrite.model_validate(task_data).model_dump(mode="json")
+    response = test_client.post("/", json=payload)
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()["run_result_recorder"] == "pkg.mod:recorder"
 
 
 @pytest.mark.asyncio
@@ -2767,3 +2781,84 @@ class TestSyncTaskHistoryRealSession:
         assert "writer_session" in call_kwargs
         assert call_kwargs["writer_session"] is not None
         assert await TaskHistoryLogManager.exists_for_task(session, saved_history.id)
+
+    async def test_sync_hands_the_run_result_to_the_recorder(
+        self,
+        regular_user,
+        session: AsyncSession,
+        mock_executor: AsyncMock,
+        mocker,
+    ):
+        """Verify a terminal sync reads the run result and feeds it to the recorder."""
+        test_session_maker = get_async_session_maker_from_engine(session.bind)
+        result = {
+            "backup_dir": "/data/backup/20260727",
+            "size_bytes": 20260727,
+            "upload_destination": "s3://bucket/backup",
+        }
+        recorded = []
+
+        async def _recorder(recorder_session, history, run_result):
+            recorded.append(run_result)
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder}, clear=True)
+
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(
+                    name="run-python",
+                    backend=TaskBackendEnum.NOMAD,
+                    is_template=False,
+                    protected=False,
+                    alert_on_fail=False,
+                    run_result_recorder="pkg:rec",
+                    output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
+                )
+            ),
+        )
+        saved_history = await TaskHistoryManager.save(
+            session,
+            build_task_history(task, status=TaskHistoryStatusEnum.RUNNING),
+        )
+
+        async def fake_sync(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            queue_item.finished_at = utc_now()
+            return queue_item
+
+        async def fake_stream_file(*args, **kwargs):
+            yield json_lib.dumps(result).encode()
+
+        mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+        mock_executor.stream_file = MagicMock(side_effect=fake_stream_file)
+
+        tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
+        tasks_app.dependency_overrides[get_session] = lambda: session
+        tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
+
+        try:
+            with (
+                patch(
+                    "app.tasks.routes.get_async_session_maker",
+                    return_value=test_session_maker,
+                ),
+                patch(
+                    "app.tasks.run_result.get_async_session_maker",
+                    return_value=test_session_maker,
+                ),
+            ):
+                transport = ASGITransport(app=tasks_app)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as client:
+                    response = await client.post(f"/history/{saved_history.id}/sync/")
+        finally:
+            tasks_app.dependency_overrides = {}
+
+        assert response.status_code == status.HTTP_200_OK
+        assert recorded == [result]
+        assert mock_executor.stream_file.call_args.kwargs["anonymize"] is False

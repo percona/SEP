@@ -25,6 +25,7 @@ import {
   useRemoveSnippetApproval,
   useSnippetDownload,
   useSnippets,
+  useSnippetServiceTypes,
 } from './hooks';
 import type { SnippetResponse } from './types';
 
@@ -261,6 +262,59 @@ describe('useSnippets', () => {
     expect(lastConfig?.params).toEqual({ offset: 50, limit: 50 });
   });
 
+  it('forwards search/approval/service_type filters as query params', async () => {
+    responseBody = { items: [], total: 0, offset: 0, limit: 50 };
+
+    const { result } = renderHook(
+      () => useSnippets({ search: '  slow  ', approval: 'approved', serviceType: 'mysql' }),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.params).toMatchObject({
+      offset: 0,
+      limit: 50,
+      search: 'slow',
+      approval: 'approved',
+      service_type: 'mysql',
+    });
+  });
+
+  it('omits only blank/undefined filters, forwarding every defined value', async () => {
+    responseBody = { items: [], total: 0, offset: 0, limit: 50 };
+
+    // The hook does not special-case "all" — that mapping is the page's job — so a
+    // real service type equal to "all" is forwarded verbatim, not dropped.
+    const { result } = renderHook(() => useSnippets({ search: '   ', serviceType: 'all' }), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    // toEqual ignores undefined-valued keys, so the blank search is absent while
+    // the defined service_type survives.
+    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50, service_type: 'all' });
+  });
+
+  it('forwards the uncategorized flag as a query param', async () => {
+    responseBody = { items: [], total: 0, offset: 0, limit: 50 };
+
+    const { result } = renderHook(() => useSnippets({ uncategorized: true }), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.params).toMatchObject({ uncategorized: true });
+  });
+
   it('returns a legacy flat array with pagination null', async () => {
     responseBody = [{ filename: 'a.sh' }];
 
@@ -273,6 +327,118 @@ describe('useSnippets', () => {
     expect(result.current.data).toEqual({
       items: [{ filename: 'a.sh' }],
       pagination: null,
+    });
+  });
+
+  it('drops uncategorized=false rather than sending it as a query param', async () => {
+    responseBody = { items: [], total: 0, offset: 0, limit: 50 };
+
+    // The page always passes the boolean, so a `false` (not-uncategorized)
+    // selection must resolve to `undefined` and be omitted — never leak as
+    // `uncategorized=false`, which the server would treat as a present flag.
+    const { result } = renderHook(() => useSnippets({ uncategorized: false }), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.params).toEqual({ offset: 0, limit: 50 });
+  });
+
+  it('keeps the previous page visible while the next page loads (keepPreviousData)', async () => {
+    const page1 = { items: [{ filename: 'p1.sh' }], total: 100, offset: 0, limit: 50 };
+    const page2 = { items: [{ filename: 'p2.sh' }], total: 100, offset: 50, limit: 50 };
+    let resolveSecond: (() => void) | null = null;
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = (
+      config: CapturedRequestConfig,
+    ) => {
+      const okResponse = (data: unknown) => ({
+        data,
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'application/json' },
+        config,
+        request: {},
+      });
+      if (config.params?.offset === 0) {
+        return Promise.resolve(okResponse(page1));
+      }
+      // Hold the next page in flight so the placeholder window is observable.
+      return new Promise((resolve) => {
+        resolveSecond = () => resolve(okResponse(page2));
+      });
+    };
+    setTokenProvider(() => 'test-access-token');
+
+    const { result, rerender } = renderHook(({ offset }) => useSnippets({ offset }), {
+      wrapper: makeWrapper(),
+      initialProps: { offset: 0 },
+    });
+
+    await waitFor(() => {
+      expect(result.current.data?.items).toEqual([{ filename: 'p1.sh' }]);
+    });
+
+    rerender({ offset: 50 });
+
+    // While the second page is in flight, the first page's rows stay visible.
+    await waitFor(() => {
+      expect(result.current.isPlaceholderData).toBe(true);
+    });
+    expect(result.current.data?.items).toEqual([{ filename: 'p1.sh' }]);
+
+    await act(async () => {
+      resolveSecond?.();
+    });
+
+    await waitFor(() => {
+      expect(result.current.data?.items).toEqual([{ filename: 'p2.sh' }]);
+    });
+  });
+});
+
+describe('useSnippetServiceTypes', () => {
+  let lastConfig: CapturedRequestConfig | null = null;
+
+  beforeEach(() => {
+    lastConfig = null;
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = (
+      config: CapturedRequestConfig,
+    ) => {
+      lastConfig = config;
+      return Promise.resolve({
+        data: { service_types: ['mongodb', 'mysql'], has_uncategorized: true },
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'application/json' },
+        config,
+        request: {},
+      });
+    };
+    setTokenProvider(() => 'test-access-token');
+  });
+
+  afterEach(() => {
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = originalAdapter;
+    setTokenProvider(() => null);
+  });
+
+  it('GETs the whole-dataset service-type facet', async () => {
+    const { result } = renderHook(() => useSnippetServiceTypes(), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(lastConfig?.url).toContain('/apps/snippets/service_types');
+    expect(result.current.data).toEqual({
+      service_types: ['mongodb', 'mysql'],
+      has_uncategorized: true,
     });
   });
 });
@@ -345,6 +511,105 @@ describe('snippet approval optimistic cache', () => {
       expect(client.getQueryData(listKey)).toEqual({
         ...approvedList,
         items: [{ ...approvedList.items[0], is_approved: false }, approvedList.items[1]],
+      });
+    });
+  });
+
+  it('drops the row and decrements total when approval no longer matches the filter', async () => {
+    const client = makeQueryClient();
+    // A "not approved" page: approving a row means it no longer belongs here.
+    const notApprovedKey = ['snippets', 'list', { offset: 0, limit: 50, approval: 'not_approved' }];
+    const notApprovedList = {
+      items: [
+        { filename: 'check.sh', is_approved: false },
+        { filename: 'other.sh', is_approved: false },
+      ],
+      pagination: { total: 2, offset: 0, limit: 50 },
+    } as AppListResult<SnippetResponse>;
+    client.setQueryData(notApprovedKey, notApprovedList);
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = () =>
+      new Promise(() => {
+        /* hang so optimistic data stays visible */
+      });
+    setTokenProvider(() => 'test-access-token');
+
+    const { result } = renderHook(() => useApproveSnippet('check.sh'), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData(notApprovedKey)).toEqual({
+        ...notApprovedList,
+        items: [notApprovedList.items[1]],
+        pagination: { total: 1, offset: 0, limit: 50 },
+      });
+    });
+  });
+
+  it('drops the row and decrements total when removing approval under the approved filter', async () => {
+    const client = makeQueryClient();
+    const approvedKey = ['snippets', 'list', { offset: 0, limit: 50, approval: 'approved' }];
+    const approvedList = {
+      items: [
+        { filename: 'check.sh', is_approved: true },
+        { filename: 'other.sh', is_approved: true },
+      ],
+      pagination: { total: 2, offset: 0, limit: 50 },
+    } as AppListResult<SnippetResponse>;
+    client.setQueryData(approvedKey, approvedList);
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = () =>
+      new Promise(() => {
+        /* hang so optimistic data stays visible */
+      });
+    setTokenProvider(() => 'test-access-token');
+
+    const { result } = renderHook(() => useRemoveSnippetApproval('check.sh'), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData(approvedKey)).toEqual({
+        ...approvedList,
+        items: [approvedList.items[1]],
+        pagination: { total: 1, offset: 0, limit: 50 },
+      });
+    });
+  });
+
+  it('flips in place under the "all" filter without touching total', async () => {
+    const client = makeQueryClient();
+    // No approval param on the key → the "all" view keeps the row, just flipped.
+    client.setQueryData(listKey, unapprovedList);
+
+    (apiClient.defaults as unknown as { adapter: unknown }).adapter = () =>
+      new Promise(() => {
+        /* hang so optimistic data stays visible */
+      });
+    setTokenProvider(() => 'test-access-token');
+
+    const { result } = renderHook(() => useApproveSnippet('check.sh'), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryData(listKey)).toEqual({
+        ...unapprovedList,
+        items: [{ ...unapprovedList.items[0], is_approved: true }, unapprovedList.items[1]],
+        pagination: { total: 2, offset: 0, limit: 50 },
       });
     });
   });

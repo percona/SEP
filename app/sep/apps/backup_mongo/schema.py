@@ -18,11 +18,12 @@
 The schema is derived from the model-first
 :class:`~app.sep.apps.backup_mongo.models.BackupForm` plus the
 :data:`~app.sep.apps.backup_mongo.views.backup_mongo_views` presentation
-bundle. :data:`BACKUP_MONGO_DERIVED` carries the three ``DerivedTask`` specs (with
+bundle. :data:`BACKUP_MONGO_DERIVED` carries the four ``DerivedTask`` specs (with
 their two-step ``payload_substitutions``) into the ``derived`` block of
 ``GET /schema``; the cascade create route reuses the same specs to POST the
-logical, physical, and status siblings. The Task-section description is built
-from those specs so the user-facing copy cannot drift from ``name_suffix``.
+logical, physical, status, and incremental siblings. The Task-section description
+is built from those specs so the user-facing copy cannot drift from
+``name_suffix``.
 """
 
 from dataclasses import replace
@@ -56,6 +57,14 @@ BACKUP_MONGO_DERIVED = [
         },
         data_overrides={"backup_type": BackupType.PBM_STATUS.value},
     ),
+    DerivedTask(
+        name_suffix="-incremental",
+        payload_substitutions={
+            BackupType.PBM_CONFIG.value: BackupType.PBM_LOGICAL.value,
+            BackupType.PBM_LOGICAL.value: BackupType.PBM_INCREMENTAL.value,
+        },
+        data_overrides={"backup_type": BackupType.PBM_INCREMENTAL.value},
+    ),
 ]
 
 #: Task-section note lists derived ``name_suffix`` values so UI copy cannot
@@ -84,7 +93,7 @@ backup_mongo_schema = derive_app_schema(
     display_name="MongoDB Backups",
     description=(
         "Configure Percona Backup for MongoDB (PBM) and manage logical, "
-        "physical, and status backup tasks."
+        "physical, status, and incremental backup tasks."
     ),
     capabilities=backup_mongo_views.capabilities,
     list_view=backup_mongo_views.list_view,

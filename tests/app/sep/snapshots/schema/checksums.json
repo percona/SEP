@@ -241,12 +241,6 @@
         "sortable": false
       },
       {
-        "format": "chip",
-        "key": "service_type",
-        "label": "Service Type",
-        "sortable": false
-      },
-      {
         "format": "relative",
         "key": "created_at",
         "label": "Created",

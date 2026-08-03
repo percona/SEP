@@ -697,7 +697,8 @@ def test_create_response_builder_pins_stable_component(
 
     The create route serves the hand-authored ``SynthCreateResponse`` (not the
     framework's auto-derived create model), and the create response combines the
-    injected ``service_type`` / resolved username extras with the probe warning.
+    resolved username extras with the probe warning while omitting internal
+    ``owner`` / ``service_type`` fields.
     """
     app_def = synth_app(
         connectivity_check=True,
@@ -731,6 +732,7 @@ def test_create_response_builder_pins_stable_component(
 
     assert response.status_code == status.HTTP_201_CREATED
     payload = response.json()
-    assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
+    assert "service_type" not in payload
+    assert "owner" not in payload
     assert payload["created_by"] == SYNTH_CREATED_BY_NAME
     assert payload["connectivity_warning"] is not None
