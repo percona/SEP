@@ -1690,6 +1690,15 @@ pull_and_start() {
         log_milestone "Image pulled: ${image_ref}"
     fi
 
+    if [ "$SEP_SERVE_FRONTEND" -eq 1 ]; then
+        if ! check_cmd_silent "${CONTAINER_ENGINE} run --rm --entrypoint /bin/sh ${image_ref} -c 'test -d /home/sep/app/frontend/dist'"; then
+            log_err "Image ${image_ref} does not carry the React bundle at /home/sep/app/frontend/dist, so nginx would never start."
+            log_err "Use an image tag that ships the bundle, or re-run with SEP_SERVE_FRONTEND=0 to serve the legacy UI."
+            exit 1
+        fi
+        log_milestone "React bundle found in image"
+    fi
+
     spin_or_die dots "Creating containers..." "${CMD} up --detach --no-start --remove-orphans"
     log_milestone "Containers created"
 
