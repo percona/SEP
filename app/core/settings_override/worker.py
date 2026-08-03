@@ -91,10 +91,11 @@ class WorkerRefresher:
             maker -- and no task is created.
         :param callbacks: Optional rebind callbacks fired by the periodic loop
             when a watched override changes value.
-        :raises Exception: Re-raises whatever the initial inline refresh
-            propagates, in practice limited to ``session_maker_factory()``
-            failures; per-proxy failures are caught and logged inside
-            ``refresh_all``.
+        :raises Exception: Re-raises whatever ``proxies_factory()`` raises --
+            it is evaluated before the refresh starts -- and whatever the
+            initial inline refresh propagates, in practice limited to
+            ``session_maker_factory()`` failures. Per-proxy refresh failures
+            are caught and logged inside ``refresh_all``.
         """
         if not enabled:
             return

@@ -21,7 +21,11 @@ from unittest.mock import MagicMock
 
 import pytest
 from pydantic import SecretStr
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    async_sessionmaker,
+    AsyncEngine,
+    create_async_engine,
+)
 from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
@@ -55,6 +59,7 @@ SEP_CORE_CLASSES = frozenset(
     }
 )
 PMM_ENDPOINT = "https://pmm-worker.example.org"
+WorkerLoopEnv = tuple[asyncio.AbstractEventLoop, async_sessionmaker]
 
 
 class _AppOwnedSettings(BaseYamlSettings):
@@ -77,13 +82,19 @@ def _app_owned_entry(setting_class: SettingClassEnum) -> AppOwnedClassEntry:
     )
 
 
-async def _create_schema(engine) -> None:
+async def _create_schema(engine: AsyncEngine) -> None:
     """Create every SQLModel table on ``engine``."""
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
 
-async def _upsert_override(maker, *, setting_class, key, value) -> None:
+async def _upsert_override(
+    maker: async_sessionmaker,
+    *,
+    setting_class: SettingClassEnum,
+    key: str,
+    value: object,
+) -> None:
     """Insert or replace a single active ``SettingOverride`` row through ``maker``."""
     async with maker() as session:
         await SettingsOverrideManager.delete_where(
@@ -118,7 +129,9 @@ def override_session_maker_fixture() -> async_sessionmaker:
 
 
 @pytest.fixture(name="worker_loop_env")
-def worker_loop_env_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple:
+def worker_loop_env_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> WorkerLoopEnv:
     """Wire a fresh event loop and in-memory SEP DB as a prefork worker child.
 
     Mirrors the ``worker_process_init`` runtime: a dedicated ``celery.loop``, the
@@ -206,7 +219,7 @@ class TestWorkerOverrideCallbacks:
 class TestSepWorkerHandlers:
     """Cover the worker_process_init / worker_process_shutdown SEP handlers."""
 
-    def test_init_starts_a_refresher(self, worker_loop_env: tuple) -> None:
+    def test_init_starts_a_refresher(self, worker_loop_env: WorkerLoopEnv) -> None:
         """Start this child's SEP refresher on ``worker_process_init``."""
         start_sep_settings_override_refresher()
 
@@ -229,7 +242,7 @@ class TestSepWorkerHandlers:
         assert sep_worker._refresher.task is None
 
     def test_init_is_idempotent_when_already_running(
-        self, worker_loop_env: tuple
+        self, worker_loop_env: WorkerLoopEnv
     ) -> None:
         """Keep the running refresher and start no second task on re-entry."""
         start_sep_settings_override_refresher()
@@ -241,7 +254,7 @@ class TestSepWorkerHandlers:
         assert not first_task.done()
 
     def test_shutdown_cancels_and_drains_started_refresher(
-        self, worker_loop_env: tuple
+        self, worker_loop_env: WorkerLoopEnv
     ) -> None:
         """Stop and drain the started refresher, clearing the handle."""
         start_sep_settings_override_refresher()
@@ -263,7 +276,7 @@ class TestSepWorkerHandlers:
         assert sep_worker._refresher.task is None
 
     def test_init_seeds_a_sep_override_into_the_worker_proxy(
-        self, worker_loop_env: tuple
+        self, worker_loop_env: WorkerLoopEnv
     ) -> None:
         """Publish a seeded SEP-side override during the initial inline refresh."""
         loop, maker = worker_loop_env
