@@ -1691,8 +1691,8 @@ pull_and_start() {
     fi
 
     if [ "$SEP_SERVE_FRONTEND" -eq 1 ]; then
-        if ! check_cmd_silent "${CONTAINER_ENGINE} run --rm --entrypoint /bin/sh ${image_ref} -c 'test -d /home/sep/app/frontend/dist'"; then
-            log_err "Image ${image_ref} does not carry the React bundle at /home/sep/app/frontend/dist, so nginx would never start."
+        if ! check_cmd_silent "${CONTAINER_ENGINE} run --rm --entrypoint /bin/sh ${image_ref} -c 'test -f /home/sep/app/frontend/dist/index.html'"; then
+            log_err "Image ${image_ref} does not carry the React bundle at /home/sep/app/frontend/dist, so nginx would serve no UI."
             log_err "Use an image tag that ships the bundle, or re-run with SEP_SERVE_FRONTEND=0 to serve the legacy UI."
             exit 1
         fi
@@ -1893,21 +1893,21 @@ fUWlH/pG1Dz7zkei70yedqC6nm+N29xmp76fdT77Kh4Kq0KxdgxjNzmapknv7BxtS/dd5I/o/mvn
 83ljj++A0Qb2OlXR9Qupz0TGVa/70XQWX8T9cBYtrpLxyP+M0tw1F67h4W3AZBrfovN1dFcFPN8/
 /wBn+Or2gwoAAA=='
 
-NGINX_CONFIG='H4sIAAAAAAACA+1XbW/bNhD+nl9xSAQ0HSpLTrw2cRAMQ9ai/ZIGTQb0QwGBpk4SG4rkSCqxW7W/
-fUe/xI6duElRYANiApbouyN599zDo1gzA1HlvckaU1qWI0RcK4XcC61uZF+3gFqOBWukh6n0aCx8
-9gy41I7+fdvacmiv0E7NpXAeFRykB+nEdKLNFKsRpOZMVtr5WyqvL1E50EUxEVv0jVWwn3Yh+Oj6
-SRKFQZHFfxp0PmusuH/hXq8HzsnVxbN7F53Incw4Wi8KwZlHSNDzRJVCDROHJg6qjsH66C7j7BJH
-ywNINLEfD+BSoPJZzYbZQOejzIkvCN2ZNuASoIdjSCpk0ldfplGFxjhH5zKpyzlGY3meZ2SdEwQn
-WlHwPr4YGQSPQ58YyYSa204x3UtT2NaXn9T2REUg7sRx/ObD+9OL16d/UXdnxSGhchx2Kl/LBZ+s
-1p581TWGYBNmTFLYsRN5kotZgkPDoREW3f2uM15hHAKwWsK20jEPkm1g8pqN3I2ft9z6/ht86uz+
-0f/sWu5ca1TZfjbhh2VbiqIVXLfuqmyvcWDaa1p6/NhrvS9a1P559FOheDvKCiEpmIgoCMe9tLca
-Z3f0kDBNM5CCvwAiRMxKPN7v/r7/Mk3TFyDquvFsIH+AQPIrIgiPZDHDs7VWSBEEp+/XEGXRH2P1
-cJQZ5tzNBiaf+ocU39GSkUM/Q+gtbfFpVZqXiDstP8YfaJPE786ASkKtaf8R0HbtgDfaXjObYx56
-EE0sQnqGWTFThd4DJzmz2muIHOW0xjVj/p6V18Viu8b+5KYK31WRlwdazIly3N/eWxPdoCkKtEKV
-dyktrZZ5UaNuPOz1qmX92Fuqki440u10F2mxzIIlGjAjNlR4AlQYv3bggrlLCCfT+flrYCqng0bS
-gUhvmo/KzK6i0tSoEFCgxvMjqBvKbZAWTErwFRmWFRCE52d/wrwSdZZ45Tx5Wse0lNvw66nwa55+
-HCJvQjfGK/rQ2XBgXWpW0Bsf+RvIHgMZCx/3jG+Y9jjYnKcO32C2FrN7rq6H1P6HV1e0VltKYInQ
-O3y1ei3vR1O/jLZLd/QHXxFoLs5crrXtH2yO7v/06A70/Bcf7DPaIBIAAA=='
+NGINX_CONFIG='H4sIAAAAAAACA+1XbW/UOBD+3l8xaiMBJ7LJtntcu1WFEAeCL6WiRboP6CKvM0lMHdtnO+0uBH47
+431p9617BSGBxFpK4syM45lnHo/jmhmIKu9N1pjSshwh4lop5F5odSP7tAPUcixYIz1Mpcdj4YMH
+wKV29PZ5Z8ehvUI7NZfCeVRwmB6mE9OJNlOsRpCaM1lp5xdUXl+icqCLYiK26Bur4CDtQvDR9ZMk
+CoMii/816HzWWHH3xL1eD5yTq5Nnd046kTuZcbReFIIzj5Cg54kqhRomDk0cVB2D9fE64+wSR8sD
+SDSxHw/gUqDyWc2G2UDno8yJjwjdmTbgEqCHE0gqZNJXH6dRhcY4R+cyqctbjMbyPM/IOicInmtF
+wfv4YmQQPA59YiQT6tZ2iul+msKuvnyvdicqAnEvjuOXb9+cXrw4/Zu6eysOCZXjsFP5Ws75ZLX2
+5KuuMQSbMGOSwo6dyJNczBIcGg6NsOjudp3xCuMQgNUSdpWOeZDsApPXbORu/Fxw68sf8L7z8Gn/
+g2u5c61RZfvBhAvLthRFK7hu3VXZXuPAtNc09fi233pftKj9o+i7QvF2lBVCUjARURBOemlvNc7u
+6D5hmmYgBX8MRIiYlXhy0P3z4Emapo9B1HXj2UD+DwLJj4gg3JL5DM/mWiFFEJy+2UCUeX+M1cNR
+ZphzNwuYfOofUXzHS0YO/QyhV7TEp1XptkSstfwnfkuLJH59BlQSak3rj4C2Gwe81Paa2Rzz0INo
+YhHSM8yKmSr07vmRM6u9hshRTmvcMObdrLzOF9sN9s9vqvC6irw80GJOlON+cW1NdIOmKNAKVa5T
+Wpot86JG3XjY71XL+rG3VCVdcKTb6c7TYpkFizT49wtQrsWWDb8BG8aPPbhg7hLC5nR+/gKYymmv
+kbQn0pO+R5XmoaLq1KgQUKDGo2OoG8ptkBZMSvAVGZYVEITnZ8/gthh1VqnlPDlbxzSb21Lsd6HY
+AgNwiLwJbzFe0R/PlgabsrMOwPH2v0XtG1Fj4V+f8S3fvhk556nPt7BthO2Ow+wRtV/wMIvWaksJ
+LBF6R3+tHtT70dQvo+3Sqf3ehwb6Fmcu19r2D7fb+E/dxgM9vwKB8vv4MhIAAA=='
 
 SEP_COMPOSE_YAML='H4sIAAAAAAACA+1ZWXPbthZ+16/AKBmnTQ2SkmUnwa0faIuxNdU2WrrMnQ4HImGLNbeAkBIl1X/v
 AbhYEilbaW/jdHqdGYU4G4CzfAckMMa1Z2jpBQSFEfVIGDFRq33ANPYwC5cej8KAhYLUENocoqMd
