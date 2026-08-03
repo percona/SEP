@@ -125,14 +125,52 @@ async def apply_effective_enabled(
         await celery_beat_session.commit()
 
 
+async def release_unowned_task_gating(
+    celery_beat_session: AsyncSession,
+    system_tasks: list[SystemPeriodicTaskSchedule],
+) -> None:
+    """Enable seeded ``PeriodicTask`` rows for schedules that carry no owner.
+
+    An unowned schedule gets no ``SEPPluginPeriodicTask`` wrapper row, so it has
+    no user toggle and ``enabled`` is a column only app gating ever writes.
+    :func:`apply_effective_enabled` iterates wrapper rows, which means a schedule
+    that *loses* its owner keeps whatever bit the previous regime left behind and
+    nothing ever writes it back — permanently off on an instance whose former
+    owning app was disabled at the time. Re-assert the only correct value for a
+    schedule nothing gates.
+
+    :param celery_beat_session: The celery-beat database session.
+    :param system_tasks: The system periodic-task schedules to seed from.
+    """
+    unowned = [
+        task.name
+        for schedule in system_tasks
+        for task in schedule.tasks
+        if not task.owner_app_key
+    ]
+    if not unowned:
+        return
+    tasks = await BasePeriodicTaskManager.list(
+        celery_beat_session, col(PeriodicTask.name).in_(unowned)
+    )
+    changed = False
+    for task in tasks:
+        if not task.enabled:
+            task.enabled = True
+            celery_beat_session.add(task)
+            changed = True
+    if changed:
+        await celery_beat_session.commit()
+
+
 async def sync_app_periodic_task_gating(
     system_tasks: list[SystemPeriodicTaskSchedule],
 ) -> None:
     """Seed wrapper rows and apply ``effective_enabled`` for every owned task.
 
     Startup entry point: opens one SEP session and one celery-beat session,
-    upserts the wrapper rows, then writes ``effective_enabled`` through for all
-    owned schedules.
+    upserts the wrapper rows, releases any schedule that no longer has an owner,
+    then writes ``effective_enabled`` through for all owned schedules.
 
     :param system_tasks: The system periodic-task schedules to gate.
     """
@@ -143,4 +181,5 @@ async def sync_app_periodic_task_gating(
         celery_beat_session_maker() as celery_beat_session,
     ):
         await seed_app_periodic_task_rows(sep_session, system_tasks)
+        await release_unowned_task_gating(celery_beat_session, system_tasks)
         await apply_effective_enabled(sep_session, celery_beat_session)

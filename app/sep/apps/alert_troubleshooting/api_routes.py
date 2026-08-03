@@ -41,9 +41,9 @@ from app.sep.apps.alert_troubleshooting.schema import (
     ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA,
 )
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.apps.snippets.models import build_snippet_response
 from app.sep.deps import SessionDep
 from app.sep.models import AlertServiceType
+from app.sep.snippets.models.responses import build_snippet_response
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA)
