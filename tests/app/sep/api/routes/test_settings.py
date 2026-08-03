@@ -17,12 +17,12 @@
 
 from collections.abc import AsyncIterator, Iterator
 from string import Template
-from typing import Any
+from typing import Annotated, Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-from fastapi import FastAPI, status
+from fastapi import Depends, FastAPI, status
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -33,20 +33,27 @@ from app.core.alerts.config import alert_settings
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
+from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.api import routes as settings_routes
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
+from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
+from app.sep.apps.framework.registry import (
+    collect_app_owned_settings_classes,
+    resolve_app_settings_metadata,
+)
 from app.sep.bundle_upload.plan import DeliveryPlan
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.config import App, sep_settings, SEPSettings
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
     get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
+    TaskAPI,
     validate_csrf,
 )
 from app.sep.main import sep_app, sep_overrides_lifespan
@@ -57,6 +64,13 @@ from app.sep.snippets.config import (
     SnippetFilterType,
     snippets_settings,
 )
+
+REDUCED_SETTINGS_PREFIX = "/settings"
+
+REDUCED_ACTIVATION = [
+    App(module_name=name) for name in ("inventory", "snippets", "atw", "mysql_backups")
+]
+"""The PMM-embedded side-car activation list (``sidecar/settings.embedded.yaml``)."""
 
 _DELIVERY_PLAN_PAYLOAD: dict[str, Any] = {
     "endpoint": "https://snow.example.com/",
@@ -183,6 +197,86 @@ def _find_setting(
     raise AssertionError(f"setting {setting_class}/{key} not in payload")
 
 
+@pytest.fixture(name="reduced_activation_client")
+def reduced_activation_client_fixture(
+    override_session: AsyncSession,
+) -> Iterator[TestClient]:
+    """Yield a settings router built as if the alerts app were never activated.
+
+    Reloading ``app.sep.main`` cannot reach this surface: ``settings.py`` captures
+    the app-owned classes and builds ``router`` at module import, and
+    ``app/sep/api/router.py`` imports that built object once. Building a fresh
+    router over SEP's real core list plus a genuinely reduced app-owned
+    collection is what exercises the composition.
+    """
+    app = FastAPI()
+
+    async def get_reduced_session() -> AsyncSession:
+        return override_session
+
+    router = build_settings_router(
+        classes=SEP_ADMIN_SETTINGS_CLASSES,
+        session_dep=Annotated[AsyncSession, Depends(get_reduced_session)],
+        admin_dep=Depends(lambda: None),
+        remote_classes=[(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")],
+        remote_api_dep=TaskAPI,
+        app_owned_classes=collect_app_owned_settings_classes(REDUCED_ACTIVATION),
+        resolve_app_metadata=resolve_app_settings_metadata,
+    )
+    app.include_router(router, prefix=REDUCED_SETTINGS_PREFIX)
+    app.dependency_overrides[get_tasks_api] = _mock_tasks_api
+    return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.mark.asyncio
+class TestReducedActivationSettings:
+    """Serve the settings API as the PMM-embedded image wires it."""
+
+    async def test_alert_settings_still_served_as_core_group(
+        self, reduced_activation_client: TestClient
+    ) -> None:
+        """Serve the core ``AlertSettings`` group with the alerts app deactivated."""
+        response = reduced_activation_client.get(f"{REDUCED_SETTINGS_PREFIX}/")
+        assert response.status_code == status.HTTP_200_OK
+        alert_group = _find_group(
+            response.json(),
+            SettingClassEnum.ALERT_SETTINGS.value,
+        )
+        assert alert_group["is_app_owned"] is False
+        assert alert_group["app_id"] is None
+        assert alert_group["settings"]
+
+    async def test_alerts_settings_not_wired_at_all(
+        self, reduced_activation_client: TestClient
+    ) -> None:
+        """Omit ``AlertsSettings`` entirely when the alerts app is deactivated."""
+        response = reduced_activation_client.get(f"{REDUCED_SETTINGS_PREFIX}/")
+        assert response.status_code == status.HTTP_200_OK
+        groups = {group["setting_class"] for group in response.json()["groups"]}
+        assert SettingClassEnum.ALERTS_SETTINGS.value not in groups
+        assert SettingClassEnum.ALERT_SETTINGS.value in groups
+
+    async def test_patch_on_deactivated_class_is_not_found(
+        self, reduced_activation_client: TestClient
+    ) -> None:
+        """Reject a PATCH against the deactivated ``AlertsSettings`` class."""
+        response = reduced_activation_client.patch(
+            f"{REDUCED_SETTINGS_PREFIX}/{SettingClassEnum.ALERTS_SETTINGS.value}",
+            json={"ALERT_FOLDER_NAME": "Nope"},
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_delete_on_deactivated_class_is_not_found(
+        self, reduced_activation_client: TestClient
+    ) -> None:
+        """Reject a DELETE against the deactivated ``AlertsSettings`` class."""
+        response = reduced_activation_client.delete(
+            f"{REDUCED_SETTINGS_PREFIX}/{SettingClassEnum.ALERTS_SETTINGS.value}"
+            "/ALERT_FOLDER_NAME",
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
 @pytest.mark.asyncio
 class TestSepSettingsList:
     """Tests for ``GET /api/sep/admin/settings/``."""
@@ -192,9 +286,9 @@ class TestSepSettingsList:
     ) -> None:
         """Return core, proxied TasksSettings, and app-owned groups.
 
-        SEP serves its own classes locally (including ``AlertsSettings``),
+        SEP serves its own classes locally (including ``AlertSettings``),
         proxies ``TasksSettings`` from the Tasks sub-app, and appends
-        app-owned classes such as ``AlertSettings``.
+        app-owned classes such as ``AlertsSettings``.
         """
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -220,6 +314,7 @@ class TestSepSettingsList:
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.MESSAGES_SETTINGS.value,
+            SettingClassEnum.ALERT_SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
         }
         for group in response.json()["groups"]:
@@ -229,22 +324,22 @@ class TestSepSettingsList:
                 assert group["app_display_name"] is None
                 assert group["app_enabled"] is None
 
-    async def test_alert_settings_group_carries_app_metadata(
+    async def test_alerts_settings_group_carries_app_metadata(
         self, api_admin_client: TestClient
     ) -> None:
-        """Tag ``AlertSettings`` as owned by the alerts app when enabled."""
+        """Tag ``AlertsSettings`` as owned by the alerts app when enabled."""
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
-        alert_group = _find_group(
+        alerts_group = _find_group(
             response.json(),
-            SettingClassEnum.ALERT_SETTINGS.value,
+            SettingClassEnum.ALERTS_SETTINGS.value,
         )
-        assert alert_group["is_app_owned"] is True
-        assert alert_group["app_id"] == "alerts"
-        assert alert_group["app_display_name"] == "Alert Templates"
-        assert alert_group["app_enabled"] is True
+        assert alerts_group["is_app_owned"] is True
+        assert alerts_group["app_id"] == "alerts"
+        assert alerts_group["app_display_name"] == "Alert Templates"
+        assert alerts_group["app_enabled"] is True
 
-    async def test_alert_settings_group_reports_disabled_app(
+    async def test_alerts_settings_group_reports_disabled_app(
         self,
         api_admin_client: TestClient,
         override_session: AsyncSession,
@@ -257,13 +352,38 @@ class TestSepSettingsList:
 
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
+        alerts_group = _find_group(
+            response.json(),
+            SettingClassEnum.ALERTS_SETTINGS.value,
+        )
+        assert alerts_group["is_app_owned"] is True
+        assert alerts_group["app_id"] == "alerts"
+        assert alerts_group["app_enabled"] is False
+
+    async def test_alert_settings_stays_core_when_alerts_app_disabled(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Keep the ``ALERTING`` delivery config core-owned and ungated.
+
+        Seven non-alerts apps and the Tasks worker read ``AlertSettings``, so
+        the frontend's app-owned filter must never be able to hide it.
+        """
+        override_session.add(
+            AppState(app_key="alerts", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
         alert_group = _find_group(
             response.json(),
             SettingClassEnum.ALERT_SETTINGS.value,
         )
-        assert alert_group["is_app_owned"] is True
-        assert alert_group["app_id"] == "alerts"
-        assert alert_group["app_enabled"] is False
+        assert alert_group["is_app_owned"] is False
+        assert alert_group["app_id"] is None
+        assert alert_group["app_enabled"] is None
 
     async def test_lists_hot_and_not_overridable_entries(
         self, api_admin_client: TestClient

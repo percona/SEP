@@ -13,17 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Declare settings classes owned by the alerts app."""
+"""Declare the alerts app's own settings class.
 
-from app.core.alerts.config import alert_settings, AlertSettings
+``AlertSettings`` (prefix ``ALERTING``) is *not* declared here: it carries
+alert-delivery config that the Tasks worker and seven non-alerts apps read, so
+it stays a core class reachable in every deployment.
+"""
+
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.settings_override.models import SettingClassEnum
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 
 APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
     AppOwnedClassEntry(
-        setting_class=SettingClassEnum.ALERT_SETTINGS,
-        settings_cls=AlertSettings,
-        proxy=alert_settings,
+        setting_class=SettingClassEnum.ALERTS_SETTINGS,
+        settings_cls=AlertsSettings,
+        proxy=alerts_settings,
         app_key="alerts",
     ),
 ]

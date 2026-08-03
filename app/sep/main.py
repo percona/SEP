@@ -53,8 +53,10 @@ from app.core.utils import run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
-from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
-from app.sep.apps.framework.registry import get_app_registry
+from app.sep.apps.framework.registry import (
+    collect_app_owned_settings_classes,
+    get_app_registry,
+)
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
@@ -238,13 +240,15 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Wire the SEP-side settings override refresher into a lifespan.
 
     Force-resolves ``messages_settings`` (fail-fast validation), then starts the
-    background refresher for the ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``,
-    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global), ``ALERT_SETTINGS`` and
-    ``ALERTS_SETTINGS`` proxies for the duration of the wrapped block.
-    ``SETTINGS`` and ``ALERT_SETTINGS`` wrap shared module-level proxies
-    (``settings`` / ``alert_settings``); the SEP refresher is their **sole**
-    owner so that under the combined ``app.main:app`` the Tasks refresher does
-    not also publish into them from the Tasks database.
+    background refresher for the duration of the wrapped block over a proxy map
+    composed from whatever the activated apps declare plus SEP's own
+    ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``, ``MESSAGES_SETTINGS``, ``SETTINGS``
+    (global) and ``ALERT_SETTINGS``. SEP's own entries are applied **over** the
+    app-owned ones, so ``SETTINGS`` and ``ALERT_SETTINGS`` -- shared
+    module-level proxies (``settings`` / ``alert_settings``) -- keep the SEP
+    refresher as their **sole** owner even if an app were to declare them: under
+    the combined ``app.main:app`` the Tasks refresher must not also publish into
+    them from the Tasks database.
     Endpoint and PMM rebind callbacks are built here -- where ``app`` is
     available -- so both run modes wire them.
 
@@ -261,9 +265,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     :param app: The FastAPI application instance, used to wire endpoint rebind
         callbacks against ``app.state``.
-    :type app: FastAPI
-    :yield: None
-    :rtype: AsyncGenerator[None, None]
+    :return: None
     """
     # Force-resolve ``messages_settings`` so the proxy's underlying Pydantic
     # instance is constructed (and validated) before any lifespan side
@@ -309,8 +311,11 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
     # the settings-API handlers read it.
     sep_app.state.override_callbacks = callbacks
-    async with settings_override_refresher(
-        get_async_session_maker,
+    proxies = {
+        entry.setting_class: ProxyEntry(entry.proxy, entry.settings_cls)
+        for entry in collect_app_owned_settings_classes()
+    }
+    proxies.update(
         {
             SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
             SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
@@ -321,10 +326,11 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ),
             SettingClassEnum.SETTINGS: ProxyEntry(settings, Settings),
             SettingClassEnum.ALERT_SETTINGS: ProxyEntry(alert_settings, AlertSettings),
-            SettingClassEnum.ALERTS_SETTINGS: ProxyEntry(
-                alerts_settings, AlertsSettings
-            ),
-        },
+        }
+    )
+    async with settings_override_refresher(
+        get_async_session_maker,
+        proxies,
         settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
         enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
         callbacks=callbacks,
