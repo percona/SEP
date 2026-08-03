@@ -19,7 +19,7 @@ import logging
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import datetime
 
-from sqlalchemy import CursorResult, delete, func, literal, or_, update
+from sqlalchemy import CursorResult, delete, func, or_, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
@@ -771,30 +771,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         return result.rowcount
 
     @classmethod
-    async def exists_for_task(cls, session: AsyncSession, task_history_id: int) -> bool:
-        """Return ``True`` when at least one chunk exists for the task history.
-
-        Uses a ``SELECT 1 ... LIMIT 1`` short-circuit query so the database
-        can stop scanning as soon as it finds the first matching row instead
-        of counting every chunk.
-
-        :param session: The SQLAlchemy asynchronous session to use for query
-            execution.
-        :type session: AsyncSession
-        :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
-        :return: Whether any chunk rows exist for the task history.
-        :rtype: bool
-        """
-        query = (
-            select(literal(1))
-            .where(col(TaskHistoryLog.task_history_id) == task_history_id)
-            .limit(1)
-        )
-        result = await session.exec(query)
-        return result.first() is not None
-
-    @classmethod
     async def ids_with_chunks(
         cls,
         session: AsyncSession,
@@ -804,7 +780,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
 
         Emit a single ``SELECT DISTINCT task_history_id FROM taskhistory_log
         WHERE task_history_id IN (:ids)`` so list endpoints avoid an N+1
-        :meth:`exists_for_task` call per paginated row. Return an empty set
+        :meth:`exists` call per paginated row. Return an empty set
         for empty input without emitting any SQL -- an empty ``IN ()``
         predicate triggers a SQLAlchemy warning and is a no-op anyway.
 

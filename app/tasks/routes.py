@@ -356,7 +356,7 @@ async def _populate_has_logs(
     """Set ``has_logs`` on each history using chunk-store + legacy fallback.
 
     Read the chunk store in one batched query so list endpoints avoid an
-    N+1 :meth:`TaskHistoryLogManager.exists_for_task` call per row, then
+    N+1 :meth:`TaskHistoryLogManager.exists` call per row, then
     OR the result with :func:`has_legacy_logs` so legacy rows keep
     rendering the **View Logs** button until the backfill lands.
 
@@ -457,7 +457,9 @@ async def retrieve_task_history(
     logger.debug("Requesting task history %s", task_history.id)
     _set_has_logs(
         task_history,
-        value=await TaskHistoryLogManager.exists_for_task(session, task_history.id)
+        value=await TaskHistoryLogManager.exists(
+            session, task_history_id=task_history.id
+        )
         or has_legacy_logs(task_history),
     )
     return task_history
@@ -597,7 +599,7 @@ async def stop_task_history(
     stopped = await executor.stop_task(session, task_history)
     _set_has_logs(
         stopped,
-        value=await TaskHistoryLogManager.exists_for_task(session, stopped.id)
+        value=await TaskHistoryLogManager.exists(session, task_history_id=stopped.id)
         or has_legacy_logs(stopped),
     )
     return stopped
@@ -684,7 +686,7 @@ async def sync_task_history(
         await maybe_record_run(synced.id, executor)
     _set_has_logs(
         synced,
-        value=await TaskHistoryLogManager.exists_for_task(session, synced.id)
+        value=await TaskHistoryLogManager.exists(session, task_history_id=synced.id)
         or has_legacy_logs(synced),
     )
     return synced

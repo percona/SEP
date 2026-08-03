@@ -1007,6 +1007,35 @@ class BaseManager:
         result = await session.scalar(query)
         return result or 0
 
+    @classmethod
+    async def exists(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        **equal_filters: Any,
+    ) -> bool:
+        """Return whether any record matches the query.
+
+        Emit a short-circuiting ``SELECT EXISTS (...)`` so the database can
+        stop at the first matching row. Filter arguments match :meth:`count`
+        and are applied through :meth:`_filter_query` (``None`` equal-filter
+        values are skipped — same behaviour as ``count``).
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param whereclause: SQL expressions for the ``where`` clause of the query.
+        :type whereclause: ColumnExpressionArgument[bool]
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :type equal_filters: Any
+        :return: ``True`` when at least one matching row exists.
+        :rtype: bool
+        """
+        inner = cls._filter_query(select(cls.Model), *whereclause, **equal_filters)
+        result = await session.scalar(select(inner.exists()))
+        return bool(result)
+
 
 class BaseSQLModelManager(BaseManager):
     """Manage database operations for a BaseSQLModel-based model.

@@ -2780,7 +2780,9 @@ class TestSyncTaskHistoryRealSession:
         call_kwargs = mock_executor.sync_task_history.await_args.kwargs
         assert "writer_session" in call_kwargs
         assert call_kwargs["writer_session"] is not None
-        assert await TaskHistoryLogManager.exists_for_task(session, saved_history.id)
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=saved_history.id
+        )
 
     async def test_sync_hands_the_run_result_to_the_recorder(
         self,
