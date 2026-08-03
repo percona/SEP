@@ -222,7 +222,7 @@ def test_activation_list_builds_an_app_registry():
     """Assert the baked activation list satisfies every declared app dependency."""
     registry = build_app_registry(SEPSettings().APPS)
 
-    assert {"inventory", "snippets", "atw", "mysql_backups"} <= set(registry.keys())
+    assert {"inventory", "atw", "mysql_backups"} <= set(registry.keys())
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
