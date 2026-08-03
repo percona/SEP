@@ -91,8 +91,9 @@ async def authenticated_get(
 
     Installs the authentication overrides an ``/api/apps/*`` route needs, so a
     route test asserts on the route's own behavior rather than on the auth gate,
-    and clears every override afterwards.
+    and restores any previously installed overrides afterwards.
     """
+    previous_overrides = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[get_session] = lambda: session
     sep_app.dependency_overrides[get_current_user] = lambda: user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: user
@@ -103,4 +104,5 @@ async def authenticated_get(
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             return await client.get(url, params=params)
     finally:
-        sep_app.dependency_overrides = {}
+        sep_app.dependency_overrides.clear()
+        sep_app.dependency_overrides.update(previous_overrides)

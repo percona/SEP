@@ -39,6 +39,12 @@ from app.sep.deps import InventoryAPI, SessionDep
 
 router = APIRouter()
 
+# Scan at most this many catalog pages when filling Choice options so a run of
+# unusable rows (missing location / shell-unsafe) cannot starve the selector of
+# older valid backups, while still bounding DB work for a free-text-friendly
+# endpoint.
+_MAX_CHOICE_SCAN_PAGES = 10
+
 
 @router.get("/services/{service_id}/backups")
 async def list_service_backups(
@@ -72,33 +78,47 @@ async def _choices_for_service_name(
 ) -> list[Choice]:
     """Return Choice options for ``service_name``, newest first, capped at one page.
 
+    Pages catalog rows until ``DEFAULT_PAGINATION_LIMIT`` valid choices are
+    collected (or rows/pages are exhausted), so filtered-out runs do not shrink
+    the usable option set below the intended cap.
+
     :param session: The database session the catalog is queried on.
     :param service_name: The inventory service name to filter catalog rows by.
     :return: Choice-compatible options; at most ``DEFAULT_PAGINATION_LIMIT`` items.
     """
-    page = await MysqlBackupRunManager.list_for_service(
-        session,
-        service_name,
-        pagination=Pagination(offset=0, limit=DEFAULT_PAGINATION_LIMIT),
-    )
-    return [
-        choice
-        for run in page.items
-        if (choice := backup_run_to_choice(run)) is not None
-    ]
+    choices: list[Choice] = []
+    offset = 0
+    for _ in range(_MAX_CHOICE_SCAN_PAGES):
+        page = await MysqlBackupRunManager.list_for_service(
+            session,
+            service_name,
+            pagination=Pagination(offset=offset, limit=DEFAULT_PAGINATION_LIMIT),
+        )
+        for run in page.items:
+            choice = backup_run_to_choice(run)
+            if choice is None:
+                continue
+            choices.append(choice)
+            if len(choices) >= DEFAULT_PAGINATION_LIMIT:
+                return choices
+        if not page.items or offset + len(page.items) >= page.total:
+            break
+        offset += len(page.items)
+    return choices
 
 
 @router.get("/backup-sources/choices")
 async def list_backup_source_choices(
     session: SessionDep,
     inventory_api: InventoryAPI,
-    service_id: str = Query(
-        ...,
+    service_id: str | None = Query(
+        None,
         description=(
             "Cascade parent from the restore form. Inventory numeric ids are "
             "resolved to a MySQL service name; custom names query the catalog "
-            "directly. Sentinel/blank/unknown values yield an empty list so "
-            "free-text entry is never blocked by a failed options fetch."
+            "directly. Omitted, blank, sentinel, or unknown values yield an "
+            "empty list so free-text entry is never blocked by a failed "
+            "options fetch."
         ),
     ),
 ) -> list[Choice]:
@@ -107,14 +127,18 @@ async def list_backup_source_choices(
     The ``service_id`` query parameter (cascade parent name on the restore form)
     selects which catalog rows to map. Options are newest-first and capped at
     :data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain
-    reachable via free-text). An empty or unresolvable parent yields ``[]`` —
-    never a ``4xx`` — so the RemoteChoices free-text escape hatch stays usable.
+    reachable via free-text). An omitted, empty, or unresolvable parent yields
+    ``[]`` — never a ``4xx`` — so the RemoteChoices free-text escape hatch stays
+    usable.
 
     :param session: The database session the catalog is queried on.
     :param inventory_api: The Inventory API client used to resolve numeric ids.
-    :param service_id: The cascade parent's submitted value.
+    :param service_id: The cascade parent's submitted value, or ``None`` when
+        omitted.
     :return: Choice-compatible options for the restore backup-source selector.
     """
+    if service_id is None:
+        return []
     trimmed = service_id.strip()
     if not trimmed or trimmed == UNKNOWN_SERVICE_SENTINEL:
         return []

@@ -193,6 +193,75 @@ async def test_build_restore_task_payload_skips_lookup_for_unknown_service_senti
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "backup_type",
+    [BackupType.XTRABACKUP, BackupType.BINLOG],
+)
+@pytest.mark.parametrize("service_id", ["/", "external-db", "db01:3306"])
+async def test_build_restore_task_payload_annotates_free_typed_service_without_lookup(
+    backup_type: BackupType,
+    service_id: str,
+    mocker,
+    mock_remote_api,
+):
+    """A free-typed service name annotates the task without an inventory lookup.
+
+    ``ServiceRef(allow_custom=True)`` lets the form submit a name instead of an
+    inventory id. Interpolating one into the detail URL is never valid, and
+    ``"/"`` used to collapse to the services *collection* endpoint (whose
+    paginated list fails ``CreatedService`` validation and 500s), so a
+    non-numeric value must skip the lookup and stand in as the service name.
+    """
+    get_created_entity = mocker.patch(
+        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
+    )
+
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        service_id=service_id,
+        backup_type=backup_type,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+    )
+    task_payload = await build_restore_task_payload(form, mock_remote_api)
+
+    assert task_payload.data["meta"]["_service_name"] == service_id
+    get_created_entity.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_build_restore_task_payload_mydumper_rejects_free_typed_service(
+    mocker,
+    mock_remote_api,
+):
+    """MYDUMPER needs a resolvable service, so a free-typed name is a clean 422.
+
+    MyDumper derives ``dest_host`` / ``dest_port`` from the service address, which
+    a typed name cannot supply. Rejecting it up front keeps the eager-resolve
+    contract while replacing the former bogus-URL 500.
+    """
+    get_created_entity = mocker.patch(
+        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
+    )
+
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        service_id="/",
+        backup_type=BackupType.MYDUMPER,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await build_restore_task_payload(form, mock_remote_api)
+
+    assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    get_created_entity.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_build_restore_payload_stamps_form_without_new_secret_exposure(
     mock_remote_api,
 ):

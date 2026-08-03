@@ -1754,12 +1754,14 @@ export interface paths {
      *     The ``service_id`` query parameter (cascade parent name on the restore form)
      *     selects which catalog rows to map. Options are newest-first and capped at
      *     :data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain
-     *     reachable via free-text). An empty or unresolvable parent yields ``[]`` —
-     *     never a ``4xx`` — so the RemoteChoices free-text escape hatch stays usable.
+     *     reachable via free-text). An omitted, empty, or unresolvable parent yields
+     *     ``[]`` — never a ``4xx`` — so the RemoteChoices free-text escape hatch stays
+     *     usable.
      *
      *     :param session: The database session the catalog is queried on.
      *     :param inventory_api: The Inventory API client used to resolve numeric ids.
-     *     :param service_id: The cascade parent's submitted value.
+     *     :param service_id: The cascade parent's submitted value, or ``None`` when
+     *         omitted.
      *     :return: Choice-compatible options for the restore backup-source selector.
      */
     get: operations['mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get'];
@@ -8080,8 +8082,9 @@ export interface components {
      *     ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
      *     / ``disabled_reason``). When ``depends_on`` is set, the fetch is
      *     parameterised by the dependency's value (appended as a query parameter named
-     *     after ``depends_on``) and the field stays disabled/empty until the
-     *     dependency has a value. When ``allow_custom`` is set, the renderer also
+     *     after ``depends_on``) and the field offers no options until the dependency
+     *     has a value, staying disabled while it waits unless ``allow_custom`` keeps
+     *     free-text entry open. When ``allow_custom`` is set, the renderer also
      *     accepts a free-typed value. The endpoint response contract is a JSON array
      *     of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
      *     "disabled"?: bool, "disabled_reason"?: str}``.
@@ -12990,9 +12993,9 @@ export interface operations {
   };
   mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get: {
     parameters: {
-      query: {
-        /** @description Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Sentinel/blank/unknown values yield an empty list so free-text entry is never blocked by a failed options fetch. */
-        service_id: string;
+      query?: {
+        /** @description Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch. */
+        service_id?: string | null;
       };
       header?: never;
       path?: never;

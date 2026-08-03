@@ -75,6 +75,9 @@ function Harness({
       <button type="button" onClick={() => methods.setValue('cluster', 'cluster-b')}>
         change-parent
       </button>
+      <button type="button" onClick={() => methods.setValue('cluster', 'cluster-a')}>
+        set-parent
+      </button>
     </FormProvider>
   );
 }
@@ -228,6 +231,64 @@ describe('RemoteChoiceSelector', () => {
 
       await user.click(screen.getByRole('button', { name: 'change-parent' }));
       await waitFor(() => expect(screen.getByTestId('value')).toHaveTextContent('null'));
+    });
+
+    it('keeps a free-typed value when the cascade parent is set afterwards', async () => {
+      // Selecting the parent used to wipe backup_source, so Create submitted ""
+      // and the backend answered 422 NonEmptyStr even though the input still
+      // looked filled.
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={makeClient()}>
+          <Harness dependsOn="cluster" initialParent={null} allowCustom />
+        </Wrapper>,
+      );
+      await user.type(screen.getByLabelText('Backup'), '/');
+      await waitFor(() => expect(screen.getByTestId('value')).toHaveTextContent('"/"'));
+
+      await user.click(screen.getByRole('button', { name: 'set-parent' }));
+      await waitFor(() =>
+        expect(mocked.get).toHaveBeenCalledWith('/apps/restore/backups?cluster=cluster-a'),
+      );
+      expect(screen.getByTestId('value')).toHaveTextContent('"/"');
+    });
+
+    it('stays typable with free-text entry while the parent has no value', async () => {
+      // Options need the parent, but a free-typed value never does: disabling the
+      // input would make a required allow_custom field unfillable (and push the
+      // keystrokes into whichever field still holds focus).
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={makeClient()}>
+          <Harness dependsOn="cluster" initialParent={null} allowCustom />
+        </Wrapper>,
+      );
+      const input = screen.getByLabelText('Backup');
+      expect(input).not.toBeDisabled();
+      expect(mocked.get).not.toHaveBeenCalled();
+
+      await user.type(input, '/backups/mydumper/latest');
+      await waitFor(() =>
+        expect(screen.getByTestId('value')).toHaveTextContent('"/backups/mydumper/latest"'),
+      );
+    });
+
+    it('stays typable with free-text entry when the options fetch fails', async () => {
+      mocked.get.mockRejectedValue(new Error('boom'));
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={makeClient()}>
+          <Harness dependsOn="cluster" initialParent="cluster-a" allowCustom />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument());
+
+      const input = screen.getByLabelText('Backup');
+      expect(input).not.toBeDisabled();
+      await user.type(input, '/backups/mydumper/latest');
+      await waitFor(() =>
+        expect(screen.getByTestId('value')).toHaveTextContent('"/backups/mydumper/latest"'),
+      );
     });
   });
 

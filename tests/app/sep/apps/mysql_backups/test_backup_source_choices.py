@@ -24,6 +24,7 @@ from httpx import Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPNotFoundException
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.sep.apps.mysql_backups.backup_source_choices import (
     backup_run_to_choice,
     backup_source_label,
@@ -131,17 +132,18 @@ class TestBackupSourceChoicesRoute:
     async def _get(
         self,
         session: AsyncSession,
-        service_id: int | str,
+        service_id: int | str | None,
         inventory: AsyncMock,
         regular_user: object,
     ) -> Response:
         """Drive the route with the given session + inventory mock, authenticated."""
+        params = None if service_id is None else {"service_id": service_id}
         return await authenticated_get(
             _URL,
             session=session,
             inventory=inventory,
             user=regular_user,
-            params={"service_id": service_id},
+            params=params,
         )
 
     @pytest.mark.asyncio
@@ -232,6 +234,49 @@ class TestBackupSourceChoicesRoute:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_missing_service_id_returns_empty_list(
+        self, session, regular_user
+    ) -> None:
+        """Return ``[]`` when the cascade parent query param is omitted."""
+        inventory = inventory_mock()
+        response = await self._get(session, None, inventory, regular_user)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+        inventory.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_unusable_rows_to_fill_choice_cap(
+        self, session, regular_user
+    ) -> None:
+        """Keep scanning past unusable catalog rows to surface older valid backups."""
+        for task_history_id in range(1, DEFAULT_PAGINATION_LIMIT + 1):
+            await MysqlBackupRunManager.save(
+                session,
+                MysqlBackupRun(
+                    task_history_id=task_history_id,
+                    service_name="svc-a",
+                    backup_type="M",
+                ),
+            )
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=DEFAULT_PAGINATION_LIMIT + 1,
+                service_name="svc-a",
+                backup_type="M",
+                location="/data/mydumper/kept",
+            ),
+        )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["value"] for item in response.json()] == ["/data/mydumper/kept"]
 
     @pytest.mark.asyncio
     async def test_unknown_service_returns_empty_list(

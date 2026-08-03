@@ -21,7 +21,10 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Body, Depends, Form
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPNotFoundException,
+    HTTPUnprocessableEntityException,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import stamp_form_input
@@ -61,13 +64,25 @@ async def resolve_restore_entities(
     ``UNKNOWN_SERVICE_SENTINEL`` placeholder skips the lookup, and a stale id whose
     service was deleted degrades to a node-only annotation on a 404.
 
+    ``ServiceRef(allow_custom=True)`` also lets the form submit a typed service
+    name instead of an inventory id. A name is never a valid detail-route segment,
+    so it annotates XtraBackup and Binlog restores as-is and is rejected for
+    MyDumper, which needs the service address to derive its destination.
+
     :param form: The validated restore create form.
     :param inventory_api: The Inventory API used to resolve the references.
     :return: The resolved facts fed into :func:`build_restore_spec`.
-    :raises HTTPException: When a MyDumper service lookup fails, or a non-MyDumper
-        lookup fails with a status other than 404.
+    :raises HTTPException: When a MyDumper service reference is a typed name or its
+        lookup fails, or a non-MyDumper lookup fails with a status other than 404.
     """
     if form.backup_type == BackupType.MYDUMPER:
+        if form.service_id is not None and not form.service_id.isdigit():
+            raise HTTPUnprocessableEntityException(
+                detail=(
+                    "Destination Database Service must be an existing MySQL service "
+                    "for a MyDumper restore"
+                )
+            )
         service = await get_created_entity(
             inventory_api,
             SyncInventoryEntityTypeEnum.SERVICE,
@@ -96,6 +111,8 @@ async def resolve_restore_entities(
         )
 
     if form.service_id and form.service_id != UNKNOWN_SERVICE_SENTINEL:
+        if not form.service_id.isdigit():
+            return RestoreResolved(service_name=form.service_id)
         try:
             service = await get_created_entity(
                 inventory_api,
