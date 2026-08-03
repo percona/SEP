@@ -21,7 +21,7 @@ from fastapi import APIRouter
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import IntervalSchedule
-from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp, StaticMount
 
 
 class TestBaseAppDisplayName:
@@ -158,3 +158,36 @@ class TestBaseAppPeriodicTaskSchedules:
         )
         assert app.periodic_task_schedules is _factory
         assert app.periodic_task_schedules() == specs
+
+
+class TestBaseAppStaticMounts:
+    """Cover the ``static_mounts`` registry-collected authenticated mounts."""
+
+    def test_static_mounts_defaults_to_empty(self) -> None:
+        """Return an empty tuple when the field is unset."""
+        app = BaseApp(name="Inventory", uri_path="/inventory")
+        assert app.static_mounts == ()
+
+    def test_static_mounts_carries_declaration(self) -> None:
+        """Carry a declared mount on a plain ``BaseApp``."""
+        mount = StaticMount(
+            path="/static/dipper",
+            directory=Path("/tmp/payloads"),
+            name="dipper_files",
+        )
+        app = BaseApp(name="Dipper", uri_path="/dipper", static_mounts=(mount,))
+        assert app.static_mounts == (mount,)
+
+
+class TestBaseAppUsesTaskData:
+    """Cover the ``uses_task_data`` shared task-route opt-in."""
+
+    def test_uses_task_data_defaults_to_false(self) -> None:
+        """Return ``False`` when the field is unset, so the shared routes stay off."""
+        app = BaseApp(name="Inventory", uri_path="/inventory")
+        assert app.uses_task_data is False
+
+    def test_uses_task_data_accepts_explicit_opt_in(self) -> None:
+        """Carry an explicit opt-in on a plain ``BaseApp``."""
+        app = BaseApp(name="ATW", uri_path="/atw", uses_task_data=True)
+        assert app.uses_task_data is True

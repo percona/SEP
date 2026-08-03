@@ -18,11 +18,10 @@
 from app.sep.apps.framework.apps import (
     AppCapabilities,
     Cascade,
-    StaticMount,
     TaskExecutionApp,
     Views,
 )
-from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp, StaticMount
 from app.sep.apps.framework.cascade import (
     build_derived_payload,
     build_predecessor_chain_execute_body,

@@ -33,7 +33,7 @@ snippets sync beat schedule is contributed via ``periodic_task_schedules``.
 """
 
 from app.sep.apps.framework.apps import TaskExecutionApp
-from app.sep.apps.framework.base import AppPeriodicTask
+from app.sep.apps.framework.base import AppPeriodicTask, StaticMount
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.apps.snippets.extra_routes import (
@@ -83,4 +83,11 @@ app = TaskExecutionApp(
             schedule=lambda: snippets_settings.SYNC_INTERVAL,
         ),
     ],
+    static_mounts=(
+        StaticMount(
+            path="/static/snippets",
+            directory=snippets_settings.SNIPPETS_DIR,
+            name="snippets_files",
+        ),
+    ),
 )

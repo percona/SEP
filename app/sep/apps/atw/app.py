@@ -68,4 +68,5 @@ app = BaseApp(
     schema=atw_schema,
     requires_apps=("snippets",),
     periodic_task_schedules=_atw_periodic_tasks,
+    uses_task_data=True,
 )
