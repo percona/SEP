@@ -47,8 +47,8 @@ _ACCESS = "access"
 _REFRESH = "refresh"
 _EXCHANGE = "exchange"
 
-# The assertion types an API Bearer credential may carry, tried in this order so
-# the common access-token path costs a single signature check.
+# Tried in this order so the common access-token path costs a single signature
+# check.
 _BEARER_TOKEN_TYPES = (_ACCESS, _EXCHANGE)
 
 _ADMIN_ROLE = "Admin"
