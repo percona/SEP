@@ -18,8 +18,8 @@
 from pydantic import BaseModel
 
 from app.sep.apps.alert_troubleshooting.deps import AlertInfo
-from app.sep.apps.snippets.models import SnippetResponse
 from app.sep.models import AlertServiceType
+from app.sep.snippets.models.responses import SnippetResponse
 
 
 class AlertSummary(BaseModel):

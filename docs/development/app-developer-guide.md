@@ -1083,7 +1083,7 @@ extension point (`app/sep/apps/framework/script_source.py`): each script supplie
 its own form schema, and listing/execute/history derive from the source. Snippets
 wires one:
 
-<!-- src: app/sep/apps/snippets/script_source.py :: snippet_source -->
+<!-- src: app/sep/snippets/script_source.py :: snippet_source -->
 ```python
 snippet_source = ScriptSource(
     script_dir=snippets_settings.SNIPPETS_DIR,
