@@ -37,6 +37,33 @@ from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum
 R = TypeVar("R", bound=BaseModel)
 
 
+def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
+    """Return the field names a ``model_dump()`` of ``model`` emits.
+
+    Build the set of wire names a list/detail row serialises: every
+    ``model_fields`` entry whose ``exclude`` is unset, resolved through
+    ``serialization_alias`` then ``alias`` then the attribute name, unioned
+    with ``model_computed_fields``. Use this — not ``model_fields`` alone —
+    when validating that a ``list_view`` column key is present in the
+    serialized row.
+
+    :param model: The Pydantic response model class whose dump keys are listed.
+    :return: The frozenset of names ``model_dump()`` emits for ``model``.
+    """
+    names: set[str] = set()
+    for name, field in model.model_fields.items():
+        if field.exclude:
+            continue
+        if isinstance(field.serialization_alias, str):
+            names.add(field.serialization_alias)
+        elif isinstance(field.alias, str):
+            names.add(field.alias)
+        else:
+            names.add(name)
+    names.update(model.model_computed_fields)
+    return frozenset(names)
+
+
 def dump_with_excluded_fields(
     model: BaseModel, *, exclude: set[str] | None = None
 ) -> dict[str, Any]:

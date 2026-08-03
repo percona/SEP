@@ -69,6 +69,7 @@ from app.sep.apps.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
     dump_with_excluded_fields,
+    serialized_field_names,
     TaskExecuteWrite,
     TaskExecutionResponse,
 )
@@ -203,6 +204,7 @@ __all__ = [
     "present",
     "record_connectivity_warning",
     "resolve_refs",
+    "serialized_field_names",
     "truthy",
     "xor_",
 ]
