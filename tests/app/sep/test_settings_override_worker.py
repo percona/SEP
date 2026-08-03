@@ -147,7 +147,7 @@ def worker_loop_env_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple:
 
 
 class TestBuildSepOverrideProxies:
-    """Test the shared SEP proxy-set builder."""
+    """Cover the shared SEP proxy-set builder."""
 
     @pytest.mark.usefixtures("no_app_owned_classes")
     def test_builder_registers_the_sep_core_classes(self) -> None:
@@ -196,7 +196,7 @@ class TestBuildSepOverrideProxies:
 
 
 class TestWorkerOverrideCallbacks:
-    """Test the callback subset the worker refresher registers."""
+    """Cover the callback subset the worker refresher registers."""
 
     def test_registry_is_exactly_the_pmm_invalidation(self) -> None:
         """Pin the disposition: PMM client invalidation, and nothing else."""
@@ -204,7 +204,7 @@ class TestWorkerOverrideCallbacks:
 
 
 class TestSepWorkerHandlers:
-    """Test the worker_process_init / worker_process_shutdown SEP handlers."""
+    """Cover the worker_process_init / worker_process_shutdown SEP handlers."""
 
     def test_init_starts_a_refresher(self, worker_loop_env: tuple) -> None:
         """Start this child's SEP refresher on ``worker_process_init``."""
@@ -282,7 +282,7 @@ class TestSepWorkerHandlers:
 
 
 class TestWorkerPmmClientInvalidation:
-    """Test that a same-endpoint PMM credential override reaches worker tasks."""
+    """Verify a same-endpoint PMM credential override reaches worker tasks."""
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("no_app_owned_classes")

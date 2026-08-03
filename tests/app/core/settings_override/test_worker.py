@@ -103,7 +103,7 @@ def session_maker_fixture(
 
 
 class TestWorkerRefresherStart:
-    """Test the start path: the enabled gate, idempotency, and late resolution."""
+    """Cover the start path: the enabled gate, idempotency, and late resolution."""
 
     def test_start_creates_a_task_on_the_resolved_loop(
         self, loop: asyncio.AbstractEventLoop, session_maker: async_sessionmaker
@@ -222,14 +222,15 @@ class TestWorkerRefresherStart:
         singleton was constructed.
         """
         stale_loop = asyncio.new_event_loop()
-        current: dict[str, object] = {"loop": stale_loop, "session_maker": None}
+        current_loop = stale_loop
+        current_session_maker = None
         refresher = WorkerRefresher(
-            lambda: current["loop"],
-            lambda: current["session_maker"],
+            lambda: current_loop,
+            lambda: current_session_maker,
             _make_registry,
         )
-        current["loop"] = loop
-        current["session_maker"] = session_maker
+        current_loop = loop
+        current_session_maker = session_maker
 
         refresher.start(INTERVAL, enabled=True)
 
@@ -260,9 +261,7 @@ class TestWorkerRefresherStart:
         monkeypatch.setattr(
             "app.core.settings_override.worker.start_refresh_task", _fake_start
         )
-        callbacks: CallbackRegistry = {
-            (SettingClassEnum.SETTINGS, "PMM"): _noop_callback
-        }
+        callbacks = {(SettingClassEnum.SETTINGS, "PMM"): _noop_callback}
         refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
 
         refresher.start(INTERVAL, enabled=True, callbacks=callbacks)
@@ -304,7 +303,7 @@ class TestWorkerRefresherStart:
 
 
 class TestWorkerRefresherStop:
-    """Test the shutdown path: cancel, drain, and the never-started no-op."""
+    """Cover the shutdown path: cancel, drain, and the never-started no-op."""
 
     def test_stop_cancels_drains_and_clears_the_task(
         self, loop: asyncio.AbstractEventLoop, session_maker: async_sessionmaker
