@@ -2379,7 +2379,7 @@ class Xtrabackup(Restore):
 
     def decrypt_aes(self, path):
 
-        cmd = "find %s -name '*.xbcrypt' | rev | cut -f 2- -d '.' | rev | xargs -P %s -I {} sh -c '/usr/bin/xbcrypt -d --encrypt-key-file=%s --encrypt-algo=AES256 --input={}.xbcrypt --output={} && rm {}.xbcrypt'" % (path, self.xb_parallel, self.xtrabackup_aes256_keyfile)
+        cmd = "find %s -name '*.xbcrypt' | rev | cut -f 2- -d '.' | rev | xargs -P %s -I {} sh -c '%s -d --encrypt-key-file=%s --encrypt-algo=AES256 --input={}.xbcrypt --output={} && rm {}.xbcrypt'" % (path, self.xb_parallel or 4, XBCRYPT_BIN, self.xtrabackup_aes256_keyfile)
         self.logger.info('Running: %s', cmd)
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         proc.communicate()
