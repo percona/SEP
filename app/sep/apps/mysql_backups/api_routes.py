@@ -17,16 +17,18 @@
 
 The declarative :class:`~app.sep.apps.framework.apps.TaskExecutionApp` in
 ``app.py`` derives the task CRUD surface; this router carries the per-service
-completed-backup catalog query, mounted as the app's ``extra_routes``. The
-route is read-only and inherits the app's standard authenticated-user gate from
-the ``/api/apps/*`` mount, so it introduces no mutating or unauthenticated
-surface.
+completed-backup catalog query and the restore ``backup_source`` Choice options
+endpoint, mounted as the app's ``extra_routes``. Both routes are read-only and
+inherit the app's standard authenticated-user gate from the ``/api/apps/*``
+mount, so they introduce no mutating or unauthenticated surface.
 """
 
 from fastapi import APIRouter
 
-from app.core.pagination import PaginatedResponse
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT, PaginatedResponse, Pagination
 from app.core.pagination.deps import PaginationDep
+from app.sep.apps.framework.schema import Choice
+from app.sep.apps.mysql_backups.backup_source_choices import backup_run_to_choice
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.deps import ResolvedMysqlService
 from app.sep.apps.mysql_backups.models import BackupRunResponse
@@ -60,3 +62,33 @@ async def list_service_backups(
     return await MysqlBackupRunManager.list_for_service(
         session, service.name, pagination=pagination
     )
+
+
+@router.get("/backup-sources/choices")
+async def list_backup_source_choices(
+    service: ResolvedMysqlService,
+    session: SessionDep,
+) -> list[Choice]:
+    """Return ``Choice`` options for a MySQL service's restore ``backup_source``.
+
+    The ``service_id`` query parameter (cascade parent name on the restore form)
+    is resolved by :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`.
+    Options are sourced from the completed-backup catalog, newest run first.
+    Rows without a usable location are skipped. An empty catalog yields ``[]``
+    so free-text entry via ``allow_custom`` is never blocked.
+
+    :param service: The inventory service resolved from the ``service_id`` query
+        parameter.
+    :param session: The database session the catalog is queried on.
+    :return: Choice-compatible options for the restore backup-source selector.
+    """
+    page = await MysqlBackupRunManager.list_for_service(
+        session,
+        service.name,
+        pagination=Pagination(offset=0, limit=DEFAULT_PAGINATION_LIMIT),
+    )
+    return [
+        choice
+        for run in page.items
+        if (choice := backup_run_to_choice(run)) is not None
+    ]
