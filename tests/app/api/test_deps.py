@@ -187,7 +187,9 @@ class TestGetCurrentUserBearerTypes:
             await get_current_user(exchange.access_token)
 
     @pytest.mark.asyncio
-    async def test_grafana_admin_reaches_an_admin_gated_surface(self, grafana_mock):
+    async def test_grafana_admin_reaches_an_admin_gated_surface(
+        self, grafana_mock, grafana_user_orgs
+    ):
         """Verify a PMM Admin is no longer flattened to a non-admin principal.
 
         This is what the nginx-injected ``SEP_INTERNAL_TOKEN`` cannot provide:
@@ -195,7 +197,7 @@ class TestGetCurrentUserBearerTypes:
         surface 403s for a real PMM Admin.
         """
         grafana_mock.get_current_user_orgs.return_value = [
-            {"orgId": 1, "name": "Main Org.", "role": "Admin"}
+            {**grafana_user_orgs[0], "role": "Admin"}
         ]
         exchange = await GrafanaUser.exchange_token_from_session("ambient")
 
@@ -205,10 +207,12 @@ class TestGetCurrentUserBearerTypes:
 
     @pytest.mark.parametrize("role", ["Editor", "Viewer"])
     @pytest.mark.asyncio
-    async def test_non_admin_roles_do_not_gain_admin(self, grafana_mock, role):
+    async def test_non_admin_roles_do_not_gain_admin(
+        self, grafana_mock, grafana_user_orgs, role
+    ):
         """Verify a non-admin Grafana role stays non-admin through the exchange."""
         grafana_mock.get_current_user_orgs.return_value = [
-            {"orgId": 1, "name": "Main Org.", "role": role}
+            {**grafana_user_orgs[0], "role": role}
         ]
         exchange = await GrafanaUser.exchange_token_from_session("ambient")
 

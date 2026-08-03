@@ -631,7 +631,7 @@ class TestSpaSessionExchange:
 
     @pytest.mark.parametrize("role", ["Editor", "Viewer"])
     def test_non_admin_role_is_refused_by_an_admin_gated_endpoint(
-        self, test_client, grafana_mock, role
+        self, test_client, grafana_mock, grafana_user_orgs, role
     ):
         """Assert a non-admin Grafana role gains no admin surface via the exchange.
 
@@ -641,7 +641,7 @@ class TestSpaSessionExchange:
         the Casdoor model at import and cannot represent a ``GrafanaUser``.
         """
         grafana_mock.get_current_user_orgs.return_value = [
-            {"orgId": 1, "name": "Main Org.", "role": role}
+            {**grafana_user_orgs[0], "role": role}
         ]
         test_client.cookies.set("grafana_session", "ambient")
         token = test_client.post(EXCHANGE_PATH).json()["access_token"]
