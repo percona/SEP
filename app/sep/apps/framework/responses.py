@@ -38,17 +38,18 @@ R = TypeVar("R", bound=BaseModel)
 
 
 def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
-    """Return the field names a ``model_dump()`` of ``model`` emits.
+    """Return the field names a ``model_dump(by_alias=True)`` of ``model`` emits.
 
     Build the set of wire names a list/detail row serialises: every
     ``model_fields`` entry whose ``exclude`` is unset, resolved through
     ``serialization_alias`` then ``alias`` then the attribute name, unioned
-    with ``model_computed_fields``. Use this — not ``model_fields`` alone —
-    when validating that a ``list_view`` column key is present in the
-    serialized row.
+    with every computed field resolved through its alias then attribute name.
+    Use this — not ``model_fields`` alone — when validating that a
+    ``list_view`` column key is present in the serialized row.
 
     :param model: The Pydantic response model class whose dump keys are listed.
-    :return: The frozenset of names ``model_dump()`` emits for ``model``.
+    :return: The frozenset of names ``model_dump(by_alias=True)`` emits for
+        ``model``.
     """
     names: set[str] = set()
     for name, field in model.model_fields.items():
@@ -60,7 +61,10 @@ def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
             names.add(field.alias)
         else:
             names.add(name)
-    names.update(model.model_computed_fields)
+    names.update(
+        field.alias if isinstance(field.alias, str) else name
+        for name, field in model.model_computed_fields.items()
+    )
     return frozenset(names)
 
 

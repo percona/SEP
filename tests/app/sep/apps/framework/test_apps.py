@@ -1156,14 +1156,14 @@ class TestDefinitionValidation:
         with pytest.raises(ValueError, match="service_type"):
             _synth_app(views=bad_views)
 
-    def test_list_view_column_on_computed_field_constructs(self) -> None:
-        """Construct cleanly when a ``list_view`` column keys a computed field."""
+    def test_list_view_column_on_aliased_computed_field_constructs(self) -> None:
+        """Construct cleanly when a column keys an aliased computed field."""
         views = Views(
             layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
             list_view=ListView(
                 columns=[
                     Column(key="name", label="Name"),
-                    Column(key="label", label="Label"),
+                    Column(key="wire_label", label="Label"),
                 ]
             ),
         )
@@ -1199,10 +1199,10 @@ class _ComputedListResponse(BaseModel):
 
     name: str
 
-    @computed_field
+    @computed_field(alias="wire_label")
     @property
     def label(self) -> str:
-        """Return a derived label present in the serialized row."""
+        """Return a derived label under its serialized alias."""
         return self.name.upper()
 
 

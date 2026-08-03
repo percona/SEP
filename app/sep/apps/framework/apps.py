@@ -904,11 +904,13 @@ class TaskExecutionApp(BaseApp):
 
         Enforce at construction — collecting every unknown column and raising once —
         so a column typo is rejected up front rather than rendering a blank column at
-        runtime. Compare keys against the names ``response_model.model_dump()`` emits
-        (see :func:`~app.sep.apps.framework.responses.serialized_field_names`), not
-        ``model_fields`` alone. Skip ``schema=`` passthrough apps (no ``create_model``)
-        and model-first apps that declare no ``list_view``; detail-view ``data.*``
-        paths stay free-form and are checked by the conformance suite instead.
+        runtime. Compare keys against the names
+        ``response_model.model_dump(by_alias=True)`` emits (see
+        :func:`~app.sep.apps.framework.responses.serialized_field_names`), not
+        ``model_fields`` alone. Skip ``schema=`` passthrough apps (no
+        ``create_model``) and model-first apps that declare no ``list_view``;
+        detail-view ``data.*`` paths stay free-form and are checked by the
+        conformance suite instead.
 
         :raises ValueError: When a ``views.list_view`` column ``key`` is not present
             in the serialized ``response_model`` row.

@@ -538,7 +538,7 @@ class _ExcludedModel(BaseModel):
 
 
 class _ComputedModel(BaseModel):
-    """Carry a plain field and a computed field that serializes."""
+    """Carry plain, computed, and aliased computed fields that serialize."""
 
     name: str
 
@@ -547,6 +547,12 @@ class _ComputedModel(BaseModel):
     def label(self) -> str:
         """Return a derived label for the dump."""
         return self.name.upper()
+
+    @computed_field(alias="wire_label")
+    @property
+    def aliased_label(self) -> str:
+        """Return a derived label under an aliased wire name."""
+        return self.label
 
 
 class _AliasedModel(BaseModel):
@@ -563,7 +569,7 @@ class _AliasedModel(BaseModel):
     [
         (_PlainModel, frozenset({"name"})),
         (_ExcludedModel, frozenset({"name"})),
-        (_ComputedModel, frozenset({"name", "label"})),
+        (_ComputedModel, frozenset({"name", "label", "wire_label"})),
         (_AliasedModel, frozenset({"wire_name", "ser_wins"})),
     ],
     ids=["plain", "exclude_true", "computed_field", "aliased"],
@@ -571,7 +577,7 @@ class _AliasedModel(BaseModel):
 def test_serialized_field_names(
     model: type[BaseModel], expected: frozenset[str]
 ) -> None:
-    """Match the names ``model_dump()`` emits across plain, excluded, computed, and aliased fields."""
+    """Match names emitted by ``model_dump(by_alias=True)``."""
     assert serialized_field_names(model) == expected
 
 
