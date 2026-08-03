@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/nodes", tags=["nodes"])
 
 NodeListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(NodeManager))]
+ServiceListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(ServiceManager))]
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
@@ -146,6 +147,7 @@ async def list_services_by_node(
     session: SessionDep,
     node: NodeDep,
     pagination: PaginationDep,
+    list_query: ServiceListQueryDep,
     service_type: ServiceTypeEnum | None = None,
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services by Node."""
@@ -154,8 +156,9 @@ async def list_services_by_node(
         node.id,
         service_type or "all",
     )
-    return await ServiceManager.list_paginated(
+    return await ServiceManager.list_query_paginated(
         session,
+        list_query=list_query,
         select_related=[Service.schemas],
         pagination=pagination,
         node_id=node.id,
