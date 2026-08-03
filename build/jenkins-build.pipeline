@@ -127,8 +127,8 @@ pipeline {
 						}
 						env.GIT_TAG = customTag
 						env.GIT_TAG_SHORT = customTag
+						env.RELEASE_VER = customTag
 						env.PUSH_LATEST = "false"
-						// Workspace-local tag so `git archive "${GIT_TAG}"` (make pack) resolves; never pushed
 						sh "git tag -f -- \"${customTag}\" HEAD"
 						echo "Using custom image tag: ${customTag}"
 					}
