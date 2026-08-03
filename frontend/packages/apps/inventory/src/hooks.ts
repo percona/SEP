@@ -41,6 +41,18 @@ export interface SyncStatus {
 }
 
 /**
+ * Result of a per-service database connectivity probe.
+ *
+ * A probe that ran but could not connect still returns HTTP 200 — `success` is
+ * false and `error` carries the upstream reason.
+ */
+export interface ConnectivityCheckResult {
+  success: boolean;
+  error?: string | null;
+  task_history_id: number;
+}
+
+/**
  * Host- or service-level system facts collected by the syncer.
  * ``installed_packages`` and ``config`` are arbitrary JSON blobs whose exact
  * shape is owned upstream, so they stay loosely typed and are rendered
@@ -149,6 +161,26 @@ export function useRefreshEntitiesOnSyncComplete(isRunning: boolean | undefined)
       queryClient.invalidateQueries({ queryKey: INVENTORY_ENTITY_ROOT_KEY });
     }
   }, [isRunning, queryClient]);
+}
+
+/**
+ * Probe database connectivity for one service from its executor host.
+ *
+ * Deliberately invalidates nothing on settle: the probe reads through to the
+ * database and changes no server state, so a refetch would be pointless work.
+ *
+ * @param serviceId inventory primary key of the service to probe.
+ */
+export function useCheckServiceConnectivity(serviceId: string | number) {
+  return useMutation<ConnectivityCheckResult, Error, void>({
+    mutationFn: async () => {
+      const { data } = await apiClient.post<ConnectivityCheckResult>(
+        `${INVENTORY_BASE}/services/${serviceId}/check-connectivity/`,
+        {},
+      );
+      return data;
+    },
+  });
 }
 
 export function useTriggerSync() {

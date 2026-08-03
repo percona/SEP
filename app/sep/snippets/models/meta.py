@@ -163,13 +163,11 @@ class SnippetVisibilityCondition(BaseModel):
         server-side: a value submitted directly for a field whose gate fires is
         rejected (HTTP 422 on the JSON API; flash + redirect on the legacy form),
         matching ``field_gate_forbidden`` "must be absent" semantics. See
-        :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`.
+        :func:`app.sep.snippets.schema.evaluate_snippet_gates`.
 
     :param parameter: The name of the sibling parameter the rule references.
-    :type parameter: NonEmptyStr
     :param equals: The literal the referenced parameter must equal for the
         condition to match. Defaults to ``None``, meaning a truthiness match.
-    :type equals: str | int | float | bool | None
     """
 
     parameter: NonEmptyStr
@@ -248,7 +246,7 @@ class SnippetMetaParameter(BaseModel):
         exclusive with ``requires_when_not``. Lowered onto a ``requires``
         :class:`~app.sep.apps.framework.rules.FieldGate` and enforced server-side
         on the execute paths (see
-        :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`). Defaults to
+        :func:`app.sep.snippets.schema.evaluate_snippet_gates`). Defaults to
         None.
     :param requires_when_not: Require a value for this parameter when the
         referenced sibling condition does not match. Same grammar as
@@ -390,7 +388,7 @@ class SnippetMetaParameter(BaseModel):
         ``forbidden_when`` / ``forbidden_when_not``) reuse the visibility-condition
         shape and lower onto the framework's ``requires`` / ``forbidden``
         :class:`FieldGate` lists, enforced server-side on the execute paths (see
-        :func:`app.sep.apps.snippets.schema.evaluate_snippet_gates`).
+        :func:`app.sep.snippets.schema.evaluate_snippet_gates`).
 
         :return: The validated :class:`SnippetMetaParameter` instance.
         :raises ValueError: If both variants of a kind are declared together; if a

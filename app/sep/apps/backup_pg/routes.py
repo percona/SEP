@@ -13,7 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the backups plugin."""
+"""Define legacy Jinja routes for the PostgreSQL backups app.
+
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/apps/backup_pg/`` and the React UI renders the app through the generic
+schema-driven shell in ``frontend/packages/framework``; the app ships no
+bespoke React package of its own. Every response from this router carries the
+RFC 8594 ``Deprecation: true`` header and emits a WARNING on hit; the routes
+remain mounted only until the Jinja layer is removed.
+"""
 
 import logging
 from typing import Annotated
@@ -33,6 +41,7 @@ from app.sep.apps.backup_pg.deps import (
     parse_backup_task_data,
 )
 from app.sep.apps.backup_pg.models import BackupType
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.config import sep_settings
 from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
@@ -49,7 +58,7 @@ from app.sep.deps import (
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 
@@ -63,9 +72,11 @@ async def pg_backups_index(
     request: Request,
     context: BackupsIndexContext,
 ) -> HTMLResponse:
-    """Render the PG backups plugin index page.
+    """Render the PG backups index page.
 
-    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+    :param request: The incoming HTTP request.
+    :param context: Template context assembled by ``BackupsIndexContext``.
+    :return: The rendered index page.
     """
     return templates.TemplateResponse(
         request=request,
@@ -89,7 +100,11 @@ async def pg_backups_create(
 ) -> RedirectResponse:
     """Create new backups task.
 
-    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+    :param request: The incoming HTTP request.
+    :param task: The task payload built from the submitted form.
+    :param task_api: The tasks-API client used to create the task.
+    :param check_connectivity: Whether to probe the target after creation.
+    :return: HTTP 303 redirect to the new task's detail page.
     """
     logger.debug("Create backups task: %s", task)
     await task_api.post(
@@ -125,7 +140,13 @@ async def pg_backups_detail(
 ) -> HTMLResponse:
     """Retrieve backups task.
 
-    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+    :param task: The task resolved from the ``task_name`` path param.
+    :param request: The incoming HTTP request.
+    :param context: Base template context.
+    :param inventory_api: The inventory-API client used to list services.
+    :param tasks_api: The tasks-API client used to fetch history and stats.
+    :param executor_hosts_ctx: Executor hosts for the host selector.
+    :return: The rendered task detail page.
     """
     data = task.data
     meta = data["meta"]
@@ -209,7 +230,13 @@ async def pg_backups_execute(
 ) -> RedirectResponse:
     """Execute backups task.
 
-    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+    :param request: The incoming HTTP request.
+    :param task: The task resolved from the ``task_name`` path param.
+    :param tasks_api: The tasks-API client used to dispatch the run.
+    :param eta: Optional future time to schedule the run for.
+    :param chain_task_names: Optional task names to chain after this run.
+    :param chain_on_failure: Whether the chain continues when this run fails.
+    :return: HTTP 303 redirect to the task's detail page.
     """
     await tasks_api.post(
         f"/execute/{task.name}",
@@ -235,15 +262,10 @@ async def pg_backups_delete(
 ) -> RedirectResponse:
     """Delete backups task.
 
-    Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
-
     :param task: The PG backups task to delete, resolved by the
         ``BackupsTask`` dependency from the ``task_name`` path param.
-    :type task: BackupsTask
     :param tasks_api: The tasks-API client used to issue the delete call.
-    :type tasks_api: TaskAPI
-    :return: HTTP 303 redirect to the plugin index.
-    :rtype: RedirectResponse
+    :return: HTTP 303 redirect to the app index.
     """
     await tasks_api.delete(f"/{task.name}")
     return RedirectResponse("/backup_pg", status_code=status.HTTP_303_SEE_OTHER)

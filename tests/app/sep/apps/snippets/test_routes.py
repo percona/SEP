@@ -650,7 +650,7 @@ class TestSnippetsExecuteVisibilityGates:
         await _seed_gated_snippet(
             create_snippet, session, _GATED_PARAMS, filename="gated-form.sh"
         )
-        error = mocker.patch("app.sep.apps.snippets.deps.messages.error")
+        error = mocker.patch("app.sep.snippets.deps.messages.error")
 
         response = admin_client.post(
             _EXECUTE_URL,
@@ -721,7 +721,7 @@ class TestSnippetsExecuteVisibilityGates:
             ],
             filename="multi-form.sh",
         )
-        error = mocker.patch("app.sep.apps.snippets.deps.messages.error")
+        error = mocker.patch("app.sep.snippets.deps.messages.error")
 
         response = admin_client.post(
             _EXECUTE_URL,

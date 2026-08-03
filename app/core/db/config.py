@@ -15,6 +15,8 @@
 
 """Define database settings."""
 
+from urllib.parse import quote
+
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -63,20 +65,24 @@ class DatabaseOptions(BaseModel):
     def URL(self) -> str:
         """Construct the database connection URL.
 
+        The credentials are percent-encoded first because ``AnyUrl.build`` escapes
+        ``@`` and ``:`` but leaves ``/`` alone, so a ``/`` in either would end the
+        authority and leave the port unparseable.
+
         :return: A string representing the connection URL based on the configuration.
-        :rtype: str
         """
         host = self.HOST
         name = self.NAME
         if self.HOST is None or self.HOST == "":
             host = f"/{self.NAME}"
             name = None
+        password = self.PASSWORD.get_secret_value() if self.PASSWORD else None
         return str(
             AnyUrl.build(
                 scheme=self.ENGINE,
                 host=host,
-                username=self.USER,
-                password=self.PASSWORD.get_secret_value() if self.PASSWORD else None,
+                username=None if self.USER is None else quote(self.USER, safe=""),
+                password=None if password is None else quote(password, safe=""),
                 port=self.PORT,
                 path=name,
             ),

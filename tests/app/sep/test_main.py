@@ -331,6 +331,38 @@ class TestLogin:
         template_patch.assert_called_once()
 
 
+@pytest.mark.asyncio
+class TestBootSnippetIngestion:
+    """Cover the ``SYNC_ON_STARTUP`` boot ingestion in ``sep_startup``.
+
+    The sync task is library-owned and statically included, so boot ingestion is
+    gated only on the setting -- never on the snippets app being activated. It is
+    deliberately not re-homed as an app-owned startup hook, which would run only
+    when the app ships.
+    """
+
+    async def test_enqueues_sync_with_the_snippets_app_deactivated(self, mocker):
+        """Fire the sync at boot from an activation list without snippets."""
+        mocker.patch.object(main_module, "init_sep_db", new_callable=AsyncMock)
+        mocker.patch.object(snippets_settings, "SYNC_ON_STARTUP", new=True)
+        mocker.patch.object(sep_settings, "APPS", [App(module_name="inventory")])
+        delay = mocker.patch.object(main_module.sync_snippets, "delay")
+
+        await main_module.sep_startup()
+
+        delay.assert_called_once_with()
+
+    async def test_does_not_enqueue_when_the_setting_is_off(self, mocker):
+        """Leave the sync unqueued when ``SYNC_ON_STARTUP`` is disabled."""
+        mocker.patch.object(main_module, "init_sep_db", new_callable=AsyncMock)
+        mocker.patch.object(snippets_settings, "SYNC_ON_STARTUP", new=False)
+        delay = mocker.patch.object(main_module.sync_snippets, "delay")
+
+        await main_module.sep_startup()
+
+        delay.assert_not_called()
+
+
 class TestAmbientSsoStartupWarning:
     """Test the startup warning for an inert ambient-SSO toggle."""
 
@@ -1096,72 +1128,89 @@ class TestAppStateGuards:
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
 
+    @pytest.mark.parametrize(
+        "route",
+        [
+            "/api/apps/atw/",
+            "/api/apps/alert_troubleshooting/",
+            "/alert-troubleshooting/",
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_atw_json_route_503s_when_snippets_disabled(
-        self, guarded_client: TestClient, session
+    async def test_snippet_consumer_routes_survive_a_snippets_disable(
+        self, guarded_client: TestClient, session, route: str
     ) -> None:
-        """Atw's JSON route 503s when the ``snippets`` app it requires is disabled.
+        """Keep ATW and Alert Troubleshooting routes reachable past a snippets disable.
 
-        The gate reports atw's own key, so the user never sees the raw
-        ``App 'snippets' is currently disabled`` leak from the execute path.
+        Both read snippet scripts from the library rather than the snippets app,
+        so neither declares ``requires_apps`` and the gate has nothing to trip on.
         """
         session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
         await session.commit()
 
-        response = guarded_client.get("/api/apps/atw/")
-
-        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert "atw" in response.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_atw_json_route_reachable_when_snippets_enabled(
-        self, guarded_client: TestClient, session
-    ) -> None:
-        """Atw's JSON route is reachable when snippets is enabled (no regression)."""
-        response = guarded_client.get("/api/apps/atw/")
+        response = guarded_client.get(route)
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
 
     @pytest.mark.parametrize(
         "route",
-        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
+        [
+            "/api/apps/atw/",
+            "/api/apps/alert_troubleshooting/",
+            "/alert-troubleshooting/",
+        ],
     )
     @pytest.mark.asyncio
-    async def test_alert_troubleshooting_routes_503_when_snippets_disabled(
-        self, guarded_client: TestClient, session, route: str
+    async def test_snippet_consumer_routes_reachable_by_default(
+        self, guarded_client: TestClient, route: str
     ) -> None:
-        """Return 503 from Alert Troubleshooting routes when snippets is disabled.
-
-        The gate names ``alert_troubleshooting`` itself so callers never see the
-        raw ``App 'snippets' is currently disabled`` leak from the snippets path.
-        """
-        session.add(
-            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
-        )
-        await session.commit()
-
-        response = guarded_client.get(route)
-
-        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert (
-            response.json()["detail"]
-            == "App 'alert_troubleshooting' is currently disabled."
-        )
-
-    @pytest.mark.parametrize(
-        "route",
-        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
-    )
-    @pytest.mark.asyncio
-    async def test_alert_troubleshooting_routes_reachable_when_snippets_enabled(
-        self, guarded_client: TestClient, session, route: str
-    ) -> None:
-        """Keep Alert Troubleshooting routes reachable when snippets is enabled."""
+        """Keep ATW and Alert Troubleshooting routes reachable with no state rows."""
         response = guarded_client.get(route)
 
         assert response.status_code == status.HTTP_200_OK
+
+    @pytest.mark.asyncio
+    async def test_dependency_disabled_route_503s_naming_its_own_key(
+        self, guarded_client: TestClient, session, mocker
+    ) -> None:
+        """Return 503 naming the gated app, not the dependency that is off.
+
+        No shipped app declares ``requires_apps`` any more, so the guard's
+        dependency arm is exercised against a synthetic registry: the route stays
+        the real mounted one (the gate closure-captured ``atw`` at mount time)
+        while the graph it resolves through is injected.
+        """
+        registry = AppRegistry(
+            [
+                BaseApp(
+                    key="atw",
+                    name="atw",
+                    display_name="ATW",
+                    uri_path="/atw",
+                    requires_apps=("provider",),
+                ),
+                BaseApp(
+                    key="provider",
+                    name="provider",
+                    display_name="Provider",
+                    uri_path="/provider",
+                ),
+            ]
+        )
+        mocker.patch(
+            "app.sep.apps.framework.registry.get_app_registry", return_value=registry
+        )
+        session.add(
+            AppState(app_key="provider", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert response.json()["detail"] == "App 'atw' is currently disabled."
 
     def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
         """Every non-protected UI plugin route carries the app-state guard."""
