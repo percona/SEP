@@ -20,12 +20,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import status
 
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.apps.report.deps import (
     get_pmm_api,
     get_report_index_context,
     require_pmm_api,
     require_upload_configured,
 )
+from app.sep.apps.report.routes import router as report_jinja_router
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.main import sep_app
 from tests.app.sep.apps.report.conftest import make_report
@@ -503,3 +505,61 @@ class TestReportUpload:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+class TestReportRouterDeprecation:
+    """Cover the deprecation contract of the report Jinja2 router."""
+
+    def test_router_uses_deprecated_route_class(self):
+        """Confirm the router is constructed with ``DeprecatedJinja2Route``."""
+        assert report_jinja_router.route_class is DeprecatedJinja2Route
+        assert report_jinja_router.routes
+
+    @pytest.mark.parametrize(
+        "route",
+        report_jinja_router.routes,
+        ids=lambda route: f"{sorted(route.methods)[0]} {route.path}",
+    )
+    def test_every_route_is_built_by_the_deprecation_route_class(self, route):
+        """Confirm every registered route inherits the header, log, and schema exclusion."""
+        assert isinstance(route, DeprecatedJinja2Route)
+        assert route.include_in_schema is False
+
+    @pytest.mark.usefixtures("_mock_report_index_context")
+    def test_html_route_sets_deprecation_header_and_logs(self, test_client):
+        """Assert a real report Jinja2 route emits the deprecation contract."""
+        with patch("app.sep.apps.framework.deprecation.logger.warning") as warning:
+            response = test_client.get("/report/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["Deprecation"] == "true"
+        warning.assert_called_once()
+        assert "/report/" in warning.call_args.args[0]
+
+    def test_json_route_sets_deprecation_header(self, test_client, mock_pmm_api):
+        """Assert the header lands on the route that returns a ``JSONResponse``.
+
+        The route class sets the header after the handler runs, so a handler
+        that returns a ``Response`` object directly is covered as well.
+        """
+        with patch(
+            "app.sep.apps.report.routes.generate_report",
+            new_callable=AsyncMock,
+            return_value=make_report(),
+        ):
+            response = test_client.get("/report/generate/json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"] == "application/json"
+        assert response.headers["Deprecation"] == "true"
+
+    def test_jinja_routes_are_omitted_from_openapi(self, test_client):
+        """Omit every legacy ``/report`` path from the generated OpenAPI document."""
+        spec = test_client.get("/openapi.json").json()
+
+        legacy_paths = [
+            path
+            for path in spec["paths"]
+            if path == "/report" or path.startswith("/report/")
+        ]
+        assert legacy_paths == []

@@ -32,7 +32,8 @@ from app.sep.apps.mysql_backups.form_backfill import (
     _extract_upload_from_meta,
     reconstruct_mysql_backups_form,
 )
-from app.sep.apps.mysql_backups.models import BackupCreate, BackupType
+from app.sep.apps.mysql_backups.forms import BackupCreate
+from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 from app.tasks.models import Task, TaskBackendEnum
 
