@@ -19,7 +19,7 @@ This definition replaces the hand-written JSON API router and schema: the
 registry discovers the exported ``app`` and mounts its derived router, which
 serves the byte-identical schema, list, detail, create, update, execute, and
 delete surfaces. Create and update are derived from the model-first
-:class:`~app.sep.apps.mysql_backups.models.BackupCreate` through the
+:class:`~app.sep.apps.mysql_backups.forms.BackupCreate` through the
 ``run-python`` spec builder, with the ``backup_type``-aware
 :func:`~app.sep.apps.mysql_backups.deps.build_mysql_backups_api_task_response`
 stamping ``backup_type`` / ``hostname`` on list, detail, and create; delete is
@@ -40,12 +40,10 @@ from app.sep.apps.framework.apps import (
     TaskExecutionApp,
 )
 from app.sep.apps.framework.schema import RelatedApp
+from app.sep.apps.mysql_backups.api_routes import router as catalog_router
 from app.sep.apps.mysql_backups.deps import build_mysql_backups_api_task_response
-from app.sep.apps.mysql_backups.models import (
-    BackupCreate,
-    BackupTaskResponse,
-    OWNER,
-)
+from app.sep.apps.mysql_backups.forms import BackupCreate, BackupTaskResponse, OWNER
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.mysql_backups.restore.app import app as restore_app
 from app.sep.apps.mysql_backups.routes import router as jinja_router
 from app.sep.apps.mysql_backups.spec import build_backup_spec
@@ -67,6 +65,7 @@ app = TaskExecutionApp(
     response_model=BackupTaskResponse,
     views=mysql_backups_views,
     task_spec_builder=build_backup_spec,
+    run_result_recorder=RUN_RESULT_RECORDER,
     response_builder=build_mysql_backups_api_task_response,
     response_context_provider=get_username_mapping,
     pagination=make_pagination_dep(max_limit=DEFAULT_PAGINATION_LIMIT),
@@ -80,5 +79,6 @@ app = TaskExecutionApp(
         ),
     ),
     jinja_router=jinja_router,
+    extra_routes=(catalog_router,),
     child_apps=(restore_app,),
 )

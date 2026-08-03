@@ -124,7 +124,7 @@ Commit the updated `.mmd` sources with any README/checklist changes. The PDF und
 |----------|-------------------------|
 | P1 OAuth login | `app/api/routes/oauth.py` (`spa_login`) |
 | P2 JWT introspection | `app/core/auth/providers/casdoor.py`, `app/models.py` (`from_jwt`) |
-| P3 SEP UI | `frontend/packages/shell/` (React 18 SPA — entry `src/main.tsx`, auth context `src/contexts/auth.tsx`). App UIs live under `frontend/packages/plugins/{name}/` and `frontend/packages/framework/` (shared schema-driven UI). |
+| P3 SEP UI | `frontend/packages/shell/` (React 18 SPA — entry `src/main.tsx`, auth context `src/contexts/auth.tsx`). App UIs live under `frontend/packages/apps/{name}/` and `frontend/packages/framework/` (shared schema-driven UI). |
 | P4a Snippets app API | `app/sep/apps/snippets/app.py` (declarative `TaskExecutionApp`), `script_source.py` (`snippet_source` — derives list/schema/history/execute); auxiliary verbs (approval, refresh, preview) in `extra_routes.py` |
 | P4b Proxy app create (checksums) | `app/sep/apps/checksums/app.py` (declarative `TaskExecutionApp`), `spec.py` (`build_checksums_spec`), `models.py` (`ChecksumsForm`); create route derived by `app/sep/apps/framework/api.py` (`derive_crud_routes`) |
 | P4c Proxy app execute (checksums) | `app/sep/apps/framework/api.py` (`derive_execute_route`), enabled via `app/sep/apps/checksums/app.py` (`AppCapabilities(execute=True)`) |

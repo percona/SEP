@@ -17,11 +17,11 @@
 
 These Jinja2 routes are deprecated. The JSON API equivalents live under
 ``/api/apps/snippets/`` and the React UI consumes them via
-``frontend/packages/plugins/snippets``. Every response from this router
+``frontend/packages/apps/snippets``. Every response from this router
 carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
-hit; the routes remain mounted so users can fall back to the legacy UI
-for capabilities (chaining, scheduling, alerting) the React UI does not
-yet expose.
+hit; the routes remain mounted only until the Jinja layer is removed. The
+React UI is at parity: chaining, scheduling and alerting are absent from
+both surfaces, and the app declares them unsupported in its schema.
 
 Per-snippet HTML actions use fixed paths (``/detail``, ``/execute``,
 ``/approve``, ``/remove-approval``) and pass ``snippet_filename`` as a

@@ -1528,6 +1528,42 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/inventory/services/{service_id}/check-connectivity/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Inventory Service Check Connectivity
+     * @description Run a database connectivity probe for a service from its executor host.
+     *
+     *     Backs the React connectivity control on the service detail page. A probe
+     *     that ran but could not connect is reported as HTTP 200 with
+     *     ``success=false`` and the upstream message in ``error``; only a probe that
+     *     could not be attempted at all is an error status. This three-segment
+     *     literal path cannot collide with the two-segment
+     *     ``/{entity}/{item_id:int}`` detail matcher.
+     *
+     *     :param service: The service to probe, resolved from the path id.
+     *     :param tasks_api: Authenticated Tasks ``RemoteAPI`` client.
+     *     :return: The upstream probe result.
+     *     :raises HTTPBadRequestException: When the service cannot be probed —
+     *         unsupported type, missing node or port, or no executor registered for
+     *         the node address.
+     *     :raises HTTPBadGatewayException: When the Tasks API is unreachable or
+     *         returns an unparseable body.
+     */
+    post: operations['inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/inventory/services/{service_id}/system-observation': {
     parameters: {
       query?: never;
@@ -1797,6 +1833,40 @@ export interface paths {
      *     :return: The plugin schema instance.
      */
     get: operations['mysql_backups_get_schema_api_apps_mysql_backups_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/mysql_backups/services/{service_id}/backups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Service Backups
+     * @description Return a page of a MySQL service's completed backup runs, newest run first.
+     *
+     *     The ``service_id`` path parameter is resolved by
+     *     :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an
+     *     unknown service surface as a ``404``. A resolvable service with no recorded
+     *     runs yields an empty page, so a caller building a restore selector is never
+     *     blocked by an empty catalog but is still told when the service itself is
+     *     unknown.
+     *
+     *     :param service: The inventory service resolved from the ``service_id`` path
+     *         parameter.
+     *     :param session: The database session the catalog is queried on.
+     *     :param pagination: The requested offset/limit window.
+     *     :return: The requested page of the service's recorded backup runs, newest
+     *         run first.
+     */
+    get: operations['mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2691,10 +2761,13 @@ export interface paths {
      *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
      *     ``detail`` are preserved through the proxy.
      *
-     *     For a local class: idempotent -- deleting a (class, key) pair that has no
-     *     override row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE
-     *     field responds 409 -- the field cannot have an override row in the first
-     *     place, so the operator's intent is unsatisfiable.
+     *     For a local class the DELETE is idempotent: deleting a (class, key) pair
+     *     that has no override row succeeds with 204. Attempting to delete a field
+     *     the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
+     *     override row in the first place and the operator's intent is
+     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+     *     may still carry a row written before the restriction applied, so that
+     *     row is deleted normally and only the no-row case answers 409.
      *
      *     After republishing the snapshot, fires the rebind callbacks for the
      *     reverted key so a HOT target rebinds to its restored value without
@@ -2709,7 +2782,8 @@ export interface paths {
      *         the router wires none).
      *     :raises HTTPNotFoundException: If the class isn't exposed or the key
      *         doesn't exist on the class.
-     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has
+     *         no row to delete.
      *     :raises HTTPUnprocessableEntityException: If ``key`` names a
      *         ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
      *         target an individual ``parent__leaf`` instead).
@@ -3434,6 +3508,22 @@ export interface components {
     ConnectivityCheckRequest: {
       /** Targets */
       targets: components['schemas']['ServiceEnum'][];
+    };
+    /**
+     * ConnectivityCheckResponse
+     * @description Represent a connectivity check result.
+     *
+     *     :param success: Whether the connectivity check succeeded.
+     *     :param error: Error message if the check failed. Defaults to ``None``.
+     *     :param task_history_id: The ID of the task history record for this check.
+     */
+    ConnectivityCheckResponse: {
+      /** Error */
+      error?: string | null;
+      /** Success */
+      success: boolean;
+      /** Task History Id */
+      task_history_id: number;
     };
     /**
      * ConnectivityResult
@@ -8733,6 +8823,45 @@ export interface components {
       xtrabackup_verify: boolean;
     };
     /**
+     * BackupRunResponse
+     * @description Expose one catalog record over the per-service query path.
+     *
+     *     :param id: The record's primary key.
+     *     :param service_name: The inventory service the backup was taken from.
+     *     :param hostname: The backup target host.
+     *     :param backup_type: The backup tool, ``"M"`` (mydumper) or ``"X"`` (xtrabackup).
+     *         Narrower than :class:`BackupType`: binlog runs are never catalogued, so
+     *         ``"B"`` never appears here.
+     *     :param location: The resolved on-disk directory the run produced.
+     *     :param upload_destination: The upload destination when one was configured.
+     *     :param size_bytes: The backup size in bytes, when the run reported it.
+     *     :param started_at: When the run started.
+     *     :param finished_at: When the run finished.
+     */
+    mysql_backups__BackupRunResponse: {
+      /**
+       * Backup Type
+       * @enum {string}
+       */
+      backup_type: 'M' | 'X';
+      /** Finished At */
+      finished_at: string | null;
+      /** Hostname */
+      hostname: string | null;
+      /** Id */
+      id: number;
+      /** Location */
+      location: string | null;
+      /** Service Name */
+      service_name: string | null;
+      /** Size Bytes */
+      size_bytes: number | null;
+      /** Started At */
+      started_at: string | null;
+      /** Upload Destination */
+      upload_destination: string | null;
+    };
+    /**
      * BackupTaskResponse
      * @description Represent a backup task API response.
      *
@@ -8785,6 +8914,17 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
+    /** PaginatedResponse[BackupRunResponse] */
+    mysql_backups__PaginatedResponse_BackupRunResponse_: {
+      /** Items */
+      items: components['schemas']['mysql_backups__BackupRunResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[BackupTaskResponse] */
     mysql_backups__PaginatedResponse_BackupTaskResponse_: {
       /** Items */
@@ -12475,6 +12615,37 @@ export interface operations {
       };
     };
   };
+  inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ConnectivityCheckResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get: {
     parameters: {
       query?: never;
@@ -13018,6 +13189,40 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupRunResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
