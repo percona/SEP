@@ -26,7 +26,12 @@ from app.inventory.config import InventorySettings
 from app.sep.apps.framework.registry import build_app_registry
 from app.sep.config import SEPSettings
 from app.tasks.config import TasksSettings
-from tests.sidecar.conftest import EMBEDDED_PROFILE, SETTINGS_ENV_HELPER, SIDECAR_DIR
+from tests.sidecar.conftest import (
+    ALLOWLIST_KEY,
+    EMBEDDED_PROFILE,
+    SETTINGS_ENV_HELPER,
+    SIDECAR_DIR,
+)
 
 PASSWORD_BEARING_USERINFO = re.compile(r"://[^/@\s]+:[^/@\s]+@")
 """Match a URL whose authority carries both a user and a password.
@@ -41,6 +46,13 @@ SECRET_KEYS = frozenset({"password", "service_account_token", "api_key"})
 
 SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
+
+ALLOWLIST_SIZE = 16
+"""How many entries the embedded override allowlist ships.
+
+Pinned so a silently truncated list -- which the policy suite's negative
+assertions would still accept -- fails here instead.
+"""
 
 UNCOMPARABLE_FIELDS = frozenset({"FASTAPI_ENV", "JINJA_ENVIRONMENT", "TEMPLATES"})
 """Fields a dump comparison cannot use.
@@ -123,6 +135,15 @@ def test_grafana_provider_constructs_with_an_empty_token():
     provider = AuthSettings().PROVIDER["grafana"]
 
     assert provider.service_account_token.get_secret_value() == ""
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_override_allowlist_resolves_from_the_profile(embedded_profile_data: dict):
+    """Assert the profile's YAML list coerces into the field the policy reads."""
+    declared = embedded_profile_data["default"][ALLOWLIST_KEY]
+
+    assert len(declared) == ALLOWLIST_SIZE
+    assert set(declared) == Settings().SETTINGS_OVERRIDE_ALLOWED_KEYS
 
 
 def test_profile_carries_a_single_default_block(embedded_profile_data: dict):
