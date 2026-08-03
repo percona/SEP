@@ -34,10 +34,9 @@ describe('Vite backend proxy prefixes', () => {
     const proxy = viteQaConfig.server?.proxy;
     expect(proxy).toBeDefined();
     expect(proxy?.['/static']).toMatchObject({
+      target: process.env.SEP_QA_BACKEND ?? 'http://127.0.0.1:18002',
       changeOrigin: true,
       cookieDomainRewrite: 'localhost',
     });
-    // Target follows SEP_QA_BACKEND (same shared entry as other prefixes).
-    expect(proxy?.['/static']?.target).toBe(proxy?.['/api']?.target);
   });
 });
