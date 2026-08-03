@@ -17,22 +17,29 @@
 
 from __future__ import annotations
 
+import ast
 import inspect
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import BaseModel
-from sqlalchemy import column
+from sqlalchemy import cast, column, String
 
-from app.core.db.list_query import ListQuerySpec
+from app.core.db.list_query import ListQuerySpec, UnknownSortKeyError
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import Pagination
 from app.sep.apps.framework import list_query as list_query_module
 from app.sep.apps.framework.list_query import (
     apply_in_memory,
+    default_in_memory_query,
+    in_memory_list_scripts,
     InMemoryListQuery,
     make_in_memory_list_query_dep,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +70,11 @@ NO_SEARCH_SPEC = ListQuerySpec(
 
 
 def _rows(*specs: tuple[str, str | None, int]) -> list[_Row]:
+    """Build materialized rows from ``(filename, title, created_at)`` triples.
+
+    :param specs: One triple per row, in the order the source materialized them.
+    :return: The rows to hand to the applier.
+    """
     return [_Row(filename=f, title=t, created_at=c) for f, t, c in specs]
 
 
@@ -224,6 +236,161 @@ class TestApplyInMemoryPagination:
         assert total == 0
 
 
+class TestDefaultInMemoryQuery:
+    """Cover the query a caller with no request-derived selections falls back to."""
+
+    def test_descending_default_strips_the_prefix(self) -> None:
+        """Split a ``-`` prefixed default into a bare key plus a descending flag."""
+        query = default_in_memory_query(SPEC)
+
+        assert (query.sort_key, query.descending, query.search) == (
+            "created_at",
+            True,
+            None,
+        )
+
+    def test_ascending_default_is_not_descending(self) -> None:
+        """Keep an unprefixed default ascending."""
+        query = default_in_memory_query(NO_SEARCH_SPEC)
+
+        assert (query.sort_key, query.descending) == ("filename", False)
+
+
+class TestApplyInMemoryWithoutPagination:
+    """Cover the whole-collection call shape the derived non-paginated route makes."""
+
+    def test_returns_every_row_unsliced(self) -> None:
+        """Return the full ordered set, past a default page, when pagination is None."""
+        row_count = 60
+        rows = _rows(*[(f"{i:02d}.sh", "T", i) for i in range(row_count)])
+        query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
+
+        page, total = apply_in_memory(rows, SPEC, query, None)
+
+        assert len(page) == row_count
+        assert total == row_count
+        assert page[0].filename == "00.sh"
+
+    def test_still_filters_and_orders(self) -> None:
+        """Apply search and ordering even with no page window."""
+        rows = _rows(("b.sh", "Beta", 2), ("a.sh", "Alpha", 1), ("c.sh", "Gamma", 3))
+        query = InMemoryListQuery(sort_key="filename", descending=True, search="a")
+
+        page, total = apply_in_memory(rows, SPEC, query, None)
+
+        assert [row.filename for row in page] == ["c.sh", "b.sh", "a.sh"]
+        assert total == len(rows)
+
+
+class TestSpecAttributeValidation:
+    """Pin that a spec/row mismatch fails loudly, and once, rather than per row."""
+
+    def test_unnamed_sortable_column_rejected_at_dep_construction(self) -> None:
+        """Reject an unnamed sort expression when the dependency is built."""
+        spec = ListQuerySpec(
+            sortable={"size": cast(column("size"), String)},
+            default_sort="size",
+            tie_breaker=column("filename"),
+        )
+
+        with pytest.raises(ValueError, match="exposes no name"):
+            make_in_memory_list_query_dep(spec)
+
+    def test_unnamed_tie_breaker_rejected_by_applier(self) -> None:
+        """Reject an unnamed tie-breaker even when the dependency was bypassed."""
+        spec = ListQuerySpec(
+            sortable={"filename": column("filename")},
+            default_sort="filename",
+            tie_breaker=cast(column("filename"), String),
+        )
+        query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
+
+        with pytest.raises(ValueError, match="tie_breaker"):
+            apply_in_memory(_rows(("a.sh", None, 1)), spec, query, Pagination())
+
+    def test_row_missing_spec_attribute_names_both_sides(self) -> None:
+        """Name the row type and the attribute instead of raising ``AttributeError``."""
+
+        class _Sparse(BaseModel):
+            filename: str
+
+        query = InMemoryListQuery(sort_key="created_at", descending=False, search=None)
+
+        with pytest.raises(ValueError, match="_Sparse has no attribute 'created_at'"):
+            apply_in_memory([_Sparse(filename="a.sh")], SPEC, query, Pagination())
+
+    def test_out_of_allowlist_sort_key_rejected(self) -> None:
+        """Reject a hand-built query whose sort key was never vetted by the spec."""
+        query = InMemoryListQuery(sort_key="secret", descending=False, search=None)
+
+        with pytest.raises(UnknownSortKeyError):
+            apply_in_memory(_rows(("a.sh", None, 1)), SPEC, query, Pagination())
+
+
+_ADAPTER_ROWS = 3
+
+
+class TestInMemoryListScripts:
+    """Cover the adapter across all four shapes the framework calls it with."""
+
+    @pytest.fixture
+    def list_scripts(
+        self,
+    ) -> Callable[
+        [InMemoryListQuery | None, Pagination | None],
+        Awaitable[tuple[list[_Row], int]],
+    ]:
+        """Adapt a fixed set of rows through the framework's applier."""
+        rows = _rows(("b.sh", "Beta", 2), ("a.sh", "Alpha", 1), ("c.sh", "Gamma", 3))
+
+        async def _materialize() -> list[_Row]:
+            return rows
+
+        return in_memory_list_scripts(_materialize, SPEC)
+
+    @pytest.mark.asyncio
+    async def test_no_query_no_pagination_returns_all_in_spec_order(
+        self, list_scripts
+    ) -> None:
+        """Order by the spec default and return everything for the bare call."""
+        page, total = await list_scripts(None, None)
+
+        assert [row.filename for row in page] == ["c.sh", "b.sh", "a.sh"]
+        assert total == _ADAPTER_ROWS
+
+    @pytest.mark.asyncio
+    async def test_no_query_with_pagination_slices_in_spec_order(
+        self, list_scripts
+    ) -> None:
+        """Slice the spec-default order rather than the materialization order."""
+        page, total = await list_scripts(None, Pagination(offset=0, limit=2))
+
+        assert [row.filename for row in page] == ["c.sh", "b.sh"]
+        assert total == _ADAPTER_ROWS
+
+    @pytest.mark.asyncio
+    async def test_query_without_pagination_filters_unsliced(
+        self, list_scripts
+    ) -> None:
+        """Honour a resolved query with no page window."""
+        query = InMemoryListQuery(sort_key="filename", descending=False, search="alpha")
+
+        page, total = await list_scripts(query, None)
+
+        assert [row.filename for row in page] == ["a.sh"]
+        assert total == 1
+
+    @pytest.mark.asyncio
+    async def test_query_with_pagination_filters_and_slices(self, list_scripts) -> None:
+        """Honour a resolved query and report the filtered total, not the page size."""
+        query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
+
+        page, total = await list_scripts(query, Pagination(offset=1, limit=1))
+
+        assert [row.filename for row in page] == ["b.sh"]
+        assert total == _ADAPTER_ROWS
+
+
 class TestApplierIsBackingAgnostic:
     """Pin the applier's independence from the script seam.
 
@@ -255,7 +422,22 @@ class TestApplierIsBackingAgnostic:
         assert total == matching
 
     def test_module_does_not_import_the_script_seam(self) -> None:
-        """Keep the applier importable without pulling in ``ScriptSource``."""
-        source = inspect.getsource(list_query_module)
-        assert "script_source" not in source
-        assert "ScriptSource" not in source
+        """Keep the applier importable without pulling in ``ScriptSource``.
+
+        Walks the module's own import statements rather than scanning its source text,
+        so prose mentioning the seam cannot fail the check and a ``TYPE_CHECKING``-only
+        import cannot pass it.
+        """
+        tree = ast.parse(inspect.getsource(list_query_module))
+        imported = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module
+        } | {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+
+        assert not [name for name in imported if name.endswith("script_source")]

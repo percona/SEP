@@ -60,6 +60,9 @@ from app.sep.snippets.models.snippet import (
 pytestmark = pytest.mark.asyncio
 
 
+_SPEC = SnippetManager.list_query_spec
+
+
 def _snippet_query(
     sort: str | None = None,
     search: str | None = None,
@@ -67,16 +70,19 @@ def _snippet_query(
 ) -> SnippetListQuery:
     """Build the composed list query the route's dependency yields.
 
+    Deliberately narrower than its ``tests/app/sep/snippets/test_crud.py`` namesake:
+    that one drives the manager across all four filter axes, while these tests drive the
+    source hook and only ever vary approval.
+
     :param sort: The raw ``sort`` value, or ``None`` for the spec default.
     :param search: The raw search term, or ``None`` for no search.
     :param approval: The approval-status filter.
     :return: The composed list query.
     """
-    spec = SnippetManager.list_query_spec
     return SnippetListQuery(
         core=ListQuery(
-            order_by=tuple(spec.resolve_sort(sort)),
-            search_predicate=build_search_predicate(search, spec.searchable),
+            order_by=tuple(_SPEC.resolve_sort(sort)),
+            search_predicate=build_search_predicate(search, _SPEC.searchable),
         ),
         approval=approval,
     )

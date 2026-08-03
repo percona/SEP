@@ -820,6 +820,9 @@ def _synth_script_source(scripts: Sequence[_SynthScript]) -> ScriptSource[_Synth
         :class:`SynthScriptListRow`.
     """
 
+    # Deliberately ignores ``list_query``: the synthetic app declares no
+    # ``list_query_spec``, so the derived route never resolves one. Routing this through
+    # the framework's applier would mean inventing a spec no assertion covers.
     async def _list_scripts(
         _list_query: Any, pagination: Pagination | None
     ) -> tuple[list[_SynthScript], int]:

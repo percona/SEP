@@ -233,7 +233,7 @@ async def get_grouped_alerts(
     :return: A mapping from service type to a sorted list of unique alerts.
     :rtype: dict[AlertServiceType, list[AlertInfo]]
     """
-    snippets = await SnippetManager.list(session, order_by=SnippetManager.ordering)
+    snippets = await SnippetManager.list(session)
     return collect_grouped_alerts(snippets)
 
 
@@ -360,7 +360,7 @@ async def get_snippets_for_alert(
     :rtype: tuple[list[Snippet], AlertInfo]
     :raises HTTPNotFoundException: If no snippets match the alert name.
     """
-    snippets = await SnippetManager.list(session, order_by=SnippetManager.ordering)
+    snippets = await SnippetManager.list(session)
     return filter_snippets_for_alert(snippets, alert_name, service_type)
 
 

@@ -78,9 +78,7 @@ async def snippets_index(
     context: DefaultContext,
 ) -> HTMLResponse:
     """Homepage of snippets plugin."""
-    context["snippets"] = await SnippetManager.list(
-        session, order_by=SnippetManager.ordering
-    )
+    context["snippets"] = await SnippetManager.list(session)
     context["enable_snippets_refresh"] = snippets_settings.ENABLE_MANUAL_SYNC
     return templates.TemplateResponse(
         request=request,

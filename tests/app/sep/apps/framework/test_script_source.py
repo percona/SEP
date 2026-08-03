@@ -31,6 +31,7 @@ so the fixture exercises the same code path a real consumer hits.
 """
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 from unittest.mock import AsyncMock
@@ -203,6 +204,9 @@ def _make_source(
         name: _FixtureScript(name, params) for name, params in _SCRIPT_PARAMS.items()
     }
 
+    # Deliberately ignores ``list_query``: this fixture exercises the source's loader
+    # and non-query behaviour, and declares no ``list_query_spec`` for the framework's
+    # applier to replay.
     async def _list_scripts(
         _list_query: object, pagination: Pagination | None
     ) -> tuple[list[_FixtureScript], int]:
@@ -851,6 +855,21 @@ class TestScriptSourceValidation:
 
         with pytest.raises(ValueError, match="derives no create route"):
             _script_app(source, create_extra_deps=(Depends(_guard),))
+
+    def test_list_query_dep_with_in_memory_flag_raises(
+        self, source: ScriptSource
+    ) -> None:
+        """Reject a source whose two list-query dependency knobs disagree.
+
+        The framework prefers ``list_query_dep``, so pairing it with the in-memory flag
+        would drop the flag silently rather than telling the author which one wins.
+        """
+        with pytest.raises(ValueError, match="list_query_dep supersedes"):
+            replace(
+                source,
+                list_query_dep=lambda: object(),
+                in_memory_list_query=True,
+            )
 
 
 class TestConformanceGuards:

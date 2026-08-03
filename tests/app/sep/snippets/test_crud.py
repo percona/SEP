@@ -15,13 +15,16 @@
 
 """Tests for SnippetManager CRUD and its Core-backed list-query spec."""
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlmodel import col
+from sqlalchemy.dialects import mysql
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col, select
 
 from app.core.db.list_query import build_search_predicate, ListQuery
-from app.core.pagination import Pagination
+from app.core.pagination import PaginatedResponse, Pagination
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.list_query import SnippetApprovalFilter, SnippetListQuery
 from app.sep.snippets.models import Snippet
@@ -43,7 +46,22 @@ def _list_query(sort: str | None = None, search: str | None = None) -> ListQuery
     )
 
 
-async def _page(session, sort=None, search=None, offset=0, limit=50):
+async def _page(
+    session: AsyncSession,
+    sort: str | None = None,
+    search: str | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> PaginatedResponse[Snippet]:
+    """Fetch one page through Core's SQL applier, as the derived list route would.
+
+    :param session: The database session.
+    :param sort: The raw ``sort`` value, or ``None`` for the spec default.
+    :param search: The raw search term, or ``None`` for no search.
+    :param offset: The page window's offset.
+    :param limit: The page window's size.
+    :return: The page envelope carrying the rows and the filtered total.
+    """
     return await SnippetManager.list_query_paginated(
         session,
         list_query=_list_query(sort=sort, search=search),
@@ -76,7 +94,20 @@ def _snippet_query(
     )
 
 
-async def _filtered_page(session, offset=0, limit=50, **query):
+async def _filtered_page(
+    session: AsyncSession,
+    offset: int = 0,
+    limit: int = 50,
+    **query: Any,
+) -> PaginatedResponse[Snippet]:
+    """Fetch one page with the snippets filters composed over the Core query.
+
+    :param session: The database session.
+    :param offset: The page window's offset.
+    :param limit: The page window's size.
+    :param query: Keyword arguments forwarded to :func:`_snippet_query`.
+    :return: The page envelope carrying the rows and the filtered total.
+    """
     return await SnippetManager.snippet_list_page(
         session,
         list_query=_snippet_query(**query),
@@ -155,8 +186,13 @@ class TestSnippetListQuerySpec:
         """Break ties on the unique ``id`` so pagination cannot repeat or drop rows."""
         assert _SPEC.tie_breaker is col(Snippet.id)
 
-    def test_derived_ordering_matches_the_spec_default(self):
-        """Derive the manager default ordering from the spec, not from ``ordering``."""
+    def test_get_ordering_prefers_the_spec_over_the_legacy_ordering(self):
+        """Derive the manager default ordering from the spec, not from ``ordering``.
+
+        Every non-HTTP ``SnippetManager.list()`` caller relies on this preference to
+        reach the spec's ordering without naming it, so the legacy attribute stays
+        unreferenced and its removal stays a pure deletion.
+        """
         assert [str(clause) for clause in SnippetManager._get_ordering()] == [
             "snippet.approved_at DESC NULLS LAST",
             "snippet.id ASC",
@@ -167,9 +203,103 @@ class TestSnippetListQuerySpec:
         assert _SPEC.search_enabled is True
 
 
+def _render_mysql_order_by(sort: str) -> str:
+    """Compile the spec's resolved ordering for ``sort`` against the MySQL dialect.
+
+    :param sort: The raw ``sort`` value (``-`` prefix for descending).
+    :return: The compiled statement text.
+    """
+    order_by = _SPEC.resolve_sort(sort)
+    return str(
+        select(col(Snippet.id)).order_by(*order_by).compile(dialect=mysql.dialect())
+    )
+
+
+def _isnull_argument(rendered: str) -> str:
+    """Return the expression MySQL's first ``ISNULL(...)`` term wraps.
+
+    Extracts by balancing parentheses rather than by substring, so a nested call such as
+    ``ISNULL(JSON_EXTRACT(...))`` yields the whole inner expression instead of stopping
+    at its first ``)``.
+
+    :param rendered: A compiled statement containing at least one ``ISNULL(`` term.
+    :return: The text between the ``ISNULL`` parentheses.
+    :raises AssertionError: When ``rendered`` has no ``ISNULL(`` term.
+    """
+    marker = "ISNULL("
+    start = rendered.find(marker)
+    assert start != -1, f"no ISNULL( term in {rendered!r}"
+    start += len(marker)
+    depth = 1
+    for index in range(start, len(rendered)):
+        if rendered[index] == "(":
+            depth += 1
+        elif rendered[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return rendered[start:index]
+    raise AssertionError(f"unbalanced ISNULL( term in {rendered!r}")
+
+
+class TestSnippetSpecOrderByRendering:
+    """Cover the dialect-aware NULLs-last rendering of the spec's ORDER BY.
+
+    MySQL has no ``NULLS LAST``, so Core rewrites the clause to its ``ISNULL`` idiom.
+    A meta-key sort compiles to a JSON extract, which has to end up *inside* that
+    ``ISNULL`` argument — if it were evaluated alongside instead, unapproved or
+    untitled rows would sort in the wrong place. Compile-only, so it runs without a
+    MySQL service; :class:`TestSnippetManagerListQueryOnMySQL` proves the same against
+    a real bind.
+    """
+
+    @pytest.mark.parametrize("sort", ["title", "-title"], ids=["asc", "desc"])
+    def test_meta_key_sort_nests_the_json_extract_inside_isnull(self, sort: str):
+        """Wrap the JSON extract in ``ISNULL`` rather than emitting it beside it."""
+        rendered = _render_mysql_order_by(sort)
+
+        assert "NULLS LAST" not in rendered
+        assert "JSON_EXTRACT" in _isnull_argument(rendered)
+
+    @pytest.mark.parametrize("sort", ["filename", "-filename"], ids=["asc", "desc"])
+    def test_plain_column_sort_nests_the_column_inside_isnull(self, sort: str):
+        """Wrap a first-class column in ``ISNULL`` with no JSON machinery."""
+        rendered = _render_mysql_order_by(sort)
+
+        assert "NULLS LAST" not in rendered
+        assert _isnull_argument(rendered) == "snippet.filename"
+
+    def test_tie_breaker_stays_the_final_order_by_term(self):
+        """Keep the unique tie-breaker last so paging cannot repeat or drop rows."""
+        rendered = _render_mysql_order_by("title")
+
+        assert rendered.rstrip().endswith("snippet.id ASC")
+
+
 @pytest.mark.asyncio
 class TestSnippetManagerListQueryPaginated:
     """Test server-side search and sort through the Core list-query primitives."""
+
+    async def test_bare_list_orders_approved_first_and_breaks_ties_on_id(
+        self, session, seed_snippet
+    ):
+        """Order a bare ``list()`` approved-first with a deterministic tie-break.
+
+        The legacy Jinja page, the ATW category listing and the alert-troubleshooting
+        pick-lists all call ``list()`` with no ``order_by``, so this pins the ordering
+        they inherit from the spec — including that unapproved rows sort last on every
+        dialect, which the legacy clause only did on MySQL and SQLite.
+        """
+        await seed_snippet(session, "unapproved-b.sh")
+        await seed_snippet(session, "unapproved-a.sh")
+        await seed_snippet(session, "approved.sh", approved=True)
+
+        rows = await SnippetManager.list(session)
+
+        assert [row.filename for row in rows] == [
+            "approved.sh",
+            "unapproved-b.sh",
+            "unapproved-a.sh",
+        ]
 
     async def test_search_matches_filename_title_and_description(
         self, session, seed_snippet
@@ -366,13 +496,16 @@ class TestSnippetManagerListQueryPaginated:
         assert page.items == []
 
 
+@pytest.mark.postgres
 @pytest.mark.asyncio
 class TestSnippetManagerListQueryOnPostgres:
     """Exercise the dialect-specific JSON extract and NULL ordering on PostgreSQL.
 
     SQLite is not a substitute for PostgreSQL's ``->>`` JSON extract and NULL
     ordering, so these run against a real ``postgres_session`` (auto-skipped when
-    ``SEP_TEST_POSTGRES_DSN`` is unset).
+    ``SEP_TEST_POSTGRES_DSN`` is unset). The ``postgres`` marker is what puts them in
+    CI's PostgreSQL lane; without it the fixture would skip in the default lane and the
+    lane's ``-m postgres`` filter would deselect them, so they would never run at all.
     """
 
     async def test_search_matches_json_title_and_description(
@@ -432,15 +565,65 @@ class TestSnippetManagerListQueryOnPostgres:
     async def test_ordering_is_deterministic_across_page_boundaries(
         self, postgres_session, seed_snippet
     ):
-        """Break a sort-key tie by filename so pages never overlap on PostgreSQL."""
-        for name in ("d.sh", "b.sh", "a.sh", "c.sh"):
+        """Break a sort-key tie by ``id`` so pages never overlap on PostgreSQL.
+
+        Every row ties on the sort key, so the unique tie-breaker alone decides the
+        window. It is the surrogate ``id``, not ``filename``, so the stable order is
+        insertion order — and the two pages must partition the set exactly.
+        """
+        seeded = ("d.sh", "b.sh", "a.sh", "c.sh")
+        for name in seeded:
             await seed_snippet(postgres_session, name, service_type="mysql")
 
         first = await _page(postgres_session, sort="service_type", offset=0, limit=2)
         second = await _page(postgres_session, sort="service_type", offset=2, limit=2)
 
-        assert [s.filename for s in first.items] == ["a.sh", "b.sh"]
-        assert [s.filename for s in second.items] == ["c.sh", "d.sh"]
+        assert [s.filename for s in first.items] == ["d.sh", "b.sh"]
+        assert [s.filename for s in second.items] == ["a.sh", "c.sh"]
+        assert first.total == len(seeded)
+
+    async def test_service_type_filter_matches_through_the_json_extract(
+        self, postgres_session, seed_snippet
+    ):
+        """Match the service-type filter through PostgreSQL's ``->>`` extract.
+
+        The filter shares its expression builder with the sort allowlist, so it renders
+        as a native ``->>`` rather than the generic ``json_extract`` SQLite accepts.
+        """
+        await seed_snippet(postgres_session, "mysql.sh", service_type="mysql")
+        await seed_snippet(postgres_session, "mongo.sh", service_type="mongodb")
+
+        page = await _filtered_page(postgres_session, service_type="mysql")
+
+        assert [s.filename for s in page.items] == ["mysql.sh"]
+        assert page.total == 1
+
+    async def test_uncategorized_filter_trims_through_the_json_extract(
+        self, postgres_session, seed_snippet
+    ):
+        """Treat a blank or absent service type as uncategorized on PostgreSQL."""
+        await seed_snippet(postgres_session, "absent.sh")
+        await seed_snippet(postgres_session, "blank.sh", service_type="   ")
+        await seed_snippet(postgres_session, "typed.sh", service_type="mysql")
+
+        page = await _filtered_page(postgres_session, uncategorized=True)
+
+        assert {s.filename for s in page.items} == {"absent.sh", "blank.sh"}
+
+    async def test_service_type_facet_reads_through_the_json_extract(
+        self, postgres_session, seed_snippet
+    ):
+        """Build the whole-dataset facet through the ``->>`` extract and ``TRIM``."""
+        await seed_snippet(postgres_session, "a.sh", service_type=" mysql ")
+        await seed_snippet(postgres_session, "b.sh", service_type="mongodb")
+        await seed_snippet(postgres_session, "c.sh")
+
+        service_types, has_uncategorized = await SnippetManager.list_service_types(
+            postgres_session
+        )
+
+        assert service_types == ["mongodb", "mysql"]
+        assert has_uncategorized is True
 
 
 @pytest.mark.asyncio
@@ -579,6 +762,53 @@ class TestSnippetListPageFilters:
 
 
 @pytest.mark.asyncio
+class TestSnippetManagerServiceTypeNormalizationAgrees:
+    """Pin the facet and the list filter to one whitespace-normalization definition.
+
+    ``list_service_types`` and ``_list_query_filters`` both trim through
+    :meth:`~app.sep.snippets.crud.SnippetManager._service_type_exprs`, so a value the
+    facet reports as blank is exactly the value the Uncategorized filter selects, and a
+    padded value the facet lists is exactly what the equality filter matches --
+    including tab/newline padding that SQL ``TRIM`` leaves intact but
+    Python/JavaScript ``strip``/``trim`` would fold. Both paths now resolve their JSON
+    extract through ``_meta_text``, so this also pins that the shared builder did not
+    quietly change one side's normalization.
+    """
+
+    @pytest.mark.parametrize("whitespace", ["\t", "\n", "\r\n"])
+    async def test_non_space_whitespace_value_is_a_real_type_on_both_paths(
+        self, session, seed_snippet, whitespace
+    ):
+        """Keep a tab/newline-only service type as a real, selectable value."""
+        await seed_snippet(session, "ws.sh", service_type=whitespace)
+        await seed_snippet(session, "absent.sh")
+
+        service_types, has_uncategorized = await SnippetManager.list_service_types(
+            session
+        )
+        uncategorized_page = await _filtered_page(session, uncategorized=True)
+
+        # SQL TRIM leaves non-space whitespace intact, so the facet lists the value
+        # and the Uncategorized filter excludes it -- the two paths agree.
+        assert whitespace in service_types
+        assert has_uncategorized is True
+        assert [s.filename for s in uncategorized_page.items] == ["absent.sh"]
+
+    async def test_tab_padded_value_matches_the_equality_filter(
+        self, session, seed_snippet
+    ):
+        """Match a tab-padded stored value with the facet value the UI would send."""
+        await seed_snippet(session, "padded.sh", service_type="mysql\t")
+        await seed_snippet(session, "mongo.sh", service_type="mongodb")
+
+        service_types, _ = await SnippetManager.list_service_types(session)
+        page = await _filtered_page(session, service_type="mysql\t")
+
+        assert "mysql\t" in service_types
+        assert [s.filename for s in page.items] == ["padded.sh"]
+
+
+@pytest.mark.asyncio
 class TestSnippetManagerListServiceTypes:
     """Test the whole-dataset service-type facet backing the list filter."""
 
@@ -624,3 +854,117 @@ class TestSnippetManagerListServiceTypes:
         page = await _filtered_page(session, service_type=service_types[0])
 
         assert [s.filename for s in page.items] == ["padded.sh"]
+
+
+@pytest.mark.mysql
+@pytest.mark.asyncio
+class TestSnippetManagerListQueryOnMySQL:
+    """Exercise the snippets sort, search and paging against a real MySQL bind.
+
+    MySQL has neither ``NULLS LAST`` nor a native ``->>`` extract, so Core rewrites the
+    ordering to its ``ISNULL`` idiom and the ``meta`` accessor compiles to
+    ``JSON_UNQUOTE(JSON_EXTRACT(...))``. Neither rewrite is observable on SQLite, and
+    :class:`TestSnippetSpecOrderByRendering` only proves what MySQL is *asked* to run —
+    so these assert what it actually returns (auto-skipped when ``SEP_TEST_MYSQL_DSN``
+    is unset).
+    """
+
+    async def test_sort_by_meta_title_places_missing_titles_last(
+        self, mysql_session, seed_snippet
+    ):
+        """Pin rows lacking ``meta.title`` last in both directions on MySQL.
+
+        The sort expression is a JSON extract, so this also covers the extract nesting
+        inside the ``ISNULL`` term rather than being evaluated beside it.
+        """
+        await seed_snippet(mysql_session, "alpha.sh", title="Alpha")
+        await seed_snippet(mysql_session, "bravo.sh", title="Bravo")
+        await seed_snippet(mysql_session, "no-title-1.sh")
+        await seed_snippet(mysql_session, "no-title-2.sh")
+
+        ascending = await _page(mysql_session, sort="title")
+        descending = await _page(mysql_session, sort="-title")
+
+        assert [s.filename for s in ascending.items] == [
+            "alpha.sh",
+            "bravo.sh",
+            "no-title-1.sh",
+            "no-title-2.sh",
+        ]
+        assert [s.filename for s in descending.items] == [
+            "bravo.sh",
+            "alpha.sh",
+            "no-title-1.sh",
+            "no-title-2.sh",
+        ]
+
+    async def test_sort_by_filename_orders_in_both_directions(
+        self, mysql_session, seed_snippet
+    ):
+        """Keep a non-nullable column ordering correct in both directions.
+
+        ``filename`` is never NULL, so its ``ISNULL`` term is constant across every
+        row; neither it nor the appended ``id`` tie-breaker may disturb either
+        direction.
+        """
+        for name in ("b.sh", "a.sh", "c.sh"):
+            await seed_snippet(mysql_session, name)
+
+        ascending = await _page(mysql_session, sort="filename")
+        descending = await _page(mysql_session, sort="-filename")
+
+        assert [s.filename for s in ascending.items] == ["a.sh", "b.sh", "c.sh"]
+        assert [s.filename for s in descending.items] == ["c.sh", "b.sh", "a.sh"]
+
+    async def test_default_sort_places_unapproved_last(
+        self, mysql_session, seed_snippet
+    ):
+        """Sort unapproved snippets last under the spec default on MySQL.
+
+        This is the exact clause every non-HTTP ``SnippetManager.list()`` caller now
+        inherits, on the one dialect where ``NULLS LAST`` has to become ``ISNULL``.
+        """
+        await seed_snippet(mysql_session, "unapproved.sh")
+        await seed_snippet(mysql_session, "approved.sh", approved=True)
+
+        page = await _page(mysql_session)
+
+        assert [s.filename for s in page.items] == ["approved.sh", "unapproved.sh"]
+
+    async def test_search_matches_json_title_and_description(
+        self, mysql_session, seed_snippet
+    ):
+        """Search the ``meta`` JSON via MySQL's ``JSON_UNQUOTE(JSON_EXTRACT(...))``.
+
+        Core lowers ``ilike`` to a ``lower() LIKE lower()`` comparison on MySQL, so the
+        term has to match through both the extract and that lowering.
+        """
+        await seed_snippet(mysql_session, "other.sh", title="MySQL Report")
+        await seed_snippet(mysql_session, "third.sh", description="dumps the MYSQL log")
+        await seed_snippet(mysql_session, "skip.sh", title="Postgres")
+
+        matching = {"other.sh", "third.sh"}
+
+        page = await _page(mysql_session, search="mysql")
+
+        assert {s.filename for s in page.items} == matching
+        assert page.total == len(matching)
+
+    async def test_ordering_is_deterministic_across_page_boundaries(
+        self, mysql_session, seed_snippet
+    ):
+        """Page tied rows without repeating or dropping any, via the ``id`` tie-break.
+
+        Every row here ties on the default sort key, so only the unique tie-breaker
+        keeps the window stable — and it has to survive the ``ISNULL`` rewrite.
+        """
+        total = 6
+        for index in range(total):
+            await seed_snippet(mysql_session, f"tied-{index}.sh")
+
+        first = await _page(mysql_session, offset=0, limit=3)
+        second = await _page(mysql_session, offset=3, limit=3)
+
+        seen = [s.filename for s in first.items] + [s.filename for s in second.items]
+        assert len(set(seen)) == total
+        assert first.total == total

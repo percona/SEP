@@ -1671,6 +1671,34 @@ def derive_cascade_create_route(
     )
 
 
+def _reject_unspecced_list_query(
+    source: ScriptSource[Any],
+    *,
+    name: str,
+    list_query_spec: ListQuerySpec | None,
+) -> None:
+    """Reject a source that resolves a list query the route would not expose.
+
+    Without a spec the derived list route registers the handler that takes no query
+    parameter, so the source's own dependency is never mounted and its filters vanish
+    silently. ``TaskExecutionApp`` checks the same pairing, but this seam is public and
+    wired directly, so it cannot rely on that.
+
+    :param source: The script source whose query knobs to check.
+    :param name: The app name, for the error message.
+    :param list_query_spec: The spec the caller supplied, if any.
+    :raises ValueError: When the source resolves a list query but no spec was supplied.
+    """
+    if list_query_spec is None and (
+        source.list_query_dep is not None or source.in_memory_list_query
+    ):
+        raise ValueError(
+            f"derive_script_routes: {name!r} source resolves a list query "
+            "(list_query_dep or in_memory_list_query) but no list_query_spec was "
+            "supplied, so the derived list route would expose none of it"
+        )
+
+
 def derive_script_routes(
     source: ScriptSource[Any],
     *,
@@ -1710,9 +1738,13 @@ def derive_script_routes(
         (plus ``search`` when the spec has searchable columns) via the SQL dependency
         or, for a source that sets ``in_memory_list_query``, the in-memory dependency;
         the resolved query is handed to ``source.list_scripts``. When ``None`` the
-        paginated route fetches the full set and returns a client-side slice.
+        paginated route fetches the full set and returns a client-side slice, so a
+        source that resolves a query is rejected rather than silently narrowed.
     :return: A plugin ``APIRouter`` carrying the derived script surface.
+    :raises ValueError: When the source resolves a list query (via ``list_query_dep``
+        or ``in_memory_list_query``) but no ``list_query_spec`` was supplied.
     """
+    _reject_unspecced_list_query(source, name=name, list_query_spec=list_query_spec)
     router = APIRouter()
     if source.static_schema is not None:
         schema_endpoint(router, source.static_schema)

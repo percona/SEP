@@ -22,7 +22,7 @@ execute-route factory.
 
 import functools
 import inspect
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -39,7 +39,7 @@ from sqlalchemy import column
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.list_query import ListQuerySpec
 from app.core.exceptions import HTTPConflictException
-from app.core.pagination import PaginatedResponse, Pagination
+from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
@@ -60,7 +60,10 @@ from app.sep.apps.framework.api import (
     schema_endpoint,
 )
 from app.sep.apps.framework.deps import make_task_dep
-from app.sep.apps.framework.list_query import apply_in_memory
+from app.sep.apps.framework.list_query import (
+    default_in_memory_query,
+    in_memory_list_scripts,
+)
 from app.sep.apps.framework.rules import (
     CardinalityRule,
     F,
@@ -1342,20 +1345,15 @@ def _make_script_source(
 ) -> ScriptSource[_StubScript]:
     """Build a minimal ``ScriptSource`` for ``derive_script_routes`` tests.
 
-    ``list_scripts`` honours the widened contract: an in-memory source replays
-    ``_STUB_SPEC`` over its rows when the route derives a query, and otherwise
-    fetches-all-then-slices.
+    ``list_scripts`` honours the widened contract through the same framework adapter a
+    real materializing source uses, so the stub cannot drift from production's shape.
     """
     scripts = rows if rows is not None else [_StubScript()]
 
-    async def _list_scripts(
-        list_query: object, pagination: Pagination | None
-    ) -> tuple[list[_StubScript], int]:
-        if list_query is not None and pagination is not None:
-            return apply_in_memory(scripts, _STUB_SPEC, list_query, pagination)
-        if pagination is not None:
-            return pagination.slice(scripts), len(scripts)
-        return scripts, len(scripts)
+    async def _materialize() -> list[_StubScript]:
+        return scripts
+
+    _list_scripts = in_memory_list_scripts(_materialize, _STUB_SPEC)
 
     async def _load_script(filename: str) -> _StubScript:
         return _StubScript(filename)
@@ -1638,6 +1636,43 @@ class TestDeriveScriptRoutesPaginatedList:
         body = response.json()
         assert body["total"] == 1
         assert body["items"] == []
+
+
+class TestDeriveScriptRoutesListQueryGuard:
+    """Pin that the seam refuses to silently drop a source's list query.
+
+    ``derive_script_routes`` is public and wired directly by callers outside
+    ``TaskExecutionApp``, so it cannot lean on the app-level validator: without a spec
+    it would register the no-query handler and quietly discard the source's filters.
+    """
+
+    def test_in_memory_source_without_spec_raises(self) -> None:
+        """Reject an in-memory source when no spec was supplied."""
+        with pytest.raises(ValueError, match="no list_query_spec was supplied"):
+            _script_router(
+                pagination_dep=make_pagination_dep(max_limit=50),
+                in_memory_list_query=True,
+            )
+
+    def test_source_with_list_query_dep_without_spec_raises(self) -> None:
+        """Reject a source supplying its own dependency when no spec was supplied."""
+        source = replace(
+            _make_script_source(),
+            list_query_dep=lambda: default_in_memory_query(_STUB_SPEC),
+        )
+
+        with pytest.raises(ValueError, match="no list_query_spec was supplied"):
+            derive_script_routes(
+                source,
+                name="test-scripts",
+                pagination_dep=make_pagination_dep(max_limit=50),
+            )
+
+    def test_plain_source_without_spec_is_accepted(self) -> None:
+        """Leave a source that resolves no query alone, so the guard is not too broad."""
+        router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
+
+        assert router.routes
 
 
 class TestDeriveScriptRoutesListQuerySeam:

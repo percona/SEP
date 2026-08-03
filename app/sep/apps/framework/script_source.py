@@ -189,14 +189,16 @@ class ScriptSource(Generic[S, Q]):
         one (built from the app's spec) with its own ``Query`` params, so the spec
         stays the single authority for the sortable allowlist while the route also
         carries the resource's base restrictions. When ``None`` (default) the
-        framework builds the dependency from the app's spec directly.
+        framework builds the dependency from the app's spec directly. Either way the
+        app must declare a spec, or the derived route exposes no query at all.
     :param in_memory_list_query: Whether the source materializes its whole set and
         applies sort/search/pagination in-process (a disk-backed source) rather than
         pushing them down to SQL. Selects which list-query dependency the framework
         builds for the app's :class:`~app.core.db.list_query.ListQuerySpec` — the
         in-memory dep (:func:`~app.sep.apps.framework.list_query.make_in_memory_list_query_dep`)
         when ``True``, the SQL dep (:func:`~app.core.db.list_query.make_list_query_dep`)
-        otherwise. Ignored when the app declares no spec.
+        otherwise. Meaningful only on a source with no ``list_query_dep``, which
+        supersedes it.
     """
 
     script_dir: Path
@@ -212,6 +214,24 @@ class ScriptSource(Generic[S, Q]):
     load_scripts: Callable[[Sequence[str]], Awaitable[Mapping[str, S]]] | None = None
     list_query_dep: Callable[..., Q] | None = None
     in_memory_list_query: bool = False
+
+    def __post_init__(self) -> None:
+        """Reject a source whose two list-query dependency knobs disagree.
+
+        The framework prefers ``list_query_dep`` when both are set, so
+        ``in_memory_list_query`` would be dropped without a word. The spec-coupled
+        half of this capability cannot be checked here — a source cannot see the app's
+        spec — and lives on ``TaskExecutionApp`` instead.
+
+        :raises ValueError: When ``in_memory_list_query`` is set on a source that also
+            supplies a ``list_query_dep``.
+        """
+        if self.list_query_dep is not None and self.in_memory_list_query:
+            raise ValueError(
+                "ScriptSource: list_query_dep supersedes the framework's in-memory "
+                "dependency; set in_memory_list_query only on a source with no "
+                "list_query_dep"
+            )
 
 
 def _validate_script_filename(filename: str) -> None:

@@ -43,6 +43,7 @@ from pydantic import (
     TypeAdapter,
 )
 
+from app.core.db.list_query import ListQuerySpec
 from app.core.pagination import make_pagination_dep, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.api import (
@@ -436,11 +437,13 @@ class TaskExecutionApp(BaseApp):
     capabilities_provider: Callable[..., BaseModel] | None = None
     service_type: ServiceTypeEnum | None = None
     list_filter: ListFilterConfig = Field(default_factory=ListFilterConfig)
-    # Typed ``Any`` (not ``ListQuerySpec``) because that Core dataclass declares its
-    # fields under ``from __future__ import annotations`` + ``TYPE_CHECKING`` imports,
-    # so pydantic cannot resolve them to build a schema even under ``SkipValidation``.
-    # It is a ``ListQuerySpec | None`` reference threaded verbatim into
-    # ``derive_script_routes``; never validated here.
+    # Typed ``Any`` rather than ``ListQuerySpec | None`` because even under
+    # ``SkipValidation`` pydantic walks the referenced dataclass to build a schema, and
+    # ``ListQuerySpec``'s fields resolve to SQLAlchemy's ``ColumnExpressionArgument`` —
+    # a generic alias over an internal ``_T`` TypeVar pydantic cannot resolve, so the
+    # model raises ``PydanticUserError`` on first instantiation. The real contract is a
+    # ``ListQuerySpec | None`` threaded verbatim into ``derive_script_routes``, enforced
+    # at construction by ``_validate_list_query`` instead of by the annotation.
     list_query_spec: SkipValidation[Any] = None
     response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
@@ -494,9 +497,9 @@ class TaskExecutionApp(BaseApp):
         """Reject an internally-inconsistent definition at construction.
 
         :raises ValueError: When the schema source, the create-payload path, the
-            connectivity references, the route knobs, the response/filter knobs, the
-            list-view columns, or the ``ArgFormat`` markers are inconsistent (see the
-            per-aspect helpers).
+            connectivity references, the route knobs, the list-query wiring, the
+            response/filter knobs, the list-view columns, or the ``ArgFormat`` markers
+            are inconsistent (see the per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
@@ -504,6 +507,7 @@ class TaskExecutionApp(BaseApp):
         self._validate_route_knobs()
         self._validate_detail_suppress()
         self._validate_list_suppress()
+        self._validate_list_query()
         self._validate_response_knobs()
         self._validate_view_columns()
         self._validate_arg_formats()
@@ -872,6 +876,53 @@ class TaskExecutionApp(BaseApp):
                 "TaskExecutionApp: capabilities.list=False suppresses the derived "
                 "list route but no custom GET / is registered in extra_routes; add "
                 "one or re-enable capabilities.list"
+            )
+
+    def _validate_list_query(self) -> None:
+        """Reject a half-wired server-side sort/search capability.
+
+        ``list_query_spec`` and the script source's query knobs are two halves of one
+        opt-in: ``derive_script_routes`` only exposes the sort and search params — and
+        only calls the source's ``list_query_dep`` — when the app declares a spec, so a
+        source configured to resolve a query under a spec-less app would have its
+        filters silently dropped rather than rejected. Enforced here, at construction,
+        because the annotation cannot carry the type (see the field comment).
+
+        :raises ValueError: When ``list_query_spec`` is not a ``ListQuerySpec``; when it
+            is set on an app with no ``script_source`` or under ``NO_PAGINATION``, both
+            of which derive no query-bearing list route; or when the source resolves a
+            list query while the app declares no spec.
+        """
+        if self.list_query_spec is not None and not isinstance(
+            self.list_query_spec, ListQuerySpec
+        ):
+            raise ValueError(
+                "TaskExecutionApp: list_query_spec must be a ListQuerySpec, got "
+                f"{type(self.list_query_spec).__name__}"
+            )
+        if self.list_query_spec is not None and self.script_source is None:
+            raise ValueError(
+                "TaskExecutionApp: list_query_spec backs only the derived script list "
+                "route; a model-first app derives its own list — drop list_query_spec"
+            )
+        if self.list_query_spec is not None and isinstance(
+            self.pagination, _NoPagination
+        ):
+            raise ValueError(
+                "TaskExecutionApp: the derived script list is unpaginated under "
+                "NO_PAGINATION and exposes no sort/search params — enable pagination "
+                "or drop list_query_spec"
+            )
+        source_resolves_query = self.script_source is not None and (
+            self.script_source.list_query_dep is not None
+            or self.script_source.in_memory_list_query
+        )
+        if source_resolves_query and self.list_query_spec is None:
+            raise ValueError(
+                "TaskExecutionApp: the script source resolves a list query, but the "
+                "derived list route only exposes one when list_query_spec is set — "
+                "set list_query_spec or drop the source's list_query_dep / "
+                "in_memory_list_query"
             )
 
     def _validate_detail_suppress(self) -> None:
