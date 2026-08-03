@@ -151,10 +151,8 @@ async def list_schemas_by_service(
     :param service: The resolved service dependency.
     :type service: Service
     :param pagination: Validated offset/limit query parameters.
-    :type pagination: Pagination
     :param list_query: The resolved sort/search produced at the request
         boundary.
-    :type list_query: ListQuery
     :param include_tables: Include nested tables in the response when set to
         any non-empty value. Defaults to compact mode (no tables).
     :type include_tables: str | None
