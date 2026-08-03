@@ -52,6 +52,8 @@ INFRASTRUCTURE_PACKAGES = frozenset({"framework", "shared"})
 
 DYNAMIC_IMPORT_CALLEES = frozenset({"import_module", "import_var"})
 
+DYNAMIC_IMPORT_TARGET_KEYWORDS = frozenset({"name", "path"})
+
 
 def _app_package_names(apps_root: Path) -> set[str]:
     """Return every activatable app package directory under ``app/sep/apps/``.
@@ -81,67 +83,90 @@ def _dynamic_import_target(node: ast.Call) -> str | None:
         if isinstance(callee, ast.Attribute)
         else getattr(callee, "id", None)
     )
-    if name not in DYNAMIC_IMPORT_CALLEES or not node.args:
+    if name not in DYNAMIC_IMPORT_CALLEES:
         return None
-    target = node.args[0]
+    target = next(
+        (
+            keyword.value
+            for keyword in node.keywords
+            if keyword.arg in DYNAMIC_IMPORT_TARGET_KEYWORDS
+        ),
+        node.args[0] if node.args else None,
+    )
     if not isinstance(target, ast.Constant) or not isinstance(target.value, str):
         return None
     return target.value.split(":", 1)[0]
 
 
-def _direct_import_edges(node: ast.AST) -> Iterator[tuple[str, int]]:
+def _absolute_base(node: ast.ImportFrom, package: str) -> str | None:
+    """Return the absolute dotted path ``node``'s module part resolves to.
+
+    :param node: The ``from ... import`` node to resolve.
+    :param package: The dotted package the importing module belongs to.
+    :return: The absolute module path, or ``None`` when the level climbs past
+        the package root.
+    """
+    if node.level == 0:
+        return node.module
+    anchor = package.split(".")[: len(package.split(".")) - node.level + 1]
+    if not anchor:
+        return None
+    return ".".join([*anchor, node.module] if node.module else anchor)
+
+
+def _direct_import_edges(node: ast.AST, package: str) -> Iterator[tuple[str, int]]:
     """Yield the import edges ``node`` itself declares, ignoring its children.
 
     A ``from ... import`` yields both its module and one path per alias, because
     ``from app.sep.apps import alerts`` names the loaded package in the alias
-    rather than in the module.
+    rather than in the module. A relative form is resolved against ``package``
+    first, so ``from .apps.alerts import config`` is classified exactly as its
+    absolute spelling would be.
 
     :param node: The node to classify.
+    :param package: The dotted package the importing module belongs to.
     :return: An iterator of dotted module paths with their line numbers.
     """
     if isinstance(node, ast.Import):
         for alias in node.names:
             yield alias.name, node.lineno
     elif isinstance(node, ast.ImportFrom):
-        if node.module and node.level == 0:
-            yield node.module, node.lineno
+        base = _absolute_base(node, package)
+        if base:
+            yield base, node.lineno
             for alias in node.names:
-                yield f"{node.module}.{alias.name}", node.lineno
+                yield f"{base}.{alias.name}", node.lineno
     elif isinstance(node, ast.Call):
         target = _dynamic_import_target(node)
         if target is not None:
             yield target, node.lineno
 
 
-def _runs_at_import(node: ast.AST) -> bool:
-    """Report whether ``node``'s own body executes when the module loads.
-
-    :param node: The child node to classify.
-    :return: Whether descending into it can reach import-time code.
-    """
-    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-        return False
-    return not _is_type_checking_guard(node)
-
-
-def _import_time_imports(node: ast.AST) -> Iterator[tuple[str, int]]:
+def _import_time_imports(node: ast.AST, package: str) -> Iterator[tuple[str, int]]:
     """Yield ``(module, lineno)`` for each import executed when the module loads.
 
     Descends the module body and class bodies -- both execute on import -- but
-    never into a function body or an ``if TYPE_CHECKING:`` guard, at any nesting
-    depth. :func:`ast.walk` cannot express that: it queues a node's children
-    before yielding the node, so skipping a ``FunctionDef`` mid-walk still lets
-    its already-queued body surface.
+    never into a function body, at any nesting depth. :func:`ast.walk` cannot
+    express that: it queues a node's children before yielding the node, so
+    skipping a ``FunctionDef`` mid-walk still lets its already-queued body
+    surface. An ``if TYPE_CHECKING:`` guard is descended on its ``else`` branch
+    only, since that is the branch a real interpreter runs.
 
     :param node: The module or nested node to descend.
+    :param package: The dotted package the importing module belongs to.
     :return: An iterator of dotted module paths with their line numbers.
     """
-    yield from _direct_import_edges(node)
+    yield from _direct_import_edges(node, package)
     if isinstance(node, ast.Import | ast.ImportFrom):
         return
     for child in ast.iter_child_nodes(node):
-        if _runs_at_import(child):
-            yield from _import_time_imports(child)
+        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        if _is_type_checking_guard(child):
+            for fallback in child.orelse:
+                yield from _import_time_imports(fallback, package)
+            continue
+        yield from _import_time_imports(child, package)
 
 
 def _is_type_checking_guard(node: ast.AST) -> bool:
@@ -156,6 +181,16 @@ def _is_type_checking_guard(node: ast.AST) -> bool:
     if isinstance(test, ast.Attribute):
         return test.attr == "TYPE_CHECKING"
     return isinstance(test, ast.Name) and test.id == "TYPE_CHECKING"
+
+
+def _package_of(path: Path) -> str:
+    """Return the dotted package a module resolves its relative imports against.
+
+    :param path: The source path to derive the package from.
+    :return: The dotted package name, which for an ``__init__.py`` is its own
+        directory.
+    """
+    return ".".join(path.relative_to(BASE_DIR).parts[:-1])
 
 
 def _core_module_paths() -> Iterator[Path]:
@@ -191,7 +226,7 @@ def _violations() -> list[str]:
     seen: set[tuple[Path, int]] = set()
     for path in _core_module_paths():
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for module, lineno in _import_time_imports(tree):
+        for module, lineno in _import_time_imports(tree, _package_of(path)):
             if _app_package_of(module, app_packages) is None:
                 continue
             if (path, lineno) in seen:
@@ -275,6 +310,34 @@ def test_no_core_module_imports_an_app_package() -> None:
             id="type-checking-guard",
         ),
         pytest.param(
+            "if TYPE_CHECKING:\n"
+            "    from app.sep.apps.alerts.config import AlertsSettings\n"
+            "else:\n"
+            "    from app.sep.apps.alerts.config import alerts_settings\n",
+            {"alerts"},
+            id="type-checking-guard-else-branch",
+        ),
+        pytest.param(
+            "from .apps.alerts.config import alerts_settings",
+            {"alerts"},
+            id="relative-same-level",
+        ),
+        pytest.param(
+            "from ..sep.apps.alerts.config import alerts_settings",
+            {"alerts"},
+            id="relative-parent-level",
+        ),
+        pytest.param(
+            "from . import apps",
+            set(),
+            id="relative-shared-package",
+        ),
+        pytest.param(
+            'import_var(path="app.sep.apps.alerts.config:alerts_settings")',
+            {"alerts"},
+            id="dynamic-keyword-target",
+        ),
+        pytest.param(
             "from app.sep.apps import labels, nav_icons",
             set(),
             id="shared-modules",
@@ -289,11 +352,16 @@ def test_no_core_module_imports_an_app_package() -> None:
 def test_import_time_edges_resolve_only_stripped_app_packages(
     source: str, expected: set[str]
 ) -> None:
-    """Resolve an app package only for edges that execute when the module loads."""
+    """Resolve an app package only for edges that execute when the module loads.
+
+    Each source is parsed as if it were a module in ``app.sep``, so the relative
+    cases resolve against the package a core module like ``app/sep/main.py``
+    would carry.
+    """
     app_packages = _app_package_names(APPS_ROOT)
     reached = {
         package
-        for module, _ in _import_time_imports(ast.parse(source))
+        for module, _ in _import_time_imports(ast.parse(source), "app.sep")
         if (package := _app_package_of(module, app_packages)) is not None
     }
     assert reached == expected
