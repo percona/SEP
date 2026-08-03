@@ -13,17 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the app.sep.apps.mysql_backups.models module."""
+"""Tests for the app.sep.apps.mysql_backups.forms module."""
 
 import pytest
 from pydantic import ValidationError
 
 from app.sep.apps.framework import BaseTaskResponse
-from app.sep.apps.mysql_backups.models import (
-    BackupConfigAll,
-    BackupTaskResponse,
-    BackupType,
-)
+from app.sep.apps.mysql_backups.forms import BackupConfigAll, BackupTaskResponse
+from app.sep.apps.mysql_backups.models import BackupType
 from app.tasks.models import TaskBackendEnum
 
 
@@ -134,7 +131,8 @@ class TestBackupTaskResponseModel:
         assert isinstance(response, BaseTaskResponse)
         assert dumped["backup_type"] == BackupType.MYDUMPER.value
         assert dumped["hostname"] == "db-host"
-        assert dumped["service_type"] is None
+        assert "service_type" not in dumped
+        assert "owner" not in dumped
         assert "anonymize_mask" in dumped
         assert "anonymized_entities" in dumped
         assert "connectivity_warning" in dumped

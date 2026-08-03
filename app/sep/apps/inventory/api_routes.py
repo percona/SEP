@@ -53,6 +53,7 @@ from app.core.pagination import (
     PaginationDep,
 )
 from app.sep.apps.framework.api import schema_endpoint
+from app.sep.apps.inventory.connectivity import probe_service_connectivity
 from app.sep.apps.inventory.deps import (
     AvailableSyncer,
     filter_syncers_by_name,
@@ -78,8 +79,9 @@ from app.sep.apps.inventory.models import (
 from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.inventory.sync import run_inventory_sync
 from app.sep.crud import SyncItemManager
-from app.sep.deps import InventoryAPI, SessionDep
+from app.sep.deps import CreatedServiceDep, InventoryAPI, SessionDep, TaskAPI
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.tasks.connectivity.models import ConnectivityCheckResponse
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
@@ -257,6 +259,32 @@ async def inventory_service_system_observation(
     return await inventory_api.get(
         inventory_system_observation_path("services", service_id)
     )
+
+
+@router.post("/services/{service_id:int}/check-connectivity/")
+async def inventory_service_check_connectivity(
+    service: CreatedServiceDep,
+    tasks_api: TaskAPI,
+) -> ConnectivityCheckResponse:
+    """Run a database connectivity probe for a service from its executor host.
+
+    Backs the React connectivity control on the service detail page. A probe
+    that ran but could not connect is reported as HTTP 200 with
+    ``success=false`` and the upstream message in ``error``; only a probe that
+    could not be attempted at all is an error status. This three-segment
+    literal path cannot collide with the two-segment
+    ``/{entity}/{item_id:int}`` detail matcher.
+
+    :param service: The service to probe, resolved from the path id.
+    :param tasks_api: Authenticated Tasks ``RemoteAPI`` client.
+    :return: The upstream probe result.
+    :raises HTTPBadRequestException: When the service cannot be probed —
+        unsupported type, missing node or port, or no executor registered for
+        the node address.
+    :raises HTTPBadGatewayException: When the Tasks API is unreachable or
+        returns an unparseable body.
+    """
+    return await probe_service_connectivity(service, tasks_api)
 
 
 @router.get("/{entity}/{item_id:int}")

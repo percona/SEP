@@ -17,41 +17,33 @@
 
 from typing import Annotated
 
-from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.sep.apps.framework.form_dsl import (
-    AppFormModel,
     ArgFormat,
-    HostRef,
     ServiceRef,
+    TaskFormModel,
     Ui,
 )
 
 
-class << class_prefix >>Form(AppFormModel):
+class << class_prefix >>Form(TaskFormModel):
     """Declare the create/update body and ``GET /schema`` source for << display_name_doc >>.
 
     The single source of the JSON request body the server validates *and* the
-    derived form. Replace these example fields with the task's real inputs:
-    ``task_name`` is required by the framework, the ``ServiceRef`` resolves the
-    target database service, the ``HostRef`` names the executor host the command
-    runs on, and each ``ArgFormat`` field becomes a CLI argument.
+    derived form. ``TaskFormModel`` supplies the shared Task-section fields —
+    ``task_name`` and the ``hostname`` executor host — so this model declares
+    only the task's own inputs. Replace the example fields below with the real
+    ones: the ``ServiceRef`` resolves the target database service, and each
+    ``ArgFormat`` field becomes a CLI argument.
 
-    :param task_name: The unique name of the task.
     :param service_id: The Inventory id of the target database service.
-    :param hostname: The executor host the command runs on.
     :param message: An example value argument passed to the command.
     """
 
-    task_name: Annotated[NonEmptyStr, Ui(section="Task")]
     service_id: Annotated[
         int,
         ServiceRef(service_types=(ServiceTypeEnum.<< service_type >>,)),
         Ui(label="Database Host", section="Task"),
-    ]
-    hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="Task")
     ]
     message: Annotated[
         str,

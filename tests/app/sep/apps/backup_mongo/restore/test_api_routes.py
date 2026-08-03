@@ -300,7 +300,8 @@ class TestRestoreMongoApiList:
         assert item["anonymize_mask"] == EMAIL_MASK
         assert item["anonymized_entities"] == EXPECTED_EMAIL_ENTITIES
         assert item["connectivity_warning"] is None
-        assert item["service_type"] == "mongodb"
+        assert "service_type" not in item
+        assert "owner" not in item
         assert item["hostname"] == "mongo-restore-host"
         assert item["backup_type"] == "pbm_logical"
         assert item["backup_source"] == "2026-04-29T10:00:00"
@@ -472,14 +473,14 @@ class TestRestoreMongoApiCreate:
         assert RESERVED_FORM_KEY not in restore_leg_post["data"]
         body = response.json()
         for field in (
-            "service_type",
             "anonymize_mask",
             "connectivity_warning",
             "anonymized_entities",
         ):
             assert field in body
         assert body["connectivity_warning"] is None
-        assert body["service_type"] == "mongodb"
+        assert "service_type" not in body
+        assert "owner" not in body
 
     def test_create_physical_posts_four_tasks(
         self,
@@ -663,7 +664,8 @@ class TestRestoreMongoApiDetail:
         assert body["anonymize_mask"] == EMAIL_MASK
         assert body["anonymized_entities"] == EXPECTED_EMAIL_ENTITIES
         assert body["connectivity_warning"] is None
-        assert body["service_type"] == "mongodb"
+        assert "service_type" not in body
+        assert "owner" not in body
         assert body["hostname"] == "mongo-restore-host"
         assert body["backup_type"] == "pbm_logical"
         assert body["backup_source"] == "2026-04-29T10:00:00"

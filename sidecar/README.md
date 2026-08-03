@@ -17,42 +17,88 @@ and Docker Hub registries.
 | `entrypoint.sh` | PID 1. Mints the broker credential for the container run, then hands off to `supervisord`. |
 | `supervisord.conf` | Runs `valkey`, three `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
+| `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables. |
+| `settings.embedded.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
 
 The image is built in **docker** manifest format rather than OCI, because OCI
 silently discards the `HEALTHCHECK` instruction.
 
-## Required runtime configuration
+## Runtime configuration
 
-`settings.yaml` is **not** baked into the image — it must be mounted at
-`/home/sep/app/settings.yaml`. The committed `production_docker` block does
-**not** satisfy this contract (it points at `sep-db`, `redis:6379` and
-`casdoor`, with TLS on), so mounting the repo's `settings.yaml` unchanged
-yields a container that never reaches a healthy state.
+`sidecar/settings.embedded.yaml` is baked into the image at
+`/home/sep/app/settings.yaml`, so the container comes up on a working
+PMM-embedded profile with no mount. It carries no secrets: the values that vary
+per deployment arrive as environment variables, which outrank the file.
 
-A conforming profile must provide:
+**Only one YAML file is ever loaded.** `PreEnvSettings.SETTINGS_FILE` names a
+single file and `YamlPrefixConfigSettingsSource` reads only that one — there is
+no baked-file-plus-overlay merge. So a **partial** override is
+environment-variable-only, and a **full** override is a bind mount at
+`/home/sep/app/settings.yaml`, which replaces the baked profile wholesale.
 
-| Setting | Required value | Why |
+### Deployment inputs
+
+Expanded by `settings-env.sh` into the canonical settings variables:
+
+| Input | Required | Default | Canonical destinations |
+|---|---|---|---|
+| `SECRET_KEY` | **yes** | — (fail fast) | already canonical (global `Settings`, no prefix) |
+| `SEP_DB_PASSWORD` | yes in practice | none | `SEP__DATABASE__PASSWORD`, `INVENTORY__DATABASE__PASSWORD`, `TASKS__DATABASE__PASSWORD`, and the assembled `CELERY__BEAT_DBURI` |
+| `SEP_DB_HOST` | no | `pmm-server` | `SEP__DATABASE__HOST`, `INVENTORY__DATABASE__HOST`, `TASKS__DATABASE__HOST`, `CELERY__BEAT_DBURI`, and the three supervisord wait loops |
+| `SEP_DB_PORT` | no | `5432` | same as `SEP_DB_HOST` |
+| `SEP_GRAFANA_TOKEN` | no | none | `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` |
+| `SEP_PMM_ENDPOINT` | no | `https://pmm-server:8443` | `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT` (with `/graph` appended) |
+| `SEP_NOMAD_ENDPOINT` | no | the profile's credential-free URL | `TASKS__NOMAD__ENDPOINT` |
+
+`SECRET_KEY` is the only input with no default — the container exits rather than
+start without one. It signs the framework's cookies and CSRF tokens and, when
+`SEP_INTERNAL_TOKEN` is unset, derives that token by HMAC, so it has to be both
+identical across the supervisord children and stable across restarts. The class
+default (`secrets.token_urlsafe(32)`) satisfies neither: it is evaluated per
+process, so each child would resolve a different key. Minting one per container
+run the way the bundled Valkey credential is minted would fix that and still
+break the second half — every session would be signed out and the inter-service
+token would rotate on each restart. Generate it once per deployment, persist it
+alongside the other deployment secrets, and pass it in.
+
+`SEP_GRAFANA_TOKEN` is optional and the container boots without it, but
+Grafana-backed sign-in and the PMM syncer stay inert until it is supplied — the
+profile ships an empty `service_account_token`, which is a valid `SecretStr`.
+The same shape means a *misspelled* token yields a silently inert provider
+rather than a startup error.
+
+Already canonical, so they are passed straight through with no expansion:
+
+| Input | Required | Notes |
 |---|---|---|
-| `<SVC>.DATABASE.HOST` / `.PORT` | `pmm-server` / `5432` | The migration one-shots wait on `nc -z pmm-server 5432`. |
-| `<SVC>.DATABASE.NAME` | `sep` / `inventory` / `tasks` | One database per service, owned by a shared least-privilege role. |
-| `SEP.UVICORN_PORT` | `9000` | `healthcheck.sh` probes loopback `:9000/health`. |
-| `INVENTORY.UVICORN_PORT` | `9001` | Probed by `healthcheck.sh`. |
-| `TASKS.UVICORN_PORT` | `9002` | Probed by `healthcheck.sh`. |
-| `<SVC>.UVICORN_HOST` | `0.0.0.0` | Ports are published out of the container. |
-| `<SVC>.SSL_CERTFILE` / `.SSL_KEYFILE` | `null` | The probe speaks plain HTTP on loopback. |
-| `SEP.INVENTORY_ENDPOINT` / `.TASKS_ENDPOINT` | `http://127.0.0.1:9001` / `:9002` | Inter-service calls stay inside the container. |
-| `AUTH.PROVIDER` | `grafana` | PMM's Grafana is the identity provider; there is no Casdoor. |
-| Celery broker | `redis://127.0.0.1:6379` | Served by the bundled Valkey. The credential is added at runtime — see below. |
+| `SEP_INTERNAL_TOKEN` | no | Derived from `SECRET_KEY` by HMAC when unset. Set it explicitly when PMM's nginx overlay pins a specific value. |
+| `BASE_URL` | no* | The side-car's address as reachable from Nomad task executors. *Required when tasks download scripts or artifacts. |
+
+Any canonical variable can also be set directly — an explicit
+`TASKS__DATABASE__HOST` outranks the one derived from `SEP_DB_HOST`. It overrides
+only itself, though: setting `SEP__DATABASE__PASSWORD` by hand leaves the other
+two services and `CELERY__BEAT_DBURI` on whatever `SEP_DB_PASSWORD` supplied, so
+prefer the deployment input when you want the value to fan out.
+
+### Not deployment inputs
+
+| Setting | Why it is fixed |
+|---|---|
+| Database user and name | PMM's `PMM_ENABLE_SEP` provisions exactly the `sep` role and `sep` database. |
+| Celery broker and result-backend URLs | Minted per container start — see below. |
+| Uvicorn hosts and ports | `healthcheck.sh` probes loopback `:9000`/`:9001`/`:9002`, so they are image contract. |
+| TLS certificate and key files | TLS is off inside the container; the probe speaks plain HTTP on loopback and PMM's nginx terminates TLS. |
 
 ### The broker credential is generated, not configured
 
 `entrypoint.sh` mints a random password per container start, writes it into a
 mode-`0600` Valkey config at `/tmp/valkey.conf`, and exports
 `CELERY__BROKER_URL` / `CELERY__RESULT_BACKEND` carrying it. Environment
-outranks the mounted `settings.yaml`, so a profile carrying the password-less
-`redis://127.0.0.1:6379` from the table above keeps working unchanged; the
+outranks the baked `settings.yaml`, so the password-less
+`redis://127.0.0.1:6379` the profile carries keeps working unchanged; the
 exported value wins. It also supersedes a `CELERY__BROKER_URL` passed to
-`docker run`, since only the generated credential opens the bundled broker.
+`docker run`, since only the generated credential opens the bundled broker —
+this is the one input the deployment-input table above deliberately excludes.
 Nothing external supplies the credential and nothing needs to know it.
 
 The password never reaches the command line, of either `valkey-server` or the
@@ -61,6 +107,34 @@ through `REDISCLI_AUTH`), because argv is readable by every process in the
 container's PID namespace. A container restart mints a fresh one, which is safe:
 the broker runs with `save ""` and `appendonly no`, so no broker state crosses
 restarts.
+
+## What the settings API will and will not change
+
+The image bakes `SETTINGS_OVERRIDE_ALLOWED_KEYS` — the exhaustive list of
+settings an administrator may change from the settings UI or API. Everything
+this container provisions is refused with `422`: the loopback endpoints and
+ports from the table above, the PMM connection and its API key, the whole Nomad
+subtree, the snippets source, sessions, security headers, and auth. What stays
+tunable is product behaviour: log level, PMM annotations, sync cadence, the
+footer and message-level display options, alerting policy and retention,
+anonymizer entities, and the task connectivity-check and log-retention
+settings.
+
+Rows written before the restriction applied — by a standalone deployment whose
+database was carried over, or by direct table access — are **inert**: the
+snapshot builder skips them, so the baked value is what the services read. They
+remain deletable through `DELETE /settings/<class>/<key>`, which is how an
+operator clears one; deleting a locked key that has no row answers `409`
+instead, since there is nothing to remove.
+
+`SETTINGS_OVERRIDE_ALLOWED_KEYS` is a general capability, not a side-car
+special case: any deployment can set it (bare env var, or a `default:` key in
+`settings.yaml`) to harden its own override surface. Leaving it unset — the
+default everywhere else — keeps every overridable setting overridable. It can
+never be changed through the API, only through the deployment's own
+configuration. Note that if this value later moves into the mounted profile,
+the `ENV` line in the Containerfile has to go: environment outranks
+`settings.yaml`, so the baked value would otherwise win permanently.
 
 ## Volumes
 

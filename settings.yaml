@@ -7,6 +7,17 @@ default:
   LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
   SSL_CAFILE: null
   BASE_URL: null
+  # Restrict which settings the override API may write. null (the default)
+  # imposes no restriction. A list turns every unlisted setting read-only:
+  # entries are "<SettingsClassName>.<KEY>", where KEY is a top-level field or a
+  # __-delimited nested path. Listing a setting that is already read-only
+  # changes nothing -- this only ever restricts. Applies to all three services.
+  SETTINGS_OVERRIDE_ALLOWED_KEYS: null
+  # SETTINGS_OVERRIDE_ALLOWED_KEYS:
+  #   - Settings.LOGGING
+  #   - Settings.PMM__annotations_enabled
+  #   - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
+  #   - TasksSettings.LOG_RETENTION_DAYS
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
     - http://127.0.0.1:8000
@@ -172,6 +183,17 @@ default:
     #         table_name: {source: literal, value: sn_customerservice_case}
     #         table_sys_id: {source: output, step: lookup, output: sys_id}
     #       reference_pointer: /result/sys_id
+    #
+    # Staging and housekeeping for the diagnostics sends that use the plan above.
+    # Read from YAML/env only (env prefix `SEP__ATW__`); defaults shown.
+    #   ATW:
+    #     bundle_dir: data/atw-bundles     # where a bundle is staged while it uploads
+    #     bundle_ttl: 3600                 # seconds before an abandoned bundle is reaped
+    #     cleanup_interval:                # `null` unregisters the sweep entirely
+    #       every: 15
+    #       period: minutes
+    #     stale_send_after: 3600           # seconds a send may stall before it is failed;
+    #                                      # must exceed the slowest legitimate send
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
@@ -243,6 +265,7 @@ development:
     SNIPPETS:
       SYNC_INTERVAL: 60 seconds
       ENABLE_MANUAL_SYNC: true
+      AUTO_APPROVE_BUILTIN_SNIPPETS: true
     INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
     TASKS_ENDPOINT: http://localhost:8000/api/tasks
     SECURITY_HEADERS:

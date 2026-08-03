@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Side-car PID 1: mint the bundled Valkey broker's credential for this container
-# run, then hand off to supervisord.
+# Side-car PID 1: expand the per-deployment inputs into canonical settings
+# variables, mint the bundled Valkey broker's credential for this container run,
+# then hand off to supervisord.
 #
 # The credential reaches valkey-server through a generated config file rather
 # than a --requirepass flag, and reaches healthcheck.sh by being read back out of
 # that file -- a HEALTHCHECK command runs in a fresh process that sees only the
 # image's ENV, never what this script exports.
 set -o errexit -o nounset -o pipefail
+
+# Sourced first, so a misconfigured container's first log line is the actionable
+# message rather than a Valkey mint that was never going to be reached.
+# shellcheck source=sidecar/settings-env.sh
+. /home/sep/app/settings-env.sh
 
 valkey_conf=/tmp/valkey.conf
 

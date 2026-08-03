@@ -24,7 +24,7 @@ import {
   setOnUnauthorized,
   setTokenProvider,
 } from '../src/client';
-import { postSession } from '../src/auth';
+import { postSession, postSessionExchange } from '../src/auth';
 import { ApiError } from '../src/errors';
 import { server } from './msw-server';
 
@@ -194,6 +194,35 @@ describe('postSession — ambient auto-login', () => {
     );
 
     await expect(postSession()).rejects.toBeInstanceOf(ApiError);
+    expect(onUnauth).not.toHaveBeenCalled();
+  });
+});
+
+describe('postSessionExchange — embedded-UI bearer', () => {
+  it('returns the exchange token shape on a 200 from /oauth/session/exchange', async () => {
+    server.use(
+      http.post(`${BASE}/api/oauth/session/exchange`, () =>
+        HttpResponse.json({ access_token: 'exchanged', expires_in: 300 }),
+      ),
+    );
+
+    await expect(postSessionExchange()).resolves.toEqual({
+      access_token: 'exchanged',
+      expires_in: 300,
+    });
+  });
+
+  it('rejects a 401 without invoking the unauthorized handler', async () => {
+    const onUnauth = vi.fn();
+    setOnUnauthorized(onUnauth);
+
+    server.use(
+      http.post(`${BASE}/api/oauth/session/exchange`, () =>
+        HttpResponse.json({ detail: 'no ambient session' }, { status: 401 }),
+      ),
+    );
+
+    await expect(postSessionExchange()).rejects.toBeInstanceOf(ApiError);
     expect(onUnauth).not.toHaveBeenCalled();
   });
 });
