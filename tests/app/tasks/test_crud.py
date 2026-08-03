@@ -27,7 +27,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db import ListQuery
 from app.core.db.list_query import build_search_predicate
-from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.db.utils import get_async_session_maker_from_engine, NullsLastOrdering
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.pagination import (
     DEFAULT_PAGINATION_LIMIT,
@@ -578,15 +578,27 @@ class TestTaskAndHistoryManagerGetOrdering:
 
     def test_task_manager_derives_default_sort_from_spec(self) -> None:
         """Return the Task ``list_query_spec`` default sort via ``_get_ordering``."""
-        assert list(
-            TaskManager._get_ordering()
-        ) == TaskManager.list_query_spec.resolve_sort(None)
+        ordering = list(TaskManager._get_ordering())
+        expected = TaskManager.list_query_spec.resolve_sort(None)
+
+        assert len(ordering) == len(expected)
+        assert isinstance(ordering[0], NullsLastOrdering)
+        assert isinstance(expected[0], NullsLastOrdering)
+        assert ordering[0].descending is expected[0].descending
+        assert ordering[0].column.compare(expected[0].column)
+        assert ordering[1].compare(expected[1])
 
     def test_task_history_manager_derives_default_sort_from_spec(self) -> None:
         """Return the history ``list_query_spec`` default sort via ``_get_ordering``."""
-        assert list(
-            TaskHistoryManager._get_ordering()
-        ) == TaskHistoryManager.list_query_spec.resolve_sort(None)
+        ordering = list(TaskHistoryManager._get_ordering())
+        expected = TaskHistoryManager.list_query_spec.resolve_sort(None)
+
+        assert len(ordering) == len(expected)
+        assert isinstance(ordering[0], NullsLastOrdering)
+        assert isinstance(expected[0], NullsLastOrdering)
+        assert ordering[0].descending is expected[0].descending
+        assert ordering[0].column.compare(expected[0].column)
+        assert ordering[1].compare(expected[1])
 
 
 class TestTaskHistoryManagerListByTaskNameOrdering:

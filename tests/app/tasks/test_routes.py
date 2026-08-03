@@ -543,9 +543,18 @@ async def test_list_task_history_excludes_internal_rows_before_pagination(
         TaskWrite.model_validate(TaskFactory.build(name="inventory-sync")),
     )
 
-    await TaskHistoryManager.save(session, build_task_history(user_task_a))
-    await TaskHistoryManager.save(session, build_task_history(user_task_b))
-    await TaskHistoryManager.save(session, build_task_history(internal_task))
+    # Distinct created_at values: utc_now() zeroes microseconds, so same-second
+    # inserts tie and the id ASC tie-breaker would keep the newest internal row
+    # off the first page under -created_at.
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    for task, created_at in (
+        (user_task_a, base),
+        (user_task_b, base + timedelta(minutes=1)),
+        (internal_task, base + timedelta(minutes=2)),
+    ):
+        history = build_task_history(task)
+        history.created_at = created_at
+        await TaskHistoryManager.save(session, history)
 
     unfiltered_response = test_client.get("/history/", params={"limit": 2})
     assert unfiltered_response.status_code == status.HTTP_200_OK
