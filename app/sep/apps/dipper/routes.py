@@ -17,10 +17,10 @@
 
 These Jinja2 routes are deprecated. The JSON API equivalents live under
 ``/api/apps/dipper/`` and the React UI consumes them via
-``frontend/packages/plugins/dipper``. Every response from this router
+``frontend/packages/apps/dipper``. Every response from this router
 carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
-hit; the routes remain mounted so users can fall back to the legacy UI
-while the React UI reaches full feature parity.
+hit; the React UI is at parity and the routes remain mounted only until
+the Jinja layer is removed.
 """
 
 import logging
