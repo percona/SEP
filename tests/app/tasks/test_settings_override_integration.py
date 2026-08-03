@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
+from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -166,6 +167,40 @@ async def test_log_retention_days_invalid_override_falls_back(
         )
     await refresh_all(lambda: override_session_maker, _tasks_proxies())
     assert baseline == tasks_settings.LOG_RETENTION_DAYS
+
+
+@pytest.mark.asyncio
+async def test_restricted_deployment_filters_withheld_rows(
+    override_session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assert a withheld key's row is filtered while an allowed one still lands."""
+    baseline = tasks_settings.STALENESS_THRESHOLD_SECONDS
+    monkeypatch.setattr(
+        settings,
+        "SETTINGS_OVERRIDE_ALLOWED_KEYS",
+        {"TasksSettings.LOG_RETENTION_DAYS"},
+    )
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="STALENESS_THRESHOLD_SECONDS",
+                value=_OVERRIDE_STALENESS_SECONDS,
+            ),
+        )
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="LOG_RETENTION_DAYS",
+                value=_OVERRIDE_LOG_RETENTION_DAYS,
+            ),
+        )
+    await refresh_all(lambda: override_session_maker, _tasks_proxies())
+    assert baseline == tasks_settings.STALENESS_THRESHOLD_SECONDS
+    assert tasks_settings.LOG_RETENTION_DAYS == _OVERRIDE_LOG_RETENTION_DAYS
 
 
 @pytest.mark.asyncio
