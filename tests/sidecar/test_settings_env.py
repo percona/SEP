@@ -18,6 +18,7 @@ import os
 import re
 import shlex
 import subprocess
+from urllib.parse import unquote, urlsplit
 
 import pytest
 
@@ -227,3 +228,24 @@ def test_derived_environment_resolves_against_the_baked_profile(
         settings_class().DATABASE.PASSWORD.get_secret_value()
         for settings_class in (SEPSettings, InventorySettings, TasksSettings)
     ] == ["pw", "pw", "pw"]
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_reserved_character_password_reaches_a_usable_service_dsn(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Assert the raw password each service receives still yields a parseable DSN.
+
+    The helper exports the password raw, so the encoding the beat URI gets from
+    the shell says nothing about the DSN the settings classes build from it.
+    """
+    password = "p@ss:w/rd"
+    environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD=password))
+    for name, value in environment.items():
+        if name not in SHELL_LOCAL_NAMES:
+            monkeypatch.setenv(name, value)
+
+    assert [
+        unquote(urlsplit(settings_class().DATABASE.URL).password)
+        for settings_class in (SEPSettings, InventorySettings, TasksSettings)
+    ] == [password, password, password]
