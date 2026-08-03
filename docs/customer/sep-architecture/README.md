@@ -51,7 +51,7 @@ It is **not** a per-task data flow, retention policy, or driver/sandbox specific
 
 ## Topology summary
 
-- **Ingress.** The Percona engineer or DBA reaches the SEP UI over HTTPS on port `8444`. Nginx terminates TLS and serves the React SPA from a build-time bundle (`/home/sep/app/frontend/dist`), forwarding `/api/`, `/legacy/`, and SSE paths to the FastAPI `app` container on internal port `9000`. Port `9999` exposes the Casdoor login UI through the same Nginx, also TLS-terminated. No SSH tunnel.
+- **Ingress.** The Percona engineer or DBA reaches the SEP UI over HTTPS on port `8444`. Nginx terminates TLS and serves the React SPA from a build-time bundle (`/home/sep/app/frontend/dist`), forwarding `/api/`, `/artifacts/`, and SSE paths to the FastAPI `app` container on internal port `9000`. Port `9999` exposes the Casdoor login UI through the same Nginx, also TLS-terminated. No SSH tunnel.
 - **Authentication.** Human users sign in via **Casdoor** (OAuth 2.0 / OIDC). The SEP App validates Casdoor JWTs and rotates refresh tokens via an `HttpOnly` cookie. Casdoor runs inside the SEP stack as a containerized IdP — there is no external user-cert login.
 - **API gateway.** The SEP App is the only FastAPI process exposed through Nginx. `Inventory API` and `Tasks API` listen on internal ports `9001` / `9002` and are reached only through the SEP App (`SEP.INVENTORY_ENDPOINT`, `SEP.TASKS_ENDPOINT` in the rendered `settings.yaml`).
 - **Background.** Celery beat schedules periodic tasks (including a TLS-cert-expiry check for Nomad). Celery worker consumes the queue, dispatches Nomad jobs, syncs task state, and pushes PMM annotations.
@@ -97,7 +97,7 @@ Every node and cross-subgraph edge in `sep-architecture.mmd` traces to one of th
 
 | Diagram element | Pinned in |
 |-----------------|-----------|
-| `Nginx` ingress, TLS, React SPA path, `/api/` `/legacy/` `/stream-logs/` upstream | `NGINX_CONFIG` blob → `nginx.conf` (`server { listen 8444 ssl; … proxy_pass https://app:9000 }`, `server { listen 9999 ssl; … proxy_pass http://casdoor:8000 }`) |
+| `Nginx` ingress, TLS, React SPA path, `/api/` `/artifacts/` `/stream-logs/` upstream | `NGINX_CONFIG` blob → `nginx.conf` (`server { listen 8444 ssl; … proxy_pass https://app:9000 }`, `server { listen 9999 ssl; … proxy_pass http://casdoor:8000 }`) |
 | `Casdoor` IdP, seeded `sep` organization + `sep-app` application | `CASDOOR_INIT_JSON_DATA` blob → `casdoor_init.json` (organizations[0].name `sep`, applications[0].name `sep-app`); compose service `casdoor` on internal port 8000 |
 | `SEP App` on port 9000, `Inventory API` on 9001, `Tasks API` on 9002 | `SEP_COMPOSE_YAML` blob → `compose.yaml` services `app`, `inventory_api`, `tasks_api`; `SEP_SETTINGS_YAML` blob → `settings.yaml` keys `SEP.INVENTORY_ENDPOINT`, `SEP.TASKS_ENDPOINT` |
 | `Celery beat`, `Celery worker` | `compose.yaml` services `celery_beat`, `celery_worker`; `app/celery.py` (shared Celery app); `app/tasks/celery.py` (`execute_task_queue`, `sync_running_tasks`, `check_nomad_cert_expiry`) |

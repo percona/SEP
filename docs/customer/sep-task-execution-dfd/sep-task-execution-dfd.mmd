@@ -106,7 +106,7 @@ flowchart LR
 
     subgraph transportNote ["Transport security (not user identity)"]
         direction LR
-        T_HTTPS["Browser ↔ Nginx: HTTPS<br/>fronts SEP UI, /api, /legacy, Casdoor /oauth"]
+        T_HTTPS["Browser ↔ Nginx: HTTPS<br/>fronts SEP UI, /api, /artifacts, Casdoor /oauth"]
         T_Internal["Nginx ↔ SEP FastAPI: HTTP loopback"]
         T_mTLS["SEP ↔ Tasks / Inventory: mTLS"]
         T_NomadTLS["Tasks ↔ Nomad: mTLS<br/>Nomad PKI customer-supplied for external Nomad"]

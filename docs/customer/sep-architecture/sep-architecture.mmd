@@ -74,7 +74,7 @@ flowchart TB
     Engineer -. "HTTPS :9999<br/>Casdoor login UI" .-> Nginx
 
     %% Nginx → upstream
-    Nginx -- "/api/, /legacy/, SSE" --> SEPApp
+    Nginx -- "/api/, /artifacts/, SSE" --> SEPApp
     Nginx -- "Casdoor login" --> Casdoor
 
     %% SEP App auth + API gateway

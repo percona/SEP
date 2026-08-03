@@ -68,7 +68,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
-| 5.1 | Browser ↔ Nginx ingress: HTTPS (Nginx terminates TLS and fronts SEP UI, `/api/*`, `/legacy/*`, and Casdoor `/oauth/*`) | ☐ | ☐ | |
+| 5.1 | Browser ↔ Nginx ingress: HTTPS (Nginx terminates TLS and fronts SEP UI, `/api/*`, signed artifact downloads at `/artifacts/*`, and Casdoor `/oauth/*`) | ☐ | ☐ | |
 | 5.2 | SEP ↔ Tasks/Inventory: mTLS with client certs | ☐ | ☐ | |
 | 5.3 | Tasks ↔ Nomad API: TLS/mTLS per deployment config | ☐ | ☐ | |
 

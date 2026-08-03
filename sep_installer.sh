@@ -321,7 +321,7 @@ def strip_marker(content, marker, keep):
 def cmd_render_templates(args):
     install_dir = args.install_dir
     create_pmm = os.environ.get("CREATE_PMM_CONTAINER", "0") == "1"
-    serve_frontend = os.environ.get("SEP_SERVE_FRONTEND", "0") == "1"
+    serve_frontend = os.environ.get("SEP_SERVE_FRONTEND", "1") == "1"
     files_map = [("CASDOOR_INIT_JSON_DATA", "casdoor_init.json"), ("NGINX_CONFIG", "nginx.conf"), ("SEP_COMPOSE_YAML", "compose.yaml"), ("SEP_SETTINGS_YAML", "settings.yaml")]
     replacements = {
         "${SEP_HTTP_PORT}": os.environ.get("SEP_HTTP_PORT", ""),
@@ -851,7 +851,7 @@ DEFAULT_CONTAINER_REGISTRY="${CONTAINER_REGISTRY:-docker.io}"
 INSTALL_DIR="${INSTALL_DIR:-"${HOME}/sep"}"
 SEP_IMAGE_NAME="${SEP_IMAGE_NAME:-${DEFAULT_CONTAINER_REGISTRY}/percona/percona-sep}"
 SEP_IMAGE_TAG="${SEP_IMAGE_TAG:-latest}"
-SEP_SERVE_FRONTEND="${SEP_SERVE_FRONTEND:-0}"
+SEP_SERVE_FRONTEND="${SEP_SERVE_FRONTEND:-1}"
 SEP_HTTP_PORT="${SEP_HTTP_PORT:-8080}"
 SEP_HTTPS_PORT="${SEP_HTTPS_PORT:-8444}"
 SEP_PMM_PUBLIC_HOST="${SEP_PMM_PUBLIC_HOST:-127.0.0.1}"
@@ -927,6 +927,8 @@ OPTIONS
 
 ENVIRONMENT
   NO_COLOR                 Suppress all color/styling output (see https://no-color.org/)
+  SEP_SERVE_FRONTEND       Serve the React SPA from nginx (Default: 1). Set to 0 to
+                           restore the legacy Jinja UI instead.
 
 EXAMPLES
   ./sep_installer.sh --http-port 9090
@@ -1882,21 +1884,21 @@ fUWlH/pG1Dz7zkei70yedqC6nm+N29xmp76fdT77Kh4Kq0KxdgxjNzmapknv7BxtS/dd5I/o/mvn
 83ljj++A0Qb2OlXR9Qupz0TGVa/70XQWX8T9cBYtrpLxyP+M0tw1F67h4W3AZBrfovN1dFcFPN8/
 /wBn+Or2gwoAAA=='
 
-NGINX_CONFIG='H4sIAAAAAAACA+1XbW/bNhD+nl9xSAS0HSpLTrw1cRAMQ9eg/ZIGTQb0QwGBpk4SG4rkSCqxO22/
-fUe/xI6cuGlRoAVqApbou6Pu7rkXkjUzEFXem6wxpWU5QsS1Usi90OqW9s8O0MixYI30MKceT4lP
-ngCX2tG/f3d2HNprtHNxKZxHBYfpYToTnXEzxWoEqTmTlXb+DsvrK1QOdFHMyBZ9YxUcpH0INrph
-kkRhUWTx7wadzxorHlY8GAzAObmuPHtQ6YzuZMbRelEIzjxCgp4nqhRqnDg0cWD1DNbH9wlnVzjp
-LiDSTH66gEuBymc1G2cjnU8yJz4h9BfcgEuAHk4gqZBJX32aexUG4xydy6QulxhN6XmekXROELzU
-ipz38eXEIHgc+8RIJtRSdo7pfprCrr76oHZnLAJxL47j03dvzy5fnf1J0701g4TKcdyrfC1XbLJa
-e7JV1xicTZgxSWGnRuRJLhYBDgPHRlh0D5vOeIVxcMBqCbtKxzxQdoHJGzZxt3beMeu/X+BD7+nv
-w4+u5c61RpXtRxN+WLalKFrBdeuuy/YGR6a9IdXTx37rfdGi9s+ir3LF20lWCEnORJSCcDJIB+t+
-9iePcdM0Iyn4c6CEiFmJJwf9Xw9+S9P0OYi6bjwbyc8gkHwLD8IjWY3wQtdaUgTC2dsNibJqj7F6
-PMkMc+62gMmm4RH5d9wRcugXCL2mEp93pWWLuFfyffyOiiR+cw7UEmpN9UdA240LTrW9YTbHPMwg
-mkmE8IyzYsEKs0d+5NxqryFyFNMaN6z5a9FeV5vtBvmXt134vo7cXWgxp5Tj/m5tzXijpijQClXe
-x7SkLfOiRt142B9UXf7UWuqSLhjS7/VX06KbBZ00YEZsU+EnSIVO2CWWjE+2kd8QkDlme3DJ3BWE
-3fzi4hUwldPmLOkQQW+KAbXmp4raeaOCulBOz46hbgiVQC2YlOArEiwrIOUX53/Asnv3OkFxnqJb
-x6TKbSPz89UkjpE3YRrjNR0OtznwiOpcojc9Jm0h+xLInKcJ32K2EbMH7q1HNH7Aeytaqy0FsEQY
-HL1Yv5MPo7ldRtvOBf3R9wP6Fmcu19oOD7d70Hfdg0J6/g85gkSAHRIAAA=='
+NGINX_CONFIG='H4sIAAAAAAACA+1XbW/bNhD+nl9xSAQ0HSpLTrw2cRAMQ9ai/ZIGTQb0QwGBpk4SG4rkSCqxW7W/
+fUe/xI6duElRYANiApbouyN599zDo1gzA1HlvckaU1qWI0RcK4XcC61uZF+3gFqOBWukh6n0aCx8
+9gy41I7+fdvacmiv0E7NpXAeFRykB+nEdKLNFKsRpOZMVtr5WyqvL1E50EUxEVv0jVWwn3Yh+Oj6
+SRKFQZHFfxp0PmusuH/hXq8HzsnVxbN7F53Incw4Wi8KwZlHSNDzRJVCDROHJg6qjsH66C7j7BJH
+ywNINLEfD+BSoPJZzYbZQOejzIkvCN2ZNuASoIdjSCpk0ldfplGFxjhH5zKpyzlGY3meZ2SdEwQn
+WlHwPr4YGQSPQ58YyYSa204x3UtT2NaXn9T2REUg7sRx/ObD+9OL16d/UXdnxSGhchx2Kl/LBZ+s
+1p581TWGYBNmTFLYsRN5kotZgkPDoREW3f2uM15hHAKwWsK20jEPkm1g8pqN3I2ft9z6/ht86uz+
+0f/sWu5ca1TZfjbhh2VbiqIVXLfuqmyvcWDaa1p6/NhrvS9a1P559FOheDvKCiEpmIgoCMe9tLca
+Z3f0kDBNM5CCvwAiRMxKPN7v/r7/Mk3TFyDquvFsIH+AQPIrIgiPZDHDs7VWSBEEp+/XEGXRH2P1
+cJQZ5tzNBiaf+ocU39GSkUM/Q+gtbfFpVZqXiDstP8YfaJPE786ASkKtaf8R0HbtgDfaXjObYx56
+EE0sQnqGWTFThd4DJzmz2muIHOW0xjVj/p6V18Viu8b+5KYK31WRlwdazIly3N/eWxPdoCkKtEKV
+dyktrZZ5UaNuPOz1qmX92Fuqki440u10F2mxzIIlGjAjNlR4AlQYv3bggrlLCCfT+flrYCqng0bS
+gUhvmo/KzK6i0tSoEFCgxvMjqBvKbZAWTErwFRmWFRCE52d/wrwSdZZ45Tx5Wse0lNvw66nwa55+
+HCJvQjfGK/rQ2XBgXWpW0Bsf+RvIHgMZCx/3jG+Y9jjYnKcO32C2FrN7rq6H1P6HV1e0VltKYInQ
+O3y1ei3vR1O/jLZLd/QHXxFoLs5crrXtH2yO7v/06A70/Bcf7DPaIBIAAA=='
 
 SEP_COMPOSE_YAML='H4sIAAAAAAACA+1ZWXPbthZ+16/AKBmnTQ2SkmUnwa0faIuxNdU2WrrMnQ4HImGLNbeAkBIl1X/v
 AbhYEilbaW/jdHqdGYU4G4CzfAckMMa1Z2jpBQSFEfVIGDFRq33ANPYwC5cej8KAhYLUENocoqMd
