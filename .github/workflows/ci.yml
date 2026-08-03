@@ -74,14 +74,12 @@ jobs:
               - 'frontend/packages/api/specs/**'
             precommit:
               - '.pre-commit-config.yaml'
-              # Exercise precommit-* jobs when the CI workflow that defines them changes.
               - '.github/workflows/ci.yml'
             shell:
               - '**/*.sh'
             frontend:
               - 'frontend/**'
               - 'package.json'
-              # Shared frontend setup; edits must re-run frontend/precommit-frontend jobs.
               - '.github/actions/setup-frontend-job/**'
             docker:
               - 'Containerfile'
