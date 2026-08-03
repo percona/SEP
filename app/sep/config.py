@@ -694,7 +694,7 @@ class SEPSettings(BaseYamlAppSettings):
     )
     APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
-    CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
+    CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=False)
     AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(
         default=False,
         description=(

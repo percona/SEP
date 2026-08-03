@@ -298,6 +298,24 @@ class TestSepSettingsList:
         )
         assert sep_setting["has_override"] is False
 
+    async def test_connectivity_check_default_advertises_false(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Assert the LIST payload advertises the declared default as ``False``.
+
+        ``default_value`` is dumped from the declared field default rather than
+        the resolved value, so it reports what a settings profile that omits the
+        key resolves to.
+        """
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        sep_setting = _find_setting(
+            response.json(),
+            SettingClassEnum.SEP_SETTINGS.value,
+            "CONNECTIVITY_CHECK_DEFAULT",
+        )
+        assert sep_setting["default_value"] is False
+
     async def test_session_parent_expanded_into_leaves(
         self, api_admin_client: TestClient
     ) -> None:
