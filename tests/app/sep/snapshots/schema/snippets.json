@@ -1,4 +1,11 @@
 {
+  "capabilities": {
+    "alert_on_fail": false,
+    "chaining": false,
+    "pii_anonymization": false,
+    "scheduling": false,
+    "stats": false
+  },
   "description": "Discover and execute pre-approved support snippets against registered executor hosts.",
   "display_name": "Snippet Manager",
   "forms": [],
