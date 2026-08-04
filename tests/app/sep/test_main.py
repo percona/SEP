@@ -62,6 +62,21 @@ from app.sep.snippets.config import snippets_settings
 from tests.app.factories import OAuthTokenFactory
 from tests.app.sep.conftest import REDUCED_ACTIVATION
 
+_ORIGINAL_SEP_APP = main_module.sep_app
+
+
+def _reload_restoring_identity() -> None:
+    """Reload ``app.sep.main`` and put the original ``sep_app`` object back.
+
+    ``importlib.reload`` re-executes the module in the same ``__dict__``,
+    rebuilding ``sep_app`` as a new object while every consumer that did
+    ``from app.sep.main import sep_app`` still holds the discarded one.
+    Restoring the original binding keeps those consumers live; the rebuilt
+    app is built over the real registry, so the two are interchangeable.
+    """
+    importlib.reload(main_module)
+    main_module.sep_app = _ORIGINAL_SEP_APP
+
 
 def _route_has_app_guard(route) -> bool:
     """Return whether a route carries the ``require_app_enabled`` guard.
