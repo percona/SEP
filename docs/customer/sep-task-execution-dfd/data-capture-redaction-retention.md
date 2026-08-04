@@ -35,7 +35,22 @@ SEP has an optional anonymization filter for task logs and task output files. Th
 - SEP controls which entity categories are enabled through an integer `anonymize_mask` on tasks and task history records.
 - If a task does not set an explicit mask, SEP can use the configured default entities from `TASKS.ANONYMIZER.DEFAULT_ENTITIES`.
 
-The current default settings file configures `TASKS.ANONYMIZER.DEFAULT_ENTITIES: "*"`, meaning all SEP-supported Presidio entities are selected by default when a task or execution does not override the mask. Existing or explicitly configured tasks can still set `anonymize_mask` to `0`, which disables anonymization for that task.
+The current default settings file configures `TASKS.ANONYMIZER.DEFAULT_ENTITIES` to the following high-confidence set when a task or execution does not override the mask:
+
+- `CREDIT_CARD`
+- `EMAIL_ADDRESS`
+- `IBAN_CODE`
+- `IP_ADDRESS`
+- `PHONE_NUMBER`
+- `US_SSN`
+- `US_ITIN`
+
+These are checksum-validated or strong-regex recognizers suited to database-tool logs (DSN strings, DDL, row counts, offsets, LSNs, and GTIDs). The following supported entities are intentionally excluded from the shipped default because they corrupt operational detail or collide with numeric tool output:
+
+- `PERSON`, `LOCATION`, and `NRP` (spaCy NER) misread hostnames, `schema.table` names, column names, and tool names as people or places.
+- `US_BANK_NUMBER`, `US_PASSPORT`, `US_DRIVER_LICENSE`, and `MEDICAL_LICENSE` are loose numeric patterns that collide with row counts, byte offsets, LSNs, and GTIDs.
+
+The `development:` profile overrides `DEFAULT_ENTITIES` to an empty list so local task-log and pulled-file reads perform no anonymization. Existing or explicitly configured tasks can still set `anonymize_mask` to `0`, which disables anonymization for that task. Any of the fourteen SEP-supported entities below can be restored through `settings.yaml` or a runtime settings override without a code change.
 
 SEP-supported PII entity categories are:
 
