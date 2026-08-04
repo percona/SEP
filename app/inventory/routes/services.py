@@ -21,6 +21,7 @@ from fastapi import APIRouter, status
 from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
+from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import (
@@ -106,9 +107,18 @@ async def retrieve_service_system_observation(
     service: ServiceDep,
 ) -> ServiceSystemObservationResponse:
     """Retrieve service system observation for a service."""
-    return await ServiceSystemObservationManager.get_or_404(
+    # A service that exists but was never visited by the system-facts syncer is a
+    # normal state, so raise with a distinct detail rather than through get_or_404(),
+    # whose default detail is indistinguishable from the missing-service 404 that
+    # ServiceDep raises.
+    observation = await ServiceSystemObservationManager.first(
         session, service_id=service.id
     )
+    if observation is None:
+        raise HTTPNotFoundException(
+            detail="System observation not collected yet for this service"
+        )
+    return observation
 
 
 @router.put("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])

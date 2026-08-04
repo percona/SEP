@@ -20,7 +20,7 @@ import logging
 from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
@@ -116,7 +116,15 @@ async def retrieve_host_system_observation(
     node: NodeDep,
 ) -> HostSystemObservationResponse:
     """Retrieve host system observation for a node."""
-    return await HostSystemObservationManager.get_or_404(session, node_id=node.id)
+    # A node that exists but was never visited by the system-facts syncer is a normal
+    # state, so raise with a distinct detail rather than through get_or_404(), whose
+    # default detail is indistinguishable from the missing-node 404 NodeDep raises.
+    observation = await HostSystemObservationManager.first(session, node_id=node.id)
+    if observation is None:
+        raise HTTPNotFoundException(
+            detail="System observation not collected yet for this node"
+        )
+    return observation
 
 
 @router.put("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])

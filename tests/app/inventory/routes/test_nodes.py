@@ -29,6 +29,10 @@ from tests.app.factories import (
 CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
 
+# Pinned verbatim rather than imported from the route: the wording is part of the
+# API contract, so a route-side edit must fail the test.
+UNCOLLECTED_NODE_DETAIL = "System observation not collected yet for this node"
+
 
 class TestListNodes:
     """Test the GET /nodes/ endpoint."""
@@ -417,16 +421,36 @@ class TestRetrieveHostSystemObservation:
     def test_retrieve_host_system_observation_404_when_no_observation(
         self, test_client: TestClient, node: Node
     ) -> None:
-        """Return 404 when node exists but no observation has been collected yet."""
+        """Return 404 with the uncollected detail when the node has no observation."""
         response = test_client.get(f"/nodes/{node.id}/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == UNCOLLECTED_NODE_DETAIL
 
     def test_retrieve_host_system_observation_404_when_node_not_found(
         self, test_client: TestClient
     ) -> None:
-        """Return 404 when the node ID does not exist."""
+        """Return 404 with the default detail when the node ID does not exist."""
         response = test_client.get("/nodes/99999/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Not Found"
+
+    def test_retrieve_host_system_observation_404_for_another_nodes_observation(
+        self,
+        test_client: TestClient,
+        node: Node,
+        host_observation: HostSystemObservation,
+    ) -> None:
+        """Never surface one node's observation when reading a sibling node."""
+        other = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert other.status_code == status.HTTP_201_CREATED
+        other_node_id = other.json()["id"]
+        assert other_node_id != node.id
+
+        response = test_client.get(f"/nodes/{other_node_id}/system-observation")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == UNCOLLECTED_NODE_DETAIL
 
 
 class TestUpsertHostSystemObservation:

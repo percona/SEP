@@ -237,6 +237,9 @@ async def inventory_node_system_observation(
     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
     :return: The host-level system observation payload.
     """
+    # Upstream splits that 404 in two by detail -- no facts collected yet, versus no
+    # such node at all -- and RemoteAPI forwards the detail verbatim, so both reach
+    # the caller without handling here.
     return await inventory_api.get(inventory_system_observation_path("nodes", node_id))
 
 
@@ -256,6 +259,8 @@ async def inventory_service_system_observation(
     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
     :return: The service-level system observation payload.
     """
+    # See the node proxy above: upstream splits that 404 in two by detail, forwarded
+    # verbatim by RemoteAPI.
     return await inventory_api.get(
         inventory_system_observation_path("services", service_id)
     )

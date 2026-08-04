@@ -29,6 +29,10 @@ from tests.app.factories import (
 
 OFFSET_BEYOND_TOTAL = 999
 
+# Pinned verbatim rather than imported from the route: the wording is part of the
+# API contract, so a route-side edit must fail the test.
+UNCOLLECTED_SERVICE_DETAIL = "System observation not collected yet for this service"
+
 
 class TestListServices:
     """Test GET /services/ endpoint."""
@@ -448,16 +452,38 @@ class TestRetrieveServiceSystemObservation:
     def test_retrieve_service_system_observation_404_when_no_observation(
         self, test_client: TestClient, service: Service
     ) -> None:
-        """Return 404 when service exists but no observation has been collected yet."""
+        """Return 404 with the uncollected detail when the service has no observation."""
         response = test_client.get(f"/services/{service.id}/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == UNCOLLECTED_SERVICE_DETAIL
 
     def test_retrieve_service_system_observation_404_when_service_not_found(
         self, test_client: TestClient
     ) -> None:
-        """Return 404 when the service ID does not exist."""
+        """Return 404 with the default detail when the service ID does not exist."""
         response = test_client.get("/services/99999/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Not Found"
+
+    def test_retrieve_service_system_observation_404_for_another_services_observation(
+        self,
+        test_client: TestClient,
+        node: Node,
+        service: Service,
+        service_observation: ServiceSystemObservation,
+    ) -> None:
+        """Never surface one service's observation when reading a sibling service."""
+        other = test_client.post(
+            f"/nodes/{node.id}/services/",
+            json=ServiceWriteFactory.build().model_dump(mode="json"),
+        )
+        assert other.status_code == status.HTTP_201_CREATED
+        other_service_id = other.json()["id"]
+        assert other_service_id != service.id
+
+        response = test_client.get(f"/services/{other_service_id}/system-observation")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == UNCOLLECTED_SERVICE_DETAIL
 
 
 class TestUpsertServiceSystemObservation:
