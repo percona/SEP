@@ -657,6 +657,20 @@ def jinja_free_registry() -> AppRegistry:
     )
 
 
+def test_reload_helpers_restore_sep_app_identity(mocker, jinja_free_registry):
+    """Reload-based helpers must leave ``sep_app``'s identity intact.
+
+    Consumers across ~53 modules bind ``sep_app`` by value at import. A reload
+    that leaves a rebuilt object in the module dict silently strands them.
+    """
+    assert main_module.sep_app is sep_app
+
+    with _reloaded_against(mocker, jinja_free_registry) as rebuilt:
+        assert rebuilt is not sep_app
+
+    assert main_module.sep_app is sep_app
+
+
 class TestJinjaDecoupledMounts:
     """Cover the shared data surface's independence from Jinja-router mounting."""
 
