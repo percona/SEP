@@ -58,9 +58,10 @@ def build_sep_override_proxies() -> ProxyRegistry:
     the Tasks database.
 
     ``collect_app_owned_settings_classes`` imports every activated app module,
-    so this runs at call time, never at import: an import-time edge into
-    ``app.sep.apps.<app>`` from outside that tree breaks the import boundary and
-    the side-car image, which strips non-activated app packages.
+    so this runs at call time, never at import: this module is itself named in
+    ``STATIC_CELERY_INCLUDE``, so reaching the app tree at its module scope
+    would import every activated app during include-import, alongside the app
+    ``celery.py`` modules being imported from the same list.
 
     :return: The wired proxy registry keyed by class identifier.
     :raises TypeError: Propagates from ``collect_app_owned_settings_classes``
@@ -136,16 +137,20 @@ def start_sep_settings_override_refresher(**_: Any) -> None:
     ``celery.loop.run_until_complete``; the initial inline refresh still seeds
     the snapshot before this handler returns.
 
-    ``messages_settings._resolve()`` runs unconditionally for fail-fast
-    validation even when the refresher is disabled, mirroring
-    ``sep_overrides_lifespan``.
+    ``messages_settings._resolve()`` runs unconditionally for validation even
+    when the refresher is disabled, as ``sep_overrides_lifespan`` does. The two
+    differ in consequence: the lifespan's call aborts startup, while Celery
+    catches and logs whatever a signal receiver raises, so an invalid config
+    here leaves the child running without this refresher.
 
     :raises ValidationError: Propagates from ``messages_settings._resolve()``
-        when the messages config is invalid, failing child start loudly.
+        when the messages config is invalid. Celery logs it and carries on
+        dispatching; the child starts without this refresher.
     :raises Exception: Propagates whatever composing the proxy registry or the
         initial inline refresh raises -- a malformed app-owned declaration
-        (``TypeError`` / ``ValueError``) or a session-maker failure. Per-proxy
-        refresh failures are caught and logged inside ``refresh_all``.
+        (``TypeError`` / ``ValueError``) or a session-maker failure -- and is
+        absorbed the same way. Per-proxy refresh failures are caught and logged
+        inside ``refresh_all``.
     """
     messages_settings._resolve()  # noqa: SLF001
     _refresher.start(

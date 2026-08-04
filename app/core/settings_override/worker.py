@@ -50,8 +50,8 @@ class WorkerRefresher:
     per prefork child and the session maker is rebound in tests.
 
     ``interval`` and ``enabled`` are :meth:`start` parameters rather than reads
-    of ``app.core.config.settings`` because this package must not import that
-    module at runtime -- ``Settings`` is itself built from
+    of ``app.core.config.settings`` because the override substrate must not
+    import that module at runtime -- ``Settings`` is itself built from
     :mod:`app.core.settings_override.proxy`.
 
     :param loop_getter: Returns the event loop that drives the refresh task.

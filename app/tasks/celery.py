@@ -140,16 +140,20 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     progress thereafter is best-effort, advancing only while a task drives
     ``celery.loop.run_until_complete``.
 
-    ``anonymizer_settings._resolve()`` runs unconditionally for fail-fast
-    validation even when the refresher is disabled, mirroring
-    ``messages_settings._resolve()`` in ``sep_overrides_lifespan``.
+    ``anonymizer_settings._resolve()`` runs unconditionally for validation even
+    when the refresher is disabled, as ``messages_settings._resolve()`` does in
+    ``sep_overrides_lifespan``. The two differ in consequence: the lifespan's
+    call aborts startup, while Celery catches and logs whatever a signal
+    receiver raises, so an invalid config here leaves the child running without
+    this refresher.
 
     :param kwargs: The ``worker_process_init`` signal keyword arguments (unused).
     :raises ValidationError: Propagates from ``anonymizer_settings._resolve()``
-        when the anonymizer config is invalid, failing child start loudly.
+        when the anonymizer config is invalid. Celery logs it and carries on
+        dispatching; the child starts without this refresher.
     :raises Exception: Propagates a session-maker failure from the initial
-        inline refresh. Per-proxy refresh failures are caught and logged inside
-        ``refresh_all``.
+        inline refresh, absorbed the same way. Per-proxy refresh failures are
+        caught and logged inside ``refresh_all``.
     """
     anonymizer_settings._resolve()  # noqa: SLF001
     _refresher.start(
