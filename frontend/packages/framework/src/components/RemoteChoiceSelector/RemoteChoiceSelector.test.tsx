@@ -326,7 +326,7 @@ describe('RemoteChoiceSelector', () => {
       expect(screen.getByRole('combobox')).toHaveValue('ghost-value');
     });
 
-    it('rejects whitespace-only input when required', async () => {
+    it('rejects typed whitespace-only input when required', async () => {
       const user = userEvent.setup();
       render(
         <Wrapper client={makeClient()}>
@@ -336,6 +336,23 @@ describe('RemoteChoiceSelector', () => {
       await waitFor(() => expect(mocked.get).toHaveBeenCalled());
 
       await user.type(screen.getByRole('combobox'), '   ');
+      await user.click(screen.getByRole('button', { name: 'validate' }));
+      await waitFor(() =>
+        expect(screen.getByTestId('error')).toHaveTextContent('Backup is required'),
+      );
+    });
+
+    it('rejects a whitespace-only value loaded into the field when required', async () => {
+      // normalizeChange collapses typed whitespace to null, so only a value
+      // arriving from defaultValues/setValue reaches the validator's trim check.
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={makeClient()}>
+          <Harness allowCustom required initialBackup="   " />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+
       await user.click(screen.getByRole('button', { name: 'validate' }));
       await waitFor(() =>
         expect(screen.getByTestId('error')).toHaveTextContent('Backup is required'),
