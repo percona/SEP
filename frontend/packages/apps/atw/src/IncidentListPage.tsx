@@ -182,7 +182,7 @@ export function IncidentListPage() {
                 <Tooltip title="Reopen">
                   <IconButton
                     aria-label={`Reopen ${incident.name}`}
-                    disabled={lifecycle.pendingIncidentId === incident.id}
+                    disabled={lifecycle.isPending(incident.id)}
                     onClick={() => lifecycle.reopen(incident.id)}
                   >
                     <LockOpenOutlinedIcon fontSize="small" />
@@ -192,7 +192,7 @@ export function IncidentListPage() {
                 <Tooltip title="Close">
                   <IconButton
                     aria-label={`Close ${incident.name}`}
-                    disabled={lifecycle.pendingIncidentId === incident.id}
+                    disabled={lifecycle.isPending(incident.id)}
                     onClick={() => lifecycle.close(incident.id)}
                   >
                     <LockOutlinedIcon fontSize="small" />

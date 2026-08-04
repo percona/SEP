@@ -26,7 +26,6 @@ from kombu.exceptions import KombuError
 from pydantic import BaseModel, UUID4
 
 from app.core.exceptions import (
-    HTTPConflictException,
     HTTPNotFoundException,
     HTTPServiceUnavailableException,
     HTTPUnprocessableEntityException,
@@ -63,6 +62,7 @@ from app.sep.apps.atw.crud import (
 )
 from app.sep.apps.atw.deps import (
     AtwIncidentDep,
+    ClosedAtwIncidentDep,
     diagnostics_send_disabled_reasons,
     IsDiagnosticsSendConfigured,
     OpenAtwIncidentDep,
@@ -283,17 +283,15 @@ async def atw_delete_incident(session: SessionDep, incident: AtwIncidentDep) -> 
 
 @router.post("/incidents/{incident_id}/close/")
 async def atw_close_incident(
-    session: SessionDep, incident: AtwIncidentDep
+    session: SessionDep, incident: OpenAtwIncidentDep
 ) -> AtwIncidentResponse:
     """Close a diagnostic incident, stamping the current UTC time.
 
     :param session: The database session.
-    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :param incident: The open incident resolved from the ``incident_id`` path parameter.
     :return: The closed incident.
     :raises HTTPConflictException: If the incident is already closed.
     """
-    if incident.closed_at is not None:
-        raise HTTPConflictException(detail="Incident is already closed.")
     incident.closed_at = utc_now()
     saved = await AtwIncidentManager.save(session, incident)
     return AtwIncidentResponse.model_validate(saved)
@@ -301,17 +299,15 @@ async def atw_close_incident(
 
 @router.post("/incidents/{incident_id}/reopen/")
 async def atw_reopen_incident(
-    session: SessionDep, incident: AtwIncidentDep
+    session: SessionDep, incident: ClosedAtwIncidentDep
 ) -> AtwIncidentResponse:
     """Reopen a closed diagnostic incident, clearing its close timestamp.
 
     :param session: The database session.
-    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :param incident: The closed incident resolved from the ``incident_id`` path parameter.
     :return: The reopened incident.
     :raises HTTPConflictException: If the incident is already open.
     """
-    if incident.closed_at is None:
-        raise HTTPConflictException(detail="Incident is already open.")
     incident.closed_at = None
     saved = await AtwIncidentManager.save(session, incident)
     return AtwIncidentResponse.model_validate(saved)

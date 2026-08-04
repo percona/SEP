@@ -68,7 +68,7 @@ class AtwIncident(BaseUUIDSQLModel, AtwIncidentBase, table=True):
     __tablename__ = "atw_incident"
 
     created_by: str = SQLField(nullable=False)
-    closed_at: UTCDatetime | None = SQLField(default=None, nullable=True)
+    closed_at: UTCDatetime | None = SQLField(default=None, sa_type=DateTimeWithTimezone)
     executions: list["AtwIncidentExecution"] = Relationship(
         back_populates="incident",
         cascade_delete=True,

@@ -96,7 +96,7 @@ export function IncidentWorkspacePage() {
                 variant="outlined"
                 size="small"
                 startIcon={<LockOpenOutlinedIcon />}
-                disabled={lifecycle.pendingIncidentId === incident.id}
+                disabled={lifecycle.isPending(incident.id)}
                 onClick={() => lifecycle.reopen(incident.id)}
               >
                 Reopen incident
@@ -106,7 +106,7 @@ export function IncidentWorkspacePage() {
                 variant="outlined"
                 size="small"
                 startIcon={<LockOutlinedIcon />}
-                disabled={lifecycle.pendingIncidentId === incident.id}
+                disabled={lifecycle.isPending(incident.id)}
                 onClick={() => lifecycle.close(incident.id)}
               >
                 Close incident

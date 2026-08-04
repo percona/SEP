@@ -29,8 +29,6 @@ export {
   useCreateAtwIncident,
   useUpdateAtwIncident,
   useDeleteAtwIncident,
-  useCloseAtwIncident,
-  useReopenAtwIncident,
   useAtwIncidentLifecycle,
   useAtwMergedSchema,
   useAtwBatchExecute,

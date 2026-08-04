@@ -49,13 +49,26 @@ async def require_open_incident(incident: AtwIncidentDep) -> AtwIncident:
     :raises HTTPConflictException: If the incident is closed.
     """
     if incident.closed_at is not None:
-        raise HTTPConflictException(
-            detail="This incident is closed. Reopen it to run more snippets.",
-        )
+        raise HTTPConflictException(detail="This incident is closed.")
     return incident
 
 
 OpenAtwIncidentDep = Annotated[AtwIncident, Depends(require_open_incident)]
+
+
+async def require_closed_incident(incident: AtwIncidentDep) -> AtwIncident:
+    """Return the incident or raise if it is still open.
+
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :return: The matching closed incident.
+    :raises HTTPConflictException: If the incident is already open.
+    """
+    if incident.closed_at is None:
+        raise HTTPConflictException(detail="This incident is already open.")
+    return incident
+
+
+ClosedAtwIncidentDep = Annotated[AtwIncident, Depends(require_closed_incident)]
 
 
 def diagnostics_send_disabled_reasons() -> list[str]:

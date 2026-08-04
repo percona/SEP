@@ -665,7 +665,7 @@ class TestAtwIncidentCloseReopen:
     async def test_close_handler_returns_response_model(
         self, session: AsyncSession, seeded_incident: AtwIncident
     ) -> None:
-        """Call the close handler directly so the response return line is measured."""
+        """Return a stamped ``AtwIncidentResponse`` when closing an open incident."""
         result = await atw_api_routes.atw_close_incident(session, seeded_incident)
 
         assert isinstance(result, AtwIncidentResponse)
@@ -676,7 +676,7 @@ class TestAtwIncidentCloseReopen:
     async def test_reopen_handler_returns_response_model(
         self, session: AsyncSession, seeded_incident: AtwIncident
     ) -> None:
-        """Call the reopen handler directly so the response return line is measured."""
+        """Return a cleared ``AtwIncidentResponse`` when reopening a closed incident."""
         seeded_incident.closed_at = utc_now()
         closed = await AtwIncidentManager.save(session, seeded_incident)
 

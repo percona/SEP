@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the ATW open-incident dependency guard."""
+"""Define tests for the ATW open- and closed-incident dependency guards."""
 
 import pytest
 import pytest_asyncio
@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.crud import AtwIncidentManager
-from app.sep.apps.atw.deps import require_open_incident
+from app.sep.apps.atw.deps import require_closed_incident, require_open_incident
 from app.sep.apps.atw.models import AtwIncident
 
 
@@ -59,8 +59,31 @@ class TestRequireOpenIncident:
     async def test_closed_incident_raises_conflict(
         self, closed_incident: AtwIncident
     ) -> None:
-        """Reject a closed incident before batch execution can proceed."""
+        """Reject a closed incident before batch execution or close can proceed."""
         with pytest.raises(HTTPConflictException) as exc_info:
             await require_open_incident(closed_incident)
 
         assert "closed" in exc_info.value.detail.lower()
+
+
+class TestRequireClosedIncident:
+    """Cover the closed-incident guard dependency."""
+
+    @pytest.mark.asyncio
+    async def test_closed_incident_passes_through(
+        self, closed_incident: AtwIncident
+    ) -> None:
+        """Return the incident unchanged when it is closed."""
+        result = await require_closed_incident(closed_incident)
+
+        assert result is closed_incident
+
+    @pytest.mark.asyncio
+    async def test_open_incident_raises_conflict(
+        self, open_incident: AtwIncident
+    ) -> None:
+        """Reject an open incident before reopen can proceed."""
+        with pytest.raises(HTTPConflictException) as exc_info:
+            await require_closed_incident(open_incident)
+
+        assert "open" in exc_info.value.detail.lower()

@@ -15,6 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
 import type {
@@ -148,8 +149,8 @@ export function useUpdateAtwIncident() {
       );
       return data;
     },
-    onSuccess: (incident) => {
-      invalidateAtwIncidentQueries(queryClient, incident);
+    onSuccess: () => {
+      invalidateAtwIncidentQueries(queryClient);
     },
   });
 }
@@ -166,12 +167,8 @@ export function useDeleteAtwIncident() {
   });
 }
 
-function invalidateAtwIncidentQueries(
-  queryClient: ReturnType<typeof useQueryClient>,
-  incident: AtwIncident,
-) {
+function invalidateAtwIncidentQueries(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: incidentsKey });
-  queryClient.invalidateQueries({ queryKey: ['atw', 'incidents', incident.id] });
 }
 
 function useAtwIncidentLifecycleAction(action: 'close' | 'reopen') {
@@ -183,24 +180,32 @@ function useAtwIncidentLifecycleAction(action: 'close' | 'reopen') {
       );
       return data;
     },
-    onSuccess: (incident) => {
-      invalidateAtwIncidentQueries(queryClient, incident);
+    onSuccess: () => {
+      invalidateAtwIncidentQueries(queryClient);
     },
   });
 }
 
-export function useCloseAtwIncident() {
-  return useAtwIncidentLifecycleAction('close');
-}
-
-export function useReopenAtwIncident() {
-  return useAtwIncidentLifecycleAction('reopen');
-}
-
-/** Shared close/reopen mutations, error text, and pending id for list and workspace. */
+/** Shared close/reopen mutations, error text, and in-flight ids for list and workspace. */
 export function useAtwIncidentLifecycle() {
-  const closeMutation = useCloseAtwIncident();
-  const reopenMutation = useReopenAtwIncident();
+  const closeMutation = useAtwIncidentLifecycleAction('close');
+  const reopenMutation = useAtwIncidentLifecycleAction('reopen');
+  const [pendingIncidentIds, setPendingIncidentIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  const trackPending = (incidentId: string, run: () => void) => {
+    setPendingIncidentIds((prev) => new Set(prev).add(incidentId));
+    run();
+  };
+
+  const clearPending = (incidentId: string) => {
+    setPendingIncidentIds((prev) => {
+      const next = new Set(prev);
+      next.delete(incidentId);
+      return next;
+    });
+  };
 
   const reset = () => {
     closeMutation.reset();
@@ -209,12 +214,20 @@ export function useAtwIncidentLifecycle() {
 
   return {
     close: (incidentId: string) => {
-      reset();
-      closeMutation.mutate(incidentId);
+      reopenMutation.reset();
+      trackPending(incidentId, () => {
+        closeMutation.mutate(incidentId, {
+          onSettled: () => clearPending(incidentId),
+        });
+      });
     },
     reopen: (incidentId: string) => {
-      reset();
-      reopenMutation.mutate(incidentId);
+      closeMutation.reset();
+      trackPending(incidentId, () => {
+        reopenMutation.mutate(incidentId, {
+          onSettled: () => clearPending(incidentId),
+        });
+      });
     },
     reset,
     error: closeMutation.isError
@@ -222,11 +235,7 @@ export function useAtwIncidentLifecycle() {
       : reopenMutation.isError
         ? (reopenMutation.error?.message ?? 'Failed to reopen incident')
         : null,
-    pendingIncidentId: closeMutation.isPending
-      ? closeMutation.variables
-      : reopenMutation.isPending
-        ? reopenMutation.variables
-        : null,
+    isPending: (incidentId: string) => pendingIncidentIds.has(incidentId),
   };
 }
 
