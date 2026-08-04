@@ -2031,14 +2031,14 @@ def rendered_leaf_keys(
 ) -> list[tuple[str, tuple[str, ...]]]:
     """Return the nested leaves the settings listing renders under a parent.
 
-    Empty when the field renders as one whole-object row instead: either it is
-    not a nested-overridable parent (a scalar, which enumerates no leaves), or
-    every leaf it enumerates carries an explicit :func:`not_overridable_field`
-    marker. The latter makes the whole object the field's only write unit, so
-    expanding it would advertise leaves no PATCH can target while hiding the key
-    that one can. Leaves withheld by ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` are not
-    that case -- they stay enumerated, so an admin can see what the allowlist is
-    holding back.
+    Empty when the field renders as one whole-object row instead: either it
+    accepts no nested overrides at all, or it enumerates no leaves to begin with
+    (a scalar HOT field), or every leaf it enumerates carries an explicit
+    :func:`not_overridable_field` marker. That last case makes the whole object
+    the field's only write unit, so expanding it would advertise leaves no PATCH
+    can target while hiding the key that one can. Leaves withheld by
+    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` are not that case -- they stay
+    enumerated, so an admin can see what the allowlist is holding back.
 
     :param settings_cls: The settings class declaring ``parent_field_name``.
     :param parent_field_name: The top-level field whose leaves to render.
