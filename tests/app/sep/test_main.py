@@ -507,7 +507,7 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     finally:
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
@@ -531,7 +531,7 @@ def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
     finally:
         sep_settings.APPS = original_apps
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 async def _refresher_proxy_map(mocker) -> dict[SettingClassEnum, ProxyEntry]:
@@ -618,7 +618,7 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
     finally:
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 @contextmanager
@@ -642,7 +642,7 @@ def _reloaded_against(mocker, registry):
     finally:
         mocker.stopall()
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 @pytest.fixture
