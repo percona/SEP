@@ -83,23 +83,16 @@ from app.sep.apps.framework.rules import (
     FieldGate,
 )
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
-from app.sep.snippets.models.constants import (
-    EXTRA_ARGS_FIELD_NAME,  # noqa: F401 -- re-exported for existing importers
-)
 
 EXECUTOR_HOST_FIELD_NAME = "executor_host"
 SUDO_FIELD_NAME = "sudo"
 SCRIPT_PREVIEW_FIELD_NAME = "script_preview"
-"""Name the execution fields a script app's form synthesises.
+"""Name the execution fields every script app's form synthesises.
 
-Each script app appends these to its frontmatter parameters (``extra_args``
-only when the script opts in), and a consumer that merges or strips them needs
-the same spelling the producer used. They live here, next to the field types
-they name, so no app package owns the vocabulary its siblings depend on.
-``EXTRA_ARGS_FIELD_NAME`` itself is imported from
-:mod:`app.sep.snippets.models.constants`, a cycle-free leaf module, since this
-package's ``script_helpers.py`` already imports the snippet model that value
-would otherwise collide with.
+Each script app appends these to its frontmatter parameters, and a consumer that
+merges or strips them needs the same spelling the producer used. They live here,
+next to the field types they name, so no app package owns the vocabulary its
+siblings depend on.
 """
 
 # Dots are permitted so nested one-of branch fields can use paths such as

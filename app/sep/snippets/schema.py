@@ -55,7 +55,6 @@ from app.sep.apps.framework.schema import (
     DateTimeField,
     EXECUTION_HOST_LABEL,
     EXECUTOR_HOST_FIELD_NAME,
-    EXTRA_ARGS_FIELD_NAME,
     FloatField,
     FormSection,
     HostField,
@@ -67,6 +66,7 @@ from app.sep.apps.framework.schema import (
     SUDO_FIELD_NAME,
 )
 from app.sep.snippets.config import SnippetSudoOption
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,

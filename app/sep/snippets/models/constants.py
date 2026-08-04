@@ -16,7 +16,7 @@
 """Define wire-name constants shared across snippet and framework schema modules."""
 
 EXTRA_ARGS_FIELD_NAME = "extra_args"
-"""Wire name of the synthesized Extra Args execution field.
+"""Name the synthesized Extra Args execution field on the wire.
 
 Shared, cycle-free home for this spelling: ``app.sep.apps.framework.schema``
 and ``app.sep.snippets.models.snippet`` both need it, but ``framework``

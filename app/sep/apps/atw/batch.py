@@ -37,7 +37,6 @@ from app.sep.apps.framework.schema import (
     AnyField,
     BoolField,
     EXECUTOR_HOST_FIELD_NAME,
-    EXTRA_ARGS_FIELD_NAME,
     HostField,
     SCRIPT_PREVIEW_FIELD_NAME,
     SUDO_FIELD_NAME,
@@ -50,6 +49,7 @@ from app.sep.apps.framework.script_source import (
     ScriptExecutionResponse,
 )
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.script_source import snippet_source, SnippetScript
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -262,13 +262,15 @@ class ATWIncidentExecutionResponse(BaseModel):
 def parameter_fields(script: SnippetScript) -> list[AnyField]:
     """Return a snippet's parameter fields, without the synthetic execution ones.
 
-    The per-snippet schema appends an executor-host selector, a sudo toggle, and a
-    script-preview pane to the frontmatter parameters. Those are batch-level or
-    presentational, so a merged batch form owns them once (or not at all) rather
-    than repeating them per snippet.
+    The per-snippet schema appends an executor-host selector, a sudo toggle, a
+    script-preview pane, and — for a snippet that opts in — an Extra Args input to
+    the frontmatter parameters. The first three are batch-level or presentational,
+    so a merged batch form owns them once (or not at all) rather than repeating
+    them per snippet; Extra Args stays because it is per-snippet by nature.
 
     :param script: The resolved snippet whose form schema is flattened.
-    :return: Every parameter field the snippet declares, in schema order.
+    :return: Every parameter field the snippet declares, in schema order, plus the
+        synthesized Extra Args field when the snippet opts into it.
     """
     return [
         field
@@ -330,14 +332,15 @@ def shared_field_names(declarations: dict[str, list[AnyField]]) -> set[str]:
     every declaration serialises identically — the wire form is what the renderer
     consumes, so byte-identity there is the sharing contract. Cosmetically similar
     but differing declarations (a per-product default, a required-vs-optional
-    divergence) stay per-snippet, where they mean different things.
+    divergence) stay per-snippet, where they mean different things. A name in
+    ``NON_SHAREABLE_FIELD_NAMES`` never merges, however unanimous its declarations.
 
     :param declarations: Every declaration of each parameter name, keyed by name.
     :return: The names whose declarations are unanimous across two or more snippets.
     """
     shared = set()
     for name, fields in declarations.items():
-        if len(fields) < _MIN_SHARED_DECLARERS:
+        if name in NON_SHAREABLE_FIELD_NAMES or len(fields) < _MIN_SHARED_DECLARERS:
             continue
         dumps = [field.model_dump(by_alias=True) for field in fields]
         if all(dump == dumps[0] for dump in dumps[1:]):

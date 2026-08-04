@@ -45,7 +45,6 @@ from app.sep.apps.atw.batch import (
     dispatch_batch_item,
     fetch_task_history,
     MAX_BATCH_SNIPPETS,
-    NON_SHAREABLE_FIELD_NAMES,
     parameter_fields,
     resolve_snippets,
     shared_field_names,
@@ -314,8 +313,6 @@ async def atw_execution_schema(
     declarations = defaultdict(list)
     for fields in fields_per_script:
         for field in fields:
-            if field.name in NON_SHAREABLE_FIELD_NAMES:
-                continue
             declarations[field.name].append(field)
     shared_names = shared_field_names(declarations)
 
