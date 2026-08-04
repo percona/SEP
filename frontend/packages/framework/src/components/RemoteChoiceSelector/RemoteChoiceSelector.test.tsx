@@ -50,6 +50,7 @@ interface HarnessProps {
   dependsOn?: string;
   initialParent?: string | null;
   initialBackup?: string | null;
+  required?: boolean;
 }
 
 function Harness({
@@ -57,6 +58,7 @@ function Harness({
   dependsOn,
   initialParent = null,
   initialBackup = null,
+  required,
 }: HarnessProps) {
   const methods = useForm<{ cluster: string | null; backup: string | null }>({
     defaultValues: { cluster: initialParent, backup: initialBackup },
@@ -67,16 +69,21 @@ function Harness({
       <RemoteChoiceSelector
         name="backup"
         label="Backup"
+        required={required}
         endpointUrl="/apps/restore/backups"
         dependsOn={dependsOn}
         allowCustom={allowCustom}
       />
       <div data-testid="value">{JSON.stringify(backup ?? null)}</div>
+      <div data-testid="error">{methods.formState.errors.backup?.message ?? ''}</div>
       <button type="button" onClick={() => methods.setValue('cluster', 'cluster-b')}>
         change-parent
       </button>
       <button type="button" onClick={() => methods.setValue('cluster', 'cluster-a')}>
         set-parent
+      </button>
+      <button type="button" onClick={() => void methods.trigger('backup')}>
+        validate
       </button>
     </FormProvider>
   );
@@ -317,6 +324,41 @@ describe('RemoteChoiceSelector', () => {
       await waitFor(() => expect(mocked.get).toHaveBeenCalled());
       // free-solo keeps the unmatched string (contrast with the select-mode case).
       expect(screen.getByRole('combobox')).toHaveValue('ghost-value');
+    });
+
+    it('rejects whitespace-only input when required', async () => {
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={makeClient()}>
+          <Harness allowCustom required />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+
+      await user.type(screen.getByRole('combobox'), '   ');
+      await user.click(screen.getByRole('button', { name: 'validate' }));
+      await waitFor(() =>
+        expect(screen.getByTestId('error')).toHaveTextContent('Backup is required'),
+      );
+    });
+
+    it('keeps a disabled option label as free text across a parent change', async () => {
+      // Typing a disabled option's label must not be classified as an option pick,
+      // or the next cascade-parent change would wipe a value normalizeChange left
+      // as verbatim free text.
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={makeClient()}>
+          <Harness dependsOn="cluster" initialParent="cluster-a" allowCustom />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+
+      await user.type(screen.getByRole('combobox'), 'Backup 2');
+      await waitFor(() => expect(screen.getByTestId('value')).toHaveTextContent('"Backup 2"'));
+
+      await user.click(screen.getByRole('button', { name: 'change-parent' }));
+      await waitFor(() => expect(screen.getByTestId('value')).toHaveTextContent('"Backup 2"'));
     });
   });
 });

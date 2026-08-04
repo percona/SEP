@@ -1754,14 +1754,18 @@ export interface paths {
      *     The ``service_id`` query parameter (cascade parent name on the restore form)
      *     selects which catalog rows to map. Options are newest-first and capped at
      *     :data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain
-     *     reachable via free-text). An omitted, empty, or unresolvable parent yields
-     *     ``[]`` — never a ``4xx`` — so the RemoteChoices free-text escape hatch stays
-     *     usable.
+     *     reachable via free-text). An omitted, empty, sentinel, or unknown parent
+     *     yields ``[]`` rather than a ``404``, so the RemoteChoices free-text escape
+     *     hatch stays usable. Other Inventory API failures still propagate.
+     *
+     *     Free-typed (non-numeric) parents query the catalog by that name without an
+     *     Inventory type check — matching ``ServiceRef(allow_custom=True)`` on the
+     *     restore form, where the destination may be a name that has no MySQL
+     *     inventory row. Numeric parents still require a resolvable MySQL service.
      *
      *     :param session: The database session the catalog is queried on.
-     *     :param inventory_api: The Inventory API client used to resolve numeric ids.
-     *     :param service_id: The cascade parent's submitted value, or ``None`` when
-     *         omitted.
+     *     :param service_name: The cascade parent resolved to a catalog service name,
+     *         or ``None`` when the parent is unusable.
      *     :return: Choice-compatible options for the restore backup-source selector.
      */
     get: operations['mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get'];

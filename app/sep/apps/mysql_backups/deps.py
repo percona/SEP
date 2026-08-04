@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends, Form, Query
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
@@ -32,6 +32,7 @@ from app.sep.apps.framework.spec import (
 from app.sep.apps.mysql_backups.forms import BackupCreate, BackupTaskResponse, OWNER
 from app.sep.apps.mysql_backups.models import BackupType, extract_backup_type_marker
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
+from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 from app.sep.deps import (
@@ -144,6 +145,55 @@ async def resolve_mysql_service(
 
 
 ResolvedMysqlService = Annotated[CreatedService, Depends(resolve_mysql_service)]
+
+
+async def resolve_optional_mysql_service_name(
+    inventory_api: InventoryAPI,
+    service_id: str | None = Query(
+        None,
+        description=(
+            "Cascade parent from the restore form. Inventory numeric ids are "
+            "resolved to a MySQL service name; custom names query the catalog "
+            "directly. Omitted, blank, sentinel, or unknown values yield an "
+            "empty list so free-text entry is never blocked by a failed "
+            "options fetch."
+        ),
+    ),
+) -> str | None:
+    """Resolve the cascade parent to a catalog service name, or ``None``.
+
+    Numeric ids go through :func:`resolve_mysql_service` (MySQL-typed only) and
+    degrade unknown ids to ``None``. Non-numeric values are returned as-is so a
+    free-typed restore destination can still list catalog rows by that name —
+    deliberately unguarded by Inventory type checks, matching the restore form's
+    ``ServiceRef(allow_custom=True)`` escape hatch. Omitted, blank, and
+    sentinel parents also yield ``None``.
+
+    :param inventory_api: The Inventory API client used to resolve numeric ids.
+    :param service_id: The cascade parent's submitted value, or ``None`` when
+        omitted.
+    :return: A service name to query the catalog with, or ``None`` when the
+        parent is unusable.
+    """
+    if service_id is None:
+        return None
+    trimmed = service_id.strip()
+    if not trimmed or trimmed == UNKNOWN_SERVICE_SENTINEL:
+        return None
+    try:
+        numeric_id = int(trimmed)
+    except ValueError:
+        return trimmed
+    try:
+        service = await resolve_mysql_service(numeric_id, inventory_api)
+    except HTTPNotFoundException:
+        return None
+    return service.name
+
+
+OptionalMysqlServiceName = Annotated[
+    str | None, Depends(resolve_optional_mysql_service_name)
+]
 
 
 get_backups_task = make_task_dep(OWNER)

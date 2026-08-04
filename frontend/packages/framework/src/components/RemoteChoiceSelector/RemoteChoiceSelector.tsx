@@ -127,7 +127,7 @@ function RemoteChoiceAutocomplete({
         // normalize to an option value — still treat those as option picks so a
         // parent change clears a catalog selection entered by typing its label.
         const matched = options.some(
-          (o) => o.value === normalized || o.label === String(next).trim(),
+          (o) => o.value === normalized || (o.label === String(next).trim() && !o.disabled),
         );
         onCommitKind(matched ? 'option' : 'custom');
       }
@@ -194,16 +194,7 @@ function RemoteChoiceAutocomplete({
         <TextField
           {...params}
           inputRef={field.ref}
-          onBlur={(event) => {
-            field.onBlur();
-            // Commit whatever is in the box on blur so a free-typed value that
-            // MUI kept only as inputValue still reaches react-hook-form before
-            // submit (e.g. click Create without pressing Enter).
-            if (allowCustom && !disabled) {
-              const input = event.target.value;
-              commit(input.trim() === '' ? null : input);
-            }
-          }}
+          onBlur={field.onBlur}
           label={label}
           required={required}
           error={isError || !!fieldError}

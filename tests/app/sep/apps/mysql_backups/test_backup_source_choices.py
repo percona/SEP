@@ -27,7 +27,6 @@ from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.sep.apps.mysql_backups.backup_source_choices import (
     backup_run_to_choice,
-    backup_source_label,
     backup_source_value,
 )
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
@@ -119,7 +118,6 @@ class TestBackupSourceMapper:
         choice = backup_run_to_choice(run)
         assert choice is not None
         assert choice.value == "/backups/mydumper/20240101"
-        assert choice.label == backup_source_label(run, value=choice.value)
         assert "Mydumper" in choice.label
         assert "2026-07-29" in choice.label
         assert "1.0 GiB" in choice.label
@@ -127,7 +125,7 @@ class TestBackupSourceMapper:
 
 
 class TestBackupSourceChoicesRoute:
-    """GET /api/apps/mysql_backups/backup-sources/choices?service_id=..."""
+    """Serve Choice options for the restore backup-source selector."""
 
     async def _get(
         self,

@@ -38,7 +38,7 @@ BACKUP_SOURCE_SHELLBACKTICK = "`"
 BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
 
 
-def _validate_backup_source_shell_safe(value: str) -> str:
+def ensure_backup_source_shell_safe(value: str) -> str:
     """Reject shell metacharacters in a backup-source path (defense in depth).
 
     Shared by every model carrying ``backup_source`` so the create form and the
@@ -230,7 +230,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     @classmethod
     def validate_backup_source_shell_safe(cls, value: str) -> str:
         """Reject shell metacharacters in backup source (defense in depth)."""
-        return _validate_backup_source_shell_safe(value)
+        return ensure_backup_source_shell_safe(value)
 
 
 class RestoreConfigServer(BaseRestoreConfigServer):
@@ -488,7 +488,7 @@ class RestoreCreate(TaskFormModel):
     @classmethod
     def validate_backup_source_shell_safe(cls, value: str) -> str:
         """Reject shell metacharacters in backup source (defense in depth)."""
-        return _validate_backup_source_shell_safe(value)
+        return ensure_backup_source_shell_safe(value)
 
 
 class RestoresResponse(BaseTaskResponse):

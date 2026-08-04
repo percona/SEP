@@ -17,9 +17,13 @@
 
 from datetime import UTC
 
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT, Pagination
 from app.sep.apps.framework.schema import Choice
+from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import BackupType, MysqlBackupRun
-from app.sep.apps.mysql_backups.restore.models import _validate_backup_source_shell_safe
+from app.sep.apps.mysql_backups.restore.models import ensure_backup_source_shell_safe
 
 _TYPE_LABELS = {
     BackupType.MYDUMPER: "Mydumper",
@@ -29,6 +33,12 @@ _TYPE_LABELS = {
 _BYTES_PER_KIB = 1024
 _SIZE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB")
 _LABEL_PATH_MAX = 48
+
+# Scan at most this many catalog pages when filling Choice options so a run of
+# unusable rows (missing location / shell-unsafe) cannot starve the selector of
+# older valid backups, while still bounding DB work for a free-text-friendly
+# endpoint.
+_MAX_CHOICE_SCAN_PAGES = 10
 
 
 def backup_source_value(run: MysqlBackupRun) -> str | None:
@@ -44,8 +54,8 @@ def backup_source_value(run: MysqlBackupRun) -> str | None:
         usable.
     """
     for candidate in (run.upload_destination, run.location):
-        if candidate is not None and candidate.strip():
-            return candidate.strip()
+        if candidate and (stripped := candidate.strip()):
+            return stripped
     return None
 
 
@@ -110,7 +120,41 @@ def backup_run_to_choice(run: MysqlBackupRun) -> Choice | None:
     if value is None:
         return None
     try:
-        _validate_backup_source_shell_safe(value)
+        ensure_backup_source_shell_safe(value)
     except ValueError:
         return None
     return Choice(value=value, label=backup_source_label(run, value=value))
+
+
+async def choices_for_service_name(
+    session: AsyncSession, service_name: str
+) -> list[Choice]:
+    """Return Choice options for ``service_name``, newest first.
+
+    Pages catalog rows until ``DEFAULT_PAGINATION_LIMIT`` valid choices are
+    collected (or rows/pages are exhausted), so filtered-out runs do not shrink
+    the usable option set below the intended cap.
+
+    :param session: The database session the catalog is queried on.
+    :param service_name: The inventory service name to filter catalog rows by.
+    :return: Choice-compatible options; at most ``DEFAULT_PAGINATION_LIMIT`` items.
+    """
+    choices: list[Choice] = []
+    offset = 0
+    for _ in range(_MAX_CHOICE_SCAN_PAGES):
+        page = await MysqlBackupRunManager.list_for_service(
+            session,
+            service_name,
+            pagination=Pagination(offset=offset, limit=DEFAULT_PAGINATION_LIMIT),
+        )
+        for run in page.items:
+            choice = backup_run_to_choice(run)
+            if choice is None:
+                continue
+            choices.append(choice)
+            if len(choices) >= DEFAULT_PAGINATION_LIMIT:
+                return choices
+        if not page.items or offset + len(page.items) >= page.total:
+            break
+        offset += len(page.items)
+    return choices

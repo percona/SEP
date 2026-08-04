@@ -72,8 +72,9 @@ async def resolve_restore_entities(
     :param form: The validated restore create form.
     :param inventory_api: The Inventory API used to resolve the references.
     :return: The resolved facts fed into :func:`build_restore_spec`.
-    :raises HTTPException: When a MyDumper service reference is a typed name or its
-        lookup fails, or a non-MyDumper lookup fails with a status other than 404.
+    :raises HTTPException: When a MyDumper service reference is a typed name or the
+        unknown-service placeholder, or its lookup fails; or when a non-MyDumper
+        lookup fails with a status other than 404.
     """
     if form.backup_type == BackupType.MYDUMPER:
         if form.service_id is not None and not form.service_id.isdigit():

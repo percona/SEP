@@ -204,7 +204,7 @@ async def test_build_restore_task_payload_annotates_free_typed_service_without_l
     mocker,
     mock_remote_api,
 ):
-    """A free-typed service name annotates the task without an inventory lookup.
+    """Annotate the task with a free-typed service name without an inventory lookup.
 
     ``ServiceRef(allow_custom=True)`` lets the form submit a name instead of an
     inventory id. Interpolating one into the detail URL is never valid, and
@@ -235,7 +235,7 @@ async def test_build_restore_task_payload_mydumper_rejects_free_typed_service(
     mocker,
     mock_remote_api,
 ):
-    """MYDUMPER needs a resolvable service, so a free-typed name is a clean 422.
+    """Reject a free-typed service name for a MyDumper restore with a clean 422.
 
     MyDumper derives ``dest_host`` / ``dest_port`` from the service address, which
     a typed name cannot supply. Rejecting it up front keeps the eager-resolve
