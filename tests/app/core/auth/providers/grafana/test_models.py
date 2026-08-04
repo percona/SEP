@@ -23,8 +23,12 @@ from fastapi import HTTPException, status
 from itsdangerous import URLSafeTimedSerializer
 from pydantic import ValidationError
 
-from app.core.auth.models import OAuthToken
-from app.core.auth.providers.grafana.models import GrafanaTokenPayload, GrafanaUser
+from app.core.auth.models import OAuthToken, SessionExchangeTokenResponse
+from app.core.auth.providers.grafana.models import (
+    _TOKEN_SERIALIZER,
+    GrafanaTokenPayload,
+    GrafanaUser,
+)
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.config import settings
 from tests.app.factories import GrafanaUserFactory
@@ -339,3 +343,165 @@ class TestGrafanaInvalidation:
     async def test_invalidate_tokens_for_user_is_noop(self):
         """Verify invalidate_tokens_for_user returns None without raising."""
         assert await GrafanaUser.invalidate_tokens_for_user("alice") is None
+
+
+class TestGrafanaSessionExchange:
+    """Verify the session-exchange grant (``exchange_token_from_session``)."""
+
+    @pytest.mark.asyncio
+    async def test_valid_session_mints_an_exchange_assertion(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify a valid ambient session mints an exchange assertion and its TTL."""
+        exchange = await GrafanaUser.exchange_token_from_session("ambient-session")
+
+        assert isinstance(exchange, SessionExchangeTokenResponse)
+        assert exchange.access_token
+        assert exchange.expires_in == grafana_mock.exchange_token_max_age
+        user = await GrafanaUser.from_bearer(exchange.access_token)
+        assert user.username == grafana_user_record["login"]
+        grafana_mock.get_current_user.assert_awaited_once_with("ambient-session")
+        grafana_mock.login.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_claim_set_is_pinned(self, grafana_mock):
+        """Verify the exchange assertion carries no claim beyond the identity set.
+
+        Guards against a later change smuggling Grafana session material or a
+        service-account credential into the minted payload.
+        """
+        exchange = await GrafanaUser.exchange_token_from_session("ambient-session")
+
+        payload = _TOKEN_SERIALIZER.loads(exchange.access_token)
+
+        assert set(payload) == {"id", "username", "email", "is_admin", "typ"}
+        assert payload["typ"] == "exchange"
+
+    @pytest.mark.asyncio
+    async def test_rejected_session_returns_none(self, grafana_mock):
+        """Verify a Grafana 401 (rejected session) returns ``None``."""
+        grafana_mock.get_current_user.side_effect = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+
+        assert await GrafanaUser.exchange_token_from_session("stale") is None
+
+    @pytest.mark.asyncio
+    async def test_non_401_error_propagates(self, grafana_mock):
+        """Verify a non-401 upstream error propagates instead of masking as no-session."""
+        grafana_mock.get_current_user.side_effect = GrafanaException()
+
+        with pytest.raises(HTTPException):
+            await GrafanaUser.exchange_token_from_session("s")
+
+    @pytest.mark.asyncio
+    async def test_admin_survives(self, grafana_mock, grafana_user_record):
+        """Verify an admin ambient session decodes to an admin exchange assertion."""
+        grafana_mock.get_current_user.return_value = {
+            **grafana_user_record,
+            "isGrafanaAdmin": True,
+        }
+
+        exchange = await GrafanaUser.exchange_token_from_session("ambient-session")
+
+        user = await GrafanaUser.from_bearer(exchange.access_token)
+        assert user.is_admin is True
+
+
+class TestGrafanaUserFromBearer:
+    """Verify the Bearer-surface accepted-type set (``from_bearer``)."""
+
+    @staticmethod
+    async def _exchange_token(session: str = "ambient-session") -> str:
+        """Mint an exchange assertion and return its token string."""
+        exchange = await GrafanaUser.exchange_token_from_session(session)
+        return exchange.access_token
+
+    @pytest.mark.asyncio
+    async def test_accepts_an_access_assertion(self, grafana_mock, grafana_user_record):
+        """Verify the common Bearer credential still authenticates."""
+        oauth = await GrafanaUser.get_oauth_token(username="alice", password="secret")
+
+        user = await GrafanaUser.from_bearer(oauth.access_token)
+
+        assert user.username == grafana_user_record["login"]
+        assert user.access_token == oauth.access_token
+
+    @pytest.mark.asyncio
+    async def test_accepts_an_exchange_assertion(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify an exchange assertion authenticates on the Bearer surface."""
+        token = await self._exchange_token()
+
+        user = await GrafanaUser.from_bearer(token)
+
+        assert user.username == grafana_user_record["login"]
+        assert user.access_token == token
+
+    @pytest.mark.asyncio
+    async def test_rejects_a_refresh_assertion(self, grafana_mock):
+        """Verify a refresh assertion is refused on the Bearer surface."""
+        oauth = await GrafanaUser.get_oauth_token(username="alice", password="secret")
+
+        with pytest.raises(ValidationError):
+            await GrafanaUser.from_bearer(oauth.refresh_token)
+
+    @pytest.mark.asyncio
+    async def test_rejects_garbage(self, grafana_mock):
+        """Verify a non-decodable credential is refused."""
+        with pytest.raises(ValidationError):
+            await GrafanaUser.from_bearer("not-a-valid-signed-token")
+
+    @pytest.mark.asyncio
+    async def test_rejects_an_empty_credential(self, grafana_mock):
+        """Verify an empty credential is refused rather than decoded."""
+        with pytest.raises(ValidationError):
+            await GrafanaUser.from_bearer("")
+
+    @pytest.mark.asyncio
+    async def test_exchange_expiry_is_enforced_against_its_own_lifetime(
+        self, grafana_mock, mocker
+    ):
+        """Verify an exchange assertion past *its* lifetime is refused.
+
+        The access lifetime stays at its default, so an implementation that
+        widened the accepted set without trying each type against its own
+        ``max_age`` would silently accept this token for the full access hour.
+        """
+        token = await self._exchange_token()
+        mocker.patch.object(
+            grafana_mock, "exchange_token_max_age", timedelta(seconds=-1)
+        )
+
+        with pytest.raises(ValidationError):
+            await GrafanaUser.from_bearer(token)
+
+    @pytest.mark.asyncio
+    async def test_rejects_an_expired_access_assertion(self, grafana_mock, mocker):
+        """Verify an expired access assertion is not rescued by the exchange attempt."""
+        oauth = await GrafanaUser.get_oauth_token(username="alice", password="secret")
+        mocker.patch.object(grafana_mock, "access_token_max_age", timedelta(seconds=-1))
+
+        with pytest.raises(ValidationError):
+            await GrafanaUser.from_bearer(oauth.access_token)
+
+
+class TestGrafanaExchangeTokenTypeIsolation:
+    """Verify an exchange assertion is refused everywhere but the Bearer surface."""
+
+    @pytest.mark.asyncio
+    async def test_from_jwt_rejects_an_exchange_assertion(self, grafana_mock):
+        """Verify the cookie/session surface refuses an exchange assertion."""
+        exchange = await GrafanaUser.exchange_token_from_session("ambient-session")
+
+        with pytest.raises(ValidationError):
+            await GrafanaUser.from_jwt(exchange.access_token)
+
+    @pytest.mark.asyncio
+    async def test_refresh_grant_rejects_an_exchange_assertion(self, grafana_mock):
+        """Verify an exchange assertion cannot be replayed at the refresh grant."""
+        exchange = await GrafanaUser.exchange_token_from_session("ambient-session")
+
+        with pytest.raises(ValidationError):
+            await GrafanaUser.get_oauth_token(refresh_token=exchange.access_token)

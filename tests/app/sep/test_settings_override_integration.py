@@ -351,7 +351,7 @@ async def _seed_snippets_task(
         session.add(
             PeriodicTask(
                 name=SNIPPETS_TASK,
-                task="app.sep.apps.snippets.celery.sync_snippets",
+                task="app.sep.snippets.celery.sync_snippets",
                 enabled=enabled,
                 schedule_model=schedule,
             )
