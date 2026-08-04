@@ -36,11 +36,12 @@ factory waiting to happen. For the same reason there is no
 scaffolding, and ``tests/app/sep/apps/framework/`` already owns that role
 through ``kit.py`` and ``contract_suite.py``.
 
-Three evasions are deliberately not caught, so the guard is not mistaken for a
+Two evasions are deliberately not caught, so the guard is not mistaken for a
 total one: a dynamic import whose target is a string literal
-(``import_module("app.sep.apps.alters.models")``), an indirect edge through a
-third module that re-exports an app model, and a star import from a module that
-itself pulls in an app model.
+(``import_module("app.sep.apps.alters.models")``), and any indirect edge through
+a third module that re-exports an app model -- whether named or pulled in by a
+star import from that third module. A star import naming an app module directly
+is caught like any other import.
 """
 
 import ast
@@ -89,7 +90,7 @@ def _imported_modules(source: str, package: str) -> Iterator[tuple[str, int]]:
 
     :param source: The module source to parse.
     :param package: The dotted package the importing module belongs to.
-    :return: An iterator of dotted import targets with their line numbers.
+    :yield: A dotted import target with its line number.
     """
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
@@ -117,39 +118,63 @@ def _is_forbidden(module: str) -> bool:
     )
 
 
-def _shared_module_paths() -> list[Path]:
+def _shared_module_paths(root: Path) -> list[Path]:
     """Return every module sitting directly at the root of the test tree.
 
     The scan is not recursive: modules deeper in the tree are scoped to a
     subtree and may legitimately import the app they test.
 
+    :param root: The test-tree root to scan.
     :return: The source paths subject to the app-agnostic rule.
     """
-    return sorted(SHARED_TEST_ROOT.glob("*.py"))
+    return sorted(root.glob("*.py"))
 
 
-def _package_of(path: Path) -> str:
+def _package_of(path: Path, base: Path) -> str:
     """Return the dotted package a module resolves its relative imports against.
 
     :param path: The source path to derive the package from.
-    :return: The dotted package name.
+    :param base: The directory the path is dotted relative to.
+    :return: The dotted package name, which for an ``__init__.py`` is its own
+        directory.
     """
-    return ".".join(path.relative_to(BASE_DIR).parts[:-1])
+    return ".".join(path.relative_to(base).parts[:-1])
 
 
-def _violations() -> list[str]:
+def _violations(root: Path, base: Path) -> list[str]:
     """Collect every app-tree import declared by a shared test module.
 
+    :param root: The test-tree root whose modules are subject to the rule.
+    :param base: The directory reported paths and dotted packages resolve against.
     :return: One ``path:line -> module`` entry per violating import.
     """
     return [
-        f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}"
-        for path in _shared_module_paths()
+        f"{path.relative_to(base)}:{lineno} -> {module}"
+        for path in _shared_module_paths(root)
         for module, lineno in _imported_modules(
-            path.read_text(encoding="utf-8"), _package_of(path)
+            path.read_text(encoding="utf-8"), _package_of(path, base)
         )
         if _is_forbidden(module)
     ]
+
+
+def _write_shared_module(base: Path, relative_path: str, source: str) -> Path:
+    """Write ``source`` into a throwaway tree mirroring the real test-root layout.
+
+    The tree is rooted at ``tests/app`` under ``base`` so a synthetic module derives
+    the same dotted package -- and so reports the same relative path -- as its real
+    counterpart would.
+
+    :param base: The directory standing in for the repository root.
+    :param relative_path: The module's path relative to the synthetic test root.
+    :param source: The module source to write.
+    :return: The synthetic test root to scan.
+    """
+    root = base / "tests" / "app"
+    path = root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(source, encoding="utf-8")
+    return root
 
 
 class TestSharedTestModulesStayAppAgnostic:
@@ -157,7 +182,7 @@ class TestSharedTestModulesStayAppAgnostic:
 
     def test_no_shared_test_module_imports_the_app_tree(self) -> None:
         """Reject every import of the activatable-app tree from the test root."""
-        violations = _violations()
+        violations = _violations(SHARED_TEST_ROOT, BASE_DIR)
         assert not violations, (
             "modules directly under tests/app/ are shared by the whole test tree"
             " and must not import app.sep.apps.*; move the factory or fixture"
@@ -166,7 +191,52 @@ class TestSharedTestModulesStayAppAgnostic:
 
     def test_the_shared_factory_module_is_in_scope(self) -> None:
         """Keep the rule anchored to the module it exists to protect."""
-        assert SHARED_TEST_ROOT / "factories.py" in _shared_module_paths()
+        assert SHARED_TEST_ROOT / "factories.py" in _shared_module_paths(
+            SHARED_TEST_ROOT
+        )
+
+
+class TestViolationReporting:
+    """Check the report a synthetic test root produces, end to end."""
+
+    def test_forbidden_absolute_import_is_reported(self, tmp_path: Path) -> None:
+        """Report a shared module's app-tree import as ``path:line -> module``."""
+        root = _write_shared_module(
+            tmp_path, "factories.py", "from app.sep.apps.atw.models import AtwIncident"
+        )
+        assert _violations(root, tmp_path) == [
+            "tests/app/factories.py:1 -> app.sep.apps.atw.models.AtwIncident"
+        ]
+
+    def test_relative_re_export_is_reported(self, tmp_path: Path) -> None:
+        """Resolve a relative re-export against the importing module's package."""
+        root = _write_shared_module(
+            tmp_path,
+            "conftest.py",
+            "from .sep.apps.atw.factories import AtwIncidentFactory",
+        )
+        assert _violations(root, tmp_path) == [
+            "tests/app/conftest.py:1 -> "
+            "tests.app.sep.apps.atw.factories.AtwIncidentFactory"
+        ]
+
+    def test_module_below_the_root_is_out_of_scope(self, tmp_path: Path) -> None:
+        """Leave a module deeper in the tree free to import the app it tests."""
+        root = _write_shared_module(
+            tmp_path,
+            "sep/apps/atw/factories.py",
+            "from app.sep.apps.atw.models import AtwIncident",
+        )
+        assert _violations(root, tmp_path) == []
+
+    def test_clean_tree_yields_no_violations(self, tmp_path: Path) -> None:
+        """Accept a shared module that imports only core and shared names."""
+        root = _write_shared_module(
+            tmp_path,
+            "factories.py",
+            "from app.tasks.models import Task\nfrom tests.app.factories import Mock\n",
+        )
+        assert _violations(root, tmp_path) == []
 
 
 class TestForbiddenImportDetection:
@@ -194,6 +264,21 @@ class TestForbiddenImportDetection:
                 "import app.sep.apps.atw.models",
                 {"app.sep.apps.atw.models"},
                 id="plain-import",
+            ),
+            pytest.param(
+                "import app.sep.apps.atw.models as atw_models",
+                {"app.sep.apps.atw.models"},
+                id="aliased-plain-import",
+            ),
+            pytest.param(
+                "from app.sep.apps.atw import models as atw_models",
+                {"app.sep.apps.atw.models"},
+                id="aliased-from-import",
+            ),
+            pytest.param(
+                "from app.sep.apps.atw.models import *",
+                {"app.sep.apps.atw.models.*"},
+                id="star-import-naming-an-app-module",
             ),
             pytest.param(
                 "from tests.app.sep.apps.atw.factories import AtwIncidentFactory",
@@ -274,7 +359,7 @@ class TestForbiddenImportDetection:
         self, source: str, expected: set[str]
     ) -> None:
         """Resolve a forbidden module only for the spellings the rule covers."""
-        package = _package_of(SHARED_TEST_ROOT / "factories.py")
+        package = _package_of(SHARED_TEST_ROOT / "factories.py", BASE_DIR)
         found = {
             module
             for module, _ in _imported_modules(source, package)
