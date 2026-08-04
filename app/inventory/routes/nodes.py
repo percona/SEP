@@ -24,6 +24,7 @@ from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
+from app.inventory.constants import UNCOLLECTED_HOST_OBSERVATION_DETAIL
 from app.inventory.crud import HostSystemObservationManager, NodeManager, ServiceManager
 from app.inventory.deps import NodeDep, SessionDep
 from app.inventory.models import (
@@ -121,9 +122,7 @@ async def retrieve_host_system_observation(
     # default detail is indistinguishable from the missing-node 404 NodeDep raises.
     observation = await HostSystemObservationManager.first(session, node_id=node.id)
     if observation is None:
-        raise HTTPNotFoundException(
-            detail="System observation not collected yet for this node"
-        )
+        raise HTTPNotFoundException(detail=UNCOLLECTED_HOST_OBSERVATION_DETAIL)
     return observation
 
 

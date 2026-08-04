@@ -29,8 +29,8 @@ from tests.app.factories import (
 CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
 
-# Pinned verbatim rather than imported from the route: the wording is part of the
-# API contract, so a route-side edit must fail the test.
+# Pinned verbatim rather than imported from app.inventory.constants: the wording is
+# part of the API contract, so an edit to the constant must fail the test.
 UNCOLLECTED_NODE_DETAIL = "System observation not collected yet for this node"
 
 
@@ -440,7 +440,7 @@ class TestRetrieveHostSystemObservation:
         node: Node,
         host_observation: HostSystemObservation,
     ) -> None:
-        """Never surface one node's observation when reading a sibling node."""
+        """Keep one node's observation from surfacing when reading a sibling node."""
         other = test_client.post(
             "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
         )

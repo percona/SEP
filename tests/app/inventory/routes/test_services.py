@@ -29,8 +29,8 @@ from tests.app.factories import (
 
 OFFSET_BEYOND_TOTAL = 999
 
-# Pinned verbatim rather than imported from the route: the wording is part of the
-# API contract, so a route-side edit must fail the test.
+# Pinned verbatim rather than imported from app.inventory.constants: the wording is
+# part of the API contract, so an edit to the constant must fail the test.
 UNCOLLECTED_SERVICE_DETAIL = "System observation not collected yet for this service"
 
 
@@ -472,7 +472,7 @@ class TestRetrieveServiceSystemObservation:
         service: Service,
         service_observation: ServiceSystemObservation,
     ) -> None:
-        """Never surface one service's observation when reading a sibling service."""
+        """Keep one service's observation from surfacing when reading a sibling."""
         other = test_client.post(
             f"/nodes/{node.id}/services/",
             json=ServiceWriteFactory.build().model_dump(mode="json"),

@@ -24,6 +24,7 @@ from app.api.deps import IsAuthenticatedDep
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
+from app.inventory.constants import UNCOLLECTED_SERVICE_OBSERVATION_DETAIL
 from app.inventory.crud import (
     SchemaManager,
     ServiceManager,
@@ -115,9 +116,7 @@ async def retrieve_service_system_observation(
         session, service_id=service.id
     )
     if observation is None:
-        raise HTTPNotFoundException(
-            detail="System observation not collected yet for this service"
-        )
+        raise HTTPNotFoundException(detail=UNCOLLECTED_SERVICE_OBSERVATION_DETAIL)
     return observation
 
 
