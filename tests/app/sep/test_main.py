@@ -16,24 +16,28 @@
 """Define tests for the app.sep.main module."""
 
 import importlib
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 from starlette.routing import Mount
 
 import app.sep.main as main_module
+from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth.exceptions import (
     BaseAuthProviderException,
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
+from app.core.settings_override.lifecycle import ProxyEntry
+from app.core.settings_override.models import SettingClassEnum
 from app.sep.api.router import apps_router
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import (
@@ -56,6 +60,7 @@ from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.snippets.config import snippets_settings
 from tests.app.factories import OAuthTokenFactory
+from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
 def _route_has_app_guard(route) -> bool:
@@ -488,6 +493,92 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
         importlib.reload(main_module)
+
+
+def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
+    """Rebuild ``sep_app`` against the PMM-embedded activation list.
+
+    Proves the registry and mount composition survive an activation list that
+    omits alerts and dipper. It does **not** prove import-cleanliness against a
+    tree with those packages stripped -- the dev checkout can still import them.
+    ``tests/app/sep/test_import_boundary.py`` is what enforces that.
+    """
+    original_apps = sep_settings.APPS
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
+    get_app_registry.cache_clear()
+
+    try:
+        importlib.reload(main_module)
+
+        keys = {app.key for app in get_app_registry()}
+        assert "alerts" not in keys
+        assert "dipper" not in keys
+    finally:
+        sep_settings.APPS = original_apps
+        get_app_registry.cache_clear()
+        importlib.reload(main_module)
+
+
+async def _refresher_proxy_map(mocker) -> dict[SettingClassEnum, ProxyEntry]:
+    """Return the proxy map ``sep_overrides_lifespan`` hands to the refresher.
+
+    :param mocker: The ``pytest-mock`` fixture used to stub the refresher.
+    :return: The composed app-owned-plus-SEP proxy map.
+    """
+    captured: dict[SettingClassEnum, ProxyEntry] = {}
+
+    @asynccontextmanager
+    async def fake_refresher(_session_maker, proxies, *_args, **_kwargs):
+        captured.update(proxies)
+        yield
+
+    mocker.patch.object(main_module, "settings_override_refresher", fake_refresher)
+    original_callbacks = getattr(main_module.sep_app.state, "override_callbacks", None)
+    try:
+        async with main_module.sep_overrides_lifespan(FastAPI()):
+            pass
+    finally:
+        main_module.sep_app.state.override_callbacks = original_callbacks
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
+    """Compose the refresher map from the app-owned seam plus SEP's own set."""
+    proxies = await _refresher_proxy_map(mocker)
+
+    assert set(proxies) == {
+        SettingClassEnum.SEP_SETTINGS,
+        SettingClassEnum.SNIPPETS_SETTINGS,
+        SettingClassEnum.MESSAGES_SETTINGS,
+        SettingClassEnum.SETTINGS,
+        SettingClassEnum.ALERT_SETTINGS,
+        SettingClassEnum.ALERTS_SETTINGS,
+    }
+    alerts_entry = proxies[SettingClassEnum.ALERTS_SETTINGS]
+    assert alerts_entry.proxy is alerts_settings
+    assert alerts_entry.settings_cls is AlertsSettings
+
+
+@pytest.mark.asyncio
+async def test_proxy_map_drops_alerts_but_keeps_core_alert_settings(mocker):
+    """Drop ``ALERTS_SETTINGS`` under reduced activation, keeping ``ALERT_SETTINGS``.
+
+    ``ALERT_SETTINGS`` arrives from SEP's own set rather than the app-owned
+    seam, so the PMM-embedded profile still refreshes the alert-delivery config
+    that the Tasks worker and seven non-alerts apps read.
+    """
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
+    get_app_registry.cache_clear()
+    try:
+        proxies = await _refresher_proxy_map(mocker)
+    finally:
+        get_app_registry.cache_clear()
+
+    assert SettingClassEnum.ALERTS_SETTINGS not in proxies
+    alert_entry = proxies[SettingClassEnum.ALERT_SETTINGS]
+    assert alert_entry.proxy is alert_settings
+    assert alert_entry.settings_cls is AlertSettings
 
 
 def test_periodic_router_mounted_when_only_inventory_enabled(mocker):

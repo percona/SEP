@@ -25,6 +25,13 @@ SIDECAR_DIR = BASE_DIR / "sidecar"
 EMBEDDED_PROFILE = SIDECAR_DIR / "settings.embedded.yaml"
 SETTINGS_ENV_HELPER = SIDECAR_DIR / "settings-env.sh"
 
+ALLOWLIST_KEY = "SETTINGS_OVERRIDE_ALLOWED_KEYS"
+"""The profile key carrying the override allowlist.
+
+Read from the profile by both the side-car resolution test and the policy
+suite's shipped-value guard, which must agree on where the list lives.
+"""
+
 SUITE_ENV_OVERRIDES = (
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID",
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET",

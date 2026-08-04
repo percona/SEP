@@ -132,9 +132,12 @@ special case: any deployment can set it (bare env var, or a `default:` key in
 `settings.yaml`) to harden its own override surface. Leaving it unset — the
 default everywhere else — keeps every overridable setting overridable. It can
 never be changed through the API, only through the deployment's own
-configuration. Note that if this value later moves into the mounted profile,
-the `ENV` line in the Containerfile has to go: environment outranks
-`settings.yaml`, so the baked value would otherwise win permanently.
+configuration. This image carries it as a `default:` key in
+`settings.embedded.yaml`, so the bind mount that replaces that file is what
+changes the list. A replacement that omits the key does not preserve the
+shipped list — it lifts the restriction entirely, since an absent key reads the
+same as a deployment that never set one. An environment variable of the same
+name still outranks the profile, as it does for every other setting here.
 
 ## Volumes
 
