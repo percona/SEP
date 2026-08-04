@@ -42,7 +42,7 @@ def _strip_block() -> str:
 
     assert anchored, f"No line containing {STRIP_ANCHOR!r} in {CONTAINERFILE}"
 
-    block = []
+    block: list[str] = []
     for line in lines[anchored[0] :]:
         block.append(line)
         if not line.rstrip().endswith("\\"):
