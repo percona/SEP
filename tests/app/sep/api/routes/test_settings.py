@@ -860,6 +860,38 @@ class TestSepSettingsPatch:
         assert "key-value" not in json_serializer(list_payload)
 
     @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_patch_carries_the_endpoint(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Store the receiver an operator names alongside the credentials."""
+        endpoint = "https://elsewhere.example.com/"
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "endpoint": endpoint,
+                    "secrets": _DELIVERY_INPUTS_SECRETS,
+                }
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        assert rows[0].value["endpoint"] == endpoint
+
+        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        entry = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, _DELIVERY_INPUTS_KEY
+        )
+        assert entry["value"]["endpoint"] == endpoint
+
+    @pytest.mark.usefixtures("delivery_skeleton")
     @pytest.mark.parametrize(
         ("secrets", "expected"),
         [
@@ -924,10 +956,11 @@ class TestSepSettingsPatch:
         override_session: AsyncSession,
     ) -> None:
         """Keep the stored credential when an operator re-submits the masked read."""
-        api_admin_client.patch(
+        stored = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
         )
+        assert stored.status_code == status.HTTP_200_OK
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={
@@ -969,10 +1002,18 @@ class TestSepSettingsPatch:
         mocker,
     ) -> None:
         """Degrade a stale row to unconfigured after an upgrade renames a secret."""
-        api_admin_client.patch(
+        response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
         )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        assert len(rows) == 1
+
         renamed = {
             **_DELIVERY_SKELETON_PAYLOAD,
             "secrets": {"sn_api_key": "", "case_token": ""},

@@ -16,6 +16,7 @@
 """Tests for the nested-override helpers in the classification registry."""
 
 import functools
+from collections.abc import Callable
 from datetime import timedelta
 from typing import ClassVar
 
@@ -41,6 +42,7 @@ from app.core.settings_override.registry import (
     NESTED_VALUE_MISSING,
     not_overridable_field,
     ReloadClassification,
+    rendered_leaf_keys,
     resolve_nested_field,
     resolve_nested_field_metadata,
     resolve_nested_value,
@@ -499,3 +501,41 @@ def test_overlay_nested_parent_leaves_unmarked_field_untouched() -> None:
     """Assert a submodel field with no overlay entry is not nested-overridable."""
     assert is_nested_overridable_parent(_OverlayNestedParent, "UNMARKED") is False
     assert "UNMARKED" not in nested_overridable_field_names(_OverlayNestedParent)
+
+
+def test_rendered_leaf_keys_yields_leaves_for_a_mixed_parent() -> None:
+    """Assert a parent with one unsealed leaf still renders as its leaves."""
+    assert dict(rendered_leaf_keys(_Outer, "NESTED")) == dict(
+        iter_nested_leaf_keys(_Outer, "NESTED")
+    )
+
+
+def test_rendered_leaf_keys_empty_for_a_locked_parent() -> None:
+    """Assert a field that takes no nested override at all renders as one row."""
+    assert rendered_leaf_keys(SEPSettings, "DIAGNOSTICS_DELIVERY") == []
+
+
+def test_rendered_leaf_keys_empty_for_a_scalar_hot_field() -> None:
+    """Assert a scalar HOT field renders as one row, enumerating no leaves."""
+    assert rendered_leaf_keys(SEPSettings, "FOOTER_TEMPLATE") == []
+
+
+def test_rendered_leaf_keys_empty_when_every_leaf_is_sealed() -> None:
+    """Assert an all-sealed parent renders whole, not as leaves no PATCH can target."""
+    assert list(iter_nested_leaf_keys(SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS"))
+    assert rendered_leaf_keys(SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS") == []
+
+
+def test_rendered_leaf_keys_keeps_allowlist_withheld_leaves(
+    restrict: Callable[..., None],
+) -> None:
+    """Assert an allowlist withholding every leaf still enumerates them.
+
+    A withheld leaf is not the sealed case: it stays listed so an admin can see
+    what the allowlist is holding back, which is why the selection asks whether
+    the key is addressable at all rather than whether the policy permits it.
+    """
+    restrict("Settings.LOGGING")
+    assert dict(rendered_leaf_keys(SEPSettings, "SESSION")) == dict(
+        iter_nested_leaf_keys(SEPSettings, "SESSION")
+    )
