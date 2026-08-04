@@ -296,6 +296,19 @@ def test_guarded_module_paths_covers_every_app_module(
     assert BASE_DIR / relative in guarded_paths
 
 
+def test_guarded_module_paths_leaves_no_apps_tree_module_out(
+    guarded_paths: set[Path],
+) -> None:
+    """Reject any walk that covers only part of the activatable-app tree.
+
+    The cases above sample the regions an outside-only walk skipped wholesale.
+    A narrower exclusion -- one app package, one subtree -- would leave every
+    sample present, and the live-tree test green, since a walk that reaches
+    fewer files finds fewer violations.
+    """
+    assert set(APPS_ROOT.rglob("*.py")) <= guarded_paths
+
+
 @pytest.mark.parametrize(
     ("importer", "source", "expected"),
     [
