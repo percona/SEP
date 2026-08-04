@@ -69,6 +69,9 @@ export default defineConfig({
       '/stream-logs': proxyEntry,
       '/execution-events': proxyEntry,
       '/files': proxyEntry,
+      // App static mounts (snippets, dipper) and anonymous legacy Jinja assets
+      // (see app/sep/main.py). Without this, SPA fallback returns index.html.
+      '/static': proxyEntry,
     },
   },
   optimizeDeps: {

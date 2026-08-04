@@ -30,15 +30,15 @@ from app.core.exceptions import (
     HTTPRedirectException,
 )
 from app.core.utils.fields import NonEmptyStr
-from app.sep.apps.snippets.deps import (
+from app.sep.deps import DefaultContext, ExecutorHostsCtx, SessionDep
+from app.sep.models import AlertServiceType
+from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.deps import (
     get_snippet_execution_request_meta,
     get_snippet_source,
     get_validated_execution_args,
     SnippetDep,
 )
-from app.sep.deps import DefaultContext, ExecutorHostsCtx, SessionDep
-from app.sep.models import AlertServiceType
-from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
     Snippet,

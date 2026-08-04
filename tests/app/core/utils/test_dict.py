@@ -18,7 +18,48 @@
 import pytest
 
 from app.core.utils import sort_dict
-from app.core.utils.dict import filter_dict, remove_falsy_values_from_dict
+from app.core.utils.dict import (
+    deep_dict_update,
+    filter_dict,
+    remove_falsy_values_from_dict,
+)
+
+
+@pytest.mark.parametrize(
+    ("main_dict", "update_dict", "expected"),
+    [
+        (
+            {"items": ["a", "b"]},
+            {"items": ["c"]},
+            {"items": ["c", "a", "b"]},
+        ),
+        (
+            {"items": ["a", "b"]},
+            {"items": []},
+            {"items": []},
+        ),
+        (
+            {"nested": {"items": [1, 2]}},
+            {"nested": {"items": []}},
+            {"nested": {"items": []}},
+        ),
+        (
+            {"k": "old"},
+            {"k": "new"},
+            {"k": "new"},
+        ),
+    ],
+    ids=[
+        "prepend-nonempty-list",
+        "empty-list-clears",
+        "nested-empty-list-clears",
+        "scalar-overwrite",
+    ],
+)
+def test_deep_dict_update(main_dict, update_dict, expected):
+    """Assert list overlays prepend when non-empty and clear when empty."""
+    deep_dict_update(main_dict, update_dict)
+    assert main_dict == expected
 
 
 @pytest.mark.parametrize(

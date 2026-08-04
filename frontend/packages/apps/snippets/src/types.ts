@@ -30,8 +30,7 @@ export type { SnippetExecutionRequest, SnippetExecutionResponse } from '@sep/fra
 export type SnippetApprovalFilter = SepComponents['schemas']['SnippetApprovalFilter'];
 
 /** Whole-dataset service-type facet backing the list filter's options. */
-export type SnippetServiceTypesResponse =
-  SepComponents['schemas']['snippets__SnippetServiceTypesResponse'];
+export type SnippetServiceTypesResponse = SepComponents['schemas']['SnippetServiceTypesResponse'];
 
 export interface SnippetResponse {
   filename: string;
