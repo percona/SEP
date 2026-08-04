@@ -59,10 +59,9 @@ the code's. Before committing the fragment, answer two questions:
    unrestricted, but `sidecar/Containerfile.sidecar` bakes a 15-entry allowlist,
    so a fragment saying only *"unset (the default) leaves every deployment
    unrestricted"* tells the side-car operator the opposite of what they will see:
-   a mostly read-only settings UI, with no signal in the release notes. See
-   `.claude/skills/shared/backwards-compatibility.md § "Behavioral Asymmetry
-   Across Processes / Deployments / Install-States"` for the full axis list
-   (process, deployment, install-state, version) and the shapes that recur.
+   a mostly read-only settings UI, with no signal in the release notes. When
+   writing the fragment, account for the main axes of variation (process,
+   deployment, install-state, version) and call out any non-uniform behavior.
 
 2. **What must the operator already have?** Name settings that are *required*,
    not merely available. *"Per-deployment values are supplied as environment
