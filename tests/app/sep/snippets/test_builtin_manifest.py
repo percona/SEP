@@ -19,13 +19,11 @@ import hashlib
 
 import pytest
 
-from app.sep.apps.snippets.builtin_manifest import (
-    BUILTIN_CHECKSUM_MANIFEST,
-    load_builtin_checksum_manifest,
-    sha256_file,
-)
+from app.sep.snippets import builtin_manifest
+from app.sep.snippets.builtin_manifest import load_builtin_checksum_manifest
+from app.sep.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST, sha256_file
 
-MODULE = "app.sep.apps.snippets.builtin_manifest"
+MODULE = "app.sep.snippets.builtin_manifest"
 
 
 class TestLoadBuiltinChecksumManifest:
@@ -122,3 +120,20 @@ class TestSha256File:
         path.write_bytes(content)
 
         assert await sha256_file(path) == hashlib.sha256(content).hexdigest()
+
+
+class TestPublicSurface:
+    """Pin the module's exported surface after the checksums passthrough dropped."""
+
+    def test_all_exports_only_the_manifest_loader(self):
+        """Assert the three checksums names are no longer re-exported."""
+        assert builtin_manifest.__all__ == ["load_builtin_checksum_manifest"]
+
+    @pytest.mark.parametrize("name", ["manifest_relative_path", "sha256_file"])
+    def test_unused_checksums_names_are_not_rebound(self, name):
+        """Assert callers must reach ``checksums`` directly for these names.
+
+        ``BUILTIN_CHECKSUM_MANIFEST`` is excluded: the loader still consumes it,
+        so it remains a module attribute even though it left ``__all__``.
+        """
+        assert not hasattr(builtin_manifest, name)

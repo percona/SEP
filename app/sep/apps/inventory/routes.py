@@ -13,7 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the Inventory App."""
+"""Define legacy Jinja routes for the Inventory app.
+
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/apps/inventory/`` and the React UI consumes them via
+``frontend/packages/apps/inventory``. Every response from this router carries
+the RFC 8594 ``Deprecation: true`` header and emits a WARNING on hit; the
+routes remain mounted only until the Jinja layer is removed.
+"""
 
 import logging
 from typing import Annotated
@@ -23,17 +30,16 @@ from fastapi import (
     BackgroundTasks,
     Form,
     Header,
-    HTTPException,
     Request,
     status,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import HTTPBadGatewayException, HTTPBadRequestException
 from app.core.pagination import fetch_all_dict_items
-from app.inventory.models import ServiceTypeEnum
-from app.sep.api.host_resolution import resolve_executor_name_by_address
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
+from app.sep.apps.inventory.connectivity import probe_service_connectivity
+from app.sep.apps.inventory.constants import CONNECTABLE_SERVICE_TYPES
 from app.sep.apps.inventory.deps import (
     build_available_syncers,
     filter_syncers_by_name,
@@ -66,19 +72,10 @@ from app.sep.deps import (
 from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
 from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.connectivity.models import ConnectivityCheckResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
-
-CONNECTABLE_SERVICE_TYPES = frozenset(
-    {
-        ServiceTypeEnum.MYSQL,
-        ServiceTypeEnum.POSTGRESQL,
-        ServiceTypeEnum.MONGODB,
-    }
-)
 
 
 def _is_scheduled_sync_enabled() -> bool:
@@ -140,8 +137,11 @@ async def sync_inventory(
 ) -> RedirectResponse:
     """Start inventory sync as a background task.
 
-    Deprecated in favour of the React sync control at
-    ``POST /api/apps/inventory/sync/``; functional until Wave 3.
+    :param syncers: The configured syncers from ``SyncersDep``.
+    :param background_tasks: FastAPI's background task scheduler.
+    :param internal_token: SEP-internal service token forwarded to the sync.
+    :param syncer_name: Optional single syncer to run instead of all of them.
+    :return: HTTP 303 redirect back to the inventory index.
     """
     try:
         selected = filter_syncers_by_name(
@@ -168,9 +168,6 @@ async def schedule_create(
 ) -> RedirectResponse:
     """Attach a periodic schedule to the inventory-sync task.
 
-    Deprecated in favour of the React schedule UI; functional until
-    Wave 3 when the Jinja2 path is retired.
-
     Validate the optional ``syncer`` field and the interval/crontab shape at
     form-submit time using ``filter_syncers_by_name`` and explicit checks so
     invalid input fails fast with a friendly redirect rather than silently
@@ -178,15 +175,10 @@ async def schedule_create(
     every configured syncer; when set it targets only that syncer.
 
     :param syncers: The configured syncers from ``SyncersDep``.
-    :type syncers: SyncersDep
     :param tasks_api: The Tasks API client.
-    :type tasks_api: TaskAPI
     :param schedule: The submitted attach form.
-    :type schedule: InventorySyncScheduleCreateForm
     :param referer: The originating page used for the redirect on success.
-    :type referer: str
     :return: A 303 redirect back to the originating page.
-    :rtype: RedirectResponse
     :raises HTTPBadRequestException: If ``SEP_INTERNAL_TOKEN`` is not
         configured, the syncer name is unknown, or both / neither schedule
         mode is supplied.
@@ -360,96 +352,18 @@ async def check_service_connectivity(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
-    if service.type not in CONNECTABLE_SERVICE_TYPES:
-        messages.error(
-            request,
-            f"Connectivity check is not supported for {service.type.name} services",
-        )
-        return redirect
-    if service.node is None or service.port is None:
-        messages.error(
-            request,
-            f"Connectivity check failed for {service.name}: "
-            "missing node or port information",
-        )
-        return redirect
-    # Fetch executor hosts inline rather than via ``ExecutorHosts`` so we can
-    # early-abort with a ``service.name``-specific flash; the dep continues
-    # with an empty mapping and would emit a second, generic flash on failure.
     try:
-        executor_hosts: dict[str, str] = await tasks_api.get("/hosts/")
-    except HTTPException as exc:
-        logger.warning(
-            "Tasks API error fetching executor hosts for service %s: %s",
-            service.id,
-            exc.detail,
-        )
-        messages.error(
-            request,
-            f"Connectivity check failed for {service.name}: {exc.detail}",
-        )
+        result = await probe_service_connectivity(service, tasks_api)
+    except (HTTPBadGatewayException, HTTPBadRequestException) as exc:
+        messages.error(request, exc.detail)
         return redirect
-    except Exception:
-        logger.exception(
-            "Failed to fetch executor hosts for connectivity check on service %s",
-            service.id,
-        )
+    if result.success:
+        messages.success(request, f"Connectivity check passed for {service.name}")
+    else:
         messages.error(
             request,
             f"Connectivity check failed for {service.name}: "
-            "could not reach the Tasks API",
-        )
-        return redirect
-    executor_target = resolve_executor_name_by_address(
-        service.node.address, executor_hosts
-    )
-    if executor_target is None:
-        messages.error(
-            request,
-            f"Connectivity check failed for {service.name}: "
-            f"no executor host is registered for address "
-            f"{service.node.address!r} (inventory node {service.node.name!r}).",
-        )
-        return redirect
-    try:
-        result = ConnectivityCheckResponse.model_validate(
-            await tasks_api.post(
-                "/connectivity-check/",
-                json={
-                    "target": executor_target,
-                    "host": service.node.address,
-                    "port": service.port,
-                    "service_type": service.type.value,
-                },
-            )
-        )
-        if result.success:
-            messages.success(
-                request,
-                f"Connectivity check passed for {service.name}",
-            )
-        else:
-            messages.error(
-                request,
-                f"Connectivity check failed for {service.name}: "
-                f"{result.error or 'Unknown error'}",
-            )
-    except HTTPException as exc:
-        logger.warning(
-            "Connectivity check API error for service %s: %s",
-            service.id,
-            exc.detail,
-        )
-        messages.error(
-            request,
-            f"Connectivity check failed for {service.name}: {exc.detail}",
-        )
-    except Exception:
-        logger.exception("Connectivity check failed for service %s", service.id)
-        messages.error(
-            request,
-            f"Connectivity check failed for {service.name}: "
-            "could not reach the Tasks API",
+            f"{result.error or 'Unknown error'}",
         )
     return redirect
 

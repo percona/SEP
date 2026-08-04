@@ -23,5 +23,13 @@ interface MultiHostFieldProps {
 }
 
 export function MultiHostField({ field }: MultiHostFieldProps) {
-  return <HostSelector name={field.name} label={field.label} required={field.required} multiple />;
+  return (
+    <HostSelector
+      name={field.name}
+      label={field.label}
+      required={field.required}
+      allowCustom={field.allow_custom}
+      multiple
+    />
+  );
 }

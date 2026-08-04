@@ -15,7 +15,7 @@
 
 """Define tests for the app.sep.apps.backup_pg.routes module."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException, status
@@ -26,6 +26,8 @@ from app.sep.apps.backup_pg.deps import (
     build_backup_task_payload,
     get_backups_index_context,
 )
+from app.sep.apps.backup_pg.routes import router as backup_pg_jinja_router
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.connectivity import (
     clear_connectivity_caches,
     get_latest_connectivity_result,
@@ -378,3 +380,33 @@ def test_jinja_routes_omitted_from_openapi(test_client):
         assert method not in operations, (
             f"{method.upper()} {path} should be omitted from OpenAPI spec"
         )
+
+
+class TestBackupPgRouterDeprecation:
+    """Cover the deprecation contract of the backup_pg Jinja2 router."""
+
+    def test_router_uses_deprecated_route_class(self):
+        """Confirm the router is constructed with ``DeprecatedJinja2Route``."""
+        assert backup_pg_jinja_router.route_class is DeprecatedJinja2Route
+        assert backup_pg_jinja_router.routes
+
+    @pytest.mark.parametrize(
+        "route",
+        backup_pg_jinja_router.routes,
+        ids=lambda route: f"{sorted(route.methods)[0]} {route.path}",
+    )
+    def test_every_route_is_built_by_the_deprecation_route_class(self, route):
+        """Confirm every registered route inherits the header, log, and schema exclusion."""
+        assert isinstance(route, DeprecatedJinja2Route)
+        assert route.include_in_schema is False
+
+    @pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
+    def test_legacy_route_sets_deprecation_header_and_logs(self, test_client):
+        """Assert a real backup_pg Jinja2 route emits the deprecation contract."""
+        with patch("app.sep.apps.framework.deprecation.logger.warning") as warning:
+            response = test_client.get("/backup_pg/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["Deprecation"] == "true"
+        warning.assert_called_once()
+        assert "/backup_pg/" in warning.call_args.args[0]

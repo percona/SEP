@@ -16,7 +16,7 @@
 """Carry the snippets surface the ``ScriptSource`` seam does not derive.
 
 The framework derives listing, per-snippet schema, history, and execute from
-:data:`~app.sep.apps.snippets.script_source.snippet_source`; the auxiliary
+:data:`~app.sep.snippets.script_source.snippet_source`; the auxiliary
 verbs (approval, manual refresh, preview/download) stay hand-written and are
 threaded into the app as ``extra_routes``. Handler names are preserved so the
 OpenAPI operation IDs of these non-derived routes stay byte-identical across the
@@ -35,21 +35,21 @@ from app.core.utils import utc_now
 from app.sep.app_drain import track_app_task
 from app.sep.apps.framework.script_helpers import build_script_preview
 from app.sep.apps.framework.script_source import ScriptPreviewResponse
-from app.sep.apps.snippets.celery import update_snippets
-from app.sep.apps.snippets.deps import (
+from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep
+from app.sep.snippets.celery import update_snippets
+from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.deps import (
     IsManualSyncEnabled,
     SnippetBatchExistenceDep,
     SnippetDep,
 )
-from app.sep.apps.snippets.models import (
+from app.sep.snippets.models.responses import (
     BatchApprovalResponse,
     build_snippet_response,
     RefreshResponse,
     SnippetResponse,
     SnippetServiceTypesResponse,
 )
-from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep
-from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import Snippet
 from app.sep.snippets.utils import guess_mime_type
 

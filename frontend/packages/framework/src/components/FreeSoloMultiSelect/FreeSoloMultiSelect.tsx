@@ -54,6 +54,8 @@ export interface FreeSoloMultiSelectProps<T extends MultiReferenceOption> {
   helperText?: string;
   error?: boolean;
   noOptionsText?: string;
+  /** Called when the dropdown opens (e.g. to refetch option lists). */
+  onOpen?: () => void;
 }
 
 const isOptionEqualToValue = <T extends MultiReferenceOption>(
@@ -78,6 +80,7 @@ function FreeSoloMultiAutocomplete<T extends MultiReferenceOption>({
   required,
   disabled,
   loading,
+  onOpen,
   helperText,
   error,
   noOptionsText,
@@ -148,6 +151,7 @@ function FreeSoloMultiAutocomplete<T extends MultiReferenceOption>({
       getOptionLabel={labelOf}
       isOptionEqualToValue={isOptionEqualToValue}
       noOptionsText={noOptionsText}
+      onOpen={onOpen}
       data-testid={`${field.name}-autocomplete`}
       filterOptions={(opts, params) => {
         const filtered = filter(opts, params);
