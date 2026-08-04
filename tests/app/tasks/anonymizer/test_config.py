@@ -43,7 +43,6 @@ def _entities_for_profile(profile: str) -> set[PIIEntity]:
     """Load ``DEFAULT_ENTITIES`` for a settings.yaml profile via the production merge."""
     source = YamlPrefixConfigSettingsSource(
         AnonymizerSettings,
-        yaml_file=Path("settings.yaml"),
         prefixes=(profile, *AnonymizerSettings.SETTINGS_PREFIXES),
     )
     settings = AnonymizerSettings(DEFAULT_ENTITIES=source.yaml_data["DEFAULT_ENTITIES"])
@@ -64,7 +63,7 @@ class TestSettingsYamlAnonymizerProfiles:
     def test_profile_resolves_expected_entities(
         self, profile: str, expected: set[PIIEntity]
     ) -> None:
-        """Assert each shipped profile resolves to the expected DEFAULT_ENTITIES set."""
+        """Assert each profile resolves to the expected ``DEFAULT_ENTITIES`` set."""
         assert _entities_for_profile(profile) == expected
 
     def test_pii_entity_retains_all_fourteen_members(self) -> None:
