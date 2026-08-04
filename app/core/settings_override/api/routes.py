@@ -404,6 +404,13 @@ def _field_responses(
     scalar HOT field, which is a nested-overridable parent but yields no leaves --
     keeps its single entry.
 
+    A parent whose every leaf carries an explicit ``not_overridable_field``
+    marker keeps its single entry too: the whole object is its only write unit,
+    so expanding it would advertise leaves no PATCH can target and hide the key
+    that one can. Leaves withheld by ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` are not
+    this case -- they stay enumerated, so an admin can see what the allowlist is
+    holding back.
+
     :param setting_class: The settings class identifier (enum member).
     :param settings_cls: The Pydantic settings class declaring ``field_meta``.
     :param proxy: The proxy whose attribute access yields current values.
@@ -420,7 +427,10 @@ def _field_responses(
         )
         else []
     )
-    if not leaves:
+    if not leaves or all(
+        chain_has_explicit_not_overridable(settings_cls, leaf_key)
+        for leaf_key, _chain in leaves
+    ):
         return [
             _settings_response_from_field(
                 setting_class=setting_class,

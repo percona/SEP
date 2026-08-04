@@ -39,7 +39,7 @@ from app.sep.apps.atw.models import (
     AtwSendStatusEnum,
 )
 from app.sep.bundle_upload.plan import DeliveryPlan
-from app.sep.config import sep_settings
+from app.sep.config import DeliveryPlanInputs, sep_settings
 
 _BASE = "/api/apps/atw"
 _EXPECTED_PAGE_TOTAL = 3
@@ -56,6 +56,40 @@ def configured_fixture(mocker: MockerFixture, delivery_plan: DeliveryPlan) -> No
 def unconfigured_fixture(mocker: MockerFixture) -> None:
     """Leave diagnostics delivery unconfigured so the send gate refuses."""
     mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", None)
+
+
+def _awaiting_secrets_plan() -> DeliveryPlan:
+    """Build a baked receiver whose one declared secret carries no value.
+
+    :return: The plan an image ships before an operator supplies credentials.
+    """
+    return DeliveryPlan(
+        endpoint="https://intake.example.com/",
+        secrets={"api_key": ""},
+        upload={
+            "path": "attachment/upload",
+            "headers": {"x-api-key": {"source": "secret", "name": "api_key"}},
+            "reference_pointer": "/result/sys_id",
+        },
+    )
+
+
+@pytest.fixture(name="awaiting_secrets")
+def awaiting_secrets_fixture(mocker: MockerFixture) -> None:
+    """Bake a receiver whose declared secret an operator has not supplied yet."""
+    mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", _awaiting_secrets_plan())
+    mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY_INPUTS", None)
+
+
+@pytest.fixture(name="configured_by_inputs")
+def configured_by_inputs_fixture(mocker: MockerFixture) -> None:
+    """Supply the baked receiver's declared secret through the runtime inputs."""
+    mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", _awaiting_secrets_plan())
+    mocker.patch.object(
+        sep_settings,
+        "DIAGNOSTICS_DELIVERY_INPUTS",
+        DeliveryPlanInputs(secrets={"api_key": "supplied-key"}),
+    )
 
 
 @pytest.fixture(name="enqueue")
@@ -380,3 +414,73 @@ class TestAtwConfig:
         response = await async_api_client.get(f"{_BASE}/config/")
 
         assert response.json()["send_disabled_reasons"] == []
+
+    @pytest.mark.usefixtures("awaiting_secrets")
+    async def test_reports_a_reason_while_a_declared_secret_is_empty(
+        self, async_api_client: AsyncClient
+    ) -> None:
+        """Withhold the Send button until an operator supplies the credentials."""
+        response = await async_api_client.get(f"{_BASE}/config/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["send_disabled_reasons"] == [
+            "Diagnostics delivery is not configured"
+        ]
+
+    @pytest.mark.usefixtures("configured_by_inputs")
+    async def test_reports_no_reasons_once_the_inputs_supply_the_secrets(
+        self, async_api_client: AsyncClient
+    ) -> None:
+        """Offer the Send button once the runtime inputs complete the plan."""
+        response = await async_api_client.get(f"{_BASE}/config/")
+
+        assert response.json()["send_disabled_reasons"] == []
+
+
+@pytest.mark.asyncio
+class TestStartSendJobRuntimeInputs:
+    """Cover the send gate when the receiver's credentials arrive as runtime inputs."""
+
+    @pytest.mark.usefixtures("configured_by_inputs")
+    async def test_accepts_the_send_once_the_inputs_complete_the_plan(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+        enqueue: Any,
+    ) -> None:
+        """Let the send through on a plan completed by the runtime inputs."""
+        incident, executions = await _seed_incident(session)
+
+        response = await async_api_client.post(
+            f"{_BASE}/incidents/{incident.id}/send-jobs/",
+            json={
+                "case_ref": "CS0042",
+                "execution_ids": [str(execution.id) for execution in executions],
+            },
+        )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        row = await AtwSendLogManager.get_or_404(
+            session, id=UUID(response.json()["id"])
+        )
+        enqueue.delay.assert_called_once_with(str(row.id))
+
+    @pytest.mark.usefixtures("awaiting_secrets")
+    async def test_refuses_the_send_while_a_declared_secret_is_empty(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+    ) -> None:
+        """Refuse before staging a bundle, where the plan previously failed mid-send."""
+        incident, executions = await _seed_incident(session)
+
+        response = await async_api_client.post(
+            f"{_BASE}/incidents/{incident.id}/send-jobs/",
+            json={
+                "case_ref": "CS0042",
+                "execution_ids": [str(execution.id) for execution in executions],
+            },
+        )
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "Diagnostics delivery is not configured" in response.json()["detail"]
