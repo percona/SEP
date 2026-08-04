@@ -17,19 +17,27 @@
 
 import json
 import re
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
+import yaml
 from pydantic import ValidationError
 from sqlalchemy_celery_beat.models import Period
 
+from app import BASE_DIR
 from app.core.celery.models import IntervalSchedule
 from app.core.settings_override.registry import (
     is_hot_reloadable,
     materialize_override_value,
 )
 from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
-from app.sep.snippets.config import SnippetsSettings, SnippetSudoOption
+from app.sep.snippets.config import (
+    SnippetFilter,
+    SnippetFilterType,
+    SnippetsSettings,
+    SnippetSudoOption,
+)
 from app.sep.snippets.models.snippet import BaseSnippet, SUDO_INPUT_NAME
 
 EXECUTOR_HOSTS = frozenset({("host1", "host1")})
@@ -355,3 +363,44 @@ class TestSyncIntervalHotField:
             materialize_override_value(
                 SnippetsSettings, "SYNC_INTERVAL", field_info, bad
             )
+
+
+class TestShippedSyncFilterConfig:
+    """Guard the shipped ``settings.yaml`` snippet sync filter declaration.
+
+    ``FILTER_EXTENSIONS`` was never a ``SnippetsSettings`` field, so the shipped
+    key was silently dropped by ``extra="ignore"`` and snippet sync ran
+    unfiltered. These tests pin the live ``SYNC_FILTER`` key and keep the dead
+    key from creeping back in.
+    """
+
+    @staticmethod
+    def _shipped_settings() -> dict[str, Any]:
+        """Load the repository's tracked ``settings.yaml``."""
+        return yaml.safe_load((BASE_DIR / "settings.yaml").read_text())
+
+    @staticmethod
+    def _iter_keys(node: Any) -> Iterator[str]:
+        """Yield every mapping key found anywhere in a parsed YAML document."""
+        if isinstance(node, dict):
+            for key, value in node.items():
+                yield key
+                yield from TestShippedSyncFilterConfig._iter_keys(value)
+        elif isinstance(node, list):
+            for item in node:
+                yield from TestShippedSyncFilterConfig._iter_keys(item)
+
+    def test_no_dead_filter_extensions_key(self):
+        """Assert no section of the shipped config declares the dead key."""
+        assert "FILTER_EXTENSIONS" not in set(self._iter_keys(self._shipped_settings()))
+
+    def test_sync_filter_declares_shell_scripts_only(self):
+        """Assert the shipped config restricts sync to ``.sh`` via the live field."""
+        snippets = self._shipped_settings()["default"]["SEP"]["SNIPPETS"]
+        assert snippets["SYNC_FILTER"] == [".sh"]
+
+    def test_shipped_sync_filter_parses_to_extension_filter(self):
+        """Verify the shipped value validates into an extension ``SnippetFilter``."""
+        snippets = self._shipped_settings()["default"]["SEP"]["SNIPPETS"]
+        parsed = SnippetsSettings(SYNC_FILTER=snippets["SYNC_FILTER"])
+        assert {SnippetFilter(".sh", SnippetFilterType.EXTENSION)} == parsed.SYNC_FILTER
