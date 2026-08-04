@@ -24,12 +24,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.sep.apps.snippets.extra_routes as snippets_extra_routes
-from app.sep.apps.snippets.models import (
-    BatchApprovalErrorResponse,
-    RefreshResponse,
-    SnippetResponse,
-    SnippetsCapabilitiesResponse,
-)
+import app.sep.snippets.models.responses as snippets_models
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
     get_api_authenticated_user,
@@ -42,6 +37,13 @@ from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.responses import (
+    BatchApprovalErrorResponse,
+    RefreshResponse,
+    SnippetBatchApproveRequest,
+    SnippetResponse,
+    SnippetsCapabilitiesResponse,
+)
 from app.tasks.models import TaskHistoryStatusEnum
 
 API_BASE = "/api/apps/snippets"
@@ -82,23 +84,17 @@ class TestSnippetsApprovalApiReviewContracts:
 
     def test_approval_response_collapses_into_snippet_response(self):
         """Single approval returns the snippet entity plus admin attribution."""
-        from app.sep.apps.snippets import models as snippets_models
-
         assert "SnippetApprovalResponse" not in snippets_models.__all__
         assert not hasattr(snippets_models, "SnippetApprovalResponse")
         assert "updated_by" in SnippetResponse.model_fields
 
     def test_batch_approve_base_is_not_exported(self):
         """``SnippetBatchApproveBase`` is gone; callers use ``SnippetBatchApproveRequest``."""
-        from app.sep.apps.snippets import models as snippets_models
-
         assert "SnippetBatchApproveBase" not in snippets_models.__all__
         assert not hasattr(snippets_models, "SnippetBatchApproveBase")
 
     def test_batch_approve_request_has_filenames_directly(self):
         """``SnippetBatchApproveRequest`` owns ``filenames`` — no delegation to a base."""
-        from app.sep.apps.snippets.models import SnippetBatchApproveRequest
-
         assert "filenames" in SnippetBatchApproveRequest.model_fields
 
     def test_batch_approval_error_defaults_use_independent_factories(self):

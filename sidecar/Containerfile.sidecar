@@ -54,8 +54,15 @@ COPY --chown=0:1001 --chmod=440 ./alembic.ini .
 COPY --chown=0:1001 --chmod=440 ./sidecar/supervisord.conf ./supervisord.conf
 COPY --chown=0:1001 --chmod=550 ./sidecar/healthcheck.sh ./healthcheck.sh
 COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
+# Sourced by entrypoint.sh, never executed, hence 440 rather than 550
+COPY --chown=0:1001 --chmod=440 ./sidecar/settings-env.sh ./settings-env.sh
 
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
+
+# The baked embedded profile. Copied after the bundle so it stays authoritative
+# even if `make pack` ever starts shipping a settings.yaml; a bind mount at this
+# path still replaces it wholesale.
+COPY --chown=0:1001 --chmod=440 ./sidecar/settings.embedded.yaml ./settings.yaml
 
 # No compose file injects this for the side-car, so the loader would otherwise
 # fall back to the development defaults
@@ -64,12 +71,6 @@ ENV FASTAPI_ENV=production_docker
 # Every program's stdout is a supervisord pipe, not a tty, so unbuffer it to
 # keep `docker logs` complete when a program dies
 ENV PYTHONUNBUFFERED=1
-
-# The settings the embedded deployment leaves to an administrator; everything else
-# is refused by the override API because this image provisions it. Carried as an
-# env var only until it can move into the baked profile -- env outranks YAML
-# permanently, so the two cannot coexist
-ENV SETTINGS_OVERRIDE_ALLOWED_KEYS='["Settings.LOGGING","Settings.PMM__annotations_enabled","SEPSettings.SYNC_REFRESH_TIME","SEPSettings.CONNECTIVITY_CHECK_DEFAULT","SEPSettings.FOOTER_TEMPLATE","MessagesSettings.LEVEL","AlertsSettings.BACKUP_INTERVAL__every","AlertsSettings.BACKUP_INTERVAL__period","AlertsSettings.BACKUP_RETENTION","AlertsSettings.ALERT_FOLDER_NAME","AlertSettings.PROVIDERS","AlertSettings.SOURCE_PREFIX","AlertSettings.SOURCE_SUFFIX","AnonymizerSettings.DEFAULT_ENTITIES","TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK","TasksSettings.LOG_RETENTION_DAYS"]'
 
 RUN chmod -R u+X,g+X $APP_HOME
 

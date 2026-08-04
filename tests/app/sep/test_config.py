@@ -309,9 +309,13 @@ class TestAppCeleryModulePath:
     """Cover the ``App.celery_module_path`` three-state convention (like ``api_router_path``)."""
 
     def test_auto_derives_when_app_ships_celery_module(self) -> None:
-        """Auto-derive ``<module_name>.celery`` when the app ships a ``celery.py``."""
-        plugin = App(module_name="snippets")
-        assert plugin.celery_module_path == "app.sep.apps.snippets.celery"
+        """Derive ``<module_name>.celery`` when the app ships a ``celery.py``.
+
+        The derivation is a filesystem probe, so the exemplar must be an app that
+        really ships one -- a synthetic module name derives ``None``.
+        """
+        plugin = App(module_name="alerts")
+        assert plugin.celery_module_path == "app.sep.apps.alerts.celery"
 
     def test_none_when_app_has_no_celery_module(self) -> None:
         """Leave ``celery_module_path`` unset when the app ships no ``celery.py``."""
