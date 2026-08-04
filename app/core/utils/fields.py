@@ -436,7 +436,7 @@ Pydantic field, or nest under ``SQLField(..., schema_extra=...)`` for SQLModel.
 
 
 class ArbitraryMapping(dict):
-    """Open ``dict[str, Any]`` with ``additionalProperties`` in the object branch.
+    """Represent a free-form ``dict[str, Any]`` in an open object schema.
 
     Use for nested or nullable mappings, and for route-level free-form JSON
     bodies / responses. Putting ``additionalProperties`` only as a sibling of
@@ -466,8 +466,7 @@ class ArbitraryMapping(dict):
     ) -> core_schema.CoreSchema:
         """Validate and coerce as a plain ``dict[str, Any]``.
 
-        :param source_type: The annotated source type (ignored; always
-            ``dict[str, Any]``).
+        :param source_type: The annotated source type (ignored; always this class).
         :param handler: Pydantic's core-schema builder.
         :return: A core schema for ``dict[str, Any]``.
         """
