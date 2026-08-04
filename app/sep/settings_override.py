@@ -50,7 +50,7 @@ from app.sep.snippets.config import snippets_settings, SnippetsSettings
 def build_sep_override_proxies() -> ProxyRegistry:
     """Compose the SEP-side proxy registry: app-owned entries plus SEP's own.
 
-    SEP's own entries are applied **over** whatever the activated apps declare,
+    SEP's own entries override whatever the activated apps declare,
     so ``SETTINGS`` and ``ALERT_SETTINGS`` -- shared module-level proxies
     (``settings`` / ``alert_settings``) -- keep the SEP refresher as their sole
     owner even if an app were to declare them: under the combined
@@ -95,10 +95,9 @@ async def invalidate_pmm_clients(_: Mapping[str, object]) -> None:
 
     A same-endpoint change (credentials, SSL) evicts the now-stale client so the
     next :class:`PMMSyncer` key-misses to a fresh one via its ``default_factory``
-    PMM read. Known limitation: when the PMM *endpoint itself* changes, the client
-    keyed by the **old** endpoint is not evicted here (this callback only sees the
-    new endpoint); it is harmless -- new syncers key-miss to a fresh client on the
-    new endpoint -- and the old client is closed at shutdown via ``close_all``.
+    PMM read. Known limitation: an endpoint change leaves the client keyed by the
+    old endpoint cached until ``close_all`` closes it at shutdown; syncers key on
+    the new endpoint, so nothing reads it in the meantime.
 
     :param _: The new effective ``Settings`` snapshot mapping (unused -- the
         current PMM endpoint is re-read from the proxy).
