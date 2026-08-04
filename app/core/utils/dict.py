@@ -40,10 +40,7 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
     in `main_dict` with the value from `update_dict`.
 
     :param main_dict: The dictionary to be updated.
-    :type main_dict: dict[Any, Any]
     :param update_dict: The dictionary containing updates to apply.
-   :param main_dict: The dictionary to be updated.
-   :param update_dict: The dictionary containing updates to apply.
     """
     for key, value in update_dict.items():
         if (
