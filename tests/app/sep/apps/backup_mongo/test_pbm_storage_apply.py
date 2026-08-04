@@ -24,7 +24,6 @@ matches the one canonical source in ``pbm_creds_common.py``.
 """
 
 import importlib.util
-import os
 import pathlib
 import subprocess
 import sys
@@ -43,6 +42,7 @@ from app.sep.apps.backup_mongo.spec import (
     BackupMongoResolved,
     build_backup_mongo_spec,
 )
+from tests.app.sep.apps.backup_mongo.pbm_payload_exec import FakePopen, run_payload
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[5]
 _GEN_SCRIPT = _PROJECT_ROOT / "scripts" / "gen_pbm_payloads.py"
@@ -118,29 +118,19 @@ def _exec_payload_capture_cmds(
     if captured is None:
         captured = []
 
-    class _FakePopen:
-        def __init__(self, cmd: list[str], *args: object, **kwargs: object):
-            if popen_error is not None:
-                raise popen_error
-            captured.append(cmd)
-            self._cmd = cmd
+    def _stub(cmd: list[str], *args: object, **kwargs: object) -> FakePopen:
+        return FakePopen(
+            cmd,
+            *args,
+            captured=captured,
+            returncode=lambda c: config_ret if c[:2] == ["pbm", "config"] else 0,
+            construction_error=popen_error,
+            **kwargs,
+        )
 
-        def wait(self) -> None:
-            return None
+    monkeypatch.setattr(subprocess, "Popen", _stub)
 
-        def poll(self) -> int:
-            if self._cmd[:2] == ["pbm", "config"]:
-                return config_ret
-            return 0
-
-    monkeypatch.setattr(subprocess, "Popen", _FakePopen)
-
-    namespace: dict[str, object] = {}
-    path = _ALL_PAYLOADS[payload]
-    try:
-        exec(compile(path.read_text(), str(path), "exec"), namespace)
-    finally:
-        os.environ.pop("PBM_MONGODB_URI", None)
+    run_payload(_ALL_PAYLOADS[payload])
     return captured
 
 
@@ -348,18 +338,13 @@ class TestApplyPbmConfigCanonical:
         ret_code: int = 0,
     ) -> None:
         """Patch ``subprocess.Popen`` to record commands and report ``ret_code``."""
-
-        class _FakePopen:
-            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
-                captured.append(cmd)
-
-            def wait(self) -> None:
-                return None
-
-            def poll(self) -> int:
-                return ret_code
-
-        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+        monkeypatch.setattr(
+            subprocess,
+            "Popen",
+            lambda cmd, *a, **kw: FakePopen(
+                cmd, *a, captured=captured, returncode=ret_code, **kw
+            ),
+        )
 
     def test_writes_config_file_and_runs_pbm_config(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -382,6 +367,38 @@ class TestApplyPbmConfigCanonical:
         assert written == {"storage": {"type": "s3", "s3": {"bucket": "backups"}}}
         assert "credentials_path" not in written
         assert "pitr" not in written
+
+    def test_strips_selective_backup_keys_before_pbm_config(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ):
+        """Strip ``namespaces`` / ``withUsersAndRoles`` from the backup block.
+
+        Those keys drive ``pbm backup --ns`` in runners but are invalid PBM
+        config-file keys, so ``pbm config --file`` must not see them.
+        """
+        monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
+        captured: list[list[str]] = []
+        self._stub_popen(monkeypatch, captured)
+
+        pbm_creds_common._apply_pbm_config(
+            {
+                "storage": {"type": "filesystem", "filesystem": {"path": "/tmp/pbm"}},
+                "backup": {
+                    "compression": "gzip",
+                    "namespaces": "db1.*,db2.coll",
+                    "withUsersAndRoles": True,
+                },
+            }
+        )
+
+        assert captured == [["pbm", "config", "--file", f"{tmp_path}/script_config"]]
+        written = yaml.safe_load((tmp_path / "script_config").read_text())
+        assert written == {
+            "storage": {"type": "filesystem", "filesystem": {"path": "/tmp/pbm"}},
+            "backup": {"compression": "gzip"},
+        }
+        assert "namespaces" not in written["backup"]
+        assert "withUsersAndRoles" not in written["backup"]
 
     def test_exits_when_task_dir_unset(
         self,
@@ -423,12 +440,16 @@ class TestApplyPbmConfigCanonical:
     ):
         """Exit 1 when ``subprocess.Popen`` raises OSError (pbm not executable)."""
         monkeypatch.setenv("NOMAD_TASK_DIR", str(tmp_path))
-
-        class _FakePopen:
-            def __init__(self, cmd: list[str], *args: object, **kwargs: object):
-                raise OSError("No such file or directory: 'pbm'")
-
-        monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+        monkeypatch.setattr(
+            subprocess,
+            "Popen",
+            lambda cmd, *a, **kw: FakePopen(
+                cmd,
+                *a,
+                construction_error=OSError("No such file or directory: 'pbm'"),
+                **kw,
+            ),
+        )
 
         with pytest.raises(SystemExit) as exc:
             pbm_creds_common._apply_pbm_config({"storage": {"type": "s3"}})

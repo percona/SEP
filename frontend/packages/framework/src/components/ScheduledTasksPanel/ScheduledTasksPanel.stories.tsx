@@ -18,6 +18,7 @@
 import { useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
 import { ScheduledTasksPanel } from './ScheduledTasksPanel';
 import type { PeriodicTaskResponse } from './hooks';
 
@@ -45,6 +46,7 @@ const SAMPLE_TASKS: PeriodicTaskResponse[] = [
     description: '',
     start_time: null,
     last_run_at: iso(-3),
+    last_run_status: 'success',
     next_run_at: iso(2),
     date_changed: iso(-60),
     total_run_count: 42,
@@ -61,6 +63,7 @@ const SAMPLE_TASKS: PeriodicTaskResponse[] = [
     description: '',
     start_time: iso(-1440),
     last_run_at: iso(-720),
+    last_run_status: 'failed',
     next_run_at: iso(720),
     date_changed: iso(-1500),
     total_run_count: 7,
@@ -87,7 +90,19 @@ function StoryHarness({ periodicTasks, appTasks }: StoryArgs) {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: Infinity } },
     });
-    qc.setQueryData(['plugins', APP_NAME, 'tasks'], appTasks);
+    qc.setQueryData(
+      [
+        'plugins',
+        APP_NAME,
+        'tasks',
+        {
+          offset: DEFAULT_APP_LIST_OFFSET,
+          limit: DEFAULT_APP_LIST_LIMIT,
+          fetchAllPages: true,
+        },
+      ],
+      { items: appTasks, pagination: null },
+    );
     qc.setQueryData(['periodic'], periodicTasks);
     return qc;
   }, [periodicTasks, appTasks]);

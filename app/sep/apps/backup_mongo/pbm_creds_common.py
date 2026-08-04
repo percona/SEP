@@ -19,10 +19,12 @@ The nine ``backup_mongo`` payload scripts are shipped to executors by ``file://`
 reference and read directly from disk, so they cannot import a shared module at
 execution time. Instead, each marked block below is the one canonical definition of
 its generated region -- the PBM credential-resolution helpers between
-:data:`PREAMBLE_BEGIN` / :data:`PREAMBLE_END`, and the :func:`_apply_pbm_config`
+:data:`PREAMBLE_BEGIN` / :data:`PREAMBLE_END`, the :func:`_apply_pbm_config`
 storage-apply helper between :data:`CONFIG_APPLY_BEGIN` / :data:`CONFIG_APPLY_END`
-(carried only by the config/logical/physical payloads that apply the config).
-Both are materialized verbatim into each payload's marked region by
+(carried only by the config/logical/physical payloads that apply the config), and
+the :func:`_append_pbm_restore_yes_if_supported` probe between
+:data:`RESTORE_YES_BEGIN` / :data:`RESTORE_YES_END` (logical/physical restore
+payloads only). All are materialized verbatim into each payload's marked region by
 ``scripts/gen_pbm_payloads.py`` and guarded in-sync (and behaviorally) by
 ``tests/app/sep/apps/backup_mongo/test_pbm_payload_preamble.py``.
 
@@ -52,6 +54,8 @@ PREAMBLE_BEGIN = "# --- BEGIN GENERATED PBM CREDS PREAMBLE ---"
 PREAMBLE_END = "# --- END GENERATED PBM CREDS PREAMBLE ---"
 CONFIG_APPLY_BEGIN = "# --- BEGIN GENERATED PBM CONFIG APPLY ---"
 CONFIG_APPLY_END = "# --- END GENERATED PBM CONFIG APPLY ---"
+RESTORE_YES_BEGIN = "# --- BEGIN GENERATED PBM RESTORE YES ---"
+RESTORE_YES_END = "# --- END GENERATED PBM RESTORE YES ---"
 
 
 # --- BEGIN GENERATED PBM CREDS PREAMBLE ---
@@ -85,15 +89,17 @@ def _creds_path(config_source: str) -> str:
     return f"{envhome}/.mongodb_uri"
 
 
-def _creds_path_from_config(config: dict | None, config_source: str = "restore") -> str:
+def _creds_path_from_config(config: object, config_source: str = "restore") -> str:
     """Resolve the MongoDB URI credentials path from an already-parsed config dict.
 
-    :param config: The parsed restore/backup config dict, or ``None`` when absent.
+    :param config: The parsed restore/backup config value. Anything other than a
+        ``dict`` (``None``, a bare scalar, a list, ...) is treated as missing config,
+        since ``yaml.safe_load`` can legally return a truthy non-dict.
     :param config_source: The config surface named in the error message, either
         ``"backup"`` or ``"restore"``.
     :return: The credentials-file path (from the config or the ``$HOME`` fallback).
     """
-    if config:
+    if isinstance(config, dict):
         path = config.get("credentials_path")
         if path:
             return path
@@ -154,9 +160,22 @@ def _apply_pbm_config(config: dict) -> None:
         dropped before it is written to the PBM config file.
     """
     sep_only_keys = frozenset({"credentials_path", "credentialsPath"})
-    pbm_config = {
-        k: v for k, v in config.items() if k not in sep_only_keys and v is not None
-    }
+    # Selective --ns flags live under backup for NOMAD_META_CONFIG readers but are
+    # not valid PBM config keys, so strip them before ``pbm config --file``.
+    sep_only_backup_keys = frozenset({"namespaces", "withUsersAndRoles"})
+    pbm_config = {}
+    for key, value in config.items():
+        if key in sep_only_keys or value is None:
+            continue
+        if key == "backup" and isinstance(value, dict):
+            backup_value = {
+                backup_key: nested_value
+                for backup_key, nested_value in value.items()
+                if backup_key not in sep_only_backup_keys
+            }
+            pbm_config[key] = backup_value
+            continue
+        pbm_config[key] = value
     task_dir = os.environ.get("NOMAD_TASK_DIR")
     if not task_dir:
         print(
@@ -186,6 +205,48 @@ def _apply_pbm_config(config: dict) -> None:
 
 
 # --- END GENERATED PBM CONFIG APPLY ---
+
+
+# --- BEGIN GENERATED PBM RESTORE YES ---
+_PBM_RESTORE_HELP_TIMEOUT_SECONDS = 10
+
+
+def _append_pbm_restore_yes_if_supported(cmd: list[str]) -> None:
+    """Append ``--yes`` to ``cmd`` when ``pbm restore --help`` advertises it.
+
+    PBM >=2.14 prompts for confirmation unless ``--yes`` is passed; under Nomad
+    there is no TTY, so that prompt cancels and the restore can report SUCCESS
+    while Mongo stays empty. Older builds do not know ``--yes``, so only add it
+    when help text advertises the flag. Bound the help probe with a short
+    timeout so a hung ``pbm`` cannot stall the restore forever.
+
+    :param cmd: The restore command list being built (mutated in place).
+    """
+    try:
+        help_cmd = ["pbm", "restore", "--help"]
+        help_proc = subprocess.run(  # noqa: S603 # nosec B603
+            help_cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_PBM_RESTORE_HELP_TIMEOUT_SECONDS,
+        )
+        help_text = f"{help_proc.stdout or ''}{help_proc.stderr or ''}"
+        if "--yes" in help_text:
+            cmd.append("--yes")
+    except OSError as err:
+        print(
+            f"Could not probe pbm restore --help for --yes support: {err}",
+            file=sys.stderr,
+        )
+    except subprocess.TimeoutExpired as err:
+        print(
+            f"pbm restore --help timed out while probing for --yes support: {err}",
+            file=sys.stderr,
+        )
+
+
+# --- END GENERATED PBM RESTORE YES ---
 
 
 def _region_between(begin_marker: str, end_marker: str) -> str:
@@ -227,3 +288,13 @@ def config_apply_source() -> str:
     :raises ValueError: When either marker is missing from the module source.
     """
     return _region_between(CONFIG_APPLY_BEGIN, CONFIG_APPLY_END)
+
+
+def restore_yes_source() -> str:
+    """Return the canonical generated restore ``--yes`` probe region text.
+
+    :return: The ``_append_pbm_restore_yes_if_supported`` body text, stripped of
+        leading/trailing blanks.
+    :raises ValueError: When either marker is missing from the module source.
+    """
+    return _region_between(RESTORE_YES_BEGIN, RESTORE_YES_END)

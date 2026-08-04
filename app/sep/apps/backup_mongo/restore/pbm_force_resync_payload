@@ -37,15 +37,17 @@ def _creds_path(config_source: str) -> str:
     return f"{envhome}/.mongodb_uri"
 
 
-def _creds_path_from_config(config: dict | None, config_source: str = "restore") -> str:
+def _creds_path_from_config(config: object, config_source: str = "restore") -> str:
     """Resolve the MongoDB URI credentials path from an already-parsed config dict.
 
-    :param config: The parsed restore/backup config dict, or ``None`` when absent.
+    :param config: The parsed restore/backup config value. Anything other than a
+        ``dict`` (``None``, a bare scalar, a list, ...) is treated as missing config,
+        since ``yaml.safe_load`` can legally return a truthy non-dict.
     :param config_source: The config surface named in the error message, either
         ``"backup"`` or ``"restore"``.
     :return: The credentials-file path (from the config or the ``$HOME`` fallback).
     """
-    if config:
+    if isinstance(config, dict):
         path = config.get("credentials_path")
         if path:
             return path

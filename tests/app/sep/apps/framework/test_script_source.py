@@ -30,6 +30,7 @@ the Wave-3 snippets migration. The framework programs against ``ScriptProtocol``
 so the fixture exercises the same code path a real consumer hits.
 """
 
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Annotated
 from unittest.mock import AsyncMock
@@ -40,7 +41,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, create_model
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.framework import ScriptSource, StaticMount, TaskExecutionApp
@@ -58,7 +59,7 @@ from app.sep.apps.framework.schema import (
     ListView,
     StringField,
 )
-from app.sep.apps.framework.script_source import ScriptExecuteWrite
+from app.sep.apps.framework.script_source import resolve_scripts, ScriptExecuteWrite
 from app.sep.deps import IsApiAuthenticated
 from app.sep.utils.static import AuthenticatedStaticFiles
 from tests.app.sep.apps.framework.contract_suite import build_contract_client
@@ -186,8 +187,17 @@ def _make_source(
     *,
     static_schema: AppSchema | None = None,
     list_response_model: type[BaseModel] | None = None,
+    load_script: Callable[[str], Awaitable[_FixtureScript]] | None = None,
+    load_scripts: (
+        Callable[[Sequence[str]], Awaitable[Mapping[str, _FixtureScript]]] | None
+    ) = None,
 ) -> ScriptSource:
-    """Build a ``ScriptSource`` whose hooks read the fixture script directory."""
+    """Build a ``ScriptSource`` whose hooks read the fixture script directory.
+
+    ``load_script`` / ``load_scripts`` override the fixture loaders so a test can
+    swap in a counting or failing variant without reaching around the source's
+    ``frozen=True`` guard.
+    """
     registry = {
         name: _FixtureScript(name, params) for name, params in _SCRIPT_PARAMS.items()
     }
@@ -206,13 +216,14 @@ def _make_source(
 
     return ScriptSource(
         script_dir=scripts_dir,
-        load_script=_load_script,
+        load_script=load_script or _load_script,
         list_scripts=_list_scripts,
         build_form_schema=_build_form_schema,
         build_execution_meta=_build_execution_meta,
         list_response=_list_row,
         static_schema=static_schema,
         list_response_model=list_response_model,
+        load_scripts=load_scripts,
     )
 
 
@@ -315,6 +326,108 @@ class TestScriptSourceHooks:
         assert meta.target == "exec-1"
         assert meta.filename == "report.sh"
         assert meta.args == {"database": "db", "count": 3}
+
+
+class TestBatchResolve:
+    """Cover ``resolve_scripts``: batch hook, sequential fallback, per-filename result."""
+
+    pytestmark = pytest.mark.asyncio
+
+    async def test_fallback_loops_load_script_for_source_without_hook(
+        self, scripts_dir: Path
+    ) -> None:
+        """Resolve each filename through ``load_script`` when no batch hook is set."""
+        source = _make_source(scripts_dir)
+        assert source.load_scripts is None
+        resolved = await resolve_scripts(source, ["report.sh", "noparams.sh"])
+        assert set(resolved) == {"report.sh", "noparams.sh"}
+        assert resolved["report.sh"].filename == "report.sh"
+
+    async def test_fallback_omits_unresolved_filename_without_raising(
+        self, scripts_dir: Path
+    ) -> None:
+        """Drop a missing filename from the result rather than raising its 404."""
+        source = _make_source(scripts_dir)
+        resolved = await resolve_scripts(source, ["report.sh", "missing.sh"])
+        assert set(resolved) == {"report.sh"}
+
+    async def test_deduplicates_repeated_filename_to_one_lookup(
+        self, scripts_dir: Path
+    ) -> None:
+        """Look a repeated filename up once and still key it in the result."""
+        base = _make_source(scripts_dir)
+        calls: list[str] = []
+
+        async def _counting_load(filename: str) -> _FixtureScript:
+            calls.append(filename)
+            return await base.load_script(filename)
+
+        source = _make_source(scripts_dir, load_script=_counting_load)
+        resolved = await resolve_scripts(source, ["report.sh", "report.sh"])
+        assert calls == ["report.sh"]
+        assert set(resolved) == {"report.sh"}
+
+    @pytest.mark.parametrize(
+        "unsafe", ["../secret.sh", "/etc/passwd", "a/../../x", "a\\b.sh"]
+    )
+    async def test_traversal_filename_raises_before_any_lookup(
+        self, scripts_dir: Path, unsafe: str
+    ) -> None:
+        """Reject an unsafe filename with 400 before touching any loader."""
+
+        async def _fail_load(filename: str) -> _FixtureScript:
+            raise AssertionError("load_script must not run for an unsafe filename")
+
+        source = _make_source(scripts_dir, load_script=_fail_load)
+        with pytest.raises(HTTPBadRequestException):
+            await resolve_scripts(source, ["report.sh", unsafe])
+
+    async def test_hook_receives_deduped_filenames_and_result_is_used(
+        self, scripts_dir: Path
+    ) -> None:
+        """Delegate to ``load_scripts`` with deduped filenames when the hook is set."""
+        seen: list[Sequence[str]] = []
+
+        async def _batch(filenames: Sequence[str]) -> dict[str, _FixtureScript]:
+            seen.append(list(filenames))
+            return {name: _FixtureScript(name, {}) for name in filenames}
+
+        async def _fail_load(filename: str) -> _FixtureScript:
+            raise AssertionError("load_script must not run when a batch hook is set")
+
+        source = _make_source(scripts_dir, load_script=_fail_load, load_scripts=_batch)
+        resolved = await resolve_scripts(source, ["report.sh", "report.sh", "x.sh"])
+        assert seen == [["report.sh", "x.sh"]]
+        assert set(resolved) == {"report.sh", "x.sh"}
+
+    @pytest.mark.parametrize("unsafe", ["../secret.sh", "a\\b.sh"])
+    async def test_traversal_guard_runs_before_the_batch_hook(
+        self, scripts_dir: Path, unsafe: str
+    ) -> None:
+        """Reject an unsafe filename with 400 before a batch hook can run."""
+
+        async def _fail_batch(filenames: Sequence[str]) -> dict[str, _FixtureScript]:
+            raise AssertionError("load_scripts must not run for an unsafe filename")
+
+        source = _make_source(scripts_dir, load_scripts=_fail_batch)
+        with pytest.raises(HTTPBadRequestException):
+            await resolve_scripts(source, ["report.sh", unsafe])
+
+    async def test_empty_selection_resolves_without_touching_a_loader(
+        self, scripts_dir: Path
+    ) -> None:
+        """Resolve an empty selection to an empty mapping, calling no loader."""
+
+        async def _fail_load(filename: str) -> _FixtureScript:
+            raise AssertionError("no loader must run for an empty selection")
+
+        async def _fail_batch(filenames: Sequence[str]) -> dict[str, _FixtureScript]:
+            raise AssertionError("no loader must run for an empty selection")
+
+        source = _make_source(
+            scripts_dir, load_script=_fail_load, load_scripts=_fail_batch
+        )
+        assert await resolve_scripts(source, []) == {}
 
 
 class TestDerivedRouteSurface:

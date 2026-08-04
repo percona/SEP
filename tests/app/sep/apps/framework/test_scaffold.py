@@ -92,6 +92,16 @@ def _cleanup(name: str) -> None:
     importlib.invalidate_caches()
 
 
+def _venv_root() -> Path:
+    """Return the active virtualenv root for Makefile ``VIRTUAL_ENV`` forwarding.
+
+    Use ``sys.prefix`` rather than resolving ``sys.executable``: following the
+    interpreter symlink lands in the base install and breaks
+    ``VIRTUAL_ENV/bin/python``.
+    """
+    return Path(sys.prefix)
+
+
 @contextmanager
 def _scaffolded_config(
     config: scaffold.ScaffoldConfig,
@@ -455,40 +465,78 @@ def test_broken_symlink_blocks_scaffold(tmp_settings: Path) -> None:
         app_dir.unlink(missing_ok=True)
 
 
-def test_ruff_fix_noop_without_python_files(monkeypatch: pytest.MonkeyPatch) -> None:
+def _fail_run(*args, **kwargs):
+    """Fail the calling test instead of spawning a subprocess."""
+    raise AssertionError(f"ruff should not run: {args}, {kwargs}")
+
+
+@pytest.fixture
+def no_ruff_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make any ``subprocess.run`` call from the scaffolder fail the test."""
+    monkeypatch.setattr(scaffold.subprocess, "run", _fail_run)
+
+
+@pytest.mark.usefixtures("no_ruff_run")
+def test_ruff_fix_noop_without_python_files() -> None:
     """Skip ruff entirely when no rendered file is a ``.py`` file."""
-
-    def _fail(*args, **kwargs):
-        raise AssertionError(f"ruff should not run: {args}, {kwargs}")
-
-    monkeypatch.setattr(scaffold.subprocess, "run", _fail)
     scaffold._ruff_fix([Path("a.txt"), Path("b.tmpl")])
 
 
-def test_ruff_fix_skips_when_ruff_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Skip ruff when the executable is not on ``$PATH``."""
-
-    def _fail(*args, **kwargs):
-        raise AssertionError(f"ruff should not run: {args}, {kwargs}")
-
-    monkeypatch.setattr(scaffold.shutil, "which", lambda _: None)
-    monkeypatch.setattr(scaffold.subprocess, "run", _fail)
+@pytest.mark.usefixtures("no_ruff_run")
+def test_ruff_fix_skips_when_ruff_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skip ruff when the executable is absent beside the Python interpreter."""
+    monkeypatch.setattr(scaffold.sys, "executable", str(tmp_path / "bin" / "python"))
     scaffold._ruff_fix([Path("a.py")])
 
 
-def test_ruff_fix_runs_check_then_format(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Run ruff check --fix then ruff format over only the rendered ``.py`` files."""
+@pytest.mark.usefixtures("no_ruff_run")
+def test_ruff_fix_skips_when_ruff_not_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skip ruff when the path exists but is not executable."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "ruff").touch()
+    monkeypatch.setattr(scaffold.sys, "executable", str(bin_dir / "python"))
+    scaffold._ruff_fix([Path("a.py")])
+
+
+@pytest.mark.usefixtures("no_ruff_run")
+def test_ruff_fix_skips_when_ruff_is_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skip ruff when the path beside the interpreter is a directory."""
+    bin_dir = tmp_path / "bin"
+    (bin_dir / "ruff").mkdir(parents=True)
+    monkeypatch.setattr(scaffold.sys, "executable", str(bin_dir / "python"))
+    scaffold._ruff_fix([Path("a.py")])
+
+
+def test_ruff_fix_runs_check_then_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run the venv ruff check then format over only rendered ``.py`` files."""
     commands = []
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    python = bin_dir / "python"
+    ruff = bin_dir / "ruff"
+    ruff.touch()
+    ruff.chmod(0o755)
 
     def _record(cmd, **kwargs):
         commands.append((cmd, kwargs))
 
-    monkeypatch.setattr(scaffold.shutil, "which", lambda _: "/usr/bin/ruff")
+    monkeypatch.setattr(scaffold.sys, "executable", str(python))
     monkeypatch.setattr(scaffold.subprocess, "run", _record)
     scaffold._ruff_fix([Path("a.py"), Path("b.txt")])
     invoked = [cmd for cmd, _kwargs in commands]
     assert [cmd[1] for cmd in invoked] == ["check", "format"]
+    assert all(cmd[0] == ruff for cmd in invoked)
     assert all("a.py" in cmd and "b.txt" not in cmd for cmd in invoked)
+    assert all(_kwargs["cwd"] == scaffold._REPO_ROOT for _cmd, _kwargs in commands)
 
 
 def test_registers_app_disabled(tmp_settings: Path) -> None:
@@ -501,15 +549,15 @@ def test_registers_app_disabled(tmp_settings: Path) -> None:
         )
 
 
-def test_summary_points_to_app_manager_without_changelog(
+def test_summary_points_to_apps_page_without_changelog(
     tmp_settings: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Assert the summary points at the Admin App Manager and omits a changelog command."""
+    """Assert the summary points at the Apps page and omits a changelog command."""
     name = "_scaffold_smoke_summary"
     try:
         assert scaffold.main(["--name", name, "--type", "task"]) == 0
         out = capsys.readouterr().out
-        assert "Admin App Manager" in out
+        assert "/admin/apps" in out
         assert "changelog" not in out.lower()
     finally:
         shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
@@ -528,7 +576,7 @@ def test_summary_notes_preexisting_registration(
         assert scaffold.main(["--name", name, "--type", "task"]) == 0
         out = capsys.readouterr().out
         assert "already registered" in out.lower()
-        assert "Admin App Manager" in out
+        assert "/admin/apps" in out
     finally:
         shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
         shutil.rmtree(scaffold.TESTS_DIR / name, ignore_errors=True)
@@ -1088,7 +1136,7 @@ def test_makefile_forwards_quoted_values() -> None:
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    venv_root = Path(sys.executable).resolve().parent.parent
+    venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
             [
@@ -1133,7 +1181,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    venv_root = Path(sys.executable).resolve().parent.parent
+    venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
             [

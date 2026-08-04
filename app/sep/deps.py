@@ -17,7 +17,7 @@
 
 import hmac
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from typing import Annotated, Any
 from zoneinfo import available_timezones
 
@@ -33,8 +33,9 @@ from app.api.deps import get_current_user as get_current_user_api
 from app.api.deps import oauth2_scheme
 from app.core.alerts.config import alert_settings
 from app.core.auth import config as auth_config
+from app.core.auth.base import BaseAuthProvider
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
-from app.core.auth.models import OAuthToken
+from app.core.auth.models import OAuthToken, SessionExchangeTokenResponse
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -338,6 +339,18 @@ async def redirect_if_user_is_authenticated(request: Request) -> None:
 IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
 
 
+def _ambient_session_provider() -> BaseAuthProvider | None:
+    """Return the active auth provider when ambient-session auth is available.
+
+    :return: The active provider, or ``None`` when ambient SSO is disabled or the
+        provider carries no ambient session.
+    """
+    if not sep_settings.AMBIENT_SESSION_SSO_ENABLED:
+        return None
+    provider = auth_config.get_active_auth_provider()
+    return provider if provider.supports_ambient_session else None
+
+
 async def resolve_ambient_session_token(request: Request) -> OAuthToken | None:
     """Resolve an ambient provider session on the request into a SEP token pair.
 
@@ -350,10 +363,8 @@ async def resolve_ambient_session_token(request: Request) -> OAuthToken | None:
         the ambient session.
     :return: A minted ``OAuthToken`` on a valid ambient session, else ``None``.
     """
-    if not sep_settings.AMBIENT_SESSION_SSO_ENABLED:
-        return None
-    provider = auth_config.get_active_auth_provider()
-    if not provider.supports_ambient_session:
+    provider = _ambient_session_provider()
+    if provider is None:
         return None
     try:
         return await provider.resolve_ambient_session(request.cookies)
@@ -361,6 +372,33 @@ async def resolve_ambient_session_token(request: Request) -> OAuthToken | None:
         logger.warning(
             "Ambient auto-login failed (upstream/operational); "
             "falling back to the login form.",
+            exc_info=True,
+        )
+        return None
+
+
+async def resolve_ambient_exchange_token(
+    request: Request,
+) -> SessionExchangeTokenResponse | None:
+    """Resolve an ambient provider session on the request into a short-lived bearer.
+
+    Gate on the same ambient-session availability as
+    :func:`resolve_ambient_session_token`, and swallow upstream failures the same
+    way, so an absent session, a rejected session, and a provider outage are
+    indistinguishable to the caller and all deny.
+
+    :param request: The incoming request, whose provider session cookie carries
+        the ambient session.
+    :return: The minted bearer on a valid ambient session, else ``None``.
+    """
+    provider = _ambient_session_provider()
+    if provider is None:
+        return None
+    try:
+        return await provider.exchange_ambient_session(request.cookies)
+    except HTTPException:
+        logger.warning(
+            "Ambient session exchange failed (upstream/operational); denying.",
             exc_info=True,
         )
         return None
@@ -1292,6 +1330,23 @@ async def check_for_conflicted_running_tasks(
 
 
 HasNoConflictedRunningTasks = Depends(check_for_conflicted_running_tasks)
+
+
+async def check_group_for_conflicted_running_tasks(
+    task_names: Sequence[str], tasks_api: TaskAPI
+) -> None:
+    """Raise if any task in a group has a running or pending run.
+
+    Backup and restore groups run on their derived/child legs, not on the parent
+    config task, so gating an edit on the parent name alone lets an edit slip
+    through mid-run. Check every group member.
+
+    :param task_names: The parent and derived/child leg names to inspect.
+    :param tasks_api: The TaskAPI instance used to make requests to the task service.
+    :raises HTTPConflictException: If any named task has a running or pending run.
+    """
+    for name in task_names:
+        await check_for_conflicted_running_tasks(name, tasks_api)
 
 
 def reject_if_protected(task: Task, *, action: str = "edit") -> Task:

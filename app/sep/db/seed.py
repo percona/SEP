@@ -50,6 +50,12 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     schedule is skipped rather than seeded with a ``None``-prefixed ``task_name``
     that would point at nothing the worker imports.
 
+    Snippet ingestion is the carve-out: its task lives in the library
+    (``app.sep.snippets.celery``) and is named in ``STATIC_CELERY_INCLUDE``, so it
+    registers whether or not the snippets app ships. Its schedule is therefore
+    emitted unconditionally against the static path and carries no
+    ``owner_app_key`` -- disabling the snippets app must not gate it.
+
     :return: The schedule/task pairs to seed into the Celery beat database.
     """
     system_tasks = [
@@ -64,19 +70,17 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
         ),
     ]
 
-    if snippets_celery := app_celery_module_for("snippets"):
-        system_tasks.append(
-            SystemPeriodicTaskSchedule(
-                schedule=snippets_settings.SYNC_INTERVAL,
-                tasks=[
-                    SystemPeriodicTaskData(
-                        name="sep__sync_snippets",
-                        task_name=f"{snippets_celery}.sync_snippets",
-                        owner_app_key="snippets",
-                    ),
-                ],
-            ),
-        )
+    system_tasks.append(
+        SystemPeriodicTaskSchedule(
+            schedule=snippets_settings.SYNC_INTERVAL,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="sep__sync_snippets",
+                    task_name="app.sep.snippets.celery.sync_snippets",
+                ),
+            ],
+        ),
+    )
 
     if alerts_celery := app_celery_module_for("alerts"):
         from app.sep.apps.alerts.config import alerts_settings
@@ -96,6 +100,23 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
 
     if report_celery := app_celery_module_for("report"):
         system_tasks.extend(_report_periodic_tasks(report_celery))
+
+    if atw_celery := app_celery_module_for("atw"):
+        from app.sep.apps.atw.config import atw_settings
+
+        if atw_settings.cleanup_interval is not None:
+            system_tasks.append(
+                SystemPeriodicTaskSchedule(
+                    schedule=atw_settings.cleanup_interval,
+                    tasks=[
+                        SystemPeriodicTaskData(
+                            name="sep__purge_atw_bundles",
+                            task_name=f"{atw_celery}.purge_atw_bundles",
+                            owner_app_key="atw",
+                        ),
+                    ],
+                ),
+            )
 
     return system_tasks
 

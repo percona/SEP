@@ -24,6 +24,7 @@ field types, the snippets schema vocabulary, and the tasks-service status enum.
 """
 
 import logging
+from collections.abc import Sequence
 from typing import Any, cast
 
 from fastapi import HTTPException
@@ -46,12 +47,12 @@ from app.sep.apps.framework.schema import (
 )
 from app.sep.apps.framework.script_helpers import execute_script
 from app.sep.apps.framework.script_source import (
-    make_script_dep,
+    resolve_scripts,
     ScriptExecuteWrite,
     ScriptExecutionResponse,
 )
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
-from app.sep.apps.snippets.script_source import snippet_source, SnippetScript
+from app.sep.snippets.script_source import snippet_source, SnippetScript
 from app.tasks.models import TaskHistoryStatusEnum
 
 __all__ = [
@@ -68,7 +69,7 @@ __all__ = [
     "dispatch_batch_item",
     "fetch_task_history",
     "parameter_fields",
-    "resolve_snippet",
+    "resolve_snippets",
     "shared_field_names",
 ]
 
@@ -81,10 +82,9 @@ ATW_HYDRATION_WARNING = (
 MAX_BATCH_SNIPPETS = 50
 """Cap a batch selection.
 
-Each selected snippet costs one snippet lookup on its own request-less session,
-and each dispatched item adds an upstream call and a write, all in request order.
-The ceiling keeps one request's cost bounded; it sits far above any realistic
-diagnostic selection.
+The whole selection resolves in a single lookup, and each dispatched item then
+adds an upstream call and a write, all in request order. The ceiling keeps one
+request's cost bounded; it sits far above any realistic diagnostic selection.
 """
 
 _MIN_SHARED_DECLARERS = 2
@@ -92,7 +92,23 @@ _SYNTHETIC_FIELD_NAMES = frozenset(
     {EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME, SCRIPT_PREVIEW_FIELD_NAME}
 )
 
-resolve_snippet = make_script_dep(snippet_source)
+
+async def resolve_snippets(filenames: Sequence[str]) -> dict[str, SnippetScript]:
+    """Resolve several snippet filenames against the shared snippet source at once.
+
+    The batch entry point the ATW call sites resolve their selections through,
+    binding them to the framework's single resolution entry point so they inherit
+    its traversal guard, order-preserving dedup, and one-query batch load. The
+    result carries only the filenames that resolved, leaving each call site free to
+    turn a missing filename into its own failure (a whole-request 404 for the
+    schema form, a per-item error for the execute loop).
+
+    :param filenames: The requested snippet filenames, possibly with duplicates.
+    :return: A mapping of each resolved filename to its :class:`SnippetScript`.
+    :raises HTTPBadRequestException: When any filename is unsafe or malformed,
+        failing the whole request before any item is dispatched.
+    """
+    return await resolve_scripts(snippet_source, filenames)
 
 
 class ATWSnippetSchema(BaseModel):
@@ -202,6 +218,13 @@ class ATWIncidentExecutionResponse(BaseModel):
     :param started_at: When the upstream execution started.
     :param finished_at: When the upstream execution finished.
     :param has_logs: Whether the upstream execution has readable logs.
+    :param masked_args: The command line the snippet ran with, credential values
+        replaced by a fixed-width mask. ``None`` together with
+        ``args_withheld=False`` means the execution recorded no arguments.
+        Defaults to ``None``.
+    :param args_withheld: Whether the arguments were suppressed because they
+        could not be masked safely -- distinguishing that from an execution that
+        genuinely ran with none. Defaults to ``False``.
     """
 
     id: UUID4
@@ -212,6 +235,8 @@ class ATWIncidentExecutionResponse(BaseModel):
     started_at: UTCDatetime | None = None
     finished_at: UTCDatetime | None = None
     has_logs: bool | None = None
+    masked_args: str | None = None
+    args_withheld: bool = False
 
 
 def parameter_fields(script: SnippetScript) -> list[AnyField]:
@@ -303,26 +328,28 @@ def shared_field_names(declarations: dict[str, list[AnyField]]) -> set[str]:
 async def dispatch_batch_item(
     body: ATWBatchExecuteWrite,
     item: ATWBatchExecuteItemWrite,
+    script: SnippetScript,
     tasks_api: RemoteAPI,
 ) -> ScriptExecutionResponse:
-    """Resolve one batch item, narrow the shared args to it, and dispatch it.
+    """Narrow the shared args to one already-resolved batch item and dispatch it.
 
     Shared arguments are filtered to the parameters the snippet actually declares,
     so a batch may offer a value no single snippet accepts, and the item's own
-    ``args`` then override what remains.
+    ``args`` then override what remains. The snippet is resolved once for the whole
+    batch by the caller and handed in, so a repeated filename costs one lookup.
 
     :param body: The batch payload supplying the executor host, sudo choice, and
         shared arguments.
-    :param item: The item naming the snippet and its own argument overrides.
+    :param item: The item naming its own argument overrides.
+    :param script: The snippet resolved for ``item.snippet_filename``.
     :param tasks_api: The authenticated Tasks API client.
     :return: The dispatched task name, the created task-history id (``None`` when
         the Tasks API returned none), and the resolved snippet filename.
-    :raises HTTPException: When the snippet cannot be resolved, its arguments fail
-        validation, it is not executable, or the Tasks API returns an error status.
+    :raises HTTPException: When the snippet's arguments fail validation, it is not
+        executable, or the Tasks API returns an error status.
     :raises OSError: Propagated from ``execute_script`` when the Tasks API
         transport itself fails.
     """
-    script = await resolve_snippet(item.snippet_filename)
     declared = {field.name for field in parameter_fields(script)}
     args = {name: value for name, value in body.shared_args.items() if name in declared}
     args.update(item.args)

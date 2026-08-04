@@ -19,7 +19,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
 import { AppDetailPage, resolveTabFromSplat } from './AppDetailPage';
@@ -49,7 +49,7 @@ vi.mock('@sep/api', () => ({
   // the summary renders its "Not scheduled" state, leaving the execute/delete
   // flows under test untouched.
   useAppTasks: () => ({
-    data: [],
+    data: { items: [], pagination: null },
     isLoading: false,
     isError: false,
     error: null,
@@ -341,6 +341,35 @@ describe('AppDetailPage — detail_view sections', () => {
     expect(hl.textContent).toBe('SELECT 1');
   });
 
+  it('passes DetailField.highlight="yaml" through to the syntax highlighter', async () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: { meta: { config: 'foo: bar' } },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(
+      executionSchema({
+        detail_view: {
+          sections: [
+            {
+              title: 'Execution',
+              fields: [{ path: 'data.meta.config', label: 'Config', highlight: 'yaml' }],
+            },
+          ],
+        },
+      } as unknown as AppSchema),
+    );
+
+    const hl = await screen.findByTestId('detail-syntax-highlighter');
+    expect(hl.getAttribute('data-language')).toBe('yaml');
+    expect(hl.textContent).toBe('foo: bar');
+  });
+
   it('renders boolean false and numeric zero leaves', () => {
     mockUseAppTask.mockReturnValue({
       data: {
@@ -356,6 +385,62 @@ describe('AppDetailPage — detail_view sections', () => {
 
     expect(screen.getByText('No')).toBeInTheDocument();
     expect(screen.getByText('0')).toBeInTheDocument();
+  });
+});
+
+describe('AppDetailPage — TaskOverviewDetailField object values', () => {
+  it('renders a nested object extra field via the JSON syntax highlighter, not a raw <pre> dump', async () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        config: { host: 'db1', port: 3306 },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    const hl = await screen.findByTestId('detail-syntax-highlighter');
+    expect(hl.getAttribute('data-language')).toBe('json');
+    // The Config label comes from formatLabel() on the extra key.
+    expect(screen.getByText('Config')).toBeInTheDocument();
+  });
+
+  it('renders an array extra field via the JSON syntax highlighter', async () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        tags: ['alpha', 'beta'],
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    const hl = await screen.findByTestId('detail-syntax-highlighter');
+    expect(hl.getAttribute('data-language')).toBe('json');
+    expect(screen.getByText('Tags')).toBeInTheDocument();
+  });
+
+  it('renders an empty object extra field via the highlighter rather than hiding it', async () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        config: {},
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    const hl = await screen.findByTestId('detail-syntax-highlighter');
+    expect(hl.getAttribute('data-language')).toBe('json');
   });
 });
 
@@ -1320,6 +1405,29 @@ describe('AppDetailPage — connectivity warning', () => {
     expect(screen.queryByTestId('connectivity-log-button')).toBeNull();
   });
 });
+describe('AppDetailPage — schedule summary placement', () => {
+  it('renders the ScheduleSummary before the Task information card', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+
+    // `schema` (module-level) has capabilities.scheduling enabled.
+    renderAt('/apps/checksums/task/FECHK');
+
+    const summary = screen.getByTestId('schedule-summary');
+    const taskInfo = screen.getByText('Task information');
+
+    // DOM order: the schedule summary node comes before the Task information
+    // heading, so it is reachable without scrolling past the info card.
+    // Bit test (not strict equality) stays correct if a future refactor wraps
+    // either node in a container and the browser ORs in containment bits.
+    expect(
+      summary.compareDocumentPosition(taskInfo) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
 describe('AppDetailPage delete flow', () => {
   it('confirms then calls delete mutation and navigates to list on success', async () => {
     mockDeleteMutate.mockReset();

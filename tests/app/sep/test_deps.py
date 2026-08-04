@@ -30,8 +30,9 @@ from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
-from app.core.auth.models import OAuthToken
+from app.core.auth.models import OAuthToken, SessionExchangeTokenResponse
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.exceptions import (
     HTTPConflictException,
@@ -40,6 +41,7 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.core.security import crypto_timestamp_serializer
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import AppRegistry, build_app_registry
@@ -58,6 +60,7 @@ from app.sep.deps import (
     get_created_schema,
     get_current_admin,
     get_current_user,
+    get_current_user_from_cookie,
     get_default_context,
     get_executor_hosts,
     get_executor_hosts_context,
@@ -77,6 +80,7 @@ from app.sep.deps import (
     require_app_enabled,
     require_bearer_for_unsafe_methods,
     require_pmm_api,
+    resolve_ambient_exchange_token,
     resolve_ambient_session_token,
 )
 from app.sep.exceptions import LoginRedirectException
@@ -186,6 +190,121 @@ class TestResolveAmbientSessionToken:
 
         assert await resolve_ambient_session_token(request) is None
         warning.assert_called_once()
+
+
+class TestResolveAmbientExchangeToken:
+    """Verify ``resolve_ambient_exchange_token`` gating and fail-closed behavior."""
+
+    @staticmethod
+    def _request(cookies: dict[str, str] | None = None) -> Request:
+        """Build a minimal GET request carrying ``cookies`` in the Cookie header."""
+        headers: list[tuple[bytes, bytes]] = []
+        if cookies:
+            joined = "; ".join(f"{name}={value}" for name, value in cookies.items())
+            headers.append((b"cookie", joined.encode()))
+        return Request(
+            {"type": "http", "headers": headers, "method": "GET", "path": "/"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_none_when_toggle_disabled(self, grafana_mock) -> None:
+        """Assert the helper no-ops when ambient SSO is off, even under Grafana."""
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_exchange_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_provider_lacks_ambient_support(self, mocker) -> None:
+        """Assert a provider without ambient-session support yields ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_exchange_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_cookie_absent(self, grafana_mock, mocker) -> None:
+        """Assert an absent session cookie yields ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request()
+        assert await resolve_ambient_exchange_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_returns_exchange_token_on_happy_path(
+        self, grafana_mock, mocker
+    ) -> None:
+        """Assert a valid ambient session mints an exchange assertion, not a pair."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "ambient"})
+
+        token = await resolve_ambient_exchange_token(request)
+
+        assert isinstance(token, SessionExchangeTokenResponse)
+        assert token.access_token
+        grafana_mock.get_current_user.assert_awaited_once_with("ambient")
+
+    @pytest.mark.asyncio
+    async def test_operational_failure_logs_and_returns_none(
+        self, grafana_mock, mocker
+    ) -> None:
+        """Assert an upstream failure denies rather than surfacing a 502."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        grafana_mock.get_current_user.side_effect = GrafanaException()
+        warning = mocker.patch("app.sep.deps.logger.warning")
+        request = self._request({"grafana_session": "s"})
+
+        assert await resolve_ambient_exchange_token(request) is None
+        warning.assert_called_once()
+
+
+class TestCookiePathRefusesExchangeToken:
+    """Verify the server-rendered cookie path stays access-only."""
+
+    @staticmethod
+    def _request_with_session_cookie(token: str) -> Request:
+        """Build a request whose session cookie carries ``token``, signed as SEP signs it.
+
+        Signing the value the way the real code does keeps a rejection
+        attributable to the assertion's ``typ`` rather than to a bad cookie
+        signature.
+        """
+        signed = crypto_timestamp_serializer.dumps(token)
+        return Request(
+            {
+                "type": "http",
+                "headers": [
+                    (b"cookie", f"{sep_settings.SESSION.COOKIE_NAME}={signed}".encode())
+                ],
+                "method": "GET",
+                "path": "/",
+                "app": MagicMock(),
+                "router": MagicMock(),
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_exchange_assertion_in_the_session_cookie_is_refused(
+        self, grafana_mock, mocker
+    ) -> None:
+        """Assert an exchange assertion in the session cookie redirects to login."""
+        mocker.patch("app.sep.deps.User", GrafanaUser)
+        exchange = await GrafanaUser.exchange_token_from_session("ambient")
+
+        with pytest.raises(LoginRedirectException):
+            await get_current_user_from_cookie(
+                self._request_with_session_cookie(exchange.access_token)
+            )
+
+    @pytest.mark.asyncio
+    async def test_access_assertion_in_the_session_cookie_is_accepted(
+        self, grafana_mock, grafana_user_record, mocker
+    ) -> None:
+        """Assert the cookie path still accepts an access assertion."""
+        mocker.patch("app.sep.deps.User", GrafanaUser)
+        oauth = await GrafanaUser.get_oauth_token(username="alice", password="secret")
+
+        user = await get_current_user_from_cookie(
+            self._request_with_session_cookie(oauth.access_token)
+        )
+
+        assert user.username == grafana_user_record["login"]
 
 
 class TestGetBaseUrl:
@@ -1904,6 +2023,32 @@ class TestGetDefaultContextPluginFiltering:
 
         keys = {p.key for p in context["plugins"]}
         assert {"inventory", "snippets", "dependent"} <= keys
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("mock_get_username_mapping")
+    async def test_snippet_consumers_stay_in_sidebar_when_snippets_disabled(
+        self, session, dummy_request, regular_user
+    ) -> None:
+        """Keep Alert Troubleshooting and ATW in the sidebar past a snippets disable.
+
+        Both read snippet scripts from the library, which ships independently of
+        the snippets app, so neither declares ``requires_apps`` and hiding the
+        snippets UI must not hide them. The dependency-gating behaviour itself
+        stays covered by the synthetic cases above.
+        """
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        with patch("app.sep.deps.settings"):
+            context = await get_default_context(
+                dummy_request, regular_user, None, session
+            )
+
+        keys = {p.key for p in context["plugins"]}
+        assert "snippets" not in keys
+        assert {"alert_troubleshooting", "atw", "inventory"} <= keys
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")

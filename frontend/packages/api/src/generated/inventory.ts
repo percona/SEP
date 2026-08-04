@@ -110,10 +110,13 @@ export interface paths {
      *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
      *     ``detail`` are preserved through the proxy.
      *
-     *     For a local class: idempotent -- deleting a (class, key) pair that has no
-     *     override row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE
-     *     field responds 409 -- the field cannot have an override row in the first
-     *     place, so the operator's intent is unsatisfiable.
+     *     For a local class the DELETE is idempotent: deleting a (class, key) pair
+     *     that has no override row succeeds with 204. Attempting to delete a field
+     *     the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
+     *     override row in the first place and the operator's intent is
+     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+     *     may still carry a row written before the restriction applied, so that
+     *     row is deleted normally and only the no-row case answers 409.
      *
      *     After republishing the snapshot, fires the rebind callbacks for the
      *     reverted key so a HOT target rebinds to its restored value without
@@ -128,7 +131,8 @@ export interface paths {
      *         the router wires none).
      *     :raises HTTPNotFoundException: If the class isn't exposed or the key
      *         doesn't exist on the class.
-     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has
+     *         no row to delete.
      *     :raises HTTPUnprocessableEntityException: If ``key`` names a
      *         ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
      *         target an individual ``parent__leaf`` instead).

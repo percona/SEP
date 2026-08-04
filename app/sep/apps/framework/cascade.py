@@ -20,9 +20,9 @@ from __future__ import annotations
 import copy
 import logging
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import Any, Literal, TYPE_CHECKING
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPInternalServerErrorException, HTTPNotFoundException
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 
 if TYPE_CHECKING:
@@ -47,6 +47,12 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+_CASCADE_PARTIAL_FAILURE_MESSAGES: dict[str, str] = {
+    "create": "Partial create failure; incomplete task group",
+    "update": "Partial update failure; inconsistent task group",
+    "delete": "Partial delete failure; orphaned tasks",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +90,22 @@ class CascadeResult:
         :rtype: bool
         """
         return not self.failures
+
+    def raise_if_failed(self, *, op: Literal["create", "update", "delete"]) -> None:
+        """Raise HTTP 500 when the cascade collected one or more failures.
+
+        :param op: The cascade operation that produced this result.
+        :raises HTTPInternalServerErrorException: When ``self.failures`` is non-empty.
+        """
+        if self.success:
+            return
+        detail: dict[str, Any] = {
+            "message": _CASCADE_PARTIAL_FAILURE_MESSAGES[op],
+            "errors": {
+                failure.task_name: str(failure.exception) for failure in self.failures
+            },
+        }
+        raise HTTPInternalServerErrorException(detail=detail)
 
 
 def build_derived_payload(

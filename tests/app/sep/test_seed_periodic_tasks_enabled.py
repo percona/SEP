@@ -67,7 +67,7 @@ def _schedule(every: int) -> list[SystemPeriodicTaskSchedule]:
             tasks=[
                 SystemPeriodicTaskData(
                     name=TASK_NAME,
-                    task_name="app.sep.apps.snippets.celery.sync_snippets",
+                    task_name="app.sep.snippets.celery.sync_snippets",
                 ),
             ],
         ),

@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, UTCDatetime
-from app.tasks.models import TaskBackendEnum, TaskResponse
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskResponse
 
 
 class TaskListResponse(BaseModel):
@@ -84,6 +84,8 @@ class PeriodicTaskSummary(BaseModel):
     :param total_run_count: The total number of times the schedule has run,
         or ``None`` when unavailable.
     :type total_run_count: int | None
+    :param last_run_status: The result of this schedule's own most recent run,
+        or ``None`` when the schedule has never run.
     :param chain_task_names: Ordered task names in the periodic execution
         chain, if any.
     :type chain_task_names: list[str]
@@ -96,6 +98,7 @@ class PeriodicTaskSummary(BaseModel):
     next_run_at: UTCDatetime | None = None
     last_run_at: UTCDatetime | None = None
     total_run_count: int | None = None
+    last_run_status: TaskHistoryStatusEnum | None = None
     chain_task_names: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")

@@ -41,4 +41,5 @@ app = BaseApp(
     nav_icon=NavIcon.TROUBLESHOOT,
     api_router=api_router,
     jinja_router=jinja_router,
+    uses_task_data=True,
 )

@@ -384,6 +384,8 @@ MigrationBackup/
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm,visualstudio,visualstudiocode,virtualenv
 
 *.db
+*.db-shm
+*.db-wal
 *.diff
 *.patch
 *.pem
@@ -393,6 +395,7 @@ MigrationBackup/
 static/sep-db.sql.txt
 data/nomad.hcl
 data/casdoor_init_data.json
+data/atw-bundles/
 .celery
 
 # TypeScript build info (incremental compilation cache)

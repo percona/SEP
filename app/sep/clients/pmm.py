@@ -19,11 +19,10 @@ import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NoReturn
 
-from aiohttp import ClientResponseError
+from aiohttp import ClientResponse, ClientResponseError
 from async_lru import _LRUCacheWrapper, alru_cache
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from app.core.requests import RemoteAPI
@@ -33,6 +32,10 @@ from app.core.requests.connectivity import (
     ConnectivityResult,
     ConnectivityStatusEnum,
     PROBE_TIMEOUT_SECONDS,
+)
+from app.core.requests.remote_api import (
+    exception_for_status,
+    UPSTREAM_NON_JSON_HEADER,
 )
 from app.core.utils.dict import remove_falsy_values_from_dict
 from app.core.utils.fields import NonEmptyStr
@@ -646,10 +649,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise HTTPException(
-                    status_code=err.status,
-                    detail=err.message,
-                ) from None
+                self._raise_upstream_no_body_error(response, err)
 
     async def update_rule(
         self,
@@ -755,6 +755,37 @@ class PMMRemoteAPI(RemoteAPI):
         )
         return ContactPoint.model_validate(data)
 
+    @staticmethod
+    def _raise_upstream_no_body_error(
+        response: ClientResponse, err: ClientResponseError
+    ) -> NoReturn:
+        """Translate an error from a no-JSON-body endpoint into a project exception.
+
+        The provisioning PUT/DELETE endpoints return 202/204 with no body on
+        success. On error, PMM itself answers with a Grafana JSON body
+        (``{"message": ...}``), but a reverse proxy failing in front of PMM can
+        return an HTML 404, which would otherwise map to
+        :class:`HTTPNotFoundException` and be swallowed by restore callers that
+        treat a 404 as "not provisioned". Inspect ``response.content_type`` and
+        stamp ``UPSTREAM_NON_JSON_HEADER`` on a non-JSON error body so
+        :func:`exception_for_status` keeps a proxy 404 as a bare
+        :class:`fastapi.HTTPException`.
+
+        :param response: The upstream error response.
+        :param err: The :class:`ClientResponseError` raised by
+            ``raise_for_status``.
+        :raises HTTPException: Always -- the mapped project exception, or a bare
+            HTTPException for a non-JSON body or an unmapped status.
+        """
+        headers = (
+            None
+            if response.content_type == "application/json"
+            else {UPSTREAM_NON_JSON_HEADER: "1"}
+        )
+        raise exception_for_status(
+            err.status, detail=err.message, headers=headers
+        ) from None
+
     async def update_contact_point(
         self, uid: str, name: str, type_: str, settings: dict[str, Any]
     ) -> None:
@@ -781,10 +812,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise HTTPException(
-                    status_code=err.status,
-                    detail=err.message,
-                ) from None
+                self._raise_upstream_no_body_error(response, err)
 
     async def delete_contact_point(self, uid: str) -> None:
         """Delete an alert contact point by its UID.
@@ -803,10 +831,7 @@ class PMMRemoteAPI(RemoteAPI):
             try:
                 response.raise_for_status()
             except ClientResponseError as err:
-                raise HTTPException(
-                    status_code=err.status,
-                    detail=err.message,
-                ) from None
+                self._raise_upstream_no_body_error(response, err)
 
     async def get_notification_policy(self) -> NotificationPolicy:
         """Fetch the current notification policy tree from PMM.

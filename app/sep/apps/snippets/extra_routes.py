@@ -16,7 +16,7 @@
 """Carry the snippets surface the ``ScriptSource`` seam does not derive.
 
 The framework derives listing, per-snippet schema, history, and execute from
-:data:`~app.sep.apps.snippets.script_source.snippet_source`; the auxiliary
+:data:`~app.sep.snippets.script_source.snippet_source`; the auxiliary
 verbs (approval, manual refresh, preview/download) stay hand-written and are
 threaded into the app as ``extra_routes``. Handler names are preserved so the
 OpenAPI operation IDs of these non-derived routes stay byte-identical across the
@@ -35,20 +35,21 @@ from app.core.utils import utc_now
 from app.sep.app_drain import track_app_task
 from app.sep.apps.framework.script_helpers import build_script_preview
 from app.sep.apps.framework.script_source import ScriptPreviewResponse
-from app.sep.apps.snippets.celery import update_snippets
-from app.sep.apps.snippets.deps import (
+from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep
+from app.sep.snippets.celery import update_snippets
+from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.deps import (
     IsManualSyncEnabled,
     SnippetBatchExistenceDep,
     SnippetDep,
 )
-from app.sep.apps.snippets.models import (
+from app.sep.snippets.models.responses import (
     BatchApprovalResponse,
     build_snippet_response,
     RefreshResponse,
     SnippetResponse,
+    SnippetServiceTypesResponse,
 )
-from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep
-from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import Snippet
 from app.sep.snippets.utils import guess_mime_type
 
@@ -79,6 +80,25 @@ async def snippets_api_refresh(
         await update_snippets()
     logger.info("Snippets refreshed via JSON API by %s", user.username)
     return RefreshResponse(refreshed_at=utc_now())
+
+
+@maintenance_router.get("/service_types", dependencies=[IsApiAuthenticated])
+async def snippets_api_service_types(
+    session: SessionDep,
+) -> SnippetServiceTypesResponse:
+    """List the distinct service types across the whole snippets dataset.
+
+    Backs the list page's service-type filter so its options reflect every value
+    in the dataset rather than only the loaded page.
+
+    :param session: The SEP database session.
+    :return: The sorted distinct service types and whether any snippet is
+        uncategorized (absent or blank service type).
+    """
+    service_types, has_uncategorized = await SnippetManager.list_service_types(session)
+    return SnippetServiceTypesResponse(
+        service_types=service_types, has_uncategorized=has_uncategorized
+    )
 
 
 artifact_router = APIRouter()

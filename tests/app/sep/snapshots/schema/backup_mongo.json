@@ -38,27 +38,34 @@
         "pbm_config": "pbm_logical",
         "pbm_logical": "pbm_status"
       }
+    },
+    {
+      "data_overrides": {
+        "backup_type": "pbm_incremental"
+      },
+      "name_suffix": "-incremental",
+      "parent_link": true,
+      "payload_substitutions": {
+        "pbm_config": "pbm_logical",
+        "pbm_logical": "pbm_incremental"
+      }
     }
   ],
-  "description": "Configure Percona Backup for MongoDB (PBM) and manage logical, physical, and status backup tasks.",
+  "description": "Configure Percona Backup for MongoDB (PBM) and manage logical, physical, status, and incremental backup tasks.",
   "display_name": "MongoDB Backups",
   "forms": [
     {
       "collapsed_by_default": false,
       "collapsible": false,
+      "description": "Creating this backup produces sibling tasks: logical, physical, status, incremental.",
       "fields": [
         {
+          "default": "mongodb-backup",
           "label": "Task Name",
           "min_length": 1,
           "name": "task_name",
           "required": true,
           "type": "string"
-        },
-        {
-          "label": "Execution Host",
-          "name": "hostname",
-          "required": true,
-          "type": "host"
         },
         {
           "label": "Database Service",
@@ -68,6 +75,13 @@
             "mongodb"
           ],
           "type": "service"
+        },
+        {
+          "depends_on": "service_id",
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
         },
         {
           "description": "Optional path to MongoDB URI credentials on the Nomad node",
@@ -81,8 +95,8 @@
       "title": "Task"
     },
     {
-      "collapsed_by_default": false,
-      "collapsible": false,
+      "collapsed_by_default": true,
+      "collapsible": true,
       "fields": [
         {
           "choices": [
@@ -201,8 +215,8 @@
       "title": "Storage"
     },
     {
-      "collapsed_by_default": false,
-      "collapsible": false,
+      "collapsed_by_default": true,
+      "collapsible": true,
       "fields": [
         {
           "default": false,
@@ -255,8 +269,8 @@
       "title": "Point-in-Time Recovery"
     },
     {
-      "collapsed_by_default": false,
-      "collapsible": false,
+      "collapsed_by_default": true,
+      "collapsible": true,
       "fields": [
         {
           "description": "YAML mapping of mongod addresses to backup priority (highest wins). One entry per line, e.g.:\n\"host1:27018\": 2\n\"host2:27018\": 1",
@@ -322,6 +336,30 @@
           "name": "backup_num_parallel_collections",
           "required": false,
           "type": "integer"
+        },
+        {
+          "description": "Optional comma-separated db.collection or db.* list. Applied as pbm backup --ns on the logical sibling only (PBM rejects --ns for physical and incremental backups).",
+          "label": "Namespaces (selective)",
+          "name": "backup_namespaces",
+          "required": false,
+          "requires": [
+            {
+              "when": {
+                "equals": {
+                  "backup_with_users_and_roles": true
+                }
+              }
+            }
+          ],
+          "type": "string"
+        },
+        {
+          "default": false,
+          "description": "Pass --with-users-and-roles with selective backup. Valid only when every namespace is database-level (db.*).",
+          "label": "Include users and roles",
+          "name": "backup_with_users_and_roles",
+          "required": false,
+          "type": "bool"
         }
       ],
       "render_after_submit": false,

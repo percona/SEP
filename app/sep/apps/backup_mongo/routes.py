@@ -17,7 +17,7 @@
 
 These Jinja2 routes are deprecated. The JSON API equivalents live under
 ``/api/apps/backup_mongo/`` and the React UI at ``/backups/mongodb/backups``
-(``frontend/packages/plugins/backup_mongo``). Every response from this router
+(``frontend/packages/apps/backup_mongo``). Every response from this router
 carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on hit;
 the routes remain mounted for Wave 1 cutover and will be removed in Wave 3.
 """
@@ -30,12 +30,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.apps.backup_mongo.deps import (
     _fetch_latest_pbm_status,
     BackupGeneratedTask,
     BackupsIndexContextDep,
     BackupsTask,
+    get_backups_task,
 )
+from app.sep.apps.backup_mongo.schema import BACKUP_MONGO_DERIVED
+from app.sep.apps.framework.cascade import cascade_create_tasks
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -77,53 +81,7 @@ async def pbm_backups_create(
     """Create new backups task."""
     logger.debug("Create backups task: %s", task)
 
-    # Create the config task
-    await task_api.post(
-        "/",
-        json=task.model_dump(),
-    )
-
-    # Create a logical backup task
-    logical_task = task.model_copy()
-    logical_task.data["backup_type"] = "pbm_logical"
-    logical_task.name = f"{task.name}-logical"
-    logical_task.data["parent"] = task.name
-    logical_task.data["payload"] = logical_task.data["payload"].replace(
-        "pbm_config", "pbm_logical"
-    )
-
-    await task_api.post(
-        "/",
-        json=logical_task.model_dump(),
-    )
-
-    # Create a physical backup task
-    physical_task = task.model_copy()
-    physical_task.data["backup_type"] = "pbm_physical"
-    physical_task.name = f"{task.name}-physical"
-    physical_task.data["parent"] = task.name
-    physical_task.data["payload"] = logical_task.data["payload"].replace(
-        "pbm_logical", "pbm_physical"
-    )
-
-    await task_api.post(
-        "/",
-        json=physical_task.model_dump(),
-    )
-
-    # Create a physical backup task
-    status_task = task.model_copy()
-    status_task.data["backup_type"] = "pbm_status"
-    status_task.name = f"{task.name}-status"
-    status_task.data["parent"] = task.name
-    status_task.data["payload"] = logical_task.data["payload"].replace(
-        "pbm_physical", "pbm_status"
-    )
-
-    await task_api.post(
-        "/",
-        json=status_task.model_dump(),
-    )
+    await cascade_create_tasks(task_api, task.model_dump(), BACKUP_MONGO_DERIVED)
 
     task_path = request.url_for("pbm_backups_detail", task_name=task.name)
     return RedirectResponse(
@@ -148,6 +106,17 @@ async def pbm_backups_detail(
         return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
     meta = data["meta"]
+    # Probe for the incremental sibling before linking a Run control. Groups
+    # created before this release only gain ``-incremental`` on edit/backfill;
+    # linking a missing task would 404 on execute.
+    incremental_name = f"{task.name}-incremental"
+    try:
+        await get_backups_task(incremental_name, tasks_api)
+    except HTTPNotFoundException:
+        has_incremental = False
+    else:
+        has_incremental = True
+
     task_data = {
         "name": task.name,
         "created_at": task.created_at,
@@ -165,6 +134,10 @@ async def pbm_backups_detail(
         ),
         "alert_on_fail": task.alert_on_fail,
     }
+    if has_incremental:
+        task_data["incremental_backup_url"] = request.url_for(
+            "pbm_backups_execute", task_name=incremental_name
+        )
 
     context["task"] = task_data
     response = await tasks_api.get(f"/{task.name}/history/")
@@ -173,6 +146,11 @@ async def pbm_backups_detail(
     context["history_logical"] = response["items"]
     response = await tasks_api.get(f"/{task.name}-physical/history/")
     context["history_physical"] = response["items"]
+    if has_incremental:
+        response = await tasks_api.get(f"/{incremental_name}/history/")
+        context["history_incremental"] = response["items"]
+    else:
+        context["history_incremental"] = []
     response = await tasks_api.get(
         f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
@@ -187,6 +165,12 @@ async def pbm_backups_detail(
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     context["running_tasks"] += response["items"]
+    if has_incremental:
+        response = await tasks_api.get(
+            f"/{incremental_name}/history/",
+            params={"status": TaskHistoryStatusEnum.RUNNING},
+        )
+        context["running_tasks"] += response["items"]
     context["stats"] = await tasks_api.get(f"/stats/{task.name}")
 
     response = await tasks_api.get(f"/{task.name}-status/history/")

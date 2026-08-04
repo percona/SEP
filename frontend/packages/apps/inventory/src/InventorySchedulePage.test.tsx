@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import type { ReactNode } from 'react';
 
 // Hoisted mocks must be set up before imports that use them.
@@ -89,7 +89,7 @@ function renderPage(schedulingEnabled = true) {
 
 function setupHooks(periodic: PeriodicTaskResponse[]) {
   useAppTasksMock.mockReturnValue({
-    data: [{ name: TASK_NAME }],
+    data: { items: [{ name: TASK_NAME }], pagination: null },
     isLoading: false,
     isError: false,
   });
@@ -125,6 +125,17 @@ describe('InventorySchedulePage', () => {
       await screen.findByTestId('inv-sched-panel');
       expect(screen.queryByTestId('inv-sched-attach')).not.toBeInTheDocument();
     });
+  });
+
+  it('loads inventory tasks with fetchAllPages so schedule joins are not capped', async () => {
+    setupHooks([]);
+    renderPage();
+    await screen.findByTestId('inv-sched-panel');
+    expect(useAppTasksMock).toHaveBeenCalledWith(
+      'inventory',
+      undefined,
+      expect.objectContaining({ fetchAllPages: true }),
+    );
   });
 
   describe('empty state', () => {

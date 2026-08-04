@@ -138,7 +138,7 @@ class App(BaseCaseInsensitiveModel):
         * **Explicit ``null``** — opt the plugin out of the JSON API mount,
           even if a conventional module exists.
     :param celery_module_path: Optional dot-separated import path to the plugin's
-        Celery task module (e.g. ``"app.sep.apps.snippets.celery"``). The path is a
+        Celery task module (e.g. ``"app.sep.apps.alerts.celery"``). The path is a
         *module*, not an attribute, so it feeds the worker ``include`` list rather
         than being resolved to an object. Three input states, mirroring
         ``api_router_path``:
@@ -644,8 +644,7 @@ class SEPSettings(BaseYamlAppSettings):
         means no receiver is configured. Set through env or YAML only, so every
         write runs the plan's cross-reference validation as a whole; DB
         overrides are rejected because a per-leaf override would merge without
-        re-validating the plan, and a secret sent through the override API is
-        stored as its mask literal.
+        re-validating the plan.
     :param APP_DRAIN: Operator-tunable settings for the cooperative app-drain
         reconciler (reconcile cadence and stale running-task TTL).
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
@@ -695,7 +694,7 @@ class SEPSettings(BaseYamlAppSettings):
     )
     APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
-    CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
+    CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=False)
     AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(
         default=False,
         description=(

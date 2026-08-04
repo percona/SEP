@@ -659,11 +659,23 @@ class TestSepConfigExportFilter:
         """Place app-owned blocks after core classes and before Tasks."""
         response = api_admin_client.get(
             EXPORT_URL,
-            params={"keys": [TASKS_CLASS, ALERT_CLASS, SEP_CLASS]},
+            params={"keys": [TASKS_CLASS, ALERTS_CLASS, SEP_CLASS]},
         )
         assert response.status_code == status.HTTP_200_OK
         payload = yaml.safe_load(response.text)
-        assert list(payload) == [SEP_CLASS, ALERT_CLASS, TASKS_CLASS]
+        assert list(payload) == [SEP_CLASS, ALERTS_CLASS, TASKS_CLASS]
+
+    async def test_core_alert_block_precedes_app_owned_alerts_block(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Keep the core ``AlertSettings`` block ahead of the app-owned ``AlertsSettings``."""
+        response = api_admin_client.get(
+            EXPORT_URL,
+            params={"keys": [ALERTS_CLASS, TASKS_CLASS, ALERT_CLASS]},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert list(payload) == [ALERT_CLASS, ALERTS_CLASS, TASKS_CLASS]
 
     async def test_alert_settings_whole_class_selector(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock

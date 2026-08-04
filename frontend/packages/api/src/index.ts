@@ -36,10 +36,22 @@ export { ApiError, normalizeAxiosError, parseFieldErrors } from './errors';
 export type { ApiErrorDetails, ApiErrorKind, FieldValidationError } from './errors';
 
 // Auth
-export { postLogin, postRefresh, postSession, postLogout, fetchCurrentUser } from './auth';
+export {
+  postLogin,
+  postRefresh,
+  postSession,
+  postSessionExchange,
+  postLogout,
+  fetchCurrentUser,
+} from './auth';
 
 // Types (re-exported from generated OpenAPI schemas)
-export type { OAuthTokenResponse, SPAOAuthTokenResponse, User } from './types/api';
+export type {
+  OAuthTokenResponse,
+  SessionExchangeTokenResponse,
+  SPAOAuthTokenResponse,
+  User,
+} from './types/api';
 
 // Generated OpenAPI type surfaces — use for typed openapi-fetch clients
 // and for type-only imports in plugins and framework code.
@@ -91,6 +103,7 @@ export type {
   MultiTableField,
   HostField,
   MultiHostField,
+  RemoteChoiceField,
   ScriptPreviewField,
   Predicate,
   FieldGate,
@@ -111,7 +124,9 @@ export {
   useUpdateAppTask,
   useAppEntityList,
   useAppEntityDetail,
-  unwrapAppListResponse,
+  normalizeAppListResponse,
+  DEFAULT_APP_LIST_OFFSET,
+  DEFAULT_APP_LIST_LIMIT,
   useCreateAppEntity,
   useUpdateAppEntity,
   useDeleteAppEntity,
@@ -145,6 +160,9 @@ export type {
   DashboardStats,
   EnabledApp,
   AppInfo,
+  AppListPagination,
+  AppListQueryOptions,
+  AppListResult,
   PaginatedAppList,
   TaskHistoryStatus,
 } from './hooks';

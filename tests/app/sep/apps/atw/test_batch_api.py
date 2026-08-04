@@ -53,6 +53,7 @@ from app.sep.deps import (
 from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.masking import SENSITIVE_ARG_MASK
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -73,6 +74,7 @@ _SECOND_TASK_ID = 12
 _DUPLICATE_TASK_IDS = (21, 22)
 _SEEDED_TASK_IDS = (101, 102)
 _SEEDED_EXECUTION_COUNT = len(_SEEDED_TASK_IDS)
+_SEEDED_MD5 = "a" * 32
 
 
 def executions_url(incident_id: object) -> str:
@@ -92,7 +94,7 @@ def request_less_session(session: AsyncSession, mocker: MockerFixture) -> AsyncS
     maker.return_value.__aenter__ = AsyncMock(return_value=session)
     maker.return_value.__aexit__ = AsyncMock(return_value=False)
     mocker.patch(
-        "app.sep.apps.snippets.script_source.get_async_session_maker",
+        "app.sep.snippets.script_source.get_async_session_maker",
         return_value=maker,
     )
     return session
@@ -129,7 +131,7 @@ def create_snippet(
         target = snippets_dir / filename
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("#!/bin/sh\necho hi\n")
-        snippet = Snippet(filename=filename, size=20, md5_digest="a" * 32)
+        snippet = Snippet(filename=filename, size=20, md5_digest=_SEEDED_MD5)
         meta = dict(snippet.meta)
         if parameters is not None:
             meta["parameters"] = parameters
@@ -253,6 +255,28 @@ class TestAtwExecutionSchema:
         assert "minutes" not in field_names(payload["shared"])
         assert field_names(per_snippet_fields(payload, "a.sh")) == ["minutes"]
         assert field_names(per_snippet_fields(payload, "b.sh")) == ["minutes"]
+
+    @pytest.mark.asyncio
+    async def test_whole_selection_resolves_in_one_snippet_lookup(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Resolve the whole selection with one batch lookup, not one per snippet."""
+        await create_snippet("a.sh", parameters=[_DEFAULTS_FILE_PARAM])
+        await create_snippet("b.sh", parameters=[_DEFAULTS_FILE_PARAM])
+        await create_snippet("c.sh", parameters=[_DEFAULTS_FILE_PARAM])
+        batch = mocker.spy(SnippetManager, "list")
+        single = mocker.spy(SnippetManager, "get_or_404")
+
+        response = api_client.get(
+            SCHEMA_URL, params={"snippet_filename": ["a.sh", "b.sh", "c.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert batch.call_count == 1
+        assert single.call_count == 0
 
     @pytest.mark.asyncio
     async def test_duplicate_filenames_are_deduped_order_preserving(
@@ -420,6 +444,34 @@ class TestAtwBatchExecute:
         ]
 
     @pytest.mark.asyncio
+    async def test_whole_batch_resolves_in_one_snippet_lookup(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """Resolve every item's snippet with one batch lookup before the dispatch loop."""
+        await create_snippet("a.sh", parameters=[])
+        await create_snippet("b.sh", parameters=[])
+        tasks_api.post.side_effect = [{"id": _FIRST_TASK_ID}, {"id": _SECOND_TASK_ID}]
+        batch = mocker.spy(SnippetManager, "list")
+        single = mocker.spy(SnippetManager, "get_or_404")
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [{"snippet_filename": "a.sh"}, {"snippet_filename": "b.sh"}],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert batch.call_count == 1
+        assert single.call_count == 0
+
+    @pytest.mark.asyncio
     async def test_shared_args_are_filtered_to_declared_parameters(
         self,
         api_client: TestClient,
@@ -472,6 +524,36 @@ class TestAtwBatchExecute:
         meta = tasks_api.post.await_args.kwargs["json"]["meta"]
         assert "/item.cnf" in meta["args"]
         assert "/shared.cnf" not in meta["args"]
+
+    @pytest.mark.asyncio
+    async def test_traversal_filename_fails_the_whole_batch(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Reject the whole batch with 400 when any item names an unsafe filename.
+
+        A traversal string is malformed input, not an unknown snippet: the seam's
+        guard runs before any lookup, so it fails the request rather than
+        degrading to a per-item error, and nothing dispatches.
+        """
+        await create_snippet("a.sh", parameters=[])
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [
+                    {"snippet_filename": "../secret.sh"},
+                    {"snippet_filename": "a.sh"},
+                ],
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        tasks_api.post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_unknown_snippet_fails_only_its_item(
@@ -853,6 +935,391 @@ class TestAtwListIncidentExecutions:
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
+class TestAtwIncidentExecutionMaskedArgs:
+    """Check the recorded arguments GET .../executions/ reports for each row.
+
+    Snippet resolution is deliberately left unstubbed so the real
+    ``resolve_snippets`` -> ``get_execution_model`` -> ``mask_snippet_args`` chain
+    runs end to end through the routing and DI stack.
+    """
+
+    @pytest_asyncio.fixture
+    async def seed_execution(
+        self, session: AsyncSession, incident: AtwIncident
+    ) -> Callable[..., Awaitable[AtwIncidentExecution]]:
+        """Return an async factory recording one execution against the incident."""
+
+        async def _factory(
+            filename: str, *, task_history_id: int = _FIRST_TASK_ID
+        ) -> AtwIncidentExecution:
+            return await AtwIncidentExecutionManager.save(
+                session,
+                AtwIncidentExecution(
+                    incident_id=incident.id,
+                    task_history_id=task_history_id,
+                    snippet_filename=filename,
+                ),
+            )
+
+        return _factory
+
+    @staticmethod
+    def _history(
+        args: str | None, *, md5_checksum: str = _SEEDED_MD5
+    ) -> dict[str, Any]:
+        """Return an upstream task-history payload carrying ``args``.
+
+        The digest is recorded alongside the arguments at execution time, and
+        masking compares it against the snippet's current one, so it has to be
+        present for a row to resolve.
+
+        :param args: The recorded argument string, or ``None`` to record none.
+        :param md5_checksum: The snippet digest recorded with the execution;
+            override it to simulate a snippet edited since the run.
+        :return: The payload shape the history endpoint returns.
+        """
+        meta = {"md5_checksum": md5_checksum}
+        if args is not None:
+            meta["args"] = args
+        return {
+            "status": TaskHistoryStatusEnum.SUCCESS.value,
+            "has_logs": True,
+            "execution_request": {"meta": meta},
+        }
+
+    @staticmethod
+    def _rows_by_task_id(response: Any) -> dict[int, dict[str, Any]]:
+        """Return the page's rows keyed by task-history id.
+
+        ``utc_now`` zeroes microseconds, so two rows seeded in one test share a
+        ``created_at`` and the newest-first sort between them is a tie the DB
+        breaks arbitrarily. Keying off the id keeps a multi-row assertion from
+        depending on which side of that tie the page landed.
+
+        :param response: The executions-list response.
+        :return: A mapping of each row's ``task_history_id`` to the row.
+        """
+        return {item["task_history_id"]: item for item in response.json()["items"]}
+
+    @pytest.mark.asyncio
+    async def test_masked_args_are_returned(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Mask a credential-named parameter's value and never emit the raw secret."""
+        secret = "hunter2SuperSecret"
+        await create_snippet(
+            "mongo-check.sh",
+            parameters=[
+                {"name": "port", "type": "int", "required": True},
+                {"name": "password", "type": "str", "required": True},
+            ],
+        )
+        await seed_execution("mongo-check.sh")
+        tasks_api.get.return_value = self._history(f"--port 27017 --password {secret}")
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["args_withheld"] is False
+        assert item["masked_args"] == f"--port 27017 --password {SENSITIVE_ARG_MASK}"
+        assert secret not in response.text
+
+    @pytest.mark.asyncio
+    async def test_credential_uri_password_is_masked(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Mask a password embedded in a URI whose name matches no credential word."""
+        await create_snippet(
+            "pbm-diagnostics.sh",
+            parameters=[{"name": "mongodb-uri", "type": "str", "required": True}],
+        )
+        await seed_execution("pbm-diagnostics.sh")
+        tasks_api.get.return_value = self._history(
+            "--mongodb-uri mongodb://USER:PASSWORD@localhost:27017/?authSource=admin"
+        )
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        masked = response.json()["items"][0]["masked_args"]
+        assert SENSITIVE_ARG_MASK in masked
+        assert "USER" in masked
+        assert "localhost:27017" in masked
+        assert "PASSWORD" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_args_withheld_when_snippet_unresolvable(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Withhold a row whose snippet no longer resolves, so nothing is unmasked."""
+        await seed_execution("deleted-since.sh")
+        tasks_api.get.return_value = self._history("--password s3cr3t")
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
+        assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_execution_without_arguments_reports_the_empty_state(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Report no arguments distinctly from withholding them."""
+        await create_snippet("no-params.sh", parameters=[])
+        await seed_execution("no-params.sh")
+        tasks_api.get.return_value = self._history(None)
+
+        response = api_client.get(executions_url(incident.id))
+
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is False
+
+    @pytest.mark.asyncio
+    async def test_hydration_failure_withholds_that_row_only(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Withhold a row whose upstream lookup failed while its sibling resolves."""
+        await create_snippet(
+            "mongo-check.sh",
+            parameters=[{"name": "password", "type": "str", "required": True}],
+        )
+        await seed_execution("mongo-check.sh", task_history_id=_FIRST_TASK_ID)
+        await seed_execution("mongo-check.sh", task_history_id=_SECOND_TASK_ID)
+
+        def history_or_upstream_failure(path: str) -> dict[str, Any]:
+            if path.endswith(f"/{_FIRST_TASK_ID}"):
+                raise HTTPBadRequestException(detail="upstream gone")
+            return self._history("--password s3cr3t")
+
+        tasks_api.get.side_effect = history_or_upstream_failure
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = self._rows_by_task_id(response)
+        assert rows[_FIRST_TASK_ID]["masked_args"] is None
+        assert rows[_FIRST_TASK_ID]["args_withheld"] is True
+        assert rows[_SECOND_TASK_ID]["masked_args"] == (
+            f"--password {SENSITIVE_ARG_MASK}"
+        )
+        assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_snippet_does_not_fail_the_page(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Keep the page alive when only some of its snippets still resolve."""
+        await create_snippet(
+            "mongo-check.sh",
+            parameters=[{"name": "password", "type": "str", "required": True}],
+        )
+        await seed_execution("mongo-check.sh", task_history_id=_FIRST_TASK_ID)
+        await seed_execution("deleted-since.sh", task_history_id=_SECOND_TASK_ID)
+        tasks_api.get.return_value = self._history("--password s3cr3t")
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = self._rows_by_task_id(response)
+        assert rows[_FIRST_TASK_ID]["masked_args"] == f"--password {SENSITIVE_ARG_MASK}"
+        assert rows[_SECOND_TASK_ID]["args_withheld"] is True
+        assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_snippet_edited_since_the_run_withholds_that_row(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Withhold a row whose snippet changed after the execution was recorded.
+
+        Masking reads the snippet's *current* frontmatter, so an edit that dropped
+        or de-sensitised a parameter would leave its recorded value unrecognised
+        and rendered in the clear. A digest that no longer matches is the signal
+        that the metadata may not describe this recording.
+        """
+        await create_snippet(
+            "edited-since.sh",
+            parameters=[{"name": "blob", "type": "str", "required": True}],
+        )
+        await seed_execution("edited-since.sh")
+        tasks_api.get.return_value = self._history(
+            "--blob s3cr3t", md5_checksum="b" * 32
+        )
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
+        assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_execution_without_a_recorded_digest_withholds_that_row(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Withhold a row whose payload carries no digest to compare against."""
+        await create_snippet(
+            "no-digest.sh",
+            parameters=[{"name": "password", "type": "str", "required": True}],
+        )
+        await seed_execution("no-digest.sh")
+        history = self._history("--password s3cr3t")
+        del history["execution_request"]["meta"]["md5_checksum"]
+        tasks_api.get.return_value = history
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
+        assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_unusable_snippet_metadata_withholds_that_row(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Withhold a row whose stored ``arg_format`` cannot be tokenised."""
+        await create_snippet(
+            "stale-meta.sh",
+            parameters=[
+                {
+                    "name": "password",
+                    "type": "str",
+                    "required": True,
+                    "arg_format": "--password '${value}",
+                }
+            ],
+        )
+        await seed_execution("stale-meta.sh")
+        tasks_api.get.return_value = self._history("--password s3cr3t")
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
+        assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_every_snippet_unresolvable_still_returns_the_page(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Return 200 with every row withheld when no filename on the page resolves."""
+        await seed_execution("gone-a.sh", task_history_id=_FIRST_TASK_ID)
+        await seed_execution("gone-b.sh", task_history_id=_SECOND_TASK_ID)
+        tasks_api.get.return_value = self._history("--password s3cr3t")
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = self._rows_by_task_id(response)
+        assert [row["args_withheld"] for row in rows.values()] == [True, True]
+        assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "history",
+        [
+            pytest.param(
+                {"execution_request": "--password s3cr3t"},
+                id="execution-request-is-not-a-mapping",
+            ),
+            pytest.param(
+                {"execution_request": {"meta": ["--password s3cr3t"]}},
+                id="meta-is-not-a-mapping",
+            ),
+        ],
+    )
+    async def test_non_mapping_upstream_payload_withholds_that_row(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+        history: dict[str, Any],
+    ) -> None:
+        """Withhold a row whose payload nests something other than a mapping.
+
+        The tasks service's response body is not validated on this side, so reading
+        ``args`` off a truthy non-mapping would raise past the masking guard and
+        fail the whole page rather than degrading this row.
+        """
+        await create_snippet(
+            "bad-shape.sh",
+            parameters=[{"name": "password", "type": "str", "required": True}],
+        )
+        await seed_execution("bad-shape.sh")
+        tasks_api.get.return_value = {
+            "status": TaskHistoryStatusEnum.SUCCESS.value,
+            "has_logs": True,
+            **history,
+        }
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
+        assert "s3cr3t" not in response.text
+
+
 class TestAtwBatchExecuteOnRealPostgres:
     """Guard the batch loop's shared-session rollback against a real aborted transaction."""
 
@@ -891,7 +1358,7 @@ class TestAtwBatchExecuteOnRealPostgres:
         maker.return_value.__aenter__ = AsyncMock(return_value=postgres_session)
         maker.return_value.__aexit__ = AsyncMock(return_value=False)
         mocker.patch(
-            "app.sep.apps.snippets.script_source.get_async_session_maker",
+            "app.sep.snippets.script_source.get_async_session_maker",
             return_value=maker,
         )
         tasks_api.post.side_effect = [

@@ -42,6 +42,7 @@ from app.tasks.crud import (
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
+    SYSTEM_USER,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -107,6 +108,8 @@ async def _create_task_history(
     status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.SUCCESS,
     snippet_filename: str | None = None,
     finished_at: datetime | None = None,
+    executed_by: str | None = None,
+    created_at: datetime | None = None,
 ) -> TaskHistory:
     """Create and persist a task history record.
 
@@ -120,6 +123,12 @@ async def _create_task_history(
     :type snippet_filename: str | None
     :param finished_at: Optional completion timestamp for the history row.
     :type finished_at: datetime | None
+    :param executed_by: Optional executor marker (e.g. ``SYSTEM_USER``) stamped
+        on the row; left at the model default when ``None``.
+    :type executed_by: str | None
+    :param created_at: Optional ``created_at`` to force on the row; left at the
+        model default (``utc_now``) when ``None``.
+    :type created_at: datetime | None
     :return: The persisted task history.
     :rtype: TaskHistory
     """
@@ -130,12 +139,14 @@ async def _create_task_history(
         task_id=task.id,
         status=status,
         finished_at=finished_at,
+        executed_by=executed_by,
         execution_request={
             "task": task.name,
             "target": "localhost",
             "meta": meta,
             "tracking": {"allocation_id": None, "evaluation_id": None},
         },
+        **({"created_at": created_at} if created_at is not None else {}),
     )
     return await TaskHistoryManager.save(session, history)
 
@@ -850,6 +861,226 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         assert latest is not None
         assert latest.status == TaskHistoryStatusEnum.FAILED
         assert latest.finished_at == row.finished_at
+
+    @pytest.mark.asyncio
+    async def test_no_executor_filter_returns_newest_regardless(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the latest-status lookup still returns the newest row's status.
+
+        Guards the existing ``POST /history/latest`` consumer, which reports the
+        newest run irrespective of executor.
+        """
+        task = await _create_task(session, name="latest-executor-default")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.RUNNING,
+            executed_by="test-user",
+        )
+
+        result = await TaskHistoryManager.latest_status_by_task_names(
+            session, [task.name]
+        )
+
+        latest = result[task.name]
+        assert latest is not None
+        assert latest.status == TaskHistoryStatusEnum.RUNNING
+
+
+class TestTaskHistoryManagerRecentSystemStatusPoints:
+    """Test TaskHistoryManager.recent_system_status_points_by_task_names."""
+
+    @pytest.mark.asyncio
+    async def test_returns_system_points_oldest_first(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert system-executed points are grouped by name, oldest first."""
+        task = await _create_task(session, name="points-order")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.FAILED,
+            executed_by=SYSTEM_USER,
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, {task.name: utc_now() - timedelta(days=1)}
+        )
+
+        assert [point.status for point in points[task.name]] == [
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.FAILED,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_excludes_non_system_rows(self, session: AsyncSession) -> None:
+        """Assert manual (non-system) runs are excluded from the points."""
+        task = await _create_task(session, name="points-non-system")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.RUNNING,
+            executed_by="test-user",
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, {task.name: utc_now() - timedelta(days=1)}
+        )
+
+        assert [point.status for point in points[task.name]] == [
+            TaskHistoryStatusEnum.SUCCESS
+        ]
+
+    @pytest.mark.asyncio
+    async def test_name_absent_when_only_non_system(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a name with only manual runs is absent from the mapping."""
+        task = await _create_task(session, name="points-only-manual")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by="test-user",
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, {task.name: utc_now() - timedelta(days=1)}
+        )
+
+        assert task.name not in points
+
+    @pytest.mark.asyncio
+    async def test_empty_thresholds_returns_empty(self, session: AsyncSession) -> None:
+        """Assert an empty threshold map short-circuits to an empty mapping."""
+        assert (
+            await TaskHistoryManager.recent_system_status_points_by_task_names(
+                session, {}
+            )
+            == {}
+        )
+
+    @pytest.mark.asyncio
+    async def test_groups_points_by_name(self, session: AsyncSession) -> None:
+        """Assert points are partitioned per task name, not mixed across names."""
+        first = await _create_task(session, name="points-first")
+        second = await _create_task(session, name="points-second")
+        await _create_task_history(
+            session,
+            first,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+        await _create_task_history(
+            session,
+            second,
+            status=TaskHistoryStatusEnum.FAILED,
+            executed_by=SYSTEM_USER,
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session,
+            {
+                first.name: utc_now() - timedelta(days=1),
+                second.name: utc_now() - timedelta(days=1),
+            },
+        )
+
+        assert [point.status for point in points[first.name]] == [
+            TaskHistoryStatusEnum.SUCCESS
+        ]
+        assert [point.status for point in points[second.name]] == [
+            TaskHistoryStatusEnum.FAILED
+        ]
+
+    @pytest.mark.asyncio
+    async def test_excludes_points_before_cutoff(self, session: AsyncSession) -> None:
+        """Assert rows older than a name's cutoff are excluded."""
+        task = await _create_task(session, name="points-cutoff")
+        await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, {task.name: utc_now() + timedelta(days=1)}
+        )
+
+        assert task.name not in points
+
+    @pytest.mark.asyncio
+    async def test_returns_all_points_at_or_after_cutoff(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the query is time-bound, not capped at a fixed row count."""
+        task = await _create_task(session, name="points-uncapped")
+        row_count = 55
+        for _ in range(row_count):
+            await _create_task_history(
+                session,
+                task,
+                status=TaskHistoryStatusEnum.SUCCESS,
+                executed_by=SYSTEM_USER,
+            )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session, {task.name: utc_now() - timedelta(days=1)}
+        )
+
+        assert len(points[task.name]) == row_count
+
+    @pytest.mark.asyncio
+    async def test_cutoff_is_per_name(self, session: AsyncSession) -> None:
+        """Assert each name is filtered by its own cutoff, not a shared bound."""
+        included = await _create_task(session, name="points-cutoff-included")
+        excluded = await _create_task(session, name="points-cutoff-excluded")
+        base = utc_now()
+        await _create_task_history(
+            session,
+            included,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+            created_at=base,
+        )
+        await _create_task_history(
+            session,
+            excluded,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            executed_by=SYSTEM_USER,
+            created_at=base,
+        )
+
+        points = await TaskHistoryManager.recent_system_status_points_by_task_names(
+            session,
+            {
+                included.name: base - timedelta(minutes=5),
+                excluded.name: base + timedelta(minutes=5),
+            },
+        )
+
+        assert included.name in points
+        assert excluded.name not in points
 
 
 # ---------------------------------------------------------------------------

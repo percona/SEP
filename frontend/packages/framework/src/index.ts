@@ -22,7 +22,11 @@ export { SEP_TABLE_CLASS } from './constants';
 export { SchemaFormRenderer } from './components/SchemaFormRenderer';
 export type { RenderFieldArgs, RenderFieldOverride } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
-export type { RenderListColumnArgs, RenderListColumnOverride } from './components/SchemaListView';
+export type {
+  RenderListColumnArgs,
+  RenderListColumnOverride,
+  SchemaListServerPagination,
+} from './components/SchemaListView';
 export {
   SchemaDrivenApp,
   DeleteConfirmDialog,
@@ -41,6 +45,8 @@ export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';
 export type { SchemaSelectorProps } from './components/SchemaSelector';
+export { RemoteChoiceSelector } from './components/RemoteChoiceSelector';
+export type { RemoteChoiceSelectorProps } from './components/RemoteChoiceSelector';
 export { TableSelector } from './components/TableSelector';
 export type { TableSelectorProps } from './components/TableSelector';
 export { FreeSoloSelect } from './components/FreeSoloSelect';
@@ -63,12 +69,14 @@ export {
   TaskHistoryStatusBadge,
   isTaskHistoryStatus,
   ChainDisplay,
+  TaskFilesDialog,
 } from './components/TaskHistoryTable';
 export type {
   TaskHistoryTableProps,
   TaskHistoryEntry,
   TaskHistoryStatus,
   PaginatedTaskHistory,
+  TaskFilesDialogProps,
 } from './components/TaskHistoryTable';
 export { SnippetExecutionAccordion } from './components/SnippetExecutionAccordion';
 export type { SnippetExecutionAccordionProps } from './components/SnippetExecutionAccordion';
@@ -105,7 +113,14 @@ export { detailSyntaxBlockSx } from './components/SchemaDrivenApp/detailSyntaxSt
 export type { DetailSyntaxLanguage } from './components/SchemaDrivenApp/detailSyntaxStyles';
 
 // Hooks
-export { useServices, useSchemas, useTables, useHosts } from './hooks';
+export {
+  useServices,
+  useSchemas,
+  useTables,
+  useHosts,
+  useResolvedServiceField,
+  useRemoteChoices,
+} from './hooks';
 export type {
   ServiceOption,
   ServiceType,
@@ -116,7 +131,11 @@ export type {
   UseSchemasOptions,
   UseTablesOptions,
   UseHostsOptions,
+  UseRemoteChoicesOptions,
+  ResolvedServiceField,
 } from './hooks';
+
+export { cascadeParentResetKey } from './utils/cascadeParentResetKey';
 
 export {
   useTaskLogs,
@@ -145,6 +164,7 @@ export type {
   DownloadLog,
   FileMetadata,
   TaskHistoryFilesMap,
+  UseTaskHistoryFilesOptions,
   TaskFileDownloadParams,
   UseSnippetAppExecutionOptions,
 } from './hooks';

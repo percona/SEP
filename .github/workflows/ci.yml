@@ -71,6 +71,11 @@ jobs:
               - 'poetry.lock'
               - 'poetry.toml'
               - 'settings.yaml'
+              - 'sidecar/settings.embedded.yaml'
+              - 'sidecar/settings-env.sh'
+              - 'sidecar/supervisord.conf'
+              - 'sidecar/healthcheck.sh'
+              - 'Makefile'
               - 'frontend/packages/api/specs/**'
             precommit:
               - '.pre-commit-config.yaml'
@@ -206,12 +211,12 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
-          version: 11.1.2
+          version: 11.1.3
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: "22.13.0"
+          node-version: "22.22.0"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -349,6 +354,8 @@ jobs:
             test -f /home/sep/app/supervisord.conf
             test -f /home/sep/app/healthcheck.sh
             test -x /home/sep/app/entrypoint.sh
+            test -f /home/sep/app/settings-env.sh
+            test -f /home/sep/app/settings.yaml
           '
 
       - name: Smoke test - verify HEALTHCHECK instruction

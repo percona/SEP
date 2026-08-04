@@ -84,6 +84,9 @@ from app.sep.snippets.forms import (
     TextInputElement,
 )
 from app.sep.snippets.models.meta import (
+    META_KEY_DESCRIPTION,
+    META_KEY_SERVICE_TYPE,
+    META_KEY_TITLE,
     serialize_cli_value,
     SnippetMetaParameter,
     SnippetMetaParametersValidationResult,
@@ -441,7 +444,7 @@ class BaseSnippet(BaseModel):
             the metadata.
         :rtype: str
         """
-        return self.meta.get("title", self.filename)
+        return self.meta.get(META_KEY_TITLE, self.filename)
 
     @cached_property
     def description(self) -> str:
@@ -451,7 +454,7 @@ class BaseSnippet(BaseModel):
             specified in the metadata.
         :rtype: str
         """
-        return self.meta.get("description", "")
+        return self.meta.get(META_KEY_DESCRIPTION, "")
 
     @cached_property
     def service_type(self) -> str | None:
@@ -463,7 +466,7 @@ class BaseSnippet(BaseModel):
             distinct from the inventory ``ServiceTypeEnum``.
         :rtype: str | None
         """
-        return self.meta.get("service_type")
+        return self.meta.get(META_KEY_SERVICE_TYPE)
 
     @cached_property
     def allow_extra_args(self) -> bool:
@@ -1068,6 +1071,18 @@ class Snippet(BaseSnippet, BaseSQLModel, table=True):
         return self.approved_at is not None
 
     @property
+    def is_human_revoked(self) -> bool:
+        """Return whether an administrator explicitly removed this snippet's approval.
+
+        Human revocation is recorded as an unapproved row whose ``updated_by`` is
+        still set to a user id. Automatic content-change removals clear
+        ``updated_by``.
+
+        :return: ``True`` when the snippet is unapproved and ``updated_by`` is set.
+        """
+        return self.approved_at is None and self.updated_by is not None
+
+    @property
     def can_execute(self) -> bool:
         """Determine whether the snippet can be executed.
 
@@ -1081,14 +1096,22 @@ class Snippet(BaseSnippet, BaseSQLModel, table=True):
         return self.is_approved and super().can_execute
 
     async def update_from_snippet(self, snippet: "Snippet") -> None:
-        """Update the current snippet from another snippet.
+        """Update file-derived fields from another snippet without changing approval.
 
-        :param snippet: The snippet from which to update.
-        :type snippet: Snippet
+        Leave ``approved_at``, ``updated_by``, and ``reason`` unchanged.
+
+        :param snippet: The snippet from which to copy file-derived fields.
         """
-        self.sqlmodel_update(snippet, update={"id": self.id})
+        self.sqlmodel_update(
+            snippet,
+            update={
+                "id": self.id,
+                "approved_at": self.approved_at,
+                "updated_by": self.updated_by,
+                "reason": self.reason,
+            },
+        )
         self.meta = await self.get_meta_by_path(self)
-        self.remove_approval("File contents have changed", None)
 
     def approve(self, reason: str, user_id: str) -> None:
         """Mark the snippet as approved.

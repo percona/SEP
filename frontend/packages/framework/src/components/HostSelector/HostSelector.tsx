@@ -15,19 +15,26 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useSnackbar } from 'notistack';
 import { useHosts, type HostOption } from '../../hooks/useHosts';
+import { useResolvedServiceField } from '../../hooks/useResolvedServiceField';
+import type { ServiceType } from '../../hooks/useServices';
 import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
+import { FreeSoloSelect } from '../FreeSoloSelect';
+import { resolveExecutorHostForService } from './resolveExecutorHostForService';
 
-const EMPTY_OPTIONS: HostOption[] = [];
+const EMPTY_HOSTS: HostOption[] = [];
 
 export interface HostSelectorProps {
   /**
-   * react-hook-form field name. In single mode stores a `HostOption | null`;
-   * in `multiple` mode stores a `(number | string)[]` (selected host ids).
+   * react-hook-form field name. Without `allowCustom`, stores a
+   * `HostOption | null`; with `allowCustom`, stores the committed
+   * `string | null` (executor id, free-typed value, or unset). In `multiple`
+   * mode stores a `(number | string)[]` (selected host ids and/or free-typed
+   * values).
    */
   name: string;
   label: string;
@@ -35,16 +42,156 @@ export interface HostSelectorProps {
   disabled?: boolean;
   helperText?: string;
   /**
-   * Render a closed multi-value host selector committing a `(number | string)[]`.
-   * Host free-solo is not offered, so multi-host is always a closed combobox.
+   * Optional upstream service field. When set, the selector clears on service
+   * change and auto-selects an executor using Dipper's resolve order
+   * (node name → address → service name). The user may still override.
+   * Cascade auto-select applies to single mode only.
+   */
+  dependsOn?: string;
+  /**
+   * When resolving a scalar ``dependsOn`` id, bound the services fetch to these
+   * types (typically the parent ``ServiceField.service_types``). Omit only when
+   * the parent value is already a hydrated ``ServiceOption``; an unbound
+   * ``useServices()`` page-loop is intentionally not used here.
+   */
+  serviceTypes?: readonly ServiceType[];
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allowCustom?: boolean;
+  /**
+   * Render a multi-value host selector committing a `(number | string)[]`.
+   * Combined with `allowCustom`, yields a free-solo multi-select; otherwise a
+   * closed multi-select combobox. Cascade auto-select applies to single mode
+   * only.
    */
   multiple?: boolean;
 }
 
-const getOptionLabel = (opt: HostOption | string) => (typeof opt === 'string' ? opt : opt.name);
+const getOptionLabel = (opt: HostOption | string) => {
+  if (typeof opt === 'string') {
+    return opt;
+  }
+  return opt.name;
+};
+
 const getHostOptionLabel = (opt: HostOption) => opt.name;
 
 const isOptionEqualToValue = (a: HostOption, b: HostOption) => a.id === b.id;
+
+function hostValueId(value: unknown): string | undefined {
+  if (typeof value === 'string' && value !== '') {
+    return value;
+  }
+  if (!value || typeof value !== 'object' || !('id' in value)) {
+    return undefined;
+  }
+  const id = (value as { id: unknown }).id;
+  if (typeof id === 'string') {
+    return id;
+  }
+  if (typeof id === 'number') {
+    return String(id);
+  }
+  return undefined;
+}
+
+function resolveHelperText({
+  helperText,
+  fieldError,
+  isError,
+  errorMessage,
+  empty,
+}: {
+  helperText?: string;
+  fieldError?: string;
+  isError: boolean;
+  errorMessage?: string;
+  empty: boolean;
+}): string | undefined {
+  if (fieldError) {
+    return fieldError;
+  }
+  if (isError && errorMessage) {
+    return errorMessage;
+  }
+  if (isError) {
+    return 'Failed to load hosts';
+  }
+  if (empty) {
+    return 'No hosts available';
+  }
+  return helperText;
+}
+
+function cascadeCommitValue(match: HostOption, allowCustom: boolean): HostOption | string {
+  if (allowCustom) {
+    return match.id;
+  }
+  return match;
+}
+
+/**
+ * Cascade auto-select for a single host field. Mounted only when ``dependsOn``
+ * is set. Scalar parent ids rehydrate through {@link useResolvedServiceField}
+ * (same path as task-name suggestion and other service consumers).
+ *
+ * When ``allowCustom`` is set the free-solo path stores a scalar id/string, so
+ * cascade commits ``match.id``; otherwise it commits the hydrated
+ * ``HostOption`` expected by the closed ``AutoCompleteInput``.
+ */
+function HostServiceCascade({
+  name,
+  dependsOn,
+  hosts,
+  serviceTypes,
+  allowCustom,
+}: {
+  name: string;
+  dependsOn: string;
+  hosts: HostOption[];
+  serviceTypes?: readonly ServiceType[];
+  allowCustom: boolean;
+}) {
+  const { setValue, getValues } = useFormContext();
+  const { service, resetKey } = useResolvedServiceField(dependsOn, serviceTypes);
+  const prevParentKeyRef = useRef<string | undefined>(undefined);
+  const autoHostIdRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    const previousKey = prevParentKeyRef.current;
+    prevParentKeyRef.current = resetKey;
+
+    if (previousKey !== undefined && previousKey !== resetKey) {
+      setValue(name, null, { shouldDirty: false, shouldValidate: false });
+      autoHostIdRef.current = undefined;
+    }
+
+    if (!service) {
+      return;
+    }
+    if (hosts.length === 0) {
+      return;
+    }
+
+    const match = resolveExecutorHostForService(hosts, service);
+    if (!match) {
+      return;
+    }
+
+    const currentId = hostValueId(getValues(name));
+    const userOverrodeAutoPick = currentId !== undefined && currentId !== autoHostIdRef.current;
+    if (userOverrodeAutoPick) {
+      return;
+    }
+
+    setValue(name, cascadeCommitValue(match, allowCustom), {
+      shouldDirty: false,
+      shouldValidate: false,
+    });
+    autoHostIdRef.current = match.id;
+  }, [resetKey, service, hosts, name, setValue, getValues, allowCustom]);
+
+  return null;
+}
 
 export function HostSelector({
   name,
@@ -52,6 +199,9 @@ export function HostSelector({
   required,
   disabled,
   helperText,
+  dependsOn,
+  serviceTypes,
+  allowCustom,
   multiple,
 }: HostSelectorProps) {
   const {
@@ -61,11 +211,29 @@ export function HostSelector({
   const { enqueueSnackbar } = useSnackbar();
 
   const { data, isLoading, isError, error, refetch } = useHosts();
-  const hosts = data ?? EMPTY_OPTIONS;
-
+  const hosts = data ?? EMPTY_HOSTS;
   const empty = !isLoading && !isError && hosts.length === 0;
-
   const fieldError = errors[name]?.message as string | undefined;
+  const freeSolo = Boolean(allowCustom);
+  const inputDisabled = Boolean(disabled) || isError;
+  const showError = isError || Boolean(fieldError);
+  const text = resolveHelperText({
+    helperText,
+    fieldError,
+    isError,
+    errorMessage: error?.message,
+    empty,
+  });
+
+  let noOptionsText = 'No hosts available';
+  if (isLoading) {
+    noOptionsText = 'Loading hosts…';
+  }
+
+  let requiredRules: { required: string } | undefined;
+  if (required) {
+    requiredRules = { required: `${label} is required` };
+  }
 
   // Surface a hosts-query failure (e.g. an upstream Tasks-API 502) via the
   // shell's snackbar. React Query keeps the `error` object identity stable
@@ -73,23 +241,18 @@ export function HostSelector({
   // raise the snackbar once per failure rather than once per render.
   const lastSurfacedRef = useRef<unknown>(null);
   useEffect(() => {
-    if (isError && error && error !== lastSurfacedRef.current) {
-      enqueueSnackbar(`Failed to load executor hosts: ${error.message}`, {
-        variant: 'error',
-        autoHideDuration: 30_000,
-      });
-      lastSurfacedRef.current = error;
+    if (!isError || !error) {
+      return;
     }
+    if (error === lastSurfacedRef.current) {
+      return;
+    }
+    enqueueSnackbar(`Failed to load executor hosts: ${error.message}`, {
+      variant: 'error',
+      autoHideDuration: 30_000,
+    });
+    lastSurfacedRef.current = error;
   }, [isError, error, enqueueSnackbar]);
-
-  let text = helperText;
-  if (fieldError) {
-    text = fieldError;
-  } else if (isError) {
-    text = error?.message ?? 'Failed to load hosts';
-  } else if (empty) {
-    text = 'No hosts available';
-  }
 
   if (multiple) {
     return (
@@ -98,37 +261,79 @@ export function HostSelector({
         label={label}
         options={hosts}
         getOptionLabel={getHostOptionLabel}
-        allowCustom={false}
+        allowCustom={freeSolo}
         required={required}
-        disabled={disabled || isError}
+        disabled={inputDisabled}
         loading={isLoading}
         helperText={text}
-        error={isError || !!fieldError}
-        noOptionsText={isLoading ? 'Loading hosts…' : 'No hosts available'}
+        error={showError}
+        noOptionsText={noOptionsText}
+        onOpen={() => {
+          void refetch();
+        }}
       />
     );
   }
 
+  let cascade: ReactNode = null;
+  if (dependsOn) {
+    cascade = (
+      <HostServiceCascade
+        name={name}
+        dependsOn={dependsOn}
+        hosts={hosts}
+        serviceTypes={serviceTypes}
+        allowCustom={freeSolo}
+      />
+    );
+  }
+
+  if (freeSolo) {
+    return (
+      <>
+        {cascade}
+        <FreeSoloSelect<HostOption>
+          name={name}
+          label={label}
+          options={hosts}
+          getOptionLabel={getHostOptionLabel}
+          required={required}
+          disabled={inputDisabled}
+          loading={isLoading}
+          helperText={text}
+          error={showError}
+          noOptionsText={noOptionsText}
+          onOpen={() => {
+            void refetch();
+          }}
+        />
+      </>
+    );
+  }
+
   return (
-    <AutoCompleteInput<HostOption>
-      name={name}
-      label={label}
-      control={control}
-      isRequired={required}
-      loading={isLoading}
-      disabled={disabled || isError}
-      options={hosts}
-      controllerProps={{
-        name,
-        rules: required ? { required: `${label} is required` } : undefined,
-      }}
-      autoCompleteProps={{
-        getOptionLabel,
-        isOptionEqualToValue,
-        noOptionsText: isLoading ? 'Loading hosts…' : 'No hosts available',
-        onOpen: () => refetch(),
-      }}
-      textFieldProps={{ helperText: text, error: isError || !!fieldError }}
-    />
+    <>
+      {cascade}
+      <AutoCompleteInput<HostOption>
+        name={name}
+        label={label}
+        control={control}
+        isRequired={required}
+        loading={isLoading}
+        disabled={inputDisabled}
+        options={hosts}
+        controllerProps={{
+          name,
+          rules: requiredRules,
+        }}
+        autoCompleteProps={{
+          getOptionLabel,
+          isOptionEqualToValue,
+          noOptionsText,
+          onOpen: () => refetch(),
+        }}
+        textFieldProps={{ helperText: text, error: showError }}
+      />
+    </>
   );
 }

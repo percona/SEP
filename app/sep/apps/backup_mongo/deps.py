@@ -25,7 +25,7 @@ import yaml
 from aiohttp import ClientResponseError
 from fastapi import Depends, Form
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import (
     BackupCreate,
@@ -49,13 +49,21 @@ from app.sep.apps.framework import (
     make_task_dep,
 )
 from app.sep.apps.framework.api import CascadeCreatePlan
-from app.sep.apps.framework.cascade import cascade_create_tasks
+from app.sep.apps.framework.cascade import (
+    build_derived_payload,
+    cascade_create_tasks,
+    cascade_update_tasks,
+    CascadeResult,
+)
+from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
+    check_group_for_conflicted_running_tasks,
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
     get_tasks_context,
     InventoryAPI,
+    reject_if_protected,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -88,7 +96,7 @@ def backup_create_from_write(body: BackupTaskWrite) -> BackupCreate:
     """Convert a :class:`BackupTaskWrite` body into a :class:`BackupCreate` model.
 
     Always sets ``backup_type`` to ``pbm_config``; POST creates the parent
-    config task and derived logical, physical, and status siblings.
+    config task and derived logical, physical, status, and incremental siblings.
 
     :param body: The JSON request body for backup task creation.
     :type body: BackupTaskWrite
@@ -146,7 +154,8 @@ async def build_backup_cascade_plan(
 
     Convert the body to a :class:`BackupCreate` form, assemble the parent
     ``pbm_config`` write, and bind a cascade closure that POSTs the parent plus
-    its derived ``pbm_logical`` / ``pbm_physical`` / ``pbm_status`` siblings. The
+    its derived ``pbm_logical`` / ``pbm_physical`` / ``pbm_status`` /
+    ``pbm_incremental`` siblings. The
     parent is re-serialised *inside* the closure so it carries the form stamp
     :func:`~app.sep.apps.framework.api.derive_cascade_create_route` applies first.
 
@@ -295,8 +304,8 @@ async def build_backup_mongo_api_detail_response(
     """Build a backup task detail response for the JSON API.
 
     Aggregates latest execution status for the parent ``pbm_config`` task and
-    each derived logical, physical, and status sibling. When a status sibling
-    exists, includes a tail of its latest stdout for the PBM status panel.
+    each derived logical, physical, status, and incremental sibling. When a status
+    sibling exists, includes a tail of its latest stdout for the PBM status panel.
 
     :param task: The parent backup config task.
     :type task: Task
@@ -337,7 +346,7 @@ async def build_backup_mongo_api_detail_response(
         last_executed_at=parent_latest.finished_at if parent_latest else None,
     )
     return BackupTaskDetailResponse(
-        **base.model_dump(),
+        **base.model_dump_with_excluded_fields(),
         derived_tasks=derived_tasks,
         latest_pbm_status=latest_pbm_status,
     )
@@ -348,6 +357,117 @@ get_backups_task = make_task_dep(OWNER)
 resolve_backup_parent_task = make_parent_resolver(get_backups_task)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
+
+
+async def get_editable_backup_parent_task(
+    task_name: str,
+    tasks_api: TaskAPI,
+) -> Task:
+    """Resolve the parent backup task or raise when it is not editable.
+
+    Resolves a derived sibling name (``-logical`` / ``-physical`` / ``-status``)
+    to the parent, rejects protected tasks, then blocks the edit while a run of
+    *any* group member is in flight. Backups execute on the derived legs, not the
+    parent config task, so checking the parent's history alone would let a ``PUT``
+    mutate a running group.
+
+    :param task_name: The task name from the URL path; may be a derived sibling.
+    :param tasks_api: The TaskAPI instance used to resolve and gate the parent.
+    :raises HTTPConflictException: If the parent is protected or any group member
+        has a running/pending run.
+    :return: The editable parent ``pbm_config`` task.
+    """
+    parent_task = await resolve_backup_parent_task(task_name, tasks_api)
+    reject_if_protected(parent_task)
+    group_names = [parent_task.name, *backup_derived_task_names(parent_task.name)]
+    await check_group_for_conflicted_running_tasks(group_names, tasks_api)
+    return parent_task
+
+
+EditableBackupParent = Annotated[
+    Task,
+    Depends(get_editable_backup_parent_task),
+]
+
+
+_BACKUP_GROUP_RENAME_MESSAGE = (
+    "Renaming a backup task group is not supported; the parent config task and "
+    "its derived siblings are wired by name at create time. Submit the update "
+    "with the existing task name."
+)
+
+
+def ensure_backup_group_update_preserves_names(
+    parent_existing_name: str,
+    updated_parent_name: str,
+) -> None:
+    """Reject a backup group update that renames the parent task.
+
+    :param parent_existing_name: The parent config task name from the URL path.
+    :param updated_parent_name: The ``task_name`` submitted in the request body.
+    :raises HTTPConflictException: When the submitted name differs from the
+        existing parent name.
+    """
+    if updated_parent_name != parent_existing_name:
+        raise HTTPConflictException(_BACKUP_GROUP_RENAME_MESSAGE)
+
+
+async def ensure_backup_derived_siblings(
+    tasks_api: TaskAPI,
+    parent_name: str,
+    parent_payload: dict[str, Any],
+) -> None:
+    """POST any missing derived siblings before a cascade update.
+
+    Groups created before incremental was added lack ``-incremental``. Creating
+    the missing sibling first keeps :func:`cascade_update_tasks` from partially
+    mutating the group and then failing on a 404 PUT.
+
+    :param tasks_api: The TaskAPI used to GET existing legs and POST missing ones.
+    :param parent_name: The parent ``pbm_config`` task name.
+    :param parent_payload: The updated parent payload used to build missing children.
+    """
+    for spec in BACKUP_MONGO_DERIVED:
+        derived_name = f"{parent_name}{spec.name_suffix}"
+        try:
+            await tasks_api.get(f"/{derived_name}")
+        except HTTPNotFoundException:
+            child_payload = build_derived_payload(parent_payload, spec)
+            await tasks_api.post("/", json=child_payload)
+
+
+async def update_backup_task_group(
+    tasks_api: TaskAPI,
+    parent_task: Task,
+    form: BackupCreate,
+    inventory_api: InventoryAPI,
+) -> CascadeResult:
+    """Cascade-update the parent backup task and its derived siblings.
+
+    Rebuilds the parent ``pbm_config`` payload, re-stamps ``_form`` so the edit
+    page keeps prefilling across repeated edits, backfills any missing derived
+    siblings (for example ``-incremental`` on pre-SEP-1373 groups), and PUTs the
+    parent plus its derived logical, physical, status, and incremental legs in
+    place. Returns the per-leg outcome; the caller raises on partial failure.
+
+    :param tasks_api: The TaskAPI instance used to update tasks.
+    :param parent_task: The parent backup config task.
+    :param form: The validated update form (``backup_type`` pinned to
+        ``pbm_config``).
+    :param inventory_api: The Inventory API to look up the backup service.
+    :return: The cascade outcome across the parent and derived legs.
+    """
+    updated_parent = await build_backup_task_payload(form, inventory_api)
+    stamp_form_input(updated_parent, form)
+    parent_payload = updated_parent.model_dump()
+    await ensure_backup_derived_siblings(tasks_api, parent_task.name, parent_payload)
+    return await cascade_update_tasks(
+        tasks_api,
+        parent_task.name,
+        parent_payload,
+        backup_derived_task_names(parent_task.name),
+        BACKUP_MONGO_DERIVED,
+    )
 
 
 def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:

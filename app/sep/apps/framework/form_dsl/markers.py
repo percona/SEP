@@ -55,6 +55,7 @@ __all__ = [
     "Hidden",
     "HostRef",
     "Option",
+    "RemoteChoices",
     "Requires",
     "SchemaRef",
     "SectionLayout",
@@ -106,9 +107,15 @@ class Ui:
     :param section: The layout-section key the field belongs to; must match a
         :attr:`SectionLayout.key` in the form layout.
     :param description: Optional helper text rendered beneath the field.
-    :param depends_on: For a cascade reference (``SchemaRef`` / ``TableRef``),
-        the field name whose value drives this field's options. Required for
-        those refs; ignored otherwise. Defaults to ``None``.
+    :param depends_on: For a cascade reference (``SchemaRef`` / ``TableRef`` /
+        ``HostRef``) or a :class:`RemoteChoices` field, the field name whose
+        value drives this field's options or default selection. Required for
+        ``SchemaRef`` / ``TableRef``; optional for ``HostRef`` (when set on a
+        single-value host field, the renderer auto-selects an executor from the
+        upstream service; multi-host ignores it) and for ``RemoteChoices`` (when
+        set, the fetch is parameterised by the dependency's value and the field
+        stays disabled until it is set). Ignored for other field kinds. Defaults
+        to ``None``.
     :param order: Sort position within the section; ties break on declaration
         order. Defaults to ``0``.
     :param required: Override for the wire ``required`` flag. ``None`` (the
@@ -295,6 +302,15 @@ class TableRef:
 class HostRef:
     """Mark a field as an executor-target (Nomad / Celery) selector.
 
+    Cascade from a service (or other upstream field) is declared via
+    ``Ui(depends_on=...)``, the same way :class:`SchemaRef` / :class:`TableRef`
+    declare theirs. When set on a single-value field, the derived
+    ``HostField`` carries ``depends_on`` on the wire and the renderer may
+    auto-select an executor from the upstream value; when omitted the
+    selector lists every available executor with no cascade. Multi-value
+    (``multiple=True``) may still emit ``depends_on`` on ``MultiHostField``,
+    but cascade auto-select is single-host only today.
+
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value and emits ``allow_custom`` on the wire. Defaults to ``False``.
     :param multiple: When ``True``, the field is a multi-value selector backed by
@@ -376,6 +392,56 @@ class Choices:
             "options",
             tuple(normalized),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteChoices:
+    """Mark a field whose options are fetched at render from an app endpoint.
+
+    Unlike :class:`Choices` (static options embedded in the wire), the options
+    are fetched at render time from ``endpoint``, which must return a
+    ``Choice``-compatible list (``value``, ``label``, optional ``disabled`` /
+    ``disabled_reason``). An optional cascade is declared via
+    ``Ui(depends_on=...)`` — when set, the fetch is parameterised by the
+    dependency's value (passed as a query parameter named after the
+    ``depends_on`` field) and the field stays disabled/empty until the
+    dependency is set, mirroring :class:`SchemaRef` / :class:`TableRef`. When
+    ``depends_on`` is omitted the field fetches once with no cascade (mirroring
+    the optional cascade of :class:`HostRef`).
+
+    The annotation must accept ``str``, since a set value (a fetched option's
+    ``value`` or a free-typed custom value) reaches the model as a string. An
+    **optional** field must additionally accept ``None``, because the selector
+    commits ``null`` both when the user clears it and — unprompted — when its
+    cascade parent changes; declare those as ``str | None = None``. A required
+    field may stay a bare ``str``: the renderer blocks the submit rather than
+    sending the ``null``. Derivation rejects either mismatch, so a schema that
+    builds cannot 422 on the value its own selector commits.
+
+    :param endpoint: The fully-resolved path the renderer fetches options from,
+        relative to the frontend ``apiClient`` base (``/api``). Bake any
+        app-specific path segments here at schema-build time (e.g.
+        ``/apps/<app_key>/<sub>/<resource>``) rather than templating client-side.
+
+        .. note::
+            On a ``TaskExecutionApp`` with the default ``capabilities.detail``,
+            ``build_router`` mounts the greedy ``GET /{detail_path_param}``
+            before ``extra_routes``, so a **single-segment** sibling path (e.g.
+            ``/apps/<key>/choices``) will be swallowed by the detail route and
+            return 404. Use at least two path segments after the app prefix
+            (e.g. ``/apps/<key>/backups/choices``) to avoid the collision.
+    :param allow_custom: When ``True``, the field also accepts a free-typed
+        value alongside the fetched options and emits ``allow_custom`` on the
+        wire. Defaults to ``False``.
+    """
+
+    endpoint: str
+    allow_custom: bool = False
+
+    def __post_init__(self) -> None:
+        """Reject an empty endpoint so the wire never advertises an unfetchable source."""
+        if not self.endpoint.strip():
+            raise ValueError("RemoteChoices endpoint must be a non-empty path")
 
 
 @dataclass(frozen=True, slots=True)

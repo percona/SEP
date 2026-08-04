@@ -46,12 +46,27 @@ repos:
         language: system
         files: ^sep_installer\.sh$
         pass_filenames: false
+      - id: update-snippets-checksum-manifest
+        name: Update built-in snippets checksum manifest
+        description: "Regenerate snippets/builtin-snippets.sha256 when files under snippets/ change"
+        entry: python3 scripts/update_snippets_checksum_manifest.py
+        language: python
+        additional_dependencies: ["aiofiles==24.1.0"]
+        files: ^snippets/
+        pass_filenames: false
       - id: changelog-fragments
         name: Validate changelog.d/ fragments
         description: "Validate per-PR changelog fragments under changelog.d/"
         entry: python3 scripts/changelog.py check
         language: system
         files: ^changelog\.d/
+        pass_filenames: false
+      - id: sync-alembic-version-locations
+        name: Sync alembic.ini [sep] version_locations
+        description: "Regenerate [sep] version_locations from app migration dirs"
+        entry: python3 scripts/sync_alembic_version_locations.py
+        language: system
+        files: ^app/sep/apps/.*/migrations/versions/
         pass_filenames: false
       - id: check-nomad-payload-size
         name: Check Nomad payload size
@@ -82,6 +97,7 @@ repos:
     rev: 745eface02aef23e168a8afb6b5737818efbea95  # v0.11.0.1
     hooks:
       - id: shellcheck
+        args: ["--external-sources"]
         types: [shell]
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: 2a30809d16bc7a60d9b97353c797f42b510d3368  # v3.12.0-2
