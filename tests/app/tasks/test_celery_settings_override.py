@@ -103,7 +103,7 @@ def worker_loop_env(monkeypatch):
     """
     loop = asyncio.new_event_loop()
     monkeypatch.setattr(celery_module.celery, "loop", loop)
-    monkeypatch.setattr(celery_module._refresher_handle, "task", None)
+    monkeypatch.setattr(celery_module._refresher, "task", None)
     monkeypatch.setattr(settings, "SETTINGS_OVERRIDE_REFRESHER_ENABLED", True)
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -275,45 +275,45 @@ class TestWorkerRefresherHandlers:
     def test_disabled_resolves_proxy_and_starts_no_task(self, monkeypatch, mocker):
         """Resolve the proxy but start no background task when disabled."""
         monkeypatch.setattr(settings, "SETTINGS_OVERRIDE_REFRESHER_ENABLED", False)
-        monkeypatch.setattr(celery_module._refresher_handle, "task", None)
+        monkeypatch.setattr(celery_module._refresher, "task", None)
         mock_anonymizer = MagicMock(spec=OverridableSettingsProxy)
         monkeypatch.setattr(celery_module, "anonymizer_settings", mock_anonymizer)
-        start = mocker.patch("app.tasks.celery.start_refresh_task")
+        start = mocker.patch("app.core.settings_override.worker.start_refresh_task")
 
         start_settings_override_refresher()
 
         mock_anonymizer._resolve.assert_called_once_with()
         start.assert_not_called()
-        assert celery_module._refresher_handle.task is None
+        assert celery_module._refresher.task is None
 
     def test_shutdown_is_noop_when_not_started(self, monkeypatch):
         """Handle a never-started refresher as a no-op on shutdown."""
-        monkeypatch.setattr(celery_module._refresher_handle, "task", None)
+        monkeypatch.setattr(celery_module._refresher, "task", None)
         stop_settings_override_refresher()
-        assert celery_module._refresher_handle.task is None
+        assert celery_module._refresher.task is None
 
     def test_shutdown_cancels_and_drains_started_refresher(self, worker_loop_env):
         """Stop and drain the started refresher, clearing the handle."""
         loop, _ = worker_loop_env
         start_settings_override_refresher()
-        task = celery_module._refresher_handle.task
+        task = celery_module._refresher.task
         assert task is not None
 
         stop_settings_override_refresher()
 
-        assert celery_module._refresher_handle.task is None
+        assert celery_module._refresher.task is None
         assert task.cancelled() or task.done()
 
     def test_init_is_idempotent_when_already_running(self, worker_loop_env):
         """Keep the running refresher and start no second task on re-entry."""
         loop, _ = worker_loop_env
         start_settings_override_refresher()
-        first_task = celery_module._refresher_handle.task
+        first_task = celery_module._refresher.task
         assert first_task is not None
 
         start_settings_override_refresher()
 
-        assert celery_module._refresher_handle.task is first_task
+        assert celery_module._refresher.task is first_task
         assert not first_task.done()
 
     def test_post_init_override_visible_after_loop_driven(self, worker_loop_env):
