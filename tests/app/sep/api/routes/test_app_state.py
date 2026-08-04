@@ -61,7 +61,7 @@ async def _seed_periodic_task(
     await session.flush()
     task = PeriodicTask(
         name=name,
-        task="app.sep.apps.snippets.celery.sync_snippets",
+        task="app.sep.snippets.celery.sync_snippets",
         enabled=enabled,
         schedule_model=schedule,
     )

@@ -16,9 +16,10 @@
 """Provide the GrafanaSDK for interacting with Grafana services."""
 
 from datetime import timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from aiohttp import ClientConnectionError
+from annotated_types import Gt
 from async_lru import _LRUCacheWrapper, alru_cache
 from fastapi import status
 from pydantic import ConfigDict, SecretStr
@@ -65,6 +66,13 @@ class GrafanaSDK(RemoteAPI):
         (the per-request Bearer credential). Defaults to 1 hour.
     :param refresh_token_max_age: How long a minted refresh assertion stays valid
         (the SPA's ``HttpOnly`` refresh cookie). Defaults to 7 days.
+    :param exchange_token_max_age: How long a minted session-exchange assertion
+        stays valid (the embedded UI's in-memory bearer). Defaults to 5 minutes.
+        This value alone bounds how long a signed-out browser keeps embedded
+        access, and how long a Grafana role change takes to take effect, so it
+        deliberately does not fall back to ``access_token_max_age``. A
+        non-positive value expires every assertion at mint time and is rejected
+        at config load rather than silently disabling embedded-UI auth.
     :param error_detail_key: The key Grafana uses for error details. Defaults to
         "message".
     :param session_cookie_name: The name of the cookie Grafana sets on a
@@ -76,6 +84,9 @@ class GrafanaSDK(RemoteAPI):
     service_account_token: SecretStr
     access_token_max_age: TimedeltaSeconds = timedelta(hours=1)
     refresh_token_max_age: TimedeltaSeconds = timedelta(days=7)
+    exchange_token_max_age: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(
+        minutes=5
+    )
     error_detail_key: NonEmptyStr = "message"
     session_cookie_name: NonEmptyStr = "grafana_session"
 

@@ -29,12 +29,6 @@ from app.sep.apps.framework.schema import (
     ScriptPreviewField,
     StringField,
 )
-from app.sep.apps.snippets.schema import (
-    build_snippet_schema,
-    evaluate_snippet_gates,
-    field_for,
-    SNIPPETS_PLUGIN_SCHEMA,
-)
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
@@ -42,6 +36,12 @@ from app.sep.snippets.models.meta import (
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     Snippet,
+)
+from app.sep.snippets.schema import (
+    build_snippet_schema,
+    evaluate_snippet_gates,
+    field_for,
+    SNIPPETS_PLUGIN_SCHEMA,
 )
 
 

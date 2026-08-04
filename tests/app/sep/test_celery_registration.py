@@ -26,11 +26,13 @@ together so a future move cannot silently break dispatch.
 import importlib
 
 from app.celery import celery
+from app.core.celery.config import STATIC_CELERY_INCLUDE
 from app.core.config import settings
 from app.sep.apps.framework.registry import (
     app_celery_module_paths,
     build_celery_include,
 )
+from app.sep.config import App, sep_settings
 
 
 def _seed_task_names() -> set[str]:
@@ -82,9 +84,9 @@ class TestSeedTaskRegistration:
         """Assert every seeded ``task_name`` resolves to a registered Celery task.
 
         Importing the configured ``include`` modules is what a worker does at
-        startup; ``@owned_by`` app tasks (and, transitively, the ``app_drain``
-        reconcile task they import) register as a side effect. Any seeded
-        ``task_name`` absent afterwards is a beat row pointing at nothing.
+        startup; the ``@owned_by`` app tasks and the statically-included library
+        and drain modules register as a side effect. Any seeded ``task_name``
+        absent afterwards is a beat row pointing at nothing.
         """
         for module in settings.CELERY.include:
             importlib.import_module(module)
@@ -93,12 +95,50 @@ class TestSeedTaskRegistration:
         assert not missing, f"seeded task_name(s) not registered: {sorted(missing)}"
 
     def test_relocated_tasks_register_under_new_names(self) -> None:
-        """Assert the two relocated tasks register under their app-owned paths."""
-        importlib.import_module("app.sep.apps.snippets.celery")
+        """Assert the relocated tasks register under their current module paths."""
+        importlib.import_module("app.sep.snippets.celery")
         importlib.import_module("app.sep.apps.alerts.celery")
 
-        assert "app.sep.apps.snippets.celery.sync_snippets" in celery.tasks
+        assert "app.sep.snippets.celery.sync_snippets" in celery.tasks
         assert "app.sep.apps.alerts.celery.backup_alert_config" in celery.tasks
+
+    def test_snippet_sync_registers_without_the_snippets_app(self, mocker) -> None:
+        """Assert snippet ingestion registers with the snippets app deactivated.
+
+        The task moved into the library and is named in ``STATIC_CELERY_INCLUDE``,
+        so an image that never mounts the snippets UI still runs the sync its beat
+        row schedules unconditionally.
+        """
+        mocker.patch.object(
+            sep_settings, "APPS", [App(module_name="inventory", enabled=True)]
+        )
+
+        include = build_celery_include()
+        assert "app.sep.snippets.celery" in include
+        for module in include:
+            importlib.import_module(module)
+
+        assert "app.sep.snippets.celery.sync_snippets" in celery.tasks
+
+    def test_drain_reconciler_registers_without_any_celery_bearing_app(
+        self, mocker
+    ) -> None:
+        """Assert the drain reconciler registers from the static include alone.
+
+        ``sep__reconcile_disabling_apps`` is seeded unconditionally, so its module
+        can no longer rely on a transitive import from an app-owned Celery module
+        that a stripped image may not ship.
+        """
+        mocker.patch.object(
+            sep_settings, "APPS", [App(module_name="inventory", enabled=True)]
+        )
+
+        include = build_celery_include()
+        assert not app_celery_module_paths()
+        for module in include:
+            importlib.import_module(module)
+
+        assert "app.sep.app_drain.reconcile_disabling_apps" in celery.tasks
 
     def test_no_task_registered_under_retired_shared_module(self) -> None:
         """Assert nothing still registers under the deleted ``app.sep.celery``."""
@@ -110,14 +150,13 @@ class TestSeedTaskRegistration:
 
         A module rename now moves the seed prefix and the include entry together
         (both read ``App.celery_module_path``), so a stale hardcoded seed string
-        would surface here rather than as a silent dead beat row. The core
-        ``app_drain`` task is not a ``SEP.APPS`` app and stays a literal, so it is
-        excluded.
+        would surface here rather than as a silent dead beat row. Tasks whose
+        module is in ``STATIC_CELERY_INCLUDE`` are not ``SEP.APPS`` apps and stay
+        literals, so they are excluded.
         """
         app_modules = set(app_celery_module_paths())
-        core_literals = {"app.sep.app_drain.reconcile_disabling_apps"}
         for name in _seed_task_names():
-            if name in core_literals:
+            if name.rsplit(".", 1)[0] in STATIC_CELERY_INCLUDE:
                 continue
             prefix = name.rsplit(".", 1)[0]
             assert prefix in app_modules, (
