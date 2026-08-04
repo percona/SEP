@@ -35,9 +35,9 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
     key in `update_dict`, if the key exists in `main_dict` and both values are
     dictionaries, merge them recursively. If the key exists in `main_dict` and
     both values are lists, prepend the non-empty list from `update_dict` to the
-    list in `main_dict`, or replace with an empty list when the overlay is empty
-    so profiles can clear inherited list settings. Otherwise, overwrite the value
-    in `main_dict` with the value from `update_dict`.
+    list in `main_dict`, or replace it with an empty list when the overlay is
+    empty. Otherwise, overwrite the value in `main_dict` with the value from
+    `update_dict`.
 
     :param main_dict: The dictionary to be updated.
     :param update_dict: The dictionary containing updates to apply.
