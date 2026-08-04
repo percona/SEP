@@ -1196,11 +1196,22 @@ rules and you need to pin which one tripped.
 
 ### Factory conventions
 
-Test data comes from `polyfactory` factories in `tests/app/factories.py` — build with
-`.build()` and customise inline (`CasdoorUserFactory.build(is_admin=True)`). Never
-hand-roll a `dict` for a model a factory already covers. The contract suite's own
-task/inventory seeding goes through the `MockTaskAPI` / `MockInventoryAPI` helpers in
+Test data comes from `polyfactory` factories — build with `.build()` and customise
+inline (`CasdoorUserFactory.build(is_admin=True)`). Never hand-roll a `dict` for a
+model a factory already covers. The contract suite's own task/inventory seeding goes
+through the `MockTaskAPI` / `MockInventoryAPI` helpers in
 `tests/app/sep/apps/framework/kit.py`, not raw dicts.
+
+**Your app's factories live in your app's test package** —
+`tests/app/sep/apps/<app>/factories.py`, imported by your tests as
+`from tests.app.sep.apps.<app>.factories import <App>CreateFactory`. Only core,
+cross-app factories (auth, tasks, inventory) belong in `tests/app/factories.py`; that
+module is imported by the whole test tree, so a factory for your models there couples
+the shared file to your app and outlives it. The directory already has an
+`__init__.py`, so no packaging step is needed — just add the module.
+`tests/app/test_factories_boundary.py` fails the build if a module at the root of the
+test tree imports `app.sep.apps.*`, or re-exports one of your factories from
+`tests.app.sep.apps.*`.
 
 ### How conformance runs in CI
 
