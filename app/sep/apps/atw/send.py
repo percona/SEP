@@ -55,7 +55,6 @@ from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.config import atw_settings
 from app.sep.apps.atw.crud import AtwIncidentManager, AtwSendLogManager
 from app.sep.apps.atw.models import AtwSendLog, AtwSendStatusEnum
-from app.sep.apps.inventory.sync import require_internal_token
 from app.sep.bundle_upload.factory import get_delivery_executor
 from app.sep.bundle_upload.plan import StepRecord
 from app.sep.bundle_upload.seam import BundleSource
@@ -631,6 +630,11 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     steps: list[dict[str, Any]] = []
     path = bundle_dir() / f"{row.id}-{uuid4().hex}{_BUNDLE_SUFFIX}"
     try:
+        # import-boundary: keep atw importable where inventory is absent, holding
+        # no import-time edge into another app package. Inside the try so a
+        # missing package lands terminally like every other failure family.
+        from app.sep.apps.inventory.sync import require_internal_token
+
         client = await get_tasks_api()
         with client.auth(require_internal_token()) as tasks_api:
             file_count, manifest = await _stage_bundle(

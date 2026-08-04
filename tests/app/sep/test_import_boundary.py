@@ -317,7 +317,7 @@ def test_guarded_module_paths_covers_every_app_module(relative: str) -> None:
 def test_import_time_edges_ignore_a_modules_own_app_package(
     importer: str, source: str, expected: set[str]
 ) -> None:
-    """Exempt an edge only when it resolves the importing module's own package.
+    """Ignore an edge only when it resolves the importing module's own package.
 
     Each source is parsed as if it were the module at ``importer``, so the owner
     the rule exempts is the one :func:`_owning_app_package` derives from that
