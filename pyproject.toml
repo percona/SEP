@@ -320,7 +320,12 @@ markers = [
     "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
     "mysql: require a real MySQL service (SEP_TEST_MYSQL_DSN)",
 ]
+# A developer dotenv file must never reach the suite: CI runs with no .env, so
+# any setting it carries makes the local run a weaker experiment than CI. This
+# pin sends PreEnvSettings.ENV_FILE at an empty committed file, so both read the
+# same settings.yaml defaults.
 env = [
+    "ENV_FILE=tests/pytest.env",
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID=test-client-id",
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=test-client-secret",
     'AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
