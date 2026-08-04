@@ -62,6 +62,21 @@ from app.sep.snippets.config import snippets_settings
 from tests.app.factories import OAuthTokenFactory
 from tests.app.sep.conftest import REDUCED_ACTIVATION
 
+_ORIGINAL_SEP_APP = main_module.sep_app
+
+
+def _reload_restoring_identity() -> None:
+    """Reload ``app.sep.main`` and put the original ``sep_app`` object back.
+
+    ``importlib.reload`` re-executes the module in the same ``__dict__``,
+    rebuilding ``sep_app`` as a new object while every consumer that did
+    ``from app.sep.main import sep_app`` still holds the discarded one.
+    Restoring the original binding keeps those consumers live; the rebuilt
+    app is built over the real registry, so the two are interchangeable.
+    """
+    importlib.reload(main_module)
+    main_module.sep_app = _ORIGINAL_SEP_APP
+
 
 def _route_has_app_guard(route) -> bool:
     """Return whether a route carries the ``require_app_enabled`` guard.
@@ -492,7 +507,7 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     finally:
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
@@ -516,7 +531,7 @@ def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
     finally:
         sep_settings.APPS = original_apps
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 async def _refresher_proxy_map(mocker) -> dict[SettingClassEnum, ProxyEntry]:
@@ -603,7 +618,7 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
     finally:
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 @contextmanager
@@ -627,7 +642,7 @@ def _reloaded_against(mocker, registry):
     finally:
         mocker.stopall()
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 @pytest.fixture
@@ -640,6 +655,20 @@ def jinja_free_registry() -> AppRegistry:
             for app in build_app_registry(sep_settings.APPS)
         ]
     )
+
+
+def test_reload_helpers_restore_sep_app_identity(mocker, jinja_free_registry):
+    """Verify reload-based helpers leave ``sep_app``'s identity intact.
+
+    Consumers across ~53 modules bind ``sep_app`` by value at import. A reload
+    that leaves a rebuilt object in the module dict silently strands them.
+    """
+    assert main_module.sep_app is sep_app
+
+    with _reloaded_against(mocker, jinja_free_registry) as rebuilt:
+        assert rebuilt is not sep_app
+
+    assert main_module.sep_app is sep_app
 
 
 class TestJinjaDecoupledMounts:
