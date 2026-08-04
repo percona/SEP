@@ -60,7 +60,7 @@ from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
     SecurityHeadersOptions,
 )
-from app.core.models import BaseLowercaseModel
+from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
@@ -348,6 +348,57 @@ _INTERNAL_TOKEN_LABEL = b"sep-internal-token"
 SettingsOverrideKey = Annotated[str, StringConstraints(pattern=r"^[^\s.]+\.[^\s.]+$")]
 
 
+class SettingsOverrideOptions(BaseCaseInsensitiveModel):
+    """Configure the DB-backed settings-override layer.
+
+    Left unmarked on :class:`Settings` so the parent classifies
+    ``NOT_OVERRIDABLE`` (matching ``SECURITY_HEADERS``). Marking it
+    ``NESTED_ONLY`` would let the override API rewrite ``ALLOWED_KEYS`` and
+    lift its own restriction.
+
+    :param REFRESH_INTERVAL: How often each service refreshes its DB-backed
+        setting overrides. Defaults to 30 seconds.
+    :param REFRESHER_ENABLED: Master kill-switch for the DB-override
+        background refresher. Tests set this to ``False`` to keep
+        ``TestClient`` lifespans hermetic; production leaves it ``True``.
+    :param ALLOWED_KEYS: The exhaustive set of settings keys the override API
+        may write, each spelled ``"<SettingsClassName>.<KEY>"`` (the key being
+        a top-level field name or a ``__``-delimited nested path). ``None``,
+        the default, places no restriction. A set activates a default-locked
+        allowlist: any pair it does not name is refused. The allowlist only
+        ever *restricts*: a field that is already not overridable stays that
+        way even when listed. Whether the named class and field exist is not
+        checked at load time, so a typo'd entry allows nothing rather than
+        raising; whitespace anywhere in an entry is rejected outright, since
+        such an entry reads correct but matches nothing.
+    """
+
+    REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
+    REFRESHER_ENABLED: bool = True
+    ALLOWED_KEYS: set[SettingsOverrideKey] | None = not_overridable_field(None)
+
+    @field_validator("REFRESH_INTERVAL")
+    @classmethod
+    def _refresh_interval_positive(cls, value: timedelta) -> timedelta:
+        """Reject zero or negative refresh intervals.
+
+        ``start_refresh_task()`` passes ``interval.total_seconds()`` directly
+        to ``asyncio.sleep()``. A non-positive interval would turn the
+        refresher into a tight loop that hammers the DB every iteration.
+
+        :param value: The configured refresh interval.
+        :type value: timedelta
+        :return: The validated interval.
+        :rtype: timedelta
+        :raises ValueError: If ``value`` is not strictly positive.
+        """
+        if value.total_seconds() <= 0:
+            raise ValueError(
+                "SETTINGS_OVERRIDE.REFRESH_INTERVAL must be a positive duration"
+            )
+        return value
+
+
 class Settings(BaseYamlSettings):
     """Define the main application settings.
 
@@ -374,21 +425,9 @@ class Settings(BaseYamlSettings):
     :param SECURITY_HEADERS: Global options for the SecurityHeadersMiddleware, to be
         used as the default SECURITY_HEADERS setting across all apps.
     :param PMM: PMM connection and authentication configuration.
-    :param SETTINGS_OVERRIDE_REFRESH_INTERVAL: How often each service refreshes its
-        DB-backed setting overrides. Defaults to 30 seconds.
-    :param SETTINGS_OVERRIDE_REFRESHER_ENABLED: Master kill-switch for the DB-override
-        background refresher. Tests set this to ``False`` to keep ``TestClient``
-        lifespans hermetic; production leaves it ``True``.
-    :param SETTINGS_OVERRIDE_ALLOWED_KEYS: The exhaustive set of settings keys the
-        override API may write, each spelled ``"<SettingsClassName>.<KEY>"`` (the
-        key being a top-level field name or a ``__``-delimited nested path).
-        ``None``, the default, places no restriction. A set activates a
-        default-locked allowlist: any pair it does not name is refused. The
-        allowlist only ever *restricts*: a field that is already not overridable
-        stays that way even when listed. Whether the named class and field exist
-        is not checked at load time, so a typo'd entry allows nothing rather than
-        raising; whitespace anywhere in an entry is rejected outright, since such
-        an entry reads correct but matches nothing.
+    :param SETTINGS_OVERRIDE: Options for the DB-backed settings-override layer
+        (refresh interval, refresher kill-switch, and the override-API allowlist).
+        See :class:`SettingsOverrideOptions`.
     """
 
     CELERY: CeleryOptions
@@ -403,11 +442,7 @@ class Settings(BaseYamlSettings):
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
     PMM: PMMSettings = hot_field(PMMSettings())
-    SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
-    SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
-    SETTINGS_OVERRIDE_ALLOWED_KEYS: set[SettingsOverrideKey] | None = (
-        not_overridable_field(None)
-    )
+    SETTINGS_OVERRIDE: SettingsOverrideOptions = SettingsOverrideOptions()
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
     @computed_field
@@ -433,29 +468,6 @@ class Settings(BaseYamlSettings):
         logging_config = deepcopy(LOGGING_CONFIG)
         deep_dict_update(logging_config, v)
         return logging_config
-
-    @field_validator("SETTINGS_OVERRIDE_REFRESH_INTERVAL")
-    @classmethod
-    def _settings_override_refresh_interval_positive(
-        cls, value: timedelta
-    ) -> timedelta:
-        """Reject zero or negative refresh intervals.
-
-        ``start_refresh_task()`` passes ``interval.total_seconds()`` directly
-        to ``asyncio.sleep()``. A non-positive interval would turn the
-        refresher into a tight loop that hammers the DB every iteration.
-
-        :param value: The configured refresh interval.
-        :type value: timedelta
-        :return: The validated interval.
-        :rtype: timedelta
-        :raises ValueError: If ``value`` is not strictly positive.
-        """
-        if value.total_seconds() <= 0:
-            raise ValueError(
-                "SETTINGS_OVERRIDE_REFRESH_INTERVAL must be a positive duration"
-            )
-        return value
 
     @model_validator(mode="after")
     def set_log_level(self) -> Self:
