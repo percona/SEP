@@ -151,10 +151,12 @@ def test_grafana_provider_constructs_with_an_empty_token():
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_override_allowlist_resolves_from_the_profile(embedded_profile_data: dict):
     """Assert the profile's YAML list coerces into the field the policy reads."""
-    declared = embedded_profile_data["default"][ALLOWLIST_KEY]
+    declared = embedded_profile_data["default"]
+    for segment in ALLOWLIST_KEY:
+        declared = declared[segment]
 
     assert len(declared) == ALLOWLIST_SIZE
-    assert set(declared) == Settings().SETTINGS_OVERRIDE_ALLOWED_KEYS
+    assert set(declared) == Settings().SETTINGS_OVERRIDE.ALLOWED_KEYS
 
 
 def test_profile_carries_a_single_default_block(embedded_profile_data: dict):

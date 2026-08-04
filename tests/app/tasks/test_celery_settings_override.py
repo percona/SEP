@@ -104,7 +104,7 @@ def worker_loop_env(monkeypatch):
     loop = asyncio.new_event_loop()
     monkeypatch.setattr(celery_module.celery, "loop", loop)
     monkeypatch.setattr(celery_module._refresher_handle, "task", None)
-    monkeypatch.setattr(settings, "SETTINGS_OVERRIDE_REFRESHER_ENABLED", True)
+    monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", True)
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -274,7 +274,7 @@ class TestWorkerRefresherHandlers:
 
     def test_disabled_resolves_proxy_and_starts_no_task(self, monkeypatch, mocker):
         """Resolve the proxy but start no background task when disabled."""
-        monkeypatch.setattr(settings, "SETTINGS_OVERRIDE_REFRESHER_ENABLED", False)
+        monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
         monkeypatch.setattr(celery_module._refresher_handle, "task", None)
         mock_anonymizer = MagicMock(spec=OverridableSettingsProxy)
         monkeypatch.setattr(celery_module, "anonymizer_settings", mock_anonymizer)

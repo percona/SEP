@@ -114,8 +114,8 @@ async def test_restricted_deployment_filters_withheld_rows(
     endpoint_baseline = sep_settings.INVENTORY_ENDPOINT
     connectivity_override = not sep_settings.CONNECTIVITY_CHECK_DEFAULT
     monkeypatch.setattr(
-        core_settings,
-        "SETTINGS_OVERRIDE_ALLOWED_KEYS",
+        core_settings.SETTINGS_OVERRIDE,
+        "ALLOWED_KEYS",
         {"SEPSettings.CONNECTIVITY_CHECK_DEFAULT"},
     )
     async with override_session_maker() as session:
@@ -305,7 +305,7 @@ async def test_main_lifespan_starts_sep_overrides_refresher(
     # The session-scope autouse fixture in ``tests/app/conftest.py`` disables
     # the refresher for the whole test session; re-enable it here so this
     # test can exercise the real lifespan wiring.
-    monkeypatch.setattr(core_settings, "SETTINGS_OVERRIDE_REFRESHER_ENABLED", True)
+    monkeypatch.setattr(core_settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", True)
 
     fake_app = FastAPI()
     try:

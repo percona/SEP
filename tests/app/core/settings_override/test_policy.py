@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cover the ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` restriction and its predicates.
+"""Cover the ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` restriction and its predicates.
 
 Exercise the setting itself (env parsing through the real ``Settings()`` source
 chain, entry-format validation), the ``policy`` predicates that read it, the
@@ -31,7 +31,7 @@ import yaml
 
 from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
-from app.core.config import Settings, settings
+from app.core.config import Settings, settings, SettingsOverrideOptions
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.policy import (
     has_allowed_key_under,
@@ -96,9 +96,13 @@ def shipped_allowed_keys() -> list[str]:
     :return: The entries the embedded profile declares.
     """
     profile = yaml.safe_load(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
-    entries = profile["default"].get(ALLOWLIST_KEY)
+    entries = profile["default"]
+    for segment in ALLOWLIST_KEY:
+        entries = entries.get(segment) if isinstance(entries, dict) else None
     if not isinstance(entries, list):
-        pytest.fail(f"{ALLOWLIST_KEY} is not a list in {EMBEDDED_PROFILE}: {entries!r}")
+        pytest.fail(
+            f"{'.'.join(ALLOWLIST_KEY)} is not a list in {EMBEDDED_PROFILE}: {entries!r}"
+        )
     return entries
 
 
@@ -137,15 +141,15 @@ class TestSettingDeclaration:
 
     def test_default_is_none(self) -> None:
         """Assert the shipped default leaves every deployment unrestricted."""
-        assert settings.SETTINGS_OVERRIDE_ALLOWED_KEYS is None
+        assert settings.SETTINGS_OVERRIDE.ALLOWED_KEYS is None
 
     def test_field_is_not_overridable(self) -> None:
         """Assert the restriction cannot be unlocked through the override API."""
         assert (
             field_reload_classification(
-                Settings.model_fields["SETTINGS_OVERRIDE_ALLOWED_KEYS"],
-                owner_cls=Settings,
-                field_name="SETTINGS_OVERRIDE_ALLOWED_KEYS",
+                SettingsOverrideOptions.model_fields["ALLOWED_KEYS"],
+                owner_cls=SettingsOverrideOptions,
+                field_name="ALLOWED_KEYS",
             )
             is ReloadClassification.NOT_OVERRIDABLE
         )
@@ -153,13 +157,13 @@ class TestSettingDeclaration:
     def test_parses_json_array_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Assert a bare env var carrying a JSON array reaches the field as a set."""
         monkeypatch.setenv(
-            "SETTINGS_OVERRIDE_ALLOWED_KEYS",
+            "SETTINGS_OVERRIDE__ALLOWED_KEYS",
             '["Settings.LOGGING", "SEPSettings.SYNC_REFRESH_TIME"]',
         )
         assert {
             "Settings.LOGGING",
             "SEPSettings.SYNC_REFRESH_TIME",
-        } == Settings().SETTINGS_OVERRIDE_ALLOWED_KEYS
+        } == Settings().SETTINGS_OVERRIDE.ALLOWED_KEYS
 
     @pytest.mark.parametrize(
         "entry",
@@ -180,18 +184,19 @@ class TestSettingDeclaration:
         self, monkeypatch: pytest.MonkeyPatch, entry: str
     ) -> None:
         """Assert a malformed entry fails the settings load rather than going inert."""
-        monkeypatch.setenv("SETTINGS_OVERRIDE_ALLOWED_KEYS", json.dumps([entry]))
-        with pytest.raises(ValueError, match="SETTINGS_OVERRIDE_ALLOWED_KEYS"):
+        monkeypatch.setenv("SETTINGS_OVERRIDE__ALLOWED_KEYS", json.dumps([entry]))
+        with pytest.raises(ValueError, match="ALLOWED_KEYS"):
             Settings()
 
     def test_accepts_nested_key_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Assert a ``__``-delimited key token passes the format validator."""
         monkeypatch.setenv(
-            "SETTINGS_OVERRIDE_ALLOWED_KEYS", '["Settings.PMM__annotations_enabled"]'
+            "SETTINGS_OVERRIDE__ALLOWED_KEYS",
+            '["Settings.PMM__annotations_enabled"]',
         )
         assert {
             "Settings.PMM__annotations_enabled"
-        } == Settings().SETTINGS_OVERRIDE_ALLOWED_KEYS
+        } == Settings().SETTINGS_OVERRIDE.ALLOWED_KEYS
 
 
 class TestPredicates:
