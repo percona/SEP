@@ -53,6 +53,7 @@ __all__ = [
     "not_overridable_field",
     "override_keys_for_rows",
     "preserve_patch_credential_url_value",
+    "rendered_leaf_keys",
     "resolve_nested_field",
     "resolve_nested_field_metadata",
     "resolve_nested_value",
@@ -2023,6 +2024,37 @@ def iter_nested_leaf_keys(
     if submodel is None:
         return
     yield from _iter_leaf_chains(submodel, (parent_field_name,))
+
+
+def rendered_leaf_keys(
+    settings_cls: type[BaseModel], parent_field_name: str
+) -> list[tuple[str, tuple[str, ...]]]:
+    """Return the nested leaves the settings listing renders under a parent.
+
+    Empty when the field renders as one whole-object row instead: either it is
+    not a nested-overridable parent (a scalar, which enumerates no leaves), or
+    every leaf it enumerates carries an explicit :func:`not_overridable_field`
+    marker. The latter makes the whole object the field's only write unit, so
+    expanding it would advertise leaves no PATCH can target while hiding the key
+    that one can. Leaves withheld by ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` are not
+    that case -- they stay enumerated, so an admin can see what the allowlist is
+    holding back.
+
+    :param settings_cls: The settings class declaring ``parent_field_name``.
+    :param parent_field_name: The top-level field whose leaves to render.
+    :return: The leaves to render, empty to render the parent as one row.
+    """
+    if not is_nested_overridable_parent(
+        settings_cls, parent_field_name, include_policy_gate=False
+    ):
+        return []
+    leaves = list(iter_nested_leaf_keys(settings_cls, parent_field_name))
+    if all(
+        chain_has_explicit_not_overridable(settings_cls, leaf_key)
+        for leaf_key, _chain in leaves
+    ):
+        return []
+    return leaves
 
 
 def _iter_leaf_chains(
