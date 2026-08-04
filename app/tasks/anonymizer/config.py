@@ -35,12 +35,13 @@ class AnonymizerSettings(BaseYamlSettings):
     :class:`OverridableSettingsProxy`, so its underlying instance is constructed
     and validated lazily on first attribute access rather than at import. The
     Tasks Celery worker's ``start_settings_override_refresher`` handler calls
-    ``anonymizer_settings._resolve()`` at ``worker_process_init`` to restore
-    fail-fast validation; removing that call regresses to lazy validation.
+    ``anonymizer_settings._resolve()`` at ``worker_process_init`` so a bad
+    config surfaces in the worker log at child start rather than mid-task --
+    Celery absorbs what a signal receiver raises, so the child still starts.
+    Removing that call regresses to lazy validation.
 
     :cvar SETTINGS_PREFIXES: The prefixes for anonymizer related settings in the
         configuration file. Set to ``["TASKS", "ANONYMIZER"]``.
-    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param DEFAULT_ENTITIES: A mapping of task owners to sets of anonymizer entities.
         If set to ``"*"``, defaults to all available anonymizer entities for all owners.
         If a list of anonymizer entities is provided, it will be used as default for all
