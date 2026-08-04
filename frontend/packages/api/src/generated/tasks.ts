@@ -1284,13 +1284,13 @@ export interface components {
      *     :param target: The target system or environment.
      *     :type target: str
      *     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-     *     :type meta: dict | None
+     *     :type meta: ArbitraryMapping | None
      *     :param payload: Optional payload or file path for parameterizing the task.
      *         Defaults to None.
      *     :type payload: str | None
      *     :param tracking: Tracking information for task execution. Defaults to a dictionary
      *         with keys for allocation and evaluation IDs.
-     *     :type tracking: dict | None
+     *     :type tracking: ArbitraryMapping | None
      */
     TaskExecutionRequest: {
       /** Eta */

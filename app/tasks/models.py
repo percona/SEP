@@ -69,8 +69,8 @@ TASK_ALIAS_LENGTH = 100
 SYSTEM_USER = "SYSTEM"
 ANY_OWNER = "ANY"
 
-# Private aliases so TaskStats computed-field metadata does not pollute the
-# shared ArbitraryMapping OpenAPI schema.
+# Private aliases (not ArbitraryMapping): status values are ints, and each
+# keeps its own WithJsonSchema template so TaskStats field titles stay local.
 _TaskStatsStatusMap = Annotated[
     dict[str, int], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
 ]

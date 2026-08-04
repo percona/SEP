@@ -899,7 +899,7 @@
       },
       "TaskExecutionRequest": {
         "additionalProperties": true,
-        "description": "Represent an execution request.\n\n:param task: The task name.\n:type task: str\n:param target: The target system or environment.\n:type target: str\n:param meta: Additional metadata for the task. Defaults to an empty dictionary.\n:type meta: dict | None\n:param payload: Optional payload or file path for parameterizing the task.\n    Defaults to None.\n:type payload: str | None\n:param tracking: Tracking information for task execution. Defaults to a dictionary\n    with keys for allocation and evaluation IDs.\n:type tracking: dict | None",
+        "description": "Represent an execution request.\n\n:param task: The task name.\n:type task: str\n:param target: The target system or environment.\n:type target: str\n:param meta: Additional metadata for the task. Defaults to an empty dictionary.\n:type meta: ArbitraryMapping | None\n:param payload: Optional payload or file path for parameterizing the task.\n    Defaults to None.\n:type payload: str | None\n:param tracking: Tracking information for task execution. Defaults to a dictionary\n    with keys for allocation and evaluation IDs.\n:type tracking: ArbitraryMapping | None",
         "properties": {
           "eta": {
             "anyOf": [

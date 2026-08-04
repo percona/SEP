@@ -636,7 +636,7 @@
         "type": "object"
       },
       "report__ReportJobResponse": {
-        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:param status: Lowercase Celery task state.\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:param result: Successful job result payload, if available.\n:param error: Failed job error text, if available.",
+        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:param status: Lowercase Celery task state.\n:type status: str\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:type pdf_ready: bool\n:param result: Successful job result payload, if available.\n:type result: ArbitraryMapping | None\n:param error: Failed job error text, if available.\n:type error: str | None",
         "properties": {
           "error": {
             "anyOf": [
@@ -662,7 +662,6 @@
             "anyOf": [
               {
                 "additionalProperties": true,
-                "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                 "type": "object"
               },
               {

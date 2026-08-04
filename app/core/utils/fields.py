@@ -41,7 +41,7 @@ from pydantic import (
     UrlConstraints,
     WrapSerializer,
 )
-from pydantic.json_schema import JsonSchemaValue, WithJsonSchema
+from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema, Url
 from starlette.datastructures import URL as StarletteURL  # noqa: N811
 
@@ -434,16 +434,57 @@ Without this, a bare ``dict`` field emits ``type: object`` with no
 Pydantic field, or nest under ``SQLField(..., schema_extra=...)`` for SQLModel.
 """
 
-ArbitraryMapping = Annotated[
-    dict[str, Any], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
-]
-"""Open ``dict[str, Any]`` that keeps ``additionalProperties`` inside the object
-schema branch.
 
-Use for nested or nullable mappings. Putting ``additionalProperties`` only as a
-sibling of ``anyOf`` still leaves ``Record<string, never>`` in the generated
-union.
-"""
+class ArbitraryMapping(dict):
+    """Open ``dict[str, Any]`` with ``additionalProperties`` in the object branch.
+
+    Use for nested or nullable mappings, and for route-level free-form JSON
+    bodies / responses. Putting ``additionalProperties`` only as a sibling of
+    ``anyOf`` still leaves ``Record<string, never>`` in the generated union.
+
+    Implemented as a ``dict`` subclass (not ``Annotated`` + ``WithJsonSchema``)
+    for two reasons:
+
+    1. **Fresh schema dicts.** FastAPI writes an operation-derived ``title``
+       into the JSON schema it resolves for a return type or body. Pydantic's
+       ``WithJsonSchema`` returns the *same* dict it was constructed with, so
+       a shared ``Annotated[..., WithJsonSchema({...})]`` alias lets one
+       route's title leak into every other site. Definition-time ``.copy()`` /
+       ``{**...}`` / a ``title`` key in the template do not help — they still
+       produce one dict that later generations mutate in place. Returning a
+       new dict from ``__get_pydantic_json_schema__`` each call isolates
+       those titles.
+    2. **Stable component names.** The ``Annotated`` + ``WithJsonSchema`` form
+       renamed generics to
+       ``PaginatedResponse_Annotated_dict_str__Any___WithJsonSchema__``. A
+       named subclass keeps ``PaginatedResponse_ArbitraryMapping_``.
+    """
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        """Validate and coerce as a plain ``dict[str, Any]``.
+
+        :param source_type: The annotated source type (unused; always ``dict``).
+        :param handler: Pydantic's core-schema builder.
+        :return: A core schema for ``dict[str, Any]``.
+        """
+        return handler.generate_schema(dict[str, Any])
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: core_schema.CoreSchema,
+        handler: GetCoreSchemaHandler,
+    ) -> JsonSchemaValue:
+        """Emit an open object schema, copying so FastAPI title writes stay local.
+
+        :param core_schema: The core schema produced for this type.
+        :param handler: Pydantic's JSON-schema builder.
+        :return: A fresh ``type: object`` schema with ``additionalProperties``.
+        """
+        return {**handler(core_schema), **ARBITRARY_ARGS_SCHEMA}
 
 
 def dsn_safe(value: str) -> str:

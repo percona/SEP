@@ -3712,12 +3712,10 @@ export interface components {
       /** Updated At */
       updated_at?: string | null;
     };
-    /** PaginatedResponse[Annotated[dict[str, Any], WithJsonSchema]] */
-    PaginatedResponse_Annotated_dict_str__Any___WithJsonSchema__: {
+    /** PaginatedResponse[Any] */
+    PaginatedResponse_Any_: {
       /** Items */
-      items: {
-        [key: string]: unknown;
-      }[];
+      items: unknown[];
       /** Limit */
       limit: number;
       /** Offset */
@@ -3725,10 +3723,12 @@ export interface components {
       /** Total */
       total: number;
     };
-    /** PaginatedResponse[Any] */
-    PaginatedResponse_Any_: {
+    /** PaginatedResponse[ArbitraryMapping] */
+    PaginatedResponse_ArbitraryMapping_: {
       /** Items */
-      items: unknown[];
+      items: {
+        [key: string]: unknown;
+      }[];
       /** Limit */
       limit: number;
       /** Offset */
@@ -3875,7 +3875,7 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :type custom_labels: dict[str, Any] | None
+     *     :type custom_labels: ArbitraryMapping | None
      *     :param node_id: The unique identifier of the node on which the service is running.
      *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
@@ -4315,13 +4315,13 @@ export interface components {
      *     :param target: The target system or environment.
      *     :type target: str
      *     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-     *     :type meta: dict | None
+     *     :type meta: ArbitraryMapping | None
      *     :param payload: Optional payload or file path for parameterizing the task.
      *         Defaults to None.
      *     :type payload: str | None
      *     :param tracking: Tracking information for task execution. Defaults to a dictionary
      *         with keys for allocation and evaluation IDs.
-     *     :type tracking: dict | None
+     *     :type tracking: ArbitraryMapping | None
      */
     TaskExecutionRequest: {
       /** Eta */
@@ -7269,7 +7269,7 @@ export interface components {
      *         for plugin-specific identity fields (e.g. ``{"backup_type":
      *         "pbm_logical"}``) that the framework should not name itself.
      *         Defaults to ``None``.
-     *     :type data_overrides: dict[str, Any] | None
+     *     :type data_overrides: ArbitraryMapping | None
      *     :param parent_link: When true, set ``data["parent"]`` on the derived
      *         payload to the parent's ``name``. Defaults to ``True``.
      *     :type parent_link: bool
@@ -9726,10 +9726,15 @@ export interface components {
      * @description Expose async report job state.
      *
      *     :param job_id: Celery task identifier.
+     *     :type job_id: str
      *     :param status: Lowercase Celery task state.
+     *     :type status: str
      *     :param pdf_ready: Whether the PDF result exists and is downloadable.
+     *     :type pdf_ready: bool
      *     :param result: Successful job result payload, if available.
+     *     :type result: ArbitraryMapping | None
      *     :param error: Failed job error text, if available.
+     *     :type error: str | None
      */
     report__ReportJobResponse: {
       /** Error */
@@ -12440,7 +12445,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PaginatedResponse_Annotated_dict_str__Any___WithJsonSchema__'];
+          'application/json': components['schemas']['PaginatedResponse_ArbitraryMapping_'];
         };
       };
       /** @description Validation Error */
