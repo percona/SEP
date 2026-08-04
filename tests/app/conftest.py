@@ -102,7 +102,7 @@ def _disable_settings_override_refresher_for_session() -> Iterator[None]:
     it locally via the function-scoped ``monkeypatch`` fixture.
     """
     mp = pytest.MonkeyPatch()
-    mp.setattr(settings, "SETTINGS_OVERRIDE_REFRESHER_ENABLED", False)
+    mp.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
     yield
     mp.undo()
 

@@ -138,7 +138,7 @@ export interface paths {
      *     that has no override row succeeds with 204. Attempting to delete a field
      *     the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
      *     override row in the first place and the operator's intent is
-     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
      *     row is deleted normally and only the no-row case answers 409.
      *
