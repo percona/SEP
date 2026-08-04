@@ -1638,7 +1638,7 @@ export interface components {
        *     :rtype: dict[str, int]
        */
       readonly status: {
-        [key: string]: unknown;
+        [key: string]: number;
       };
       /**
        * Total

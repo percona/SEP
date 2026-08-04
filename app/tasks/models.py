@@ -69,11 +69,9 @@ TASK_ALIAS_LENGTH = 100
 SYSTEM_USER = "SYSTEM"
 ANY_OWNER = "ANY"
 
-# Private aliases (not ArbitraryMapping): status values are ints, and each
-# keeps its own WithJsonSchema template so TaskStats field titles stay local.
-_TaskStatsStatusMap = Annotated[
-    dict[str, int], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
-]
+# Duration is ``dict[str, Any]``; without an open-object schema it serialises as
+# bare ``type: object`` → ``Record<string, never>``. Status stays plain
+# ``dict[str, int]`` so OpenAPI keeps ``additionalProperties: {type: integer}``.
 _TaskStatsDurationMap = Annotated[
     dict[str, Any], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
 ]
@@ -1121,7 +1119,7 @@ class TaskStats(BaseModel):
 
     @computed_field
     @property
-    def status(self) -> _TaskStatsStatusMap:
+    def status(self) -> dict[str, int]:
         """Return the task status summary.
 
         :return: A dictionary summarizing the number of passed and failed tasks.

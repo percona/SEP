@@ -1455,7 +1455,9 @@
             "title": "Last Finished At"
           },
           "status": {
-            "additionalProperties": true,
+            "additionalProperties": {
+              "type": "integer"
+            },
             "description": "Return the task status summary.\n\n:return: A dictionary summarizing the number of passed and failed tasks.\n:rtype: dict[str, int]",
             "readOnly": true,
             "title": "Status",
