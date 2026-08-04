@@ -27,14 +27,17 @@ where a shared module keeps a relocated name importable from its old home by
 pulling it back in.
 
 The rule is deliberately stricter than the production-side boundary in
-``tests/app/sep/test_import_boundary.py``. That one guards the PMM-embedded
-side-car image, which strips non-activated app packages, so only edges that
-*execute* on import can break it; this one guards ownership, so a deferred or
+``tests/app/sep/test_import_boundary.py``, and stricter along two axes. That one
+guards the PMM-embedded side-car image, which strips non-activated app packages,
+so only edges that *execute* on import can break it and it skips function bodies
+and ``if TYPE_CHECKING:`` blocks; this one guards ownership, so a deferred or
 annotation-only import of an app model counts too -- it is an app-specific
-factory waiting to happen. For the same reason there is no
-``framework``/``shared`` exemption: a factory for a framework model is still app
-scaffolding, and ``tests/app/sep/apps/framework/`` already owns that role
-through ``kit.py`` and ``contract_suite.py``.
+factory waiting to happen. And where that rule classifies
+``app.sep.apps.framework``/``shared`` as belonging to no app package -- they ship
+in the image, so reaching them breaks nothing -- this one forbids them like any
+other app path: a factory for a framework model is still app scaffolding, and
+``tests/app/sep/apps/framework/`` already owns that role through ``kit.py`` and
+``contract_suite.py``.
 
 Two evasions are deliberately not caught, so the guard is not mistaken for a
 total one: a dynamic import whose target is a string literal
