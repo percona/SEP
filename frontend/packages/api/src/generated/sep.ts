@@ -5372,7 +5372,9 @@ export interface components {
      *     :param sudo: The sudo choice applied to every item; snippets whose sudo
      *         option is not optional ignore it.
      *     :param shared_args: Arguments offered to every item, filtered per snippet to
-     *         the parameters that snippet declares.
+     *         the parameters that snippet declares. ``NON_SHAREABLE_FIELD_NAMES`` (e.g.
+     *         Extra Args) are never applied from ``shared_args``, even for a snippet
+     *         that declares a field with that name.
      *     :param items: The snippets to execute, at least one and at most
      *         ``MAX_BATCH_SNIPPETS``.
      */
@@ -5492,7 +5494,9 @@ export interface components {
      *     ``AppSchema`` section carries only a display title.
      *
      *     :param shared: The batch-level execution fields followed by every parameter
-     *         the selection declares identically.
+     *         the selection declares identically, excluding ``NON_SHAREABLE_FIELD_NAMES``
+     *         (e.g. Extra Args), which stay per-snippet even when every item declares
+     *         them.
      *     :param per_snippet: The remaining per-snippet fields, in request order.
      */
     atw__ATWMergedSchemaResponse: {
@@ -8607,10 +8611,16 @@ export interface components {
      *     XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
      *     derived schema. Field declaration order is load-bearing: the derived section
      *     order follows each section's first field, and the within-section order follows
-     *     declaration order, so the order here reproduces the hand-written schema
-     *     byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
+     *     declaration order, so the derived section and field order matches the
+     *     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
      *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+     *     encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
+     *     independent encryption modes that both produce an encrypted backup;
+     *     ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
+     *     ``post_run_encrypt`` so post-run takes precedence (matching the backend at
+     *     ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
+     *     is on — and the per-mode bool
+     *     ``FailRule``s in
      *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
      *     into the conditional-rule plan at class definition, so no
      *     ``@apply_conditional_rules`` decorator is needed. The config sub-models

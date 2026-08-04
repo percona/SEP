@@ -257,15 +257,16 @@ class TestCeleryDerivation:
         assert build_celery_include([]) == list(STATIC_CELERY_INCLUDE)
 
     def test_static_base_carries_the_app_independent_modules(self) -> None:
-        """Pin the base: tasks service, library snippet sync, drain reconciler.
+        """Pin the base: tasks service, snippet sync, drain, SEP override refresher.
 
-        The last two must register in an image shipping no app with a
+        The last three must register in an image shipping no app with a
         ``celery.py``, so they cannot be registry-derived.
         """
         assert STATIC_CELERY_INCLUDE == (
             "app.tasks.celery",
             "app.sep.snippets.celery",
             "app.sep.app_drain",
+            "app.sep.settings_override",
         )
 
     def test_build_include_dedupes_static_base_collision(self) -> None:

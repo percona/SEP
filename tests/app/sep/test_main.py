@@ -45,7 +45,7 @@ from app.sep.apps.framework.registry import (
     build_app_registry,
     get_app_registry,
 )
-from app.sep.config import App, sep_settings
+from app.sep.config import App, sep_settings, SEPSettings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.exceptions import LoginRedirectException
 from app.sep.main import (
@@ -573,6 +573,26 @@ async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
     alerts_entry = proxies[SettingClassEnum.ALERTS_SETTINGS]
     assert alerts_entry.proxy is alerts_settings
     assert alerts_entry.settings_cls is AlertsSettings
+
+
+@pytest.mark.asyncio
+async def test_lifespan_refreshes_exactly_the_shared_builder_map(mocker):
+    """Hand the refresher whatever ``build_sep_override_proxies`` composes.
+
+    The Celery worker's SEP-side handler refreshes the same builder's output, so
+    delegating here -- rather than composing an equivalent set inline -- is what
+    keeps the two processes from drifting.
+    """
+    sentinel = {
+        SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+    }
+    mocker.patch.object(
+        main_module, "build_sep_override_proxies", return_value=sentinel
+    )
+
+    proxies = await _refresher_proxy_map(mocker)
+
+    assert proxies == sentinel
 
 
 @pytest.mark.asyncio

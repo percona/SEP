@@ -40,7 +40,11 @@ default:
     ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
   SEP:
     SNIPPETS:
-      FILTER_EXTENSIONS:
+      # Restrict snippet sync to shell scripts. Bare strings are parsed as
+      # extension filters; MIME-type filters use the "mime:<value>" form.
+      # Files that don't match are skipped, so add ".py" here to sync Python
+      # snippets even though an interpreter for them is configured by default.
+      SYNC_FILTER:
         - .sh
     UVICORN_HOST: "127.0.0.1"
     UVICORN_PORT: 8000
@@ -248,12 +252,22 @@ default:
       MINIFY_PAYLOAD: True  # Minify payloads before dispatch
       LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
     ANONYMIZER:
-      DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
+      DEFAULT_ENTITIES:
+        - CREDIT_CARD
+        - EMAIL_ADDRESS
+        - IBAN_CODE
+        - IP_ADDRESS
+        - PHONE_NUMBER
+        - US_SSN
+        - US_ITIN
 
 development:
   PMM:
     ENDPOINT: https://127.0.0.1:8443
     VERIFY_SSL: false
+  TASKS:
+    ANONYMIZER:
+      DEFAULT_ENTITIES: []
   SEP:
     UVICORN_RELOAD: true
     # UVICORN_EXTRA_RELOAD_DIRS:
