@@ -66,14 +66,20 @@ COPY --chown=0:1001 --chmod=440 ./sidecar/settings.embedded.yaml ./settings.yaml
 
 # PMM feature-build variant (branch `pmm`): only the inventory, mysql_backups
 # and atw apps ship — every other app package is stripped from the bundle so it
-# cannot be activated. snippets is the one exception, thinned rather than
-# dropped; its retention list predates the move of the snippets runtime to
-# app/sep/snippets/, which sits outside this tree and is never stripped, so the
-# list now preserves only the package __init__ — which the truncation below
-# then empties.
+# cannot be activated. The strip is an allow-list so a package added later is
+# dropped by default rather than shipping until someone remembers to list it,
+# and -type d confines it to packages so the loose modules at the apps root
+# survive. framework and shared are retained not as apps but because the three
+# shipped ones and app/sep/main.py import them. snippets is the one exception,
+# thinned rather than dropped; its retention list predates the move of the
+# snippets runtime to app/sep/snippets/, which sits outside this tree and is
+# never stripped, so the list now preserves only the package __init__ — which
+# the truncation below then empties.
 RUN cd $APP_HOME/app/sep/apps && \
-    rm -rf alert_troubleshooting alerts alters archives backup_mongo \
-        backup_pg checksums dipper mysql_summary report tasks topology && \
+    find . -mindepth 1 -maxdepth 1 -type d \
+        ! -name inventory ! -name mysql_backups ! -name atw \
+        ! -name framework ! -name shared ! -name snippets \
+        -exec rm -rf {} + && \
     find snippets -mindepth 1 -maxdepth 1 ! -name '__init__.py' ! -name 'celery.py' \
         ! -name 'builtin_manifest.py' ! -name 'constants.py' ! -name 'deps.py' \
         ! -name 'models.py' ! -name 'schema.py' ! -name 'script_source.py' -exec rm -rf {} + && \
