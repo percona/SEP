@@ -40,19 +40,19 @@ from app.core.exceptions import (
     HTTPUnprocessableEntityException,
 )
 from app.sep.apps.framework.script_source import ScriptExecuteWrite
-from app.sep.apps.snippets.deps import build_snippet_execution_meta
-from app.sep.apps.snippets.script_source import (
-    build_snippet_source,
-    snippet_source,
-    SnippetScript,
-)
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.deps import build_snippet_execution_meta
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     EXTRA_ARGS_INPUT_NAME,
     Snippet,
     SnippetExecutionMeta,
+)
+from app.sep.snippets.script_source import (
+    build_snippet_source,
+    snippet_source,
+    SnippetScript,
 )
 
 pytestmark = pytest.mark.asyncio

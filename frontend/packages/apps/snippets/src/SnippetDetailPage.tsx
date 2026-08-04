@@ -28,8 +28,8 @@ import { useSnippetDownload, useSnippetSchema } from './hooks';
  * to ``SnippetExecutionAccordion``. No ``executorHost`` prop is passed, so
  * the accordion renders the schema-driven host selector field.
  *
- * The legacy Jinja2 detail page remains mounted for capabilities not yet
- * ported (chaining, scheduling, alerting).
+ * The legacy Jinja2 detail page remains mounted only until the Jinja layer is
+ * removed; it offers no capability this page lacks.
  */
 export function SnippetDetailPage() {
   const { filename } = useParams<{ filename: string }>();

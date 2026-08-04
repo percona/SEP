@@ -78,7 +78,7 @@ function makeSchema(extraFields: FormSection['fields'] = []): AppSchema {
 
 /** Schema shaped like the backend's synthesised snippet schema: a dedicated
  * collapsible "Script preview" section whose only field is the read-only
- * `script_preview` ScriptPreviewField (see app/sep/apps/snippets/schema.py). */
+ * `script_preview` ScriptPreviewField (see app/sep/snippets/schema.py). */
 function makeSchemaWithPreview(): AppSchema {
   const base = makeSchema();
   return {

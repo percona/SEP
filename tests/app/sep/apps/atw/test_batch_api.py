@@ -94,7 +94,7 @@ def request_less_session(session: AsyncSession, mocker: MockerFixture) -> AsyncS
     maker.return_value.__aenter__ = AsyncMock(return_value=session)
     maker.return_value.__aexit__ = AsyncMock(return_value=False)
     mocker.patch(
-        "app.sep.apps.snippets.script_source.get_async_session_maker",
+        "app.sep.snippets.script_source.get_async_session_maker",
         return_value=maker,
     )
     return session
@@ -1455,7 +1455,7 @@ class TestAtwBatchExecuteOnRealPostgres:
         maker.return_value.__aenter__ = AsyncMock(return_value=postgres_session)
         maker.return_value.__aexit__ = AsyncMock(return_value=False)
         mocker.patch(
-            "app.sep.apps.snippets.script_source.get_async_session_maker",
+            "app.sep.snippets.script_source.get_async_session_maker",
             return_value=maker,
         )
         tasks_api.post.side_effect = [
