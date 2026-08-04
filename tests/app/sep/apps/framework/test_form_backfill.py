@@ -29,18 +29,23 @@ from sqlmodel.pool import StaticPool
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.sep.apps.checksums.app import app as checksums_app
+from app.sep.apps.checksums.models import ChecksumsForm, OWNER
 from app.sep.apps.framework.form_backfill import (
     _backfill_app,
     _backfill_single_task,
-    _BackfillApp,
+    _build_arg_parser,
     _persist_stamped_form,
     _rollback_backfill_session,
     _TaskBackfillOutcome,
     FormBackfillContext,
+    FormReconstructor,
     main,
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
+from app.sep.apps.framework.form_backfill_registry import (
+    collect_form_backfill_entries,
+    FormBackfillEntry,
+)
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum
 
@@ -60,6 +65,16 @@ def _minimal_task(*, data: dict) -> Task:
 def _reconstructor_must_not_run(_task: Task, _ctx: FormBackfillContext) -> dict:
     """Fail fast when the orchestrator invokes a reconstructor unexpectedly."""
     raise AssertionError("reconstructor must not run")
+
+
+def _entry(reconstructor: FormReconstructor) -> FormBackfillEntry:
+    """Build a checksums-keyed backfill entry bound to ``reconstructor``."""
+    return FormBackfillEntry(
+        app_key="checksums",
+        owner=OWNER,
+        create_model=ChecksumsForm,
+        reconstructor=reconstructor,
+    )
 
 
 # A populated (but empty) lookup so the orchestrator's guard passes to the reconstructor.
@@ -166,7 +181,7 @@ async def test_backfill_app_continues_when_persist_and_rollback_fail():
     session.rollback = AsyncMock(side_effect=RuntimeError("rollback failed"))
     session.flush = AsyncMock()
 
-    entry = _BackfillApp(app=checksums_app, reconstructor=lambda _t, _c: None)
+    entry = _entry(lambda _t, _c: None)
     ctx = FormBackfillContext(log=logging.getLogger("test"))
     outcomes = [
         _TaskBackfillOutcome("stamped", stamped_payload),
@@ -198,7 +213,7 @@ def test_backfill_single_task_skips_existing_form_stamp():
     task = _minimal_task(
         data={"meta": {}, RESERVED_FORM_KEY: {"task_name": "already-stamped"}},
     )
-    entry = _BackfillApp(app=checksums_app, reconstructor=_reconstructor_must_not_run)
+    entry = _entry(_reconstructor_must_not_run)
     ctx = FormBackfillContext(log=logging.getLogger("test"))
 
     outcome = _backfill_single_task(task, entry, ctx)
@@ -211,7 +226,7 @@ def test_backfill_single_task_skips_existing_form_stamp():
 def test_backfill_single_task_skips_when_service_lookup_missing():
     """Skip a run with no inventory lookup before invoking the reconstructor."""
     task = _minimal_task(data={"meta": {}})
-    entry = _BackfillApp(app=checksums_app, reconstructor=_reconstructor_must_not_run)
+    entry = _entry(_reconstructor_must_not_run)
     ctx = FormBackfillContext(log=logging.getLogger("test"), service_lookup=None)
 
     outcome = _backfill_single_task(task, entry, ctx)
@@ -232,7 +247,7 @@ def test_backfill_single_task_skips_invalid_reconstructed_form():
             "service_id": 1,
         }
 
-    entry = _BackfillApp(app=checksums_app, reconstructor=_invalid_body)
+    entry = _entry(_invalid_body)
     ctx = FormBackfillContext(
         log=logging.getLogger("test"), service_lookup=_EMPTY_SERVICE_LOOKUP
     )
@@ -263,7 +278,7 @@ async def test_backfill_single_task_stamp_preserves_audit_fields_on_persist(
             "recursion_method": "processlist",
         }
 
-    entry = _BackfillApp(app=checksums_app, reconstructor=_valid_body)
+    entry = _entry(_valid_body)
     ctx = FormBackfillContext(
         log=logging.getLogger("test"), service_lookup=_EMPTY_SERVICE_LOOKUP
     )
@@ -290,7 +305,7 @@ async def test_backfill_app_records_mixed_outcomes_without_aborting():
     session = MagicMock()
     session.commit = AsyncMock()
     session.flush = AsyncMock()
-    entry = _BackfillApp(app=checksums_app, reconstructor=lambda _t, _c: None)
+    entry = _entry(lambda _t, _c: None)
     ctx = FormBackfillContext(log=logging.getLogger("test"))
     outcomes = [
         _TaskBackfillOutcome("skipped_existing"),
@@ -329,7 +344,7 @@ async def test_backfill_app_dry_run_never_commits():
     session = MagicMock()
     session.commit = AsyncMock()
     session.flush = AsyncMock()
-    entry = _BackfillApp(app=checksums_app, reconstructor=lambda _t, _c: None)
+    entry = _entry(lambda _t, _c: None)
     ctx = FormBackfillContext(log=logging.getLogger("test"), dry_run=True)
 
     with (
@@ -348,6 +363,16 @@ async def test_backfill_app_dry_run_never_commits():
     assert stats.stamped == 1
     session.commit.assert_not_awaited()
     session.flush.assert_not_awaited()
+
+
+def test_arg_parser_description_lists_every_collected_app_key():
+    """Derive the CLI's app list from the collected entries, not a hardcoded tuple."""
+    description = _build_arg_parser().description
+
+    assert description is not None
+    for entry in collect_form_backfill_entries():
+        assert entry.app_key in description
+    assert "restores" not in description
 
 
 def test_main_cli_help_exits_zero(capsys):
