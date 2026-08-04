@@ -25,6 +25,7 @@ from fastapi import HTTPException, Query
 from fastapi.responses import Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth import config as auth_config
 from app.core.config import BaseYamlSettings, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPBadRequestException
@@ -38,7 +39,6 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import FieldMetadata
 from app.core.utils.date_time import utc_now
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
-from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.framework.registry import (
     collect_app_owned_settings_classes,
     resolve_app_settings_metadata,
@@ -55,7 +55,7 @@ SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
     (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
     (SettingClassEnum.MESSAGES_SETTINGS, MessagesSettings, messages_settings),
-    (SettingClassEnum.ALERTS_SETTINGS, AlertsSettings, alerts_settings),
+    (SettingClassEnum.ALERT_SETTINGS, AlertSettings, alert_settings),
     # The global ``Settings`` class is refreshed only by the SEP web process, so
     # its override-eligible fields (e.g. ``PMM``, ``LOGGING``) are exposed here.
     (SettingClassEnum.SETTINGS, Settings, settings),
