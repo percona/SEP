@@ -56,8 +56,8 @@ the code's. Before committing the fragment, answer two questions:
 1. **Does every deployment see this?** If any shipped artifact — the side-car
    image, a packaged profile, a default-on env — carries a different value than
    the code default, name it. `SETTINGS_OVERRIDE_ALLOWED_KEYS` defaults to
-   unrestricted, but `sidecar/Containerfile.sidecar` bakes a 15-entry allowlist,
-   so a fragment saying only *"unset (the default) leaves every deployment
+   unrestricted, but the embedded side-car image bakes an allowlist via
+   `sidecar/settings.embedded.yaml`, so a fragment saying only *"unset (the default) leaves every deployment
    unrestricted"* tells the side-car operator the opposite of what they will see:
    a mostly read-only settings UI, with no signal in the release notes. When
    writing the fragment, account for the main axes of variation (process,
