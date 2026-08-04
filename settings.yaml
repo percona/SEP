@@ -12,12 +12,13 @@ default:
   # entries are "<SettingsClassName>.<KEY>", where KEY is a top-level field or a
   # __-delimited nested path. Listing a setting that is already read-only
   # changes nothing -- this only ever restricts. Applies to all three services.
-  SETTINGS_OVERRIDE_ALLOWED_KEYS: null
-  # SETTINGS_OVERRIDE_ALLOWED_KEYS:
-  #   - Settings.LOGGING
-  #   - Settings.PMM__annotations_enabled
-  #   - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
-  #   - TasksSettings.LOG_RETENTION_DAYS
+  SETTINGS_OVERRIDE:
+    ALLOWED_KEYS: null
+    # ALLOWED_KEYS:
+    #   - Settings.LOGGING
+    #   - Settings.PMM__annotations_enabled
+    #   - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
+    #   - TasksSettings.LOG_RETENTION_DAYS
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
     - http://127.0.0.1:8000
