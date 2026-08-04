@@ -140,7 +140,7 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     :param kwargs: The ``worker_process_init`` signal keyword arguments (unused).
     """
     anonymizer_settings._resolve()  # noqa: SLF001
-    if not settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED:
+    if not settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED:
         return
     if _refresher_handle.task is not None and not _refresher_handle.task.done():
         return
@@ -155,7 +155,7 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
                     anonymizer_settings, AnonymizerSettings
                 ),
             },
-            settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
+            settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL,
         )
     )
 

@@ -120,8 +120,8 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     anonymizer_settings, AnonymizerSettings
                 ),
             },
-            settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-            enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+            settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL,
+            enabled=settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED,
             callbacks=_OVERRIDE_REBIND_CALLBACKS,
         ),
         default_lifespan(app),
