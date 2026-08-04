@@ -16,7 +16,6 @@
 """Define tests for the app.tasks.anonymizer.config module."""
 
 from collections import defaultdict
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
