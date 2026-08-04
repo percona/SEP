@@ -50,6 +50,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
+from app.core.security import require_internal_token
 from app.core.utils import json_serializer
 from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.config import atw_settings
@@ -630,11 +631,6 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     steps: list[dict[str, Any]] = []
     path = bundle_dir() / f"{row.id}-{uuid4().hex}{_BUNDLE_SUFFIX}"
     try:
-        # import-boundary: keep atw importable where inventory is absent, holding
-        # no import-time edge into another app package. Inside the try so a
-        # missing package lands terminally like every other failure family.
-        from app.sep.apps.inventory.sync import require_internal_token
-
         client = await get_tasks_api()
         with client.auth(require_internal_token()) as tasks_api:
             file_count, manifest = await _stage_bundle(
