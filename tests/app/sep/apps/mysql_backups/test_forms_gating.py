@@ -171,7 +171,7 @@ class TestEncryptionGate:
             BackupCreate(**_base_payload(BackupType.MYDUMPER, encrypt=True))
 
     def test_recipient_without_any_encryption_fails(self):
-        """Recipient set with no encryption mode enabled → 422."""
+        """Reject a recipient set with no encryption mode enabled → 422."""
         with pytest.raises(ValidationError, match="encryption_recipient"):
             BackupCreate(
                 **_base_payload(
