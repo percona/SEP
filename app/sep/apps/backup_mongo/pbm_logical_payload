@@ -1,10 +1,13 @@
 """ PBM Logical Payload """
 
 import subprocess
+import getpass
 import os
+import pwd
 import sys
 import time
 import traceback
+from pathlib import Path
 import yaml
 
 PBM_METRIC_TYPE = "PBM Logical"
@@ -218,29 +221,50 @@ def _apply_pbm_config(config: dict) -> None:
 _TEXTFILE_COLLECTOR_DEFAULT_SUBPATH = "pmm/collectors/textfile-collector/low-resolution"
 
 
-def _textfile_collector_dir() -> str:
+def _backup_user_home() -> Path | None:
+    """Return the home directory of the user the backup runs as, or ``None``.
+
+    Resolve the user the MySQL/PostgreSQL payloads resolve --
+    ``PERCONA_BACKUP_USER``, then ``SUDO_USER``, then the login name -- and read
+    the home from the passwd database rather than ``$HOME``. Under ``sudo`` the
+    two disagree, and honouring ``$HOME`` would drop this payload's ``.prom``
+    files somewhere PMM never scrapes while the MySQL/PG ones land correctly.
+
+    Unlike those payloads the lookup is lazy and guarded: a host with no passwd
+    entry for the resolved name must cost the metric, not abort the backup.
+
+    :return: The backup user's home directory, or ``None`` when it cannot be
+        resolved to an absolute path.
+    """
+    try:
+        user = (
+            os.environ.get("PERCONA_BACKUP_USER")
+            or os.environ.get("SUDO_USER")
+            or getpass.getuser()
+        )
+        home = Path(pwd.getpwnam(user).pw_dir)
+    except (KeyError, OSError):
+        return None
+    return home if home.is_absolute() else None
+
+
+def _textfile_collector_dir() -> Path | None:
     """Return the PMM textfile-collector directory for backup ``.prom`` files.
 
     Mirror the MySQL/PostgreSQL payloads: honour
     ``PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR`` and otherwise fall back to the PMM
-    low-resolution collector under the current user's home. Resolve the home
-    absolutely via ``expanduser`` -- when it cannot be resolved (no ``$HOME``,
-    no passwd entry) return ``""`` so ``_write_textfile_metric`` no-ops rather
-    than writing a relative ``pmm/collectors/...`` path under the payload's cwd.
-    The path is trailing-slash normalised so it can be joined with a filename.
+    low-resolution collector under the backup user's home.
 
-    :return: The collector directory path ending in a trailing slash, or ``""``
-        when neither the override nor a home directory can be resolved.
+    :return: The collector directory, or ``None`` when neither the override nor a
+        home directory resolves -- ``_write_textfile_metric`` then no-ops rather
+        than writing a relative ``pmm/collectors/...`` path under the payload's
+        cwd.
     """
-    base = os.environ.get("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR")
-    if not base:
-        home = os.path.expanduser("~")
-        if not os.path.isabs(home):
-            return ""
-        base = os.path.join(home, _TEXTFILE_COLLECTOR_DEFAULT_SUBPATH)
-    if not base.endswith("/"):
-        base += "/"
-    return base
+    override = os.environ.get("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR")
+    if override:
+        return Path(override)
+    home = _backup_user_home()
+    return home / _TEXTFILE_COLLECTOR_DEFAULT_SUBPATH if home else None
 
 
 def _metric_alias() -> str:
@@ -261,12 +285,19 @@ def _escape_label_value(value: str) -> str:
 
     The text-exposition format requires backslash, double-quote and newline in a
     label value to be escaped; an un-escaped host alias carrying any of them would
-    otherwise produce a ``.prom`` file the collector rejects wholesale.
+    otherwise produce a ``.prom`` file the collector rejects wholesale. Carriage
+    returns are escaped too, so this and :func:`_safe_filename_alias` neutralise
+    the same set of characters in the same host-controlled alias.
 
     :param value: The raw label value (the host alias).
     :return: The escaped label value.
     """
-    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
 
 
 def _safe_filename_alias(value: str) -> str:
@@ -291,15 +322,24 @@ def _write_textfile_metric(filename: str, body: str) -> None:
     MySQL/PG ``check_textcollector_dir`` guard) and swallow any write error so
     metric emission never changes the backup's exit status or aborts the run.
 
+    Publish through a sibling temp file and an atomic rename: a scrape landing
+    between truncate and write reads a partial file, and the collector rejects a
+    malformed ``.prom`` wholesale rather than skipping the bad line.
+
     :param filename: The ``.prom`` file name to write under the collector dir.
     :param body: The Prometheus text-exposition content to write.
     """
     collector_dir = _textfile_collector_dir()
-    if not os.path.isdir(collector_dir):
+    if collector_dir is None or not collector_dir.is_dir():
         return
+    target = collector_dir / filename
+    # A deterministic temp name means a leftover from a failed rename is reused
+    # by the next write instead of accumulating, and the collector reads only
+    # ``*.prom``.
+    tmp = target.with_name(f"{target.name}.tmp")
     try:
-        with open(os.path.join(collector_dir, filename), "w", encoding="utf-8") as out:
-            out.write(body)
+        tmp.write_text(body, encoding="utf-8")
+        tmp.replace(target)
     except OSError as err:
         print(
             f"Failed to write textfile-collector metric {filename}: {err}",

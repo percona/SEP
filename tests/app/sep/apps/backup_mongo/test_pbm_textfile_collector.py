@@ -15,14 +15,15 @@
 
 """Define tests for the PBM textfile-collector metric writer across the Mongo payloads."""
 
-import builtins
-import os
+import getpass
+import pwd
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from app.sep.apps.backup_mongo.pbm_creds_common import (
+    _backup_user_home,
     _escape_label_value,
     _metric_alias,
     _safe_filename_alias,
@@ -87,32 +88,111 @@ def _read_prom(collector_dir: Path, name: str) -> str:
     return (collector_dir / name).read_text(encoding="utf-8")
 
 
+def _stub_passwd(monkeypatch, homes: dict[str, str]) -> list[str]:
+    """Stub ``pwd.getpwnam`` with a name-to-home table and record the names looked up.
+
+    :param monkeypatch: The pytest monkeypatch fixture.
+    :param homes: The passwd entries to serve, keyed by user name. A name absent
+        from the table raises ``KeyError``, as the real ``getpwnam`` does.
+    :return: The list the stub appends each looked-up name to.
+    """
+    looked_up: list[str] = []
+
+    def _getpwnam(name: str) -> pwd.struct_passwd:
+        looked_up.append(name)
+        if name not in homes:
+            raise KeyError(f"getpwnam(): name not found: {name}")
+        return pwd.struct_passwd((name, "x", 0, 0, "", homes[name], "/bin/sh"))
+
+    monkeypatch.setattr(pwd, "getpwnam", _getpwnam)
+    return looked_up
+
+
+class TestBackupUserHome:
+    """Cover the passwd-based home resolution the collector directory falls back to."""
+
+    def test_prefers_percona_backup_user(self, monkeypatch) -> None:
+        """Resolve ``PERCONA_BACKUP_USER`` ahead of ``SUDO_USER`` and the login name."""
+        monkeypatch.setenv("PERCONA_BACKUP_USER", "pbm")
+        monkeypatch.setenv("SUDO_USER", "operator")
+        _stub_passwd(monkeypatch, {"pbm": "/home/pbm", "operator": "/home/operator"})
+        assert _backup_user_home() == Path("/home/pbm")
+
+    def test_falls_back_to_sudo_user(self, monkeypatch) -> None:
+        """Resolve ``SUDO_USER`` when no explicit backup user is configured."""
+        monkeypatch.delenv("PERCONA_BACKUP_USER", raising=False)
+        monkeypatch.setenv("SUDO_USER", "operator")
+        _stub_passwd(monkeypatch, {"operator": "/home/operator"})
+        assert _backup_user_home() == Path("/home/operator")
+
+    def test_falls_back_to_login_name(self, monkeypatch) -> None:
+        """Resolve the login name when neither override is set."""
+        monkeypatch.delenv("PERCONA_BACKUP_USER", raising=False)
+        monkeypatch.delenv("SUDO_USER", raising=False)
+        monkeypatch.setattr(getpass, "getuser", lambda: "runner")
+        _stub_passwd(monkeypatch, {"runner": "/home/runner"})
+        assert _backup_user_home() == Path("/home/runner")
+
+    def test_ignores_home_env(self, monkeypatch) -> None:
+        """Read the home from passwd, never from ``$HOME``.
+
+        Under ``sudo`` the two disagree. Honouring ``$HOME`` would put this
+        payload's ``.prom`` files somewhere PMM never scrapes, while the
+        MySQL/PostgreSQL payloads -- which resolve through passwd -- land
+        correctly, and the mismatch is silent because the write then no-ops.
+        """
+        monkeypatch.setenv("HOME", "/root")
+        monkeypatch.setenv("PERCONA_BACKUP_USER", "pbm")
+        _stub_passwd(monkeypatch, {"pbm": "/home/pbm"})
+        assert _backup_user_home() == Path("/home/pbm")
+
+    def test_returns_none_when_user_not_in_passwd(self, monkeypatch) -> None:
+        """Return ``None`` rather than raising when the user has no passwd entry."""
+        monkeypatch.setenv("PERCONA_BACKUP_USER", "ghost")
+        _stub_passwd(monkeypatch, {})
+        assert _backup_user_home() is None
+
+    def test_returns_none_when_login_name_unresolvable(self, monkeypatch) -> None:
+        """Return ``None`` when even the login name cannot be determined."""
+        monkeypatch.delenv("PERCONA_BACKUP_USER", raising=False)
+        monkeypatch.delenv("SUDO_USER", raising=False)
+
+        def _no_user() -> str:
+            raise OSError("no login name")
+
+        monkeypatch.setattr(getpass, "getuser", _no_user)
+        assert _backup_user_home() is None
+
+    def test_returns_none_for_relative_home(self, monkeypatch) -> None:
+        """Return ``None`` for a relative passwd home, never a payload-cwd path."""
+        monkeypatch.setenv("PERCONA_BACKUP_USER", "pbm")
+        _stub_passwd(monkeypatch, {"pbm": "relative/home"})
+        assert _backup_user_home() is None
+
+
 class TestTextfileCollectorDir:
     """Cover the collector-directory resolution."""
 
     def test_honors_env_override(self, monkeypatch) -> None:
         """Honour ``PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR`` verbatim."""
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", "/custom/dir")
-        assert _textfile_collector_dir() == "/custom/dir/"
+        assert _textfile_collector_dir() == Path("/custom/dir")
 
-    def test_preserves_trailing_slash(self, monkeypatch) -> None:
-        """Do not double a trailing slash already present in the override."""
-        monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", "/custom/dir/")
-        assert _textfile_collector_dir() == "/custom/dir/"
-
-    def test_falls_back_to_home(self, monkeypatch) -> None:
-        """Fall back to the PMM low-resolution collector under ``$HOME``."""
+    def test_falls_back_to_backup_user_home(self, monkeypatch) -> None:
+        """Fall back to the PMM low-resolution collector under the backup user's home."""
         monkeypatch.delenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", raising=False)
-        monkeypatch.setenv("HOME", "/home/pbm")
-        assert _textfile_collector_dir() == (
-            "/home/pbm/pmm/collectors/textfile-collector/low-resolution/"
+        monkeypatch.setenv("PERCONA_BACKUP_USER", "pbm")
+        _stub_passwd(monkeypatch, {"pbm": "/home/pbm"})
+        assert _textfile_collector_dir() == Path(
+            "/home/pbm/pmm/collectors/textfile-collector/low-resolution"
         )
 
-    def test_returns_empty_when_home_unresolvable(self, monkeypatch) -> None:
-        """Return ``""`` -- not a relative path -- when no home can be resolved."""
+    def test_returns_none_when_home_unresolvable(self, monkeypatch) -> None:
+        """Return ``None`` -- not a relative path -- when no home can be resolved."""
         monkeypatch.delenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", raising=False)
-        monkeypatch.setattr(os.path, "expanduser", lambda _path: "~")
-        assert _textfile_collector_dir() == ""
+        monkeypatch.setenv("PERCONA_BACKUP_USER", "ghost")
+        _stub_passwd(monkeypatch, {})
+        assert _textfile_collector_dir() is None
 
 
 class TestMetricAlias:
@@ -137,6 +217,10 @@ class TestLabelAndFilenameSafety:
         assert _escape_label_value(r'a"b\c') == r"a\"b\\c"
         assert _escape_label_value("a\nb") == "a\\nb"
 
+    def test_escapes_carriage_return(self) -> None:
+        """Escape a carriage return too, matching what the filename sanitiser strips."""
+        assert _escape_label_value("a\rb") == "a\\rb"
+
     def test_leaves_ordinary_aliases_untouched(self) -> None:
         """Leave an ordinary hostname untouched when escaping."""
         assert _escape_label_value("db-host.example.com") == "db-host.example.com"
@@ -146,19 +230,31 @@ class TestLabelAndFilenameSafety:
         assert _safe_filename_alias("a/b") == "a_b"
         assert _safe_filename_alias("a\x00b\nc\rd") == "a_b_c_d"
 
-    def test_status_escapes_label_and_sanitises_filename(
-        self, tmp_path, monkeypatch
+    @pytest.mark.parametrize(
+        ("write", "prefix"),
+        [
+            pytest.param(
+                lambda: write_backup_status("PBM Logical", 0), "", id="status"
+            ),
+            pytest.param(
+                lambda: write_backup_enabled("PBM Logical"), "driver.", id="enabled"
+            ),
+        ],
+    )
+    def test_writers_escape_label_and_sanitise_filename(
+        self, write, prefix: str, tmp_path, monkeypatch
     ) -> None:
-        """Escape labels and sanitise the filename for a quote/slash-bearing target."""
+        """Escape labels and sanitise the filename for a quote/slash-bearing target.
+
+        Both writers reach the same two helpers off the same host-controlled
+        ``NOMAD_META_TARGET``, so both are driven through the real env seam.
+        """
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
-        # Drive the real seam: the alias production reads NOMAD_META_TARGET.
         monkeypatch.setenv("NOMAD_META_TARGET", 'ev/il"host')
-        write_backup_status("PBM Logical", 0)
+        write()
         name, body = _read_single_prom(tmp_path)
-        # The filename never escapes the collector dir and carries no raw quote/slash.
-        assert "/" not in name.replace(".prom", "")
+        assert name == f'{prefix}backup.PBM Logical.ev_il"host.prom'
         assert (tmp_path / name).parent == tmp_path
-        # The label value is escaped, so the exposition line is well-formed.
         assert r'alias="ev/il\"host"' in body
 
 
@@ -209,13 +305,45 @@ class TestWriteBackupStatus:
     def test_write_error_is_swallowed(self, collector, monkeypatch, capsys) -> None:
         """Swallow a write error so metric emission never aborts the backup."""
 
-        def _deny(*_args, **_kwargs):
+        def _deny(*_args, **_kwargs) -> None:
             raise OSError("disk full")
 
-        monkeypatch.setattr(builtins, "open", _deny)
-        # Must not raise.
+        monkeypatch.setattr(Path, "write_text", _deny)
         write_backup_status("PBM Logical", 0)
         assert "Failed to write textfile-collector metric" in capsys.readouterr().err
+
+    def test_leaves_no_temp_file_behind(self, collector) -> None:
+        """Publish through a temp file that the rename consumes, leaving only the ``.prom``."""
+        write_backup_status("PBM Logical", 0)
+        assert sorted(p.name for p in collector.iterdir()) == [
+            "backup.PBM Logical.host-1.prom"
+        ]
+
+    def test_partial_write_leaves_previous_prom_intact(
+        self, collector, monkeypatch
+    ) -> None:
+        """Keep the last good ``.prom`` when a later write dies part-way through.
+
+        This is what the temp file plus rename buys. Writing straight to the
+        published path would truncate it first, so the collector would scrape a
+        half-written file -- and reject every metric in it -- until the next run.
+        """
+        write_backup_status("PBM Logical", 0)
+        target = collector / "backup.PBM Logical.host-1.prom"
+        previous = target.read_text(encoding="utf-8")
+        real_write_text = Path.write_text
+
+        def _half_then_fail(self: Path, data: str, **kwargs) -> None:
+            real_write_text(self, data[: len(data) // 2], **kwargs)
+            raise OSError("disk full")
+
+        monkeypatch.setattr(Path, "write_text", _half_then_fail)
+        write_backup_status("PBM Logical", 1)
+        assert target.read_text(encoding="utf-8") == previous
+        # The half-written body landed on the temp path, not the published one.
+        assert (collector / f"{target.name}.tmp").read_text(
+            encoding="utf-8"
+        ) != previous
 
     def test_empty_alias_still_writes(self, tmp_path, monkeypatch) -> None:
         """Fall back to an empty alias label (never abort) when none is resolved."""
@@ -259,7 +387,7 @@ class TestTextfileRegionSync:
 
     @pytest.mark.parametrize("payload", _textfile_payloads(), ids=lambda p: p.name)
     def test_region_matches_canonical(self, payload: Path) -> None:
-        """The block between a payload's markers equals ``textfile_source()``."""
+        """Assert the block between a payload's markers equals ``textfile_source()``."""
         region = region_between(
             payload.read_text(encoding="utf-8"), TEXTFILE_BEGIN, TEXTFILE_END
         )
@@ -427,7 +555,6 @@ class TestSnapshotPayloadStatus:
         monkeypatch.setenv("PERCONA_BACKUP_TEXTFILE_COLLECTOR_DIR", str(tmp_path))
         monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
         monkeypatch.delenv("PBM_CREATE_SNAPSHOT", raising=False)
-        # Must not raise -- the snapshot payload records failure and returns.
         run_payload(_payload_path("pbm_snapshot_payload"))
         body = _read_prom(tmp_path, "backup.PBM Snapshot.host-1.prom")
         assert 'msp_backup_status{type="PBM Snapshot", alias="host-1"} 1' in body
@@ -440,7 +567,6 @@ class TestSnapshotPayloadStatus:
         monkeypatch.setenv("NOMAD_META_TARGET", "host-1")
         monkeypatch.setenv("PBM_CREATE_SNAPSHOT", "/usr/local/bin/pbm_create_snapshot")
         monkeypatch.setattr(subprocess, "run", self._fake_run_failure)
-        # Must not raise -- the snapshot payload records failure and returns.
         run_payload(_payload_path("pbm_snapshot_payload"))
         body = _read_prom(tmp_path, "backup.PBM Snapshot.host-1.prom")
         assert 'msp_backup_status{type="PBM Snapshot", alias="host-1"} 1' in body
