@@ -63,6 +63,20 @@ def _make_registry() -> ProxyRegistry:
     }
 
 
+CALLBACKS: CallbackRegistry = {(SettingClassEnum.SETTINGS, "PMM"): _noop_callback}
+
+
+class _CountingRegistry:
+    """Compose the registry through :func:`_make_registry`, counting each build."""
+
+    def __init__(self) -> None:
+        self.builds = 0
+
+    def __call__(self) -> ProxyRegistry:
+        self.builds += 1
+        return _make_registry()
+
+
 def _unreachable_loop() -> asyncio.AbstractEventLoop:
     """Fail the test if the refresher resolves the event loop."""
     raise AssertionError("the event loop must not be resolved")
@@ -123,36 +137,23 @@ class TestWorkerRefresherStart:
         self, loop: asyncio.AbstractEventLoop, session_maker: async_sessionmaker
     ) -> None:
         """Skip the proxy registry entirely when the refresher is disabled."""
-        builds = 0
-
-        def _counting_registry() -> ProxyRegistry:
-            nonlocal builds
-            builds += 1
-            return _make_registry()
-
-        refresher = WorkerRefresher(
-            lambda: loop, lambda: session_maker, _counting_registry
-        )
+        registry = _CountingRegistry()
+        refresher = WorkerRefresher(lambda: loop, lambda: session_maker, registry)
 
         refresher.start(INTERVAL, enabled=False)
 
         assert refresher.task is None
-        assert builds == 0
+        assert registry.builds == 0
 
     def test_construction_does_not_build_the_registry(
         self, loop: asyncio.AbstractEventLoop, session_maker: async_sessionmaker
     ) -> None:
         """Defer the registry build past construction of the singleton."""
-        builds = 0
+        registry = _CountingRegistry()
 
-        def _counting_registry() -> ProxyRegistry:
-            nonlocal builds
-            builds += 1
-            return _make_registry()
+        WorkerRefresher(lambda: loop, lambda: session_maker, registry)
 
-        WorkerRefresher(lambda: loop, lambda: session_maker, _counting_registry)
-
-        assert builds == 0
+        assert registry.builds == 0
 
     def test_second_start_keeps_the_running_task(
         self, loop: asyncio.AbstractEventLoop, session_maker: async_sessionmaker
@@ -174,22 +175,14 @@ class TestWorkerRefresherStart:
         self, loop: asyncio.AbstractEventLoop, session_maker: async_sessionmaker
     ) -> None:
         """Skip the registry build on a start that short-circuits."""
-        builds = 0
-
-        def _counting_registry() -> ProxyRegistry:
-            nonlocal builds
-            builds += 1
-            return _make_registry()
-
-        refresher = WorkerRefresher(
-            lambda: loop, lambda: session_maker, _counting_registry
-        )
+        registry = _CountingRegistry()
+        refresher = WorkerRefresher(lambda: loop, lambda: session_maker, registry)
         refresher.start(INTERVAL, enabled=True)
 
         refresher.start(INTERVAL, enabled=True)
 
         try:
-            assert builds == 1
+            assert registry.builds == 1
         finally:
             refresher.stop()
 
@@ -240,44 +233,22 @@ class TestWorkerRefresherStart:
             refresher.stop()
             stale_loop.close()
 
-    def test_start_forwards_the_callback_registry(
+    @pytest.mark.parametrize(
+        ("start_kwargs", "expected"),
+        [
+            pytest.param({"callbacks": CALLBACKS}, CALLBACKS, id="registry-forwarded"),
+            pytest.param({}, None, id="omitted-defaults-to-none"),
+        ],
+    )
+    def test_start_hands_the_callback_registry_to_the_refresh_task(
         self,
         loop: asyncio.AbstractEventLoop,
         session_maker: async_sessionmaker,
         monkeypatch: pytest.MonkeyPatch,
+        start_kwargs: dict[str, CallbackRegistry],
+        expected: CallbackRegistry | None,
     ) -> None:
-        """Hand the caller's callbacks to the refresh task."""
-        recorded: dict[str, object] = {}
-
-        async def _fake_start(
-            session_maker_factory: object,
-            proxies: ProxyRegistry,
-            interval: timedelta,
-            callbacks: CallbackRegistry | None = None,
-        ) -> asyncio.Task:
-            recorded["callbacks"] = callbacks
-            return asyncio.create_task(asyncio.sleep(3600))
-
-        monkeypatch.setattr(
-            "app.core.settings_override.worker.start_refresh_task", _fake_start
-        )
-        callbacks = {(SettingClassEnum.SETTINGS, "PMM"): _noop_callback}
-        refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
-
-        refresher.start(INTERVAL, enabled=True, callbacks=callbacks)
-
-        try:
-            assert recorded["callbacks"] is callbacks
-        finally:
-            refresher.stop()
-
-    def test_start_defaults_to_no_callbacks(
-        self,
-        loop: asyncio.AbstractEventLoop,
-        session_maker: async_sessionmaker,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Pass ``None`` when the caller registers no callbacks."""
+        """Forward the caller's callbacks, passing ``None`` when none are given."""
         recorded: dict[str, object] = {}
 
         async def _fake_start(
@@ -294,10 +265,10 @@ class TestWorkerRefresherStart:
         )
         refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
 
-        refresher.start(INTERVAL, enabled=True)
+        refresher.start(INTERVAL, enabled=True, **start_kwargs)
 
         try:
-            assert recorded["callbacks"] is None
+            assert recorded["callbacks"] is expected
         finally:
             refresher.stop()
 

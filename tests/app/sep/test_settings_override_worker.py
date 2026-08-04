@@ -219,7 +219,8 @@ class TestWorkerOverrideCallbacks:
 class TestSepWorkerHandlers:
     """Cover the worker_process_init / worker_process_shutdown SEP handlers."""
 
-    def test_init_starts_a_refresher(self, worker_loop_env: WorkerLoopEnv) -> None:
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_init_starts_a_refresher(self) -> None:
         """Start this child's SEP refresher on ``worker_process_init``."""
         start_sep_settings_override_refresher()
 
@@ -241,9 +242,8 @@ class TestSepWorkerHandlers:
         start.assert_not_called()
         assert sep_worker._refresher.task is None
 
-    def test_init_is_idempotent_when_already_running(
-        self, worker_loop_env: WorkerLoopEnv
-    ) -> None:
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_init_is_idempotent_when_already_running(self) -> None:
         """Keep the running refresher and start no second task on re-entry."""
         start_sep_settings_override_refresher()
         first_task = sep_worker._refresher.task
@@ -253,9 +253,8 @@ class TestSepWorkerHandlers:
         assert sep_worker._refresher.task is first_task
         assert not first_task.done()
 
-    def test_shutdown_cancels_and_drains_started_refresher(
-        self, worker_loop_env: WorkerLoopEnv
-    ) -> None:
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_shutdown_cancels_and_drains_started_refresher(self) -> None:
         """Stop and drain the started refresher, clearing the handle."""
         start_sep_settings_override_refresher()
         task = sep_worker._refresher.task
