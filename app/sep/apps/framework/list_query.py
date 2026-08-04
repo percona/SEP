@@ -67,6 +67,20 @@ class InMemoryListQuery:
     descending: bool
     search: str | None
 
+    @classmethod
+    def from_sort(cls, sort: str, search: str | None) -> InMemoryListQuery:
+        """Split a ``-``-prefixed sort value into its key and direction.
+
+        :param sort: A vetted sort value, descending when ``-`` prefixed.
+        :param search: The raw search term, or ``None`` for no search.
+        :return: The resolved selections.
+        """
+        return cls(
+            sort_key=sort.removeprefix("-"),
+            descending=sort.startswith("-"),
+            search=search,
+        )
+
 
 def _attr_name(column: ColumnExpressionArgument, *, role: str) -> str:
     """Return the object attribute a spec column expression names.
@@ -165,6 +179,8 @@ def make_in_memory_list_query_dep(
     :raises ValueError: When a spec column expression exposes no name to read off a
         row, so a misdeclared spec fails at wiring time rather than per request.
     """
+    # Resolved for its exception only: a misdeclared spec has to fail here, at wiring
+    # time, rather than once per request inside the applier.
     _spec_attrs(spec)
     if spec.search_enabled:
 
@@ -206,12 +222,7 @@ def _build_in_memory_query(
         raise HTTPUnprocessableEntityException(
             detail=f"Invalid sort key: {exc.key!r}"
         ) from exc
-    descending = sort.startswith("-")
-    return InMemoryListQuery(
-        sort_key=sort.removeprefix("-"),
-        descending=descending,
-        search=search,
-    )
+    return InMemoryListQuery.from_sort(sort, search)
 
 
 def default_in_memory_query(spec: ListQuerySpec) -> InMemoryListQuery:
@@ -223,11 +234,7 @@ def default_in_memory_query(spec: ListQuerySpec) -> InMemoryListQuery:
     :param spec: The spec whose default sort to adopt.
     :return: The spec's default sort with no search term.
     """
-    return InMemoryListQuery(
-        sort_key=spec.default_sort.removeprefix("-"),
-        descending=spec.default_sort.startswith("-"),
-        search=None,
-    )
+    return InMemoryListQuery.from_sort(spec.default_sort, None)
 
 
 def apply_in_memory(
@@ -262,6 +269,7 @@ def apply_in_memory(
             [
                 (f"sortable[{query.sort_key!r}]", attrs.sort_attrs[query.sort_key]),
                 ("tie_breaker", attrs.tie_attr),
+                *(("searchable", attr) for attr in attrs.search_attrs),
             ],
         )
     filtered = _search(items, attrs, query.search)
@@ -318,14 +326,15 @@ def _search(
     term = search.strip().lower() if search else ""
     if not term:
         return list(items)
-    matched: list[S] = []
-    for item in items:
-        for attr in attrs.search_attrs:
-            value = getattr(item, attr)
-            if value is not None and term in str(value).lower():
-                matched.append(item)
-                break
-    return matched
+
+    def matches(item: S) -> bool:
+        return any(
+            term in str(value).lower()
+            for attr in attrs.search_attrs
+            if (value := getattr(item, attr)) is not None
+        )
+
+    return [item for item in items if matches(item)]
 
 
 def _sort(
@@ -346,10 +355,11 @@ def _sort(
     :return: The ordered rows.
     """
     sort_attr = attrs.sort_attrs[query.sort_key]
-    tie_attr = attrs.tie_attr
-    rows = sorted(items, key=lambda item: getattr(item, tie_attr))
-    present = [item for item in rows if getattr(item, sort_attr, None) is not None]
-    absent = [item for item in rows if getattr(item, sort_attr, None) is None]
+    rows = sorted(items, key=lambda item: getattr(item, attrs.tie_attr))
+    present: list[S] = []
+    absent: list[S] = []
+    for item in rows:
+        (absent if getattr(item, sort_attr) is None else present).append(item)
     present.sort(key=lambda item: getattr(item, sort_attr), reverse=query.descending)
     return present + absent
 

@@ -40,6 +40,7 @@ from app.sep.apps.framework.list_query import (
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+    from typing import TypeAlias
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +68,13 @@ NO_SEARCH_SPEC = ListQuerySpec(
     default_sort="filename",
     tie_breaker=column("filename"),
 )
+
+
+if TYPE_CHECKING:
+    ListScripts: TypeAlias = Callable[
+        [InMemoryListQuery | None, Pagination | None],
+        Awaitable[tuple[list[_Row], int]],
+    ]
 
 
 def _rows(*specs: tuple[str, str | None, int]) -> list[_Row]:
@@ -206,6 +214,26 @@ class TestApplyInMemorySearch:
         _, total = apply_in_memory(rows, SPEC, query, Pagination())
         assert total == len(rows)
 
+    def test_non_string_searchable_value_matched_as_text(self) -> None:
+        """Match a non-string searchable attribute through its text form.
+
+        A spec is free to make a numeric attribute searchable; SQL ``ilike`` casts it,
+        so the in-memory path has to compare the same way rather than skipping it.
+        """
+        spec = ListQuerySpec(
+            sortable={"filename": column("filename")},
+            default_sort="filename",
+            tie_breaker=column("filename"),
+            searchable=(column("created_at"),),
+        )
+        rows = _rows(("a", "A", 17), ("b", "B", 42))
+        query = InMemoryListQuery(sort_key="filename", descending=False, search="17")
+
+        page, total = apply_in_memory(rows, spec, query, Pagination())
+
+        assert [row.filename for row in page] == ["a"]
+        assert total == 1
+
 
 class TestApplyInMemoryPagination:
     """Verify slicing and that the total reflects the filtered set, not the page."""
@@ -326,6 +354,23 @@ class TestSpecAttributeValidation:
         with pytest.raises(UnknownSortKeyError):
             apply_in_memory(_rows(("a.sh", None, 1)), SPEC, query, Pagination())
 
+    def test_row_missing_searchable_attribute_names_both_sides(self) -> None:
+        """Reject a searchable-only mismatch on the first list call, not the first search.
+
+        The sortable and tie-breaker attributes can line up while a searchable one does
+        not, and the search attributes are read only for a non-blank term — so checking
+        them lazily would defer a wiring error to whichever request first searched.
+        """
+
+        class _Untitled(BaseModel):
+            filename: str
+            created_at: int = 0
+
+        query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
+
+        with pytest.raises(ValueError, match="_Untitled has no attribute 'title'"):
+            apply_in_memory([_Untitled(filename="a.sh")], SPEC, query, Pagination())
+
 
 _ADAPTER_ROWS = 3
 
@@ -334,12 +379,7 @@ class TestInMemoryListScripts:
     """Cover the adapter across all four shapes the framework calls it with."""
 
     @pytest.fixture
-    def list_scripts(
-        self,
-    ) -> Callable[
-        [InMemoryListQuery | None, Pagination | None],
-        Awaitable[tuple[list[_Row], int]],
-    ]:
+    def list_scripts(self) -> ListScripts:
         """Adapt a fixed set of rows through the framework's applier."""
         rows = _rows(("b.sh", "Beta", 2), ("a.sh", "Alpha", 1), ("c.sh", "Gamma", 3))
 
@@ -350,7 +390,7 @@ class TestInMemoryListScripts:
 
     @pytest.mark.asyncio
     async def test_no_query_no_pagination_returns_all_in_spec_order(
-        self, list_scripts
+        self, list_scripts: ListScripts
     ) -> None:
         """Order by the spec default and return everything for the bare call."""
         page, total = await list_scripts(None, None)
@@ -360,7 +400,7 @@ class TestInMemoryListScripts:
 
     @pytest.mark.asyncio
     async def test_no_query_with_pagination_slices_in_spec_order(
-        self, list_scripts
+        self, list_scripts: ListScripts
     ) -> None:
         """Slice the spec-default order rather than the materialization order."""
         page, total = await list_scripts(None, Pagination(offset=0, limit=2))
@@ -370,7 +410,7 @@ class TestInMemoryListScripts:
 
     @pytest.mark.asyncio
     async def test_query_without_pagination_filters_unsliced(
-        self, list_scripts
+        self, list_scripts: ListScripts
     ) -> None:
         """Honour a resolved query with no page window."""
         query = InMemoryListQuery(sort_key="filename", descending=False, search="alpha")
@@ -381,7 +421,9 @@ class TestInMemoryListScripts:
         assert total == 1
 
     @pytest.mark.asyncio
-    async def test_query_with_pagination_filters_and_slices(self, list_scripts) -> None:
+    async def test_query_with_pagination_filters_and_slices(
+        self, list_scripts: ListScripts
+    ) -> None:
         """Honour a resolved query and report the filtered total, not the page size."""
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
 

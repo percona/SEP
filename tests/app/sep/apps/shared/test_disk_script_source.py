@@ -262,7 +262,7 @@ class TestLoadAndList:
         """Flag the disk source as in-memory so the framework builds that dep."""
         assert source.in_memory_list_query is True
 
-    def test_non_spec_list_query_spec_raises_at_wiring_time(
+    async def test_non_spec_list_query_spec_raises_at_wiring_time(
         self, script_dir: Path
     ) -> None:
         """Reject a bad spec when the source is built, not on the first list request."""

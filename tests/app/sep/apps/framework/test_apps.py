@@ -963,6 +963,21 @@ class TestListQuerySpecValidation:
                 script_source=_script_source_with_in_memory_query(),
             )
 
+    def test_source_with_list_query_dep_without_spec_raises(self) -> None:
+        """Reject the other half of the same pairing: a filter dep with no spec.
+
+        ``list_query_dep`` and ``in_memory_list_query`` are separate ways for a source
+        to resolve a query, and a source composing its own filter dependency is the
+        shape snippets ships — so it must trip the guard on its own.
+        """
+        source = replace(
+            synth_script_app().script_source,
+            list_query_dep=lambda: None,
+        )
+
+        with pytest.raises(ValueError, match="set list_query_spec or drop"):
+            synth_script_app(script_source=source)
+
     def test_consistent_pair_is_accepted(self) -> None:
         """Accept a source and app that agree, so the guards are not over-broad."""
         app = synth_script_app(

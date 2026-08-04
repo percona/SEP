@@ -437,13 +437,11 @@ class TaskExecutionApp(BaseApp):
     capabilities_provider: Callable[..., BaseModel] | None = None
     service_type: ServiceTypeEnum | None = None
     list_filter: ListFilterConfig = Field(default_factory=ListFilterConfig)
-    # Typed ``Any`` rather than ``ListQuerySpec | None`` because even under
-    # ``SkipValidation`` pydantic walks the referenced dataclass to build a schema, and
-    # ``ListQuerySpec``'s fields resolve to SQLAlchemy's ``ColumnExpressionArgument`` —
-    # a generic alias over an internal ``_T`` TypeVar pydantic cannot resolve, so the
-    # model raises ``PydanticUserError`` on first instantiation. The real contract is a
-    # ``ListQuerySpec | None`` threaded verbatim into ``derive_script_routes``, enforced
-    # at construction by ``_validate_list_query`` instead of by the annotation.
+    # Contract is ``ListQuerySpec | None``, but even under ``SkipValidation`` pydantic
+    # walks the dataclass to build a schema and chokes on SQLAlchemy's
+    # ``ColumnExpressionArgument`` (a generic alias over an unresolvable ``_T``), raising
+    # ``PydanticUserError`` on first instantiation. ``_validate_list_query`` enforces the
+    # type at construction instead.
     list_query_spec: SkipValidation[Any] = None
     response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
@@ -893,36 +891,36 @@ class TaskExecutionApp(BaseApp):
             of which derive no query-bearing list route; or when the source resolves a
             list query while the app declares no spec.
         """
-        if self.list_query_spec is not None and not isinstance(
-            self.list_query_spec, ListQuerySpec
-        ):
+        source = self.script_source
+        spec = self.list_query_spec
+        if spec is None:
+            if source is not None and (
+                source.list_query_dep is not None or source.in_memory_list_query
+            ):
+                raise ValueError(
+                    "TaskExecutionApp: the script source resolves a list query, but the "
+                    "derived list route only exposes one when list_query_spec is set — "
+                    "set list_query_spec or drop the source's list_query_dep / "
+                    "in_memory_list_query"
+                )
+            return
+        is_spec = isinstance(spec, ListQuerySpec)
+        if not is_spec:
             raise ValueError(
                 "TaskExecutionApp: list_query_spec must be a ListQuerySpec, got "
-                f"{type(self.list_query_spec).__name__}"
+                f"{type(spec).__name__}"
             )
-        if self.list_query_spec is not None and self.script_source is None:
+        if source is None:
             raise ValueError(
                 "TaskExecutionApp: list_query_spec backs only the derived script list "
                 "route; a model-first app derives its own list — drop list_query_spec"
             )
-        if self.list_query_spec is not None and isinstance(
-            self.pagination, _NoPagination
-        ):
+        unpaginated = isinstance(self.pagination, _NoPagination)
+        if unpaginated:
             raise ValueError(
                 "TaskExecutionApp: the derived script list is unpaginated under "
                 "NO_PAGINATION and exposes no sort/search params — enable pagination "
                 "or drop list_query_spec"
-            )
-        source_resolves_query = self.script_source is not None and (
-            self.script_source.list_query_dep is not None
-            or self.script_source.in_memory_list_query
-        )
-        if source_resolves_query and self.list_query_spec is None:
-            raise ValueError(
-                "TaskExecutionApp: the script source resolves a list query, but the "
-                "derived list route only exposes one when list_query_spec is set — "
-                "set list_query_spec or drop the source's list_query_dep / "
-                "in_memory_list_query"
             )
 
     def _validate_detail_suppress(self) -> None:

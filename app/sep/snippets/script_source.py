@@ -223,8 +223,9 @@ async def _list_scripts(
     filtered total are all pushed down to
     :meth:`~app.sep.snippets.crud.SnippetManager.snippet_list_page`, so the count and
     data queries share predicates and the ``total`` matches the visible page. The rows
-    are expunged so they stay usable after the request-less session closes, mirroring
-    :func:`_load_script`. The snippets list route always derives a query, so
+    go through :func:`_detach` so they stay usable after the request-less session
+    closes, mirroring :func:`_load_script`. The snippets list route always derives a
+    query, so
     ``list_query`` and ``pagination`` are always supplied; the ``None`` branches keep
     the hook honest against the framework's non-query call shapes, where an absent
     ``pagination`` means the whole set rather than a default-sized first page.
@@ -241,17 +242,15 @@ async def _list_scripts(
             rows = await SnippetManager.list(session)
             total = len(rows)
         else:
-            page = (
-                await SnippetManager.snippet_list_page(
+            page = await (
+                SnippetManager.list_paginated(session, pagination=pagination)
+                if list_query is None
+                else SnippetManager.snippet_list_page(
                     session, list_query=list_query, pagination=pagination
                 )
-                if list_query is not None
-                else await SnippetManager.list_paginated(session, pagination=pagination)
             )
             rows, total = page.items, page.total
-        for snippet in rows:
-            session.expunge(snippet)
-    return [SnippetScript(snippet) for snippet in rows], total
+        return [SnippetScript(_detach(session, snippet)) for snippet in rows], total
 
 
 async def _load_scripts(filenames: Sequence[str]) -> dict[str, SnippetScript]:
