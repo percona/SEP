@@ -31,6 +31,7 @@ __all__ = [
     "canonical_override_key",
     "chain_has_advanced",
     "chain_has_explicit_not_overridable",
+    "chain_is_locked",
     "coerce_field_value",
     "coerce_nested_field_value",
     "dump_field_value",
@@ -71,7 +72,12 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSeriali
 from pydantic.errors import PydanticSchemaGenerationError
 from pydantic_core import PydanticUndefined
 
-from app.core.settings_override.models import SettingOverride
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.policy import (
+    has_allowed_key_under,
+    is_key_allowed,
+    is_restriction_active,
+)
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils.fields import (
     _credential_url_serializer,
@@ -288,21 +294,69 @@ def _effective_field_markers(
     return {**entry, **markers}
 
 
-def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:
+def _setting_class_or_none(settings_cls: type[BaseModel]) -> SettingClassEnum | None:
+    """Return the override-table identifier for a settings class, if it has one.
+
+    Every class a settings router exposes is an enum member, so ``None`` means
+    the class can carry no override row at all. Each policy gate reads that as
+    "withhold", closing rather than widening the overridable surface.
+
+    :param settings_cls: The Pydantic settings class to identify.
+    :return: The matching enum member, or ``None`` when the class has none.
+    """
+    try:
+        return SettingClassEnum(settings_cls.__name__)
+    except ValueError:
+        return None
+
+
+def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
+    """Return whether ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withholds one canonical key.
+
+    :param settings_cls: The top-level Pydantic settings class owning the key.
+    :param canonical_key: The canonical override key: a top-level field name or
+        a ``__``-delimited nested path in its case-corrected spelling.
+    :return: ``True`` when a restriction is active and does not allow this pair.
+    """
+    if not is_restriction_active():
+        return False
+    setting_class = _setting_class_or_none(settings_cls)
+    if setting_class is None:
+        return True
+    return not is_key_allowed(setting_class, canonical_key)
+
+
+def is_hot_reloadable(
+    settings_cls: type[BaseModel],
+    field_name: str,
+    *,
+    include_policy_gate: bool = True,
+) -> bool:
     """Return whether the given field is marked HOT on the given settings class.
 
     Accepts any Pydantic ``BaseModel`` subclass, not just ``BaseYamlSettings``:
     the nested-override resolver consults this predicate against nested
     submodels (e.g. ``SessionOptions``) when classifying leaf fields.
 
+    The policy gate, however, only answers for a top-level settings class: it
+    keys the allowlist on the class ``__name__`` and the key as spelled, and a
+    submodel is named by no entry, so the gate withholds it unconditionally.
+    Pass ``include_policy_gate=False`` when inspecting a submodel, or ask
+    :func:`chain_is_locked` with the top-level class and the full
+    ``__``-delimited key instead.
+
     :param settings_cls: The Pydantic model class to inspect.
-    :type settings_cls: type[BaseModel]
     :param field_name: The name of the field to check.
-    :type field_name: str
-    :return: ``True`` when ``field_name`` exists on ``settings_cls`` and is
+    :param include_policy_gate: Whether to also require
+        ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` to permit the key. Pass ``False`` to
+        read the static declaration alone, which is what distinguishes a field
+        the allowlist withholds from one the code declares not overridable, and
+        which is required when ``settings_cls`` is a submodel.
+    :return: ``True`` when ``field_name`` exists on ``settings_cls``, is
         marked with ``{"reload": ReloadClassification.HOT}`` via
-        :func:`app.core.utils.pydantic.field_with_metadata` or the class overlay.
-    :rtype: bool
+        :func:`app.core.utils.pydantic.field_with_metadata` or the class overlay,
+        and (unless ``include_policy_gate`` is ``False``) the allowlist permits
+        overriding it.
     """
     field = settings_cls.model_fields.get(field_name)
     if field is None:
@@ -310,7 +364,9 @@ def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:
     markers = _effective_field_markers(
         field, owner_cls=settings_cls, field_name=field_name
     )
-    return markers.get(FieldMarkerKey.RELOAD) == ReloadClassification.HOT
+    if markers.get(FieldMarkerKey.RELOAD) != ReloadClassification.HOT:
+        return False
+    return not (include_policy_gate and _policy_locked(settings_cls, field_name))
 
 
 def field_reload_classification(
@@ -329,18 +385,32 @@ def field_reload_classification(
     name), this operates on a :class:`FieldInfo` directly so callers can
     classify a nested leaf resolved out of a submodel.
 
+    When both ``owner_cls`` and ``field_name`` are supplied
+    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` is consulted too, so a field it withholds
+    reports ``NOT_OVERRIDABLE`` and the settings API describes what it will
+    actually accept. That lookup only answers for a top-level settings class,
+    and this function exposes no way to skip it alone: omitting ``owner_cls`` /
+    ``field_name`` drops the class overlay along with it. Classify a submodel
+    leaf through :func:`chain_is_locked` instead, passing the top-level class
+    and the full ``__``-delimited key.
+
     :param field_info: The Pydantic field metadata to classify.
     :param owner_cls: The class owning ``field_info``, for overlay lookup.
     :param field_name: The field's name on ``owner_cls``, for overlay lookup.
     :return: The field's reload classification.
-    :rtype: ReloadClassification
     """
     value = _effective_field_markers(field_info, owner_cls, field_name).get(
         FieldMarkerKey.RELOAD
     )
-    if value in {ReloadClassification.HOT, ReloadClassification.NESTED_ONLY}:
-        return value
-    return ReloadClassification.NOT_OVERRIDABLE
+    if value not in {ReloadClassification.HOT, ReloadClassification.NESTED_ONLY}:
+        return ReloadClassification.NOT_OVERRIDABLE
+    if (
+        owner_cls is not None
+        and field_name is not None
+        and _policy_locked(owner_cls, field_name)
+    ):
+        return ReloadClassification.NOT_OVERRIDABLE
+    return value
 
 
 def is_explicit_not_overridable(
@@ -647,7 +717,10 @@ def not_overridable_field(
 
 
 def is_nested_overridable_parent(
-    settings_cls: type[BaseModel], field_name: str
+    settings_cls: type[BaseModel],
+    field_name: str,
+    *,
+    include_policy_gate: bool = True,
 ) -> bool:
     """Return whether ``field_name`` accepts nested-child overrides.
 
@@ -655,17 +728,22 @@ def is_nested_overridable_parent(
     OR :attr:`ReloadClassification.NESTED_ONLY`. ``False`` for unknown fields
     and for fields classified ``NOT_OVERRIDABLE``.
 
+    Under an active allowlist the parent additionally has to lead somewhere: one
+    allowed descendant keeps it addressable, while a parent whose every leaf is
+    withheld stops accepting nested overrides entirely.
+
     Used by :func:`app.core.settings_override.api.routes._validate_patch_body`
     and :func:`app.core.settings_override.cache.build_snapshot` to gate
     ``__``-delimited keys at the parent level before walking into the nested
     resolver.
 
     :param settings_cls: The Pydantic settings class declaring the field.
-    :type settings_cls: type[BaseModel]
     :param field_name: The top-level field name.
-    :type field_name: str
+    :param include_policy_gate: Whether to also require
+        ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` to leave something reachable under the
+        parent. Pass ``False`` to ask only whether the key is addressable at all,
+        which is what keeps a stale row under a fully withheld parent deletable.
     :return: ``True`` iff nested-child overrides may target this field.
-    :rtype: bool
     """
     info = settings_cls.model_fields.get(field_name)
     if info is None:
@@ -673,10 +751,17 @@ def is_nested_overridable_parent(
     markers = _effective_field_markers(
         info, owner_cls=settings_cls, field_name=field_name
     )
-    return markers.get(FieldMarkerKey.RELOAD) in {
+    if markers.get(FieldMarkerKey.RELOAD) not in {
         ReloadClassification.HOT,
         ReloadClassification.NESTED_ONLY,
-    }
+    }:
+        return False
+    if not include_policy_gate or not is_restriction_active():
+        return True
+    setting_class = _setting_class_or_none(settings_cls)
+    if setting_class is None:
+        return False
+    return has_allowed_key_under(setting_class, field_name)
 
 
 def nested_overridable_field_names(
@@ -855,6 +940,38 @@ def chain_has_advanced(settings_cls: type[BaseModel], key: str) -> bool:
     )
 
 
+def chain_is_locked(settings_cls: type[BaseModel], key: str) -> bool:
+    """Return whether a nested key is closed to overrides, statically or by policy.
+
+    Composes the two independent reasons a nested path may be refused: an
+    explicit :func:`not_overridable_field` marker anywhere along the chain
+    (:func:`chain_has_explicit_not_overridable`), or
+    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withholding the leaf. The policy lookup
+    uses the canonical chain rather than ``key`` as spelled, so a
+    case-insensitive spelling reaches the same verdict as the row it would
+    resolve to. Returns ``False`` for an unresolvable key (the caller surfaces
+    the resolution failure separately).
+
+    Kept distinct from :func:`chain_has_explicit_not_overridable`, which stays
+    purely static: telling "locked by the code" from "locked by the allowlist"
+    is what lets DELETE clear a stale row for a key the allowlist withheld.
+
+    :param settings_cls: The top-level Pydantic settings class.
+    :param key: The ``__``-delimited override key.
+    :return: ``True`` iff an override of ``key`` would be refused.
+    """
+    resolved = _resolve_nested_segments(settings_cls, key)
+    if resolved is None:
+        return False
+    if any(
+        is_explicit_not_overridable(info, owner_cls=owner, field_name=name)
+        for owner, name, info in resolved
+    ):
+        return True
+    canonical_key = "__".join(name for _owner, name, _info in resolved)
+    return _policy_locked(settings_cls, canonical_key)
+
+
 def coerce_nested_field_value(
     settings_cls: type[BaseModel],
     key: str,
@@ -865,29 +982,24 @@ def coerce_nested_field_value(
     Combines :func:`resolve_nested_field` and :func:`coerce_field_value` so the
     cache and API layers have one entry point for the full nested-row coercion
     contract. A path whose leaf *or any intermediate* is explicitly classified
-    ``NOT_OVERRIDABLE`` is rejected by raising :class:`KeyError`, matching the
+    ``NOT_OVERRIDABLE``, or whose leaf ``SETTINGS_OVERRIDE_ALLOWED_KEYS``
+    withholds, is rejected by raising :class:`KeyError`, matching the
     unresolvable-path contract so the caller's existing ``except KeyError``
     branch logs and skips uniformly.
 
     :param settings_cls: The top-level Pydantic settings class.
-    :type settings_cls: type[BaseModel]
     :param key: The override row's ``__``-delimited key.
-    :type key: str
     :param raw: The raw JSON-decoded value to coerce.
-    :type raw: Any
     :return: ``((canonical_segment, ...), coerced_value)``.
-    :rtype: tuple[tuple[str, ...], Any]
-    :raises KeyError: If the path is unresolvable on ``settings_cls`` or any
-        segment along it is explicitly classified ``NOT_OVERRIDABLE``.
+    :raises KeyError: If the path is unresolvable on ``settings_cls``, any
+        segment along it is explicitly classified ``NOT_OVERRIDABLE``, or
+        ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` does not allow overriding the leaf.
     :raises ValidationError: If ``raw`` cannot be coerced to the leaf's type.
     """
     resolved = _resolve_nested_segments(settings_cls, key)
     if resolved is None:
         raise KeyError(key)
-    if any(
-        is_explicit_not_overridable(info, owner_cls=owner, field_name=name)
-        for owner, name, info in resolved
-    ):
+    if chain_is_locked(settings_cls, key):
         raise KeyError(key)
     chain = tuple(name for _owner, name, _info in resolved)
     leaf_info = resolved[-1][2]
@@ -1844,20 +1956,19 @@ def resolve_nested_field_metadata(
     (annotation, default, description, secret/complex flags) is taken from the
     leaf field. The reported ``reload`` is ``HOT`` for an override-eligible
     leaf (the default under a nested-overridable parent) and
-    ``NOT_OVERRIDABLE`` when the leaf **or any intermediate in its chain** is
-    explicitly :func:`not_overridable_field`-marked -- the same chain check that
-    gates PATCH/DELETE, so the reported classification matches what an override
-    would actually be allowed to do. ``is_advanced`` is likewise chain-resolved
-    via :func:`chain_has_advanced`, so a leaf inherits the flag from an advanced
+    ``NOT_OVERRIDABLE`` when the leaf *or any intermediate in its chain* is
+    explicitly :func:`not_overridable_field`-marked, or when
+    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withholds the leaf. That is the same chain
+    check that gates PATCH, so the reported classification matches what an
+    override would actually be allowed to do. ``is_advanced`` is chain-resolved
+    via
+    :func:`chain_has_advanced`, so a leaf inherits the flag from an advanced
     parent.
 
     :param settings_cls: The top-level Pydantic settings class.
-    :type settings_cls: type[BaseModel]
     :param key: The ``__``-delimited override key.
-    :type key: str
     :return: The synthesised leaf metadata, or ``None`` when ``key`` does not
         resolve to a nested field.
-    :rtype: FieldMetadata | None
     """
     resolved = resolve_nested_field(settings_cls, key)
     if resolved is None:
@@ -1865,7 +1976,7 @@ def resolve_nested_field_metadata(
     _chain, leaf_info = resolved
     reload = (
         ReloadClassification.NOT_OVERRIDABLE
-        if chain_has_explicit_not_overridable(settings_cls, key)
+        if chain_is_locked(settings_cls, key)
         else ReloadClassification.HOT
     )
     return FieldMetadata(

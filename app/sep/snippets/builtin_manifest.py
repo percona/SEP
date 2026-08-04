@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Load the built-in snippet checksum manifest for the snippets app."""
+"""Load the built-in snippet checksum manifest."""
 
 from __future__ import annotations
 
@@ -22,21 +22,12 @@ from typing import TYPE_CHECKING
 
 import aiofiles
 
-from app.sep.snippets.checksums import (
-    BUILTIN_CHECKSUM_MANIFEST,
-    manifest_relative_path,
-    sha256_file,
-)
+from app.sep.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-__all__ = [
-    "BUILTIN_CHECKSUM_MANIFEST",
-    "load_builtin_checksum_manifest",
-    "manifest_relative_path",
-    "sha256_file",
-]
+__all__ = ["load_builtin_checksum_manifest"]
 
 logger = logging.getLogger(__name__)
 

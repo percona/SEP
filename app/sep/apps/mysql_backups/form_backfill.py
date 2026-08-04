@@ -25,7 +25,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.mysql_backups.deps import parse_backup_task_data
-from app.sep.apps.mysql_backups.models import BackupCreate, UploadProvider
+from app.sep.apps.mysql_backups.forms import BackupCreate, UploadProvider
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
@@ -82,7 +82,7 @@ def reconstruct_mysql_backups_form(
     task: Task,
     ctx: FormBackfillContext,
 ) -> dict[str, Any] | None:
-    """Rebuild a :class:`~app.sep.apps.mysql_backups.models.BackupCreate` body from a legacy task.
+    """Rebuild a :class:`~app.sep.apps.mysql_backups.forms.BackupCreate` body from a legacy task.
 
     Wraps :func:`~app.sep.apps.mysql_backups.deps.parse_backup_task_data`, resolves
     ``service_id`` from inventory, reads ``upload`` from ``SERVER_LIST[0].UPLOAD``, and

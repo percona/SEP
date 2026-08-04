@@ -16,7 +16,7 @@
 """Define the presentation bundle for the MySQL Backups app.
 
 Section *membership* and *order* are declared on
-:class:`~app.sep.apps.mysql_backups.models.BackupCreate` (via ``Ui(section=...)``
+:class:`~app.sep.apps.mysql_backups.forms.BackupCreate` (via ``Ui(section=...)``
 and field-declaration order); what lives here is the part the model cannot
 express: the section titles, the collapse/whole-section-hide metadata, the list
 columns, and the UI capability flags. These feed the derived ``GET /schema`` and

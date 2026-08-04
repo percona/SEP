@@ -49,7 +49,7 @@ from app.sep.apps.framework.script_source import (
     ScriptExecutionResponse,
 )
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
-from app.sep.apps.snippets.script_source import snippet_source, SnippetScript
+from app.sep.snippets.script_source import snippet_source, SnippetScript
 from app.tasks.models import TaskHistoryStatusEnum
 
 __all__ = [

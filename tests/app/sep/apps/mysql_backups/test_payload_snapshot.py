@@ -30,7 +30,7 @@ compute the same ``Path(__file__).parent`` within the package).
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
-from app.sep.apps.mysql_backups.models import BackupCreate
+from app.sep.apps.mysql_backups.forms import BackupCreate
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.inventory import CreatedService
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory

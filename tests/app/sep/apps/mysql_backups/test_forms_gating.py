@@ -19,12 +19,12 @@ import pytest
 from pydantic import ValidationError
 
 from app.sep.apps.framework.form_dsl.derivation import derive_form_sections
-from app.sep.apps.mysql_backups.models import (
+from app.sep.apps.mysql_backups.forms import (
     BackupConfigAll,
     BackupCreate,
-    BackupType,
     UploadProvider,
 )
+from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.views import mysql_backups_views
 
 

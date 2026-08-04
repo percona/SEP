@@ -106,6 +106,41 @@ async def test_active_override_flips_value_after_refresh(
 
 
 @pytest.mark.asyncio
+async def test_restricted_deployment_filters_withheld_rows(
+    override_session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assert a withheld key's row is filtered while an allowed one still lands."""
+    endpoint_baseline = sep_settings.INVENTORY_ENDPOINT
+    connectivity_override = not sep_settings.CONNECTIVITY_CHECK_DEFAULT
+    monkeypatch.setattr(
+        core_settings,
+        "SETTINGS_OVERRIDE_ALLOWED_KEYS",
+        {"SEPSettings.CONNECTIVITY_CHECK_DEFAULT"},
+    )
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+                key="INVENTORY_ENDPOINT",
+                value="https://stale.example.com",
+            ),
+        )
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=connectivity_override,
+            ),
+        )
+    await refresh_all(lambda: override_session_maker, _sep_proxies())
+    assert endpoint_baseline == sep_settings.INVENTORY_ENDPOINT
+    assert sep_settings.CONNECTIVITY_CHECK_DEFAULT is connectivity_override
+
+
+@pytest.mark.asyncio
 async def test_inactive_override_falls_back_to_yaml_default(
     override_session_maker: async_sessionmaker,
 ) -> None:
@@ -316,7 +351,7 @@ async def _seed_snippets_task(
         session.add(
             PeriodicTask(
                 name=SNIPPETS_TASK,
-                task="app.sep.apps.snippets.celery.sync_snippets",
+                task="app.sep.snippets.celery.sync_snippets",
                 enabled=enabled,
                 schedule_model=schedule,
             )

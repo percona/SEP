@@ -28,13 +28,13 @@ from fastapi.encoders import jsonable_encoder
 
 from app.core.utils.path import payload_uri
 from app.sep.apps.framework.spec import ResolvedEntities, RunPythonSpec
-from app.sep.apps.mysql_backups.models import (
+from app.sep.apps.mysql_backups.forms import (
     BackupConfig,
     BackupConfigAll,
     BackupConfigServer,
     BackupCreate,
-    BackupType,
 )
+from app.sep.apps.mysql_backups.models import BackupType
 
 _BASE_REQUIREMENTS = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
 
