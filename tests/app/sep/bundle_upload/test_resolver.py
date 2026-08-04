@@ -25,6 +25,7 @@ from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.config import DeliveryPlanInputs, sep_settings
 
 _BAKED_ENDPOINT = "https://intake.example.com/"
+_RESOLVER_LOGGER = "app.sep.bundle_upload.resolver"
 
 
 def _plan(secrets: dict[str, str], *, endpoint: str = _BAKED_ENDPOINT) -> DeliveryPlan:
@@ -63,7 +64,7 @@ class TestSkeletonOnly:
         """Report the ordinary unconfigured state silently, without a log line."""
         mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", None)
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=_RESOLVER_LOGGER):
             assert resolve_delivery_plan() is None
 
         assert caplog.records == []
@@ -85,7 +86,7 @@ class TestSkeletonOnly:
             _plan({"client_token": "", "sn_api_key": ""}),
         )
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=_RESOLVER_LOGGER):
             assert resolve_delivery_plan() is None
 
         assert "client_token, sn_api_key" in caplog.text
@@ -132,7 +133,7 @@ class TestMergedInputs:
             DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
         )
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=_RESOLVER_LOGGER):
             assert resolve_delivery_plan() is None
 
         assert "client_token" in caplog.text
@@ -234,7 +235,7 @@ class TestMergedInputs:
             DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
         )
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger=_RESOLVER_LOGGER):
             assert resolve_delivery_plan() is None
 
         assert "client_token" in caplog.text
