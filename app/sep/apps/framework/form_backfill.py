@@ -31,6 +31,7 @@ import logging
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -40,16 +41,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.inventory.db import get_async_session_maker as get_inventory_session_maker
-from app.sep.apps.alters.app import app as alters_app
-from app.sep.apps.alters.form_backfill import reconstruct_alters_form
-from app.sep.apps.alters.models import AltersCreate
-from app.sep.apps.alters.models import OWNER as ALTERS_OWNER
-from app.sep.apps.archives.app import app as archives_app
-from app.sep.apps.archives.form_backfill import reconstruct_archives_form
-from app.sep.apps.backup_pg.app import app as backup_pg_app
-from app.sep.apps.backup_pg.form_backfill import reconstruct_backup_pg_form
-from app.sep.apps.checksums.app import app as checksums_app
-from app.sep.apps.checksums.form_backfill import reconstruct_checksums_form
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.form_backfill_inventory import (
     load_schema_id_lookup,
@@ -59,12 +50,6 @@ from app.sep.apps.framework.form_backfill_inventory import (
 )
 from app.sep.apps.framework.form_dsl import AppFormModel
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
-from app.sep.apps.mysql_backups.app import app as mysql_backups_app
-from app.sep.apps.mysql_backups.form_backfill import reconstruct_mysql_backups_form
-from app.sep.apps.mysql_backups.restore.app import app as mysql_restores_app
-from app.sep.apps.mysql_backups.restore.form_backfill import (
-    reconstruct_mysql_restores_form,
-)
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.models import Task, TaskWrite
@@ -209,12 +194,38 @@ class _BackfillApp:
         return self.create_model_override or self.app.create_model
 
 
-def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
+@lru_cache(maxsize=1)
+def _in_scope_apps() -> tuple[_BackfillApp, ...]:
     """Return the in-scope apps and their reconstructors.
+
+    No module-scope statement may call this: its deferred imports would then run
+    at import after all, in the one shape the import-boundary guard cannot
+    detect. Cached so the build runs once; ``cache_clear()`` resets it.
 
     :return: The apps whose legacy tasks are eligible for ``data['_form']`` backfill.
     """
-    entries: list[_BackfillApp] = [
+    # import-boundary: framework ships in the side-car image, so it may hold no
+    # import-time edge into an app package that image strips.
+    from app.sep.apps.alters.app import app as alters_app
+    from app.sep.apps.alters.form_backfill import reconstruct_alters_form
+    from app.sep.apps.alters.models import AltersCreate
+    from app.sep.apps.alters.models import OWNER as ALTERS_OWNER
+    from app.sep.apps.archives.app import app as archives_app
+    from app.sep.apps.archives.form_backfill import reconstruct_archives_form
+    from app.sep.apps.backup_pg.app import app as backup_pg_app
+    from app.sep.apps.backup_pg.form_backfill import reconstruct_backup_pg_form
+    from app.sep.apps.checksums.app import app as checksums_app
+    from app.sep.apps.checksums.form_backfill import reconstruct_checksums_form
+    from app.sep.apps.mysql_backups.app import app as mysql_backups_app
+    from app.sep.apps.mysql_backups.form_backfill import (
+        reconstruct_mysql_backups_form,
+    )
+    from app.sep.apps.mysql_backups.restore.app import app as mysql_restores_app
+    from app.sep.apps.mysql_backups.restore.form_backfill import (
+        reconstruct_mysql_restores_form,
+    )
+
+    return (
         _BackfillApp(app=archives_app, reconstructor=reconstruct_archives_form),
         _BackfillApp(app=checksums_app, reconstructor=reconstruct_checksums_form),
         _BackfillApp(app=backup_pg_app, reconstructor=reconstruct_backup_pg_form),
@@ -230,11 +241,7 @@ def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
             owner_override=ALTERS_OWNER,
             create_model_override=AltersCreate,
         ),
-    ]
-    return tuple(entries)
-
-
-IN_SCOPE_APPS: tuple[_BackfillApp, ...] = _build_in_scope_apps()
+    )
 
 
 def _task_write_from_task(task: Task, data: dict[str, Any]) -> TaskWrite:
@@ -497,7 +504,7 @@ async def run_backfill(
     owner_filter = set(owners) if owners is not None else None
     entries = [
         entry
-        for entry in IN_SCOPE_APPS
+        for entry in _in_scope_apps()
         if owner_filter is None or entry.owner in owner_filter
     ]
     summary = BackfillSummary(dry_run=dry_run)
@@ -535,7 +542,12 @@ async def run_backfill(
     return summary
 
 
-_VALID_OWNERS: frozenset[str] = frozenset(entry.owner for entry in IN_SCOPE_APPS)
+def _valid_owners() -> frozenset[str]:
+    """Return the task owners the CLI accepts.
+
+    :return: The owner strings of every in-scope backfill app.
+    """
+    return frozenset(entry.owner for entry in _in_scope_apps())
 
 
 def _owner_from_cli(value: str) -> str:
@@ -546,9 +558,10 @@ def _owner_from_cli(value: str) -> str:
     :raises argparse.ArgumentTypeError: When ``value`` names no in-scope app owner.
     """
     normalized = value.strip().upper()
-    if normalized in _VALID_OWNERS:
+    valid_owners = _valid_owners()
+    if normalized in valid_owners:
         return normalized
-    valid = ", ".join(sorted(_VALID_OWNERS))
+    valid = ", ".join(sorted(valid_owners))
     raise argparse.ArgumentTypeError(
         f"unknown owner {value!r}; expected one of: {valid}"
     )
