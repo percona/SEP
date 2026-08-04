@@ -39,6 +39,7 @@ from app.core.settings_override.policy import (
     is_restriction_active,
 )
 from app.core.settings_override.registry import (
+    chain_has_explicit_not_overridable,
     field_reload_classification,
     is_nested_overridable_parent,
     iter_class_fields,
@@ -144,7 +145,28 @@ class TestSettingDeclaration:
         assert settings.SETTINGS_OVERRIDE.ALLOWED_KEYS is None
 
     def test_field_is_not_overridable(self) -> None:
-        """Assert the restriction cannot be unlocked through the override API."""
+        """Assert the restriction cannot be unlocked through the override API.
+
+        Positively locks both halves of the self-lockdown: the unmarked
+        ``SETTINGS_OVERRIDE`` parent classifies ``NOT_OVERRIDABLE`` (so nested
+        leaves are unreachable), and ``ALLOWED_KEYS`` keeps its explicit
+        ``not_overridable_field`` marker (so a later parent-marker change still
+        refuses that leaf via the chain check).
+        """
+        assert (
+            field_reload_classification(
+                Settings.model_fields["SETTINGS_OVERRIDE"],
+                owner_cls=Settings,
+                field_name="SETTINGS_OVERRIDE",
+            )
+            is ReloadClassification.NOT_OVERRIDABLE
+        )
+        assert (
+            is_nested_overridable_parent(
+                Settings, "SETTINGS_OVERRIDE", include_policy_gate=False
+            )
+            is False
+        )
         assert (
             field_reload_classification(
                 SettingsOverrideOptions.model_fields["ALLOWED_KEYS"],
@@ -152,6 +174,9 @@ class TestSettingDeclaration:
                 field_name="ALLOWED_KEYS",
             )
             is ReloadClassification.NOT_OVERRIDABLE
+        )
+        assert chain_has_explicit_not_overridable(
+            Settings, "SETTINGS_OVERRIDE__ALLOWED_KEYS"
         )
 
     def test_parses_json_array_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
