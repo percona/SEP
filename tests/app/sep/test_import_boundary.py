@@ -267,6 +267,15 @@ def test_no_module_imports_another_app_package() -> None:
     )
 
 
+@pytest.fixture(scope="module")
+def guarded_paths() -> set[Path]:
+    """Walk the guarded tree once for every case that asserts membership in it.
+
+    :return: Every source path :func:`_guarded_module_paths` yields.
+    """
+    return set(_guarded_module_paths())
+
+
 @pytest.mark.parametrize(
     "relative",
     [
@@ -280,9 +289,11 @@ def test_no_module_imports_another_app_package() -> None:
         "app/sep/apps/alters/app.py",
     ],
 )
-def test_guarded_module_paths_covers_every_app_module(relative: str) -> None:
+def test_guarded_module_paths_covers_every_app_module(
+    relative: str, guarded_paths: set[Path]
+) -> None:
     """Bind the rule to the apps-tree modules an outside-only walk would skip."""
-    assert BASE_DIR / relative in set(_guarded_module_paths())
+    assert BASE_DIR / relative in guarded_paths
 
 
 @pytest.mark.parametrize(
