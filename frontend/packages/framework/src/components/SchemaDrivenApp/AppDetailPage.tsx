@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -46,6 +46,7 @@ import {
   useDeleteAppTask,
   useAppEntityDetail,
   useAppTask,
+  useAppTasks,
   type DetailSection,
   type SepComponents,
   type AppEntitySchema,
@@ -60,6 +61,7 @@ import {
 } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { ScheduleSummary } from '../ScheduleSummary';
+import { ChainBuilder, type ChainValue } from '../ChainBuilder';
 import {
   useExecuteTask,
   useStopTaskHistory,
@@ -578,6 +580,10 @@ interface ActionBarProps {
   hasStoredForm: boolean;
 }
 
+function emptyChain(): ChainValue {
+  return { chain_task_names: [], chain_on_failure: false };
+}
+
 function ActionBar({
   schema,
   pluginName,
@@ -592,6 +598,21 @@ function ActionBar({
   const executeTask = useExecuteTask(pluginName);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingExecute, setPendingExecute] = useState<TaskExecuteAction | null>(null);
+  const [chain, setChain] = useState<ChainValue>(emptyChain);
+
+  const chainingEnabled = !!schema.capabilities?.chaining;
+  const { data: appTasksData } = useAppTasks<{ name: string }>(pluginName, undefined, {
+    fetchAllPages: true,
+    enabled: chainingEnabled,
+  });
+  const availableTasks = useMemo(
+    () => (appTasksData?.items ?? []).map((t) => ({ name: t.name })),
+    [appTasksData],
+  );
+
+  useEffect(() => {
+    setChain(emptyChain());
+  }, [pendingExecute]);
 
   const resolvedExecuteActions =
     executeActions ??
@@ -607,20 +628,28 @@ function ActionBar({
     if (!pendingExecute) {
       return;
     }
+    const hasChain = chain.chain_task_names.length > 0;
+    let executeBody = pendingExecute.executeBody;
+    if (hasChain) {
+      executeBody = {
+        ...pendingExecute.executeBody,
+        chain_task_names: chain.chain_task_names,
+        chain_on_failure: chain.chain_on_failure,
+      };
+    }
     try {
       await executeTask.mutateAsync({
         taskName: pendingExecute.taskName,
-        executeBody: pendingExecute.executeBody,
+        executeBody,
       });
       enqueueSnackbar(`${schema.display_name} task "${pendingExecute.taskName}" started`, {
         variant: 'success',
       });
+      setPendingExecute(null);
     } catch (e) {
       enqueueSnackbar(e instanceof Error ? e.message : 'Failed to execute task', {
         variant: 'error',
       });
-    } finally {
-      setPendingExecute(null);
     }
   };
 
@@ -708,7 +737,12 @@ function ActionBar({
         </Button>
       </Stack>
 
-      <Dialog open={pendingExecute !== null} onClose={() => setPendingExecute(null)}>
+      <Dialog
+        open={pendingExecute !== null}
+        onClose={() => setPendingExecute(null)}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>
           {pendingExecute?.label ?? 'Execute'} {schema.display_name} task?
         </DialogTitle>
@@ -717,6 +751,17 @@ function ActionBar({
             {pendingExecute?.confirmMessage ??
               `Are you sure you want to execute the task ${pendingExecute?.taskName ?? taskName} now?`}
           </DialogContentText>
+          {chainingEnabled && pendingExecute && (
+            <Box sx={{ mt: 2 }}>
+              <ChainBuilder
+                availableTasks={availableTasks}
+                currentTaskName={pendingExecute.taskName}
+                value={chain}
+                onChange={setChain}
+                disabled={executeTask.isPending}
+              />
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPendingExecute(null)} disabled={executeTask.isPending}>
