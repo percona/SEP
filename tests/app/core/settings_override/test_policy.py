@@ -18,7 +18,7 @@
 Exercise the setting itself (env parsing through the real ``Settings()`` source
 chain, entry-format validation), the ``policy`` predicates that read it, the
 fail-closed and restrict-only invariants, and the value the side-car image
-ships in its Containerfile.
+bakes into its embedded settings profile.
 """
 
 import json
@@ -27,6 +27,7 @@ import sys
 from collections.abc import Callable
 
 import pytest
+import yaml
 
 from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
@@ -53,9 +54,7 @@ from app.sep.middleware.messages.config import MessagesSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
-
-CONTAINERFILE = BASE_DIR / "sidecar" / "Containerfile.sidecar"
-ENV_LINE_PREFIX = "ENV SETTINGS_OVERRIDE_ALLOWED_KEYS="
+from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE
 
 #: Every settings class reachable from the settings router, keyed by the enum
 #: member whose value is the class ``__name__``.
@@ -88,13 +87,19 @@ CARVE_OUT_KEY = "Settings.PMM__annotations_enabled"
 
 
 def shipped_allowed_keys() -> list[str]:
-    """Return the allowlist the side-car Containerfile bakes into the image."""
-    for line in CONTAINERFILE.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped.startswith(ENV_LINE_PREFIX):
-            raw = stripped.removeprefix(ENV_LINE_PREFIX).strip()
-            return json.loads(raw.strip("'"))
-    pytest.fail(f"No {ENV_LINE_PREFIX!r} line in {CONTAINERFILE}")
+    """Return the allowlist the side-car profile bakes into the image.
+
+    Fail the run outright when the profile does not carry the key: the
+    restriction's negative assertions are all satisfied by an empty list, so
+    degrading to one would leave them green while guarding nothing.
+
+    :return: The entries the embedded profile declares.
+    """
+    profile = yaml.safe_load(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
+    entries = profile["default"].get(ALLOWLIST_KEY)
+    if not isinstance(entries, list):
+        pytest.fail(f"{ALLOWLIST_KEY} is not a list in {EMBEDDED_PROFILE}: {entries!r}")
+    return entries
 
 
 def listed_hot_keys(settings_cls: type) -> set[str]:
