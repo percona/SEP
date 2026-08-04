@@ -139,11 +139,12 @@ class TestPerModeBoolGates:
 
 
 class TestEncryptionGate:
-    """Enforce the master-switch encryption model.
+    """Enforce the independent-modes encryption model.
 
-    ``encrypt`` is the master switch; ``encrypt_using_tmpdir`` and
-    ``post_run_encrypt`` each require it and are mutually exclusive; and
-    ``encryption_recipient`` is required iff ``encrypt`` is truthy.
+    ``encrypt`` (in-place) and ``post_run_encrypt`` are independent modes;
+    ``encrypt_using_tmpdir`` requires ``encrypt`` and is mutually exclusive with
+    ``post_run_encrypt``; and ``encryption_recipient`` is required iff either mode
+    is enabled.
     """
 
     def test_defaults_yield_valid_disabled_config(self):
