@@ -602,10 +602,10 @@ class DeliveryPlanInputs(BaseModel):
     """Carry the per-deployment inputs a baked delivery plan leaves open.
 
     Both leaves are sealed with ``not_overridable_field`` so the settings API
-    accepts only an atomic whole-object PATCH: a ``__``-delimited leaf write is
-    coerced by ``coerce_nested_field_value`` and never reaches the owning field's
-    materializer, which is the only place a payload is checked against the baked
-    skeleton.
+    accepts only an atomic whole-object PATCH. Were they overridable, a
+    ``__``-delimited leaf write would be coerced by ``coerce_nested_field_value``
+    and never reach the owning field's materializer, which is the only place a
+    payload is checked against the baked skeleton.
 
     :param endpoint: The receiver base URL, or ``None`` to keep the baked plan's.
     :param secrets: Values for the secret names the baked plan declares.

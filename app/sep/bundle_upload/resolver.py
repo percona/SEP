@@ -47,8 +47,8 @@ def resolve_delivery_plan() -> DeliveryPlan | None:
     import must take effect.
 
     Every unconfigured and every invalid case resolves to ``None`` rather than
-    raising: ``diagnostics_send_disabled_reasons`` calls this while rendering the
-    send action, so an exception here would fail that request.
+    raising, so a caller rendering UI state from this value never fails merely
+    because delivery is unconfigured or misconfigured.
 
     A stored inputs override whose secret names stop matching the skeleton --
     after an image upgrade renames one -- is dropped from the settings snapshot
