@@ -79,9 +79,9 @@ def assignment_line(text: str, token: str) -> str:
     :param text: The payload source to scan.
     :param token: The identifier the assignment line must contain.
     :return: The stripped assignment line.
-    :raises AssertionError: When no assignment mentioning ``token`` is found.
+    :raises LookupError: When no assignment mentioning ``token`` is found.
     """
     for line in text.splitlines():
         if token in line and "=" in line:
             return line.strip()
-    raise AssertionError(f"no {token} assignment found")
+    raise LookupError(f"no {token} assignment found")

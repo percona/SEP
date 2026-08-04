@@ -100,7 +100,7 @@ class TestPerPayloadAssembly:
 
     @pytest.mark.parametrize("payload", _shipped_payloads(), ids=lambda p: p.name)
     def test_region_matches_canonical(self, payload: Path) -> None:
-        """The block between a payload's markers equals ``preamble_source()``."""
+        """Assert the block between a payload's markers equals ``preamble_source()``."""
         region = region_between(
             payload.read_text(encoding="utf-8"), PREAMBLE_BEGIN, PREAMBLE_END
         )
