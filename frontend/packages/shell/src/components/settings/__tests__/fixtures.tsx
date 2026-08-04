@@ -51,7 +51,7 @@ export const sepListResponse = {
         makeSetting({
           key: 'CONNECTIVITY_CHECK_DEFAULT',
           value: true,
-          default_value: true,
+          default_value: false,
           type: 'bool',
         }),
         makeSetting({

@@ -79,11 +79,11 @@ from app.sep.apps.atw.models import (
 )
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.apps.snippets.script_source import snippet_not_found_detail, SnippetScript
 from app.sep.deps import ApiCurrentUser, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
 
 logger = logging.getLogger(__name__)
 

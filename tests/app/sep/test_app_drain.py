@@ -35,6 +35,7 @@ from app.sep.app_drain import (
 )
 from app.sep.crud import AppRunningTaskManager, AppStateManager
 from app.sep.models import AppLifecycleEnum, AppRunningTask, AppState
+from app.sep.snippets.celery import sync_snippets
 
 
 def _patch_session_maker(mocker, session: AsyncSession) -> MagicMock:
@@ -213,20 +214,26 @@ class TestRecordTaskSignals:
         record = mocker.patch("app.sep.app_drain._record_start")
         run = mocker.patch.object(app_drain.celery.loop, "run_until_complete")
         task = MagicMock()
-        task.owner_app_key = "snippets"
+        task.owner_app_key = "alerts"
         record_task_start("task-1", task)
-        record.assert_called_once_with("snippets", "task-1")
+        record.assert_called_once_with("alerts", "task-1")
         run.assert_called_once()
 
     def test_drainable_tasks_carry_their_owner(self) -> None:
         """Each drainable Celery task is tagged with its owning app key."""
         from app.sep.apps.alerts.celery import backup_alert_config
         from app.sep.apps.report.celery import generate_health_report
-        from app.sep.apps.snippets.celery import sync_snippets
 
-        assert getattr(sync_snippets, "owner_app_key", None) == "snippets"
         assert getattr(generate_health_report, "owner_app_key", None) == "report"
         assert getattr(backup_alert_config, "owner_app_key", None) == "alerts"
+
+    def test_library_snippet_sync_is_unowned(self) -> None:
+        """Leave the library-owned snippet sync out of every app's drain.
+
+        It writes library ``Snippet`` rows that consumers read regardless of app
+        state, so tagging it would let a snippets disable cancel ingestion.
+        """
+        assert getattr(sync_snippets, "owner_app_key", None) is None
 
 
 class TestReconciler:
