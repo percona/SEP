@@ -45,7 +45,7 @@ from app.sep.apps.framework.registry import (
     build_app_registry,
     get_app_registry,
 )
-from app.sep.config import App, sep_settings
+from app.sep.config import App, sep_settings, SEPSettings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.exceptions import LoginRedirectException
 from app.sep.main import (
@@ -61,6 +61,21 @@ from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.snippets.config import snippets_settings
 from tests.app.factories import OAuthTokenFactory
 from tests.app.sep.conftest import REDUCED_ACTIVATION
+
+_ORIGINAL_SEP_APP = main_module.sep_app
+
+
+def _reload_restoring_identity() -> None:
+    """Reload ``app.sep.main`` and put the original ``sep_app`` object back.
+
+    ``importlib.reload`` re-executes the module in the same ``__dict__``,
+    rebuilding ``sep_app`` as a new object while every consumer that did
+    ``from app.sep.main import sep_app`` still holds the discarded one.
+    Restoring the original binding keeps those consumers live; the rebuilt
+    app is built over the real registry, so the two are interchangeable.
+    """
+    importlib.reload(main_module)
+    main_module.sep_app = _ORIGINAL_SEP_APP
 
 
 def _route_has_app_guard(route) -> bool:
@@ -492,7 +507,7 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     finally:
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
@@ -516,7 +531,7 @@ def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
     finally:
         sep_settings.APPS = original_apps
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 async def _refresher_proxy_map(mocker) -> dict[SettingClassEnum, ProxyEntry]:
@@ -558,6 +573,26 @@ async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
     alerts_entry = proxies[SettingClassEnum.ALERTS_SETTINGS]
     assert alerts_entry.proxy is alerts_settings
     assert alerts_entry.settings_cls is AlertsSettings
+
+
+@pytest.mark.asyncio
+async def test_lifespan_refreshes_exactly_the_shared_builder_map(mocker):
+    """Hand the refresher whatever ``build_sep_override_proxies`` composes.
+
+    The Celery worker's SEP-side handler refreshes the same builder's output, so
+    delegating here -- rather than composing an equivalent set inline -- is what
+    keeps the two processes from drifting.
+    """
+    sentinel = {
+        SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+    }
+    mocker.patch.object(
+        main_module, "build_sep_override_proxies", return_value=sentinel
+    )
+
+    proxies = await _refresher_proxy_map(mocker)
+
+    assert proxies == sentinel
 
 
 @pytest.mark.asyncio
@@ -603,7 +638,7 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
     finally:
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 @contextmanager
@@ -627,7 +662,7 @@ def _reloaded_against(mocker, registry):
     finally:
         mocker.stopall()
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
+        _reload_restoring_identity()
 
 
 @pytest.fixture
@@ -640,6 +675,20 @@ def jinja_free_registry() -> AppRegistry:
             for app in build_app_registry(sep_settings.APPS)
         ]
     )
+
+
+def test_reload_helpers_restore_sep_app_identity(mocker, jinja_free_registry):
+    """Verify reload-based helpers leave ``sep_app``'s identity intact.
+
+    Consumers across ~53 modules bind ``sep_app`` by value at import. A reload
+    that leaves a rebuilt object in the module dict silently strands them.
+    """
+    assert main_module.sep_app is sep_app
+
+    with _reloaded_against(mocker, jinja_free_registry) as rebuilt:
+        assert rebuilt is not sep_app
+
+    assert main_module.sep_app is sep_app
 
 
 class TestJinjaDecoupledMounts:

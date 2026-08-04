@@ -13,12 +13,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Guard the import boundary between core modules and activatable apps.
+"""Guard the import boundary between every module and the activatable apps.
 
 The PMM-embedded side-car image strips non-activated packages from
-``app/sep/apps/``, so any module outside that tree holding an import-time edge
-into ``app.sep.apps.<app>`` breaks the image at import. This module walks the
-``app/`` tree with :mod:`ast` and fails on every such edge.
+``app/sep/apps/``, so a module that ships in the image must hold no import-time
+edge into a package the image strips. This module walks the ``app/`` tree with
+:mod:`ast` and enforces the rule that subsumes it, consulting no deployment
+configuration: no module holds an import-time edge into an activatable app
+package other than the one it lives in.
+
+Both halves bind. A module that lives in no app package -- everything outside
+``app/sep/apps/`` plus, inside it, ``framework``/``shared`` and the apps-level
+modules -- may reach none of them. A module inside app package ``X`` may reach
+``X`` freely and nothing else.
 
 Two node shapes count, because both execute at import: a static ``import`` /
 ``from ... import``, and a dynamic import call whose target is a string literal
@@ -34,8 +41,8 @@ Two limitations are deliberate, so the guard is not mistaken for a total one:
   violation.
 - A function that imports in its body and is then *called* at module scope does
   execute the import at import time, but resolving that needs call-graph
-  tracing. Function bodies are skipped, so this shape is not caught; the
-  codebase's deferred imports are all called from request/task paths.
+  tracing. Function bodies are skipped, so a deferred import satisfies the rule
+  only while no module-scope statement calls it.
 """
 
 import ast
@@ -193,14 +200,26 @@ def _package_of(path: Path) -> str:
     return ".".join(path.relative_to(BASE_DIR).parts[:-1])
 
 
-def _core_module_paths() -> Iterator[Path]:
-    """Yield every ``app/**/*.py`` module outside the activatable-app tree.
+def _guarded_module_paths() -> Iterator[Path]:
+    """Yield every ``app/**/*.py`` module the boundary rule binds.
 
-    :return: An iterator of source paths subject to the boundary rule.
+    :return: An iterator of source paths, the whole ``app/`` tree.
     """
-    for path in sorted((BASE_DIR / "app").rglob("*.py")):
-        if not path.is_relative_to(APPS_ROOT):
-            yield path
+    yield from sorted((BASE_DIR / "app").rglob("*.py"))
+
+
+def _owning_app_package(path: Path, app_packages: set[str]) -> str | None:
+    """Return the activatable app package ``path`` lives in, if any.
+
+    :param path: The source path to classify.
+    :param app_packages: The activatable app package names.
+    :return: The owning app package, or ``None`` for a module outside them --
+        including ``framework``/``shared`` and the apps-level modules.
+    """
+    if not path.is_relative_to(APPS_ROOT):
+        return None
+    head = path.relative_to(APPS_ROOT).parts[0]
+    return head if head in app_packages else None
 
 
 def _app_package_of(module: str, app_packages: set[str]) -> str | None:
@@ -217,17 +236,19 @@ def _app_package_of(module: str, app_packages: set[str]) -> str | None:
 
 
 def _violations() -> list[str]:
-    """Collect every import-time edge from a core module into an app package.
+    """Collect every import-time edge into an app package other than the owner's.
 
     :return: One ``path:line -> module`` entry per violating import.
     """
     app_packages = _app_package_names(APPS_ROOT)
     found: list[str] = []
     seen: set[tuple[Path, int]] = set()
-    for path in _core_module_paths():
+    for path in _guarded_module_paths():
+        owner = _owning_app_package(path, app_packages)
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for module, lineno in _import_time_imports(tree, _package_of(path)):
-            if _app_package_of(module, app_packages) is None:
+            target = _app_package_of(module, app_packages)
+            if target is None or target == owner:
                 continue
             if (path, lineno) in seen:
                 continue
@@ -236,14 +257,106 @@ def _violations() -> list[str]:
     return found
 
 
-def test_no_core_module_imports_an_app_package() -> None:
-    """Reject every import-time edge from outside ``app/sep/apps/`` into an app."""
+def test_no_module_imports_another_app_package() -> None:
+    """Reject every import-time edge into an app package other than the owner's."""
     violations = _violations()
     assert not violations, (
-        "modules outside app/sep/apps/ must not import an activatable app package"
-        " at import time (the PMM-embedded image strips them):\n"
+        "no module may import an activatable app package other than the one it"
+        " lives in at import time (the PMM-embedded image strips them):\n"
         + "\n".join(violations)
     )
+
+
+@pytest.fixture(scope="module")
+def guarded_paths() -> set[Path]:
+    """Walk the guarded tree once for every case that asserts membership in it.
+
+    :return: Every source path :func:`_guarded_module_paths` yields.
+    """
+    return set(_guarded_module_paths())
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "app/sep/main.py",
+        "app/sep/apps/framework/form_backfill.py",
+        "app/sep/apps/shared/disk_script_source.py",
+        "app/sep/apps/__init__.py",
+        "app/sep/apps/labels.py",
+        "app/sep/apps/nav_icons.py",
+        "app/sep/apps/inventory/app.py",
+        "app/sep/apps/alters/app.py",
+    ],
+)
+def test_guarded_module_paths_covers_every_app_module(
+    relative: str, guarded_paths: set[Path]
+) -> None:
+    """Bind the rule to the apps-tree modules an outside-only walk would skip."""
+    assert BASE_DIR / relative in guarded_paths
+
+
+def test_guarded_module_paths_leaves_no_apps_tree_module_out(
+    guarded_paths: set[Path],
+) -> None:
+    """Reject any walk that covers only part of the activatable-app tree.
+
+    The cases above sample the regions an outside-only walk skipped wholesale.
+    A narrower exclusion -- one app package, one subtree -- would leave every
+    sample present, and the live-tree test green, since a walk that reaches
+    fewer files finds fewer violations.
+    """
+    assert set(APPS_ROOT.rglob("*.py")) <= guarded_paths
+
+
+@pytest.mark.parametrize(
+    ("importer", "source", "expected"),
+    [
+        pytest.param(
+            "app/sep/apps/inventory/deps.py",
+            "from app.sep.apps.inventory.sync import require_internal_token",
+            set(),
+            id="own-package-exempt",
+        ),
+        pytest.param(
+            "app/sep/apps/framework/form_backfill.py",
+            "from app.sep.apps.inventory.sync import require_internal_token",
+            {"inventory"},
+            id="no-owner-nothing-exempt",
+        ),
+        pytest.param(
+            "app/sep/apps/inventory/deps.py",
+            "from app.sep.apps.alters.app import app",
+            {"alters"},
+            id="sibling-package-not-exempt",
+        ),
+        pytest.param(
+            "app/sep/apps/mysql_backups/restore/app.py",
+            "from app.sep.apps.mysql_backups.restore.app import app",
+            set(),
+            id="own-package-subtree-exempt",
+        ),
+    ],
+)
+def test_import_time_edges_ignore_a_modules_own_app_package(
+    importer: str, source: str, expected: set[str]
+) -> None:
+    """Ignore an edge only when it resolves the importing module's own package.
+
+    Each source is parsed as if it were the module at ``importer``, so the owner
+    the rule exempts is the one :func:`_owning_app_package` derives from that
+    real path.
+    """
+    path = BASE_DIR / importer
+    app_packages = _app_package_names(APPS_ROOT)
+    owner = _owning_app_package(path, app_packages)
+    reached = {
+        target
+        for module, _ in _import_time_imports(ast.parse(source), _package_of(path))
+        if (target := _app_package_of(module, app_packages)) is not None
+        and target != owner
+    }
+    assert reached == expected
 
 
 @pytest.mark.parametrize(
