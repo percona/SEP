@@ -632,16 +632,16 @@ function ActionBar({
     let executeBody = pendingExecute.executeBody;
     if (hasChain) {
       executeBody = {
-        ...pendingExecute.executeBody,
+        ...(pendingExecute.executeBody ?? {}),
         chain_task_names: chain.chain_task_names,
         chain_on_failure: chain.chain_on_failure,
       };
     }
     try {
-      await executeTask.mutateAsync({
-        taskName: pendingExecute.taskName,
-        executeBody,
-      });
+      const executeArgs = executeBody
+        ? { taskName: pendingExecute.taskName, executeBody }
+        : { taskName: pendingExecute.taskName };
+      await executeTask.mutateAsync(executeArgs);
       enqueueSnackbar(`${schema.display_name} task "${pendingExecute.taskName}" started`, {
         variant: 'success',
       });
