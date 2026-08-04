@@ -57,7 +57,7 @@ class ContextFilter(Filter):
 
 
 class ContextFormatter(_Formatter):
-    """Format logs with all populated context fields appended.
+    """Format logs with the populated request and task context fields appended.
 
     ``ContextFilter`` injects attributes on every ``LogRecord``. The configured
     base formatter is expected to already render the ``correlation_id`` in its
@@ -71,20 +71,19 @@ class ContextFormatter(_Formatter):
         """Format a log record and append non-default context fields.
 
         :param record: The log record to format.
-        :type record: LogRecord
         :return: Base formatted line plus appended context ``key=value`` pairs.
-        :rtype: str
         """
         base = super().format(record)
         parts: list[str] = []
 
-        # Stable order: follow insertion order from `_CONTEXT_VARS`, but never
-        # duplicate the correlation_id because it's rendered in the base format.
         for key in _CONTEXT_VARS:
             if key == "correlation_id":
                 continue
-            value = getattr(record, key, self._DEFAULT_SENTINEL)
-            if value != self._DEFAULT_SENTINEL:
+            raw_value = getattr(record, key, self._DEFAULT_SENTINEL)
+            if raw_value != self._DEFAULT_SENTINEL:
+                value = str(raw_value).replace("\n", "\\n").replace("\r", "\\r")
+                if any(ch.isspace() for ch in value) or "=" in value:
+                    value = repr(value)
                 parts.append(f"{key}={value}")
 
         if not parts:
