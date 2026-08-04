@@ -33,7 +33,6 @@ from pydantic import (
     model_validator,
     ValidationError,
 )
-from pydantic.json_schema import WithJsonSchema
 from sqlalchemy import (
     BigInteger,
     Column,
@@ -68,13 +67,6 @@ from app.tasks.anonymizer.entities import PIIEntity
 TASK_ALIAS_LENGTH = 100
 SYSTEM_USER = "SYSTEM"
 ANY_OWNER = "ANY"
-
-# Duration is ``dict[str, Any]``; without an open-object schema it serialises as
-# bare ``type: object`` → ``Record<string, never>``. Status stays plain
-# ``dict[str, int]`` so OpenAPI keeps ``additionalProperties: {type: integer}``.
-_TaskStatsDurationMap = Annotated[
-    dict[str, Any], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
-]
 
 #: Allocation-relative output-files directory of every job spec that pins its
 #: ``run-script`` task's ``work_dir`` to ``${NOMAD_TASK_DIR}/output_files``
@@ -261,13 +253,11 @@ class TaskExecutionRequest(BaseModel):
     :param target: The target system or environment.
     :type target: str
     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-    :type meta: ArbitraryMapping | None
     :param payload: Optional payload or file path for parameterizing the task.
         Defaults to None.
     :type payload: str | None
     :param tracking: Tracking information for task execution. Defaults to a dictionary
         with keys for allocation and evaluation IDs.
-    :type tracking: ArbitraryMapping | None
     """
 
     model_config = ConfigDict(extra="allow")
@@ -1138,7 +1128,7 @@ class TaskStats(BaseModel):
 
     @computed_field
     @property
-    def duration(self) -> _TaskStatsDurationMap:
+    def duration(self) -> ArbitraryMapping:
         """Return the task duration summary.
 
         :return: A dictionary summarizing average, last, and total task durations.

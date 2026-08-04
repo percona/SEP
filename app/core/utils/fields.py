@@ -446,14 +446,14 @@ class ArbitraryMapping(dict):
     for two reasons:
 
     1. **Fresh schema dicts.** FastAPI writes an operation-derived ``title``
-       into the JSON schema it resolves for a return type or body. Pydantic's
-       ``WithJsonSchema`` returns the *same* dict it was constructed with, so
-       a shared ``Annotated[..., WithJsonSchema({...})]`` alias lets one
-       route's title leak into every other site. Definition-time ``.copy()`` /
-       ``{**...}`` / a ``title`` key in the template do not help — they still
-       produce one dict that later generations mutate in place. Returning a
-       new dict from ``__get_pydantic_json_schema__`` each call isolates
-       those titles.
+       into the JSON schema it resolves for a return type or ``Body()``.
+       ``WithJsonSchema`` returns the dict it stores, and equal metadata
+       collapses across annotation sites, so one route's title leaks onto
+       every other (including a GET response title on a PUT request body).
+       An explicit ``title`` in the template, and a fresh dict *per*
+       ``WithJsonSchema`` construction, both still leak. Returning a new dict
+       from ``__get_pydantic_json_schema__`` on every call keeps titles local.
+       Model fields are unaffected — they keep field-derived titles.
     2. **Stable component names.** The ``Annotated`` + ``WithJsonSchema`` form
        renamed generics to
        ``PaginatedResponse_Annotated_dict_str__Any___WithJsonSchema__``. A
@@ -466,7 +466,8 @@ class ArbitraryMapping(dict):
     ) -> core_schema.CoreSchema:
         """Validate and coerce as a plain ``dict[str, Any]``.
 
-        :param source_type: The annotated source type (unused; always ``dict``).
+        :param source_type: The annotated source type (ignored; always
+            ``dict[str, Any]``).
         :param handler: Pydantic's core-schema builder.
         :return: A core schema for ``dict[str, Any]``.
         """
