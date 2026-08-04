@@ -38,22 +38,22 @@ from app.sep.apps.framework.script_helpers import (
     build_artifact_download_url,
     build_execution_meta,
 )
-from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
-from app.sep.apps.snippets.models import (
-    BatchApprovalErrorResponse,
-    SnippetBatchApproveRequest,
-)
-from app.sep.apps.snippets.schema import evaluate_snippet_gates
 from app.sep.deps import SessionDep
 from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.list_query import SnippetApprovalFilter, SnippetListQuery
+from app.sep.snippets.models.responses import (
+    BatchApprovalErrorResponse,
+    SnippetBatchApproveRequest,
+)
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
     Snippet,
     SnippetExecutionMeta,
 )
+from app.sep.snippets.schema import evaluate_snippet_gates
 
 logger = logging.getLogger(__name__)
 

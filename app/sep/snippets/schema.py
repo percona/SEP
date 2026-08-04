@@ -47,6 +47,7 @@ from app.sep.apps.framework.schema import (
     AnyField,
     AppSchema,
     BoolField,
+    Capabilities,
     Choice,
     ChoiceField,
     Column,
@@ -65,6 +66,7 @@ from app.sep.apps.framework.schema import (
     SUDO_FIELD_NAME,
 )
 from app.sep.snippets.config import SnippetSudoOption
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
@@ -80,6 +82,7 @@ SNIPPETS_PLUGIN_SCHEMA = AppSchema(
         "registered executor hosts."
     ),
     forms=[],
+    capabilities=Capabilities(scheduling=False, alert_on_fail=False, chaining=False),
     list_view=ListView(
         columns=[
             Column(key="filename", label="Filename", sortable=True),
@@ -370,6 +373,18 @@ def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
                     label="Run with sudo",
                     default=True,
                     description=("This snippet is configured to always run with sudo."),
+                ),
+            ),
+        )
+    if snippet.allow_extra_args:
+        execution_fields.append(
+            cast(
+                AnyField,
+                StringField(
+                    name=EXTRA_ARGS_FIELD_NAME,
+                    label="Extra Args",
+                    placeholder="e.g. --verbose",
+                    description="Any extra args to pass to the snippet execution command",
                 ),
             ),
         )

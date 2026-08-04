@@ -304,8 +304,8 @@ def capabilities_endpoint(
     .. code-block:: python
 
         from app.sep.apps.framework.api import capabilities_endpoint
-        from app.sep.apps.snippets.models import SnippetsCapabilitiesResponse
         from app.sep.snippets.config import snippets_settings
+        from app.sep.snippets.models.responses import SnippetsCapabilitiesResponse
 
         def _snippets_capabilities() -> SnippetsCapabilitiesResponse:
             return SnippetsCapabilitiesResponse(

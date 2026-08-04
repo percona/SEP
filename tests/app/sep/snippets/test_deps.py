@@ -20,10 +20,11 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import status
 
-import app.sep.apps.snippets.deps as snippets_deps
+import app.sep.snippets.deps as snippets_deps
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.exceptions import HTTPBadRequestException
-from app.sep.apps.snippets.deps import (
+from app.sep.snippets.config import SnippetSudoOption
+from app.sep.snippets.deps import (
     build_snippet_execution_meta,
     check_snippet_batch_existence,
     get_executable_snippet_for_api,
@@ -32,7 +33,6 @@ from app.sep.apps.snippets.deps import (
     validate_snippet_filename,
     validate_snippet_parameters,
 )
-from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     Snippet,
