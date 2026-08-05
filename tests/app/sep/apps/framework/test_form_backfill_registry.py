@@ -92,9 +92,9 @@ def test_skips_apps_without_a_declaration():
 
 
 def test_applies_no_enabled_filter():
-    """Collect from a declaring app alongside a disabled activation entry."""
+    """Collect a declaring app's entry even when its activation entry is disabled."""
     entries = collect_form_backfill_entries(
-        [App(module_name="topology", enabled=False), App(module_name="checksums")],
+        [App(module_name="checksums", enabled=False)],
     )
 
     assert [entry.app_key for entry in entries] == ["checksums"]
