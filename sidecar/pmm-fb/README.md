@@ -3,11 +3,44 @@
 Compose topology pairing the PMM feature build (SEP frontend + PostgreSQL
 exposure, [Percona-Lab/pmm-submodules#4500] = percona/pmm branch `PMM-15216`,
 PRs [percona/pmm#5653] + [percona/pmm#5700]) with the app-restricted SEP
-side-car built from this branch: supervisord running the three APIs + Celery
-worker/beat + bundled Valkey, shipping only the `inventory`, `mysql_backups`
-and `atw` apps. The snippets management app is not shipped — the builtin
-snippet library is ingested and auto-approved at boot (SEP-1627) so atw can
-execute it, with no periodic or manual re-sync.
+side-car: supervisord running the three APIs + Celery worker/beat + bundled
+Valkey, shipping only the `inventory`, `mysql_backups` and `atw` apps. The
+snippets management app is not shipped — the builtin snippet library is
+ingested and auto-approved at boot (SEP-1627) so atw can execute it, with no
+periodic or manual re-sync.
+
+## Which image to pin
+
+The restricted image is built on `main`, not on this branch. `main`'s
+`image-sidecar-embedded` target derives the shipped app set from
+`sidecar/settings.embedded.yaml`'s `SEP.APPS` and publishes it under an
+`-embedded` suffix, so a feature build tagged `<customImageTag>` produces:
+
+| Tag | Contents |
+|---|---|
+| `percona/percona-sep:<customImageTag>` | the standalone image |
+| `percona/percona-sep:<customImageTag>-sidecar` | the full side-car, every app |
+| `percona/percona-sep:<customImageTag>-embedded` | the app-restricted side-car — **pin this one** |
+
+Which of those reach Docker Hub is a per-run decision: each push stage is
+gated on the build job's `pushImageDocker` parameter. Only the plain tag has
+ever landed there for a feature build, so check the registry rather than
+assuming all three exist.
+
+`compose.yaml`'s `sep-sidecar` service must therefore track the `-embedded`
+tag. Pinning the plain tag gets the standalone image, which has no supervisord
+and will not come up under this harness.
+
+The pin currently reads `pmm-a2db4ac`, which predates this split: it is a
+restricted image only because `make image` used to build the side-car on this
+branch, and no `-embedded` tag has been published yet. It stays valid, so the
+harness keeps working — but the first feature build cut after this branch
+merges publishes `<customImageTag>-embedded`, and the pin moves there.
+
+That image carries the side-car `HEALTHCHECK` — every side-car recipe builds
+in docker format precisely because OCI discards the instruction — so
+`docker compose ps` reports its health normally. The 150 s start period keeps
+it out of `unhealthy` while PMM provisioning and SEP migrations finish.
 
 [Percona-Lab/pmm-submodules#4500]: https://github.com/Percona-Lab/pmm-submodules/pull/4500
 [percona/pmm#5653]: https://github.com/percona/pmm/pull/5653
@@ -21,7 +54,8 @@ docker compose up -d        # or: podman compose up -d
 ```
 
 First boot takes a couple of minutes (PMM provisioning + SEP migrations; the
-side-car healthcheck has a 150 s grace period). Then:
+side-car recipe budgets 150 s before its healthcheck would start failing).
+Then:
 
 - PMM UI: https://127.0.0.1:8443 (admin / admin)
 - SEP API through PMM's nginx: https://127.0.0.1:8443/api/apps/
