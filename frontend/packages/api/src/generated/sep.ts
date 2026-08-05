@@ -802,7 +802,7 @@ export interface paths {
      * @description Close a diagnostic incident, stamping the current UTC time.
      *
      *     :param session: The database session.
-     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param incident: The open incident resolved from the ``incident_id`` path parameter.
      *     :return: The closed incident.
      *     :raises HTTPConflictException: If the incident is already closed.
      */
@@ -884,7 +884,7 @@ export interface paths {
      * @description Reopen a closed diagnostic incident, clearing its close timestamp.
      *
      *     :param session: The database session.
-     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param incident: The closed incident resolved from the ``incident_id`` path parameter.
      *     :return: The reopened incident.
      *     :raises HTTPConflictException: If the incident is already open.
      */
