@@ -17,9 +17,10 @@
 
 Kept in a separate module (not ``env.py``) for the same reason as
 ``_discovery.py``: importing ``env.py`` runs migrations as a side effect, so
-helpers that want unit tests live here. Unlike ``_discovery.py`` this module
-has no import-time side effects at all — it needs a live ``MigrationContext``
-and so runs after ``context.configure(...)``.
+helpers that want unit tests live here. Unlike ``_discovery.py``'s helpers,
+which run standalone, ``skip_unresolvable_heads`` needs a live
+``MigrationContext`` and so is called after ``context.configure(...)`` rather
+than at import time.
 
 Each app that owns migrations is an independent branch rooted at ``base`` and
 recorded in the shared ``alembic_version_sep`` table. An image that strips an
