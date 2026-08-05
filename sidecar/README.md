@@ -25,7 +25,7 @@ Jenkins builds and publishes it alongside the other two.
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables. |
 | `settings.embedded.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
-| `restrict_apps.py` | Build-step strip for the app-restricted variant; removes every app package the baked profile does not activate. Deleted in the same layer, so it is not present in the final image. |
+| `restrict_apps.py` | Build-step strip for the app-restricted variant; removes every app package the baked profile does not activate. Removed during the build, so it is not present in the final image. |
 
 The image is built in **docker** manifest format rather than OCI, because OCI
 silently discards the `HEALTHCHECK` instruction.
@@ -46,8 +46,8 @@ environment-variable-only, and a **full** override is a bind mount at
 ### App set
 
 The app-restricted image ships exactly the apps `settings.embedded.yaml`'s
-`SEP.APPS` activates, plus `framework` and `shared`, which every app reaches and
-which the activation list never names. Nothing else declares the set: changing
+`SEP.APPS` activates, plus `framework` and `shared`, which shipped modules reach
+and which the activation list never names. Nothing else declares the set: changing
 which apps the image ships is an edit to `SEP.APPS` and nothing else, and the
 build fails if an activated app has no package to keep.
 
