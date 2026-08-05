@@ -69,6 +69,26 @@ is the only way to end up without one. Capitalise the first word; do not add a
    spine does not re-document them, but does add a fragment for, say, a
    request-body casing narrowing that only that plugin undergoes.
 
+## What a fragment must say
+
+A fragment is read by an operator deciding whether a change affects them and
+when. Two things it must carry.
+
+**Name the asymmetry.** When the change does not land uniformly — for some
+installations and not others, for some processes and not others, or only after
+a delay — say so. Silence on an asymmetric axis reads as "works uniformly".
+Answer whichever of these three applies:
+
+| Axis | The question to answer | Say this, not that |
+|---|---|---|
+| **Who** | fresh installs only, or existing installations too? | "reaches fresh installs and installer re-runs only; an existing installation keeps its rendered config until the installer runs again" — not "the new default applies" |
+| **When** | at upgrade, at restart, or on the next occurrence of some event? | "an override lands on the next task the worker executes" — not "without a restart" |
+| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | "workers pick the new values up on their next refresh, 30 seconds by default, so a send started inside that window fails as unconfigured and is not retried" — not "takes effect immediately" |
+
+**Pick the section from the work-item type.** File a Bug's fragment under
+`fixed` and a Story's under `changed`. The type decides even when two tickets
+do topically identical work.
+
 ## File format
 
 - **Filename:** `<TICKET>.<section>.md`, e.g. `SEP-503.added.md`.

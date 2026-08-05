@@ -23,15 +23,16 @@ import yaml
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.deps import parse_backup_task_data
-from app.sep.apps.backup_pg.models import BackupPgForm
+from app.sep.apps.backup_pg.models import BackupPgForm, OWNER
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
+from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
     from app.tasks.models import Task
 
-__all__ = ["reconstruct_backup_pg_form"]
+__all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_backup_pg_form"]
 
 _BACKUP_PG_FORM_FIELDS = frozenset(BackupPgForm.model_fields)
 
@@ -117,3 +118,13 @@ def reconstruct_backup_pg_form(
         "alert_on_fail": task.alert_on_fail,
         **form_fields,
     }
+
+
+FORM_BACKFILL_ENTRIES = [
+    FormBackfillEntry(
+        app_key="backup_pg",
+        owner=OWNER,
+        create_model=BackupPgForm,
+        reconstructor=reconstruct_backup_pg_form,
+    ),
+]

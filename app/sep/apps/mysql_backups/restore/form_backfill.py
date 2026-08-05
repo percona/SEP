@@ -24,15 +24,16 @@ import yaml
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
+from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import parse_restore_task_data
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate
+from app.sep.apps.mysql_backups.restore.models import OWNER, RestoreCreate
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
     from app.tasks.models import Task
 
-__all__ = ["reconstruct_mysql_restores_form"]
+__all__ = ["FORM_BACKFILL_ENTRY", "reconstruct_mysql_restores_form"]
 
 _RESTORE_FORM_FIELDS = frozenset(RestoreCreate.model_fields)
 _EXPLICIT_FORM_KEYS = frozenset(
@@ -172,3 +173,11 @@ def reconstruct_mysql_restores_form(
     if schema_id is not None:
         body["schema_id"] = schema_id
     return body
+
+
+FORM_BACKFILL_ENTRY = FormBackfillEntry(
+    app_key="mysql_backups/restore",
+    owner=OWNER,
+    create_model=RestoreCreate,
+    reconstructor=reconstruct_mysql_restores_form,
+)
