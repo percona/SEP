@@ -16,7 +16,7 @@ execute it, with no periodic or manual re-sync.
 ## Bring-up
 
 ```bash
-./bootstrap.sh              # generate .env, render settings.yaml + pmm.conf
+./bootstrap.sh              # generate .env, render pmm.conf
 docker compose up -d        # or: podman compose up -d
 ```
 
@@ -35,13 +35,26 @@ work without it):
 ./mint-grafana-token.sh
 ```
 
+The token lands in `.env` and the script recreates the side-car to apply it —
+a restart would reuse the old environment. Task-lifecycle PMM annotations also
+start reaching PMM at that point: the baked profile enables them, and they are
+inert while no token is set.
+
 ## How the pieces connect
 
 - `bootstrap.sh` generates per-deployment secrets into the gitignored `.env`
-  (PG password, SEP secret key, SEP internal token) and renders the
-  gitignored `settings.yaml` / `pmm.conf` from their committed `*.template`
-  siblings. Nothing secret is committed; re-running re-renders and keeps an
-  already-minted Grafana token.
+  (PG password, SEP secret key, SEP internal token, plus an empty slot for the
+  Grafana token) and renders the gitignored `pmm.conf` from its committed
+  `pmm.conf.template` sibling. Nothing secret is committed; re-running
+  re-renders and keeps an existing `.env`, minted Grafana token included.
+- SEP's settings come from the profile baked into the image at
+  `/home/sep/app/settings.yaml` — nothing is mounted over it. `compose.yaml`'s
+  `environment:` block supplies only the per-deployment values (`SECRET_KEY`,
+  `SEP_DB_PASSWORD`, `SEP_INTERNAL_TOKEN`, `SEP_GRAFANA_TOKEN`,
+  `SEP_NOMAD_ENDPOINT`, `BASE_URL`), which outrank the file; the image supplies
+  everything else. `../README.md` documents the full input contract, including
+  that a *partial* override is environment-only and a *full* override means
+  bind-mounting over the baked profile wholesale.
 - `PMM_ENABLE_SEP=1` + the generated password make pmm-server's entrypoint
   expose its embedded PostgreSQL on the compose network and provision the
   low-privilege `sep` role owning the `sep` database (percona/pmm#5700).
@@ -75,6 +88,22 @@ work without it):
   anything that can reach 127.0.0.1:8443 can call the SEP API as the service
   principal. Local testing only.
 - Both ports 8443 and 9000-9002 bind to loopback only.
-- Rotating the internal token = edit `.env`, re-run `./bootstrap.sh`, then
-  recreate both containers (the nginx map and SEP settings must move
-  together).
+- Rotating the internal token = edit `SEP_INTERNAL_TOKEN` in `.env`, re-run
+  `./bootstrap.sh` so `pmm.conf` is re-rendered with the new bearer, then
+  `docker compose up -d --force-recreate` for **both** containers: the side-car
+  because a restart would reuse its old environment, and pmm-server because
+  nginx only reads its config at start. The nginx map and the side-car's
+  environment have to move together.
+- The settings mount is gone, so editing a rendered YAML file is no longer a
+  way to try something out. Partial overrides are environment-variable-only; a
+  full override means bind-mounting over `/home/sep/app/settings.yaml`, which
+  replaces the baked profile wholesale. Add an ignore rule for whatever local
+  filename you mount — nothing here ignores one any more, and such a file holds
+  the deployment's secrets in cleartext.
+- **Upgrading a harness bootstrapped before the mount was dropped:** delete the
+  leftover `settings.yaml`. It is inert now but still holds the secret key, PG
+  password and internal token in cleartext, and it is no longer ignored. If you
+  had minted a Grafana token, it lives only in that file — copy it into `.env`
+  as `SEP_GRAFANA_TOKEN=` before deleting, or just re-run
+  `./mint-grafana-token.sh` afterwards; otherwise Grafana auth and the PMM
+  syncer silently go inert.

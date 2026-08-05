@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Mint a Grafana service-account token in the PMM feature build and wire it
-# into this directory's settings.yaml (AUTH.PROVIDER.grafana.service_account_token
-# and PMM.API_KEY), then restart the SEP side-car so it picks the token up.
+# Mint a Grafana service-account token in the PMM feature build and wire it into
+# this directory's .env as SEP_GRAFANA_TOKEN, which the side-car expands into
+# AUTH.PROVIDER.grafana.service_account_token and PMM.API_KEY, then recreate the
+# SEP side-car so it picks the token up. A restart would not: it reuses the
+# existing container's environment, so the new token would never reach the
+# process.
 # Optional: the PMM UI's SEP pages work without it (interim internal-token
 # auth); the token enables SEP-side Grafana auth and the PMM syncer.
 
@@ -27,18 +30,19 @@ need_cmd() {
 need_cmd curl
 need_cmd jq
 need_cmd sed
+need_cmd grep
 
 usage() {
     cat << 'EOF'
 mint-grafana-token.sh [OPTIONS]
 
 Create (or reuse) the "sep-fb" Grafana service account in the PMM feature
-build, mint a fresh Admin token for it, write the token into settings.yaml,
-and restart the sep-sidecar container.
+build, mint a fresh Admin token for it, write the token into .env, and
+recreate the sep-sidecar container so it picks up the new environment.
 
 Options:
   -n, --dry-run       Mint nothing; show what would be done
-  --no-restart        Update settings.yaml but skip the container restart
+  --no-recreate       Update .env but skip the container recreate
   -h, --help          Show this help
 
 Environment:
@@ -48,13 +52,13 @@ Environment:
 
 Examples:
   ./mint-grafana-token.sh
-  PMM_ADMIN_PASSWORD=secret ./mint-grafana-token.sh --no-restart
+  PMM_ADMIN_PASSWORD=secret ./mint-grafana-token.sh --no-recreate
 EOF
     exit "${1:-0}"
 }
 
 DRY_RUN=0
-RESTART=1
+RECREATE=1
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -63,8 +67,8 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=1
             shift
             ;;
-        --no-restart)
-            RESTART=0
+        --no-recreate)
+            RECREATE=0
             shift
             ;;
         -*)
@@ -84,9 +88,10 @@ PMM_ADMIN_PASSWORD="${PMM_ADMIN_PASSWORD:-admin}"
 SA_NAME="sep-fb"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-settings_file="${script_dir}/settings.yaml"
-[[ -f ${settings_file} ]] || {
-    error "settings.yaml not found next to this script: ${settings_file}"
+env_file="${script_dir}/.env"
+[[ -f ${env_file} ]] || {
+    error ".env not found next to this script: ${env_file}"
+    error "Run ./bootstrap.sh first."
     exit 1
 }
 
@@ -97,8 +102,8 @@ grafana_api() {
 
 if [[ ${DRY_RUN} -eq 1 ]]; then
     info "[dry-run] Would create/reuse service account '${SA_NAME}' at ${PMM_URL}/graph"
-    info "[dry-run] Would mint an Admin token and write it into ${settings_file}"
-    [[ ${RESTART} -eq 1 ]] && info "[dry-run] Would restart the sep-sidecar container"
+    info "[dry-run] Would mint an Admin token and write it into ${env_file}"
+    [[ ${RECREATE} -eq 1 ]] && info "[dry-run] Would recreate the sep-sidecar container"
     exit 0
 fi
 
@@ -123,26 +128,37 @@ token="$(grafana_api -X POST "${PMM_URL}/graph/api/serviceaccounts/${sa_id}/toke
     error "Token creation failed for service account ${sa_id}"
     exit 1
 }
+# .env is sourced by bootstrap.sh and parsed by compose, so a token carrying $,
+# backticks, spaces, # or quotes would corrupt the line or expand at source time
+# and the side-car would come up healthy on the wrong token
+[[ ${token} =~ ^glsa_[A-Za-z0-9_]+$ ]] || {
+    error "Unexpected token format from Grafana"
+    exit 1
+}
 success "Minted Grafana service-account token (${SA_NAME}, role Admin)"
 
-# Inode-preserving rewrite: the file is bind-mounted into the container, and a
-# sed -i inode swap is invisible there until the container is fully recreated
-updated="$(sed -E "s|(service_account_token:) glsa_[A-Za-z0-9_]+|\1 ${token}|; s|(API_KEY:) glsa_[A-Za-z0-9_]+|\1 ${token}|" \
-    "${settings_file}")"
-printf '%s\n' "${updated}" > "${settings_file}"
-success "Wrote the token into ${settings_file}"
+# Read-then-truncate-write rather than sed -i, so .env keeps the 0600 mode
+# bootstrap.sh gave it — it holds every per-deployment secret
+if grep -q '^SEP_GRAFANA_TOKEN=' "${env_file}"; then
+    updated="$(sed -E "s|^SEP_GRAFANA_TOKEN=.*|SEP_GRAFANA_TOKEN=${token}|" "${env_file}")"
+    printf '%s\n' "${updated}" > "${env_file}"
+else
+    printf 'SEP_GRAFANA_TOKEN=%s\n' "${token}" >> "${env_file}"
+fi
+success "Wrote the token into ${env_file}"
 
-if [[ ${RESTART} -eq 1 ]]; then
-    # Pick whichever engine is actually running the stack (both CLIs may exist)
+if [[ ${RECREATE} -eq 1 ]]; then
+    # Pick whichever engine is actually running the stack (both CLIs may exist).
+    # --no-deps leaves pmm-server and its provisioning time alone despite depends_on
     if [[ -n "$(cd "${script_dir}" && docker compose ps -q sep-sidecar 2> /dev/null)" ]]; then
-        (cd "${script_dir}" && docker compose restart sep-sidecar)
+        (cd "${script_dir}" && docker compose up -d --force-recreate --no-deps sep-sidecar)
     elif [[ -n "$(cd "${script_dir}" && podman compose ps -q sep-sidecar 2> /dev/null)" ]]; then
-        (cd "${script_dir}" && podman compose restart sep-sidecar)
+        (cd "${script_dir}" && podman compose up -d --force-recreate --no-deps sep-sidecar)
     else
-        info "No running sep-sidecar found; restart the SEP container manually to apply the token"
+        info "No running sep-sidecar found; recreate the SEP container manually to apply the token"
         exit 0
     fi
-    success "Restarted sep-sidecar"
+    success "Recreated sep-sidecar"
 else
-    info "Skipping restart; restart the SEP container to apply the token"
+    info "Skipping recreate; recreate the SEP container to apply the token"
 fi

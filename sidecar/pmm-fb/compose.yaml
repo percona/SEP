@@ -11,18 +11,23 @@
 # boot, no snippets management UI).
 #
 # Run ./bootstrap.sh first: it generates the .env this file interpolates and
-# renders settings.yaml + pmm.conf from their committed templates. pmm.conf
-# overlays the stock nginx config so the five SEP path prefixes the PMM UI
-# expects (/api, /sep_app, /stream-logs, /execution-events, /files) reach the
-# side-car; see pmm.conf.template for the interim auth (Option D) wiring.
+# renders pmm.conf from its committed template. pmm.conf overlays the stock
+# nginx config so the five SEP path prefixes the PMM UI expects (/api,
+# /sep_app, /stream-logs, /execution-events, /files) reach the side-car; see
+# pmm.conf.template for the interim auth (Option D) wiring. SEP's own settings
+# come from the profile baked into the image, with the per-deployment values
+# below overriding it — environment outranks the file.
 #
 # The side-car gets a fixed IP because nginx resolves proxy targets at
 # startup, when the SEP container may not be running yet — and a name-based
-# upstream would also go stale when sep-sidecar is restarted (e.g. after
-# minting the Grafana token). pmm.conf proxies to that IP.
+# upstream would also go stale when sep-sidecar is recreated (e.g. after
+# minting the Grafana token, which now takes a recreate rather than a restart
+# because the token reaches the process as environment). pmm.conf proxies to
+# that IP.
 #
-# No credentials are committed: bootstrap.sh generates them per deployment
-# into the gitignored .env / rendered files; see README.md.
+# No per-deployment credentials are committed: bootstrap.sh generates those
+# into the gitignored .env and pmm.conf; see README.md. The one credential
+# spelled out below is PMM's stock admin:admin, which the feature build ships.
 
 name: sep-pmm-fb
 
@@ -44,13 +49,19 @@ services:
         ipv4_address: 172.28.9.2
 
   sep-sidecar:
-    image: docker.io/percona/percona-sep:pmm-a2db4ac
+    image: docker.io/percona/percona-sep:pmm-e11e9fd
     depends_on: [pmm-server]
     environment:
       SECRET_KEY: ${SEP_SECRET_KEY:?run ./bootstrap.sh first}
       SEP_DB_PASSWORD: ${SEP_PG_PASSWORD:?run ./bootstrap.sh first}
-    volumes:
-      - ./settings.yaml:/home/sep/app/settings.yaml:ro
+      SEP_INTERNAL_TOKEN: ${SEP_INTERNAL_TOKEN:?run ./bootstrap.sh first}
+      # Empty until ./mint-grafana-token.sh runs; settings-env.sh tests -n, so
+      # empty leaves the profile's inert token in place
+      SEP_GRAFANA_TOKEN: ${SEP_GRAFANA_TOKEN:-}
+      # The baked profile's endpoint is deliberately credential-free; the
+      # harness is where PMM's admin:admin belongs
+      SEP_NOMAD_ENDPOINT: https://admin:admin@pmm-server:8443/nomad
+      BASE_URL: http://sep-sidecar:9000
     ports:
       - "127.0.0.1:9000:9000" # sep API (direct host access for probing)
       - "127.0.0.1:9001:9001" # inventory API
