@@ -15,12 +15,18 @@
 
 """Define tests for inventory schema routes."""
 
+from datetime import datetime, UTC
+
+import pytest
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
+from app.inventory.crud import TableManager
 from app.inventory.models import Node, Schema, Service, Table
 from tests.app.factories import (
+    NodeWriteFactory,
     SchemaWriteFactory,
     ServiceWriteFactory,
     TableWriteFactory,
@@ -28,6 +34,7 @@ from tests.app.factories import (
 
 SCHEMA_COUNT_WITH_SECOND = 2
 OFFSET_BEYOND_TOTAL = 999
+LIST_QUERY_MATCH_TOTAL = 2
 
 
 class TestListSchemas:
@@ -42,6 +49,13 @@ class TestListSchemas:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_schemas_rejects_unknown_sort_key(
+        self, test_client: TestClient
+    ) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        response = test_client.get("/schemas/", params={"sort": "evil"})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_list_schemas_multiple(
         self, test_client: TestClient, schema: Schema, service: Service
@@ -85,6 +99,93 @@ class TestListSchemas:
         assert len(data["items"]) == 1
         assert data["total"] == 1
         assert data["limit"] == 1
+
+    def test_list_schemas_search_ilike(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return only schemas whose name matches the search case-insensitively."""
+        match = SchemaWriteFactory.build(name="AlphaSearchSchema")
+        other = SchemaWriteFactory.build(name="OtherSchema")
+        test_client.post(
+            f"/services/{service.id}/schemas/", json=match.model_dump(mode="json")
+        )
+        test_client.post(
+            f"/services/{service.id}/schemas/", json=other.model_dump(mode="json")
+        )
+
+        response = test_client.get("/schemas/", params={"search": "alphasearch"})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["name"] == match.name
+
+    def test_list_schemas_search_reports_filtered_total(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Filter rows by search and report the filtered total, not the page size."""
+        for suffix in ("a", "b"):
+            payload = SchemaWriteFactory.build(name=f"FilterMatchSchema_{suffix}")
+            test_client.post(
+                f"/services/{service.id}/schemas/",
+                json=payload.model_dump(mode="json"),
+            )
+        other = SchemaWriteFactory.build(name="UnrelatedSchema")
+        test_client.post(
+            f"/services/{service.id}/schemas/",
+            json=other.model_dump(mode="json"),
+        )
+
+        response = test_client.get(
+            "/schemas/", params={"search": "filtermatchschema", "limit": 1}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == LIST_QUERY_MATCH_TOTAL
+        assert len(data["items"]) == 1
+
+    def test_list_schemas_deterministic_ordering_across_pages(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Sort equal names stably across pages via the id tie-breaker.
+
+        Schema names are unique per service, so the shared name is created on a
+        second service to produce a name tie in the top-level list.
+        """
+        shared_name = "SameSortSchema"
+        node_response = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert node_response.status_code == status.HTTP_201_CREATED
+        other_service_response = test_client.post(
+            f"/nodes/{node_response.json()['id']}/services/",
+            json=ServiceWriteFactory.build(port=5101).model_dump(mode="json"),
+        )
+        assert other_service_response.status_code == status.HTTP_201_CREATED
+        other_service_id = other_service_response.json()["id"]
+
+        created_ids: list[int] = []
+        for service_id in (service.id, other_service_id):
+            payload = SchemaWriteFactory.build(name=shared_name)
+            create_response = test_client.post(
+                f"/services/{service_id}/schemas/",
+                json=payload.model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+            created_ids.append(create_response.json()["id"])
+        created_ids.sort()
+
+        first_page = test_client.get(
+            "/schemas/",
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 0},
+        )
+        second_page = test_client.get(
+            "/schemas/",
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 1},
+        )
+        assert first_page.status_code == status.HTTP_200_OK
+        assert second_page.status_code == status.HTTP_200_OK
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
 
 class TestRetrieveSchema:
@@ -216,6 +317,16 @@ class TestListTablesBySchema:
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
+    def test_list_tables_by_schema_rejects_unknown_sort_key(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"sort": "evil"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
     def test_list_tables_by_schema(
         self, test_client: TestClient, schema: Schema, table: Table
     ) -> None:
@@ -231,7 +342,7 @@ class TestListTablesBySchema:
     def test_list_tables_by_schema_search(
         self, test_client: TestClient, schema: Schema, table: Table
     ) -> None:
-        """Return only tables whose name matches the search query."""
+        """Return only tables whose name matches the search case-insensitively."""
         response = test_client.get(
             f"/schemas/{schema.id}/tables/",
             params={"search": table.name[:3]},
@@ -295,6 +406,69 @@ class TestListTablesBySchema:
         data = response.json()
         assert data["total"] >= 1
         assert len(data["items"]) <= 1
+
+    def test_list_tables_by_schema_search_reports_filtered_total(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Filter rows by search and report the filtered total, not the page size."""
+        for suffix in ("a", "b"):
+            payload = TableWriteFactory.build(name=f"FilterMatchTable_{suffix}")
+            create_response = test_client.post(
+                f"/schemas/{schema.id}/tables/",
+                json=payload.model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+        other = TableWriteFactory.build(name="UnrelatedTable")
+        test_client.post(
+            f"/schemas/{schema.id}/tables/",
+            json=other.model_dump(mode="json"),
+        )
+
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"search": "filtermatchtable", "limit": 1},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == LIST_QUERY_MATCH_TOTAL
+        assert len(data["items"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_list_tables_by_schema_deterministic_ordering_across_pages(
+        self, test_client: TestClient, session: AsyncSession, schema: Schema
+    ) -> None:
+        """Sort equal created_at stably across pages via the id tie-breaker.
+
+        Table names are unique per schema, so name ties cannot occur in this
+        nested list; exercise the tie-breaker on created_at instead.
+        """
+        shared_created_at = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+        created_ids: list[int] = []
+        for name in ("tie_table_a", "tie_table_b"):
+            row = await TableManager.create(
+                session,
+                TableWriteFactory.build(name=name),
+                schema_id=schema.id,
+            )
+            row.created_at = shared_created_at
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            created_ids.append(row.id)
+        created_ids.sort()
+
+        first_page = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"sort": "created_at", "limit": 1, "offset": 0},
+        )
+        second_page = test_client.get(
+            f"/schemas/{schema.id}/tables/",
+            params={"sort": "created_at", "limit": 1, "offset": 1},
+        )
+        assert first_page.status_code == status.HTTP_200_OK
+        assert second_page.status_code == status.HTTP_200_OK
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
 
 class TestCreateTableForSchema:

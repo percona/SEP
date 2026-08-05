@@ -24,6 +24,7 @@ from tests.app.factories import SchemaWriteFactory, TableWriteFactory
 
 EXPECTED_TABLE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
+LIST_QUERY_MATCH_TOTAL = 2
 
 
 class TestListTables:
@@ -38,6 +39,13 @@ class TestListTables:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_tables_rejects_unknown_sort_key(
+        self, test_client: TestClient
+    ) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        response = test_client.get("/tables/", params={"sort": "evil"})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_list_tables_multiple(
         self, test_client: TestClient, table: Table, second_table: Table
@@ -72,6 +80,91 @@ class TestListTables:
         assert len(data["items"]) == 1
         assert data["total"] == EXPECTED_TABLE_COUNT
         assert data["limit"] == 1
+
+    def test_list_tables_search_ilike(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Return only tables whose name matches the search case-insensitively."""
+        match = TableWriteFactory.build(name="AlphaSearchTable")
+        other = TableWriteFactory.build(name="OtherTable")
+        test_client.post(
+            f"/schemas/{schema.id}/tables/", json=match.model_dump(mode="json")
+        )
+        test_client.post(
+            f"/schemas/{schema.id}/tables/", json=other.model_dump(mode="json")
+        )
+
+        response = test_client.get("/tables/", params={"search": "alphasearch"})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["name"] == match.name
+
+    def test_list_tables_search_reports_filtered_total(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Filter rows by search and report the filtered total, not the page size."""
+        for suffix in ("a", "b"):
+            payload = TableWriteFactory.build(name=f"FilterMatchTable_{suffix}")
+            test_client.post(
+                f"/schemas/{schema.id}/tables/",
+                json=payload.model_dump(mode="json"),
+            )
+        other = TableWriteFactory.build(name="UnrelatedTable")
+        test_client.post(
+            f"/schemas/{schema.id}/tables/",
+            json=other.model_dump(mode="json"),
+        )
+
+        response = test_client.get(
+            "/tables/", params={"search": "filtermatchtable", "limit": 1}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == LIST_QUERY_MATCH_TOTAL
+        assert len(data["items"]) == 1
+
+    def test_list_tables_deterministic_ordering_across_pages(
+        self, test_client: TestClient, schema: Schema, service: Service
+    ) -> None:
+        """Sort equal names stably across pages via the id tie-breaker.
+
+        Table names are unique per schema, so the shared name is created on a
+        second schema to produce a name tie in the top-level list.
+        """
+        shared_name = "SameSortTable"
+        other_schema_response = test_client.post(
+            f"/services/{service.id}/schemas/",
+            json=SchemaWriteFactory.build(name="other_same_sort_schema").model_dump(
+                mode="json"
+            ),
+        )
+        assert other_schema_response.status_code == status.HTTP_201_CREATED
+        other_schema_id = other_schema_response.json()["id"]
+
+        created_ids: list[int] = []
+        for schema_id in (schema.id, other_schema_id):
+            payload = TableWriteFactory.build(name=shared_name)
+            create_response = test_client.post(
+                f"/schemas/{schema_id}/tables/",
+                json=payload.model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+            created_ids.append(create_response.json()["id"])
+        created_ids.sort()
+
+        first_page = test_client.get(
+            "/tables/",
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 0},
+        )
+        second_page = test_client.get(
+            "/tables/",
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 1},
+        )
+        assert first_page.status_code == status.HTTP_200_OK
+        assert second_page.status_code == status.HTTP_200_OK
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
 
 class TestRetrieveTable:

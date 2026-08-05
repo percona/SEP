@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for AppState seeding in :func:`app.sep.db.seed.init_sep_db`."""
+"""Cover SEP database seeding and system periodic-task contributions."""
 
 from collections.abc import AsyncIterator
 
@@ -39,6 +39,8 @@ from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
 
 SNIPPETS_TASK = "sep__sync_snippets"
 ALERTS_TASK = "sep__backup_alert_config"
+REPORT_PURGE_TASK = "sep__purge_report_artifacts"
+ATW_PURGE_TASK = "sep__purge_atw_bundles"
 CELERY_RESULT_EXPIRES_SECONDS = 3600
 
 
@@ -323,6 +325,142 @@ class TestAppOwnedScheduleGating:
         )
         assert snippet_task.task_name == "app.sep.snippets.celery.sync_snippets"
         assert snippet_task.owner_app_key is None
+
+
+class TestAppScheduleContribution:
+    """Cover per-app ``periodic_task_schedules`` specs folded by seed."""
+
+    @staticmethod
+    def _tasks_by_name(
+        schedules: list[SystemPeriodicTaskSchedule],
+    ) -> dict[str, SystemPeriodicTaskData]:
+        """Index every task in ``schedules`` by ``name``."""
+        return {task.name: task for schedule in schedules for task in schedule.tasks}
+
+    @staticmethod
+    def _schedule_for(
+        schedules: list[SystemPeriodicTaskSchedule], task_name: str
+    ) -> SystemPeriodicTaskSchedule:
+        """Return the schedule carrying ``task_name``."""
+        return next(
+            schedule
+            for schedule in schedules
+            if any(task.name == task_name for task in schedule.tasks)
+        )
+
+    def test_contributing_apps_set_owner_and_celery_prefix(self, mocker) -> None:
+        """Assert owner keys and Celery task-name prefixes on contributed schedules."""
+        mocker.patch.object(
+            seed_module.sep_settings,
+            "APPS",
+            [_plugin("alerts"), _plugin("report"), _plugin("atw")],
+        )
+
+        tasks = self._tasks_by_name(seed_module.get_system_periodic_tasks())
+
+        assert tasks[ALERTS_TASK].owner_app_key == "alerts"
+        assert tasks[ALERTS_TASK].task_name == (
+            "app.sep.apps.alerts.celery.backup_alert_config"
+        )
+        assert tasks[REPORT_PURGE_TASK].owner_app_key == "report"
+        assert tasks[REPORT_PURGE_TASK].task_name == (
+            "app.sep.apps.report.celery.purge_report_artifacts"
+        )
+        assert tasks[ATW_PURGE_TASK].owner_app_key == "atw"
+        assert tasks[ATW_PURGE_TASK].task_name == (
+            "app.sep.apps.atw.celery.purge_atw_bundles"
+        )
+
+    def test_non_contributing_app_adds_no_owned_schedule(self, mocker) -> None:
+        """Contribute only the unowned schedules when no app declares a factory."""
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("inventory")])
+
+        schedules = seed_module.get_system_periodic_tasks()
+        tasks = [task for schedule in schedules for task in schedule.tasks]
+
+        assert {task.name for task in tasks} == {
+            "sep__reconcile_disabling_apps",
+            SNIPPETS_TASK,
+        }
+        assert all(task.owner_app_key is None for task in tasks)
+
+    def test_builder_reads_backup_interval_at_call_time(self, mocker) -> None:
+        """Reflect a live ``BACKUP_INTERVAL`` override on each builder call."""
+        from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
+        from app.sep.apps.alerts.config import alerts_settings
+
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("alerts")])
+
+        alerts_settings._set_snapshot(
+            {"BACKUP_INTERVAL": CoreIntervalSchedule(every=6, period=Period.HOURS)}
+        )
+        try:
+            schedule = self._schedule_for(
+                seed_module.get_system_periodic_tasks(), ALERTS_TASK
+            )
+            assert schedule.schedule == CoreIntervalSchedule(
+                every=6, period=Period.HOURS
+            )
+        finally:
+            alerts_settings._set_snapshot({})
+
+        alerts_settings._set_snapshot(
+            {"BACKUP_INTERVAL": CoreIntervalSchedule(every=12, period=Period.HOURS)}
+        )
+        try:
+            schedule = self._schedule_for(
+                seed_module.get_system_periodic_tasks(), ALERTS_TASK
+            )
+            assert schedule.schedule == CoreIntervalSchedule(
+                every=12, period=Period.HOURS
+            )
+        finally:
+            alerts_settings._set_snapshot({})
+
+    def test_report_kwargs_assemble_from_non_default_entry(self, mocker) -> None:
+        """Carry kwargs only for non-default report schedule-entry fields."""
+        from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
+        from app.sep.config import ReportScheduleEntry
+
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("report")])
+        mocker.patch.object(
+            seed_module.sep_settings.HEALTH_REPORT,
+            "schedules",
+            [
+                ReportScheduleEntry(
+                    schedule=CoreIntervalSchedule(every=7, period=Period.DAYS),
+                    since="now-10d",
+                    full=False,
+                    upload=True,
+                )
+            ],
+        )
+
+        tasks = self._tasks_by_name(seed_module.get_system_periodic_tasks())
+        generation = tasks["sep__generate_health_report"]
+
+        assert generation.owner_app_key == "report"
+        assert generation.task_name == (
+            "app.sep.apps.report.celery.generate_health_report"
+        )
+        assert generation.extra_kwargs == {
+            "kwargs": '{"since": "now-10d", "full": false, "upload": true}'
+        }
+        assert REPORT_PURGE_TASK in tasks
+
+    def test_registry_entry_exposes_schedule_specs(self, mocker) -> None:
+        """Carry app-owned schedule specs on a contributing registry entry."""
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("alerts")])
+
+        app = get_app_registry().get("alerts")
+        assert app is not None
+        assert app.periodic_task_schedules is not None
+        contributed = (
+            app.periodic_task_schedules()
+            if callable(app.periodic_task_schedules)
+            else app.periodic_task_schedules
+        )
+        assert ALERTS_TASK in {spec.name for spec in contributed}
 
 
 def test_celery_result_expires_configured() -> None:
