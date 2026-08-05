@@ -319,7 +319,8 @@
 | app/sep/middleware/messages/config.py                                                                                 |       12 |        0 |        0 |        0 |    100% |           |
 | app/sep/middleware/messages/models.py                                                                                 |       31 |        0 |        4 |        0 |    100% |           |
 | app/sep/migrations/\_discovery.py                                                                                     |       41 |        2 |       20 |        3 |     92% |65, 97, 133-\>130 |
-| app/sep/migrations/env.py                                                                                             |       39 |        5 |        4 |        2 |     84% |39-\>42, 68-79, 121 |
+| app/sep/migrations/\_orphan\_heads.py                                                                                 |       33 |        0 |        6 |        0 |    100% |           |
+| app/sep/migrations/env.py                                                                                             |       41 |        5 |        4 |        2 |     84% |40-\>43, 69-80, 123 |
 | app/sep/migrations/versions/2024\_10\_07\_1450-7f4dec8bc76a\_create\_sync\_tables.py                                  |       26 |        8 |        0 |        0 |     69% |     69-76 |
 | app/sep/migrations/versions/2024\_10\_08\_2047-eeac2926bbea\_remove\_task\_history\_id\_field.py                      |       12 |        1 |        0 |        0 |     92% |        45 |
 | app/sep/migrations/versions/2025\_08\_08\_1005-9307f0f5ee54\_create\_snippet\_table.py                                |       16 |        3 |        0 |        0 |     81% |     59-61 |
@@ -329,12 +330,12 @@
 | app/sep/migrations/versions/2026\_06\_02\_1512-378c0872642f\_extend\_setting\_class\_enum\_settings\_alert.py         |       23 |        8 |        4 |        1 |     59% | 47, 77-91 |
 | app/sep/migrations/versions/2026\_06\_15\_1725-64f10ead74f6\_add\_seppluginperiodictask.py                            |       16 |        3 |        0 |        0 |     81% |     55-57 |
 | app/sep/migrations/versions/2026\_06\_16\_1200-a7c4e9f1b2d3\_add\_lifecycle\_state\_to\_app\_state.py                 |       26 |        0 |        0 |        0 |    100% |           |
-| app/sep/migrations/versions/2026\_06\_16\_1600-b8d5f2a9c1e4\_add\_apprunningtask\_table.py                            |       16 |        3 |        0 |        0 |     81% |     54-56 |
+| app/sep/migrations/versions/2026\_06\_16\_1600-b8d5f2a9c1e4\_add\_apprunningtask\_table.py                            |       16 |        0 |        0 |        0 |    100% |           |
 | app/sep/migrations/versions/2026\_06\_22\_1223-410eedfc5b43\_merge\_heads.py                                          |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/migrations/versions/2026\_06\_22\_1400-c97e7e47c935\_extend\_setting\_class\_enum\_anonymizer.py              |       23 |        8 |        4 |        1 |     59% | 47, 80-93 |
 | app/sep/migrations/versions/2026\_06\_30\_1200-a1f4c7e9b2d3\_extend\_setting\_class\_enum\_alerts.py                  |       23 |        8 |        4 |        1 |     59% | 47, 82-95 |
 | app/sep/migrations/versions/2026\_07\_02\_1000-f1a2b3c4d5e6\_merge\_heads\_before\_inventory\_settings.py             |        6 |        0 |        0 |        0 |    100% |           |
-| app/sep/migrations/versions/2026\_07\_02\_1001-a2b3c4d5e6f7\_extend\_setting\_class\_enum\_inventory.py               |       25 |        8 |        4 |        1 |     62% | 59, 81-93 |
+| app/sep/migrations/versions/2026\_07\_02\_1001-a2b3c4d5e6f7\_extend\_setting\_class\_enum\_inventory.py               |       25 |        2 |        4 |        2 |     86% |    59, 86 |
 | app/sep/models.py                                                                                                     |       66 |        1 |        2 |        1 |     97% |       247 |
 | app/sep/periodic\_tasks.py                                                                                            |       55 |        0 |       20 |        0 |    100% |           |
 | app/sep/routes/artifacts.py                                                                                           |       38 |        1 |       14 |        1 |     96% |        81 |
@@ -366,7 +367,7 @@
 | app/sep/sync/models.py                                                                                                |      368 |       42 |      100 |       20 |     85% |81-90, 102-\>104, 104-\>106, 125, 131-\>133, 134-\>136, 195-\>201, 273-275, 304-\>302, 336, 396-397, 544, 592, 698-\>exit, 716, 730, 750-751, 786-\>exit, 831, 845, 867-868, 904-\>exit, 949, 962, 986-988, 1021-\>exit, 1130-\>exit, 1169, 1313-1315, 1422-1424, 1429-1435, 1439 |
 | app/sep/sync/syncers/mysql/payload.py                                                                                 |      175 |       47 |       54 |        5 |     69% |156-\>164, 240-244, 249-254, 267-273, 277-300, 354-\>370, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                                  |      222 |        1 |       86 |        7 |     97% |112, 268-\>270, 272-\>274, 586-\>594, 595-\>599, 676-\>687, 762-\>766 |
-| app/sep/sync/syncers/pmm.py                                                                                           |       85 |       19 |       28 |        6 |     71% |78-82, 102-105, 116, 171-179, 227, 229, 231-247, 285-\>290 |
+| app/sep/sync/syncers/pmm.py                                                                                           |       85 |       20 |       28 |        6 |     70% |78-82, 102-105, 116, 171-179, 227, 228-\>224, 231-247, 286-289 |
 | app/sep/sync/syncers/system\_facts/payload.py                                                                         |      235 |       19 |       78 |       12 |     90% |52-\>58, 147-148, 176, 222-224, 231, 233-\>229, 244-251, 261-\>263, 263-\>265, 265-\>267, 282-284, 290-292, 316, 415-\>417, 417-\>419, 522, 533 |
 | app/sep/sync/syncers/system\_facts/syncer.py                                                                          |      118 |        7 |       28 |        3 |     93% |104, 169-170, 245, 256-\>254, 310-311, 350 |
 | app/sep/tasks.py                                                                                                      |       31 |        0 |       12 |        1 |     98% |   69-\>84 |
@@ -451,7 +452,7 @@
 | app/tasks/routes.py                                                                                                   |      232 |       22 |       46 |        4 |     89% |142-146, 229-235, 268, 318-324, 331, 375-376, 404, 444, 463, 627, 641, 649, 675, 683-\>685, 706-707 |
 | app/tasks/run\_result.py                                                                                              |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                          |       11 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                             | **34179** | **7170** | **8992** |  **759** | **76%** |           |
+| **TOTAL**                                                                                                             | **34214** | **7162** | **8998** |  **760** | **76%** |           |
 
 
 ## Setup coverage badge
