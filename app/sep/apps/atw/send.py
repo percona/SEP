@@ -577,13 +577,18 @@ async def run_send(send_log_id: UUID) -> None:
 
     Every failure family lands as a ``FAILED`` row carrying its reason: the row is
     the only place a support engineer can learn what happened, so the terminal
-    write is guaranteed rather than best-effort.
+    write is guaranteed rather than best-effort -- short of the database itself
+    being unreachable, where the row is left to the stale sweep instead.
 
     :param send_log_id: The send log driving this attempt.
     :raises HTTPNotFoundException: Propagated when the incident was deleted
         between the enqueue and this attempt.
     :raises HTTPBadRequestException: Propagated when a terminal row cannot be
         written.
+    :raises Exception: Propagated when rolling back a failed settings re-read
+        itself fails. The database is unreachable at that point, so no terminal
+        write was going to land either way and the row is left to the stale
+        sweep.
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
@@ -650,6 +655,9 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
         was deleted between the enqueue and this attempt.
     :raises HTTPBadRequestException: Propagated from the manager when a terminal
         row cannot be written.
+    :raises Exception: Propagated from ``_resolve_plan_after_refresh`` when
+        rolling back a failed settings re-read itself fails. That call sits
+        ahead of the broad terminal guard, so nothing here catches it.
     """
     if row.status.is_terminal():
         logger.info(
