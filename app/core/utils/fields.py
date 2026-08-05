@@ -700,6 +700,7 @@ _REJECT_CREDENTIAL_URL_MASK = AfterValidator(_reject_credential_url_mask)
 
 CredentialHttpUrl = Annotated[
     HttpUrl,
+    _REJECT_CREDENTIAL_URL_MASK,
     _CREDENTIAL_URL_JSON_SERIALIZER,
 ]
 """Define an HTTP URL that redacts embedded userinfo passwords on JSON serialization.
@@ -712,6 +713,7 @@ config fingerprints that must store the full URL.
 StrCredentialHttpUrl = Annotated[
     str,
     AsTypeValidator(HttpUrl, lambda v: str(v).rstrip("/")),
+    _REJECT_CREDENTIAL_URL_MASK,
     _CREDENTIAL_URL_JSON_SERIALIZER,
 ]
 """Define a string HTTP URL that redacts embedded passwords on JSON serialization.
@@ -723,6 +725,7 @@ slashes stripped, and masks any embedded password in JSON dumps.
 StrCredentialAnyUrl = Annotated[
     str,
     AsTypeValidator(AnyUrl, str),
+    _REJECT_CREDENTIAL_URL_MASK,
     _CREDENTIAL_URL_JSON_SERIALIZER,
 ]
 """Define a string URL (any scheme) that redacts embedded passwords on JSON serialization.
