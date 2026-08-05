@@ -375,6 +375,38 @@ def test_arg_parser_description_lists_every_collected_app_key():
     assert "restores" not in description
 
 
+def test_arg_parser_description_omits_the_app_list_when_nothing_is_declared(
+    monkeypatch,
+):
+    """Drop the parenthesized app list when no activated app declares a backfill."""
+    monkeypatch.setattr(
+        "app.sep.apps.framework.form_backfill.collect_form_backfill_entries",
+        list,
+    )
+
+    description = _build_arg_parser().description
+
+    assert description is not None
+    assert "()" not in description
+    assert "No activated app declares a form backfill." in description
+
+
+def test_main_rejects_any_owner_when_nothing_is_declared(capsys, monkeypatch):
+    """Name the empty scope instead of an empty ``expected one of`` list."""
+    monkeypatch.setattr(
+        "app.sep.apps.framework.form_backfill.collect_form_backfill_entries",
+        list,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--owner", "CHECKSUMS"])
+
+    assert exc_info.value.code == _ARGPARSE_USAGE_ERROR
+    stderr = capsys.readouterr().err
+    assert "no activated app declares a form backfill" in stderr
+    assert "expected one of" not in stderr
+
+
 def test_main_cli_help_exits_zero(capsys):
     """The module entry point exposes the documented CLI flags."""
     with pytest.raises(SystemExit) as exc_info:

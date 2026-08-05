@@ -470,6 +470,10 @@ def _owner_from_cli(value: str, valid_owners: frozenset[str]) -> str:
     normalized = value.strip().upper()
     if normalized in valid_owners:
         return normalized
+    if not valid_owners:
+        raise argparse.ArgumentTypeError(
+            f"unknown owner {value!r}; no activated app declares a form backfill"
+        )
     valid = ", ".join(sorted(valid_owners))
     raise argparse.ArgumentTypeError(
         f"unknown owner {value!r}; expected one of: {valid}"
@@ -482,14 +486,19 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     :return: A parser exposing ``--dry-run``, ``--owner``, and ``--verbose``.
     """
     entries = collect_form_backfill_entries()
-    app_keys = ", ".join(entry.app_key for entry in entries)
     valid_owners = frozenset(entry.owner for entry in entries)
-    parser = argparse.ArgumentParser(
-        description=(
+    if entries:
+        app_keys = ", ".join(entry.app_key for entry in entries)
+        description = (
             "Backfill data['_form'] on legacy tasks for framework-migrated apps "
             f"({app_keys})."
-        ),
-    )
+        )
+    else:
+        description = (
+            "Backfill data['_form'] on legacy tasks. No activated app declares "
+            "a form backfill."
+        )
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--dry-run",
         action="store_true",
