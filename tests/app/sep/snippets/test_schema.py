@@ -21,7 +21,13 @@ from urllib.parse import urlencode
 import pytest
 
 from app.sep.apps.dipper.models import DipperScript
-from app.sep.apps.field_names import RESERVED_EXECUTION_FIELD_NAMES
+from app.sep.apps.field_names import (
+    EXECUTOR_HOST_FIELD_NAME,
+    EXTRA_ARGS_FIELD_NAME,
+    RESERVED_EXECUTION_FIELD_NAMES,
+    SCRIPT_PREVIEW_FIELD_NAME,
+    SUDO_FIELD_NAME,
+)
 from app.sep.apps.framework.schema import (
     BoolField,
     ChoiceField,
@@ -46,6 +52,7 @@ from app.sep.snippets.schema import (
     field_for,
     SNIPPETS_PLUGIN_SCHEMA,
 )
+from tests.app.sep.form_schema_utils import form_field_names, form_field_types
 
 
 def test_static_schema_has_no_forms_and_keyed_columns():
@@ -193,14 +200,14 @@ async def test_per_snippet_schema_omits_extra_args_field_by_default(create_snipp
     assert not any(field.name == "extra_args" for field in all_fields)
 
 
-def _field_names(schema):
-    """Return every form field name across a schema's sections, sorted.
-
-    Sorted rather than keyed by name so a duplicate wire name -- the failure
-    the reserved-name tests exist to catch -- stays visible instead of
-    collapsing into one entry.
-    """
-    return sorted(field.name for section in schema.forms for field in section.fields)
+#: Every execution field this builder can synthesize, and the widget rendering it.
+#: Snippets is the maximal builder, so these are the whole reserved set.
+SYNTHESIZED_FIELD_TYPES = {
+    EXECUTOR_HOST_FIELD_NAME: HostField,
+    SUDO_FIELD_NAME: BoolField,
+    SCRIPT_PREVIEW_FIELD_NAME: ScriptPreviewField,
+    EXTRA_ARGS_FIELD_NAME: StringField,
+}
 
 
 def _reset_cached_meta(snippet, **meta):
@@ -239,7 +246,9 @@ class TestReservedParameterNames:
         four reserved names is actually synthesized, making the collision reachable.
         Asserting the whole field set, rather than only that the reserved name
         appears once, keeps a build that dropped the *synthesized* field as well
-        from passing.
+        from passing; asserting its type keeps one silently retyped -- the
+        author's ``str`` parameter shadowing the synthesized widget -- from
+        passing either.
         """
         snippet = await create_snippet("hello.sh", approved=True)
         _reset_cached_meta(
@@ -254,7 +263,8 @@ class TestReservedParameterNames:
         schema = build_snippet_schema(snippet)
 
         assert not any(s.title == "Parameters" for s in schema.forms)
-        assert _field_names(schema) == sorted(RESERVED_EXECUTION_FIELD_NAMES)
+        assert form_field_names(schema) == sorted(RESERVED_EXECUTION_FIELD_NAMES)
+        assert form_field_types(schema) == SYNTHESIZED_FIELD_TYPES
 
     @pytest.mark.asyncio
     async def test_per_snippet_schema_builds_when_invalid_parameters_are_ignored(
@@ -264,7 +274,8 @@ class TestReservedParameterNames:
 
         ``IGNORE_INVALID_PARAMETERS`` relaxes ``can_execute`` only; the reserved
         parameter is still dropped at parse time, so the form the operator opted
-        into still carries exactly one ``executor_host`` field rather than the
+        into still carries exactly one ``executor_host`` field -- still the
+        synthesized host widget, not the author's string -- rather than the
         duplicate-field error this setting would otherwise expose them to.
         """
         monkeypatch.setattr(
@@ -279,7 +290,8 @@ class TestReservedParameterNames:
 
         schema = build_snippet_schema(snippet)
 
-        assert _field_names(schema).count("executor_host") == 1
+        assert form_field_names(schema).count(EXECUTOR_HOST_FIELD_NAME) == 1
+        assert form_field_types(schema)[EXECUTOR_HOST_FIELD_NAME] is HostField
 
     @pytest.mark.asyncio
     async def test_every_synthesized_field_name_is_reserved(self, create_snippet):
@@ -296,7 +308,8 @@ class TestReservedParameterNames:
 
         schema = build_snippet_schema(snippet)
 
-        assert set(_field_names(schema)) == RESERVED_EXECUTION_FIELD_NAMES
+        assert set(form_field_names(schema)) == RESERVED_EXECUTION_FIELD_NAMES
+        assert form_field_types(schema) == SYNTHESIZED_FIELD_TYPES
 
 
 @pytest.mark.asyncio

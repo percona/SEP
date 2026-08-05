@@ -53,11 +53,19 @@ from app.sep.apps.shared.disk_script_source import (
 )
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.models.snippet import BaseSnippet, SnippetExecutionMeta
+from tests.app.sep.form_schema_utils import (
+    form_field_names,
+    form_field_types,
+    form_fields_by_name,
+)
 
 pytestmark = pytest.mark.asyncio
 
-#: The execution fields this app synthesizes for a sudo-optional script.
-_SYNTHESIZED_FIELD_NAMES = frozenset({EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME})
+#: The fields this app synthesizes for a sudo-optional script, and their widgets.
+_SYNTHESIZED_FIELD_TYPES = {
+    EXECUTOR_HOST_FIELD_NAME: HostField,
+    SUDO_FIELD_NAME: BoolField,
+}
 
 
 _SHELL_NO_PARAMS = """#!/usr/bin/env bash
@@ -167,20 +175,6 @@ def _framework_processed_body(
     """
     validated = script.get_execution_model().model_validate(body.args)
     return body.model_copy(update={"args": validated.model_dump()})
-
-
-def _fields(schema: object) -> dict[str, object]:
-    """Return every form field across a schema's sections, keyed by field name."""
-    return {field.name: field for section in schema.forms for field in section.fields}
-
-
-def _field_name_list(schema: object) -> list[str]:
-    """Return every form field name across a schema's sections, sorted.
-
-    ``_fields`` keys by name and so cannot see a duplicate wire name, which is
-    exactly what the reserved-name tests assert the absence of.
-    """
-    return sorted(field.name for section in schema.forms for field in section.fields)
 
 
 def _shell_with_parameter(name: str) -> str:
@@ -306,7 +300,7 @@ class TestFormSchema:
         """Map choice/int/bool parameters onto their framework field counterparts."""
         _write_script(script_dir, "typed.sh", _SHELL_TYPED_PARAMS)
         script = await source.load_script("typed.sh")
-        fields = _fields(source.build_form_schema(script))
+        fields = form_fields_by_name(source.build_form_schema(script))
         assert isinstance(fields["mode"], ChoiceField)
         assert isinstance(fields["retries"], IntegerField)
         assert isinstance(fields["verbose"], BoolField)
@@ -317,7 +311,7 @@ class TestFormSchema:
         """Render the executor-host field plus a sudo toggle for an optional-sudo script."""
         _write_script(script_dir, "sudo.sh", _SHELL_OPTIONAL_SUDO)
         script = await source.load_script("sudo.sh")
-        fields = _fields(source.build_form_schema(script))
+        fields = form_fields_by_name(source.build_form_schema(script))
         assert isinstance(fields["executor_host"], HostField)
         assert isinstance(fields["sudo"], BoolField)
 
@@ -327,7 +321,7 @@ class TestFormSchema:
         """Render only the Execution section when the script declares no parameters."""
         _write_script(script_dir, "bare.sh", _SHELL_NO_PARAMS)
         script = await source.load_script("bare.sh")
-        fields = _fields(source.build_form_schema(script))
+        fields = form_fields_by_name(source.build_form_schema(script))
         assert set(fields) == {"executor_host"}
         assert isinstance(fields["executor_host"], HostField)
 
@@ -337,7 +331,7 @@ class TestFormSchema:
         """Map a plain string parameter onto a ``StringField``."""
         _write_script(script_dir, "msg.sh", _SHELL_MESSAGE_PARAM)
         script = await source.load_script("msg.sh")
-        fields = _fields(source.build_form_schema(script))
+        fields = form_fields_by_name(source.build_form_schema(script))
         assert isinstance(fields["message"], StringField)
 
     @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
@@ -353,7 +347,8 @@ class TestFormSchema:
 
         Asserting the whole field set, rather than only that the reserved name
         appears at most once, keeps a build that dropped the *synthesized* field
-        as well from passing.
+        as well from passing; asserting its type keeps one silently retyped from
+        passing either.
         """
         _write_script(script_dir, "reserved.sh", _shell_with_parameter(reserved_name))
         script = await source.load_script("reserved.sh")
@@ -361,7 +356,8 @@ class TestFormSchema:
         schema = source.build_form_schema(script)
 
         assert not any(section.title == "Parameters" for section in schema.forms)
-        assert _field_name_list(schema) == sorted(_SYNTHESIZED_FIELD_NAMES)
+        assert form_field_names(schema) == sorted(_SYNTHESIZED_FIELD_TYPES)
+        assert form_field_types(schema) == _SYNTHESIZED_FIELD_TYPES
 
     async def test_every_synthesized_field_name_is_reserved(
         self, source: ScriptSource, script_dir: Path
@@ -370,10 +366,10 @@ class TestFormSchema:
         _write_script(script_dir, "sudo.sh", _SHELL_OPTIONAL_SUDO)
         script = await source.load_script("sudo.sh")
 
-        synthesized = set(_field_name_list(source.build_form_schema(script)))
+        schema = source.build_form_schema(script)
 
-        assert synthesized == _SYNTHESIZED_FIELD_NAMES
-        assert synthesized <= RESERVED_EXECUTION_FIELD_NAMES
+        assert form_field_types(schema) == _SYNTHESIZED_FIELD_TYPES
+        assert set(form_field_names(schema)) <= RESERVED_EXECUTION_FIELD_NAMES
 
 
 class TestExecuteMeta:

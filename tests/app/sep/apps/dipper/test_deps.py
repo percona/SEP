@@ -28,13 +28,16 @@ from app.sep.apps.dipper.constants import CollectorTypeEnum
 from app.sep.apps.dipper.deps import (
     build_dipper_meta_from_args,
     fetch_pmm_node_service_names,
+    get_dipper_execution_meta,
     get_dipper_script_filename,
     has_pmm_script,
     resolve_executor_host_for_service,
 )
+from app.sep.apps.dipper.models import DipperScript
+from app.sep.apps.field_names import RESERVED_EXECUTION_FIELD_NAMES
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.inventory import CreatedService
-from app.sep.snippets.config import SnippetSudoOption
+from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 
 
@@ -136,6 +139,70 @@ class TestBuildDipperMetaFromArgs:
             assert meta.interpreter != "sudo None"
         except HTTPBadRequestException:
             pass  # correct — guard fired before producing the bad string
+
+
+def _script_with_parameter(name: str) -> DipperScript:
+    """Return a DB-free Dipper script declaring a single parameter called ``name``.
+
+    ``sudo: never`` keeps the script's own configuration out of the way, so a
+    failure here can only come from the parameter name.
+    """
+    return DipperScript(
+        filename="collect.sh",
+        size=1,
+        md5_digest="a" * 32,
+        meta={
+            "title": "Collect",
+            "sudo": SnippetSudoOption.NEVER.value,
+            "parameters": [{"name": name, "type": "str"}],
+        },
+    )
+
+
+class TestInvalidFrontmatterBlocksExecution:
+    """Cover the execution block for a script carrying invalid frontmatter."""
+
+    @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
+    def test_reserved_parameter_name_blocks_the_shared_meta_builder(
+        self, reserved_name
+    ):
+        """Refuse to build execution meta for a script with a reserved parameter name.
+
+        Dropping the parameter keeps the form renderable, but the script is still
+        misconfigured -- the operator would silently run it without the argument
+        its author declared. Both Dipper execution flows assemble their meta here,
+        so guarding this one seam blocks both.
+        """
+        script = _script_with_parameter(reserved_name)
+        assert script.execution_interpreter is not None
+        assert script.can_execute is False
+
+        with pytest.raises(HTTPBadRequestException):
+            build_dipper_meta_from_args(
+                _make_service(), script, "src://test", _make_args()
+            )
+
+    def test_reserved_parameter_name_blocks_the_legacy_form_flow(self):
+        """Refuse the legacy form dependency for a script with a reserved name."""
+        with pytest.raises(HTTPBadRequestException):
+            get_dipper_execution_meta(
+                _make_service(),
+                _script_with_parameter("sudo"),
+                "src://test",
+                _make_args(),
+            )
+
+    def test_execution_proceeds_when_invalid_parameters_are_ignored(self, monkeypatch):
+        """Honour the operator's opt-out rather than blocking unconditionally."""
+        monkeypatch.setattr(
+            snippets_settings.META, "IGNORE_INVALID_PARAMETERS", True, raising=False
+        )
+
+        meta = build_dipper_meta_from_args(
+            _make_service(), _script_with_parameter("sudo"), "src://test", _make_args()
+        )
+
+        assert meta.target == "host1"
 
 
 def _make_service_with_node(

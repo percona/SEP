@@ -326,15 +326,13 @@ class FilePreview(NamedTuple):
 
 
 class BaseSnippetArgs(BaseModel):
-    """Base model for validating snippet execution arguments.
+    """Validate the arguments a snippet execution was submitted with.
 
     :cvar extra_args_field: The name of the field used to store extra arguments
-        ("extra_args").
-    :vartype extra_args_field: ClassVar[str]
-    :cvar sudo_field: The name of the field used to store the sudo toggle ("sudo").
+        (``extra_args``).
+    :cvar sudo_field: The name of the field used to store the sudo toggle (``sudo``).
     :param executor_host: The hostname of the target system where the snippet will be
         executed.
-    :type executor_host: NonEmptyStr
     """
 
     extra_args_field: ClassVar[str] = EXTRA_ARGS_FIELD_NAME

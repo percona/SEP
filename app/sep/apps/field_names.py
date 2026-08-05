@@ -13,11 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Name the execution fields every script app's form synthesises.
+"""Name the execution fields a script app's form can synthesise.
 
-Each script app appends these fields to a script's frontmatter parameters when it
-builds an execution form, and a consumer that merges or strips them needs the same
-spelling the producer used. :data:`RESERVED_EXECUTION_FIELD_NAMES` closes the loop
+Together these are the union of what the script apps append to a script's
+frontmatter parameters when building an execution form -- each app synthesises
+its own subset, and some of those are conditional on the script's configuration.
+A consumer that merges or strips them needs the same spelling the producer used,
+whichever app produced them. :data:`RESERVED_EXECUTION_FIELD_NAMES` closes the loop
 back at the other producer of form fields, the script author: a frontmatter
 parameter declaring one of these names is rejected at parse time by
 :meth:`app.sep.snippets.models.meta.SnippetMetaParameter._reject_reserved_name`, so

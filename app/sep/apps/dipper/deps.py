@@ -471,10 +471,30 @@ def build_dipper_meta_from_args(
     *,
     sudo_default: bool = False,
 ) -> SnippetExecutionMeta:
-    """Build shared execution metadata for legacy and JSON Dipper flows."""
+    """Build shared execution metadata for legacy and JSON Dipper flows.
+
+    Both flows assemble their meta here, so the guard against invalid frontmatter
+    parameters lives here rather than at either entry point. A parameter the
+    frontmatter declared but the parser rejected -- a reserved execution field
+    name, say -- is dropped from the form, so executing anyway would silently run
+    the script without an argument its author asked for.
+
+    :param service: The inventory service the collector runs against.
+    :param script: The collector script being dispatched.
+    :param script_source: The signed URL the executor downloads the script from.
+    :param execution_args: The validated arguments for this execution.
+    :param sudo_default: Whether to run with ``sudo`` when the args request nothing.
+    :return: The execution metadata the framework posts to the Tasks API.
+    :raises HTTPBadRequestException: When the script declares no runnable
+        interpreter, or carries invalid frontmatter parameters.
+    """
     interpreter = script.execution_interpreter
     if interpreter is None:
         raise HTTPBadRequestException(detail="No interpreter configured for script")
+    if not script.can_execute:
+        raise HTTPBadRequestException(
+            detail=f"Script {script.filename!r} has invalid frontmatter parameters."
+        )
     return build_execution_meta(
         script,
         execution_args,

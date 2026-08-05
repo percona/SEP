@@ -42,19 +42,22 @@ class TestWireNames:
 class TestReservedExecutionFieldNames:
     """Test the set reserved against frontmatter parameter names."""
 
-    def test_reserves_exactly_the_synthesized_names(self) -> None:
-        """Reserve every synthesized execution field name and nothing else.
+    def test_reserves_every_field_name_the_module_declares(self) -> None:
+        """Reserve every wire name declared here, and nothing else.
 
-        Adding a fifth name deliberately fails here, so the reservation --
-        and the user-visible message that lists it -- stays a conscious choice
-        rather than a silent widening.
+        The expectation is read off the module's own constants rather than
+        retyped, so a fifth constant added without being added to the frozenset
+        fails here -- which is the whole point of a single definition site. A
+        retyped expectation would stay green in exactly that case; the wire
+        spellings are pinned once, in :class:`TestWireNames`.
         """
-        assert {
-            "executor_host",
-            "sudo",
-            "script_preview",
-            "extra_args",
-        } == RESERVED_EXECUTION_FIELD_NAMES
+        declared = {
+            value
+            for name, value in vars(field_names).items()
+            if name.endswith("_FIELD_NAME")
+        }
+
+        assert declared == RESERVED_EXECUTION_FIELD_NAMES
 
     def test_is_immutable(self) -> None:
         """Keep the reserved set immutable so no consumer can widen it in place."""
