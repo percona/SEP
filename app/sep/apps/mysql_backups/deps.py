@@ -174,18 +174,18 @@ async def resolve_optional_mysql_service_name(
         omitted.
     :return: A service name to query the catalog with, or ``None`` when the
         parent is unusable.
+    :raises HTTPException: When the Inventory lookup fails with a status other
+        than 404.
     """
     if service_id is None:
         return None
     trimmed = service_id.strip()
     if not trimmed or trimmed == UNKNOWN_SERVICE_SENTINEL:
         return None
-    try:
-        numeric_id = int(trimmed)
-    except ValueError:
+    if not trimmed.isdigit():
         return trimmed
     try:
-        service = await resolve_mysql_service(numeric_id, inventory_api)
+        service = await resolve_mysql_service(int(trimmed), inventory_api)
     except HTTPNotFoundException:
         return None
     return service.name
