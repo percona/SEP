@@ -35,6 +35,7 @@ from app.core.settings_override.registry import (
     dump_field_value,
     hot_field,
     is_advanced_field,
+    is_credential_url_field,
     iter_class_fields,
     iter_nested_leaf_keys,
     nested_overridable_field,
@@ -194,6 +195,24 @@ def test_dump_field_value_redacts_credential_http_url() -> None:
     assert "inv-secret" not in dumped
     assert "****" in dumped
     assert "inv-user" in dumped
+
+
+def test_is_credential_url_field_recognises_all_aliases() -> None:
+    """Detect every credential-URL annotated type by serializer identity.
+
+    The shared mask-rejecting validator adds metadata beside the serializer; this
+    pins that detection still keys off serializer-function identity alone.
+    """
+    from app.core.celery.config import CeleryOptions
+    from app.core.config import PMMSettings
+    from app.sep.config import SEPSettings
+
+    for field in (
+        SEPSettings.model_fields["INVENTORY_ENDPOINT"],
+        PMMSettings.model_fields["endpoint"],
+        CeleryOptions.model_fields["broker_url"],
+    ):
+        assert is_credential_url_field(field)
 
 
 def test_dump_field_value_redacts_nested_secret() -> None:
