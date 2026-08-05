@@ -27,7 +27,10 @@ from app.sep.apps.atw.models import (
     AtwIncidentResponse,
     AtwIncidentWrite,
 )
-from tests.app.factories import AtwIncidentExecutionFactory, AtwIncidentFactory
+from tests.app.sep.apps.atw.factories import (
+    AtwIncidentExecutionFactory,
+    AtwIncidentFactory,
+)
 
 _INCIDENT_NAME_PATTERN = r"Incident \d{4}-\d\d-\d\d \d\d:\d\d"
 
