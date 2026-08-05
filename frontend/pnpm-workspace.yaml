@@ -25,4 +25,4 @@ overrides:
   immutable@<5.1.8: ^5.1.8
   react: 19.2.7
   react-dom: 19.2.7
-  postcss@<8.5.18: 8.5.18
+  postcss@<8.5.23: 8.5.23
