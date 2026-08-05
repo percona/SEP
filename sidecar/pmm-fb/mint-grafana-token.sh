@@ -140,9 +140,20 @@ success "Minted Grafana service-account token (${SA_NAME}, role Admin)"
 # Read-then-truncate-write rather than sed -i, so .env keeps the 0600 mode
 # bootstrap.sh gave it — it holds every per-deployment secret
 if grep -q '^SEP_GRAFANA_TOKEN=' "${env_file}"; then
-    updated="$(sed -E "s|^SEP_GRAFANA_TOKEN=.*|SEP_GRAFANA_TOKEN=${token}|" "${env_file}")"
+    # Truncating on a failed or empty read would destroy the other secrets, and
+    # unlike pmm.conf they are generated once and cannot be re-derived
+    updated="$(sed -E "s|^SEP_GRAFANA_TOKEN=.*|SEP_GRAFANA_TOKEN=${token}|" "${env_file}")" || {
+        error "Could not read ${env_file}; leaving it unchanged"
+        exit 1
+    }
+    [[ -n ${updated} ]] || {
+        error "Refusing to overwrite ${env_file} with an empty result"
+        exit 1
+    }
     printf '%s\n' "${updated}" > "${env_file}"
 else
+    # A hand-edited .env may lack the trailing newline the append needs
+    [[ -z $(tail -c1 "${env_file}") ]] || printf '\n' >> "${env_file}"
     printf 'SEP_GRAFANA_TOKEN=%s\n' "${token}" >> "${env_file}"
 fi
 success "Wrote the token into ${env_file}"
