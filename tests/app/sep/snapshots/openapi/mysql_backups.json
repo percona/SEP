@@ -2618,7 +2618,7 @@
       },
       "framework__RemoteChoiceField": {
         "additionalProperties": false,
-        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field stays disabled/empty until the\ndependency has a value. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
+        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field offers no options until the dependency\nhas a value, staying disabled while it waits unless ``allow_custom`` keeps\nfree-text entry open. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -3578,7 +3578,7 @@
         "type": "object"
       },
       "mysql_backups__BackupCreate": {
-        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the order here reproduces the hand-written schema\nbyte-for-byte. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption requires/forbidden pair, and the per-mode bool ``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the derived section and field order matches the\nhand-written schema. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are\nindependent encryption modes that both produce an encrypted backup;\n``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside\n``post_run_encrypt`` so post-run takes precedence (matching the backend at\n``mydumper_payload``), and ``encryption_recipient`` is required iff either mode\nis on — and the per-mode bool\n``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -4623,6 +4623,62 @@
           }
         },
         "summary": "Create",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
+    "/api/apps/mysql_backups/backup-sources/choices": {
+      "get": {
+        "description": "Return ``Choice`` options for a MySQL service's restore ``backup_source``.\n\nThe ``service_id`` query parameter (cascade parent name on the restore form)\nselects which catalog rows to map. Options are newest-first and capped at\n:data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain\nreachable via free-text). An omitted, empty, sentinel, or unknown parent\nyields ``[]`` rather than a ``404``, so the RemoteChoices free-text escape\nhatch stays usable. Other Inventory API failures still propagate.\n\nFree-typed (non-numeric) parents query the catalog by that name without an\nInventory type check — matching ``ServiceRef(allow_custom=True)`` on the\nrestore form, where the destination may be a name that has no MySQL\ninventory row. Numeric parents still require a resolvable MySQL service.\n\n:param session: The database session the catalog is queried on.\n:param service_name: The cascade parent resolved to a catalog service name,\n    or ``None`` when the parent is unusable.\n:return: Choice-compatible options for the restore backup-source selector.",
+        "operationId": "mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get",
+        "parameters": [
+          {
+            "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
+            "in": "query",
+            "name": "service_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
+              "title": "Service Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/framework__Choice"
+                  },
+                  "title": "Response Mysql Backups List Backup Source Choices Api Apps Mysql Backups Backup Sources Choices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Backup Source Choices",
         "tags": [
           "mysql_backups"
         ]

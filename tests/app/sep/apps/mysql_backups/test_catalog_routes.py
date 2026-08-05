@@ -19,50 +19,20 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import status
-from httpx import ASGITransport, AsyncClient, Response
+from httpx import Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import MysqlBackupRun
-from app.sep.deps import (
-    get_api_authenticated_user,
-    get_current_user,
-    get_inventory_api,
-    get_session,
-    require_bearer_for_unsafe_methods,
+from tests.app.sep.apps.mysql_backups.conftest import (
+    authenticated_get,
+    inventory_mock,
+    service_payload,
 )
-from app.sep.main import sep_app
 
 _URL = "/api/apps/mysql_backups/services/{service_id}/backups"
-
-
-def _service(
-    name: str,
-    service_id: int = 1,
-    service_type: ServiceTypeEnum = ServiceTypeEnum.MYSQL,
-) -> dict:
-    """Build a minimal inventory service payload the route can resolve."""
-    return {
-        "id": service_id,
-        "name": name,
-        "type": service_type.value,
-        "node_id": 1,
-    }
-
-
-def _inventory(
-    returns: dict | None = None, *, raises: Exception | None = None
-) -> AsyncMock:
-    """Build a mock InventoryAPI whose ``get`` returns or raises."""
-    mock = AsyncMock(spec=RemoteAPI)
-    if raises is not None:
-        mock.get.side_effect = raises
-    else:
-        mock.get.return_value = returns
-    return mock
 
 
 class TestServiceBackupsRoute:
@@ -76,19 +46,12 @@ class TestServiceBackupsRoute:
         regular_user: object,
     ) -> Response:
         """Drive the route with the given session + inventory mock, authenticated."""
-        sep_app.dependency_overrides[get_session] = lambda: session
-        sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-        sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
-        sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-        sep_app.dependency_overrides[get_inventory_api] = lambda: inventory
-        try:
-            transport = ASGITransport(app=sep_app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                return await client.get(_URL.format(service_id=service_id))
-        finally:
-            sep_app.dependency_overrides = {}
+        return await authenticated_get(
+            _URL.format(service_id=service_id),
+            session=session,
+            inventory=inventory,
+            user=regular_user,
+        )
 
     @pytest.mark.asyncio
     async def test_returns_records_newest_first(self, session, regular_user) -> None:
@@ -106,7 +69,7 @@ class TestServiceBackupsRoute:
             )
 
         response = await self._get(
-            session, 1, _inventory(_service("svc-a")), regular_user
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -132,7 +95,7 @@ class TestServiceBackupsRoute:
         )
 
         response = await self._get(
-            session, 1, _inventory(_service("svc-a")), regular_user
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
         )
 
         body = response.json()
@@ -145,7 +108,7 @@ class TestServiceBackupsRoute:
     ) -> None:
         """Return an empty page for a resolvable service with no recorded runs."""
         response = await self._get(
-            session, 1, _inventory(_service("svc-empty")), regular_user
+            session, 1, inventory_mock(service_payload("svc-empty")), regular_user
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -163,7 +126,7 @@ class TestServiceBackupsRoute:
         response = await self._get(
             session,
             999,
-            _inventory(raises=HTTPNotFoundException(detail="nope")),
+            inventory_mock(raises=HTTPNotFoundException(detail="nope")),
             regular_user,
         )
 
@@ -180,7 +143,9 @@ class TestServiceBackupsRoute:
         response = await self._get(
             session,
             1,
-            _inventory(_service("svc-a", service_type=ServiceTypeEnum.POSTGRESQL)),
+            inventory_mock(
+                service_payload("svc-a", service_type=ServiceTypeEnum.POSTGRESQL)
+            ),
             regular_user,
         )
 

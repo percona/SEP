@@ -29,12 +29,6 @@ from app.sep.apps.framework.schema import (
     ScriptPreviewField,
     StringField,
 )
-from app.sep.apps.snippets.schema import (
-    build_snippet_schema,
-    evaluate_snippet_gates,
-    field_for,
-    SNIPPETS_PLUGIN_SCHEMA,
-)
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
@@ -42,6 +36,12 @@ from app.sep.snippets.models.meta import (
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     Snippet,
+)
+from app.sep.snippets.schema import (
+    build_snippet_schema,
+    evaluate_snippet_gates,
+    field_for,
+    SNIPPETS_PLUGIN_SCHEMA,
 )
 
 
@@ -52,6 +52,21 @@ def test_static_schema_has_no_forms_and_keyed_columns():
     column_keys = [column.key for column in SNIPPETS_PLUGIN_SCHEMA.list_view.columns]
     assert "filename" in column_keys
     assert "isApproved" in column_keys
+
+
+def test_static_schema_declares_every_capability_unsupported():
+    """Declare every capability unsupported, including the ones left at default.
+
+    Chaining, scheduling and alerting were never offered by the legacy Jinja UI
+    either, so the declaration records their absence rather than a gap. Derive
+    the field list from the model so a capability added later has to be decided
+    here rather than defaulting in unnoticed.
+    """
+    capabilities = SNIPPETS_PLUGIN_SCHEMA.capabilities
+    assert capabilities is not None
+    assert {
+        name: getattr(capabilities, name) for name in type(capabilities).model_fields
+    } == dict.fromkeys(type(capabilities).model_fields, False)
 
 
 def _execution_section(schema):
@@ -140,6 +155,72 @@ async def test_per_snippet_schema_includes_optional_sudo_toggle(create_snippet):
     sudo_field = next(f for f in section.fields if f.name == "sudo")
     assert isinstance(sudo_field, BoolField)
     assert sudo_field.default is False
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_includes_extra_args_field_when_allowed(
+    create_snippet,
+):
+    """Add the Extra Args field to the Execution section when the snippet allows it."""
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.meta = {**snippet.meta, "allow_extra_args": True}
+    snippet.__dict__.pop("allow_extra_args", None)
+
+    schema = build_snippet_schema(snippet)
+
+    section = _execution_section(schema)
+    extra_args_field = next(f for f in section.fields if f.name == "extra_args")
+    assert isinstance(extra_args_field, StringField)
+    assert extra_args_field.label == "Extra Args"
+    assert extra_args_field.placeholder == "e.g. --verbose"
+    assert (
+        extra_args_field.description
+        == "Any extra args to pass to the snippet execution command"
+    )
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_omits_extra_args_field_by_default(create_snippet):
+    """Omit the Extra Args field for a snippet that never opts into ``allow_extra_args``."""
+    snippet = await create_snippet("hello.sh", approved=True)
+
+    schema = build_snippet_schema(snippet)
+
+    all_fields = [field for section in schema.forms for field in section.fields]
+    assert not any(field.name == "extra_args" for field in all_fields)
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_drops_extra_args_named_parameter(create_snippet):
+    """Drop a frontmatter parameter reserved for the synthesized Extra Args field.
+
+    Regression test: previously this reached ``build_snippet_schema`` and
+    raised an opaque ``duplicate field name(s)`` error when
+    ``allow_extra_args`` was set, or silently double-bound submitted values
+    in the execution model when it was not. The reserved-name parameter is
+    now caught earlier, at parameter parse time (see ``validated_parameters``
+    on the snippet), so it never reaches either path -- ``build_snippet_schema``
+    just omits it like any other invalid parameter.
+    """
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.meta = {
+        **snippet.meta,
+        "allow_extra_args": True,
+        "parameters": [{"name": "extra_args", "type": "str"}],
+    }
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.__dict__.pop("allow_extra_args", None)
+
+    assert any("reserved" in error for error in snippet.validated_parameters.errors)
+
+    schema = build_snippet_schema(snippet)
+
+    assert not any(s.title == "Parameters" for s in schema.forms)
+    section = _execution_section(schema)
+    extra_args_fields = [f for f in section.fields if f.name == "extra_args"]
+    assert len(extra_args_fields) == 1
+    assert isinstance(extra_args_fields[0], StringField)
 
 
 @pytest.mark.asyncio

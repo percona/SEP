@@ -29,6 +29,7 @@ from app.sep.db import get_async_session_maker
 from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
 from app.sep.periodic_tasks import sync_app_periodic_task_gating
+from app.sep.snippets.config import snippets_settings
 
 
 def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
@@ -50,6 +51,12 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     ``owner_app_key`` from ``app.key`` and prefixes each entry's ``task`` with
     the resolved Celery module.
 
+    Snippet ingestion is the carve-out: its task lives in the library
+    (``app.sep.snippets.celery``) and is named in ``STATIC_CELERY_INCLUDE``, so it
+    registers whether or not the snippets app ships. Its schedule is therefore
+    emitted unconditionally against the static path and carries no
+    ``owner_app_key`` -- disabling the snippets app must not gate it.
+
     :return: The schedule/task pairs to seed into the Celery beat database.
     """
     system_tasks = [
@@ -63,6 +70,18 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
             ],
         ),
     ]
+
+    system_tasks.append(
+        SystemPeriodicTaskSchedule(
+            schedule=snippets_settings.SYNC_INTERVAL,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="sep__sync_snippets",
+                    task_name="app.sep.snippets.celery.sync_snippets",
+                ),
+            ],
+        ),
+    )
 
     for app in get_app_registry():
         if app.periodic_task_schedules is None:

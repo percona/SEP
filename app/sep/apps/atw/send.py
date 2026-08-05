@@ -50,14 +50,15 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
+from app.core.security import require_internal_token
 from app.core.utils import json_serializer
 from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.config import atw_settings
 from app.sep.apps.atw.crud import AtwIncidentManager, AtwSendLogManager
 from app.sep.apps.atw.models import AtwSendLog, AtwSendStatusEnum
-from app.sep.apps.inventory.sync import require_internal_token
 from app.sep.bundle_upload.factory import get_delivery_executor
 from app.sep.bundle_upload.plan import StepRecord
+from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.bundle_upload.seam import BundleSource
 from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
@@ -617,7 +618,7 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
         return
 
     detail = dict(row.detail)
-    plan = sep_settings.DIAGNOSTICS_DELIVERY
+    plan = resolve_delivery_plan()
     if plan is None:
         await _fail(session, row, detail, [], _UNCONFIGURED_ERROR)
         return
