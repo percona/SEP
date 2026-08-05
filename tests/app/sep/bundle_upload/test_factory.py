@@ -318,4 +318,4 @@ class TestIntraSendConnectionReuse:
 
         assert opened.call_count == 1
         assert sessions[0] is sessions[1]
-        assert len(mock.requests) == _EXPECTED_REQUEST_COUNT
+        assert sum(len(reqs) for reqs in mock.requests.values()) == _EXPECTED_REQUEST_COUNT
