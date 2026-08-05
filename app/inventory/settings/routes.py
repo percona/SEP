@@ -15,12 +15,13 @@
 
 """Compose the Inventory sub-app's settings REST API."""
 
-__all__ = ["router"]
+__all__ = ["INVENTORY_ADMIN_SETTINGS_CLASSES", "router"]
 
 from fastapi import APIRouter
 
 from app.api.deps import IsAdminDep
 from app.core.settings_override.api import build_settings_router
+from app.core.settings_override.api.routes import ClassEntry
 from app.core.settings_override.models import SettingClassEnum
 from app.inventory.config import inventory_settings, InventorySettings
 from app.inventory.deps import SessionDep
@@ -29,14 +30,16 @@ from app.inventory.deps import SessionDep
 # until one is promoted; the override framework (proxy, refresher, table) is
 # wired end-to-end regardless.
 
+INVENTORY_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
+    (
+        SettingClassEnum.INVENTORY_SETTINGS,
+        InventorySettings,
+        inventory_settings,
+    ),
+]
+
 _settings_router = build_settings_router(
-    classes=[
-        (
-            SettingClassEnum.INVENTORY_SETTINGS,
-            InventorySettings,
-            inventory_settings,
-        ),
-    ],
+    classes=INVENTORY_ADMIN_SETTINGS_CLASSES,
     session_dep=SessionDep,
     admin_dep=IsAdminDep,
 )
