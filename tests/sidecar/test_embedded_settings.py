@@ -235,9 +235,10 @@ def test_grafana_token_merges_into_the_profile_block(monkeypatch: pytest.MonkeyP
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_activation_list_builds_an_app_registry():
     """Assert the baked activation list satisfies every declared app dependency."""
-    registry = build_app_registry(SEPSettings().APPS)
+    activated = set(build_app_registry(SEPSettings().APPS).keys())
 
-    assert {"inventory", "snippets", "atw", "mysql_backups"} <= set(registry.keys())
+    assert {"inventory", "atw", "mysql_backups"} <= activated
+    assert "snippets" not in activated
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
