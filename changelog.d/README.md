@@ -69,6 +69,48 @@ is the only way to end up without one. Capitalise the first word; do not add a
    spine does not re-document them, but does add a fragment for, say, a
    request-body casing narrowing that only that plugin undergoes.
 
+## What a fragment must say
+
+A fragment is read by an operator deciding whether a change affects them and
+when. Two things it must therefore carry:
+
+**Name the asymmetry.** When the change does not land uniformly — for some
+installations and not others, for some processes and not others, or only after
+a delay — say so. Silence on an asymmetric axis reads as "works uniformly", and
+the operator who acts on that reading is the one the fragment failed. Three
+axes recur:
+
+| Axis | The question the fragment must answer |
+|---|---|
+| **Who** | fresh installs only? existing installations too, or not until the installer is re-run? |
+| **When** | at upgrade, at restart, or on the next occurrence of some event? |
+| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? |
+
+Incidents, all in one window. SEP-1685's fragment announced a new installer
+default that reaches only fresh installs and installer re-runs; an existing
+installation keeps its rendered `nginx.conf` and `compose.yaml` until the
+installer runs again, and the fragment did not say so. SEP-1720's said overrides
+take effect "without a restart, matching the API processes" — true of the API's
+continuously-running loop, but the worker's refresh is best-effort and only
+advances while something drives the loop, so the honest answer is "as tasks
+run", which is not what the sentence implies. SEP-1698's read as immediate
+("so delivery can be turned on without editing a settings file or restarting")
+while the worker holds the previous snapshot for up to
+`SETTINGS_OVERRIDE_REFRESH_INTERVAL`; a send enqueued inside that window fails
+terminally as unconfigured, with no retry. The lag row exists because that last
+one is the expensive shape: the asymmetry is not just a delay, it is a
+*failure* inside the delay.
+
+**Pick the section from the work-item type.** A Bug's fragment goes under
+`fixed`. In-repo precedent is genuinely split — SEP-1712 and SEP-1584 are Bugs
+that used `.fixed.md`, while SEP-1037 and SEP-1038 are Stories that used
+`.changed.md` for topically identical "extend override coverage to another
+process" work — so the type is the tiebreaker, not the topic. An operator
+scanning **Fixed** for "my override didn't apply in the worker" does not find it
+under Changed. When a deployment-impact framing genuinely should lead and
+`changed` is the better home for a Bug, that is defensible, but the fragment
+must then say what changed rather than what was fixed.
+
 ## File format
 
 - **Filename:** `<TICKET>.<section>.md`, e.g. `SEP-503.added.md`.
