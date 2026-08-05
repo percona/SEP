@@ -20,12 +20,13 @@ from types import SimpleNamespace
 
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.alters.app import app as alters_app
-from app.sep.apps.alters.form_backfill import reconstruct_alters_form
+from app.sep.apps.alters.form_backfill import (
+    FORM_BACKFILL_ENTRIES,
+    reconstruct_alters_form,
+)
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.framework.form_backfill import (
     _backfill_single_task,
-    _BackfillApp,
     FormBackfillContext,
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
@@ -186,12 +187,7 @@ class TestBackfillSingleTask:
             )
         )
         task = _legacy_alters_task(name="alter-stamp")
-        entry = _BackfillApp(
-            app=alters_app,
-            reconstructor=reconstruct_alters_form,
-            owner_override="ALTERS",
-            create_model_override=AltersCreate,
-        )
+        entry = FORM_BACKFILL_ENTRIES[0]
 
         outcome = _backfill_single_task(task, entry, _ctx(lookup))
 

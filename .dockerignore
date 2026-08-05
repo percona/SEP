@@ -12,6 +12,24 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Secrets and local state — mirrors the sensitive patterns in .gitignore
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.srl
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite
+**/*.sqlite3
+**/.celery
+data/nomad.hcl
+data/casdoor_init_data.json
+data/atw-bundles/
+static/sep-db.sql.txt
+
 # Misc
 .git/
 *.log
