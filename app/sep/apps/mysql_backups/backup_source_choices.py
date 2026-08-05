@@ -20,6 +20,7 @@ from datetime import UTC
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, Pagination
+from app.core.utils import shorten_text
 from app.sep.apps.framework.schema import Choice
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import BackupType, MysqlBackupRun
@@ -33,6 +34,7 @@ _TYPE_LABELS = {
 _BYTES_PER_KIB = 1024
 _SIZE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB")
 _LABEL_PATH_MAX = 48
+_LABEL_PATH_TAIL = (_LABEL_PATH_MAX - 1) // 2
 
 # Scan at most this many catalog pages when filling Choice options so a run of
 # unusable rows (missing location / shell-unsafe) cannot starve the selector of
@@ -77,18 +79,6 @@ def _format_size(size_bytes: int | None) -> str:
     return f"{size:.1f} {_SIZE_UNITS[unit_index]}"
 
 
-def _elide_path(path: str) -> str:
-    """Shorten a long path for the selector label while keeping head and tail.
-
-    :param path: The full backup-source location.
-    :return: ``path`` unchanged when short enough, else a middle-elided form.
-    """
-    if len(path) <= _LABEL_PATH_MAX:
-        return path
-    keep = (_LABEL_PATH_MAX - 1) // 2
-    return f"{path[:keep]}…{path[-keep:]}"
-
-
 def backup_source_label(run: MysqlBackupRun, *, value: str) -> str:
     """Build a human-readable selector label for a catalogued backup run.
 
@@ -101,10 +91,13 @@ def backup_source_label(run: MysqlBackupRun, *, value: str) -> str:
         finished = "unknown time"
     else:
         finished = run.finished_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
-    return (
-        f"{type_label} · {finished} · {_format_size(run.size_bytes)} · "
-        f"{_elide_path(value)}"
+    location = shorten_text(
+        value,
+        max_length=_LABEL_PATH_MAX,
+        keep_last_chars=_LABEL_PATH_TAIL,
+        ellipsis="…",
     )
+    return f"{type_label} · {finished} · {_format_size(run.size_bytes)} · {location}"
 
 
 def backup_run_to_choice(run: MysqlBackupRun) -> Choice | None:
