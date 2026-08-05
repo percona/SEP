@@ -22,7 +22,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
-import { AppDetailPage, resolveTabFromSplat } from './AppDetailPage';
+import { AppDetailPage, resolveTabFromSplat, type TaskExecuteAction } from './AppDetailPage';
 
 const mockDeleteMutate = vi.fn();
 const mockExecuteMutate = vi.fn();
@@ -44,9 +44,9 @@ const mockUseTaskStats = vi.fn<(...args: unknown[]) => MockStatsResult>(() => ({
   isError: false,
 }));
 
-function defaultAppTasksResult() {
+function defaultAppTasksResult(items: { name: string }[] = []) {
   return {
-    data: { items: [] as { name: string }[], pagination: null },
+    data: { items, pagination: null },
     isLoading: false,
     isError: false,
     error: null,
@@ -649,6 +649,19 @@ describe('AppDetailPage execute flow', () => {
 });
 
 describe('AppDetailPage — execute chain composition', () => {
+  const backupMongoExecuteActions = (task: Record<string, unknown>): TaskExecuteAction[] => [
+    {
+      label: 'Sync Config',
+      taskName: String(task.name),
+      testId: 'backup-mongo-sync-config',
+    },
+    {
+      label: 'Run Logical Backup',
+      taskName: 'pbm-backup-logical',
+      testId: 'backup-mongo-logical-backup',
+    },
+  ];
+
   beforeEach(() => {
     mockExecuteMutate.mockReset();
     mockExecuteMutate.mockResolvedValue({ id: 99 });
@@ -656,22 +669,39 @@ describe('AppDetailPage — execute chain composition', () => {
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
-    useAppTasksMock.mockReturnValue({
-      data: {
-        items: [{ name: 'FECHK' }, { name: 'other-task' }],
-        pagination: null,
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
+    useAppTasksMock.mockReturnValue(
+      defaultAppTasksResult([{ name: 'FECHK' }, { name: 'other-task' }]),
+    );
   });
 
   async function addTaskToChain(dialog: HTMLElement, taskName: string) {
     const user = userEvent.setup();
     await user.click(within(dialog).getByRole('combobox'));
     await user.click(await screen.findByRole('option', { name: taskName }));
+  }
+
+  function renderBackupMongoChainPage() {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'pbm-backup',
+        status: 'completed',
+        derived_tasks: [{ name: 'pbm-backup-logical', backup_type: 'pbm_logical', status: null }],
+      },
+      isLoading: false,
+    });
+    useAppTasksMock.mockReturnValue(
+      defaultAppTasksResult([
+        { name: 'pbm-backup' },
+        { name: 'pbm-backup-logical' },
+        { name: 'other-task' },
+      ]),
+    );
+    return renderWithSchema(makeSchema({ chaining: true }), {
+      pluginName: 'backup_mongo',
+      path: '/apps/backup_mongo/task/pbm-backup',
+      getTaskExecuteActions: backupMongoExecuteActions,
+    });
   }
 
   it('renders ChainBuilder when chaining is true', async () => {
@@ -683,6 +713,31 @@ describe('AppDetailPage — execute chain composition', () => {
       undefined,
       expect.objectContaining({ fetchAllPages: true, enabled: true }),
     );
+  });
+
+  it('shows a loading state while chainable tasks are fetching', async () => {
+    useAppTasksMock.mockReturnValue({
+      ...defaultAppTasksResult(),
+      data: undefined,
+      isLoading: true,
+    });
+    renderWithSchema(makeSchema({ chaining: true }));
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+    expect(await screen.findByTestId('chain-tasks-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('chain-builder')).not.toBeInTheDocument();
+  });
+
+  it('shows an error when chainable tasks fail to load', async () => {
+    useAppTasksMock.mockReturnValue({
+      ...defaultAppTasksResult(),
+      data: undefined,
+      isError: true,
+      error: new Error('network down'),
+    });
+    renderWithSchema(makeSchema({ chaining: true }));
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+    expect(await screen.findByTestId('chain-tasks-error')).toHaveTextContent(/network down/);
+    expect(screen.queryByTestId('chain-builder')).not.toBeInTheDocument();
   });
 
   it('does not render ChainBuilder when chaining is false', async () => {
@@ -751,44 +806,22 @@ describe('AppDetailPage — execute chain composition', () => {
       data: { id: 1, name: 'my-alter', status: 'completed' },
       isLoading: false,
     });
-    useAppTasksMock.mockReturnValue({
-      data: {
-        items: [{ name: 'my-alter-pre-checks' }, { name: 'other-task' }],
-        pagination: null,
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-
-    render(
-      <QueryClientProvider client={makeClient()}>
-        <SnackbarProvider>
-          <MemoryRouter initialEntries={['/apps/alters/task/my-alter']}>
-            <Routes>
-              <Route
-                path="/apps/:plugin/task/:id/*"
-                element={
-                  <AppDetailPage
-                    schema={makeSchema({ chaining: true })}
-                    pluginName="alters"
-                    getTaskExecuteActions={() => [
-                      {
-                        label: 'Pre-checks',
-                        taskName: 'my-alter-pre-checks',
-                        testId: 'alters-pre-checks-execute',
-                        executeBody: { eta: '2099-01-01T00:00:00Z' },
-                      },
-                    ]}
-                  />
-                }
-              />
-            </Routes>
-          </MemoryRouter>
-        </SnackbarProvider>
-      </QueryClientProvider>,
+    useAppTasksMock.mockReturnValue(
+      defaultAppTasksResult([{ name: 'my-alter-pre-checks' }, { name: 'other-task' }]),
     );
+
+    renderWithSchema(makeSchema({ chaining: true }), {
+      pluginName: 'alters',
+      path: '/apps/alters/task/my-alter',
+      getTaskExecuteActions: () => [
+        {
+          label: 'Pre-checks',
+          taskName: 'my-alter-pre-checks',
+          testId: 'alters-pre-checks-execute',
+          executeBody: { eta: '2099-01-01T00:00:00Z' },
+        },
+      ],
+    });
 
     await user.click(screen.getByTestId('alters-pre-checks-execute'));
     const dialog = await screen.findByRole('dialog');
@@ -809,57 +842,7 @@ describe('AppDetailPage — execute chain composition', () => {
 
   it('keys currentTaskName to the pending execute action, not the page task', async () => {
     const user = userEvent.setup();
-    mockUseAppTask.mockReturnValue({
-      data: {
-        id: 1,
-        name: 'pbm-backup',
-        status: 'completed',
-        derived_tasks: [{ name: 'pbm-backup-logical', backup_type: 'pbm_logical', status: null }],
-      },
-      isLoading: false,
-    });
-    useAppTasksMock.mockReturnValue({
-      data: {
-        items: [{ name: 'pbm-backup' }, { name: 'pbm-backup-logical' }, { name: 'other-task' }],
-        pagination: null,
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-
-    render(
-      <QueryClientProvider client={makeClient()}>
-        <SnackbarProvider>
-          <MemoryRouter initialEntries={['/apps/backup_mongo/task/pbm-backup']}>
-            <Routes>
-              <Route
-                path="/apps/:plugin/task/:id/*"
-                element={
-                  <AppDetailPage
-                    schema={makeSchema({ chaining: true })}
-                    pluginName="backup_mongo"
-                    getTaskExecuteActions={(task) => [
-                      {
-                        label: 'Sync Config',
-                        taskName: String(task.name),
-                        testId: 'backup-mongo-sync-config',
-                      },
-                      {
-                        label: 'Run Logical Backup',
-                        taskName: 'pbm-backup-logical',
-                        testId: 'backup-mongo-logical-backup',
-                      },
-                    ]}
-                  />
-                }
-              />
-            </Routes>
-          </MemoryRouter>
-        </SnackbarProvider>
-      </QueryClientProvider>,
-    );
+    renderBackupMongoChainPage();
 
     await user.click(screen.getByTestId('backup-mongo-logical-backup'));
     const dialog = await screen.findByRole('dialog');
@@ -873,57 +856,7 @@ describe('AppDetailPage — execute chain composition', () => {
 
   it('resets chain when opening a different execute action', async () => {
     const user = userEvent.setup();
-    mockUseAppTask.mockReturnValue({
-      data: {
-        id: 1,
-        name: 'pbm-backup',
-        status: 'completed',
-        derived_tasks: [{ name: 'pbm-backup-logical', backup_type: 'pbm_logical', status: null }],
-      },
-      isLoading: false,
-    });
-    useAppTasksMock.mockReturnValue({
-      data: {
-        items: [{ name: 'pbm-backup' }, { name: 'pbm-backup-logical' }, { name: 'other-task' }],
-        pagination: null,
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-
-    render(
-      <QueryClientProvider client={makeClient()}>
-        <SnackbarProvider>
-          <MemoryRouter initialEntries={['/apps/backup_mongo/task/pbm-backup']}>
-            <Routes>
-              <Route
-                path="/apps/:plugin/task/:id/*"
-                element={
-                  <AppDetailPage
-                    schema={makeSchema({ chaining: true })}
-                    pluginName="backup_mongo"
-                    getTaskExecuteActions={(task) => [
-                      {
-                        label: 'Sync Config',
-                        taskName: String(task.name),
-                        testId: 'backup-mongo-sync-config',
-                      },
-                      {
-                        label: 'Run Logical Backup',
-                        taskName: 'pbm-backup-logical',
-                        testId: 'backup-mongo-logical-backup',
-                      },
-                    ]}
-                  />
-                }
-              />
-            </Routes>
-          </MemoryRouter>
-        </SnackbarProvider>
-      </QueryClientProvider>,
-    );
+    renderBackupMongoChainPage();
 
     await user.click(screen.getByTestId('backup-mongo-sync-config'));
     let dialog = await screen.findByRole('dialog');
@@ -954,7 +887,16 @@ describe('AppDetailPage — execute chain composition', () => {
   });
 });
 
-function renderWithSchema(customSchema: AppSchema, path = '/apps/checksums/task/FECHK') {
+function renderWithSchema(
+  customSchema: AppSchema,
+  options: {
+    path?: string;
+    pluginName?: string;
+    getTaskExecuteActions?: (task: Record<string, unknown>) => TaskExecuteAction[] | undefined;
+  } = {},
+) {
+  const pluginName = options.pluginName ?? 'checksums';
+  const path = options.path ?? `/apps/${pluginName}/task/FECHK`;
   return render(
     <QueryClientProvider client={makeClient()}>
       <SnackbarProvider>
@@ -962,7 +904,13 @@ function renderWithSchema(customSchema: AppSchema, path = '/apps/checksums/task/
           <Routes>
             <Route
               path="/apps/:plugin/task/:id/*"
-              element={<AppDetailPage schema={customSchema} pluginName="checksums" />}
+              element={
+                <AppDetailPage
+                  schema={customSchema}
+                  pluginName={pluginName}
+                  getTaskExecuteActions={options.getTaskExecuteActions}
+                />
+              }
             />
             <Route path="/apps/:plugin" element={<div>list page</div>} />
           </Routes>

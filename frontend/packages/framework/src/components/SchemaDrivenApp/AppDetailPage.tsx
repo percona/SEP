@@ -21,6 +21,7 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
+import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -601,7 +602,12 @@ function ActionBar({
   const [chain, setChain] = useState<ChainValue>(emptyChain);
 
   const chainingEnabled = !!schema.capabilities?.chaining;
-  const { data: appTasksData } = useAppTasks<{ name: string }>(pluginName, undefined, {
+  const {
+    data: appTasksData,
+    isLoading: appTasksLoading,
+    isError: appTasksError,
+    error: appTasksLoadError,
+  } = useAppTasks<{ name: string }>(pluginName, undefined, {
     fetchAllPages: true,
     enabled: chainingEnabled,
   });
@@ -632,7 +638,7 @@ function ActionBar({
     let executeBody = pendingExecute.executeBody;
     if (hasChain) {
       executeBody = {
-        ...(pendingExecute.executeBody ?? {}),
+        ...pendingExecute.executeBody,
         chain_task_names: chain.chain_task_names,
         chain_on_failure: chain.chain_on_failure,
       };
@@ -739,7 +745,11 @@ function ActionBar({
 
       <Dialog
         open={pendingExecute !== null}
-        onClose={() => setPendingExecute(null)}
+        onClose={() => {
+          if (!executeTask.isPending) {
+            setPendingExecute(null);
+          }
+        }}
         fullWidth
         maxWidth="sm"
       >
@@ -753,13 +763,24 @@ function ActionBar({
           </DialogContentText>
           {chainingEnabled && pendingExecute && (
             <Box sx={{ mt: 2 }}>
-              <ChainBuilder
-                availableTasks={availableTasks}
-                currentTaskName={pendingExecute.taskName}
-                value={chain}
-                onChange={setChain}
-                disabled={executeTask.isPending}
-              />
+              {appTasksLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                  <CircularProgress size={24} data-testid="chain-tasks-loading" />
+                </Box>
+              ) : appTasksError ? (
+                <Alert severity="error" data-testid="chain-tasks-error">
+                  Couldn&apos;t load tasks available to chain
+                  {appTasksLoadError instanceof Error ? `: ${appTasksLoadError.message}` : ''}
+                </Alert>
+              ) : (
+                <ChainBuilder
+                  availableTasks={availableTasks}
+                  currentTaskName={pendingExecute.taskName}
+                  value={chain}
+                  onChange={setChain}
+                  disabled={executeTask.isPending}
+                />
+              )}
             </Box>
           )}
         </DialogContent>
