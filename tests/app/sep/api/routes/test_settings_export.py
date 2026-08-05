@@ -24,6 +24,7 @@ import pytest_asyncio
 import yaml
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
@@ -35,7 +36,7 @@ from app.core.requests import RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
 from app.sep.bundle_upload.plan import DeliveryPlan
-from app.sep.config import sep_settings
+from app.sep.config import DeliveryPlanInputs, sep_settings, SEPSettings
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -313,6 +314,32 @@ class TestSepConfigExportYaml:
         assert block["secrets"]["api_key"] == REDACTED_SECRET
         assert block["upload"]["path"] == "attachment/upload"
         assert "plan-secret" not in yaml_text
+
+    async def test_delivery_inputs_export_redacts_and_cannot_be_re_fed(
+        self, api_admin_client: TestClient, mocker
+    ) -> None:
+        """Redact the runtime inputs, and refuse the redacted block as configuration.
+
+        The export is what an operator carries between deployments, so the
+        masked secrets it renders must not resolve back into a plan that sends
+        ``**********`` to the receiver as the credential.
+        """
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"sn_api_key": "inputs-secret"}),
+        )
+        yaml_text = api_admin_client.get(EXPORT_URL).text
+        export = yaml.safe_load(yaml_text)
+        block = export[SettingClassEnum.SEP_SETTINGS.value][
+            "DIAGNOSTICS_DELIVERY_INPUTS"
+        ]
+
+        assert block["secrets"]["sn_api_key"] == REDACTED_SECRET
+        assert "inputs-secret" not in yaml_text
+
+        with pytest.raises(ValidationError, match="sn_api_key"):
+            SEPSettings(DIAGNOSTICS_DELIVERY_INPUTS=block)
 
     async def test_inventory_endpoint_redacted_in_yaml(
         self, api_admin_client: TestClient

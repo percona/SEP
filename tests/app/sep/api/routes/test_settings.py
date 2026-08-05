@@ -78,6 +78,19 @@ _DELIVERY_PLAN_PAYLOAD: dict[str, Any] = {
     },
 }
 
+_DELIVERY_SKELETON_PAYLOAD: dict[str, Any] = {
+    "endpoint": "https://snow.example.com/",
+    "secrets": {"sn_api_key": "", "client_token": ""},
+    "upload": {
+        "path": "attachment/upload",
+        "headers": {"x-sn-apikey": {"source": "secret", "name": "sn_api_key"}},
+        "fields": {"client_token": {"source": "secret", "name": "client_token"}},
+    },
+}
+
+_DELIVERY_INPUTS_KEY = "DIAGNOSTICS_DELIVERY_INPUTS"
+_DELIVERY_INPUTS_SECRETS = {"sn_api_key": "key-value", "client_token": "token-value"}
+
 
 def _mock_tasks_api() -> AsyncMock:
     """Return an ``AsyncMock`` Tasks API client serving an empty TasksSettings group.
@@ -179,6 +192,20 @@ def _find_group(payload: dict[str, Any], setting_class: str) -> dict[str, Any]:
         if group["setting_class"] == setting_class:
             return group
     raise AssertionError(f"group {setting_class!r} not in payload")
+
+
+@pytest.fixture(name="delivery_skeleton")
+def delivery_skeleton_fixture(mocker) -> Iterator[None]:
+    """Bake a delivery plan declaring two secrets, both left empty.
+
+    Clears the proxy snapshot on teardown, since the PATCH handler refreshes it
+    inline and a stored inputs row would otherwise leak into sibling tests.
+    """
+    mocker.patch.object(
+        sep_settings, "DIAGNOSTICS_DELIVERY", DeliveryPlan(**_DELIVERY_SKELETON_PAYLOAD)
+    )
+    yield
+    sep_settings._set_snapshot({})
 
 
 def _find_setting(
@@ -299,6 +326,21 @@ class TestSepSettingsList:
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
         }
+
+    async def test_all_sealed_nested_parent_is_listed_whole(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """List the inputs object itself, not the leaves no PATCH can target."""
+        payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        keys = {
+            entry["key"]
+            for group in payload["groups"]
+            if group["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+            for entry in group["settings"]
+        }
+
+        assert _DELIVERY_INPUTS_KEY in keys
+        assert not [key for key in keys if key.startswith(f"{_DELIVERY_INPUTS_KEY}__")]
 
     async def test_core_groups_are_not_app_owned(
         self, api_admin_client: TestClient
@@ -788,6 +830,205 @@ class TestSepSettingsPatch:
 
         assert entry["value"]["secrets"]["api_key"] == "**********"
         assert "plan-secret" not in json_serializer(list_payload)
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_whole_object_patch_persists_and_masks(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Accept the atomic write an operator uses to turn delivery on."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        assert len(rows) == 1
+
+        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        entry = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, _DELIVERY_INPUTS_KEY
+        )
+        assert entry["reload"] == ReloadClassification.HOT.value
+        assert entry["value"]["secrets"]["sn_api_key"] == SECRET_STR_MASK
+        assert "key-value" not in json_serializer(list_payload)
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_patch_carries_the_endpoint(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Store the receiver an operator names alongside the credentials."""
+        endpoint = "https://elsewhere.example.com/"
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "endpoint": endpoint,
+                    "secrets": _DELIVERY_INPUTS_SECRETS,
+                }
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        assert rows[0].value["endpoint"] == endpoint
+
+        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        entry = _find_setting(
+            list_payload, SettingClassEnum.SEP_SETTINGS.value, _DELIVERY_INPUTS_KEY
+        )
+        assert entry["value"]["endpoint"] == endpoint
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    @pytest.mark.parametrize(
+        ("secrets", "expected"),
+        [
+            ({**_DELIVERY_INPUTS_SECRETS, "extra_key": "c"}, "extra_key"),
+            ({"sn_api_key": "key-value"}, "client_token"),
+        ],
+    )
+    async def test_delivery_inputs_secret_names_must_match_the_plan(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        secrets: dict[str, str],
+        expected: str,
+    ) -> None:
+        """Refuse a payload whose secret names are not exactly the declared ones."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={_DELIVERY_INPUTS_KEY: {"secrets": secrets}},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            entry["type"] == "value_error" and expected in entry["msg"]
+            for entry in detail
+        )
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert rows == []
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            (f"{_DELIVERY_INPUTS_KEY}__secrets", {"sn_api_key": "key-value"}),
+            (f"{_DELIVERY_INPUTS_KEY}__endpoint", "https://elsewhere.example.com/"),
+        ],
+    )
+    async def test_delivery_inputs_leaf_patch_rejected(
+        self,
+        api_admin_client: TestClient,
+        key: str,
+        value: Any,
+    ) -> None:
+        """Refuse a per-leaf write, which would bypass the materializer entirely."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={key: value},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            entry["type"] == ReloadClassification.NOT_OVERRIDABLE.value
+            for entry in detail
+        )
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_resubmitted_mask_keeps_the_stored_secret(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Keep the stored credential when an operator re-submits the masked read."""
+        stored = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
+        )
+        assert stored.status_code == status.HTTP_200_OK
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "secrets": dict.fromkeys(_DELIVERY_INPUTS_SECRETS, SECRET_STR_MASK)
+                }
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        assert rows[0].value["secrets"] == _DELIVERY_INPUTS_SECRETS
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_mask_without_a_stored_row_is_rejected(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Refuse the mask when restoration had nothing to put back."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "secrets": dict.fromkeys(_DELIVERY_INPUTS_SECRETS, SECRET_STR_MASK)
+                }
+            },
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_row_that_stops_matching_the_plan_is_dropped(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        mocker,
+    ) -> None:
+        """Degrade a stale row to unconfigured after an upgrade renames a secret."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        assert len(rows) == 1
+
+        renamed = {
+            **_DELIVERY_SKELETON_PAYLOAD,
+            "secrets": {"sn_api_key": "", "case_token": ""},
+            "upload": {
+                **_DELIVERY_SKELETON_PAYLOAD["upload"],
+                "fields": {"case_token": {"source": "secret", "name": "case_token"}},
+            },
+        }
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", DeliveryPlan(**renamed)
+        )
+
+        snapshot = await build_snapshot(override_session, SEPSettings)
+
+        assert _DELIVERY_INPUTS_KEY not in snapshot
 
     async def test_app_drain_nested_leaf_patch_creates_override(
         self,
