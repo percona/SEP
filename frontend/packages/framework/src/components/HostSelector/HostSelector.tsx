@@ -217,7 +217,12 @@ export function HostSelector({
   // which `errors[name]` would never resolve.
   const fieldError = get(errors, name)?.message as string | undefined;
   const freeSolo = Boolean(allowCustom);
-  const inputDisabled = Boolean(disabled) || isError;
+  // A failed hosts query does not disable the control: `onOpen` holds the only
+  // `refetch()` trigger and a disabled Autocomplete never opens, so one failure
+  // would wedge the field until the page remounts. The error stays visible
+  // through `text` / `showError` / the snackbar. Same reasoning as
+  // StandaloneHostSelector.
+  const inputDisabled = Boolean(disabled);
   const showError = isError || Boolean(fieldError);
   const text = resolveHelperText({
     helperText,
