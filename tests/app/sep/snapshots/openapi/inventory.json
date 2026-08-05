@@ -1,6 +1,36 @@
 {
   "components": {
     "schemas": {
+      "ConnectivityCheckResponse": {
+        "description": "Represent a connectivity check result.\n\n:param success: Whether the connectivity check succeeded.\n:param error: Error message if the check failed. Defaults to ``None``.\n:param task_history_id: The ID of the task history record for this check.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "task_history_id": {
+            "title": "Task History Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "success",
+          "task_history_id"
+        ],
+        "title": "ConnectivityCheckResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2425,7 +2455,7 @@
       },
       "framework__RemoteChoiceField": {
         "additionalProperties": false,
-        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field stays disabled/empty until the\ndependency has a value. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
+        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field offers no options until the dependency\nhas a value, staying disabled while it waits unless ``allow_custom`` keeps\nfree-text entry open. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -3501,6 +3531,49 @@
           }
         },
         "summary": "Get Schema",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/apps/inventory/services/{service_id}/check-connectivity/": {
+      "post": {
+        "description": "Run a database connectivity probe for a service from its executor host.\n\nBacks the React connectivity control on the service detail page. A probe\nthat ran but could not connect is reported as HTTP 200 with\n``success=false`` and the upstream message in ``error``; only a probe that\ncould not be attempted at all is an error status. This three-segment\nliteral path cannot collide with the two-segment\n``/{entity}/{item_id:int}`` detail matcher.\n\n:param service: The service to probe, resolved from the path id.\n:param tasks_api: Authenticated Tasks ``RemoteAPI`` client.\n:return: The upstream probe result.\n:raises HTTPBadRequestException: When the service cannot be probed —\n    unsupported type, missing node or port, or no executor registered for\n    the node address.\n:raises HTTPBadGatewayException: When the Tasks API is unreachable or\n    returns an unparseable body.",
+        "operationId": "inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectivityCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inventory Service Check Connectivity",
         "tags": [
           "inventory"
         ]

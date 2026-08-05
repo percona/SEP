@@ -23,7 +23,6 @@ import yaml
 from fastapi import status
 
 from app.core.exceptions import HTTPNotFoundException
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.mysql_backups.deps import get_backups_task
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
@@ -183,7 +182,8 @@ class TestListEndpoint:
         assert row["name"] == task["name"]
         assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
         assert row["backup_type"] == BackupType.MYDUMPER.value
-        assert row["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in row
+        assert "owner" not in row
         assert "anonymize_mask" in row
         assert "anonymized_entities" in row
         mock_task_api_dep.post.assert_awaited_once_with(
@@ -251,7 +251,8 @@ class TestDetailEndpoint:
         body = response.json()
         assert body["name"] == task["name"]
         assert body["backup_type"] == BackupType.MYDUMPER.value
-        assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "service_type" not in body
+        assert "owner" not in body
         assert "anonymize_mask" in body
         assert "anonymized_entities" in body
 
@@ -359,17 +360,39 @@ class TestCreateEndpoint:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
-    def test_create_rejects_recipient_without_encrypt(
-        self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            pytest.param(
+                {"encryption_recipient": "ops@example.com"},
+                id="recipient-without-encrypt",
+            ),
+            pytest.param({"encrypt_using_tmpdir": True}, id="tmpdir-without-encrypt"),
+            pytest.param({"post_run_encrypt": True}, id="post-run-without-recipient"),
+            pytest.param(
+                {
+                    "encrypt": True,
+                    "encrypt_using_tmpdir": True,
+                    "post_run_encrypt": True,
+                    "encryption_recipient": "ops@example.com",
+                },
+                id="tmpdir-and-post-run-together",
+            ),
+        ],
+    )
+    def test_create_rejects_invalid_encryption_combo(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        overrides,
     ):
-        """encryption_recipient without encrypt=True is rejected with 422."""
+        """Reject an invalid encryption combination with 422 before any POST."""
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
         )
-        body = build_backup_write_body(
-            service_id=created_service.id,
-            encryption_recipient="ops@example.com",
-        )
+        body = build_backup_write_body(service_id=created_service.id, **overrides)
         response = test_client.post(
             "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )

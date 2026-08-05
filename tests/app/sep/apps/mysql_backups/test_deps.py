@@ -28,11 +28,9 @@ from app.sep.apps.mysql_backups.deps import (
     get_backups_task_info,
     parse_backup_task_data,
 )
-from app.sep.apps.mysql_backups.models import (
-    BackupCreate,
-    BackupType,
-    UploadProvider,
-)
+from app.sep.apps.mysql_backups.forms import BackupCreate, UploadProvider
+from app.sep.apps.mysql_backups.models import BackupType, extract_backup_type_marker
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.inventory import CreatedNode, CreatedService
 from app.tasks.models import (
     Task,
@@ -116,6 +114,9 @@ async def test_build_backup_task_payload(
     assert task_payload.name == form_data["task_name"]
     assert task_payload.backend == TaskBackendEnum.PROXY
     assert task_payload.owner == "BACKUPS"
+    # A form-built task must carry the recorder so its completed runs are
+    # catalogued, exactly as the model-first JSON create path does.
+    assert task_payload.run_result_recorder == RUN_RESULT_RECORDER
 
     data = task_payload.data
     assert data["task"] == "run-python"
@@ -651,6 +652,45 @@ def _task_with_raw_config(raw_config: str) -> Task:
 def test_extract_backup_type_handles_non_dict_yaml(raw_config: str):
     """Malformed/non-dict YAML must return ``None`` instead of raising."""
     assert _extract_backup_type_from_task(_task_with_raw_config(raw_config)) is None
+
+
+class TestExtractBackupTypeMarkerShapeGuards:
+    """Guard ``extract_backup_type_marker`` against non-string/missing shapes.
+
+    ``meta.config`` is expected to be a YAML string, but the value is untrusted
+    task data. Before the structural-match rewrite, a non-string ``config``
+    (e.g. a dict) reached ``yaml.safe_load`` directly and raised
+    ``AttributeError`` uncaught by the ``except yaml.YAMLError`` guard. These
+    lock in the ``None``-not-raise contract for every shape short of a string.
+    """
+
+    def test_none_task_data_returns_none(self):
+        """Return ``None`` for a task with no ``data`` at all."""
+        assert extract_backup_type_marker(None) is None
+
+    def test_missing_meta_key_returns_none(self):
+        """Return ``None`` when ``data`` carries no ``meta`` key."""
+        assert extract_backup_type_marker({}) is None
+
+    def test_non_dict_meta_returns_none(self):
+        """Return ``None`` when ``meta`` itself is not a mapping."""
+        assert extract_backup_type_marker({"meta": "not-a-dict"}) is None
+
+    def test_dict_valued_config_returns_none_without_raising(self):
+        """Return ``None``, not raise, when ``config`` is a dict instead of YAML text.
+
+        This is the exact shape that used to reach ``yaml.safe_load`` and raise
+        ``AttributeError: 'dict' object has no attribute 'read'``.
+        """
+        task_data = {"meta": {"config": {"SERVER_LIST": [{"BACKUP_TYPE": "M"}]}}}
+        assert extract_backup_type_marker(task_data) is None
+
+    def test_non_string_backup_type_marker_returns_none(self):
+        """Return ``None`` when ``BACKUP_TYPE`` itself is not a string."""
+        task_data = {
+            "meta": {"config": yaml.dump({"SERVER_LIST": [{"BACKUP_TYPE": 1}]})}
+        }
+        assert extract_backup_type_marker(task_data) is None
 
 
 def _make_backup_task(

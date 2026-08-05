@@ -79,6 +79,12 @@ image-sidecar: pack
 	@podman image exists "sep:${RELEASE_VER}-sidecar" && podman image rm "sep:${RELEASE_VER}-sidecar" || true
 	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}-sidecar"
 
+# The app-restricted PMM-embedded variant: the side-car recipe with the app
+# strip switched on. Which apps survive is settings.embedded.yaml's SEP.APPS.
+image-sidecar-embedded: pack
+	@podman image exists "sep:${RELEASE_VER}-embedded" && podman image rm "sep:${RELEASE_VER}-embedded" || true
+	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --build-arg SEP_RESTRICT_APPS=1 --tag "sep:${RELEASE_VER}-embedded"
+
 format: venv
 	@"${VENV_BIN}"/ruff format .
 	@"${VENV_BIN}"/djlint . --reformat
@@ -127,6 +133,7 @@ bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
 
 makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py app/sep/models.py
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@for app in $(APPS); do \
 		capitalized=$$(echo $$app | sed 's/^./\U&/'); \
 		echo "Checking migrations for $$capitalized"; \
@@ -161,10 +168,12 @@ makemigrations-plugin: venv alembic.ini
 ifndef PLUGIN
 	$(error PLUGIN is required. Usage: make makemigrations-plugin PLUGIN=<plugin-name>)
 endif
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@read -p "Enter description for new $(PLUGIN) plugin migration: " desc; \
 	"${VENV_BIN}"/alembic --name sep revision --autogenerate --head=$(PLUGIN)@head -m "$$desc"
 
 migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations/versions app/sep/migrations/versions
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@for app in $(APPS); do \
 		"${VENV_BIN}"/alembic --name $$app upgrade heads; \
 	done
@@ -209,7 +218,13 @@ endif
 ifndef MSG
 	$(error MSG is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
 endif
-	@$(PYTHON) scripts/changelog.py add --ticket "$(TICKET)" --section "$(SECTION)" --message "$(MSG)" $(if $(FORCE),--force,)
+# TICKET, SECTION and MSG are forwarded through the recipe shell environment as
+# "$$VAR" — command-line variables are auto-exported, so the shell (not Make's
+# textual expansion) supplies each value and embedded quotes, spaces and backticks
+# stay literal (a literal '$' must be written as '$$' on the command line).
+# Interpolating "$(MSG)" instead pastes the raw text inside an already-open quoted string, where a `"` closes it and a backtick
+# command-substitutes; no caller-side quoting can prevent that.
+	@$(PYTHON) scripts/changelog.py add --ticket "$$TICKET" --section "$$SECTION" --message "$$MSG" $(if $(FORCE),--force,)
 
 changelog-check:
 	@$(PYTHON) scripts/changelog.py check
@@ -301,4 +316,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image image-sidecar format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check

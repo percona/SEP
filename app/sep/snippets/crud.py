@@ -23,7 +23,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
-from app.core.db.utils import func_json_extract
+from app.core.db.utils import func_json_extract, NullsLastOrdering
 from app.core.pagination import PaginatedResponse, Pagination
 from app.sep.snippets.list_query import (
     SNIPPET_SORT_KEYS,
@@ -155,22 +155,22 @@ class SnippetManager(BaseSQLModelManager):
 
         NULLs are pinned last regardless of direction so a sort by a meta key some
         rows lack (or the nullable ``approved_at`` column) places the same rows
-        identically on SQLite and PostgreSQL, whose default NULL ordering differs.
+        identically on SQLite, PostgreSQL, and MySQL, whose default NULL ordering
+        differs. :class:`~app.core.db.utils.NullsLastOrdering` renders that placement
+        per dialect, since MySQL has no ``NULLS LAST`` syntax.
 
         :param engine: The database engine name (``session.get_bind().name``).
         :param list_query: The validated list-query selections.
         :return: The ordered list of column expressions.
         """
         sort_column = SNIPPET_SORT_KEYS[list_query.sort_key]
-        primary = cls._sort_expression(engine, sort_column)
-        if list_query.sort_direction is SnippetSortDirection.DESC:
-            primary = primary.desc()
-        else:
-            primary = primary.asc()
-        primary = primary.nulls_last()
+        ordered = NullsLastOrdering(
+            cls._sort_expression(engine, sort_column),
+            descending=list_query.sort_direction is SnippetSortDirection.DESC,
+        )
         if list_query.sort_key is SnippetSortKey.FILENAME:
-            return [primary]
-        return [primary, col(getattr(Snippet, TIE_BREAKER_COLUMN)).asc()]
+            return [ordered]
+        return [ordered, col(getattr(Snippet, TIE_BREAKER_COLUMN)).asc()]
 
     @classmethod
     async def snippet_list_page(

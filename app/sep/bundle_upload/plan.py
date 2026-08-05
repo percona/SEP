@@ -42,12 +42,15 @@ __all__ = [
     "PlanValue",
     "ResolutionStep",
     "SecretValue",
+    "StepObserver",
     "StepOutputValue",
+    "StepRecord",
     "UploadStep",
 ]
 
 import logging
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Self
 
 from fastapi import HTTPException
@@ -312,6 +315,29 @@ class DeliveryPlanError(Exception):
     """Signal that a delivery plan cannot be carried out as configured."""
 
 
+@dataclass(frozen=True, slots=True)
+class StepRecord:
+    """Report one resolution step's progress to an observer.
+
+    Carries the step's declared outputs and never its response body, so an
+    observer that persists these records cannot retain data the plan did not
+    ask for.
+
+    :param name: The resolution step's name.
+    :param status: ``"running"`` when the request is about to be issued,
+        ``"success"`` once its outputs are extracted.
+    :param outputs: The extracted outputs, or ``None`` while the step runs.
+    """
+
+    name: str
+    status: Literal["running", "success"]
+    outputs: Mapping[str, str] | None = None
+
+
+#: A synchronous callback invoked once per resolution-step transition.
+StepObserver = Callable[[StepRecord], None]
+
+
 def _secret_valued_keys(values: Mapping[str, PlanValue]) -> list[str]:
     """Return the keys of a value map whose values come from a named secret.
 
@@ -346,14 +372,25 @@ class DeliveryPlanExecutor:
     the bundle in the terminal multipart upload step.
     """
 
-    def __init__(self, plan: DeliveryPlan, api: RemoteAPI) -> None:
+    def __init__(
+        self,
+        plan: DeliveryPlan,
+        api: RemoteAPI,
+        *,
+        step_observer: StepObserver | None = None,
+    ) -> None:
         """Bind the plan to the transport that will carry its requests.
 
         :param plan: The validated delivery plan to run.
         :param api: The remote API client every request is issued through.
+        :param step_observer: A synchronous callback notified as each resolution
+            step starts and completes, for a caller that records send progress.
+            The terminal upload is not reported -- its outcome is the returned
+            :class:`~app.sep.bundle_upload.seam.UploadResult`.
         """
         self._plan = plan
         self._api = api
+        self._step_observer = step_observer
 
     async def upload_bundle(
         self,
@@ -501,6 +538,7 @@ class DeliveryPlanExecutor:
             }
         )
         logger.debug("Delivery plan: running resolution step %r.", step.name)
+        self._observe(StepRecord(name=step.name, status="running"))
         with (
             self._api.redact_headers(_secret_valued_keys(step.headers)),
             self._api.redact_body_fields(_secret_valued_keys(step.body)),
@@ -519,7 +557,17 @@ class DeliveryPlanExecutor:
                     err.status_code,
                 )
                 raise
-        return self._extract_outputs(step, response)
+        extracted = self._extract_outputs(step, response)
+        self._observe(StepRecord(name=step.name, status="success", outputs=extracted))
+        return extracted
+
+    def _observe(self, record: StepRecord) -> None:
+        """Hand one step record to the configured observer, if there is one.
+
+        :param record: The step transition to report.
+        """
+        if self._step_observer is not None:
+            self._step_observer(record)
 
     def _extract_outputs(
         self,

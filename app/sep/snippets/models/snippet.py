@@ -35,6 +35,7 @@ import yaml
 from aiofiles.ospath import getsize
 from async_lru import alru_cache
 from pydantic import (
+    AliasChoices,
     BaseModel,
     BeforeValidator,
     computed_field,
@@ -83,6 +84,7 @@ from app.sep.snippets.forms import (
     SubmitButtonElement,
     TextInputElement,
 )
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     META_KEY_DESCRIPTION,
     META_KEY_SERVICE_TYPE,
@@ -334,7 +336,7 @@ class BaseSnippetArgs(BaseModel):
     :type executor_host: NonEmptyStr
     """
 
-    extra_args_field: ClassVar[str] = "extra_args"
+    extra_args_field: ClassVar[str] = EXTRA_ARGS_FIELD_NAME
     sudo_field: ClassVar[str] = "sudo"
     executor_host: NonEmptyStr = Field(
         validation_alias=EXECUTOR_HOSTS_INPUT_NAME, exclude=True
@@ -955,7 +957,13 @@ class BaseSnippet(BaseModel):
         if add_extra_args_field:
             fields[BaseSnippetArgs.extra_args_field] = (
                 ExtraArgsField,
-                Field(default_factory=list, alias=EXTRA_ARGS_INPUT_NAME),
+                Field(
+                    default_factory=list,
+                    validation_alias=AliasChoices(
+                        EXTRA_ARGS_INPUT_NAME, EXTRA_ARGS_FIELD_NAME
+                    ),
+                    serialization_alias=EXTRA_ARGS_FIELD_NAME,
+                ),
             )
 
         if add_sudo_field:
@@ -1071,6 +1079,18 @@ class Snippet(BaseSnippet, BaseSQLModel, table=True):
         return self.approved_at is not None
 
     @property
+    def is_human_revoked(self) -> bool:
+        """Return whether an administrator explicitly removed this snippet's approval.
+
+        Human revocation is recorded as an unapproved row whose ``updated_by`` is
+        still set to a user id. Automatic content-change removals clear
+        ``updated_by``.
+
+        :return: ``True`` when the snippet is unapproved and ``updated_by`` is set.
+        """
+        return self.approved_at is None and self.updated_by is not None
+
+    @property
     def can_execute(self) -> bool:
         """Determine whether the snippet can be executed.
 
@@ -1084,14 +1104,22 @@ class Snippet(BaseSnippet, BaseSQLModel, table=True):
         return self.is_approved and super().can_execute
 
     async def update_from_snippet(self, snippet: "Snippet") -> None:
-        """Update the current snippet from another snippet.
+        """Update file-derived fields from another snippet without changing approval.
 
-        :param snippet: The snippet from which to update.
-        :type snippet: Snippet
+        Leave ``approved_at``, ``updated_by``, and ``reason`` unchanged.
+
+        :param snippet: The snippet from which to copy file-derived fields.
         """
-        self.sqlmodel_update(snippet, update={"id": self.id})
+        self.sqlmodel_update(
+            snippet,
+            update={
+                "id": self.id,
+                "approved_at": self.approved_at,
+                "updated_by": self.updated_by,
+                "reason": self.reason,
+            },
+        )
         self.meta = await self.get_meta_by_path(self)
-        self.remove_approval("File contents have changed", None)
 
     def approve(self, reason: str, user_id: str) -> None:
         """Mark the snippet as approved.

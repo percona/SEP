@@ -704,8 +704,9 @@ class RemoteChoiceField(BaseField):
     ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
     / ``disabled_reason``). When ``depends_on`` is set, the fetch is
     parameterised by the dependency's value (appended as a query parameter named
-    after ``depends_on``) and the field stays disabled/empty until the
-    dependency has a value. When ``allow_custom`` is set, the renderer also
+    after ``depends_on``) and the field offers no options until the dependency
+    has a value, staying disabled while it waits unless ``allow_custom`` keeps
+    free-text entry open. When ``allow_custom`` is set, the renderer also
     accepts a free-typed value. The endpoint response contract is a JSON array
     of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
     "disabled"?: bool, "disabled_reason"?: str}``.
@@ -953,12 +954,6 @@ class ListView(SchemaBaseModel):
 #: Read-only execution-host column shared by every host-bearing list view.
 #: Never mutate it; pass through ``default_columns()``, which copies per call.
 EXECUTOR_HOST_COLUMN = Column(key="hostname", label=EXECUTION_HOST_LABEL)
-
-#: Read-only "Service Type" chip column shared by the service-type task apps.
-#: Never mutate it; pass through ``default_columns()``, which copies per call.
-SERVICE_TYPE_COLUMN = Column(
-    key="service_type", label="Service Type", format=ColumnFormat.CHIP
-)
 
 
 def default_columns(*middle: Column) -> list[Column]:

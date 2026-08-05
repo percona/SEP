@@ -28,18 +28,22 @@ from pydantic import SecretStr
 
 from app.core.config import settings
 from app.core.pagination import DEFAULT_PAGINATION_OFFSET, MAX_PAGINATION_LIMIT
+from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.inventory.deps import (
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
 )
 from app.sep.crud import SyncItemManager
-from app.sep.deps import BEARER_REQUIRED_DETAIL
+from app.sep.deps import BEARER_REQUIRED_DETAIL, get_created_service, get_tasks_api
 from app.sep.main import sep_app
 from app.sep.models import SyncInventoryEntityTypeEnum
+from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 from tests.app.sep.apps.inventory.conftest import no_syncers, PMM_STUB_NAME
 
 _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
+_MYSQL_PORT = 3306
+_TASK_HISTORY_ID = 42
 _ENVELOPE_TOTAL = 7
 _REQUEST_OFFSET = 2
 _REQUEST_LIMIT = 5
@@ -794,3 +798,183 @@ class TestInventorySystemObservation:
             )
         finally:
             sep_app.openapi_schema = prior_schema
+
+
+class TestInventoryServiceCheckConnectivity:
+    """Cover POST /api/apps/inventory/services/{service_id}/check-connectivity/."""
+
+    @pytest.fixture
+    def created_node(self):
+        """Return a fake inventory node."""
+        return CreatedNodeFactory.build()
+
+    @pytest.fixture
+    def mysql_service(self, created_node):
+        """Return a MySQL service attached to ``created_node`` with a port set."""
+        service = CreatedServiceFactory.build(
+            type=ServiceTypeEnum.MYSQL, port=_MYSQL_PORT
+        )
+        service.node = created_node
+        return service
+
+    @pytest.fixture
+    def _mock_mysql_service_dep(self, mysql_service):
+        """Resolve ``CreatedServiceDep`` to the MySQL service."""
+        sep_app.dependency_overrides[get_created_service] = lambda: mysql_service
+        yield
+        sep_app.dependency_overrides.pop(get_created_service, None)
+
+    @pytest.fixture
+    def mock_tasks_api_dep(self, created_node) -> AsyncMock:
+        """Mock ``TaskAPI`` with a host mapping that resolves ``created_node``."""
+        mock = AsyncMock(spec=RemoteAPI)
+        mock.get.return_value = {created_node.name: created_node.address}
+        sep_app.dependency_overrides[get_tasks_api] = lambda: mock
+        yield mock
+        sep_app.dependency_overrides.pop(get_tasks_api, None)
+
+    def _url(self, service) -> str:
+        return f"/api/apps/inventory/services/{service.id}/check-connectivity/"
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_successful_probe_returns_200(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Return HTTP 200 carrying the upstream result body when the probe passes."""
+        mock_tasks_api_dep.post.return_value = {
+            "success": True,
+            "error": None,
+            "task_history_id": _TASK_HISTORY_ID,
+        }
+        response = test_client.post(self._url(mysql_service))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "success": True,
+            "error": None,
+            "task_history_id": _TASK_HISTORY_ID,
+        }
+        mock_tasks_api_dep.post.assert_awaited_once_with(
+            "/connectivity-check/",
+            json={
+                "target": mysql_service.node.name,
+                "host": mysql_service.node.address,
+                "port": mysql_service.port,
+                "service_type": ServiceTypeEnum.MYSQL.value,
+            },
+        )
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_failed_probe_returns_200_with_error_body(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Return HTTP 200 with ``success=false`` when the check fails but the call succeeds."""
+        mock_tasks_api_dep.post.return_value = {
+            "success": False,
+            "error": "Connection refused",
+            "task_history_id": _TASK_HISTORY_ID,
+        }
+        response = test_client.post(self._url(mysql_service))
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["success"] is False
+        assert body["error"] == "Connection refused"
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_failed_probe_without_error_returns_null_error(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Keep ``error`` null on an errorless failure so the client owns the fallback text."""
+        mock_tasks_api_dep.post.return_value = {
+            "success": False,
+            "error": None,
+            "task_history_id": _TASK_HISTORY_ID,
+        }
+        response = test_client.post(self._url(mysql_service))
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["success"] is False
+        assert body["error"] is None
+
+    @pytest.mark.usefixtures("mock_tasks_api_dep")
+    def test_unsupported_service_type_returns_400(
+        self, test_client, created_node, mock_tasks_api_dep
+    ):
+        """Reject a non-connectable service type server-side with HTTP 400."""
+        service = CreatedServiceFactory.build(
+            type=ServiceTypeEnum.PROXYSQL, port=_MYSQL_PORT
+        )
+        service.node = created_node
+        sep_app.dependency_overrides[get_created_service] = lambda: service
+        try:
+            response = test_client.post(self._url(service))
+        finally:
+            sep_app.dependency_overrides.pop(get_created_service, None)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert ServiceTypeEnum.PROXYSQL.name in response.json()["detail"]
+        mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_missing_port_returns_400(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Reject a service with no port, which cannot be probed, with HTTP 400."""
+        mysql_service.port = None
+        response = test_client.post(self._url(mysql_service))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_unregistered_node_address_returns_400_naming_the_address(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Return HTTP 400 naming the node address when no executor is registered for it."""
+        mock_tasks_api_dep.get.return_value = {"some-other-nomad": "10.0.0.99"}
+        response = test_client.post(self._url(mysql_service))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert mysql_service.node.address in response.json()["detail"]
+        mock_tasks_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.usefixtures("mock_tasks_api_dep")
+    def test_unknown_service_propagates_404(self, test_client, mock_inventory_api_dep):
+        """Propagate the inventory 404 from ``CreatedServiceDep`` for an unknown service id."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Service not found"
+        )
+        response = test_client.post(
+            "/api/apps/inventory/services/999999/check-connectivity/"
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_unreachable_tasks_api_returns_502_without_leaking_internals(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Surface a transport failure as HTTP 502 with no internal error text."""
+        mock_tasks_api_dep.post.side_effect = ConnectionError("boom at socket layer")
+        response = test_client.post(self._url(mysql_service))
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "boom at socket layer" not in response.text
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_malformed_upstream_payload_returns_502(
+        self, test_client, mysql_service, mock_tasks_api_dep
+    ):
+        """Return HTTP 502 for an unparseable upstream body, not a 500 validation escape."""
+        mock_tasks_api_dep.post.return_value = {"unexpected": "shape"}
+        response = test_client.post(self._url(mysql_service))
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_requires_authentication(self, unauthenticated_client, mysql_service):
+        """Return 401 when the request carries no API auth."""
+        response = unauthenticated_client.post(self._url(mysql_service))
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_openapi_response_references_connectivity_model(self, test_client):
+        """Reference the upstream connectivity model from the 200 response schema."""
+        spec = test_client.get("/openapi.json").json()
+        post_op = spec["paths"][
+            "/api/apps/inventory/services/{service_id}/check-connectivity/"
+        ]["post"]
+        schema = post_op["responses"]["200"]["content"]["application/json"]["schema"]
+        assert "ConnectivityCheckResponse" in schema["$ref"]

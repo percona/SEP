@@ -16,12 +16,13 @@
 """Define the presentation bundle for the MySQL Backups app.
 
 Section *membership* and *order* are declared on
-:class:`~app.sep.apps.mysql_backups.models.BackupCreate` (via ``Ui(section=...)``
+:class:`~app.sep.apps.mysql_backups.forms.BackupCreate` (via ``Ui(section=...)``
 and field-declaration order); what lives here is the part the model cannot
 express: the section titles, the collapse/whole-section-hide metadata, the list
 columns, and the UI capability flags. These feed the derived ``GET /schema`` and
-are carried over verbatim from the previous hand-written ``AppSchema`` so the
-schema wire format is unchanged.
+are carried over from the previous hand-written ``AppSchema``; the one addition
+is the Encryption section's group ``description`` that guides operators through
+the independent in-place and post-run encryption modes and their constraints.
 """
 
 from app.sep.apps.framework.apps import Views
@@ -72,7 +73,18 @@ mysql_backups_views = Views(
                 collapsible=True,
                 forbidden=(FieldGate(when=F("backup_type") != "B"),),
             ),
-            SectionLayout(key="Encryption", title="Encryption", collapsible=True),
+            SectionLayout(
+                key="Encryption",
+                title="Encryption",
+                collapsible=True,
+                description=(
+                    "GPG-encrypt the backup. In-place ('Encrypt backup', optionally "
+                    "with 'Encrypt using tmpdir') and post-run ('Encrypt after backup "
+                    "completes') are independent — enable either or both. 'Encrypt "
+                    "using tmpdir' and 'Encrypt after backup completes' are mutually "
+                    "exclusive. Either mode needs a recipient."
+                ),
+            ),
             SectionLayout(key="Upload", title="Upload", collapsible=True),
         )
     ),

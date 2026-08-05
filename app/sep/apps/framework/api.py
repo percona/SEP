@@ -55,6 +55,7 @@ from app.sep.apps.framework.connectivity import (
 from app.sep.apps.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
+    dump_with_excluded_fields,
     TaskExecuteWrite,
     TaskExecutionResponse,
     TaskResponseBuilder,
@@ -301,8 +302,8 @@ def capabilities_endpoint(
     .. code-block:: python
 
         from app.sep.apps.framework.api import capabilities_endpoint
-        from app.sep.apps.snippets.models import SnippetsCapabilitiesResponse
         from app.sep.snippets.config import snippets_settings
+        from app.sep.snippets.models.responses import SnippetsCapabilitiesResponse
 
         def _snippets_capabilities() -> SnippetsCapabilitiesResponse:
             return SnippetsCapabilitiesResponse(
@@ -595,7 +596,7 @@ def _register_create_route(
         base = builder(task, status=None)
         if warning is not None:
             return create_response_model(
-                **{**base.model_dump(), "connectivity_warning": warning}
+                **{**dump_with_excluded_fields(base), "connectivity_warning": warning}
             )
         return base
 
@@ -723,7 +724,7 @@ def _register_update_route(
         )
         if warning is not None:
             return create_response_model(
-                **{**base.model_dump(), "connectivity_warning": warning}
+                **{**dump_with_excluded_fields(base), "connectivity_warning": warning}
             )
         return base
 

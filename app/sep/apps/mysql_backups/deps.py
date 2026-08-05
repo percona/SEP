@@ -20,20 +20,19 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends, Form, Query
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import (
     assemble_envelope,
     resolve_refs,
 )
-from app.sep.apps.mysql_backups.models import (
-    BackupCreate,
-    BackupTaskResponse,
-    BackupType,
-    OWNER,
-)
+from app.sep.apps.mysql_backups.forms import BackupCreate, BackupTaskResponse, OWNER
+from app.sep.apps.mysql_backups.models import BackupType, extract_backup_type_marker
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
+from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 from app.sep.deps import (
@@ -43,6 +42,7 @@ from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
+from app.sep.inventory import CreatedService
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ async def build_backup_task_payload(
         name=form.task_name,
         owner=OWNER,
         alert_on_fail=form.alert_on_fail,
+        run_result_recorder=RUN_RESULT_RECORDER,
     )
 
 
@@ -118,34 +119,101 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
 
+async def resolve_mysql_service(
+    service_id: int, inventory_api: InventoryAPI
+) -> CreatedService:
+    """Resolve an inventory service by id for the backup-catalog query route.
+
+    Lets the Inventory API's ``404`` propagate unchanged: an unknown ``service_id``
+    is a real client error, not an empty catalog. The catalog query distinguishes
+    the two — this raises for a service that does not exist, while a service that
+    exists but has no recorded runs yields an empty list. A resolvable service of
+    the wrong type is treated the same as an unknown one: the catalog query has no
+    way to tell the two apart (it filters on ``service_name`` alone), so serving
+    it would let a same-named non-MySQL service leak another service's rows.
+
+    :param service_id: The inventory id of the service to resolve.
+    :param inventory_api: The Inventory API client used to resolve the service.
+    :return: The resolved service.
+    :raises HTTPNotFoundException: When the resolved service is not a MySQL service.
+    """
+    service_data = await inventory_api.get(f"/services/{service_id}")
+    service = CreatedService.model_validate(service_data)
+    if service.type is not ServiceTypeEnum.MYSQL:
+        raise HTTPNotFoundException(detail="Service not found")
+    return service
+
+
+ResolvedMysqlService = Annotated[CreatedService, Depends(resolve_mysql_service)]
+
+
+async def resolve_optional_mysql_service_name(
+    inventory_api: InventoryAPI,
+    service_id: str | None = Query(
+        None,
+        description=(
+            "Cascade parent from the restore form. Inventory numeric ids are "
+            "resolved to a MySQL service name; custom names query the catalog "
+            "directly. Omitted, blank, sentinel, or unknown values yield an "
+            "empty list so free-text entry is never blocked by a failed "
+            "options fetch."
+        ),
+    ),
+) -> str | None:
+    """Resolve the cascade parent to a catalog service name, or ``None``.
+
+    Numeric ids go through :func:`resolve_mysql_service` (MySQL-typed only) and
+    degrade unknown ids to ``None``. Non-numeric values are returned as-is so a
+    free-typed restore destination can still list catalog rows by that name —
+    deliberately unguarded by Inventory type checks, matching the restore form's
+    ``ServiceRef(allow_custom=True)`` escape hatch. Omitted, blank, and
+    sentinel parents also yield ``None``.
+
+    :param inventory_api: The Inventory API client used to resolve numeric ids.
+    :param service_id: The cascade parent's submitted value, or ``None`` when
+        omitted.
+    :return: A service name to query the catalog with, or ``None`` when the
+        parent is unusable.
+    :raises HTTPException: When the Inventory lookup fails with a status other
+        than 404.
+    """
+    if service_id is None:
+        return None
+    trimmed = service_id.strip()
+    if not trimmed or trimmed == UNKNOWN_SERVICE_SENTINEL:
+        return None
+    if not trimmed.isdigit():
+        return trimmed
+    try:
+        service = await resolve_mysql_service(int(trimmed), inventory_api)
+    except HTTPNotFoundException:
+        return None
+    return service.name
+
+
+OptionalMysqlServiceName = Annotated[
+    str | None, Depends(resolve_optional_mysql_service_name)
+]
+
+
 get_backups_task = make_task_dep(OWNER)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
 
-def _extract_backup_type_from_task(task: Task) -> BackupType | None:  # noqa: PLR0911
-    """Read ``BACKUP_TYPE`` out of the task's YAML config, if present."""
-    meta = task.data.get("meta") if task.data else None
-    raw_config = meta.get("config") if meta else None
-    if not raw_config:
-        return None
+def _extract_backup_type_from_task(task: Task) -> BackupType | None:
+    """Read ``BACKUP_TYPE`` out of the task's YAML config as a typed value, if present.
+
+    Shares the defensive raw-marker parse with the run-result recorder via
+    :func:`~app.sep.apps.mysql_backups.models.extract_backup_type_marker`,
+    layering only the coercion to the typed :class:`BackupType` on top.
+
+    :param task: The task whose ``data`` carries the YAML config.
+    :return: The typed backup type, or ``None`` when absent or unrecognised.
+    """
+    marker = extract_backup_type_marker(task.data)
     try:
-        config = yaml.safe_load(raw_config)
-    except yaml.YAMLError:
-        return None
-    if not isinstance(config, dict):
-        return None
-    server_list = config.get("SERVER_LIST")
-    if not isinstance(server_list, list) or not server_list:
-        return None
-    first = server_list[0]
-    if not isinstance(first, dict):
-        return None
-    raw_type = first.get("BACKUP_TYPE")
-    if raw_type is None:
-        return None
-    try:
-        return BackupType(raw_type)
+        return BackupType(marker)
     except ValueError:
         return None
 

@@ -18,8 +18,9 @@
 import type { ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { apiClient } from '@sep/api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { useRefreshEntitiesOnSyncComplete } from './hooks';
+import { useCheckServiceConnectivity, useRefreshEntitiesOnSyncComplete } from './hooks';
 
 const ENTITY_ROOT_KEY = ['plugins', 'inventory', 'entity'];
 
@@ -134,5 +135,50 @@ describe('useRefreshEntitiesOnSyncComplete', () => {
     await waitFor(() => {
       expect(client.getQueryState(NODE_LIST_KEY)?.isInvalidated).toBe(true);
     });
+  });
+});
+
+describe('useCheckServiceConnectivity', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function setupMutation(serviceId: string | number) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    return renderHook(() => useCheckServiceConnectivity(serviceId), { wrapper });
+  }
+
+  it('posts to the service-scoped endpoint and returns the probe body', async () => {
+    const body = { success: false, error: 'Connection refused', task_history_id: 12 };
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: body } as never);
+
+    const { result } = setupMutation(42);
+    result.current.mutate();
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(postSpy).toHaveBeenCalledWith('/apps/inventory/services/42/check-connectivity/', {});
+    expect(result.current.data).toEqual(body);
+  });
+
+  it('does not invalidate cached queries — a probe mutates no server state', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const invalidate = vi.spyOn(client, 'invalidateQueries').mockResolvedValue();
+    vi.spyOn(apiClient, 'post').mockResolvedValue({
+      data: { success: true, error: null, task_history_id: 1 },
+    } as never);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useCheckServiceConnectivity(42), { wrapper });
+    result.current.mutate();
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidate).not.toHaveBeenCalled();
   });
 });

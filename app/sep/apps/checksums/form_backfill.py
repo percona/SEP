@@ -21,15 +21,16 @@ from typing import Any, TYPE_CHECKING
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.deps import parse_checksums_task_args
-from app.sep.apps.checksums.models import coerce_target_list
+from app.sep.apps.checksums.models import ChecksumsForm, coerce_target_list, OWNER
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
+from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
     from app.tasks.models import Task
 
-__all__ = ["reconstruct_checksums_form"]
+__all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_checksums_form"]
 
 
 def _split_checksums_dsn_recursion(recursion_method: str) -> tuple[str, str]:
@@ -117,3 +118,13 @@ def reconstruct_checksums_form(
         "alert_on_fail": task.alert_on_fail,
         **parsed,
     }
+
+
+FORM_BACKFILL_ENTRIES = [
+    FormBackfillEntry(
+        app_key="checksums",
+        owner=OWNER,
+        create_model=ChecksumsForm,
+        reconstructor=reconstruct_checksums_form,
+    ),
+]

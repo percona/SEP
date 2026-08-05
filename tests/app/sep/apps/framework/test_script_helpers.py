@@ -45,9 +45,9 @@ from app.sep.apps.framework.script_helpers import (
     post_task_execution,
 )
 from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
-from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     FilePreview,

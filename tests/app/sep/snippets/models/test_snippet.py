@@ -29,6 +29,7 @@ from app.sep.snippets.models.snippet import (
     BaseSnippet,
     BaseSnippetArgs,
     EXECUTOR_HOSTS_INPUT_NAME,
+    EXTRA_ARGS_INPUT_NAME,
     Snippet,
 )
 
@@ -308,6 +309,59 @@ class TestGetExecutionModel:
         instance = model(**{"-hostname-": "server1", "host": "db-host"})
         assert instance.executor_host == "server1"
 
+    def test_binds_extra_args_via_new_schema_alias(self):
+        """Verify a value keyed by the schema-driven ``extra_args`` name binds."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"allow_extra_args": True, "parameters": []},
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {EXECUTOR_HOSTS_INPUT_NAME: "server1", "extra_args": "--verbose --foo"}
+        )
+        assert instance.extra_args == ["--verbose", "--foo"]
+
+    def test_binds_extra_args_via_legacy_alias(self):
+        """Verify the legacy ``-extra_args-`` alias still binds alongside the new one."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"allow_extra_args": True, "parameters": []},
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {EXECUTOR_HOSTS_INPUT_NAME: "server1", EXTRA_ARGS_INPUT_NAME: "--verbose"}
+        )
+        assert instance.extra_args == ["--verbose"]
+
+    def test_extra_args_field_absent_when_not_allowed(self):
+        """Verify the generated model declares no ``extra_args`` field by default."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"parameters": []},
+        )
+        model = snippet.get_execution_model()
+        assert "extra_args" not in model.model_fields
+
+    def test_extra_args_key_ignored_when_not_allowed(self):
+        """Verify submitting ``extra_args`` for a non-opted-in snippet is silently dropped."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"parameters": []},
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {EXECUTOR_HOSTS_INPUT_NAME: "server1", "extra_args": "--verbose"}
+        )
+        assert instance.to_args_string() == ""
+
 
 class TestToArgsString:
     """Test datetime CLI argument serialization via to_args_string."""
@@ -404,6 +458,38 @@ class TestToArgsString:
         assert args == "2024-06-10T14:30:00"
         assert "2024-06-10 14:30:00" not in args
 
+    def test_extra_args_from_new_alias_reach_command_string(self):
+        """Verify a value bound via the schema-driven alias reaches the built command."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"allow_extra_args": True, "parameters": []},
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {EXECUTOR_HOSTS_INPUT_NAME: "host1", "extra_args": "--verbose"}
+        )
+
+        args = instance.to_args_string()
+
+        assert "--verbose" in args.split()
+
+    def test_empty_extra_args_produces_no_stray_tokens(self):
+        """Verify a blank Extra Args value appends nothing to the command."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"allow_extra_args": True, "parameters": []},
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {EXECUTOR_HOSTS_INPUT_NAME: "host1", "extra_args": ""}
+        )
+
+        assert instance.to_args_string() == ""
+
 
 class TestValidatedParameters:
     """Test the validated_parameters cached property."""
@@ -439,6 +525,27 @@ class TestValidatedParameters:
         )
         result = snippet.validated_parameters
         assert len(result.errors) > 0
+
+    def test_extra_args_named_parameter_is_rejected(self):
+        """Drop a parameter reserved for the synthesized Extra Args field.
+
+        Regression test for a wire-name collision: an ordinary parameter
+        named ``extra_args`` would otherwise share its wire name with the
+        synthesized Extra Args execution field, causing
+        ``build_snippet_schema`` to raise a duplicate-field error, or a
+        submitted value to silently double-bind in the execution model. It
+        is now rejected like any other invalid parameter, before either path
+        is reached.
+        """
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"parameters": [{"name": "extra_args", "type": "str"}]},
+        )
+        result = snippet.validated_parameters
+        assert len(result.parameters) == 0
+        assert any("reserved" in error for error in result.errors)
 
     def test_no_parameters(self):
         """Verify empty parameters produce no errors."""
@@ -635,15 +742,18 @@ class TestSnippetModel:
 
     @pytest.mark.asyncio
     async def test_update_from_snippet(self):
-        """Verify update_from_snippet updates meta and removes approval."""
+        """Verify content updates preserve approval fields."""
         from app.core.utils import utc_now
 
+        approved_at = utc_now()
         original = Snippet(
             id=1,
             filename="test.sh",
             size=100,
             md5_digest="a" * 32,
-            approved_at=utc_now(),
+            approved_at=approved_at,
+            updated_by="user-123",
+            reason="Approved by admin",
         )
         new_snippet = Snippet(
             filename="test.sh",
@@ -660,7 +770,45 @@ class TestSnippetModel:
         assert original.md5_digest == "b" * 32
         assert original.size == UPDATED_SIZE
         assert original.meta == {"title": "Updated"}
-        assert original.approved_at is None
+        assert original.approved_at == approved_at
+        assert original.updated_by == "user-123"
+        assert original.reason == "Approved by admin"
+
+    def test_is_human_revoked_when_unapproved_with_user(self):
+        """Verify an administrator revocation is detected.
+
+        Writer contract: both Jinja and API revoke routes pass a real user id
+        into ``remove_approval``, which leaves ``updated_by`` set while clearing
+        ``approved_at``. Sync relies on that signal to avoid re-approving.
+        """
+        snippet = Snippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        snippet.remove_approval("Approval removed by admin", "user-456")
+        assert snippet.is_human_revoked is True
+        assert snippet.updated_by == "user-456"
+
+    def test_is_human_revoked_false_for_automatic_removal(self):
+        """Verify automatic approval removals are not treated as human revocations.
+
+        Writer contract: sync content-change clears pass ``user_id=None`` so
+        ``is_human_revoked`` stays false and a later matching sync may re-approve.
+        """
+        snippet = Snippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        snippet.approve("Approved by admin", "user-123")
+        snippet.remove_approval("File contents have changed", None)
+        assert snippet.is_human_revoked is False
+        assert snippet.updated_by is None
+
+    def test_is_human_revoked_false_while_approved_with_user(self):
+        """Verify approval writers that set ``updated_by`` are not treated as revoked.
+
+        Writer contract: batch approve and single approve leave ``updated_by`` set
+        together with ``approved_at``, so ``is_human_revoked`` stays false.
+        """
+        snippet = Snippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        snippet.approve("Batch approved by admin", "user-789")
+        assert snippet.is_approved is True
+        assert snippet.updated_by == "user-789"
+        assert snippet.is_human_revoked is False
 
 
 class TestFromPath:

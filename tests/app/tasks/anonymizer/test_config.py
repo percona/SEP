@@ -20,9 +20,54 @@ from collections import defaultdict
 import pytest
 from pydantic import ValidationError
 
+from app.core.config import YamlPrefixConfigSettingsSource
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
 from app.tasks.anonymizer.entities import PIIEntity
+
+HIGH_CONFIDENCE_DEFAULT_ENTITIES = {
+    PIIEntity.CREDIT_CARD,
+    PIIEntity.EMAIL_ADDRESS,
+    PIIEntity.IBAN_CODE,
+    PIIEntity.IP_ADDRESS,
+    PIIEntity.PHONE_NUMBER,
+    PIIEntity.US_SSN,
+    PIIEntity.US_ITIN,
+}
+
+PII_ENTITY_MEMBER_COUNT = 14
+
+
+def _entities_for_profile(profile: str) -> set[PIIEntity]:
+    """Load ``DEFAULT_ENTITIES`` for a settings.yaml profile via the production merge."""
+    source = YamlPrefixConfigSettingsSource(
+        AnonymizerSettings,
+        prefixes=(profile, *AnonymizerSettings.SETTINGS_PREFIXES),
+    )
+    settings = AnonymizerSettings(DEFAULT_ENTITIES=source.yaml_data["DEFAULT_ENTITIES"])
+    return settings.DEFAULT_ENTITIES["any_owner"]
+
+
+class TestSettingsYamlAnonymizerProfiles:
+    """Assert shipped settings.yaml profiles resolve the expected entity sets."""
+
+    @pytest.mark.parametrize(
+        ("profile", "expected"),
+        [
+            ("default", HIGH_CONFIDENCE_DEFAULT_ENTITIES),
+            ("development", set()),
+        ],
+        ids=["default-high-confidence", "development-empty"],
+    )
+    def test_profile_resolves_expected_entities(
+        self, profile: str, expected: set[PIIEntity]
+    ) -> None:
+        """Assert each profile resolves to the expected ``DEFAULT_ENTITIES`` set."""
+        assert _entities_for_profile(profile) == expected
+
+    def test_pii_entity_retains_all_fourteen_members(self) -> None:
+        """Assert narrowing is configuration-only; ``PIIEntity`` still has 14 members."""
+        assert len(PIIEntity) == PII_ENTITY_MEMBER_COUNT
 
 
 class TestValidateEntitiesDefaultdict:

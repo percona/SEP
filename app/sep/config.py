@@ -52,10 +52,13 @@ from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
+    coerce_field_value,
     hot_field,
     materialize_template,
+    MaterializerContext,
     nested_overridable_field,
     not_overridable_field,
+    SECRET_STR_MASK,
 )
 from app.core.utils import (
     deep_dict_update,
@@ -138,7 +141,7 @@ class App(BaseCaseInsensitiveModel):
         * **Explicit ``null``** — opt the plugin out of the JSON API mount,
           even if a conventional module exists.
     :param celery_module_path: Optional dot-separated import path to the plugin's
-        Celery task module (e.g. ``"app.sep.apps.snippets.celery"``). The path is a
+        Celery task module (e.g. ``"app.sep.apps.alerts.celery"``). The path is a
         *module*, not an attribute, so it feeds the worker ``include`` list rather
         than being resolved to an object. Three input states, mirroring
         ``api_router_path``:
@@ -595,6 +598,91 @@ class AppDrainSettings(BaseLowercaseModel):
     stale_task_ttl: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(hours=1)
 
 
+class DeliveryPlanInputs(BaseModel):
+    """Carry the per-deployment inputs a baked delivery plan leaves open.
+
+    Both leaves are sealed with ``not_overridable_field`` so the settings API
+    accepts only an atomic whole-object PATCH. Were they overridable, a
+    ``__``-delimited leaf write would be coerced by ``coerce_nested_field_value``
+    and never reach the owning field's materializer, which is the only place a
+    payload is checked against the baked skeleton.
+
+    :param endpoint: The receiver base URL, or ``None`` to keep the baked plan's.
+    :param secrets: Values for the secret names the baked plan declares.
+    """
+
+    endpoint: CredentialHttpUrl | None = not_overridable_field(None)
+    secrets: dict[str, SecretStr] = not_overridable_field({})
+
+    @field_validator("secrets")
+    @classmethod
+    def _reject_unresolved_mask(
+        cls, value: dict[str, SecretStr]
+    ) -> dict[str, SecretStr]:
+        """Reject a secret carrying the redaction mask as its value.
+
+        The mask is what every read surface renders -- the settings API and the
+        YAML export alike -- so it round-trips back as a plausible-looking value.
+        On the override path ``preserve_patch_secret_value`` swaps a resubmitted
+        mask for the stored secret before this runs, so a mask arriving here
+        means there was nothing to restore; on the YAML and environment paths
+        nothing swaps it at all. A field validator covers every acquisition path,
+        which a materializer cannot: materializers run on the override path only.
+
+        :param value: The submitted secret values.
+        :return: The validated secret values.
+        :raises ValueError: When any value is the redaction mask.
+        """
+        if masked := sorted(
+            name
+            for name, secret in value.items()
+            if secret.get_secret_value() == SECRET_STR_MASK
+        ):
+            raise ValueError(
+                f"Secrets carry the redaction mask and cannot be stored: "
+                f"{', '.join(masked)}"
+            )
+        return value
+
+
+def materialize_delivery_plan_inputs(ctx: MaterializerContext) -> Any:
+    """Bind submitted delivery-plan inputs against the baked plan skeleton.
+
+    ``DeliveryPlan``'s cross-reference validator accepts *extra* secret names --
+    it only checks that every cited name is declared, never the converse -- so an
+    undeclared key would persist and then be silently ignored at send time. This
+    runs at both enforcement points the override module provides, and is the only
+    place a candidate payload is seen before it is stored.
+
+    Reading the skeleton off ``sep_settings`` is safe because
+    ``DIAGNOSTICS_DELIVERY`` is ``not_overridable_field``, so it never comes from
+    the snapshot being rebuilt.
+
+    :param ctx: The materialization context.
+    :return: The validated inputs, or ``None`` when the override clears them.
+    :raises ValidationError: When the payload does not match the field's shape.
+    :raises ValueError: When the secret names are not exactly the ones the
+        skeleton declares.
+    """
+    inputs = coerce_field_value(ctx.field_info, ctx.raw)
+    if inputs is None:
+        return None
+    skeleton = sep_settings.DIAGNOSTICS_DELIVERY
+    declared = frozenset(skeleton.secrets) if skeleton is not None else frozenset()
+    submitted = frozenset(inputs.secrets)
+    if submitted != declared:
+        problems: list[str] = []
+        if undeclared := sorted(submitted - declared):
+            problems.append(f"undeclared secret names {', '.join(undeclared)}")
+        if missing := sorted(declared - submitted):
+            problems.append(f"missing secret names {', '.join(missing)}")
+        raise ValueError(
+            f"Delivery-plan inputs do not match the configured plan: "
+            f"{'; '.join(problems)}."
+        )
+    return inputs
+
+
 def _warn_legacy_apps_key() -> None:
     """Emit a deprecation warning for the legacy ``SEP.PLUGINS`` config key."""
     logger.warning(
@@ -641,11 +729,17 @@ class SEPSettings(BaseYamlAppSettings):
     :param DIAGNOSTICS_DELIVERY: The delivery plan used to send diagnostic
         bundles to a receiver: named secrets, an ordered list of HTTP resolution
         steps, and one terminal multipart upload step. ``None`` (the default)
-        means no receiver is configured. Set through env or YAML only, so every
-        write runs the plan's cross-reference validation as a whole; DB
-        overrides are rejected because a per-leaf override would merge without
-        re-validating the plan, and a secret sent through the override API is
-        stored as its mask literal.
+        means no receiver is configured. This skeleton is set through env or YAML
+        only, so every write runs the plan's cross-reference validation as a
+        whole; DB overrides are rejected because a per-leaf override would merge
+        without re-validating the plan. ``DIAGNOSTICS_DELIVERY_INPUTS`` is the
+        runtime surface for the values that differ per deployment.
+    :param DIAGNOSTICS_DELIVERY_INPUTS: The per-deployment values
+        ``DIAGNOSTICS_DELIVERY`` leaves open -- the receiver endpoint and the
+        values of the secret names its steps cite. ``None`` (the default) leaves
+        the baked plan to stand on its own. Overridable as one atomic
+        whole-object write, whose materializer refuses a payload naming any
+        secret the baked plan does not declare, or omitting one it does.
     :param APP_DRAIN: Operator-tunable settings for the cooperative app-drain
         reconciler (reconcile cadence and stale running-task TTL).
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
@@ -693,9 +787,12 @@ class SEPSettings(BaseYamlAppSettings):
     DIAGNOSTICS_DELIVERY: DeliveryPlan | None = not_overridable_field(
         None, advanced=True
     )
+    DIAGNOSTICS_DELIVERY_INPUTS: DeliveryPlanInputs | None = hot_field(
+        None, materializer=materialize_delivery_plan_inputs, advanced=True
+    )
     APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
-    CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
+    CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=False)
     AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(
         default=False,
         description=(

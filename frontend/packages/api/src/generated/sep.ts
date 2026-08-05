@@ -661,6 +661,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/atw/config/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Config
+     * @description Report whether the incident send action is available.
+     *
+     *     Not gated by the send guard -- this endpoint is what reports that guard, so
+     *     it must answer whether or not a receiver is configured.
+     *
+     *     :return: The reasons the send action is withheld; empty when it is offered.
+     */
+    get: operations['atw_atw_config_api_apps_atw_config__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/atw/execution-schema/': {
     parameters: {
       query?: never;
@@ -774,11 +799,16 @@ export interface paths {
      * Atw List Incident Executions
      * @description List one incident's snippet executions, newest first, with live task status.
      *
+     *     Each row also reports the command line its snippet ran with, credential values
+     *     masked. A row whose snippet or upstream payload cannot supply what masking
+     *     needs reports its arguments as withheld; the page still returns.
+     *
      *     :param session: The database session.
      *     :param incident: The incident resolved from the ``incident_id`` path parameter.
      *     :param pagination: The offset/limit window for the page.
      *     :param tasks_api: The authenticated Tasks API client.
-     *     :return: A paginated page of executions hydrated from the Tasks API.
+     *     :return: A paginated page of executions hydrated from the Tasks API, each with
+     *         its masked arguments or the reason they are absent.
      */
     get: operations['atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get'];
     put?: never;
@@ -809,6 +839,76 @@ export interface paths {
      *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/send-jobs/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw List Send Jobs
+     * @description List one incident's diagnostics send attempts, newest first.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param pagination: The offset/limit window for the page.
+     *     :return: A paginated page of send attempts, newest first.
+     */
+    get: operations['atw_atw_list_send_jobs_api_apps_atw_incidents__incident_id__send_jobs__get'];
+    put?: never;
+    /**
+     * Atw Start Send Job
+     * @description Start delivering the selected executions' output files and logs to the support case.
+     *
+     *     The row is created before the task is queued so a broker failure is still
+     *     recorded as a failed attempt rather than vanishing: the row is the only place
+     *     a support engineer can see that a send was ever tried.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param current_user: The authenticated user, stamped as ``requested_by``.
+     *     :param body: The send payload naming the case reference and executions.
+     *     :return: The created send log, pending.
+     *     :raises HTTPUnprocessableEntityException: When an execution id does not belong
+     *         to this incident.
+     *     :raises HTTPServiceUnavailableException: When the send could not be queued.
+     *     :raises HTTPBadRequestException: Propagated from the manager when the row
+     *         cannot be written.
+     */
+    post: operations['atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/send-jobs/{send_job_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Get Send Job
+     * @description Retrieve one diagnostics send attempt, for the dialog to poll.
+     *
+     *     :param session: The database session.
+     *     :param incident: The incident resolved from the ``incident_id`` path parameter.
+     *     :param send_job_id: The send attempt's UUID.
+     *     :return: The matching send attempt.
+     *     :raises HTTPNotFoundException: If this incident has no such attempt.
+     */
+    get: operations['atw_atw_get_send_job_api_apps_atw_incidents__incident_id__send_jobs__send_job_id__get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1428,6 +1528,42 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/inventory/services/{service_id}/check-connectivity/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Inventory Service Check Connectivity
+     * @description Run a database connectivity probe for a service from its executor host.
+     *
+     *     Backs the React connectivity control on the service detail page. A probe
+     *     that ran but could not connect is reported as HTTP 200 with
+     *     ``success=false`` and the upstream message in ``error``; only a probe that
+     *     could not be attempted at all is an error status. This three-segment
+     *     literal path cannot collide with the two-segment
+     *     ``/{entity}/{item_id:int}`` detail matcher.
+     *
+     *     :param service: The service to probe, resolved from the path id.
+     *     :param tasks_api: Authenticated Tasks ``RemoteAPI`` client.
+     *     :return: The upstream probe result.
+     *     :raises HTTPBadRequestException: When the service cannot be probed —
+     *         unsupported type, missing node or port, or no executor registered for
+     *         the node address.
+     *     :raises HTTPBadGatewayException: When the Tasks API is unreachable or
+     *         returns an unparseable body.
+     */
+    post: operations['inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/inventory/services/{service_id}/system-observation': {
     parameters: {
       query?: never;
@@ -1604,6 +1740,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/mysql_backups/backup-sources/choices': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Backup Source Choices
+     * @description Return ``Choice`` options for a MySQL service's restore ``backup_source``.
+     *
+     *     The ``service_id`` query parameter (cascade parent name on the restore form)
+     *     selects which catalog rows to map. Options are newest-first and capped at
+     *     :data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain
+     *     reachable via free-text). An omitted, empty, sentinel, or unknown parent
+     *     yields ``[]`` rather than a ``404``, so the RemoteChoices free-text escape
+     *     hatch stays usable. Other Inventory API failures still propagate.
+     *
+     *     Free-typed (non-numeric) parents query the catalog by that name without an
+     *     Inventory type check — matching ``ServiceRef(allow_custom=True)`` on the
+     *     restore form, where the destination may be a name that has no MySQL
+     *     inventory row. Numeric parents still require a resolvable MySQL service.
+     *
+     *     :param session: The database session the catalog is queried on.
+     *     :param service_name: The cascade parent resolved to a catalog service name,
+     *         or ``None`` when the parent is unusable.
+     *     :return: Choice-compatible options for the restore backup-source selector.
+     */
+    get: operations['mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/mysql_backups/restore/': {
     parameters: {
       query?: never;
@@ -1697,6 +1870,40 @@ export interface paths {
      *     :return: The plugin schema instance.
      */
     get: operations['mysql_backups_get_schema_api_apps_mysql_backups_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/mysql_backups/services/{service_id}/backups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Service Backups
+     * @description Return a page of a MySQL service's completed backup runs, newest run first.
+     *
+     *     The ``service_id`` path parameter is resolved by
+     *     :data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an
+     *     unknown service surface as a ``404``. A resolvable service with no recorded
+     *     runs yields an empty page, so a caller building a restore selector is never
+     *     blocked by an empty catalog but is still told when the service itself is
+     *     unknown.
+     *
+     *     :param service: The inventory service resolved from the ``service_id`` path
+     *         parameter.
+     *     :param session: The database session the catalog is queried on.
+     *     :param pagination: The requested offset/limit window.
+     *     :return: The requested page of the service's recorded backup runs, newest
+     *         run first.
+     */
+    get: operations['mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2591,10 +2798,13 @@ export interface paths {
      *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
      *     ``detail`` are preserved through the proxy.
      *
-     *     For a local class: idempotent -- deleting a (class, key) pair that has no
-     *     override row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE
-     *     field responds 409 -- the field cannot have an override row in the first
-     *     place, so the operator's intent is unsatisfiable.
+     *     For a local class the DELETE is idempotent: deleting a (class, key) pair
+     *     that has no override row succeeds with 204. Attempting to delete a field
+     *     the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
+     *     override row in the first place and the operator's intent is
+     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+     *     may still carry a row written before the restriction applied, so that
+     *     row is deleted normally and only the no-row case answers 409.
      *
      *     After republishing the snapshot, fires the rebind callbacks for the
      *     reverted key so a HOT target rebinds to its restored value without
@@ -2609,7 +2819,8 @@ export interface paths {
      *         the router wires none).
      *     :raises HTTPNotFoundException: If the class isn't exposed or the key
      *         doesn't exist on the class.
-     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has
+     *         no row to delete.
      *     :raises HTTPUnprocessableEntityException: If ``key`` names a
      *         ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
      *         target an individual ``parent__leaf`` instead).
@@ -3299,6 +3510,32 @@ export interface components {
       lifecycle_state: components['schemas']['AppLifecycleEnum'];
     };
     /**
+     * BatchApprovalResponse
+     * @description Successful response for the batch-approve endpoint.
+     *
+     *     :param approved: Filenames whose approval state was toggled by this
+     *         request (newly approved as a result of the call).
+     *     :type approved: list[str]
+     *     :param skipped_already_approved: Filenames that were already approved
+     *         when the call started; the request is treated as a soft-skip
+     *         (idempotent).
+     *     :type skipped_already_approved: list[str]
+     */
+    BatchApprovalResponse: {
+      /** Approved */
+      approved: string[];
+      /**
+       * Count
+       * @description Return the number of newly approved snippets.
+       *
+       *     :return: Length of ``approved``.
+       *     :rtype: int
+       */
+      readonly count: number;
+      /** Skipped Already Approved */
+      skipped_already_approved: string[];
+    };
+    /**
      * ConnectivityCheckRequest
      * @description Carry the required set of services to probe.
      *
@@ -3308,6 +3545,22 @@ export interface components {
     ConnectivityCheckRequest: {
       /** Targets */
       targets: components['schemas']['ServiceEnum'][];
+    };
+    /**
+     * ConnectivityCheckResponse
+     * @description Represent a connectivity check result.
+     *
+     *     :param success: Whether the connectivity check succeeded.
+     *     :param error: Error message if the check failed. Defaults to ``None``.
+     *     :param task_history_id: The ID of the task history record for this check.
+     */
+    ConnectivityCheckResponse: {
+      /** Error */
+      error?: string | null;
+      /** Success */
+      success: boolean;
+      /** Task History Id */
+      task_history_id: number;
     };
     /**
      * ConnectivityResult
@@ -3518,6 +3771,17 @@ export interface components {
       /** Total */
       total: number;
     };
+    /** PaginatedResponse[SnippetResponse] */
+    PaginatedResponse_SnippetResponse_: {
+      /** Items */
+      items: components['schemas']['SnippetResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[TaskHistoryResponse] */
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
@@ -3539,6 +3803,20 @@ export interface components {
       offset: number;
       /** Total */
       total: number;
+    };
+    /**
+     * RefreshResponse
+     * @description Represent the successful result of a manual snippets-refresh operation.
+     *
+     *     :param refreshed_at: UTC timestamp at which the refresh completed.
+     *     :type refreshed_at: datetime
+     */
+    RefreshResponse: {
+      /**
+       * Refreshed At
+       * Format: date-time
+       */
+      refreshed_at: string;
     };
     /**
      * ReloadClassification
@@ -3871,6 +4149,128 @@ export interface components {
      */
     SnippetApprovalFilter: 'all' | 'approved' | 'not_approved';
     /**
+     * SnippetBatchApproveRequest
+     * @description Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.
+     *
+     *     Unlike the Form-bound :class:`~app.sep.snippets.deps.SnippetBatchApproveForm`
+     *     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
+     *     parses it as JSON.
+     *
+     *     :param filenames: Unique, non-empty list of snippet filenames to approve in a
+     *         single atomic operation. Duplicates are silently deduplicated by
+     *         ``UniqueList``.
+     */
+    SnippetBatchApproveRequest: {
+      /** Filenames */
+      filenames: string[];
+    };
+    /**
+     * SnippetResponse
+     * @description Represent a snippet entity as exposed by the JSON API.
+     *
+     *     :param filename: The snippet's filename on disk; doubles as its
+     *         identifier in the API.
+     *     :type filename: NonEmptyStr
+     *     :param title: The display title for the snippet (snippet metadata's
+     *         ``title`` field, falling back to ``filename`` when unset).
+     *     :type title: NonEmptyStr
+     *     :param description: The snippet's free-text description, or an empty
+     *         string when no description is set in metadata.
+     *     :type description: str
+     *     :param service_type: The snippet's free-form service type
+     *         (``service_type`` metadata field, for example ``"mysql"`` or
+     *         ``"mongodb"``), or ``None`` when the snippet declares no service
+     *         type. Distinct from the inventory ``ServiceTypeEnum``.
+     *     :type service_type: str | None
+     *     :param size: Snippet file size in bytes.
+     *     :type size: int
+     *     :param md5_digest: 32-character MD5 hex digest of the snippet file.
+     *     :type md5_digest: str
+     *     :param is_approved: Whether the snippet has been approved for execution.
+     *     :type is_approved: bool
+     *     :param approved_at: When the snippet was last approved, or ``None`` if
+     *         unapproved.
+     *     :type approved_at: datetime | None
+     *     :param updated_by: User id that last toggled the approval state, or
+     *         ``None`` if no toggle has occurred.
+     *     :type updated_by: str | None
+     *     :param reason: Free-form reason recorded the last time the snippet's
+     *         approval state changed.
+     *     :type reason: str
+     *     :param requires_sudo: Whether the snippet requires sudo for execution
+     *         (either always-sudo or sudo is user-toggleable).
+     *     :type requires_sudo: bool
+     *     :param sudo_optional: Whether the user can toggle sudo at execution
+     *         time.
+     *     :type sudo_optional: bool
+     *     :param sudo_default: Default value for the sudo toggle when
+     *         ``sudo_optional`` is ``True``.
+     *     :type sudo_default: bool
+     *     :param interpreter: The shell/interpreter command used to execute the
+     *         snippet (for example, ``"bash"`` or ``"python3"``); ``None`` when
+     *         no interpreter mapping resolves.
+     *     :type interpreter: str | None
+     *     :param created_at: When the snippet row was first inserted.
+     *     :type created_at: datetime
+     *     :param updated_at: When the snippet row was last updated, or ``None``
+     *         if never updated since insert.
+     *     :type updated_at: datetime | None
+     */
+    SnippetResponse: {
+      /** Approved At */
+      approved_at?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Description */
+      description: string;
+      /** Filename */
+      filename: string;
+      /** Interpreter */
+      interpreter?: string | null;
+      /** Is Approved */
+      is_approved: boolean;
+      /** Md5 Digest */
+      md5_digest: string;
+      /** Reason */
+      reason: string;
+      /** Requires Sudo */
+      requires_sudo: boolean;
+      /** Service Type */
+      service_type?: string | null;
+      /** Size */
+      size: number;
+      /** Sudo Default */
+      sudo_default: boolean;
+      /** Sudo Optional */
+      sudo_optional: boolean;
+      /** Title */
+      title: string;
+      /** Updated At */
+      updated_at?: string | null;
+      /** Updated By */
+      updated_by?: string | null;
+    };
+    /**
+     * SnippetServiceTypesResponse
+     * @description Carry the whole-dataset service-type facet for the list filter.
+     *
+     *     Sourced across every snippet (not the loaded page) so the list page's
+     *     service-type dropdown can offer every value the dataset contains.
+     *
+     *     :param service_types: The sorted distinct non-blank service types.
+     *     :param has_uncategorized: Whether any snippet has an absent or blank service
+     *         type (surfaced as the "Uncategorized" filter option).
+     */
+    SnippetServiceTypesResponse: {
+      /** Has Uncategorized */
+      has_uncategorized: boolean;
+      /** Service Types */
+      service_types: string[];
+    };
+    /**
      * SnippetSortDirection
      * @description Enumerate the sort direction.
      *
@@ -3894,6 +4294,28 @@ export interface components {
      * @enum {string}
      */
     SnippetSortKey: 'created_at' | 'filename' | 'approved_at' | 'title' | 'service_type';
+    /**
+     * SnippetsCapabilitiesResponse
+     * @description Represent per-deployment capability flags for the Snippets plugin.
+     *
+     *     Exposes flags that gate the visibility of admin-only UI affordances
+     *     (currently the manual refresh button) so the React shell can decide
+     *     whether to render those controls without probing the gated endpoints.
+     *
+     *     Distinct from :class:`~app.sep.apps.framework.schema.Capabilities`,
+     *     which describes static UI feature flags on
+     *     :attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`
+     *     (chaining, scheduling, alert_on_fail). This model is the per-
+     *     deployment runtime counterpart returned by ``GET /capabilities``.
+     *
+     *     :param manual_sync_enabled: Whether manual snippet refresh is enabled
+     *         in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).
+     *     :type manual_sync_enabled: bool
+     */
+    SnippetsCapabilitiesResponse: {
+      /** Manual Sync Enabled */
+      manual_sync_enabled: boolean;
+    };
     /**
      * SourceEnum
      * @description Enumeration of possible data sources for a node.
@@ -4173,7 +4595,7 @@ export interface components {
     alert_troubleshooting__AlertDetailResponse: {
       alert: components['schemas']['alert_troubleshooting__AlertInfo'];
       /** Snippets */
-      snippets: components['schemas']['snippets__SnippetResponse'][];
+      snippets: components['schemas']['SnippetResponse'][];
     };
     /**
      * AlertGroup
@@ -4711,11 +5133,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -4990,7 +5409,9 @@ export interface components {
      *     :param sudo: The sudo choice applied to every item; snippets whose sudo
      *         option is not optional ignore it.
      *     :param shared_args: Arguments offered to every item, filtered per snippet to
-     *         the parameters that snippet declares.
+     *         the parameters that snippet declares. ``NON_SHAREABLE_FIELD_NAMES`` (e.g.
+     *         Extra Args) are never applied from ``shared_args``, even for a snippet
+     *         that declares a field with that name.
      *     :param items: The snippets to execute, at least one and at most
      *         ``MAX_BATCH_SNIPPETS``.
      */
@@ -5062,8 +5483,20 @@ export interface components {
      *     :param started_at: When the upstream execution started.
      *     :param finished_at: When the upstream execution finished.
      *     :param has_logs: Whether the upstream execution has readable logs.
+     *     :param masked_args: The command line the snippet ran with, credential values
+     *         replaced by a fixed-width mask. ``None`` together with
+     *         ``args_withheld=False`` means the execution recorded no arguments.
+     *         Defaults to ``None``.
+     *     :param args_withheld: Whether the arguments were suppressed because they
+     *         could not be masked safely -- distinguishing that from an execution that
+     *         genuinely ran with none. Defaults to ``False``.
      */
     atw__ATWIncidentExecutionResponse: {
+      /**
+       * Args Withheld
+       * @default false
+       */
+      args_withheld: boolean;
       /**
        * Created At
        * Format: date-time
@@ -5078,6 +5511,8 @@ export interface components {
        * Format: uuid4
        */
       id: string;
+      /** Masked Args */
+      masked_args?: string | null;
       /** Snippet Filename */
       snippet_filename: string;
       /** Started At */
@@ -5096,7 +5531,9 @@ export interface components {
      *     ``AppSchema`` section carries only a display title.
      *
      *     :param shared: The batch-level execution fields followed by every parameter
-     *         the selection declares identically.
+     *         the selection declares identically, excluding ``NON_SHAREABLE_FIELD_NAMES``
+     *         (e.g. Extra Args), which stay per-snippet even when every item declares
+     *         them.
      *     :param per_snippet: The remaining per-snippet fields, in request order.
      */
     atw__ATWMergedSchemaResponse: {
@@ -5183,6 +5620,17 @@ export interface components {
       title: string;
     };
     /**
+     * AtwConfigResponse
+     * @description Report whether the incident send action is available.
+     *
+     *     :param send_disabled_reasons: Why sending is unavailable; empty when the
+     *         receiver is configured and the action is offered.
+     */
+    atw__AtwConfigResponse: {
+      /** Send Disabled Reasons */
+      send_disabled_reasons: string[];
+    };
+    /**
      * AtwIncidentResponse
      * @description Represent a persisted diagnostic incident.
      *
@@ -5245,6 +5693,75 @@ export interface components {
       /** Name */
       name?: string;
     };
+    /**
+     * AtwSendJobWrite
+     * @description Define the payload starting one diagnostics send.
+     *
+     *     :param case_ref: The support-case reference to attach the bundle to.
+     *     :param execution_ids: The incident executions whose output files and logs to
+     *         send.
+     */
+    atw__AtwSendJobWrite: {
+      /** Case Ref */
+      case_ref: string;
+      /** Execution Ids */
+      execution_ids: string[];
+    };
+    /**
+     * AtwSendLogResponse
+     * @description Represent one recorded diagnostics send attempt.
+     *
+     *     Every field is always present on a stored attempt, so -- unlike returning the
+     *     :class:`AtwSendLog` table model directly -- the generated client types them as
+     *     required rather than optional.
+     *
+     *     :param id: The attempt's UUID primary key.
+     *     :param incident_id: The incident the attempt belongs to.
+     *     :param case_ref: The support-case reference the attempt targeted.
+     *     :param requested_by: Username of the support engineer who started it.
+     *     :param status: The attempt's lifecycle status.
+     *     :param started_at: When the worker picked it up, if it did.
+     *     :param finished_at: When it reached a terminal status, if it did.
+     *     :param created_at: When the attempt was requested.
+     *     :param detail: The attempt's recorded evidence.
+     */
+    atw__AtwSendLogResponse: {
+      /** Case Ref */
+      case_ref: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Detail */
+      detail: Record<string, never>;
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Id
+       * Format: uuid4
+       */
+      id: string;
+      /**
+       * Incident Id
+       * Format: uuid4
+       */
+      incident_id: string;
+      /** Requested By */
+      requested_by: string;
+      /** Started At */
+      started_at: string | null;
+      status: components['schemas']['atw__AtwSendStatusEnum'];
+    };
+    /**
+     * AtwSendStatusEnum
+     * @description Enumerate the lifecycle of one diagnostics send attempt.
+     *
+     *     The column stores member *names* (``PENDING``); the API serializes the
+     *     ``StrEnum`` *values* (``pending``).
+     * @enum {string}
+     */
+    atw__AtwSendStatusEnum: 'pending' | 'running' | 'success' | 'failed';
     /** PaginatedResponse[ATWIncidentExecutionResponse] */
     atw__PaginatedResponse_ATWIncidentExecutionResponse_: {
       /** Items */
@@ -5260,6 +5777,17 @@ export interface components {
     atw__PaginatedResponse_AtwIncidentResponse_: {
       /** Items */
       items: components['schemas']['atw__AtwIncidentResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[AtwSendLogResponse] */
+    atw__PaginatedResponse_AtwSendLogResponse_: {
+      /** Items */
+      items: components['schemas']['atw__AtwSendLogResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -5330,11 +5858,8 @@ export interface components {
       latest_pbm_status?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5375,11 +5900,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5587,11 +6109,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5641,11 +6160,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5821,13 +6337,10 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -5868,11 +6381,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6085,11 +6595,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6124,11 +6631,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6299,13 +6803,10 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6315,16 +6816,20 @@ export interface components {
      * @description Represent the universal task-response surface for standard task apps.
      *
      *     Carry the fields shared by every standard ``TaskExecutionApp`` response:
-     *     the task identity and ownership, the resolved execution status, the stored
-     *     configuration, and the audit/anonymization metadata. A standard app whose
-     *     response has no app-specific fields uses this model directly; an app with
-     *     extras subclasses it. The model is parametrized by the task ``owner``, which
-     *     drives the ``anonymized_entities`` default-entity lookup.
+     *     the task identity, the resolved execution status, the stored configuration,
+     *     and the audit/anonymization metadata. A standard app whose response has no
+     *     app-specific fields uses this model directly; an app with extras subclasses
+     *     it. The model is parametrized by the task ``owner``, which drives the
+     *     ``anonymized_entities`` default-entity lookup but is excluded from the
+     *     serialized detail/list payload (as is ``service_type``).
      *
      *     :param name: The task name.
-     *     :param owner: The entity or user that owns the task.
+     *     :param owner: The task-category owner (for example ``BACKUPS``). Kept
+     *         as a model attribute for ``anonymized_entities`` and server-side
+     *         filtering; excluded from the serialized detail/list payload.
      *     :param service_type: The database service type, stamped by the builder;
-     *         ``None`` for an app without a fixed service type.
+     *         ``None`` for an app without a fixed service type. Excluded from the
+     *         serialized detail/list payload.
      *     :param status: The latest known execution status; ``None`` until the task
      *         runs.
      *     :param last_executed_at: The most recent time the task finished executing
@@ -6381,11 +6886,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -7457,11 +7959,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -7591,8 +8090,9 @@ export interface components {
      *     ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
      *     / ``disabled_reason``). When ``depends_on`` is set, the fetch is
      *     parameterised by the dependency's value (appended as a query parameter named
-     *     after ``depends_on``) and the field stays disabled/empty until the
-     *     dependency has a value. When ``allow_custom`` is set, the renderer also
+     *     after ``depends_on``) and the field offers no options until the dependency
+     *     has a value, staying disabled while it waits unless ``allow_custom`` keeps
+     *     free-text entry open. When ``allow_custom`` is set, the renderer also
      *     accepts a free-typed value. The endpoint response contract is a JSON array
      *     of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
      *     "disabled"?: bool, "disabled_reason"?: str}``.
@@ -8149,10 +8649,16 @@ export interface components {
      *     XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
      *     derived schema. Field declaration order is load-bearing: the derived section
      *     order follows each section's first field, and the within-section order follows
-     *     declaration order, so the order here reproduces the hand-written schema
-     *     byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
+     *     declaration order, so the derived section and field order matches the
+     *     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
      *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+     *     encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
+     *     independent encryption modes that both produce an encrypted backup;
+     *     ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
+     *     ``post_run_encrypt`` so post-run takes precedence (matching the backend at
+     *     ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
+     *     is on — and the per-mode bool
+     *     ``FailRule``s in
      *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
      *     into the conditional-rule plan at class definition, so no
      *     ``@apply_conditional_rules`` decorator is needed. The config sub-models
@@ -8365,6 +8871,45 @@ export interface components {
       xtrabackup_verify: boolean;
     };
     /**
+     * BackupRunResponse
+     * @description Expose one catalog record over the per-service query path.
+     *
+     *     :param id: The record's primary key.
+     *     :param service_name: The inventory service the backup was taken from.
+     *     :param hostname: The backup target host.
+     *     :param backup_type: The backup tool, ``"M"`` (mydumper) or ``"X"`` (xtrabackup).
+     *         Narrower than :class:`BackupType`: binlog runs are never catalogued, so
+     *         ``"B"`` never appears here.
+     *     :param location: The resolved on-disk directory the run produced.
+     *     :param upload_destination: The upload destination when one was configured.
+     *     :param size_bytes: The backup size in bytes, when the run reported it.
+     *     :param started_at: When the run started.
+     *     :param finished_at: When the run finished.
+     */
+    mysql_backups__BackupRunResponse: {
+      /**
+       * Backup Type
+       * @enum {string}
+       */
+      backup_type: 'M' | 'X';
+      /** Finished At */
+      finished_at: string | null;
+      /** Hostname */
+      hostname: string | null;
+      /** Id */
+      id: number;
+      /** Location */
+      location: string | null;
+      /** Service Name */
+      service_name: string | null;
+      /** Size Bytes */
+      size_bytes: number | null;
+      /** Started At */
+      started_at: string | null;
+      /** Upload Destination */
+      upload_destination: string | null;
+    };
+    /**
      * BackupTaskResponse
      * @description Represent a backup task API response.
      *
@@ -8399,11 +8944,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8420,6 +8962,17 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
+    /** PaginatedResponse[BackupRunResponse] */
+    mysql_backups__PaginatedResponse_BackupRunResponse_: {
+      /** Items */
+      items: components['schemas']['mysql_backups__BackupRunResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[BackupTaskResponse] */
     mysql_backups__PaginatedResponse_BackupTaskResponse_: {
       /** Items */
@@ -8639,13 +9192,10 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      /** Owner */
-      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
       protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -9289,202 +9839,6 @@ export interface components {
     report__UptimeSection: {
       /** Entries */
       entries?: components['schemas']['report__UptimeEntry'][];
-    };
-    /**
-     * BatchApprovalResponse
-     * @description Successful response for the batch-approve endpoint.
-     *
-     *     :param approved: Filenames whose approval state was toggled by this
-     *         request (newly approved as a result of the call).
-     *     :type approved: list[str]
-     *     :param skipped_already_approved: Filenames that were already approved
-     *         when the call started; the request is treated as a soft-skip
-     *         (idempotent).
-     *     :type skipped_already_approved: list[str]
-     */
-    snippets__BatchApprovalResponse: {
-      /** Approved */
-      approved: string[];
-      /**
-       * Count
-       * @description Return the number of newly approved snippets.
-       *
-       *     :return: Length of ``approved``.
-       *     :rtype: int
-       */
-      readonly count: number;
-      /** Skipped Already Approved */
-      skipped_already_approved: string[];
-    };
-    /** PaginatedResponse[SnippetResponse] */
-    snippets__PaginatedResponse_SnippetResponse_: {
-      /** Items */
-      items: components['schemas']['snippets__SnippetResponse'][];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
-    };
-    /**
-     * RefreshResponse
-     * @description Represent the successful result of a manual snippets-refresh operation.
-     *
-     *     :param refreshed_at: UTC timestamp at which the refresh completed.
-     *     :type refreshed_at: datetime
-     */
-    snippets__RefreshResponse: {
-      /**
-       * Refreshed At
-       * Format: date-time
-       */
-      refreshed_at: string;
-    };
-    /**
-     * SnippetBatchApproveRequest
-     * @description Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.
-     *
-     *     Unlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`
-     *     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
-     *     parses it as JSON.
-     *
-     *     :param filenames: Unique, non-empty list of snippet filenames to approve in a
-     *         single atomic operation. Duplicates are silently deduplicated by
-     *         ``UniqueList``.
-     *     :type filenames: UniqueList[NonEmptyStr]
-     */
-    snippets__SnippetBatchApproveRequest: {
-      /** Filenames */
-      filenames: string[];
-    };
-    /**
-     * SnippetResponse
-     * @description Represent a snippet entity as exposed by the JSON API.
-     *
-     *     :param filename: The snippet's filename on disk; doubles as its
-     *         identifier in the API.
-     *     :type filename: NonEmptyStr
-     *     :param title: The display title for the snippet (snippet metadata's
-     *         ``title`` field, falling back to ``filename`` when unset).
-     *     :type title: NonEmptyStr
-     *     :param description: The snippet's free-text description, or an empty
-     *         string when no description is set in metadata.
-     *     :type description: str
-     *     :param service_type: The snippet's free-form service type
-     *         (``service_type`` metadata field, for example ``"mysql"`` or
-     *         ``"mongodb"``), or ``None`` when the snippet declares no service
-     *         type. Distinct from the inventory ``ServiceTypeEnum``.
-     *     :type service_type: str | None
-     *     :param size: Snippet file size in bytes.
-     *     :type size: int
-     *     :param md5_digest: 32-character MD5 hex digest of the snippet file.
-     *     :type md5_digest: str
-     *     :param is_approved: Whether the snippet has been approved for execution.
-     *     :type is_approved: bool
-     *     :param approved_at: When the snippet was last approved, or ``None`` if
-     *         unapproved.
-     *     :type approved_at: datetime | None
-     *     :param updated_by: User id that last toggled the approval state, or
-     *         ``None`` if no toggle has occurred.
-     *     :type updated_by: str | None
-     *     :param reason: Free-form reason recorded the last time the snippet's
-     *         approval state changed.
-     *     :type reason: str
-     *     :param requires_sudo: Whether the snippet requires sudo for execution
-     *         (either always-sudo or sudo is user-toggleable).
-     *     :type requires_sudo: bool
-     *     :param sudo_optional: Whether the user can toggle sudo at execution
-     *         time.
-     *     :type sudo_optional: bool
-     *     :param sudo_default: Default value for the sudo toggle when
-     *         ``sudo_optional`` is ``True``.
-     *     :type sudo_default: bool
-     *     :param interpreter: The shell/interpreter command used to execute the
-     *         snippet (for example, ``"bash"`` or ``"python3"``); ``None`` when
-     *         no interpreter mapping resolves.
-     *     :type interpreter: str | None
-     *     :param created_at: When the snippet row was first inserted.
-     *     :type created_at: datetime
-     *     :param updated_at: When the snippet row was last updated, or ``None``
-     *         if never updated since insert.
-     *     :type updated_at: datetime | None
-     */
-    snippets__SnippetResponse: {
-      /** Approved At */
-      approved_at?: string | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Description */
-      description: string;
-      /** Filename */
-      filename: string;
-      /** Interpreter */
-      interpreter?: string | null;
-      /** Is Approved */
-      is_approved: boolean;
-      /** Md5 Digest */
-      md5_digest: string;
-      /** Reason */
-      reason: string;
-      /** Requires Sudo */
-      requires_sudo: boolean;
-      /** Service Type */
-      service_type?: string | null;
-      /** Size */
-      size: number;
-      /** Sudo Default */
-      sudo_default: boolean;
-      /** Sudo Optional */
-      sudo_optional: boolean;
-      /** Title */
-      title: string;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Updated By */
-      updated_by?: string | null;
-    };
-    /**
-     * SnippetServiceTypesResponse
-     * @description Carry the whole-dataset service-type facet for the list filter.
-     *
-     *     Sourced across every snippet (not the loaded page) so the list page's
-     *     service-type dropdown can offer every value the dataset contains.
-     *
-     *     :param service_types: The sorted distinct non-blank service types.
-     *     :param has_uncategorized: Whether any snippet has an absent or blank service
-     *         type (surfaced as the "Uncategorized" filter option).
-     */
-    snippets__SnippetServiceTypesResponse: {
-      /** Has Uncategorized */
-      has_uncategorized: boolean;
-      /** Service Types */
-      service_types: string[];
-    };
-    /**
-     * SnippetsCapabilitiesResponse
-     * @description Represent per-deployment capability flags for the Snippets plugin.
-     *
-     *     Exposes flags that gate the visibility of admin-only UI affordances
-     *     (currently the manual refresh button) so the React shell can decide
-     *     whether to render those controls without probing the gated endpoints.
-     *
-     *     Distinct from :class:`~app.sep.apps.framework.schema.Capabilities`,
-     *     which describes static UI feature flags on
-     *     :attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`
-     *     (chaining, scheduling, alert_on_fail). This model is the per-
-     *     deployment runtime counterpart returned by ``GET /capabilities``.
-     *
-     *     :param manual_sync_enabled: Whether manual snippet refresh is enabled
-     *         in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).
-     *     :type manual_sync_enabled: bool
-     */
-    snippets__SnippetsCapabilitiesResponse: {
-      /** Manual Sync Enabled */
-      manual_sync_enabled: boolean;
     };
     /**
      * ExecutorHostMetadata
@@ -10794,6 +11148,26 @@ export interface operations {
       };
     };
   };
+  atw_atw_config_api_apps_atw_config__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwConfigResponse'];
+        };
+      };
+    };
+  };
   atw_atw_execution_schema_api_apps_atw_execution_schema__get: {
     parameters: {
       query: {
@@ -11042,6 +11416,107 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['atw__ATWBatchExecuteResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_list_send_jobs_api_apps_atw_incidents__incident_id__send_jobs__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_AtwSendLogResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_start_send_job_api_apps_atw_incidents__incident_id__send_jobs__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['atw__AtwSendJobWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwSendLogResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_get_send_job_api_apps_atw_incidents__incident_id__send_jobs__send_job_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        send_job_id: string;
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwSendLogResponse'];
         };
       };
       /** @description Validation Error */
@@ -12188,6 +12663,37 @@ export interface operations {
       };
     };
   };
+  inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ConnectivityCheckResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get: {
     parameters: {
       query?: never;
@@ -12499,6 +13005,38 @@ export interface operations {
       };
     };
   };
+  mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get: {
+    parameters: {
+      query?: {
+        /** @description Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch. */
+        service_id?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['framework__Choice'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   mysql_backups_restore__list_paginated_api_apps_mysql_backups_restore__get: {
     parameters: {
       query?: {
@@ -12731,6 +13269,40 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupRunResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -13111,7 +13683,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__PaginatedResponse_SnippetResponse_'];
+          'application/json': components['schemas']['PaginatedResponse_SnippetResponse_'];
         };
       };
       /** @description Validation Error */
@@ -13134,7 +13706,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['snippets__SnippetBatchApproveRequest'];
+        'application/json': components['schemas']['SnippetBatchApproveRequest'];
       };
     };
     responses: {
@@ -13144,7 +13716,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__BatchApprovalResponse'];
+          'application/json': components['schemas']['BatchApprovalResponse'];
         };
       };
       /** @description Validation Error */
@@ -13173,7 +13745,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__SnippetsCapabilitiesResponse'];
+          'application/json': components['schemas']['SnippetsCapabilitiesResponse'];
         };
       };
     };
@@ -13193,7 +13765,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__RefreshResponse'];
+          'application/json': components['schemas']['RefreshResponse'];
         };
       };
     };
@@ -13233,7 +13805,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__SnippetServiceTypesResponse'];
+          'application/json': components['schemas']['SnippetServiceTypesResponse'];
         };
       };
     };
@@ -13256,7 +13828,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__SnippetResponse'];
+          'application/json': components['schemas']['SnippetResponse'];
         };
       };
       /** @description Validation Error */

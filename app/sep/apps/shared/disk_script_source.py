@@ -60,7 +60,6 @@ from app.sep.apps.framework.script_helpers import (
     build_execution_meta,
 )
 from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
-from app.sep.apps.snippets.schema import evaluate_snippet_gates, field_for
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import (
     BaseSnippet,
@@ -68,6 +67,7 @@ from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     SnippetExecutionMeta,
 )
+from app.sep.snippets.schema import evaluate_snippet_gates, field_for
 
 __all__ = [
     "DiskScriptListRow",

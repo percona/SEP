@@ -21,7 +21,7 @@ from the module path), mounting its derived JSON router at
 ``/snippets/`` via the threaded ``jinja_router``. The JSON surface is the first
 real adoption of the framework ``ScriptSource`` seam: listing, per-snippet form
 schema, execution history, and execute are derived from
-:data:`~app.sep.apps.snippets.script_source.snippet_source`, while the
+:data:`~app.sep.snippets.script_source.snippet_source`, while the
 non-derived auxiliary verbs (approval, manual refresh, preview/download) are
 carried as ``extra_routes``. ``GET /capabilities`` is wired through the framework
 ``capabilities_provider`` helper.
@@ -32,17 +32,18 @@ owner of its own — ``ANY`` is the honest "no owner restriction" value.
 """
 
 from app.sep.apps.framework.apps import TaskExecutionApp
+from app.sep.apps.framework.base import StaticMount
 from app.sep.apps.nav_icons import NavIcon
-from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.apps.snippets.extra_routes import (
     approval_router,
     artifact_router,
     maintenance_router,
 )
-from app.sep.apps.snippets.models import SnippetsCapabilitiesResponse
 from app.sep.apps.snippets.routes import router as jinja_router
-from app.sep.apps.snippets.script_source import snippet_source
 from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from app.sep.snippets.models.responses import SnippetsCapabilitiesResponse
+from app.sep.snippets.script_source import snippet_source
 from app.tasks.models import ANY_OWNER
 
 
@@ -74,4 +75,11 @@ app = TaskExecutionApp(
     extra_routes=(approval_router, maintenance_router, artifact_router),
     jinja_router=jinja_router,
     artifact_base_dirs={ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR},
+    static_mounts=(
+        StaticMount(
+            path="/static/snippets",
+            directory=snippets_settings.SNIPPETS_DIR,
+            name="snippets_files",
+        ),
+    ),
 )

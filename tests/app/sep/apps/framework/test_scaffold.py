@@ -92,6 +92,16 @@ def _cleanup(name: str) -> None:
     importlib.invalidate_caches()
 
 
+def _venv_root() -> Path:
+    """Return the active virtualenv root for Makefile ``VIRTUAL_ENV`` forwarding.
+
+    Use ``sys.prefix`` rather than resolving ``sys.executable``: following the
+    interpreter symlink lands in the base install and breaks
+    ``VIRTUAL_ENV/bin/python``.
+    """
+    return Path(sys.prefix)
+
+
 @contextmanager
 def _scaffolded_config(
     config: scaffold.ScaffoldConfig,
@@ -539,15 +549,15 @@ def test_registers_app_disabled(tmp_settings: Path) -> None:
         )
 
 
-def test_summary_points_to_app_manager_without_changelog(
+def test_summary_points_to_apps_page_without_changelog(
     tmp_settings: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Assert the summary points at the Admin App Manager and omits a changelog command."""
+    """Assert the summary points at the Apps page and omits a changelog command."""
     name = "_scaffold_smoke_summary"
     try:
         assert scaffold.main(["--name", name, "--type", "task"]) == 0
         out = capsys.readouterr().out
-        assert "Admin App Manager" in out
+        assert "/admin/apps" in out
         assert "changelog" not in out.lower()
     finally:
         shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
@@ -566,7 +576,7 @@ def test_summary_notes_preexisting_registration(
         assert scaffold.main(["--name", name, "--type", "task"]) == 0
         out = capsys.readouterr().out
         assert "already registered" in out.lower()
-        assert "Admin App Manager" in out
+        assert "/admin/apps" in out
     finally:
         shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
         shutil.rmtree(scaffold.TESTS_DIR / name, ignore_errors=True)
@@ -1126,7 +1136,7 @@ def test_makefile_forwards_quoted_values() -> None:
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    venv_root = Path(sys.executable).resolve().parent.parent
+    venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
             [
@@ -1171,7 +1181,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    venv_root = Path(sys.executable).resolve().parent.parent
+    venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
             [
