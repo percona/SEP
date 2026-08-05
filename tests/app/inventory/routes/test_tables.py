@@ -127,7 +127,7 @@ class TestListTables:
     def test_list_tables_deterministic_ordering_across_pages(
         self, test_client: TestClient, schema: Schema, service: Service
     ) -> None:
-        """Order equal names stably across pages via the id tie-breaker.
+        """Sort equal names stably across pages via the id tie-breaker.
 
         Table names are unique per schema, so the shared name is created on a
         second schema to produce a name tie in the top-level list.

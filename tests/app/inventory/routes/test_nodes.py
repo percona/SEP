@@ -191,7 +191,7 @@ class TestListNodes:
     def test_list_nodes_deterministic_ordering_across_pages(
         self, test_client: TestClient
     ) -> None:
-        """Order equal names stably across pages via the id tie-breaker."""
+        """Sort equal names stably across pages via the id tie-breaker."""
         shared_name = "SameSortNode"
         created_ids: list[int] = []
         for _ in range(LIST_QUERY_MATCH_TOTAL):
@@ -446,7 +446,7 @@ class TestListServicesByNode:
     def test_list_services_by_node_deterministic_ordering_across_pages(
         self, test_client: TestClient, node: Node
     ) -> None:
-        """Order equal names stably across pages via the id tie-breaker."""
+        """Sort equal names stably across pages via the id tie-breaker."""
         shared_name = "SameSortByNode"
         created_ids: list[int] = []
         for index in range(LIST_QUERY_MATCH_TOTAL):

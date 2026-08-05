@@ -164,7 +164,7 @@ class TestListServices:
     def test_list_services_deterministic_ordering_across_pages(
         self, test_client: TestClient, node: Node
     ) -> None:
-        """Order equal names stably across pages via the id tie-breaker."""
+        """Sort equal names stably across pages via the id tie-breaker."""
         shared_name = "SameSortService"
         created_ids: list[int] = []
         for index in range(LIST_QUERY_MATCH_TOTAL):
@@ -501,7 +501,7 @@ class TestListSchemasByService:
     async def test_list_schemas_by_service_deterministic_ordering_across_pages(
         self, test_client: TestClient, session: AsyncSession, service: Service
     ) -> None:
-        """Order equal created_at stably across pages via the id tie-breaker.
+        """Sort equal created_at stably across pages via the id tie-breaker.
 
         Schema names are unique per service, so name ties cannot occur in this
         nested list; exercise the tie-breaker on created_at instead.

@@ -146,7 +146,7 @@ class TestListSchemas:
     def test_list_schemas_deterministic_ordering_across_pages(
         self, test_client: TestClient, service: Service
     ) -> None:
-        """Order equal names stably across pages via the id tie-breaker.
+        """Sort equal names stably across pages via the id tie-breaker.
 
         Schema names are unique per service, so the shared name is created on a
         second service to produce a name tie in the top-level list.
@@ -437,7 +437,7 @@ class TestListTablesBySchema:
     async def test_list_tables_by_schema_deterministic_ordering_across_pages(
         self, test_client: TestClient, session: AsyncSession, schema: Schema
     ) -> None:
-        """Order equal created_at stably across pages via the id tie-breaker.
+        """Sort equal created_at stably across pages via the id tie-breaker.
 
         Table names are unique per schema, so name ties cannot occur in this
         nested list; exercise the tie-breaker on created_at instead.

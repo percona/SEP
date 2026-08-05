@@ -33,7 +33,6 @@ class NodeManager(BaseSQLModelManager):
     """Manage Node operations, including retrieval, listing, and deletion.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Node`).
-    :vartype Model: type[Node]
     :cvar list_query_spec: The list-query spec declaring this entity's sortable
         allowlist, searchable columns, and default sort.
     """
@@ -54,13 +53,10 @@ class ServiceManager(BaseSQLModelChildManager):
     """Manage Service operations, including retrieval, listing, and deletion.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Service`).
-    :vartype Model: type[Service]
     :ivar ParentManager: The manager class responsible for handling the parent model
         (`NodeManager`).
-    :vartype ParentManager: type[NodeManager]
     :ivar connected_by: The field name that connects the child model to the parent
         model (`node_id`).
-    :vartype connected_by: str
     :cvar list_query_spec: The list-query spec declaring this entity's sortable
         allowlist, searchable columns, and default sort.
     """
@@ -83,13 +79,10 @@ class SchemaManager(BaseSQLModelChildManager):
     """Manage Schema operations, including retrieval, listing, and deletion.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Schema`).
-    :vartype Model: type[Schema]
     :ivar ParentManager: The manager class responsible for handling the parent model
         (`ServiceManager`).
-    :vartype ParentManager: type[ServiceManager]
     :ivar connected_by: The field name that connects the child model to the parent
         model (`service_id`).
-    :vartype connected_by: str
     :cvar list_query_spec: The list-query spec declaring this entity's sortable
         allowlist, searchable columns, and default sort.
     """
@@ -112,13 +105,10 @@ class TableManager(BaseSQLModelChildManager):
     """Manage Table operations, including retrieval, listing, and deletion.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Table`).
-    :vartype Model: type[Table]
     :ivar ParentManager: The manager class responsible for handling the parent model
         (`SchemaManager`).
-    :vartype ParentManager: type[SchemaManager]
     :ivar connected_by: The field name that connects the child model to the parent
         model (`schema_id`).
-    :vartype connected_by: str
     :cvar list_query_spec: The list-query spec declaring this entity's sortable
         allowlist, searchable columns, and default sort.
     """
@@ -142,13 +132,10 @@ class HostSystemObservationManager(BaseSQLModelChildManager):
 
     :ivar Model: The SQLModel class this manager is responsible for
         (`HostSystemObservation`).
-    :vartype Model: type[HostSystemObservation]
     :ivar ParentManager: The manager class responsible for handling the parent model
         (`NodeManager`).
-    :vartype ParentManager: type[NodeManager]
     :ivar connected_by: The field name that connects the child model to the parent
         model (`node_id`).
-    :vartype connected_by: str
     """
 
     Model = HostSystemObservation
@@ -161,13 +148,10 @@ class ServiceSystemObservationManager(BaseSQLModelChildManager):
 
     :ivar Model: The SQLModel class this manager is responsible for
         (`ServiceSystemObservation`).
-    :vartype Model: type[ServiceSystemObservation]
     :ivar ParentManager: The manager class responsible for handling the parent model
         (`ServiceManager`).
-    :vartype ParentManager: type[ServiceManager]
     :ivar connected_by: The field name that connects the child model to the parent
         model (`service_id`).
-    :vartype connected_by: str
     """
 
     Model = ServiceSystemObservation
