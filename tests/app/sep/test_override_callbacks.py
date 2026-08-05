@@ -32,7 +32,7 @@ from app.sep.main import (
     _make_remote_api_rebinder,
     _reseed_system_periodic_tasks,
 )
-from app.sep.settings_override import invalidate_pmm_clients
+from app.sep.settings_override import apply_logging_dictconfig, invalidate_pmm_clients
 from app.sep.snippets.config import snippets_settings
 
 
@@ -162,10 +162,10 @@ async def test_apply_logging_dictconfig_reapplies_new_level(
     the overridden level into the config before re-applying it — otherwise the
     stale level baked in at construction time would be re-applied.
     """
-    dict_config = mocker.patch("app.sep.main.logging.config.dictConfig")
+    dict_config = mocker.patch("app.sep.settings_override.logging.config.dictConfig")
     settings._set_snapshot({"LOGGING": "DEBUG"})
     try:
-        await sep_main._apply_logging_dictconfig({})
+        await apply_logging_dictconfig({})
     finally:
         settings._set_snapshot({})
 
@@ -181,12 +181,13 @@ async def test_apply_logging_dictconfig_swallows_failure(
 ) -> None:
     """Assert a malformed logging config is logged and swallowed, never crashing the app."""
     mocker.patch(
-        "app.sep.main.logging.config.dictConfig", side_effect=ValueError("bad config")
+        "app.sep.settings_override.logging.config.dictConfig",
+        side_effect=ValueError("bad config"),
     )
     settings._set_snapshot({"LOGGING": "DEBUG"})
     try:
         # Must not raise.
-        await sep_main._apply_logging_dictconfig({})
+        await apply_logging_dictconfig({})
     finally:
         settings._set_snapshot({})
 
@@ -200,7 +201,7 @@ async def test_logging_and_app_drain_callbacks_registered() -> None:
             callbacks = sep_main.sep_app.state.override_callbacks
         assert (
             callbacks[(SettingClassEnum.SETTINGS, "LOGGING")]
-            is sep_main._apply_logging_dictconfig
+            is apply_logging_dictconfig
         )
         assert (
             callbacks[(SettingClassEnum.SEP_SETTINGS, "APP_DRAIN")]
