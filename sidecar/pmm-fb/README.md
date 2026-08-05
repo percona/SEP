@@ -3,11 +3,34 @@
 Compose topology pairing the PMM feature build (SEP frontend + PostgreSQL
 exposure, [Percona-Lab/pmm-submodules#4500] = percona/pmm branch `PMM-15216`,
 PRs [percona/pmm#5653] + [percona/pmm#5700]) with the app-restricted SEP
-side-car built from this branch: supervisord running the three APIs + Celery
-worker/beat + bundled Valkey, shipping only the `inventory`, `mysql_backups`
-and `atw` apps. The snippets management app is not shipped — the builtin
-snippet library is ingested and auto-approved at boot (SEP-1627) so atw can
-execute it, with no periodic or manual re-sync.
+side-car: supervisord running the three APIs + Celery worker/beat + bundled
+Valkey, shipping only the `inventory`, `mysql_backups` and `atw` apps. The
+snippets management app is not shipped — the builtin snippet library is
+ingested and auto-approved at boot (SEP-1627) so atw can execute it, with no
+periodic or manual re-sync.
+
+## Which image to pin
+
+The restricted image is built on `main`, not on this branch. `main`'s
+`image-sidecar-embedded` target derives the shipped app set from
+`sidecar/settings.embedded.yaml`'s `SEP.APPS` and publishes it under an
+`-embedded` suffix, so a feature build tagged `<customImageTag>` publishes:
+
+| Tag | Contents |
+|---|---|
+| `percona/percona-sep:<customImageTag>` | the standalone image |
+| `percona/percona-sep:<customImageTag>-sidecar` | the full side-car, every app |
+| `percona/percona-sep:<customImageTag>-embedded` | the app-restricted side-car — **pin this one** |
+
+`compose.yaml`'s `sep-sidecar` service must therefore track the `-embedded`
+tag. Pinning the plain tag gets the standalone image, which has no supervisord
+and will not come up under this harness.
+
+The pin currently reads `pmm-a2db4ac`, which predates this split: it is a
+restricted image only because `make image` used to build the side-car on this
+branch, and no `-embedded` tag has been published yet. It stays valid, so the
+harness keeps working — but the first feature build cut after this branch
+merges publishes `<customImageTag>-embedded`, and the pin moves there.
 
 [Percona-Lab/pmm-submodules#4500]: https://github.com/Percona-Lab/pmm-submodules/pull/4500
 [percona/pmm#5653]: https://github.com/percona/pmm/pull/5653

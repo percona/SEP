@@ -70,18 +70,20 @@ builder:
 	@podman image exists "sep:builder" && podman image rm "sep:builder"
 	@buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
 
-# On this branch (`pmm`, the PMM feature-build branch) `image` builds the
-# app-restricted consolidated side-car, NOT the standalone image: the Jenkins
-# Build job only runs `make image`, so this is what publishes the feature-build
-# artifact under the plain tag. Docker format for the HEALTHCHECK (see below).
 image: pack
 	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
-	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
+	@buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
 
 # docker format, not oci: OCI silently discards the HEALTHCHECK instruction
 image-sidecar: pack
 	@podman image exists "sep:${RELEASE_VER}-sidecar" && podman image rm "sep:${RELEASE_VER}-sidecar" || true
 	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}-sidecar"
+
+# The app-restricted PMM-embedded variant: the side-car recipe with the app
+# strip switched on. Which apps survive is settings.embedded.yaml's SEP.APPS.
+image-sidecar-embedded: pack
+	@podman image exists "sep:${RELEASE_VER}-embedded" && podman image rm "sep:${RELEASE_VER}-embedded" || true
+	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --build-arg SEP_RESTRICT_APPS=1 --tag "sep:${RELEASE_VER}-embedded"
 
 format: venv
 	@"${VENV_BIN}"/ruff format .
@@ -314,4 +316,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image image-sidecar format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check
