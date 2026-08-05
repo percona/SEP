@@ -85,9 +85,14 @@ Answer whichever of these three applies:
 | **When** | at upgrade, at restart, or on the next occurrence of some event? | "an override lands on the next task the worker executes" — not "without a restart" |
 | **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | "workers pick the new values up on their next refresh, 30 seconds by default, so a send started inside that window fails as unconfigured and is not retried" — not "takes effect immediately" |
 
-**Pick the section from the work-item type.** File a Bug's fragment under
-`fixed` and a Story's under `changed`. The type decides even when two tickets
-do topically identical work.
+**Pick the section from what the change *is*.** The work-item type decides only
+once that answer is "a modification to behaviour that already shipped".
+
+| Section | Use when |
+|---|---|
+| `added` | a surface that did not exist before — a new endpoint, image variant, CLI, published artifact, settings class. Applies whatever the work-item type says. |
+| `breaking` / `security` / `config` | the change is primarily that, regardless of type. |
+| `fixed` / `changed` | everything else. Both cover a modification to shipped behaviour, so the type is the tiebreak: Bug → `fixed`, Story → `changed`, even when two tickets do topically identical work. |
 
 ## File format
 
