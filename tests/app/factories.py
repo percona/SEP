@@ -116,27 +116,6 @@ class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
     """Define factory for PeriodicTasks instances."""
 
 
-class AtwIncidentFactory(SQLAlchemyFactory[AtwIncident]):
-    """Define factory for AtwIncident instances."""
-
-    closed_at = None
-
-
-class AtwIncidentExecutionFactory(SQLAlchemyFactory[AtwIncidentExecution]):
-    """Define factory for AtwIncidentExecution instances."""
-
-
-class AtwSendLogFactory(SQLAlchemyFactory[AtwSendLog]):
-    """Define factory for AtwSendLog instances.
-
-    ``detail`` is pinned to an empty mapping because polyfactory cannot generate a
-    value for the untyped JSON column.
-    """
-
-    detail = Use(dict)
-
-
-
 class GeneratedTaskFactory(ModelFactory[TaskWrite]):
     """Define factory for GenerateTask instances."""
 
