@@ -17,12 +17,15 @@
 
 Register the bespoke alerts plugin through the registry's definition path
 (``getattr(module, "app")``) instead of the synthesized-legacy fallback,
-exposing the same JSON and Jinja routers the registry imports today.
+exposing the same JSON and Jinja routers the registry imports today, and
+contribute the alert-config backup beat schedule via
+``periodic_task_schedules``.
 """
 
 from app.sep.apps.alerts.api_routes import router as api_router
+from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.alerts.routes import router as jinja_router
-from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.nav_icons import NavIcon
 
 app = BaseApp(
@@ -36,4 +39,11 @@ app = BaseApp(
     nav_icon=NavIcon.DESCRIPTION,
     api_router=api_router,
     jinja_router=jinja_router,
+    periodic_task_schedules=[
+        AppPeriodicTask(
+            name="sep__backup_alert_config",
+            task="backup_alert_config",
+            schedule=lambda: alerts_settings.BACKUP_INTERVAL,
+        ),
+    ],
 )
