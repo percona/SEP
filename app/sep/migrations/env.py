@@ -26,6 +26,7 @@ from alembic import context
 from app.core.db.utils import compare_type
 from app.sep.config import sep_settings
 from app.sep.migrations._discovery import discover_plugin_migrations_and_models
+from app.sep.migrations._orphan_heads import skip_unresolvable_heads
 from app.core.settings_override.models import *
 from app.sep.models import *
 from app.sep.snippets.models import *
@@ -86,6 +87,7 @@ def do_run_migrations(connection: Connection) -> None:
         version_table="alembic_version_sep",
         compare_type=compare_type,
     )
+    skip_unresolvable_heads(context)
 
     with context.begin_transaction():
         context.run_migrations()

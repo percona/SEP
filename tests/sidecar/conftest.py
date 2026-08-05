@@ -32,14 +32,6 @@ Read from the profile by both the side-car resolution test and the policy
 suite's shipped-value guard, which must agree on where the list lives.
 """
 
-INFRASTRUCTURE_PACKAGES = frozenset({"framework", "shared"})
-"""Packages the strip retains that are not activatable apps.
-
-Mirrors the set ``tests/app/sep/test_import_boundary.py`` derives app names
-against; duplicated rather than imported so neither suite depends on the
-other's module scope.
-"""
-
 SUITE_ENV_OVERRIDES = (
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID",
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET",

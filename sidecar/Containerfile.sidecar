@@ -64,18 +64,15 @@ ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 # path still replaces it wholesale.
 COPY --chown=0:1001 --chmod=440 ./sidecar/settings.embedded.yaml ./settings.yaml
 
-# PMM feature-build variant (branch `pmm`): only the inventory, mysql_backups
-# and atw apps ship — every other app package is stripped from the bundle so it
-# cannot be activated. The strip is an allow-list so a package added later is
-# dropped by default rather than shipping until someone remembers to list it,
-# and -type d confines it to packages so the loose modules at the apps root
-# survive. framework and shared are retained not as apps but because the three
-# shipped ones and app/sep/main.py import them.
-RUN cd $APP_HOME/app/sep/apps && \
-    find . -mindepth 1 -maxdepth 1 -type d \
-        ! -name inventory ! -name mysql_backups ! -name atw \
-        ! -name framework ! -name shared \
-        -exec rm -rf {} +
+# Restricted variant: strip every app package the baked profile does not
+# activate. Off by default, so the general side-car build is unaffected; the
+# retained set is derived from settings.yaml and named nowhere in this recipe.
+ARG SEP_RESTRICT_APPS=0
+COPY --chown=0:0 --chmod=400 ./sidecar/restrict_apps.py /tmp/restrict_apps.py
+RUN if [ "$SEP_RESTRICT_APPS" = "1" ]; then \
+        python /tmp/restrict_apps.py settings.yaml app/sep/apps; \
+    fi && \
+    rm -f /tmp/restrict_apps.py
 
 # No compose file injects this for the side-car, so the loader would otherwise
 # fall back to the development defaults
