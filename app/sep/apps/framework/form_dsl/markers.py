@@ -114,7 +114,8 @@ class Ui:
         single-value host field, the renderer auto-selects an executor from the
         upstream service; multi-host ignores it) and for ``RemoteChoices`` (when
         set, the fetch is parameterised by the dependency's value and the field
-        stays disabled until it is set). Ignored for other field kinds. Defaults
+        stays disabled until it is set, unless the marker's ``allow_custom``
+        keeps free-text entry open). Ignored for other field kinds. Defaults
         to ``None``.
     :param order: Sort position within the section; ties break on declaration
         order. Defaults to ``0``.
@@ -404,8 +405,9 @@ class RemoteChoices:
     ``disabled_reason``). An optional cascade is declared via
     ``Ui(depends_on=...)`` — when set, the fetch is parameterised by the
     dependency's value (passed as a query parameter named after the
-    ``depends_on`` field) and the field stays disabled/empty until the
-    dependency is set, mirroring :class:`SchemaRef` / :class:`TableRef`. When
+    ``depends_on`` field) and the field lists no options until the dependency is
+    set, mirroring :class:`SchemaRef` / :class:`TableRef`; it also stays disabled
+    while it waits unless ``allow_custom`` keeps free-text entry open. When
     ``depends_on`` is omitted the field fetches once with no cascade (mirroring
     the optional cascade of :class:`HostRef`).
 
