@@ -298,7 +298,8 @@ class TestRealSpecThreadsStorageIntoConfigFile:
         applied = yaml.safe_load((tmp_path / "script_config").read_text())
         assert applied["storage"]["s3"]["bucket"] == "backups"
         assert applied["storage"]["s3"]["region"] == "eu-west-1"
-        # SEP-only keys must not leak into the PBM config file.
+        # SEP-only keys must not leak into the PBM config file; ``pbm config``
+        # rejects the ``credentials_path`` the payload reads directly.
         assert "credentials_path" not in applied
 
 
