@@ -9,6 +9,7 @@ pipeline {
 
 	parameters {
 		gitParameter branch: 'origin/main',
+			defaultValue: 'main',
 			name: 'releaseTag',
 			selectedValue: 'TOP',
 			sortMode: 'DESCENDING_SMART',

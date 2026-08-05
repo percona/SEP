@@ -23,14 +23,16 @@ from typing import Any, TYPE_CHECKING
 import yaml
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.archives.models import ArchivesCreate, OWNER
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
+from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
     from app.tasks.models import Task
 
-__all__ = ["reconstruct_archives_form"]
+__all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_archives_form"]
 
 
 def _case_get(mapping: dict[str, Any], key: str) -> Any:
@@ -279,3 +281,13 @@ def reconstruct_archives_form(
     if loaded is None:
         return None
     return _build_archives_form_body(task, meta, *loaded, ctx)
+
+
+FORM_BACKFILL_ENTRIES = [
+    FormBackfillEntry(
+        app_key="archives",
+        owner=OWNER,
+        create_model=ArchivesCreate,
+        reconstructor=reconstruct_archives_form,
+    ),
+]
