@@ -142,10 +142,13 @@ class TestBuildDipperMetaFromArgs:
 
 
 def _script_with_parameter(name: str) -> DipperScript:
-    """Return a DB-free Dipper script declaring a single parameter called ``name``.
+    """Return a DB-free Dipper script declaring a single frontmatter parameter.
 
     ``sudo: never`` keeps the script's own configuration out of the way, so a
     failure here can only come from the parameter name.
+
+    :param name: The frontmatter parameter name the script declares.
+    :return: A collector script backed by no database row.
     """
     return DipperScript(
         filename="collect.sh",
@@ -164,25 +167,33 @@ class TestInvalidFrontmatterBlocksExecution:
 
     @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
     def test_reserved_parameter_name_blocks_the_shared_meta_builder(
-        self, reserved_name
-    ):
+        self, reserved_name: str
+    ) -> None:
         """Refuse to build execution meta for a script with a reserved parameter name.
 
         Dropping the parameter keeps the form renderable, but the script is still
         misconfigured -- the operator would silently run it without the argument
         its author declared. Both Dipper execution flows assemble their meta here,
         so guarding this one seam blocks both.
+
+        The parser's own messages have to reach the refusal: this app does not
+        surface them on the form, so a detail naming only the filename would leave
+        the cause invisible everywhere in the UI.
         """
         script = _script_with_parameter(reserved_name)
         assert script.execution_interpreter is not None
         assert script.can_execute is False
 
-        with pytest.raises(HTTPBadRequestException):
+        with pytest.raises(HTTPBadRequestException) as exc_info:
             build_dipper_meta_from_args(
                 _make_service(), script, "src://test", _make_args()
             )
 
-    def test_reserved_parameter_name_blocks_the_legacy_form_flow(self):
+        assert script.filename in exc_info.value.detail
+        for error in script.validated_parameters.errors:
+            assert error in exc_info.value.detail
+
+    def test_reserved_parameter_name_blocks_the_legacy_form_flow(self) -> None:
         """Refuse the legacy form dependency for a script with a reserved name."""
         with pytest.raises(HTTPBadRequestException):
             get_dipper_execution_meta(
@@ -192,11 +203,11 @@ class TestInvalidFrontmatterBlocksExecution:
                 _make_args(),
             )
 
-    def test_execution_proceeds_when_invalid_parameters_are_ignored(self, monkeypatch):
+    def test_execution_proceeds_when_invalid_parameters_are_ignored(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Honour the operator's opt-out rather than blocking unconditionally."""
-        monkeypatch.setattr(
-            snippets_settings.META, "IGNORE_INVALID_PARAMETERS", True, raising=False
-        )
+        monkeypatch.setattr(snippets_settings.META, "IGNORE_INVALID_PARAMETERS", True)
 
         meta = build_dipper_meta_from_args(
             _make_service(), _script_with_parameter("sudo"), "src://test", _make_args()

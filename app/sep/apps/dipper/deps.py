@@ -479,6 +479,10 @@ def build_dipper_meta_from_args(
     name, say -- is dropped from the form, so executing anyway would silently run
     the script without an argument its author asked for.
 
+    The refusal enumerates the parser's own messages because this app does not
+    surface them on the form: without them the operator would see a rejection
+    naming no cause anywhere in the UI.
+
     :param service: The inventory service the collector runs against.
     :param script: The collector script being dispatched.
     :param script_source: The signed URL the executor downloads the script from.
@@ -492,8 +496,10 @@ def build_dipper_meta_from_args(
     if interpreter is None:
         raise HTTPBadRequestException(detail="No interpreter configured for script")
     if not script.can_execute:
+        reasons = "; ".join(script.validated_parameters.errors)
         raise HTTPBadRequestException(
-            detail=f"Script {script.filename!r} has invalid frontmatter parameters."
+            detail=f"Script {script.filename!r} has invalid frontmatter parameters: "
+            f"{reasons}"
         )
     return build_execution_meta(
         script,
