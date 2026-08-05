@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""Tests for the app-package strip the restricted embedded image runs."""
+"""Cover the app-package strip the restricted embedded image runs."""
 
 from collections.abc import Iterable
 from pathlib import Path
@@ -102,7 +102,10 @@ def test_activated_apps_reads_the_profile_activation_list(embedded_profile_data:
 
 def test_activated_apps_does_not_list_snippets():
     """Assert the retired snippets activation stays out of the derived set."""
-    assert "snippets" not in activated_apps(EMBEDDED_PROFILE)
+    activated = activated_apps(EMBEDDED_PROFILE)
+
+    assert activated, "the baked profile activates no apps"
+    assert "snippets" not in activated
 
 
 def test_restrict_keeps_the_activated_apps_and_infrastructure(
@@ -192,12 +195,18 @@ def test_restrict_rejects_a_profile_with_no_activation_list(tmp_path: Path):
 
 def test_every_activated_app_has_a_package_in_the_repo():
     """Assert the baked profile activates nothing the repository does not ship."""
-    assert activated_apps(EMBEDDED_PROFILE) <= _real_package_names()
+    activated = activated_apps(EMBEDDED_PROFILE)
+
+    assert activated, "the baked profile activates no apps"
+    assert activated <= _real_package_names()
 
 
 def test_infrastructure_packages_are_not_activatable_apps():
     """Assert the always-retained packages are disjoint from the activated ones."""
-    assert INFRASTRUCTURE_PACKAGES.isdisjoint(activated_apps(EMBEDDED_PROFILE))
+    activated = activated_apps(EMBEDDED_PROFILE)
+
+    assert activated, "the baked profile activates no apps"
+    assert INFRASTRUCTURE_PACKAGES.isdisjoint(activated)
 
 
 def test_infrastructure_packages_exist_in_the_repo():

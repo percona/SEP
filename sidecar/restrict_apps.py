@@ -23,6 +23,7 @@ derived from it rather than repeated in the build recipe.
 import argparse
 import shutil
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -44,7 +45,7 @@ def activated_apps(profile: Path) -> set[str]:
     :raises KeyError: When the profile carries no activation list, or an entry
         in it declares no module name.
     """
-    document = yaml.safe_load(profile.read_text(encoding="utf-8"))
+    document: dict[str, Any] = yaml.safe_load(profile.read_text(encoding="utf-8"))
     return {entry["MODULE_NAME"] for entry in document["default"]["SEP"]["APPS"]}
 
 
