@@ -37,6 +37,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.exceptions import HTTPBadGatewayException, HTTPBadRequestException
 from app.core.pagination import fetch_all_dict_items
+from app.core.security import get_internal_token
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.apps.inventory.connectivity import probe_service_connectivity
 from app.sep.apps.inventory.constants import CONNECTABLE_SERVICE_TYPES
@@ -48,7 +49,6 @@ from app.sep.apps.inventory.deps import (
 )
 from app.sep.apps.inventory.models import InventorySyncScheduleCreateForm
 from app.sep.apps.inventory.sync import (
-    get_internal_token,
     run_inventory_sync,
     run_node_sync,
     run_schema_sync,
