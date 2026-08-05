@@ -22,6 +22,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.core.utils.fields import UTCDatetime
 from app.core.utils.pydantic import CustomFieldMetadata
+from app.sep.apps.field_names import RESERVED_EXECUTION_FIELD_NAMES
 from app.sep.snippets.forms import (
     CheckboxInputElement,
     DateTimeInputElement,
@@ -31,7 +32,6 @@ from app.sep.snippets.forms import (
     TextInputElement,
     TextInputHTMLElement,
 )
-from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     serialize_cli_value,
     SnippetMetaParameter,
@@ -93,19 +93,63 @@ class TestSetDefaultStep:
 class TestReservedParameterName:
     """Test rejection of parameter names reserved for synthesized fields."""
 
-    def test_extra_args_name_raises(self):
-        """Raise when a parameter is named after the synthesized Extra Args field."""
+    @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
+    def test_reserved_name_raises(self, reserved_name):
+        """Raise when a parameter is named after a synthesized execution field."""
+        with pytest.raises(ValidationError) as exc_info:
+            SnippetMetaParameter(name=reserved_name, type=SnippetMetaParameterType.STR)
+        message = str(exc_info.value)
+        assert "reserved" in message
+        assert reserved_name in message
+
+    @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
+    def test_reserved_name_is_rejected_when_hidden(self, reserved_name):
+        """Raise for a reserved name even when the parameter renders in no form.
+
+        ``hidden`` suppresses form rendering only. The parameter still reaches
+        the generated execution model, where its validation alias is its
+        declared name, so a hidden reserved name would collide there instead.
+        """
         with pytest.raises(ValidationError, match="reserved"):
             SnippetMetaParameter(
-                name=EXTRA_ARGS_FIELD_NAME, type=SnippetMetaParameterType.STR
+                name=reserved_name, type=SnippetMetaParameterType.STR, hidden=True
             )
 
-    def test_other_names_are_unaffected(self):
-        """Verify an unreserved name is still accepted."""
-        param = SnippetMetaParameter(
-            name="extra_args_suffix", type=SnippetMetaParameterType.STR
-        )
-        assert param.name == "extra_args_suffix"
+    @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
+    def test_reserved_name_is_rejected_when_positional(self, reserved_name):
+        """Raise for a reserved name even when the parameter is positional."""
+        with pytest.raises(ValidationError, match="reserved"):
+            SnippetMetaParameter(
+                name=reserved_name, type=SnippetMetaParameterType.STR, positional=True
+            )
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "extra_args_suffix",
+            "sudo_mode",
+            "executor_hosts",
+            "script_preview_url",
+            "preview",
+            "host",
+        ],
+    )
+    def test_near_miss_names_are_unaffected(self, name):
+        """Accept a name that merely resembles a reserved one."""
+        param = SnippetMetaParameter(name=name, type=SnippetMetaParameterType.STR)
+        assert param.name == name
+
+    @pytest.mark.parametrize("name", ["Sudo", "SUDO", "Extra_Args"])
+    def test_reservation_is_case_sensitive(self, name):
+        """Accept a re-cased reserved name, which cannot collide.
+
+        Duplicate form field names are detected by exact comparison, and every
+        downstream binding -- HTML input names, generated model field keys,
+        validation aliases -- is case-sensitive too, so ``Sudo`` is provably
+        distinct from the synthesized ``sudo`` field.
+        """
+        param = SnippetMetaParameter(name=name, type=SnippetMetaParameterType.STR)
+        assert param.name == name
 
 
 class TestDatetimeTypeResolution:

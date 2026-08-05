@@ -34,6 +34,11 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.sep.apps.field_names import (
+    EXECUTOR_HOST_FIELD_NAME,
+    RESERVED_EXECUTION_FIELD_NAMES,
+    SUDO_FIELD_NAME,
+)
 from app.sep.apps.framework.schema import (
     BoolField,
     ChoiceField,
@@ -50,6 +55,9 @@ from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.models.snippet import BaseSnippet, SnippetExecutionMeta
 
 pytestmark = pytest.mark.asyncio
+
+#: The execution fields this app synthesizes for a sudo-optional script.
+_SYNTHESIZED_FIELD_NAMES = frozenset({EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME})
 
 
 _SHELL_NO_PARAMS = """#!/usr/bin/env bash
@@ -164,6 +172,30 @@ def _framework_processed_body(
 def _fields(schema: object) -> dict[str, object]:
     """Return every form field across a schema's sections, keyed by field name."""
     return {field.name: field for section in schema.forms for field in section.fields}
+
+
+def _field_name_list(schema: object) -> list[str]:
+    """Return every form field name across a schema's sections, sorted.
+
+    ``_fields`` keys by name and so cannot see a duplicate wire name, which is
+    exactly what the reserved-name tests assert the absence of.
+    """
+    return sorted(field.name for section in schema.forms for field in section.fields)
+
+
+def _shell_with_parameter(name: str) -> str:
+    """Return an optional-sudo shell script declaring one parameter called ``name``."""
+    return (
+        "#!/usr/bin/env bash\n"
+        "# ---\n"
+        "# title: Reserved\n"
+        "# sudo: optional\n"
+        "# parameters:\n"
+        f"#   - name: {name}\n"
+        "#     label: Reserved\n"
+        "# ---\n"
+        'echo "run"\n'
+    )
 
 
 @pytest.fixture
@@ -307,6 +339,41 @@ class TestFormSchema:
         script = await source.load_script("msg.sh")
         fields = _fields(source.build_form_schema(script))
         assert isinstance(fields["message"], StringField)
+
+    @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
+    async def test_reserved_named_parameter_is_dropped_not_raised(
+        self, source: ScriptSource, script_dir: Path, reserved_name: str
+    ) -> None:
+        """Drop a reserved-name parameter instead of failing the schema build.
+
+        Reservation is unconditional, so this holds for the two names this app
+        never synthesizes (``script_preview``, ``extra_args``) as well as for
+        the two it does: an author cannot tell from their frontmatter which app
+        will render it.
+
+        Asserting the whole field set, rather than only that the reserved name
+        appears at most once, keeps a build that dropped the *synthesized* field
+        as well from passing.
+        """
+        _write_script(script_dir, "reserved.sh", _shell_with_parameter(reserved_name))
+        script = await source.load_script("reserved.sh")
+
+        schema = source.build_form_schema(script)
+
+        assert not any(section.title == "Parameters" for section in schema.forms)
+        assert _field_name_list(schema) == sorted(_SYNTHESIZED_FIELD_NAMES)
+
+    async def test_every_synthesized_field_name_is_reserved(
+        self, source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Keep every field this builder synthesizes covered by the reserved set."""
+        _write_script(script_dir, "sudo.sh", _SHELL_OPTIONAL_SUDO)
+        script = await source.load_script("sudo.sh")
+
+        synthesized = set(_field_name_list(source.build_form_schema(script)))
+
+        assert synthesized == _SYNTHESIZED_FIELD_NAMES
+        assert synthesized <= RESERVED_EXECUTION_FIELD_NAMES
 
 
 class TestExecuteMeta:

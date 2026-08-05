@@ -44,16 +44,15 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.sep.apps.field_names import EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME
 from app.sep.apps.framework.schema import (
     AppSchema,
     BoolField,
     Column,
     EXECUTION_HOST_LABEL,
-    EXECUTOR_HOST_FIELD_NAME,
     FormSection,
     HostField,
     ListView,
-    SUDO_FIELD_NAME,
 )
 from app.sep.apps.framework.script_helpers import (
     build_artifact_download_url,

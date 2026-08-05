@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.sep.apps.field_names import RESERVED_EXECUTION_FIELD_NAMES
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
     snippets_settings,
@@ -34,6 +35,7 @@ from app.sep.snippets.models.snippet import (
 )
 
 EXPECTED_PARAM_COUNT = 2
+EXPECTED_RESERVED_ERROR_COUNT = 2
 UPDATED_SIZE = 200
 MD5_DIGEST_LENGTH = 32
 
@@ -526,26 +528,86 @@ class TestValidatedParameters:
         result = snippet.validated_parameters
         assert len(result.errors) > 0
 
-    def test_extra_args_named_parameter_is_rejected(self):
-        """Drop a parameter reserved for the synthesized Extra Args field.
+    @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
+    def test_reserved_named_parameter_is_rejected(self, reserved_name):
+        """Drop a parameter reserved for a synthesized execution field.
 
         Regression test for a wire-name collision: an ordinary parameter
-        named ``extra_args`` would otherwise share its wire name with the
-        synthesized Extra Args execution field, causing
-        ``build_snippet_schema`` to raise a duplicate-field error, or a
-        submitted value to silently double-bind in the execution model. It
-        is now rejected like any other invalid parameter, before either path
-        is reached.
+        sharing its wire name with a synthesized execution field would
+        otherwise make the schema builders raise a duplicate-field error, or a
+        submitted value silently double-bind in the execution model. It is now
+        rejected like any other invalid parameter, before either path is
+        reached.
         """
         snippet = BaseSnippet(
             filename="test.sh",
             size=100,
             md5_digest="a" * 32,
-            meta={"parameters": [{"name": "extra_args", "type": "str"}]},
+            meta={"parameters": [{"name": reserved_name, "type": "str"}]},
         )
         result = snippet.validated_parameters
         assert len(result.parameters) == 0
-        assert any("reserved" in error for error in result.errors)
+        assert any(
+            "reserved" in error and reserved_name in error for error in result.errors
+        )
+
+    @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
+    def test_reserved_named_parameter_blocks_execution(self, reserved_name):
+        """Block execution of a snippet declaring a reserved parameter name."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"parameters": [{"name": reserved_name, "type": "str"}]},
+        )
+        assert snippet.can_execute is False
+
+    def test_every_reserved_named_parameter_is_reported(self):
+        """Report one error per reserved name and keep the valid siblings."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "sudo", "type": "str"},
+                    {"name": "mode", "type": "str"},
+                    {"name": "extra_args", "type": "str"},
+                ]
+            },
+        )
+        result = snippet.validated_parameters
+        assert [param.name for param in result.parameters] == ["mode"]
+        assert len(result.errors) == EXPECTED_RESERVED_ERROR_COUNT
+        assert any("'sudo'" in error for error in result.errors)
+        assert any("'extra_args'" in error for error in result.errors)
+
+    def test_reserved_named_parameter_is_not_reported_as_unknown_reference(self):
+        """Keep a sibling's reference to a rejected parameter unflagged.
+
+        Visibility references are checked against the names the frontmatter
+        *declared*, not the ones that survived validation, so a rejected
+        parameter is reported once as reserved rather than twice -- once as
+        reserved and again as an unknown reference.
+        """
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "sudo", "type": "str"},
+                    {
+                        "name": "mode",
+                        "type": "str",
+                        "visible_when": {"parameter": "sudo", "equals": "1"},
+                    },
+                ]
+            },
+        )
+        errors = snippet.validated_parameters.errors
+        assert len(errors) == 1
+        assert "reserved" in errors[0]
 
     def test_no_parameters(self):
         """Verify empty parameters produce no errors."""
