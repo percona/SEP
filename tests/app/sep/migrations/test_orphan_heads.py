@@ -21,7 +21,6 @@ decision ``skip_unresolvable_heads`` makes, whose combination is covered by
 the integration tests in ``test_alembic_integration.py``.
 """
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -30,18 +29,12 @@ from alembic.script import ScriptDirectory
 
 from app.sep.migrations._orphan_heads import missing_version_locations, partition_heads
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION
 
-# The create_alert_backup_table revision: the head of the alerts branch, the
-# app the PMM-embedded side-car strips.
-_ALERTS_HEAD = "d21ad387df7a"
 # The create_atw_incident_tables revision, on the atw branch.
 _ATW_REVISION = "b82887dfe93d"
 # The create_mysql_backup_run_table revision, on the mysql_backups branch.
 _MYSQL_BACKUPS_HEAD = "f0a1b2c3d4e5"
-# A revision id no branch in the tree defines.
-_UNKNOWN_REVISION = "deadbeef1234"
 
 
 @pytest.fixture
@@ -56,11 +49,11 @@ def sep_script() -> ScriptDirectory:
 def test_partition_heads_splits_known_from_unknown(sep_script):
     """Sort a resolvable revision and an unknown one into separate tuples."""
     resolvable, unresolvable = partition_heads(
-        sep_script, (_ALERTS_HEAD, _UNKNOWN_REVISION)
+        sep_script, (ALERTS_HEAD, UNKNOWN_REVISION)
     )
 
-    assert resolvable == (_ALERTS_HEAD,)
-    assert unresolvable == (_UNKNOWN_REVISION,)
+    assert resolvable == (ALERTS_HEAD,)
+    assert unresolvable == (UNKNOWN_REVISION,)
 
 
 def test_partition_heads_treats_every_real_head_as_resolvable(sep_script):
@@ -87,20 +80,20 @@ def test_partition_heads_on_empty_input_makes_no_revision_map_lookups():
 def test_partition_heads_preserves_input_order(sep_script):
     """Keep resolvable ids in the order they appeared in ``heads``."""
     resolvable, unresolvable = partition_heads(
-        sep_script, (_ATW_REVISION, _UNKNOWN_REVISION, _MYSQL_BACKUPS_HEAD)
+        sep_script, (_ATW_REVISION, UNKNOWN_REVISION, _MYSQL_BACKUPS_HEAD)
     )
 
     assert resolvable == (_ATW_REVISION, _MYSQL_BACKUPS_HEAD)
-    assert unresolvable == (_UNKNOWN_REVISION,)
+    assert unresolvable == (UNKNOWN_REVISION,)
 
 
 def test_partition_heads_reports_several_unknown_ids(sep_script):
     """Collect every unresolvable id, as an app with unmerged heads produces."""
     _, unresolvable = partition_heads(
-        sep_script, (_UNKNOWN_REVISION, "cafebabe5678", _ALERTS_HEAD)
+        sep_script, (UNKNOWN_REVISION, "cafebabe5678", ALERTS_HEAD)
     )
 
-    assert unresolvable == (_UNKNOWN_REVISION, "cafebabe5678")
+    assert unresolvable == (UNKNOWN_REVISION, "cafebabe5678")
 
 
 def test_missing_version_locations_is_empty_when_every_entry_exists(sep_script):

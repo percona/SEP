@@ -22,7 +22,6 @@ any misconfigured ``version_locations`` or plugin-discovery regression.
 """
 
 import logging
-from pathlib import Path
 
 import pytest
 from alembic import command
@@ -35,8 +34,7 @@ from sqlalchemy.exc import IntegrityError
 from app.sep.apps.alerts.models import AlertBackup
 from app.sep.config import sep_settings
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION
 
 # The add_setting_override_table revision on the SEP track, before SETTINGS /
 # ALERT_SETTINGS were added to the setting_class CHECK constraint.
@@ -47,13 +45,6 @@ _SEP_PRE_ENUM_REVISION = "ed97b99eef38"
 _SEP_PRE_LIFECYCLE_REVISION = "64f10ead74f6"
 # The add_lifecycle_state_to_app_state revision under test.
 _SEP_LIFECYCLE_REVISION = "a7c4e9f1b2d3"
-
-
-# The create_alert_backup_table revision: the head of the alerts branch, the
-# app the PMM-embedded side-car's allow-list strip removes.
-_ALERTS_HEAD = "d21ad387df7a"
-# A revision id no branch in the tree defines, standing in for version skew.
-_UNKNOWN_REVISION = "deadbeef1234"
 
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
@@ -205,7 +196,7 @@ def test_upgrade_preserves_the_unresolvable_row(
 
     command.upgrade(stripped_cfg, "heads")
 
-    assert _ALERTS_HEAD in _get_stamped_revisions(sync_url)
+    assert ALERTS_HEAD in _get_stamped_revisions(sync_url)
 
 
 def test_upgrade_logs_every_skipped_revision_id(
@@ -225,7 +216,7 @@ def test_upgrade_logs_every_skipped_revision_id(
         if record.name == _ORPHAN_HEADS_LOGGER and record.levelno == logging.WARNING
     ]
     assert len(records) == 1
-    assert _ALERTS_HEAD in records[0].getMessage()
+    assert ALERTS_HEAD in records[0].getMessage()
     assert absent_path in records[0].getMessage()
 
 
@@ -246,7 +237,7 @@ def test_upgrade_applies_another_branch_while_preserving_the_orphan_row(
     finally:
         engine.dispose()
     assert "lifecycle_state" in columns
-    assert _ALERTS_HEAD in _get_stamped_revisions(sync_url)
+    assert ALERTS_HEAD in _get_stamped_revisions(sync_url)
 
 
 def test_returning_app_resumes_from_the_preserved_row(
@@ -286,7 +277,7 @@ def test_returning_app_resumes_from_the_preserved_row(
     finally:
         engine.dispose()
     assert rows == ['{"kept": true}']
-    assert _ALERTS_HEAD in _get_stamped_revisions(sync_url)
+    assert ALERTS_HEAD in _get_stamped_revisions(sync_url)
 
 
 def test_fresh_db_with_every_branch_present_logs_nothing(sep_alembic_config, caplog):
@@ -321,9 +312,9 @@ def test_unknown_revision_is_not_skipped_when_every_location_is_present(
     """Refuse to filter version skew, so Alembic rejects it exactly as today."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, "heads")
-    _stamp_extra_revision(sync_url, _UNKNOWN_REVISION)
+    _stamp_extra_revision(sync_url, UNKNOWN_REVISION)
 
-    with pytest.raises(CommandError, match=_UNKNOWN_REVISION):
+    with pytest.raises(CommandError, match=UNKNOWN_REVISION):
         command.upgrade(cfg, "heads")
 
 
@@ -331,7 +322,7 @@ def test_refusal_to_skip_is_explained_before_alembic_raises(sep_alembic_config, 
     """Log an error naming the unresolved id and why it was left in place."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, "heads")
-    _stamp_extra_revision(sync_url, _UNKNOWN_REVISION)
+    _stamp_extra_revision(sync_url, UNKNOWN_REVISION)
 
     with (
         caplog.at_level(logging.ERROR, logger=_ORPHAN_HEADS_LOGGER),
@@ -345,7 +336,7 @@ def test_refusal_to_skip_is_explained_before_alembic_raises(sep_alembic_config, 
         if record.name == _ORPHAN_HEADS_LOGGER and record.levelno == logging.ERROR
     ]
     assert len(records) == 1
-    assert _UNKNOWN_REVISION in records[0].getMessage()
+    assert UNKNOWN_REVISION in records[0].getMessage()
     assert "present on disk" in records[0].getMessage()
 
 
@@ -356,7 +347,7 @@ def test_a_stripped_app_and_version_skew_are_skipped_together(
     full_cfg, sync_url = sep_alembic_config
     stripped_cfg, _, _ = sep_alembic_config_stripped_alerts
     command.upgrade(full_cfg, "heads")
-    _stamp_extra_revision(sync_url, _UNKNOWN_REVISION)
+    _stamp_extra_revision(sync_url, UNKNOWN_REVISION)
 
     with caplog.at_level(logging.WARNING, logger=_ORPHAN_HEADS_LOGGER):
         command.upgrade(stripped_cfg, "heads")
@@ -367,10 +358,10 @@ def test_a_stripped_app_and_version_skew_are_skipped_together(
         if record.name == _ORPHAN_HEADS_LOGGER and record.levelno == logging.WARNING
     ]
     assert len(records) == 1
-    assert _ALERTS_HEAD in records[0].getMessage()
-    assert _UNKNOWN_REVISION in records[0].getMessage()
+    assert ALERTS_HEAD in records[0].getMessage()
+    assert UNKNOWN_REVISION in records[0].getMessage()
     stamped = _get_stamped_revisions(sync_url)
-    assert {_ALERTS_HEAD, _UNKNOWN_REVISION} <= stamped
+    assert {ALERTS_HEAD, UNKNOWN_REVISION} <= stamped
 
 
 def test_alembic_upgrade_heads_fresh_db_creates_alert_backup(sep_alembic_config):
