@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the model factories for the Archive app's tests.
+"""Define the model factories for the Archives app's tests.
 
 No test consumes this yet; the app's tests pin the create body through
 :mod:`tests.app.sep.apps.archives.build_pins`.

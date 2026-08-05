@@ -54,27 +54,11 @@ from pathlib import Path
 import pytest
 
 from app import BASE_DIR
+from tests.app.import_ast import absolute_base, package_of
 
 SHARED_TEST_ROOT = BASE_DIR / "tests" / "app"
 
 FORBIDDEN_PREFIXES = ("app.sep.apps", "tests.app.sep.apps")
-
-
-def _absolute_base(node: ast.ImportFrom, package: str) -> str | None:
-    """Return the absolute dotted path ``node``'s module part resolves to.
-
-    :param node: The ``from ... import`` node to resolve.
-    :param package: The dotted package the importing module belongs to.
-    :return: The absolute module path, or ``None`` when the level climbs past the
-        package root.
-    """
-    if node.level == 0:
-        return node.module
-    parts = package.split(".")
-    anchor = parts[: len(parts) - node.level + 1]
-    if not anchor:
-        return None
-    return ".".join([*anchor, node.module] if node.module else anchor)
 
 
 def _imported_modules(source: str, package: str) -> Iterator[tuple[str, int]]:
@@ -93,14 +77,14 @@ def _imported_modules(source: str, package: str) -> Iterator[tuple[str, int]]:
 
     :param source: The module source to parse.
     :param package: The dotted package the importing module belongs to.
-    :yield: A dotted import target with its line number.
+    :return: An iterator of dotted import targets with their line numbers.
     """
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 yield alias.name, node.lineno
         elif isinstance(node, ast.ImportFrom):
-            base = _absolute_base(node, package)
+            base = absolute_base(node, package)
             if base:
                 for alias in node.names:
                     yield f"{base}.{alias.name}", node.lineno
@@ -124,24 +108,19 @@ def _is_forbidden(module: str) -> bool:
 def _shared_module_paths(root: Path) -> list[Path]:
     """Return every module sitting directly at the root of the test tree.
 
-    The scan is not recursive: modules deeper in the tree are scoped to a
-    subtree and may legitimately import the app they test.
+    The rule binds the test root specifically, and the scan is flat to match: a
+    module deeper in the tree is not automatically app-agnostic, but it is not
+    imported by the whole tree either, so it is out of this rule's scope. That
+    knowingly leaves out ``tests/app/sep/conftest.py`` and
+    ``tests/app/sep/apps/conftest.py``, which every app's tests inherit -- the
+    latter cannot be bound without exempting ``framework``, since it owns the
+    shared router-contract wiring the per-app suites derive from, and exempting
+    ``framework`` is what this rule's docstring declines to do.
 
     :param root: The test-tree root to scan.
     :return: The source paths subject to the app-agnostic rule.
     """
     return sorted(root.glob("*.py"))
-
-
-def _package_of(path: Path, base: Path) -> str:
-    """Return the dotted package a module resolves its relative imports against.
-
-    :param path: The source path to derive the package from.
-    :param base: The directory the path is dotted relative to.
-    :return: The dotted package name, which for an ``__init__.py`` is its own
-        directory.
-    """
-    return ".".join(path.relative_to(base).parts[:-1])
 
 
 def _violations(root: Path, base: Path) -> list[str]:
@@ -155,7 +134,7 @@ def _violations(root: Path, base: Path) -> list[str]:
         f"{path.relative_to(base)}:{lineno} -> {module}"
         for path in _shared_module_paths(root)
         for module, lineno in _imported_modules(
-            path.read_text(encoding="utf-8"), _package_of(path, base)
+            path.read_text(encoding="utf-8"), package_of(path, base)
         )
         if _is_forbidden(module)
     ]
@@ -202,44 +181,45 @@ class TestSharedTestModulesStayAppAgnostic:
 class TestViolationReporting:
     """Check the report a synthetic test root produces, end to end."""
 
-    def test_forbidden_absolute_import_is_reported(self, tmp_path: Path) -> None:
-        """Report a shared module's app-tree import as ``path:line -> module``."""
-        root = _write_shared_module(
-            tmp_path, "factories.py", "from app.sep.apps.atw.models import AtwIncident"
-        )
-        assert _violations(root, tmp_path) == [
-            "tests/app/factories.py:1 -> app.sep.apps.atw.models.AtwIncident"
-        ]
-
-    def test_relative_re_export_is_reported(self, tmp_path: Path) -> None:
-        """Resolve a relative re-export against the importing module's package."""
-        root = _write_shared_module(
-            tmp_path,
-            "conftest.py",
-            "from .sep.apps.atw.factories import AtwIncidentFactory",
-        )
-        assert _violations(root, tmp_path) == [
-            "tests/app/conftest.py:1 -> "
-            "tests.app.sep.apps.atw.factories.AtwIncidentFactory"
-        ]
-
-    def test_module_below_the_root_is_out_of_scope(self, tmp_path: Path) -> None:
-        """Leave a module deeper in the tree free to import the app it tests."""
-        root = _write_shared_module(
-            tmp_path,
-            "sep/apps/atw/factories.py",
-            "from app.sep.apps.atw.models import AtwIncident",
-        )
-        assert _violations(root, tmp_path) == []
-
-    def test_clean_tree_yields_no_violations(self, tmp_path: Path) -> None:
-        """Accept a shared module that imports only core and shared names."""
-        root = _write_shared_module(
-            tmp_path,
-            "factories.py",
-            "from app.tasks.models import Task\nfrom tests.app.factories import Mock\n",
-        )
-        assert _violations(root, tmp_path) == []
+    @pytest.mark.parametrize(
+        ("relative_path", "source", "expected"),
+        [
+            pytest.param(
+                "factories.py",
+                "from app.sep.apps.atw.models import AtwIncident",
+                ["tests/app/factories.py:1 -> app.sep.apps.atw.models.AtwIncident"],
+                id="absolute-import-reported",
+            ),
+            pytest.param(
+                "conftest.py",
+                "from .sep.apps.atw.factories import AtwIncidentFactory",
+                [
+                    "tests/app/conftest.py:1 -> "
+                    "tests.app.sep.apps.atw.factories.AtwIncidentFactory"
+                ],
+                id="relative-re-export-resolved",
+            ),
+            pytest.param(
+                "sep/apps/atw/factories.py",
+                "from app.sep.apps.atw.models import AtwIncident",
+                [],
+                id="below-root-out-of-scope",
+            ),
+            pytest.param(
+                "factories.py",
+                "from app.tasks.models import Task\n"
+                "from tests.app.factories import Mock\n",
+                [],
+                id="clean-tree",
+            ),
+        ],
+    )
+    def test_a_synthetic_root_reports_the_expected_violations(
+        self, relative_path: str, source: str, expected: list[str], tmp_path: Path
+    ) -> None:
+        """Report one ``path:line -> module`` entry per in-scope app-tree import."""
+        root = _write_shared_module(tmp_path, relative_path, source)
+        assert _violations(root, tmp_path) == expected
 
 
 class TestForbiddenImportDetection:
@@ -362,7 +342,7 @@ class TestForbiddenImportDetection:
         self, source: str, expected: set[str]
     ) -> None:
         """Resolve a forbidden module only for the spellings the rule covers."""
-        package = _package_of(SHARED_TEST_ROOT / "factories.py", BASE_DIR)
+        package = package_of(SHARED_TEST_ROOT / "factories.py", BASE_DIR)
         found = {
             module
             for module, _ in _imported_modules(source, package)

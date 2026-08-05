@@ -23,8 +23,8 @@ from app.sep.apps.alters.models import AltersCreate
 class AltersCreateFactory(ModelFactory[AltersCreate]):
     """Define factory for AltersCreate instances."""
 
-    db_schema: int = 1
-    db_table: int = 2
+    db_schema: int | str = 1
+    db_table: int | str = 2
     recursion_method: str = "processlist"
     dsn_table: str = ""
     continue_on_pre_check_failure: bool = False
