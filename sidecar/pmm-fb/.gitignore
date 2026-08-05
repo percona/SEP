@@ -1,5 +1,3 @@
 .env
-# No longer generated, but a harness bootstrapped before the mount was dropped
-# still has one holding secrets in cleartext
 settings.yaml
 pmm.conf
