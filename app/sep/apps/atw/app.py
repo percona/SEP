@@ -37,9 +37,9 @@ from app.sep.apps.nav_icons import NavIcon
 def _atw_periodic_tasks() -> list[AppPeriodicTask]:
     """Contribute the bundle-purge sweep while cleanup is configured.
 
-    ``cleanup_interval`` may be ``None`` to unregister the sweep entirely; the
-    factory is re-invoked on every seed so a hot disable drops the contribution
-    without a restart.
+    ``cleanup_interval`` may be ``None`` to unregister the sweep entirely, so this
+    is kept as a callable: the contribution is variable-length (0 or 1) and a plain
+    list literal would commit to a fixed set at ``BaseApp(...)`` construction.
 
     :return: The purge contrib, or an empty list when cleanup is disabled.
     """
