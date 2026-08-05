@@ -17,19 +17,28 @@
 
 from datetime import timedelta
 from string import Template
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
+from pytest_mock import MockerFixture
 
 from app.core.settings_override.registry import (
+    chain_is_locked,
+    is_advanced_field,
     is_hot_reloadable,
     is_nested_overridable_parent,
+    MaterializerContext,
+    SECRET_STR_MASK,
 )
+from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import (
     App,
     AppDrainSettings,
+    DeliveryPlanInputs,
     HealthReportSettings,
+    materialize_delivery_plan_inputs,
     sep_settings,
     SEPSettings,
     SessionOptions,
@@ -125,6 +134,127 @@ class TestDiagnosticsDelivery:
 
         with pytest.raises(ValidationError, match="undefined secret 'api_key'"):
             SEPSettings(DIAGNOSTICS_DELIVERY=payload)
+
+
+class TestDiagnosticsDeliveryInputs:
+    """Cover the ``DIAGNOSTICS_DELIVERY_INPUTS`` runtime-inputs settings block."""
+
+    @staticmethod
+    def _context(raw: Any) -> MaterializerContext:
+        """Return the materialization context the override layer would build.
+
+        :param raw: The raw, JSON-decoded value of the candidate override.
+        :return: The context for the inputs field.
+        """
+        return MaterializerContext(
+            settings_cls=SEPSettings,
+            field_name="DIAGNOSTICS_DELIVERY_INPUTS",
+            field_info=SEPSettings.model_fields["DIAGNOSTICS_DELIVERY_INPUTS"],
+            raw=raw,
+        )
+
+    @staticmethod
+    def _skeleton() -> DeliveryPlan:
+        """Return a baked plan declaring two secrets, both left empty."""
+        return DeliveryPlan(
+            endpoint="https://snow.example.com/",
+            secrets={"sn_api_key": "", "client_token": ""},
+            upload={
+                "path": "attachment/upload",
+                "headers": {"x-sn-apikey": {"source": "secret", "name": "sn_api_key"}},
+                "fields": {
+                    "client_token": {"source": "secret", "name": "client_token"}
+                },
+            },
+        )
+
+    def test_defaults_to_not_configured(self):
+        """Leave the inputs unset so a standalone deployment behaves unchanged."""
+        assert SEPSettings(_env_file=None).DIAGNOSTICS_DELIVERY_INPUTS is None
+
+    def test_is_hot_reloadable_and_advanced(self):
+        """Expose the whole object to the settings API, grouped as advanced."""
+        assert is_hot_reloadable(SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS")
+        assert (
+            is_advanced_field(SEPSettings.model_fields["DIAGNOSTICS_DELIVERY_INPUTS"])
+            is True
+        )
+
+    @pytest.mark.parametrize("leaf", ["secrets", "endpoint"])
+    def test_leaves_are_sealed(self, leaf: str):
+        """Refuse every per-leaf write, so the materializer sees each payload whole."""
+        assert chain_is_locked(SEPSettings, f"DIAGNOSTICS_DELIVERY_INPUTS__{leaf}")
+
+    def test_materializer_accepts_exactly_the_declared_secret_names(
+        self, mocker: MockerFixture
+    ):
+        """Bind a payload naming every secret the baked plan declares."""
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", self._skeleton())
+
+        inputs = materialize_delivery_plan_inputs(
+            self._context({"secrets": {"sn_api_key": "a", "client_token": "b"}})
+        )
+
+        assert inputs.secrets["sn_api_key"].get_secret_value() == "a"
+
+    def test_materializer_passes_none_through(self, mocker: MockerFixture):
+        """Accept clearing the inputs back to the field default."""
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", self._skeleton())
+
+        assert materialize_delivery_plan_inputs(self._context(None)) is None
+
+    def test_materializer_rejects_an_unknown_secret_name(self, mocker: MockerFixture):
+        """Refuse a name the plan never cites, which would persist and be ignored."""
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", self._skeleton())
+
+        with pytest.raises(ValueError, match="extra_key"):
+            materialize_delivery_plan_inputs(
+                self._context(
+                    {
+                        "secrets": {
+                            "sn_api_key": "a",
+                            "client_token": "b",
+                            "extra_key": "c",
+                        }
+                    }
+                )
+            )
+
+    def test_materializer_rejects_a_missing_secret_name(self, mocker: MockerFixture):
+        """Refuse a payload that leaves a declared secret unsupplied."""
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", self._skeleton())
+
+        with pytest.raises(ValueError, match="client_token"):
+            materialize_delivery_plan_inputs(
+                self._context({"secrets": {"sn_api_key": "a"}})
+            )
+
+    def test_materializer_rejects_secrets_without_a_baked_plan(
+        self, mocker: MockerFixture
+    ):
+        """Refuse inputs for a receiver the image never baked."""
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", None)
+
+        with pytest.raises(ValueError, match="sn_api_key"):
+            materialize_delivery_plan_inputs(
+                self._context({"secrets": {"sn_api_key": "a"}})
+            )
+
+    def test_model_rejects_a_secret_carrying_the_mask(self):
+        """Refuse the redaction mask as a stored credential value."""
+        with pytest.raises(ValidationError, match="sn_api_key"):
+            DeliveryPlanInputs(secrets={"sn_api_key": SECRET_STR_MASK})
+
+    def test_mask_is_rejected_on_the_yaml_path(self):
+        """Fail settings construction when a masked export is re-fed as configuration.
+
+        No materializer runs on this path, so the model's own validator is what
+        stops the mask from reaching the receiver as a literal credential.
+        """
+        with pytest.raises(ValidationError, match="sn_api_key"):
+            SEPSettings(
+                DIAGNOSTICS_DELIVERY_INPUTS={"secrets": {"sn_api_key": SECRET_STR_MASK}}
+            )
 
 
 class TestHealthReportEndpoint:
