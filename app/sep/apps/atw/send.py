@@ -638,17 +638,17 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
                 path, row, incident_name, tasks_api, plan.max_bundle_size_mb
             )
         size = path.stat().st_size
-        executor = await get_delivery_executor(
+        async with get_delivery_executor(
             plan,
             step_observer=lambda record: steps.append(_step_detail(record)),
-        )
-        with path.open("rb") as handle:
-            result = await executor.upload_bundle(
-                source_ref=f"atw-incident/{row.incident_id}",
-                bundle=BundleSource(filename=path.name, content=handle, size=size),
-                case_ref=row.case_ref,
-                manifest=manifest,
-            )
+        ) as executor:
+            with path.open("rb") as handle:
+                result = await executor.upload_bundle(
+                    source_ref=f"atw-incident/{row.incident_id}",
+                    bundle=BundleSource(filename=path.name, content=handle, size=size),
+                    case_ref=row.case_ref,
+                    manifest=manifest,
+                )
         logger.info(
             "Diagnostics send %s delivered to case %s as %s: %s",
             row.id,
