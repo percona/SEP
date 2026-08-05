@@ -249,8 +249,21 @@ class TestBackupSourceChoicesRoute:
     async def test_skips_unusable_rows_to_fill_choice_cap(
         self, session, regular_user
     ) -> None:
-        """Keep scanning past unusable catalog rows to surface older valid backups."""
-        for task_history_id in range(1, DEFAULT_PAGINATION_LIMIT + 1):
+        """Keep scanning past unusable catalog rows to surface older valid backups.
+
+        The only usable row is saved first, so it sorts last and falls beyond the
+        first page of unusable rows — a single-page scan would return ``[]``.
+        """
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="svc-a",
+                backup_type="M",
+                location="/data/mydumper/kept",
+            ),
+        )
+        for task_history_id in range(2, DEFAULT_PAGINATION_LIMIT + 2):
             await MysqlBackupRunManager.save(
                 session,
                 MysqlBackupRun(
@@ -259,15 +272,6 @@ class TestBackupSourceChoicesRoute:
                     backup_type="M",
                 ),
             )
-        await MysqlBackupRunManager.save(
-            session,
-            MysqlBackupRun(
-                task_history_id=DEFAULT_PAGINATION_LIMIT + 1,
-                service_name="svc-a",
-                backup_type="M",
-                location="/data/mydumper/kept",
-            ),
-        )
 
         response = await self._get(
             session, 1, inventory_mock(service_payload("svc-a")), regular_user
