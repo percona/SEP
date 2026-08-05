@@ -1680,7 +1680,12 @@ class TestSepSettingsCredentialUrlWriteback:
     async def test_patch_redacted_inventory_endpoint_preserves_password(
         self, api_admin_client: TestClient
     ) -> None:
-        """Keep the real password when saving an unchanged redacted ``INVENTORY_ENDPOINT``."""
+        """Keep the real password when saving an unchanged redacted ``INVENTORY_ENDPOINT``.
+
+        Preserve runs before validation: a masked resubmit is swapped for the
+        stored password first, so the shared mask-rejecting validator never
+        sees the display value and the round-trip succeeds.
+        """
         full_url = "http://inv-user:inv-secret@inventory.internal:8080"
         redacted_url = "http://inv-user:****@inventory.internal:8080"
         try:
@@ -1692,6 +1697,26 @@ class TestSepSettingsCredentialUrlWriteback:
             assert response.status_code == status.HTTP_200_OK
             assert "inv-secret" in str(sep_settings.INVENTORY_ENDPOINT)
             assert "****" not in str(sep_settings.INVENTORY_ENDPOINT)
+        finally:
+            sep_settings._set_snapshot({})
+
+    async def test_patch_masked_endpoint_without_stored_password_is_rejected(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject a masked endpoint when there is no stored password to restore.
+
+        The YAML/env baseline has no userinfo password, so preserve leaves the
+        mask intact and the shared type validator fails the PATCH with 422.
+        """
+        redacted_url = "http://inv-user:****@inventory.internal:8080"
+        try:
+            sep_settings._set_snapshot({})
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/SEPSettings",
+                json={"INVENTORY_ENDPOINT": redacted_url},
+            )
+            assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+            assert "cannot be stored" in response.text
         finally:
             sep_settings._set_snapshot({})
 
