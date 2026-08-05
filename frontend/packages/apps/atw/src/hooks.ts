@@ -171,7 +171,10 @@ function invalidateAtwIncidentQueries(queryClient: ReturnType<typeof useQueryCli
   queryClient.invalidateQueries({ queryKey: incidentsKey });
 }
 
-function useAtwIncidentLifecycleAction(action: 'close' | 'reopen') {
+function useAtwIncidentLifecycleAction(
+  action: 'close' | 'reopen',
+  onDone: (incidentId: string) => void,
+) {
   const queryClient = useQueryClient();
   return useMutation<AtwIncident, Error, string>({
     mutationFn: async (incidentId) => {
@@ -183,21 +186,17 @@ function useAtwIncidentLifecycleAction(action: 'close' | 'reopen') {
     onSuccess: () => {
       invalidateAtwIncidentQueries(queryClient);
     },
+    onSettled: (_data, _error, incidentId) => {
+      onDone(incidentId);
+    },
   });
 }
 
 /** Shared close/reopen mutations, error text, and in-flight ids for list and workspace. */
 export function useAtwIncidentLifecycle() {
-  const closeMutation = useAtwIncidentLifecycleAction('close');
-  const reopenMutation = useAtwIncidentLifecycleAction('reopen');
   const [pendingIncidentIds, setPendingIncidentIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-
-  const trackPending = (incidentId: string, run: () => void) => {
-    setPendingIncidentIds((prev) => new Set(prev).add(incidentId));
-    run();
-  };
 
   const clearPending = (incidentId: string) => {
     setPendingIncidentIds((prev) => {
@@ -207,6 +206,9 @@ export function useAtwIncidentLifecycle() {
     });
   };
 
+  const closeMutation = useAtwIncidentLifecycleAction('close', clearPending);
+  const reopenMutation = useAtwIncidentLifecycleAction('reopen', clearPending);
+
   const reset = () => {
     closeMutation.reset();
     reopenMutation.reset();
@@ -215,19 +217,13 @@ export function useAtwIncidentLifecycle() {
   return {
     close: (incidentId: string) => {
       reopenMutation.reset();
-      trackPending(incidentId, () => {
-        closeMutation.mutate(incidentId, {
-          onSettled: () => clearPending(incidentId),
-        });
-      });
+      setPendingIncidentIds((prev) => new Set(prev).add(incidentId));
+      closeMutation.mutate(incidentId);
     },
     reopen: (incidentId: string) => {
       closeMutation.reset();
-      trackPending(incidentId, () => {
-        reopenMutation.mutate(incidentId, {
-          onSettled: () => clearPending(incidentId),
-        });
-      });
+      setPendingIncidentIds((prev) => new Set(prev).add(incidentId));
+      reopenMutation.mutate(incidentId);
     },
     reset,
     error: closeMutation.isError

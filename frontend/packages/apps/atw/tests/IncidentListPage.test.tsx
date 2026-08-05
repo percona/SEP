@@ -192,4 +192,60 @@ describe('IncidentListPage', () => {
       expect(screen.getByText('Incident is already closed.')).toBeTruthy();
     });
   });
+
+  it('re-enables the first row close button after overlapping closes settle', async () => {
+    const other = {
+      ...incident,
+      id: '22222222-2222-4222-8222-222222222222',
+      name: 'Lock waits',
+    };
+    mockedApi.get.mockResolvedValue(paginated([incident, other]));
+
+    let resolveFirst!: (value: { data: typeof incident }) => void;
+    let resolveSecond!: (value: { data: typeof other }) => void;
+    const firstClose = new Promise<{ data: typeof incident }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const secondClose = new Promise<{ data: typeof other }>((resolve) => {
+      resolveSecond = resolve;
+    });
+    mockedApi.post.mockImplementation((url: string) => {
+      if (url.endsWith(`/${incident.id}/close/`)) {
+        return firstClose;
+      }
+      if (url.endsWith(`/${other.id}/close/`)) {
+        return secondClose;
+      }
+      return Promise.reject(new Error(`Unexpected POST ${url}`));
+    });
+
+    const user = userEvent.setup();
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => expect(screen.getByText('DB slowness')).toBeTruthy());
+    const firstCloseButton = screen.getByRole('button', { name: /Close DB slowness/i });
+    const secondCloseButton = screen.getByRole('button', { name: /Close Lock waits/i });
+
+    await user.click(firstCloseButton);
+    await waitFor(() => expect(firstCloseButton).toBeDisabled());
+
+    await user.click(secondCloseButton);
+    await waitFor(() => {
+      expect(firstCloseButton).toBeDisabled();
+      expect(secondCloseButton).toBeDisabled();
+    });
+
+    resolveSecond({ data: { ...other, closed_at: '2026-07-30T12:00:00Z' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Close Lock waits/i })).not.toBeDisabled();
+    });
+    expect(screen.getByRole('button', { name: /Close DB slowness/i })).toBeDisabled();
+
+    resolveFirst({ data: { ...incident, closed_at: '2026-07-30T12:00:00Z' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Close DB slowness/i })).not.toBeDisabled();
+    });
+  });
 });
