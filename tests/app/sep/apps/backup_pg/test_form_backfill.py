@@ -20,15 +20,14 @@ from types import SimpleNamespace
 import yaml
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_pg.app import app as backup_pg_app
 from app.sep.apps.backup_pg.form_backfill import (
     _extract_stanza_from_meta,
+    FORM_BACKFILL_ENTRIES,
     reconstruct_backup_pg_form,
 )
 from app.sep.apps.backup_pg.models import BackupPgForm, BackupType
 from app.sep.apps.framework.form_backfill import (
     _backfill_single_task,
-    _BackfillApp,
     FormBackfillContext,
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
@@ -245,7 +244,7 @@ def test_backfill_single_task_stamps_backup_pg_form():
         ),
     )
     task = _legacy_backup_pg_task(name="pg-stamp", stanza="prod-main")
-    entry = _BackfillApp(app=backup_pg_app, reconstructor=reconstruct_backup_pg_form)
+    entry = FORM_BACKFILL_ENTRIES[0]
     ctx = FormBackfillContext(
         log=__import__("logging").getLogger("test"),
         service_lookup=lookup,

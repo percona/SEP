@@ -40,6 +40,7 @@ _UPLOAD_URL = "http://localhost:8000/attachment/upload"
 _TICKET_URL = "http://localhost:8000/ticket_details"
 _ACCOUNT_URL = "http://localhost:8000/case_account"
 _MANIFEST: dict[str, Any] = {"bundle": "diag", "size": 12}
+_PLAN_LOGGER = "app.sep.bundle_upload.plan"
 
 
 @pytest.fixture(name="api")
@@ -695,7 +696,7 @@ class TestDeliveryPlanExecutor:
                 body="accepted",
                 content_type="text/plain",
             )
-            with caplog.at_level("WARNING"):
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
                 async with api:
                     result = await executor.upload_bundle(
                         source_ref="src-9",
@@ -717,7 +718,7 @@ class TestDeliveryPlanExecutor:
             mock.post(
                 _UPLOAD_URL, status=status.HTTP_201_CREATED, payload=[{"sys_id": "x"}]
             )
-            with caplog.at_level("WARNING"):
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
                 async with api:
                     result = await executor.upload_bundle(
                         source_ref="src-9",
@@ -739,7 +740,7 @@ class TestDeliveryPlanExecutor:
             mock.post(
                 _UPLOAD_URL, status=status.HTTP_201_CREATED, payload={"other": "x"}
             )
-            with caplog.at_level("WARNING"):
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
                 async with api:
                     result = await executor.upload_bundle(
                         source_ref="src-9",
