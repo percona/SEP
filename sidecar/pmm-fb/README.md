@@ -97,13 +97,13 @@ inert while no token is set.
 - The settings mount is gone, so editing a rendered YAML file is no longer a
   way to try something out. Partial overrides are environment-variable-only; a
   full override means bind-mounting over `/home/sep/app/settings.yaml`, which
-  replaces the baked profile wholesale. Add an ignore rule for whatever local
-  filename you mount — nothing here ignores one any more, and such a file holds
-  the deployment's secrets in cleartext.
+  replaces the baked profile wholesale. Only `settings.yaml` is ignored here,
+  so add an ignore rule for any other local filename you mount — such a file
+  holds the deployment's secrets in cleartext.
 - **Upgrading a harness bootstrapped before the mount was dropped:** delete the
   leftover `settings.yaml`. It is inert now but still holds the secret key, PG
-  password and internal token in cleartext, and it is no longer ignored. If you
-  had minted a Grafana token, it lives only in that file — copy it into `.env`
-  as `SEP_GRAFANA_TOKEN=` before deleting, or just re-run
-  `./mint-grafana-token.sh` afterwards; otherwise Grafana auth and the PMM
-  syncer silently go inert.
+  password and internal token in cleartext; it stays ignored only to keep it
+  out of a commit until you do. If you had minted a Grafana token, it lives
+  only in that file — copy it into `.env` as `SEP_GRAFANA_TOKEN=` before
+  deleting, or just re-run `./mint-grafana-token.sh` afterwards; otherwise
+  Grafana auth and the PMM syncer silently go inert.
