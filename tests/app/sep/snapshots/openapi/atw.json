@@ -4487,7 +4487,7 @@
     },
     "/api/apps/atw/incidents/{incident_id}/close/": {
       "post": {
-        "description": "Close a diagnostic incident, stamping the current UTC time.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:return: The closed incident.\n:raises HTTPConflictException: If the incident is already closed.",
+        "description": "Close a diagnostic incident, stamping the current UTC time.\n\n:param session: The database session.\n:param incident: The open incident resolved from the ``incident_id`` path parameter.\n:return: The closed incident.\n:raises HTTPConflictException: If the incident is already closed.",
         "operationId": "atw_atw_close_incident_api_apps_atw_incidents__incident_id__close__post",
         "parameters": [
           {
@@ -4650,7 +4650,7 @@
     },
     "/api/apps/atw/incidents/{incident_id}/reopen/": {
       "post": {
-        "description": "Reopen a closed diagnostic incident, clearing its close timestamp.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:return: The reopened incident.\n:raises HTTPConflictException: If the incident is already open.",
+        "description": "Reopen a closed diagnostic incident, clearing its close timestamp.\n\n:param session: The database session.\n:param incident: The closed incident resolved from the ``incident_id`` path parameter.\n:return: The reopened incident.\n:raises HTTPConflictException: If the incident is already open.",
         "operationId": "atw_atw_reopen_incident_api_apps_atw_incidents__incident_id__reopen__post",
         "parameters": [
           {
