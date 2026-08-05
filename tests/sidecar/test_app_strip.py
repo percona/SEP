@@ -22,6 +22,7 @@ import yaml
 
 from app import BASE_DIR
 from sidecar.restrict_apps import activated_apps, INFRASTRUCTURE_PACKAGES, restrict
+from tests.app.sep import test_import_boundary
 from tests.sidecar.conftest import EMBEDDED_PROFILE
 
 APPS_ROOT = BASE_DIR / "app" / "sep" / "apps"
@@ -170,6 +171,15 @@ def test_restrict_rejects_an_activated_app_with_no_package(tmp_path: Path):
         restrict(profile, apps_root)
 
 
+def test_restrict_rejects_a_missing_infrastructure_package(tmp_path: Path):
+    """Assert an absent always-retained package fails the build."""
+    profile = _write_profile(tmp_path / "settings.yaml", ACTIVATED_IN_SYNTHETIC_TREE)
+    apps_root = _build_apps_tree(tmp_path / "apps", ACTIVATED_IN_SYNTHETIC_TREE)
+
+    with pytest.raises(FileNotFoundError, match="framework"):
+        restrict(profile, apps_root)
+
+
 def test_restrict_rejects_a_profile_with_no_activation_list(tmp_path: Path):
     """Assert a profile carrying no activation list fails the build."""
     profile = tmp_path / "settings.yaml"
@@ -193,3 +203,8 @@ def test_infrastructure_packages_are_not_activatable_apps():
 def test_infrastructure_packages_exist_in_the_repo():
     """Assert every always-retained package is a real package directory."""
     assert _real_package_names() >= INFRASTRUCTURE_PACKAGES
+
+
+def test_infrastructure_packages_match_the_import_boundary_guard():
+    """Assert the strip and the import-boundary guard retain the same packages."""
+    assert INFRASTRUCTURE_PACKAGES == test_import_boundary.INFRASTRUCTURE_PACKAGES

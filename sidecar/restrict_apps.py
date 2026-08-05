@@ -57,7 +57,8 @@ def restrict(profile: Path, apps_root: Path) -> frozenset[str]:
     :param profile: The baked settings profile.
     :param apps_root: The ``app/sep/apps`` directory to thin.
     :return: The package directory names left in place.
-    :raises FileNotFoundError: When an activated app has no package directory.
+    :raises FileNotFoundError: When a retained package — an activated app or an
+        infrastructure one — has no directory.
     :raises KeyError: When the profile carries no activation list, or an entry
         in it declares no module name.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
@@ -70,7 +71,7 @@ def restrict(profile: Path, apps_root: Path) -> frozenset[str]:
     missing = retained - present
     if missing:
         raise FileNotFoundError(
-            f"Activated apps have no package under {apps_root}: {sorted(missing)}"
+            f"Retained packages have no directory under {apps_root}: {sorted(missing)}"
         )
 
     for name in present - retained:
