@@ -29,6 +29,10 @@ from pydantic import SecretStr
 from app.core.config import settings
 from app.core.pagination import DEFAULT_PAGINATION_OFFSET, MAX_PAGINATION_LIMIT
 from app.core.requests import RemoteAPI
+from app.inventory.constants import (
+    UNCOLLECTED_HOST_OBSERVATION_DETAIL,
+    UNCOLLECTED_SERVICE_OBSERVATION_DETAIL,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.inventory.deps import (
     get_syncers,
@@ -801,6 +805,16 @@ class TestInventorySystemObservation:
         response = test_client.get(url)
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Not Found"
+
+    def test_pinned_details_match_inventory_constants(self):
+        """Hold the pinned proxy details equal to the sub-app's own constants.
+
+        The literals this class asserts against are a separate copy of the strings
+        the inventory routes raise. Without this guard, rewording the constants
+        leaves these proxy tests green against wording the sub-app no longer sends.
+        """
+        assert _UNCOLLECTED_NODE_DETAIL == UNCOLLECTED_HOST_OBSERVATION_DETAIL
+        assert _UNCOLLECTED_SERVICE_DETAIL == UNCOLLECTED_SERVICE_OBSERVATION_DETAIL
 
     @pytest.mark.parametrize(
         "url",
