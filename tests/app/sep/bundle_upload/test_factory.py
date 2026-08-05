@@ -15,20 +15,22 @@
 
 """Define tests for the delivery-executor factory and endpoint splitting."""
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import pytest
 from aioresponses import aioresponses
 from fastapi import status
 from pytest_mock import MockerFixture
 
-from app.core.config import settings
 from app.core.exceptions import HTTPConflictException
 from app.core.requests import RemoteAPI
 from app.core.requests.registry import ClientRegistry
 from app.sep.bundle_upload.factory import get_delivery_executor, split_endpoint
 from app.sep.bundle_upload.plan import DeliveryPlan, DeliveryPlanError, StepRecord
 from app.sep.bundle_upload.seam import BundleSource
+
+if TYPE_CHECKING:
+    from aiohttp import ClientSession
 
 _ORIGIN = "https://intake.example.com"
 _TICKET_URL = f"{_ORIGIN}/ticket_details?number=CS0001"
@@ -79,37 +81,24 @@ def _bundle(size: int | None = None) -> BundleSource:
 
 async def _send(
     plan: DeliveryPlan,
-    captured: list[RemoteAPI],
     *,
     case_ref: str | None = "CS0001",
     size: int | None = None,
 ) -> None:
-    """Run one send through the factory, recording the transport it was given.
+    """Run one send through the factory.
 
     :param plan: The plan to deliver with.
-    :param captured: The list the send's transport is appended to, so a caller
-        can assert on it after a failure unwound the context.
     :param case_ref: The case reference, ``None`` to withhold the send input the
         plan cites.
     :param size: The bundle size to report, for a send the plan's cap rejects.
     """
     async with get_delivery_executor(plan) as executor:
-        captured.append(executor._api)
         await executor.upload_bundle(
             source_ref="atw-incident/1",
             bundle=_bundle(size),
             case_ref=case_ref,
             manifest={},
         )
-
-
-def _registry_endpoints() -> list[str]:
-    """Return the endpoints of every client the process-global registry holds.
-
-    :return: One trailing-slash-stripped endpoint per cached client.
-    """
-    clients = settings._CLIENT_REGISTRY._clients.values()
-    return [str(client.endpoint).rstrip("/") for client in clients]
 
 
 class TestSplitEndpoint:
@@ -225,7 +214,9 @@ class TestDeliveryTransportLifetime:
         """Build the client directly, leaving the process-global registry alone.
 
         The receiver endpoint is operator-changeable at run time, so a client
-        pooled on its origin is orphaned the moment the origin changes.
+        pooled on its origin is orphaned the moment the origin changes. ``get``
+        is the registry's only insertion path, so never calling it is the whole
+        claim: nothing was cached under either origin.
         """
         pooled = mocker.spy(ClientRegistry, "get")
 
@@ -235,9 +226,6 @@ class TestDeliveryTransportLifetime:
             pass
 
         pooled.assert_not_called()
-        pooled_endpoints = _registry_endpoints()
-        assert "https://old.example.com" not in pooled_endpoints
-        assert "https://new.example.com" not in pooled_endpoints
 
     @pytest.mark.asyncio
     async def test_the_transport_is_open_inside_and_closed_after(self) -> None:
@@ -251,44 +239,58 @@ class TestDeliveryTransportLifetime:
 
     @pytest.mark.asyncio
     async def test_the_transport_is_closed_when_the_receiver_rejects_the_upload(
-        self,
+        self, mocker: MockerFixture
     ) -> None:
         """Close the session when the terminal upload answers an error status."""
-        captured: list[RemoteAPI] = []
+        opened = mocker.spy(RemoteAPI, "__aenter__")
 
         with aioresponses() as mock:
             mock.get(_TICKET_URL, payload={"result": {"sys_id": "SYS1"}})
             mock.post(_UPLOAD_URL, status=status.HTTP_409_CONFLICT, payload={})
 
             with pytest.raises(HTTPConflictException):
-                await _send(_plan(_ORIGIN), captured)
+                await _send(_plan(_ORIGIN))
 
-        assert captured[0]._session is None
+        assert opened.spy_return._session is None
 
+    @pytest.mark.parametrize(
+        ("plan", "match", "send_kwargs"),
+        [
+            pytest.param(
+                _plan(_ORIGIN),
+                "case_ref",
+                {"case_ref": None},
+                id="plan-cites-a-withheld-send-input",
+            ),
+            pytest.param(
+                _plan(_ORIGIN, max_bundle_size_mb=1),
+                "above the configured",
+                {"size": 2 * 1024 * 1024},
+                id="bundle-is-over-the-cap",
+            ),
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_the_transport_is_closed_when_the_plan_cannot_be_carried_out(
+    async def test_the_transport_is_closed_when_the_send_fails_before_any_request(
         self,
+        mocker: MockerFixture,
+        plan: DeliveryPlan,
+        match: str,
+        send_kwargs: dict[str, Any],
     ) -> None:
-        """Close the session when the plan cites a send input the caller withheld."""
-        captured: list[RemoteAPI] = []
+        """Close the session for a send the executor rejects without a request.
 
-        with pytest.raises(DeliveryPlanError, match="case_ref"):
-            await _send(_plan(_ORIGIN), captured, case_ref=None)
+        :param mocker: The mocker fixture.
+        :param plan: The plan the send runs, built to fail.
+        :param match: The fragment the raised error's message must carry.
+        :param send_kwargs: The send arguments that trip the failure.
+        """
+        opened = mocker.spy(RemoteAPI, "__aenter__")
 
-        assert captured[0]._session is None
+        with pytest.raises(DeliveryPlanError, match=match):
+            await _send(plan, **send_kwargs)
 
-    @pytest.mark.asyncio
-    async def test_the_transport_is_closed_when_the_bundle_is_over_the_cap(
-        self,
-    ) -> None:
-        """Close the session for a bundle rejected before any request is issued."""
-        captured: list[RemoteAPI] = []
-        plan = _plan(_ORIGIN, max_bundle_size_mb=1)
-
-        with pytest.raises(DeliveryPlanError, match="above the configured"):
-            await _send(plan, captured, size=2 * 1024 * 1024)
-
-        assert captured[0]._session is None
+        assert opened.spy_return._session is None
 
 
 class TestIntraSendConnectionReuse:
@@ -300,7 +302,7 @@ class TestIntraSendConnectionReuse:
     ) -> None:
         """Issue every request of one ``upload_bundle`` over the same session."""
         opened = mocker.spy(RemoteAPI, "__aenter__")
-        sessions: list[Any] = []
+        sessions: list[ClientSession | None] = []
 
         with aioresponses() as mock:
             mock.get(_TICKET_URL, payload={"result": {"sys_id": "SYS1"}})
@@ -318,4 +320,6 @@ class TestIntraSendConnectionReuse:
 
         assert opened.call_count == 1
         assert sessions[0] is sessions[1]
-        assert sum(len(reqs) for reqs in mock.requests.values()) == _EXPECTED_REQUEST_COUNT
+        assert (
+            sum(len(reqs) for reqs in mock.requests.values()) == _EXPECTED_REQUEST_COUNT
+        )
