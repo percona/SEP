@@ -529,7 +529,7 @@ class TestValidatedParameters:
         assert len(result.errors) > 0
 
     @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
-    def test_reserved_named_parameter_is_rejected(self, reserved_name):
+    def test_reserved_named_parameter_is_rejected(self, reserved_name: str) -> None:
         """Drop a parameter reserved for a synthesized execution field.
 
         Regression test for a wire-name collision: an ordinary parameter
@@ -552,7 +552,9 @@ class TestValidatedParameters:
         )
 
     @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
-    def test_reserved_named_parameter_blocks_execution(self, reserved_name):
+    def test_reserved_named_parameter_blocks_execution(
+        self, reserved_name: str
+    ) -> None:
         """Block execution of a snippet declaring a reserved parameter name."""
         snippet = BaseSnippet(
             filename="test.sh",
@@ -562,7 +564,7 @@ class TestValidatedParameters:
         )
         assert snippet.can_execute is False
 
-    def test_every_reserved_named_parameter_is_reported(self):
+    def test_every_reserved_named_parameter_is_reported(self) -> None:
         """Report one error per reserved name and keep the valid siblings."""
         snippet = BaseSnippet(
             filename="test.sh",
@@ -582,7 +584,9 @@ class TestValidatedParameters:
         assert any("'sudo'" in error for error in result.errors)
         assert any("'extra_args'" in error for error in result.errors)
 
-    def test_reserved_named_parameter_is_not_reported_as_unknown_reference(self):
+    def test_reserved_named_parameter_is_not_reported_as_unknown_reference(
+        self,
+    ) -> None:
         """Keep a sibling's reference to a rejected parameter unflagged.
 
         Visibility references are checked against the names the frontmatter

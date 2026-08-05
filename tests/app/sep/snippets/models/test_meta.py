@@ -94,7 +94,7 @@ class TestReservedParameterName:
     """Test rejection of parameter names reserved for synthesized fields."""
 
     @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
-    def test_reserved_name_raises(self, reserved_name):
+    def test_reserved_name_raises(self, reserved_name: str) -> None:
         """Raise when a parameter is named after a synthesized execution field."""
         with pytest.raises(ValidationError) as exc_info:
             SnippetMetaParameter(name=reserved_name, type=SnippetMetaParameterType.STR)
@@ -103,7 +103,7 @@ class TestReservedParameterName:
         assert reserved_name in message
 
     @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
-    def test_reserved_name_is_rejected_when_hidden(self, reserved_name):
+    def test_reserved_name_is_rejected_when_hidden(self, reserved_name: str) -> None:
         """Raise for a reserved name even when the parameter renders in no form.
 
         ``hidden`` suppresses form rendering only. The parameter still reaches
@@ -116,7 +116,9 @@ class TestReservedParameterName:
             )
 
     @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
-    def test_reserved_name_is_rejected_when_positional(self, reserved_name):
+    def test_reserved_name_is_rejected_when_positional(
+        self, reserved_name: str
+    ) -> None:
         """Raise for a reserved name even when the parameter is positional."""
         with pytest.raises(ValidationError, match="reserved"):
             SnippetMetaParameter(
@@ -134,13 +136,13 @@ class TestReservedParameterName:
             "host",
         ],
     )
-    def test_near_miss_names_are_unaffected(self, name):
+    def test_near_miss_names_are_unaffected(self, name: str) -> None:
         """Accept a name that merely resembles a reserved one."""
         param = SnippetMetaParameter(name=name, type=SnippetMetaParameterType.STR)
         assert param.name == name
 
     @pytest.mark.parametrize("name", ["Sudo", "SUDO", "Extra_Args"])
-    def test_reservation_is_case_sensitive(self, name):
+    def test_reservation_is_case_sensitive(self, name: str) -> None:
         """Accept a re-cased reserved name, which cannot collide.
 
         Duplicate form field names are detected by exact comparison, and every

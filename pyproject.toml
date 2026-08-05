@@ -290,6 +290,7 @@ order-by-type = false
 "test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
 "tests/app/sep/apps/framework/contract_suite.py" = ["S"] # pytest contract-suite mixin uses bare assert
+"tests/app/sep/form_schema_utils.py" = ["S"] # shared form-schema assertion helper uses bare assert
 "scripts/*.py" = [
     "T201", # CLI scripts use print() for user-facing output
     "S603", # CLI scripts coordinate git/gh/make subprocesses with literal arg lists

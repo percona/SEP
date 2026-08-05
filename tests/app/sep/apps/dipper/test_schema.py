@@ -29,13 +29,17 @@ from app.sep.apps.field_names import (
 from app.sep.apps.framework.schema import BoolField, HostField, ScriptPreviewField
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippet
-from tests.app.sep.form_schema_utils import form_field_names, form_field_types
+from tests.app.sep.form_schema_utils import (
+    assert_only_synthesized_fields,
+    form_field_names,
+    form_field_types,
+)
 
 SERVICE_ID = 1
 COLLECTOR_TYPE = "environment"
 
 #: The execution fields this builder synthesizes, and the widget rendering each.
-SYNTHESIZED_FIELD_TYPES = {
+_SYNTHESIZED_FIELD_TYPES = {
     EXECUTOR_HOST_FIELD_NAME: HostField,
     SUDO_FIELD_NAME: BoolField,
     SCRIPT_PREVIEW_FIELD_NAME: ScriptPreviewField,
@@ -43,7 +47,11 @@ SYNTHESIZED_FIELD_TYPES = {
 
 
 def _script(**meta: Any) -> BaseSnippet:
-    """Return a DB-free script carrying the given frontmatter meta."""
+    """Return a DB-free script carrying the given frontmatter meta.
+
+    :param meta: Frontmatter keys merged over the title and sudo defaults.
+    :return: A script whose meta is the merge, backed by no database row.
+    """
     return BaseSnippet(
         filename="collect.py",
         size=1,
@@ -67,11 +75,6 @@ class TestReservedParameterNames:
 
         Reservation is unconditional, so this also holds for ``extra_args``,
         which Dipper never synthesizes.
-
-        Asserting the whole field set, rather than only that the reserved name
-        appears at most once, keeps a build that dropped the *synthesized* field
-        as well from passing; asserting its type keeps one silently retyped from
-        passing either.
         """
         script = _script(parameters=[{"name": reserved_name, "type": "str"}])
 
@@ -79,9 +82,7 @@ class TestReservedParameterNames:
             script, service_id=SERVICE_ID, collector_type=COLLECTOR_TYPE
         )
 
-        assert not any(section.title == "Parameters" for section in schema.forms)
-        assert form_field_names(schema) == sorted(SYNTHESIZED_FIELD_TYPES)
-        assert form_field_types(schema) == SYNTHESIZED_FIELD_TYPES
+        assert_only_synthesized_fields(schema, _SYNTHESIZED_FIELD_TYPES)
 
     def test_every_synthesized_field_name_is_reserved(self) -> None:
         """Keep every field this builder synthesizes covered by the reserved set."""
@@ -89,5 +90,5 @@ class TestReservedParameterNames:
             _script(), service_id=SERVICE_ID, collector_type=COLLECTOR_TYPE
         )
 
-        assert form_field_types(schema) == SYNTHESIZED_FIELD_TYPES
+        assert form_field_types(schema) == _SYNTHESIZED_FIELD_TYPES
         assert set(form_field_names(schema)) <= RESERVED_EXECUTION_FIELD_NAMES

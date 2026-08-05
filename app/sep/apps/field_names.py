@@ -13,10 +13,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Name the execution fields a script app's form can synthesise.
+"""Name the execution fields a script app's form can synthesize.
 
 Together these are the union of what the script apps append to a script's
-frontmatter parameters when building an execution form -- each app synthesises
+frontmatter parameters when building an execution form -- each app synthesizes
 its own subset, and some of those are conditional on the script's configuration.
 A consumer that merges or strips them needs the same spelling the producer used,
 whichever app produced them. :data:`RESERVED_EXECUTION_FIELD_NAMES` closes the loop
@@ -57,12 +57,12 @@ RESERVED_EXECUTION_FIELD_NAMES = frozenset(
 """Reserve every synthesized field name against frontmatter parameter names.
 
 Reservation is unconditional and app-wide: a name is reserved even for a script
-whose app never synthesises that particular field -- a ``sudo: never`` snippet, a
+whose app never synthesizes that particular field -- a ``sudo: never`` snippet, a
 disk-backed script app with no preview endpoint -- because the alternative is a
 per-app, per-configuration rule that the author of a frontmatter file cannot
 evaluate from the file in front of them.
 
-The members are the same constants the form builders synthesise from, so reserving
+The members are the same constants the form builders synthesize from, so reserving
 a fifth name is a two-line edit in this module and cannot be forgotten at the
 validator.
 """

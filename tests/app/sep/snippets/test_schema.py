@@ -15,7 +15,9 @@
 
 """Tests for the snippets plugin schema synthesiser."""
 
+from collections.abc import Awaitable, Callable
 from functools import cached_property
+from typing import Any
 from urllib.parse import urlencode
 
 import pytest
@@ -52,7 +54,11 @@ from app.sep.snippets.schema import (
     field_for,
     SNIPPETS_PLUGIN_SCHEMA,
 )
-from tests.app.sep.form_schema_utils import form_field_names, form_field_types
+from tests.app.sep.form_schema_utils import (
+    assert_only_synthesized_fields,
+    form_field_names,
+    form_field_types,
+)
 
 
 def test_static_schema_has_no_forms_and_keyed_columns():
@@ -202,7 +208,7 @@ async def test_per_snippet_schema_omits_extra_args_field_by_default(create_snipp
 
 #: Every execution field this builder can synthesize, and the widget rendering it.
 #: Snippets is the maximal builder, so these are the whole reserved set.
-SYNTHESIZED_FIELD_TYPES = {
+_SYNTHESIZED_FIELD_TYPES = {
     EXECUTOR_HOST_FIELD_NAME: HostField,
     SUDO_FIELD_NAME: BoolField,
     SCRIPT_PREVIEW_FIELD_NAME: ScriptPreviewField,
@@ -210,12 +216,15 @@ SYNTHESIZED_FIELD_TYPES = {
 }
 
 
-def _reset_cached_meta(snippet, **meta):
+def _reset_cached_meta(snippet: Snippet, **meta: Any) -> None:
     """Re-apply snippet meta and drop every cached property derived from it.
 
     Every ``cached_property`` on the class is dropped rather than a named few,
     so a property added later cannot leave a test asserting against a stale
     value computed from the pre-mutation meta.
+
+    :param snippet: The already-created snippet whose meta is being replaced.
+    :param meta: Frontmatter keys merged over the snippet's existing meta.
     """
     snippet.meta = {**snippet.meta, **meta}
     for klass in type(snippet).__mro__:
@@ -230,8 +239,10 @@ class TestReservedParameterNames:
     @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
     @pytest.mark.asyncio
     async def test_per_snippet_schema_drops_reserved_named_parameter(
-        self, create_snippet, reserved_name
-    ):
+        self,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        reserved_name: str,
+    ) -> None:
         """Drop a frontmatter parameter reserved for a synthesized execution field.
 
         Regression test: previously this reached ``build_snippet_schema`` and
@@ -244,11 +255,6 @@ class TestReservedParameterNames:
 
         Both ``allow_extra_args`` and ``sudo`` are enabled so that every one of the
         four reserved names is actually synthesized, making the collision reachable.
-        Asserting the whole field set, rather than only that the reserved name
-        appears once, keeps a build that dropped the *synthesized* field as well
-        from passing; asserting its type keeps one silently retyped -- the
-        author's ``str`` parameter shadowing the synthesized widget -- from
-        passing either.
         """
         snippet = await create_snippet("hello.sh", approved=True)
         _reset_cached_meta(
@@ -262,14 +268,14 @@ class TestReservedParameterNames:
 
         schema = build_snippet_schema(snippet)
 
-        assert not any(s.title == "Parameters" for s in schema.forms)
-        assert form_field_names(schema) == sorted(RESERVED_EXECUTION_FIELD_NAMES)
-        assert form_field_types(schema) == SYNTHESIZED_FIELD_TYPES
+        assert_only_synthesized_fields(schema, _SYNTHESIZED_FIELD_TYPES)
 
     @pytest.mark.asyncio
     async def test_per_snippet_schema_builds_when_invalid_parameters_are_ignored(
-        self, create_snippet, monkeypatch
-    ):
+        self,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Build a collision-free form even when invalid parameters are ignored.
 
         ``IGNORE_INVALID_PARAMETERS`` relaxes ``can_execute`` only; the reserved
@@ -278,9 +284,7 @@ class TestReservedParameterNames:
         synthesized host widget, not the author's string -- rather than the
         duplicate-field error this setting would otherwise expose them to.
         """
-        monkeypatch.setattr(
-            snippets_settings.META, "IGNORE_INVALID_PARAMETERS", True, raising=False
-        )
+        monkeypatch.setattr(snippets_settings.META, "IGNORE_INVALID_PARAMETERS", True)
         snippet = await create_snippet("hello.sh", approved=True)
         _reset_cached_meta(
             snippet, parameters=[{"name": "executor_host", "type": "str"}]
@@ -294,7 +298,9 @@ class TestReservedParameterNames:
         assert form_field_types(schema)[EXECUTOR_HOST_FIELD_NAME] is HostField
 
     @pytest.mark.asyncio
-    async def test_every_synthesized_field_name_is_reserved(self, create_snippet):
+    async def test_every_synthesized_field_name_is_reserved(
+        self, create_snippet: Callable[..., Awaitable[Snippet]]
+    ) -> None:
         """Keep every field this builder synthesizes covered by the reserved set.
 
         A parameterless snippet yields a schema whose fields are all synthesized,
@@ -309,7 +315,7 @@ class TestReservedParameterNames:
         schema = build_snippet_schema(snippet)
 
         assert set(form_field_names(schema)) == RESERVED_EXECUTION_FIELD_NAMES
-        assert form_field_types(schema) == SYNTHESIZED_FIELD_TYPES
+        assert form_field_types(schema) == _SYNTHESIZED_FIELD_TYPES
 
 
 @pytest.mark.asyncio

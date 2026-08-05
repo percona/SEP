@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Traverse the form sections of a built :class:`AppSchema`.
+"""Traverse and assert against the form sections of a built :class:`AppSchema`.
 
 Shared by the per-script schema suites -- snippets, Dipper and the disk-script
 source -- which each assert the same two things about their builder's output:
@@ -56,3 +56,23 @@ def form_field_types(schema: AppSchema) -> dict[str, type]:
     :return: Each field's class keyed by its wire name.
     """
     return {name: type(field) for name, field in form_fields_by_name(schema).items()}
+
+
+def assert_only_synthesized_fields(
+    schema: AppSchema, expected: dict[str, type]
+) -> None:
+    """Assert a schema carries the synthesized execution fields and nothing else.
+
+    Shared by the reserved-name suites, where the author's colliding parameter has
+    to be dropped. Asserting the whole field set, rather than only that the
+    reserved name appears at most once, keeps a build that dropped the
+    *synthesized* field as well from passing; asserting each field's type keeps one
+    silently retyped -- the author's ``str`` parameter shadowing the synthesized
+    widget -- from passing either.
+
+    :param schema: The built schema whose form sections are traversed.
+    :param expected: Each synthesized field's class keyed by its wire name.
+    """
+    assert not any(section.title == "Parameters" for section in schema.forms)
+    assert form_field_names(schema) == sorted(expected)
+    assert form_field_types(schema) == expected

@@ -54,6 +54,7 @@ from app.sep.apps.shared.disk_script_source import (
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.models.snippet import BaseSnippet, SnippetExecutionMeta
 from tests.app.sep.form_schema_utils import (
+    assert_only_synthesized_fields,
     form_field_names,
     form_field_types,
     form_fields_by_name,
@@ -178,7 +179,11 @@ def _framework_processed_body(
 
 
 def _shell_with_parameter(name: str) -> str:
-    """Return an optional-sudo shell script declaring one parameter called ``name``."""
+    """Return an optional-sudo shell script declaring exactly one parameter.
+
+    :param name: The frontmatter parameter name the script declares.
+    :return: The script body, frontmatter included.
+    """
     return (
         "#!/usr/bin/env bash\n"
         "# ---\n"
@@ -344,20 +349,13 @@ class TestFormSchema:
         never synthesizes (``script_preview``, ``extra_args``) as well as for
         the two it does: an author cannot tell from their frontmatter which app
         will render it.
-
-        Asserting the whole field set, rather than only that the reserved name
-        appears at most once, keeps a build that dropped the *synthesized* field
-        as well from passing; asserting its type keeps one silently retyped from
-        passing either.
         """
         _write_script(script_dir, "reserved.sh", _shell_with_parameter(reserved_name))
         script = await source.load_script("reserved.sh")
 
         schema = source.build_form_schema(script)
 
-        assert not any(section.title == "Parameters" for section in schema.forms)
-        assert form_field_names(schema) == sorted(_SYNTHESIZED_FIELD_TYPES)
-        assert form_field_types(schema) == _SYNTHESIZED_FIELD_TYPES
+        assert_only_synthesized_fields(schema, _SYNTHESIZED_FIELD_TYPES)
 
     async def test_every_synthesized_field_name_is_reserved(
         self, source: ScriptSource, script_dir: Path
