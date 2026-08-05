@@ -44,10 +44,18 @@ fail against the very file it validates.
 PLACEHOLDER_MARKER = re.compile(r"glsa_|__[A-Z_]+__")
 SECRET_KEYS = frozenset({"password", "service_account_token", "api_key"})
 
+SECRET_MAP_KEYS = frozenset({"secrets"})
+"""Keys whose whole sub-mapping is secret-valued, whatever its members are named.
+
+``DIAGNOSTICS_DELIVERY.secrets`` names its credentials after the receiver's own
+fields (``sn_api_key``, ``client_token``), which :data:`SECRET_KEYS` would walk
+past, so the block is matched by its container instead.
+"""
+
 SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
-ALLOWLIST_SIZE = 16
+ALLOWLIST_SIZE = 17
 """How many entries the embedded override allowlist ships.
 
 Pinned so a silently truncated list -- which the policy suite's negative
@@ -90,6 +98,12 @@ def secret_valued_leaves(data: Any) -> list[tuple[str, Any]]:
                 for key, value in data.items()
                 if key.lower() in SECRET_KEYS
             ),
+            *(
+                pair
+                for key, value in data.items()
+                if key.lower() in SECRET_MAP_KEYS and isinstance(value, dict)
+                for pair in value.items()
+            ),
             *(pair for value in data.values() for pair in secret_valued_leaves(value)),
         ]
     if isinstance(data, list):
@@ -116,6 +130,7 @@ def test_profile_constructs_every_settings_class():
     assert Settings().CELERY.broker_url
     assert AuthSettings().PROVIDER
     assert SEPSettings().DATABASE.NAME == SHARED_DATABASE_NAME
+    assert SEPSettings().DIAGNOSTICS_DELIVERY is not None
     assert InventorySettings().DATABASE.NAME == SHARED_DATABASE_NAME
     assert TasksSettings().NOMAD.endpoint
 
@@ -220,9 +235,10 @@ def test_grafana_token_merges_into_the_profile_block(monkeypatch: pytest.MonkeyP
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_activation_list_builds_an_app_registry():
     """Assert the baked activation list satisfies every declared app dependency."""
-    registry = build_app_registry(SEPSettings().APPS)
+    activated = set(build_app_registry(SEPSettings().APPS).keys())
 
-    assert {"inventory", "snippets", "atw", "mysql_backups"} <= set(registry.keys())
+    assert {"inventory", "atw", "mysql_backups"} <= activated
+    assert "snippets" not in activated
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")

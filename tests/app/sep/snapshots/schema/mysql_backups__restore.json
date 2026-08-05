@@ -76,12 +76,24 @@
       "collapsible": true,
       "fields": [
         {
-          "description": "Where the backup is stored. Use a local path (/backups/mydumper/20240101), a remote host (db01:/path/to/backup), s3://bucket/path, or gs://bucket/path. Add /latest to any of these to restore the most recent backup. Avoid these characters: $ ; | & ( ) `",
+          "allow_custom": true,
+          "label": "Destination Database Service",
+          "name": "service_id",
+          "required": false,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        },
+        {
+          "allow_custom": true,
+          "depends_on": "service_id",
+          "description": "Where the backup is stored. Select a database service above to list its completed backups, then pick one — or enter a local path (/backups/mydumper/20240101), a remote host (db01:/path/to/backup), s3://bucket/path, or gs://bucket/path. Add /latest to any of these to restore the most recent backup. Avoid these characters: $ ; | & ( ) `",
+          "endpoint_url": "/apps/mysql_backups/backup-sources/choices",
           "label": "Backup Source",
-          "min_length": 1,
           "name": "backup_source",
           "required": true,
-          "type": "string"
+          "type": "remote_choice"
         },
         {
           "label": "Logging directory",
@@ -157,16 +169,6 @@
       "collapsed_by_default": false,
       "collapsible": true,
       "fields": [
-        {
-          "allow_custom": true,
-          "label": "Destination Database Service",
-          "name": "service_id",
-          "required": false,
-          "service_types": [
-            "mysql"
-          ],
-          "type": "service"
-        },
         {
           "allow_custom": true,
           "depends_on": "service_id",

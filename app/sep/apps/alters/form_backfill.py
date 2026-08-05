@@ -21,13 +21,15 @@ from typing import Any, TYPE_CHECKING
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import parse_alters_task_args
+from app.sep.apps.alters.models import AltersCreate, OWNER
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
+from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
     from app.tasks.models import Task
 
-__all__ = ["reconstruct_alters_form"]
+__all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_alters_form"]
 
 
 def _non_empty_str(value: Any) -> str | None:
@@ -97,3 +99,13 @@ def reconstruct_alters_form(
     if mysql_config_file is not None:
         body["pre_checks_mysql_config_file"] = mysql_config_file
     return body
+
+
+FORM_BACKFILL_ENTRIES = [
+    FormBackfillEntry(
+        app_key="alters",
+        owner=OWNER,
+        create_model=AltersCreate,
+        reconstructor=reconstruct_alters_form,
+    ),
+]

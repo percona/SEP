@@ -125,9 +125,11 @@ default:
       ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
       CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
     # Diagnostic bundle delivery plan - unset by default (no receiver configured).
-    # Settable through this file and environment variables only: the whole plan is
-    # cross-validated as a unit at settings load, so the settings API rejects both a
-    # whole-object and a per-leaf write.
+    # The skeleton below is settable through this file and environment variables
+    # only: the whole plan is cross-validated as a unit at settings load, so the
+    # settings API rejects both a whole-object and a per-leaf write. The parts that
+    # differ per deployment - the receiver endpoint and the secret values - go
+    # through DIAGNOSTICS_DELIVERY_INPUTS, documented after the examples below.
     #
     # NOTE: unlike its neighbours, the keys inside this block are case-SENSITIVE and
     # lowercase. Header names, secret names and multipart field names go on the wire
@@ -187,6 +189,23 @@ default:
     #         table_name: {source: literal, value: sn_customerservice_case}
     #         table_sys_id: {source: output, step: lookup, output: sys_id}
     #       reference_pointer: /result/sys_id
+    #
+    # Per-deployment inputs for the plan above - unset by default. Supplies the
+    # values the skeleton leaves open, so an image can bake a plan whose secret
+    # names are declared but empty and an operator fill them in later. Unlike the
+    # skeleton this IS settable through the settings API, as one atomic
+    # whole-object write: both its leaves are sealed, so a `__`-delimited leaf
+    # write is refused, and the secret names submitted must be exactly the ones
+    # the plan declares. Delivery stays off until every declared secret has a
+    # non-empty value.
+    #   DIAGNOSTICS_DELIVERY_INPUTS:
+    #     endpoint: https://snow.example.com/  # optional; omit to keep the plan's
+    #     secrets:
+    #       api_key: "..."                     # keyed by the plan's secret names
+    # Secrets render as `**********` in the settings API and in the YAML export,
+    # and resubmitting the mask through PATCH keeps the stored value. Feeding an
+    # exported block back in through this file fails settings construction rather
+    # than sending the mask to the receiver as the credential.
     #
     # Staging and housekeeping for the diagnostics sends that use the plan above.
     # Read from YAML/env only (env prefix `SEP__ATW__`); defaults shown.
