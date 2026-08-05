@@ -261,23 +261,19 @@ def _metric_alias() -> str:
 
 
 def _escape_label_value(value: str) -> str:
-    """Return ``value`` escaped for use as a Prometheus label value.
+    r"""Return ``value`` escaped for use as a Prometheus label value.
 
-    The text-exposition format requires backslash, double-quote and newline in a
-    label value to be escaped; an un-escaped host alias carrying any of them would
-    otherwise produce a ``.prom`` file the collector rejects wholesale. Carriage
-    returns are escaped too, so this and :func:`_safe_filename_alias` neutralise
-    the same set of characters in the same host-controlled alias.
+    The text-exposition format defines exactly three escapes inside a label value
+    -- backslash, double-quote and newline -- and its parser rejects any other
+    escape sequence. An un-escaped alias carrying one of those three would produce
+    a ``.prom`` file the collector rejects wholesale, so escape them and leave
+    every other character raw: a carriage return is copied through by the parser,
+    while ``\r`` would be the invalid escape that breaks the file.
 
     :param value: The raw label value (the host alias).
     :return: The escaped label value.
     """
-    return (
-        value.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-    )
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def _safe_filename_alias(value: str) -> str:

@@ -217,9 +217,9 @@ class TestLabelAndFilenameSafety:
         assert _escape_label_value(r'a"b\c') == r"a\"b\\c"
         assert _escape_label_value("a\nb") == "a\\nb"
 
-    def test_escapes_carriage_return(self) -> None:
-        """Escape a carriage return too, matching what the filename sanitiser strips."""
-        assert _escape_label_value("a\rb") == "a\\rb"
+    def test_leaves_carriage_return_raw(self) -> None:
+        r"""Leave a carriage return raw -- ``\r`` is an escape the parser rejects."""
+        assert _escape_label_value("a\rb") == "a\rb"
 
     def test_leaves_ordinary_aliases_untouched(self) -> None:
         """Leave an ordinary hostname untouched when escaping."""
@@ -340,7 +340,6 @@ class TestWriteBackupStatus:
         monkeypatch.setattr(Path, "write_text", _half_then_fail)
         write_backup_status("PBM Logical", 1)
         assert target.read_text(encoding="utf-8") == previous
-        # The half-written body landed on the temp path, not the published one.
         assert (collector / f"{target.name}.tmp").read_text(
             encoding="utf-8"
         ) != previous
