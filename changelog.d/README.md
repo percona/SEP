@@ -86,30 +86,47 @@ axes recur:
 | **When** | at upgrade, at restart, or on the next occurrence of some event? |
 | **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? |
 
-Incidents, all in one window. SEP-1685's fragment announced a new installer
-default that reaches only fresh installs and installer re-runs; an existing
-installation keeps its rendered `nginx.conf` and `compose.yaml` until the
-installer runs again, and the fragment did not say so. SEP-1720's said overrides
-take effect "without a restart, matching the API processes" — true of the API's
-continuously-running loop, but the worker's refresh is best-effort and only
-advances while something drives the loop, so the honest answer is "as tasks
-run", which is not what the sentence implies. SEP-1698's read as immediate
+This is the author-facing form of the reviewer rule in
+[`.github/instructions/backwards-compatibility.instructions.md`](../.github/instructions/backwards-compatibility.instructions.md)
+§ "Behavioral asymmetry across processes / deployments / install-states", which
+frames the same asymmetry as process / deployment / install-state / version.
+Who/When/Lag is that list rephrased as the questions an author answers; keep the
+two in step.
+
+Two fragments in one window were drafted without their lag and corrected before
+release — read the merged versions as the shape to copy. `SEP-1720.fixed.md`
+first said overrides take effect "without a restart, matching the API
+processes": true of the API's continuously-running loop, but the worker's
+refresh is best-effort and only advances while something drives the loop. The
+merged fragment (PR #1253) names the real behaviour — "an override lands on the
+next task the worker executes". `SEP-1698.config.md` first read as immediate
 ("so delivery can be turned on without editing a settings file or restarting")
 while the worker holds the previous snapshot for up to
-`SETTINGS_OVERRIDE_REFRESH_INTERVAL`; a send enqueued inside that window fails
-terminally as unconfigured, with no retry. The lag row exists because that last
-one is the expensive shape: the asymmetry is not just a delay, it is a
-*failure* inside the delay.
+`SETTINGS_OVERRIDE_REFRESH_INTERVAL`; the merged fragment (PR #1260) names the
+window, its 30-second default, and what happens inside it — a send started there
+fails as unconfigured and is not retried automatically, so the operator retries
+once the interval has elapsed. The lag row exists because that second one is the
+expensive shape: the asymmetry is not just a delay, it is a *failure* inside the
+delay.
+
+The **Who** axis is the easiest to miss, because nothing in the diff shows it.
+An installer default reaches fresh installs and installer re-runs only:
+`cmd_render_templates` in `sep_installer.sh` writes `nginx.conf` and
+`compose.yaml` into the install directory once, so an existing installation
+keeps its rendered copies until the installer runs again. A fragment announcing
+a new installer default has to say which installations it reaches.
 
 **Pick the section from the work-item type.** A Bug's fragment goes under
-`fixed`. In-repo precedent is genuinely split — SEP-1712 and SEP-1584 are Bugs
-that used `.fixed.md`, while SEP-1037 and SEP-1038 are Stories that used
-`.changed.md` for topically identical "extend override coverage to another
-process" work — so the type is the tiebreaker, not the topic. An operator
-scanning **Fixed** for "my override didn't apply in the worker" does not find it
-under Changed. When a deployment-impact framing genuinely should lead and
-`changed` is the better home for a Bug, that is defensible, but the fragment
-must then say what changed rather than what was fixed.
+`fixed`, a Story's under `changed`, and the type decides even when two tickets
+do topically identical work. SEP-1720 (Bug) and SEP-1038 (Story) both extended
+DB-backed settings overrides to the Celery worker; SEP-1720's fragment was
+drafted as `.changed.md` and refiled to `SEP-1720.fixed.md` on that ground
+alone, joining the other Bug fragments in the tree (`SEP-1712.fixed.md`,
+`SEP-1584.fixed.md`). An operator scanning **Fixed** for "my override didn't
+apply in the worker" does not find it under Changed. When a deployment-impact
+framing genuinely should lead and `changed` is the better home for a Bug, that
+is defensible, but the fragment must then say what changed rather than what was
+fixed.
 
 ## File format
 
