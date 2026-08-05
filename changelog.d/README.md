@@ -79,20 +79,15 @@ installations and not others, for some processes and not others, or only after
 a delay — say so. Silence on an asymmetric axis reads as "works uniformly".
 Answer whichever of these three applies:
 
-| Axis | The question to answer | A fragment that answers it |
+| Axis | The question to answer | Say this, not that |
 |---|---|---|
-| **Who** | fresh installs only, or existing installations too? | an installer default reaches fresh installs and installer re-runs only — `cmd_render_templates` renders `nginx.conf` and `compose.yaml` once, so an existing installation keeps its copies until the installer runs again |
-| **When** | at upgrade, at restart, or on the next occurrence of some event? | `SEP-1720.fixed.md`: "an override lands on the next task the worker executes" — not the "without a restart" it was drafted as |
-| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | `SEP-1698.config.md`: workers refresh on `SETTINGS_OVERRIDE_REFRESH_INTERVAL` (30 seconds by default), "so a send started within that window can still fail as unconfigured; retry it once the interval has elapsed" |
-
-This is the author-facing form of the reviewer rule in
-[`.github/instructions/backwards-compatibility.instructions.md`](../.github/instructions/backwards-compatibility.instructions.md)
-§ "Behavioral asymmetry across processes / deployments / install-states".
+| **Who** | fresh installs only, or existing installations too? | "reaches fresh installs and installer re-runs only; an existing installation keeps its rendered config until the installer runs again" — not "the new default applies" |
+| **When** | at upgrade, at restart, or on the next occurrence of some event? | "an override lands on the next task the worker executes" — not "without a restart" |
+| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | "workers pick the new values up on their next refresh, 30 seconds by default, so a send started inside that window fails as unconfigured and is not retried" — not "takes effect immediately" |
 
 **Pick the section from the work-item type.** File a Bug's fragment under
-`fixed` and a Story's under `changed`, even when two tickets do topically
-identical work — SEP-1720 (Bug, `.fixed.md`) and SEP-1038 (Story,
-`.changed.md`) both extended DB-backed settings overrides to the Celery worker.
+`fixed` and a Story's under `changed`. The type decides even when two tickets
+do topically identical work.
 
 ## File format
 
