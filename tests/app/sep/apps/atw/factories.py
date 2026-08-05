@@ -22,7 +22,13 @@ from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution, AtwSendLo
 
 
 class AtwIncidentFactory(SQLAlchemyFactory[AtwIncident]):
-    """Define factory for AtwIncident instances."""
+    """Define factory for AtwIncident instances.
+
+    ``closed_at`` is pinned to ``None`` so a built incident is open unless a test
+    stamps it; polyfactory otherwise fills the nullable column at random.
+    """
+
+    closed_at = None
 
 
 class AtwIncidentExecutionFactory(SQLAlchemyFactory[AtwIncidentExecution]):

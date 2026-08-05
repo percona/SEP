@@ -621,7 +621,7 @@
         "type": "object"
       },
       "atw__AtwIncidentResponse": {
-        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.",
+        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.\n:param closed_at: When the incident was closed, if ever; ``None`` means open.",
         "properties": {
           "case_ref": {
             "anyOf": [
@@ -633,6 +633,18 @@
               }
             ],
             "title": "Case Ref"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
           },
           "created_at": {
             "format": "date-time",
@@ -672,7 +684,8 @@
           "case_ref",
           "created_by",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "closed_at"
         ],
         "title": "AtwIncidentResponse",
         "type": "object"
@@ -4472,6 +4485,50 @@
         ]
       }
     },
+    "/api/apps/atw/incidents/{incident_id}/close/": {
+      "post": {
+        "description": "Close a diagnostic incident, stamping the current UTC time.\n\n:param session: The database session.\n:param incident: The open incident resolved from the ``incident_id`` path parameter.\n:return: The closed incident.\n:raises HTTPConflictException: If the incident is already closed.",
+        "operationId": "atw_atw_close_incident_api_apps_atw_incidents__incident_id__close__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Close Incident",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
     "/api/apps/atw/incidents/{incident_id}/executions/": {
       "get": {
         "description": "List one incident's snippet executions, newest first, with live task status.\n\nEach row also reports the command line its snippet ran with, credential values\nmasked. A row whose snippet or upstream payload cannot supply what masking\nneeds reports its arguments as withheld; the page still returns.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param pagination: The offset/limit window for the page.\n:param tasks_api: The authenticated Tasks API client.\n:return: A paginated page of executions hydrated from the Tasks API, each with\n    its masked arguments or the reason they are absent.",
@@ -4586,6 +4643,50 @@
           }
         },
         "summary": "Atw Batch Execute",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/{incident_id}/reopen/": {
+      "post": {
+        "description": "Reopen a closed diagnostic incident, clearing its close timestamp.\n\n:param session: The database session.\n:param incident: The closed incident resolved from the ``incident_id`` path parameter.\n:return: The reopened incident.\n:raises HTTPConflictException: If the incident is already open.",
+        "operationId": "atw_atw_reopen_incident_api_apps_atw_incidents__incident_id__reopen__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Reopen Incident",
         "tags": [
           "atw"
         ]

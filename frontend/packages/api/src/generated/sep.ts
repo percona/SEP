@@ -788,6 +788,31 @@ export interface paths {
     patch: operations['atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch'];
     trace?: never;
   };
+  '/api/apps/atw/incidents/{incident_id}/close/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Atw Close Incident
+     * @description Close a diagnostic incident, stamping the current UTC time.
+     *
+     *     :param session: The database session.
+     *     :param incident: The open incident resolved from the ``incident_id`` path parameter.
+     *     :return: The closed incident.
+     *     :raises HTTPConflictException: If the incident is already closed.
+     */
+    post: operations['atw_atw_close_incident_api_apps_atw_incidents__incident_id__close__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/atw/incidents/{incident_id}/executions/': {
     parameters: {
       query?: never;
@@ -839,6 +864,31 @@ export interface paths {
      *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/reopen/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Atw Reopen Incident
+     * @description Reopen a closed diagnostic incident, clearing its close timestamp.
+     *
+     *     :param session: The database session.
+     *     :param incident: The closed incident resolved from the ``incident_id`` path parameter.
+     *     :return: The reopened incident.
+     *     :raises HTTPConflictException: If the incident is already open.
+     */
+    post: operations['atw_atw_reopen_incident_api_apps_atw_incidents__incident_id__reopen__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -5644,10 +5694,13 @@ export interface components {
      *     :param created_by: Username of the support engineer who created the incident.
      *     :param created_at: When the incident was created.
      *     :param updated_at: When the incident was last updated, if ever.
+     *     :param closed_at: When the incident was closed, if ever; ``None`` means open.
      */
     atw__AtwIncidentResponse: {
       /** Case Ref */
       case_ref: string | null;
+      /** Closed At */
+      closed_at: string | null;
       /**
        * Created At
        * Format: date-time
@@ -11360,6 +11413,37 @@ export interface operations {
       };
     };
   };
+  atw_atw_close_incident_api_apps_atw_incidents__incident_id__close__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get: {
     parameters: {
       query?: {
@@ -11416,6 +11500,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['atw__ATWBatchExecuteResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_reopen_incident_api_apps_atw_incidents__incident_id__reopen__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
         };
       };
       /** @description Validation Error */
