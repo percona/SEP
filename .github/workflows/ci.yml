@@ -370,6 +370,41 @@ jobs:
           esac
           echo "ENTRYPOINT present: $entrypoint"
 
+      - name: Build app-restricted side-car image
+        run: >-
+          docker build
+          --build-context "localhost/sep:builder=docker-image://sep:builder"
+          -f sidecar/Containerfile.sidecar
+          --build-arg SEP_RESTRICT_APPS=1
+          -t "sep:HEAD-embedded" .
+
+      - name: Smoke test - restricted image ships exactly the activated apps
+        run: |
+          docker run --rm -i --entrypoint python "sep:HEAD-embedded" - <<'PY'
+          import sys
+          from pathlib import Path
+
+          import yaml
+
+          root = Path("/home/sep/app")
+          profile = yaml.safe_load((root / "settings.yaml").read_text(encoding="utf-8"))
+          apps_root = root / "app" / "sep" / "apps"
+
+          expected = {e["MODULE_NAME"] for e in profile["default"]["SEP"]["APPS"]} | {
+              "framework",
+              "shared",
+          }
+          actual = {child.name for child in apps_root.iterdir() if child.is_dir()}
+
+          if expected != actual:
+              sys.exit(f"::error::expected {sorted(expected)}, found {sorted(actual)}")
+          if not (apps_root / "labels.py").is_file():
+              sys.exit("::error::the apps-root loose modules did not survive the strip")
+          PY
+
+      - name: Smoke test - verify the general side-car image is unrestricted
+        run: docker run --rm --entrypoint /bin/sh "sep:HEAD-sidecar" -c 'test -d /home/sep/app/app/sep/apps/report'
+
   ci-success:
     if: always()
     needs:
