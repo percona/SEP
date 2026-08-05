@@ -39,11 +39,8 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
 )
-from tests.app.factories import (
-    AltersCreateFactory,
-    GeneratedTaskFactory,
-    TaskFactory,
-)
+from tests.app.factories import GeneratedTaskFactory, TaskFactory
+from tests.app.sep.apps.alters.factories import AltersCreateFactory
 
 
 @pytest.fixture
