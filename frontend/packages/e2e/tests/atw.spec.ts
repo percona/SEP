@@ -408,18 +408,19 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
     // one — and the schema request carries the searched snippet's own filename,
     // which is the identity the batch payload will send.
     await expect(page.getByLabel('Executor host')).toBeVisible({ timeout: 15_000 });
-    const schemaFilenames = new URL(calls.executionSchemaUrls.at(-1) as string).searchParams.getAll(
-      'snippet_filename',
-    );
-    expect(schemaFilenames).toEqual([MOCK_SEARCH_SNIPPET.filename]);
+    const lastSchemaUrl = calls.executionSchemaUrls.at(-1);
+    expect(lastSchemaUrl, 'the selection should have requested a merged schema').toBeDefined();
+    expect(new URL(lastSchemaUrl ?? '').searchParams.getAll('snippet_filename')).toEqual([
+      MOCK_SEARCH_SNIPPET.filename,
+    ]);
 
-    expect(calls.snippetSearchUrls.length).toBeGreaterThan(0);
+    const lastSearchUrl = calls.snippetSearchUrls.at(-1);
+    expect(lastSearchUrl, 'typing should have issued a snippet search').toBeDefined();
     for (const url of calls.snippetSearchUrls) {
       // Unapproved snippets are rejected at execute time, so they are never offered.
       expect(new URL(url).searchParams.get('approval')).toBe('approved');
     }
-    const lastSearch = new URL(calls.snippetSearchUrls.at(-1) as string).searchParams;
-    expect(lastSearch.get('search')).toBe('summary');
+    expect(new URL(lastSearchUrl ?? '').searchParams.get('search')).toBe('summary');
   });
 
   test('batch execute failure shows a submit error on the form', async ({ page }) => {

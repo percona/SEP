@@ -232,30 +232,36 @@ export function CollectPane({ incidentId }: CollectPaneProps) {
     [available, selected, searchResults],
   );
 
-  // Server provenance only counts while the fetched page belongs to the text
-  // now in the box: the query keeps the previous term's page while the next one
-  // is in flight, and that page would otherwise smuggle the old term's hits past
-  // the local filter unconditionally.
+  // Whether the page currently in hand was fetched for the term now in the box.
+  // `isPlaceholderData` is the precise signal: under `keepPreviousData` it is set
+  // exactly while the previous term's page stands in for an unresolved one. Plain
+  // `isFetching` would also fire on a background refetch of the *same* term, and
+  // no result is stale then.
+  const searchPageIsCurrent = !searchQuery.isPlaceholderData;
+
+  // Server provenance only counts while that page belongs to the typed text —
+  // otherwise the stand-in page would smuggle the old term's hits past the local
+  // filter, which keeps anything the server matched unconditionally.
   const filterOptions = useCallback(
     (candidates: AtwSnippetSummary[], state: { inputValue: string }) => {
       const fetchedTermIsCurrent =
-        state.inputValue.trim() === debouncedSearch && !searchQuery.isFetching;
+        state.inputValue.trim() === debouncedSearch && searchPageIsCurrent;
       return filterSnippetOptions(
         candidates,
         state.inputValue,
         fetchedTermIsCurrent ? searchMatchedNames : NO_NAMES,
       );
     },
-    [debouncedSearch, searchMatchedNames, searchQuery.isFetching],
+    [debouncedSearch, searchMatchedNames, searchPageIsCurrent],
   );
 
   // The endpoint pages, so a broad term can match more than one page holds.
   // Report the overflow instead of silently showing the first page. Suppressed
-  // mid-fetch: the kept-previous page belongs to the previous term, and the
-  // notice names the term it counts.
+  // while a stand-in page is showing: its total belongs to the previous term,
+  // and the notice names the term it counts.
   const searchPagination = searchQuery.data?.pagination ?? null;
   const hiddenMatchCount =
-    debouncedSearch !== '' && searchPagination && !searchQuery.isFetching
+    debouncedSearch !== '' && searchPagination && searchPageIsCurrent
       ? Math.max(searchPagination.total - searchResults.length, 0)
       : 0;
 

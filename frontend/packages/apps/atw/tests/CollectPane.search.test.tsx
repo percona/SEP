@@ -187,14 +187,18 @@ describe('CollectPane snippet search', () => {
 
     await userEvent.type(input, 'xyz');
 
-    // Stale provenance must not keep a row that matches neither the new term nor
-    // any of the option's own fields.
+    // Wait until the new term's request is out before asserting: only then has
+    // the debounce caught up with the box, so the row can no longer be hidden by
+    // the term simply not having settled yet. What is left holding it is the
+    // stand-in page from the previous term, and that must not grant provenance.
     await waitFor(
       () => {
-        expect(screen.queryByRole('option', { name: /PT Summary/ })).not.toBeInTheDocument();
+        expect(searchCalls().some((params) => params.search === 'perconaxyz')).toBe(true);
       },
       { timeout: 3000 },
     );
+
+    expect(screen.queryByRole('option', { name: /PT Summary/ })).not.toBeInTheDocument();
   });
 
   it('reports how many matches the fetched page left out', async () => {
