@@ -39,6 +39,11 @@ def form_field_names(schema: AppSchema) -> list[str]:
 def form_fields_by_name(schema: AppSchema) -> dict[str, AnyField]:
     """Return every form field across a schema's sections, keyed by field name.
 
+    Keying by name cannot mask a duplicate: ``AppSchema`` runs
+    ``_validate_unique_field_names_in_forms`` in a ``mode="after"`` validator, so a
+    builder emitting one wire name twice raises before any schema object exists for
+    this function to receive. The repeat surfaces out of the builder call itself.
+
     :param schema: The built schema whose form sections are traversed.
     :return: Each field keyed by its wire name.
     """
