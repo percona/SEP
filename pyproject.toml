@@ -322,8 +322,9 @@ markers = [
 ]
 # A developer dotenv file must never reach the suite: CI runs with no .env, so
 # any setting it carries makes the local run a weaker experiment than CI. This
-# pin sends PreEnvSettings.ENV_FILE at an empty committed file, so both read the
-# same settings.yaml defaults.
+# pin points PreEnvSettings.ENV_FILE at a committed dotenv file with no
+# assignments, so pytest ignores contributor-local dotenv files (exported env
+# vars can still override as usual).
 env = [
     "ENV_FILE=tests/pytest.env",
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID=test-client-id",
