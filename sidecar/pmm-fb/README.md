@@ -37,10 +37,10 @@ branch, and no `-embedded` tag has been published yet. It stays valid, so the
 harness keeps working — but the first feature build cut after this branch
 merges publishes `<customImageTag>-embedded`, and the pin moves there.
 
-That image was built before `image` switched to docker format, so its
-`HEALTHCHECK` was discarded and it reports no health state at all. Nothing
-here waits on side-car health, so bring-up is unaffected — but check the three
-API ports rather than `docker compose ps` until the pin moves.
+That image carries the side-car `HEALTHCHECK` — every side-car recipe builds
+in docker format precisely because OCI discards the instruction — so
+`docker compose ps` reports its health normally. The 150 s start period keeps
+it out of `unhealthy` while PMM provisioning and SEP migrations finish.
 
 [Percona-Lab/pmm-submodules#4500]: https://github.com/Percona-Lab/pmm-submodules/pull/4500
 [percona/pmm#5653]: https://github.com/percona/pmm/pull/5653
@@ -54,8 +54,7 @@ docker compose up -d        # or: podman compose up -d
 ```
 
 First boot takes a couple of minutes (PMM provisioning + SEP migrations; the
-side-car recipe budgets 150 s before its healthcheck would start failing, and
-the pinned image ships none at all — see [Which image to pin](#which-image-to-pin)).
+side-car recipe budgets 150 s before its healthcheck would start failing).
 Then:
 
 - PMM UI: https://127.0.0.1:8443 (admin / admin)
