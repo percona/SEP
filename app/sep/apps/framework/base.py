@@ -30,9 +30,9 @@ from app.sep.apps.nav_icons import NavIcon
 
 
 class AppPeriodicTask(NamedTuple):
-    """App-authored beat schedule contribution.
+    """Carry one app's beat-schedule contribution.
 
-    Carries only what an app knows about its own periodic work. The system
+    Holds only what an app knows about its own periodic work. The system
     periodic-task rebuild stamps ``owner_app_key`` from the registry entry's
     ``key`` and prefixes ``task`` with the app's Celery module path.
     ``schedule`` is a thunk so hot interval overrides (``BACKUP_INTERVAL``,
