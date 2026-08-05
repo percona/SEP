@@ -31,15 +31,16 @@ assuming all three exist.
 tag. Pinning the plain tag gets the standalone image, which has no supervisord
 and will not come up under this harness.
 
-The pin currently reads `pmm-e11e9fd`, which predates this split: it is a
-restricted image only because `make image` used to build the side-car on this
-branch, and no `-embedded` tag has been published yet. It replaces
-`pmm-a2db4ac` because it is the first build carrying the baked settings
-profile, without which the side-car has no settings source once the mount is
-gone. It has **not** been pushed to Docker Hub yet, so `docker compose up -d`
-cannot pull it on another machine until it is. The first feature build cut
-after this branch merges publishes `<customImageTag>-embedded`, and the pin
-moves there.
+The pin reads `pmm-272c0f0-embedded` — the first `-embedded` build cut from
+this branch after the branch-side repoint and strip were retired, published to
+both the internal registry and Docker Hub. It carries the baked settings
+profile, which is what the side-car reads for everything the `environment:`
+block does not supply, and is required now that nothing is mounted over
+`/home/sep/app/settings.yaml`.
+
+Repin whenever you need a newer build: cut one from the SEP `Build` job with a
+`customImageTag`, and pin that tag with `-embedded` appended. The plain tag
+from the same run is the standalone image, not this one.
 
 That image carries the side-car `HEALTHCHECK` — every side-car recipe builds
 in docker format precisely because OCI discards the instruction — so
