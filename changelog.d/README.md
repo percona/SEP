@@ -72,61 +72,27 @@ is the only way to end up without one. Capitalise the first word; do not add a
 ## What a fragment must say
 
 A fragment is read by an operator deciding whether a change affects them and
-when. Two things it must therefore carry:
+when. Two things it must carry.
 
 **Name the asymmetry.** When the change does not land uniformly — for some
 installations and not others, for some processes and not others, or only after
-a delay — say so. Silence on an asymmetric axis reads as "works uniformly", and
-the operator who acts on that reading is the one the fragment failed. Three
-axes recur:
+a delay — say so. Silence on an asymmetric axis reads as "works uniformly".
+Answer whichever of these three applies:
 
-| Axis | The question the fragment must answer |
-|---|---|
-| **Who** | fresh installs only? existing installations too, or not until the installer is re-run? |
-| **When** | at upgrade, at restart, or on the next occurrence of some event? |
-| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? |
+| Axis | The question to answer | A fragment that answers it |
+|---|---|---|
+| **Who** | fresh installs only, or existing installations too? | an installer default reaches fresh installs and installer re-runs only — `cmd_render_templates` renders `nginx.conf` and `compose.yaml` once, so an existing installation keeps its copies until the installer runs again |
+| **When** | at upgrade, at restart, or on the next occurrence of some event? | `SEP-1720.fixed.md`: "an override lands on the next task the worker executes" — not the "without a restart" it was drafted as |
+| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | `SEP-1698.config.md`: workers refresh on `SETTINGS_OVERRIDE_REFRESH_INTERVAL` (30 seconds by default), "so a send started within that window can still fail as unconfigured; retry it once the interval has elapsed" |
 
 This is the author-facing form of the reviewer rule in
 [`.github/instructions/backwards-compatibility.instructions.md`](../.github/instructions/backwards-compatibility.instructions.md)
-§ "Behavioral asymmetry across processes / deployments / install-states", which
-frames the same asymmetry as process / deployment / install-state / version.
-Who/When/Lag is that list rephrased as the questions an author answers; keep the
-two in step.
+§ "Behavioral asymmetry across processes / deployments / install-states".
 
-Two fragments in one window were drafted without their lag and corrected before
-release — read the merged versions as the shape to copy. `SEP-1720.fixed.md`
-first said overrides take effect "without a restart, matching the API
-processes": true of the API's continuously-running loop, but the worker's
-refresh is best-effort and only advances while something drives the loop. The
-merged fragment (PR #1253) names the real behaviour — "an override lands on the
-next task the worker executes". `SEP-1698.config.md` first read as immediate
-("so delivery can be turned on without editing a settings file or restarting")
-while the worker holds the previous snapshot for up to
-`SETTINGS_OVERRIDE_REFRESH_INTERVAL`; the merged fragment (PR #1260) names the
-window, its 30-second default, and what happens inside it — a send started there
-fails as unconfigured and is not retried automatically, so the operator retries
-once the interval has elapsed. The lag row exists because that second one is the
-expensive shape: the asymmetry is not just a delay, it is a *failure* inside the
-delay.
-
-The **Who** axis is the easiest to miss, because nothing in the diff shows it.
-An installer default reaches fresh installs and installer re-runs only:
-`cmd_render_templates` in `sep_installer.sh` writes `nginx.conf` and
-`compose.yaml` into the install directory once, so an existing installation
-keeps its rendered copies until the installer runs again. A fragment announcing
-a new installer default has to say which installations it reaches.
-
-**Pick the section from the work-item type.** A Bug's fragment goes under
-`fixed`, a Story's under `changed`, and the type decides even when two tickets
-do topically identical work. SEP-1720 (Bug) and SEP-1038 (Story) both extended
-DB-backed settings overrides to the Celery worker; SEP-1720's fragment was
-drafted as `.changed.md` and refiled to `SEP-1720.fixed.md` on that ground
-alone, joining the other Bug fragments in the tree (`SEP-1712.fixed.md`,
-`SEP-1584.fixed.md`). An operator scanning **Fixed** for "my override didn't
-apply in the worker" does not find it under Changed. When a deployment-impact
-framing genuinely should lead and `changed` is the better home for a Bug, that
-is defensible, but the fragment must then say what changed rather than what was
-fixed.
+**Pick the section from the work-item type.** File a Bug's fragment under
+`fixed` and a Story's under `changed`, even when two tickets do topically
+identical work — SEP-1720 (Bug, `.fixed.md`) and SEP-1038 (Story,
+`.changed.md`) both extended DB-backed settings overrides to the Celery worker.
 
 ## File format
 
