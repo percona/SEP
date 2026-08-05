@@ -66,6 +66,12 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      // App static mounts (snippets, dipper) and anonymous legacy Jinja assets
+      // (see app/sep/main.py). Without this, SPA fallback returns index.html.
+      '/static': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   optimizeDeps: {
@@ -108,6 +114,7 @@ export default defineConfig({
           if (id.includes('/node_modules/@tanstack/react-query/')) {
             return 'vendor-query';
           }
+          return undefined;
         },
       },
     },

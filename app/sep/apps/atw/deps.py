@@ -23,7 +23,7 @@ from pydantic import UUID4
 from app.core.exceptions import HTTPServiceUnavailableException
 from app.sep.apps.atw.crud import AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident
-from app.sep.config import sep_settings
+from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.deps import SessionDep
 
 
@@ -44,13 +44,16 @@ AtwIncidentDep = Annotated[AtwIncident, Depends(get_atw_incident)]
 def diagnostics_send_disabled_reasons() -> list[str]:
     """Return why the incident send action is unavailable, empty when it is not.
 
-    ``DIAGNOSTICS_DELIVERY`` is validated as a whole at settings load, so a
-    partially-configured receiver cannot exist at run time and the list carries
-    at most this one reason.
+    The plan is resolved from the baked skeleton and its runtime inputs on every
+    call, so a partially-configured receiver -- a declared secret left without a
+    value -- is reported here rather than failing mid-send.
+    ``resolve_delivery_plan`` logs which names are missing; the reason surfaced
+    to the UI stays generic, because it reaches an operator who cannot act on
+    the receiver's internal secret names.
 
     :return: The reasons to withhold the send action from the UI.
     """
-    if sep_settings.DIAGNOSTICS_DELIVERY is None:
+    if resolve_delivery_plan() is None:
         return ["Diagnostics delivery is not configured"]
     return []
 

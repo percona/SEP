@@ -139,7 +139,21 @@ class TestPerModeBoolGates:
 
 
 class TestEncryptionGate:
-    """``encryption_recipient`` is required iff ``encrypt`` is truthy."""
+    """Enforce the independent-modes encryption model.
+
+    ``encrypt`` (in-place) and ``post_run_encrypt`` are independent modes;
+    ``encrypt_using_tmpdir`` requires ``encrypt`` and is mutually exclusive with
+    ``post_run_encrypt``; and ``encryption_recipient`` is required iff either mode
+    is enabled.
+    """
+
+    def test_defaults_yield_valid_disabled_config(self):
+        """Accept an untouched Encryption section (all defaults) as a disabled config."""
+        form = BackupCreate(**_base_payload(BackupType.MYDUMPER))
+        assert form.encrypt is False
+        assert form.encrypt_using_tmpdir is False
+        assert form.post_run_encrypt is False
+        assert form.encryption_recipient is None
 
     def test_encrypt_with_recipient_ok(self):
         """encrypt=True + recipient validates."""
@@ -156,13 +170,75 @@ class TestEncryptionGate:
         with pytest.raises(ValidationError, match="encryption_recipient"):
             BackupCreate(**_base_payload(BackupType.MYDUMPER, encrypt=True))
 
-    def test_recipient_without_encrypt_fails(self):
-        """Recipient set with encrypt=False → 422."""
+    def test_recipient_without_any_encryption_fails(self):
+        """Reject a recipient set with no encryption mode enabled → 422."""
         with pytest.raises(ValidationError, match="encryption_recipient"):
             BackupCreate(
                 **_base_payload(
                     BackupType.MYDUMPER,
                     encrypt=False,
+                    encryption_recipient="ops@example.com",
+                )
+            )
+
+    def test_tmpdir_with_encrypt_ok(self):
+        """Accept encrypt with encrypt_using_tmpdir and a recipient (tmpdir mode)."""
+        BackupCreate(
+            **_base_payload(
+                BackupType.MYDUMPER,
+                encrypt=True,
+                encrypt_using_tmpdir=True,
+                encryption_recipient="ops@example.com",
+            )
+        )
+
+    def test_post_run_with_encrypt_ok(self):
+        """Accept encrypt with post_run_encrypt and a recipient (post-run mode)."""
+        BackupCreate(
+            **_base_payload(
+                BackupType.MYDUMPER,
+                encrypt=True,
+                post_run_encrypt=True,
+                encryption_recipient="ops@example.com",
+            )
+        )
+
+    def test_tmpdir_without_encrypt_fails(self):
+        """Reject encrypt_using_tmpdir when encrypt is off."""
+        with pytest.raises(ValidationError, match="encrypt_using_tmpdir"):
+            BackupCreate(
+                **_base_payload(BackupType.MYDUMPER, encrypt_using_tmpdir=True)
+            )
+
+    def test_post_run_without_encrypt_ok(self):
+        """Accept post_run_encrypt with a recipient but no in-place encrypt.
+
+        Post-run encryption produces an encrypted backup on its own, so it must
+        not depend on the in-place ``encrypt`` toggle.
+        """
+        BackupCreate(
+            **_base_payload(
+                BackupType.MYDUMPER,
+                encrypt=False,
+                post_run_encrypt=True,
+                encryption_recipient="ops@example.com",
+            )
+        )
+
+    def test_post_run_without_recipient_fails(self):
+        """Reject post_run_encrypt without a recipient (post-run GPG needs one)."""
+        with pytest.raises(ValidationError, match="encryption_recipient"):
+            BackupCreate(**_base_payload(BackupType.MYDUMPER, post_run_encrypt=True))
+
+    def test_tmpdir_and_post_run_together_fails(self):
+        """Reject encrypt_using_tmpdir combined with post_run_encrypt."""
+        with pytest.raises(ValidationError, match="encrypt_using_tmpdir"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.MYDUMPER,
+                    encrypt=True,
+                    encrypt_using_tmpdir=True,
+                    post_run_encrypt=True,
                     encryption_recipient="ops@example.com",
                 )
             )
