@@ -29,6 +29,14 @@ from pydantic import (
 
 from app.core.utils.fields import AsyncDatabaseEngine
 
+#: The driver kwarg each async dialect uses for its connect timeout. asyncpg
+#: takes ``timeout``, aiomysql takes ``connect_timeout``; aiosqlite's
+#: ``timeout`` means lock wait, not connect, so SQLite is absent.
+_CONNECT_TIMEOUT_KEYS: dict[AsyncDatabaseEngine, str] = {
+    AsyncDatabaseEngine.POSTGRESQL: "timeout",
+    AsyncDatabaseEngine.MYSQL: "connect_timeout",
+}
+
 
 class DatabaseOptions(BaseModel):
     """Define configuration options for a database connection.
@@ -48,6 +56,11 @@ class DatabaseOptions(BaseModel):
         rejected.
     :param POOL_TIMEOUT: Seconds to wait for a free connection. Unset keeps
         SQLAlchemy's default. Must be ``> 0``.
+    :param CONNECT_TIMEOUT: Seconds to wait for a TCP connect. Unset passes no
+        ``connect_args``, leaving the driver's own default. Forwarded as
+        ``timeout`` for asyncpg and ``connect_timeout`` for aiomysql; omitted
+        for SQLite, where that key means lock wait rather than connect. Must
+        be ``> 0``.
     """
 
     ENGINE: AsyncDatabaseEngine = AsyncDatabaseEngine.SQLITE
@@ -59,6 +72,7 @@ class DatabaseOptions(BaseModel):
     POOL_SIZE: PositiveInt | None = None
     MAX_OVERFLOW: NonNegativeInt | None = None
     POOL_TIMEOUT: PositiveFloat | None = None
+    CONNECT_TIMEOUT: PositiveFloat | None = None
 
     @computed_field(repr=False)
     @property
@@ -106,3 +120,20 @@ class DatabaseOptions(BaseModel):
             }.items()
             if value is not None
         }
+
+    @property
+    def connect_args(self) -> dict[str, float]:
+        """Return the dialect-specific connect-timeout kwarg, or an empty mapping.
+
+        An unset ``CONNECT_TIMEOUT``, or an engine with no connect-timeout
+        meaning (SQLite), yields ``{}`` so the caller can omit ``connect_args``
+        from ``create_async_engine`` entirely.
+
+        :return: A single-key mapping for the active dialect, or ``{}``.
+        """
+        if self.CONNECT_TIMEOUT is None:
+            return {}
+        key = _CONNECT_TIMEOUT_KEYS.get(self.ENGINE)
+        if key is None:
+            return {}
+        return {key: self.CONNECT_TIMEOUT}
