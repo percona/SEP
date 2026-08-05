@@ -14,13 +14,18 @@ periodic or manual re-sync.
 The restricted image is built on `main`, not on this branch. `main`'s
 `image-sidecar-embedded` target derives the shipped app set from
 `sidecar/settings.embedded.yaml`'s `SEP.APPS` and publishes it under an
-`-embedded` suffix, so a feature build tagged `<customImageTag>` publishes:
+`-embedded` suffix, so a feature build tagged `<customImageTag>` produces:
 
 | Tag | Contents |
 |---|---|
 | `percona/percona-sep:<customImageTag>` | the standalone image |
 | `percona/percona-sep:<customImageTag>-sidecar` | the full side-car, every app |
 | `percona/percona-sep:<customImageTag>-embedded` | the app-restricted side-car — **pin this one** |
+
+Which of those reach Docker Hub is a per-run decision: each push stage is
+gated on the build job's `pushImageDocker` parameter. Only the plain tag has
+ever landed there for a feature build, so check the registry rather than
+assuming all three exist.
 
 `compose.yaml`'s `sep-sidecar` service must therefore track the `-embedded`
 tag. Pinning the plain tag gets the standalone image, which has no supervisord
@@ -31,6 +36,11 @@ restricted image only because `make image` used to build the side-car on this
 branch, and no `-embedded` tag has been published yet. It stays valid, so the
 harness keeps working — but the first feature build cut after this branch
 merges publishes `<customImageTag>-embedded`, and the pin moves there.
+
+That image was built before `image` switched to docker format, so its
+`HEALTHCHECK` was discarded and it reports no health state at all. Nothing
+here waits on side-car health, so bring-up is unaffected — but check the three
+API ports rather than `docker compose ps` until the pin moves.
 
 [Percona-Lab/pmm-submodules#4500]: https://github.com/Percona-Lab/pmm-submodules/pull/4500
 [percona/pmm#5653]: https://github.com/percona/pmm/pull/5653
@@ -44,7 +54,9 @@ docker compose up -d        # or: podman compose up -d
 ```
 
 First boot takes a couple of minutes (PMM provisioning + SEP migrations; the
-side-car healthcheck has a 150 s grace period). Then:
+side-car recipe budgets 150 s before its healthcheck would start failing, and
+the pinned image ships none at all — see [Which image to pin](#which-image-to-pin)).
+Then:
 
 - PMM UI: https://127.0.0.1:8443 (admin / admin)
 - SEP API through PMM's nginx: https://127.0.0.1:8443/api/apps/
