@@ -31,11 +31,15 @@ assuming all three exist.
 tag. Pinning the plain tag gets the standalone image, which has no supervisord
 and will not come up under this harness.
 
-The pin currently reads `pmm-a2db4ac`, which predates this split: it is a
+The pin currently reads `pmm-e11e9fd`, which predates this split: it is a
 restricted image only because `make image` used to build the side-car on this
-branch, and no `-embedded` tag has been published yet. It stays valid, so the
-harness keeps working — but the first feature build cut after this branch
-merges publishes `<customImageTag>-embedded`, and the pin moves there.
+branch, and no `-embedded` tag has been published yet. It replaces
+`pmm-a2db4ac` because it is the first build carrying the baked settings
+profile, without which the side-car has no settings source once the mount is
+gone. It has **not** been pushed to Docker Hub yet, so `docker compose up -d`
+cannot pull it on another machine until it is. The first feature build cut
+after this branch merges publishes `<customImageTag>-embedded`, and the pin
+moves there.
 
 That image carries the side-car `HEALTHCHECK` — every side-car recipe builds
 in docker format precisely because OCI discards the instruction — so

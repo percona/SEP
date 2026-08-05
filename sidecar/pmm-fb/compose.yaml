@@ -52,9 +52,10 @@ services:
 
   sep-sidecar:
     # Predates the -embedded split: this tag is restricted because `make image`
-    # used to build the side-car on this branch. It stays valid, but the next
-    # feature build publishes the restricted image as <customImageTag>-embedded
-    # — repin there. See README.md "Which image to pin".
+    # used to build the side-car on this branch. It is the first pin carrying
+    # the baked settings profile, and it is not on Docker Hub yet — see
+    # README.md "Which image to pin". The next feature build publishes the
+    # restricted image as <customImageTag>-embedded; repin there.
     image: docker.io/percona/percona-sep:pmm-e11e9fd
     depends_on: [pmm-server]
     environment:
