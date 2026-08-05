@@ -380,17 +380,13 @@ export interface paths {
      *     is set, otherwise return ``SchemaCompactResponse`` (without tables).
      *
      *     :param session: The async database session.
-     *     :type session: AsyncSession
      *     :param service: The resolved service dependency.
-     *     :type service: Service
      *     :param pagination: Validated offset/limit query parameters.
      *     :param list_query: The resolved sort/search produced at the request
      *         boundary.
      *     :param include_tables: Include nested tables in the response when set to
      *         any non-empty value. Defaults to compact mode (no tables).
-     *     :type include_tables: str | None
      *     :return: A paginated response of schema responses.
-     *     :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
      */
     get: operations['services_list_schemas_by_service_services__service_id__schemas__get'];
     put?: never;
