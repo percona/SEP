@@ -40,10 +40,9 @@ from app.core.settings_override.policy import (
 )
 from app.core.settings_override.registry import (
     field_reload_classification,
-    is_nested_overridable_parent,
     iter_class_fields,
-    iter_nested_leaf_keys,
     ReloadClassification,
+    rendered_leaf_keys,
     resolve_nested_field,
     resolve_nested_field_metadata,
 )
@@ -105,22 +104,16 @@ def shipped_allowed_keys() -> list[str]:
 def listed_hot_keys(settings_cls: type) -> set[str]:
     """Return the keys the settings list renders HOT for one settings class.
 
-    Mirrors ``_field_responses``: a nested-overridable parent is replaced in the
-    listing by its enumerated leaves, so an entry naming such a parent addresses
-    no rendered row and unlocks none of its leaves.
+    Shares ``_field_responses``' row selection through ``rendered_leaf_keys``, so
+    an entry naming a parent the listing replaces with its leaves addresses no
+    rendered row and unlocks none of them.
 
     :param settings_cls: The Pydantic settings class to render.
     :return: The rendered keys that are currently overridable.
     """
     hot: set[str] = set()
     for field_meta in iter_class_fields(settings_cls):
-        leaves = (
-            list(iter_nested_leaf_keys(settings_cls, field_meta.key))
-            if is_nested_overridable_parent(
-                settings_cls, field_meta.key, include_policy_gate=False
-            )
-            else []
-        )
+        leaves = rendered_leaf_keys(settings_cls, field_meta.key)
         if not leaves:
             if field_meta.reload is ReloadClassification.HOT:
                 hot.add(field_meta.key)

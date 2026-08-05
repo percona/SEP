@@ -66,7 +66,7 @@ dependencies = [
     "python-multipart (>=0.0.31,<0.0.32)",
     "croniter (>=6.0.0,<7.0.0)",
     "weasyprint (>=69.0,<70.0)",
-    "cryptography (>=49.0.0,<50.0.0)",
+    "cryptography (>=50.0.0,<51.0.0)",
 ]
 
 [tool.poetry]
@@ -320,7 +320,13 @@ markers = [
     "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
     "mysql: require a real MySQL service (SEP_TEST_MYSQL_DSN)",
 ]
+# A developer dotenv file must never reach the suite: CI runs with no .env, so
+# any setting it carries makes the local run a weaker experiment than CI. This
+# pin points PreEnvSettings.ENV_FILE at a committed dotenv file with no
+# assignments, so pytest ignores contributor-local dotenv files (exported env
+# vars can still override as usual).
 env = [
+    "ENV_FILE=tests/pytest.env",
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID=test-client-id",
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=test-client-secret",
     'AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
