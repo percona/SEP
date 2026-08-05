@@ -21,6 +21,7 @@ import json
 import logging
 import tarfile
 import time
+from base64 import b64decode
 from binascii import b2a_base64
 from collections import defaultdict
 from collections.abc import AsyncGenerator
@@ -69,6 +70,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
 )
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
+from app.tasks.logs.line_split import split_complete_lines
 from app.tasks.logs.log_reader import decompress_legacy_logs
 from app.tasks.logs.log_writer import (
     backfill_legacy_logs,
@@ -91,6 +93,32 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
+
+_ANONYMIZED_STEPS: frozenset[str] = frozenset({"run-script", "step1"})
+
+
+def _should_anonymize(step: str, anonymize_entities: set[PIIEntity] | None) -> bool:
+    """Return whether ``step`` output should be anonymized for the given entities.
+
+    :param step: The Nomad task name within the allocation.
+    :param anonymize_entities: The requested PII entities, or ``None``.
+    :return: ``True`` when the step is anonymized and entities were requested.
+    """
+    return step in _ANONYMIZED_STEPS and bool(anonymize_entities)
+
+
+def _decode_and_anonymize(raw: bytes, anonymize_entities: set[PIIEntity] | None) -> str:
+    """Decode raw log bytes as UTF-8 and redact PII when entities are requested.
+
+    :param raw: The raw (pre-anonymization) log bytes.
+    :param anonymize_entities: PII entities to redact, or ``None`` to skip
+        anonymization.
+    :return: The decoded text, anonymized when entities were requested.
+    """
+    text = raw.decode("utf-8", errors="replace")
+    if anonymize_entities and text:
+        text = anonymize_text(text, anonymize_entities)
+    return text
 
 
 def _nomad_event_body_text(ev: dict) -> str:
@@ -742,7 +770,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         nomad_start_offset: int,
         producer_start_offset: int,
         anonymize_entities: set[PIIEntity] | None,
-    ) -> tuple[str, int, int]:
+        *,
+        flush_partial: bool = False,
+    ) -> tuple[str, int, int, int]:
         """Fetch the delta bytes and advanced offsets for a single step/log_type.
 
         The Nomad offset tracks the raw (pre-anonymization) byte position in
@@ -753,26 +783,35 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :meth:`TaskHistoryLogWriter.append` from mixing raw and anonymized
         byte counts on retry.
 
+        Anonymization runs on complete lines only: a PII token split across two
+        Nomad frames (or across two sync cycles) is never seen whole by
+        Presidio and would escape redaction. The trailing partial line is
+        therefore withheld from anonymization -- the returned Nomad offset is
+        rolled back by its raw byte length so it is simply re-fetched next cycle
+        and joined with the new bytes. That re-fetch is idempotent because the
+        withheld bytes were never emitted, so ``producer_offset`` never advanced
+        past them; the writer's dedup covers a different case -- a retry after a
+        concurrent state update. ``flush_partial`` disables the
+        withholding so a terminal drain can emit a newline-less final line
+        instead of losing it forever.
+
         :param alloc_id: The Nomad allocation identifier.
-        :type alloc_id: str
         :param step: The Nomad task name within the allocation.
-        :type step: str
         :param log_type: The log stream type (stdout or stderr).
-        :type log_type: TaskLogType
         :param nomad_start_offset: The byte offset to start reading from in
             Nomad-space.
-        :type nomad_start_offset: int
         :param producer_start_offset: The producer-space byte offset
             corresponding to ``nomad_start_offset``.
-        :type producer_start_offset: int
         :param anonymize_entities: PII entities to anonymize for ``run-script``
             and ``step1`` content. When ``None``, no anonymization is performed.
-        :type anonymize_entities: set[PIIEntity] | None
-        :return: ``(delta_text, new_nomad_offset, new_producer_offset)`` —
-            the anonymized bytes fetched this cycle, the advanced Nomad-space
-            offset for the next fetch, and the advanced producer-space offset
-            that the writer should persist.
-        :rtype: tuple[str, int, int]
+        :param flush_partial: When ``True``, emit the trailing partial line
+            instead of withholding it (terminal flush).
+        :return: ``(delta_text, new_nomad_offset, new_producer_offset,
+            withheld_bytes)`` -- the anonymized bytes fetched this cycle, the
+            advanced Nomad-space offset for the next fetch, the advanced
+            producer-space offset the writer should persist, and the raw byte
+            length of the partial line withheld this cycle (``0`` when nothing
+            was withheld).
         """
         try:
             raw_log_data = self.backend.client.stream_logs.stream(
@@ -788,7 +827,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 alloc_id,
                 step,
             )
-            return "", nomad_start_offset, producer_start_offset
+            return "", nomad_start_offset, producer_start_offset, 0
         pieces = []
         nomad_offset = nomad_start_offset
         for raw_log_data_item in (
@@ -797,19 +836,29 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             log_data = json.loads(raw_log_data_item)
             if raw_msg := log_data.get("Data"):
                 nomad_offset = log_data.get("Offset", nomad_offset)
-                msg = b64decode_str(raw_msg)
-                if step in ("run-script", "step1") and anonymize_entities:
-                    msg = anonymize_text(msg, anonymize_entities)
-                pieces.append(msg)
-        delta = "".join(pieces)
+                pieces.append(b64decode(raw_msg))
+        raw_buf = b"".join(pieces)
+        anonymizing = _should_anonymize(step, anonymize_entities)
+        withheld = 0
+        if anonymizing and not flush_partial:
+            complete, remainder = split_complete_lines(raw_buf)
+            withheld = len(remainder)
+            nomad_offset -= withheld
+        else:
+            complete = raw_buf
+        delta = _decode_and_anonymize(
+            complete, anonymize_entities if anonymizing else None
+        )
         producer_offset = producer_start_offset + len(delta.encode("utf-8"))
-        return delta, nomad_offset, producer_offset
+        return delta, nomad_offset, producer_offset, withheld
 
     def get_logs_for_allocation(
         self,
         alloc: dict[str, Any],
         initial_logs: dict[str, dict[str, Any]] | None = None,
         anonymize_entities: set[PIIEntity] | None = None,
+        *,
+        flush_partial: bool = False,
     ) -> dict[str, dict[str, Any]]:
         """Return the delta logs for an allocation since the previous offsets.
 
@@ -822,19 +871,19 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         it is not an accumulator over cycles.
 
         :param alloc: The allocation details from Nomad.
-        :type alloc: dict[str, Any]
         :param initial_logs: Per-step starting offsets in the shape
             ``{step: {f"{log_type}_last_offset": int,
             f"{log_type}_producer_offset": int}}``. Content fields are ignored.
-        :type initial_logs: dict[str, dict[str, Any]] | None
         :param anonymize_entities: PII entities to anonymize in run-script /
             step1 output. When ``None``, no anonymization is performed.
-        :type anonymize_entities: set[PIIEntity] | None
+        :param flush_partial: When ``True``, emit each stream's trailing partial
+            line instead of withholding it (terminal flush).
         :return: A dict containing this cycle's delta log content and the new
             last offsets, shaped
             ``{step: {log_type: delta_text, f"{log_type}_last_offset": int,
-            f"{log_type}_producer_offset": int}}``.
-        :rtype: dict[str, dict[str, Any]]
+            f"{log_type}_producer_offset": int,
+            f"{log_type}_withheld": int}}``. ``_withheld`` is the raw byte
+            length of the partial line withheld this cycle (``0`` when none).
         """
         alloc_id = alloc["ID"]
         task_logs = defaultdict(dict)
@@ -852,18 +901,23 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 continue
             last_offset_key = f"{log_type}_last_offset"
             producer_offset_key = f"{log_type}_producer_offset"
+            withheld_key = f"{log_type}_withheld"
             nomad_start_offset = task_logs[step].get(last_offset_key) or 0
             producer_start_offset = task_logs[step].get(producer_offset_key) or 0
-            delta, new_nomad_offset, new_producer_offset = self._fetch_step_log_delta(
-                alloc_id,
-                step,
-                log_type,
-                nomad_start_offset,
-                producer_start_offset,
-                anonymize_entities,
+            delta, new_nomad_offset, new_producer_offset, withheld = (
+                self._fetch_step_log_delta(
+                    alloc_id,
+                    step,
+                    log_type,
+                    nomad_start_offset,
+                    producer_start_offset,
+                    anonymize_entities,
+                    flush_partial=flush_partial,
+                )
             )
             task_logs[step][last_offset_key] = new_nomad_offset
             task_logs[step][producer_offset_key] = new_producer_offset
+            task_logs[step][withheld_key] = withheld
             task_logs[step][log_type] = delta
         return task_logs
 
@@ -1079,6 +1133,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         only one stream polls the full window (correctness over latency; the
         window is ``hot``-tunable).
 
+        Anonymization withholds each stream's trailing partial line until a
+        newline completes it, so a stream holding a partial looks quiet. The
+        early-exit is suppressed while any stream is still withholding, and a
+        final ``flush_partial`` pass after the loop emits any line that never
+        received a newline (a process exiting without one) so it is persisted
+        rather than dropped.
+
         :param writer_session: The dedicated log writer session.
         :param queue_item: The terminal task history record being drained.
         :param alloc: The current Nomad allocation dict.
@@ -1104,6 +1165,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 for log_type in TaskLogType
                 if task_logs[step].get(log_type)
             }
+            withholding = {
+                (step, log_type)
+                for step in task_logs
+                for log_type in TaskLogType
+                if task_logs[step].get(f"{log_type}_withheld")
+            }
             if produced:
                 advanced |= produced
                 await self._write_nomad_deltas(
@@ -1113,8 +1180,33 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     task_logs,
                     force_flush=True,
                 )
-            elif advanced == candidates:
-                return
+            elif advanced == candidates and not withholding:
+                break
+
+        # Terminal flush: emit any trailing line that never received a newline.
+        # Runs on both loop-exit branches so a withheld remainder is never lost.
+        # Gated on whether withholding was even possible, not on the drain's
+        # polling budget -- ``_should_anonymize`` requires truthy entities, so
+        # this is an exact substitution that keeps AC3's no-loss guarantee
+        # independent of ``terminal_log_drain_max_attempts``.
+        if not queue_item.anonymized_entities:
+            return
+        final_offsets = await self._build_initial_log_offsets(
+            writer_session, queue_item.id, alloc_epoch
+        )
+        final_logs = self.get_logs_for_allocation(
+            alloc,
+            final_offsets,
+            queue_item.anonymized_entities,
+            flush_partial=True,
+        )
+        await self._write_nomad_deltas(
+            writer_session,
+            queue_item.id,
+            alloc_epoch,
+            final_logs,
+            force_flush=True,
+        )
 
     @staticmethod
     async def _build_initial_log_offsets(
@@ -1419,16 +1511,21 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     ) -> None:
         """Push logs to the asynchronous queue for processing.
 
+        Anonymization runs on complete lines only, so the trailing partial line
+        of each frame is withheld in ``pending`` and carried across reconnects
+        until a newline completes it (see :meth:`_decode_live_frame`). When the
+        stream ends with a withheld remainder still pending -- a process
+        exiting without a trailing newline -- it is redacted and pushed to the
+        queue before the ``msg=None`` sentinel, so it is delivered rather than
+        dropped.
+
         :param alloc: The allocation details containing the task states.
-        :type alloc: dict[str, Any]
         :param step: The task step name.
-        :type step: str
         :param log_type: The type of log to stream ('stdout' or 'stderr').
-        :type log_type: TaskLogType
         :param queue: The asyncio queue to push log lines into.
-        :type queue: asyncio.Queue
         :param start_offset: The offset to start reading logs from. Defaults to 0.
-        :type start_offset: int
+        :param anonymize_entities: PII entities to anonymize in run-script /
+            step1 output. When ``None``, no anonymization is performed.
         """
         timeout = ClientTimeout(sock_read=self.log_socket_read_timeout)
         params = {
@@ -1438,6 +1535,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             "offset": start_offset,
         }
         state = "running"
+        pending = bytearray()
         while state == "running":
             alloc_id = alloc["ID"]
             stream_start = None
@@ -1450,6 +1548,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     params=params,
                     client_timeout=timeout,
                     anonymize_entities=anonymize_entities,
+                    pending=pending,
                 )
             except asyncio.CancelledError:
                 self._log_stream_cancelled(
@@ -1482,7 +1581,54 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     start_offset,
                 )
                 break
+        if pending:
+            decoded_msg = _decode_and_anonymize(
+                bytes(pending), anonymize_entities or None
+            )
+            await queue.put(
+                TaskLog(
+                    step=step,
+                    type=log_type,
+                    msg=decoded_msg,
+                    offset=params["offset"],
+                )
+            )
         await queue.put(TaskLog(step=step, type=log_type, msg=None))
+
+    @staticmethod
+    def _decode_live_frame(
+        pending: bytearray,
+        raw_msg: str,
+        step: str,
+        offset: int,
+        anonymize_entities: set[PIIEntity] | None,
+    ) -> tuple[str | None, int]:
+        """Decode a live log frame, anonymizing per complete line.
+
+        For anonymized steps the trailing partial line is kept in ``pending``
+        and withheld until a later frame supplies its newline, so a PII token
+        split across frames is anonymized whole rather than per fragment.
+        Non-anonymized steps decode and emit each frame unchanged.
+
+        :param pending: The withheld-remainder buffer, mutated in place.
+        :param raw_msg: This frame's base64-encoded ``Data`` field.
+        :param step: The Nomad task name within the allocation.
+        :param offset: The raw Nomad byte offset at the end of this frame.
+        :param anonymize_entities: PII entities to redact, or ``None``.
+        :return: ``(text, resume_offset)`` to emit, where ``resume_offset`` is
+            rolled back over any withheld remainder so a reconnecting client
+            re-fetches it; ``(None, offset)`` when the whole buffer is still a
+            partial line and nothing should be emitted yet.
+        """
+        if not _should_anonymize(step, anonymize_entities):
+            return b64decode_str(raw_msg), offset
+        pending.extend(b64decode(raw_msg))
+        complete, _ = split_complete_lines(bytes(pending))
+        if not complete:
+            return None, offset
+        del pending[: len(complete)]
+        decoded_msg = _decode_and_anonymize(complete, anonymize_entities)
+        return decoded_msg, offset - len(pending)
 
     async def _consume_nomad_log_stream(
         self,
@@ -1493,6 +1639,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         params: dict[str, Any],
         client_timeout: ClientTimeout,
         anonymize_entities: set[PIIEntity] | None,
+        pending: bytearray,
     ) -> tuple[str, dict[str, Any], float | None]:
         """Perform a single Nomad log streaming HTTP request and consume chunks.
 
@@ -1519,6 +1666,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type client_timeout: ClientTimeout
         :param anonymize_entities: Optional PII entities to redact for specific steps.
         :type anonymize_entities: set[PIIEntity] | None
+        :param pending: Caller-owned buffer holding the trailing partial line
+            withheld from anonymization; mutated in place and carried across
+            reconnects so a token split at a frame boundary is redacted whole.
         :return: Nomad task ``State`` string, ``running`` to continue the outer
             loop, or a ``_NOMAD_LOG_STREAM_*`` sentinel; the allocation dict (possibly
             refreshed); and monotonic time when response body reads began, or
@@ -1587,14 +1737,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                 offset,
                                 elapsed,
                             )
-                        decoded_msg = b64decode_str(msg)
-                        if step in ("run-script", "step1"):
-                            decoded_msg = anonymize_text(
-                                decoded_msg, anonymize_entities or set()
-                            )
+                        decoded_msg, emit_offset = self._decode_live_frame(
+                            pending, msg, step, offset, anonymize_entities
+                        )
+                        if decoded_msg is None:
+                            continue
                         await queue.put(
                             TaskLog(
-                                step=step, type=log_type, msg=decoded_msg, offset=offset
+                                step=step,
+                                type=log_type,
+                                msg=decoded_msg,
+                                offset=emit_offset,
                             )
                         )
                     elif empty_data_count >= self.log_socket_read_timeout:

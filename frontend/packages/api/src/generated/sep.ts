@@ -1740,6 +1740,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/mysql_backups/backup-sources/choices': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Backup Source Choices
+     * @description Return ``Choice`` options for a MySQL service's restore ``backup_source``.
+     *
+     *     The ``service_id`` query parameter (cascade parent name on the restore form)
+     *     selects which catalog rows to map. Options are newest-first and capped at
+     *     :data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain
+     *     reachable via free-text). An omitted, empty, sentinel, or unknown parent
+     *     yields ``[]`` rather than a ``404``, so the RemoteChoices free-text escape
+     *     hatch stays usable. Other Inventory API failures still propagate.
+     *
+     *     Free-typed (non-numeric) parents query the catalog by that name without an
+     *     Inventory type check — matching ``ServiceRef(allow_custom=True)`` on the
+     *     restore form, where the destination may be a name that has no MySQL
+     *     inventory row. Numeric parents still require a resolvable MySQL service.
+     *
+     *     :param session: The database session the catalog is queried on.
+     *     :param service_name: The cascade parent resolved to a catalog service name,
+     *         or ``None`` when the parent is unusable.
+     *     :return: Choice-compatible options for the restore backup-source selector.
+     */
+    get: operations['mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/mysql_backups/restore/': {
     parameters: {
       query?: never;
@@ -5372,7 +5409,9 @@ export interface components {
      *     :param sudo: The sudo choice applied to every item; snippets whose sudo
      *         option is not optional ignore it.
      *     :param shared_args: Arguments offered to every item, filtered per snippet to
-     *         the parameters that snippet declares.
+     *         the parameters that snippet declares. ``NON_SHAREABLE_FIELD_NAMES`` (e.g.
+     *         Extra Args) are never applied from ``shared_args``, even for a snippet
+     *         that declares a field with that name.
      *     :param items: The snippets to execute, at least one and at most
      *         ``MAX_BATCH_SNIPPETS``.
      */
@@ -5492,7 +5531,9 @@ export interface components {
      *     ``AppSchema`` section carries only a display title.
      *
      *     :param shared: The batch-level execution fields followed by every parameter
-     *         the selection declares identically.
+     *         the selection declares identically, excluding ``NON_SHAREABLE_FIELD_NAMES``
+     *         (e.g. Extra Args), which stay per-snippet even when every item declares
+     *         them.
      *     :param per_snippet: The remaining per-snippet fields, in request order.
      */
     atw__ATWMergedSchemaResponse: {
@@ -8049,8 +8090,9 @@ export interface components {
      *     ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
      *     / ``disabled_reason``). When ``depends_on`` is set, the fetch is
      *     parameterised by the dependency's value (appended as a query parameter named
-     *     after ``depends_on``) and the field stays disabled/empty until the
-     *     dependency has a value. When ``allow_custom`` is set, the renderer also
+     *     after ``depends_on``) and the field offers no options until the dependency
+     *     has a value, staying disabled while it waits unless ``allow_custom`` keeps
+     *     free-text entry open. When ``allow_custom`` is set, the renderer also
      *     accepts a free-typed value. The endpoint response contract is a JSON array
      *     of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
      *     "disabled"?: bool, "disabled_reason"?: str}``.
@@ -8607,10 +8649,16 @@ export interface components {
      *     XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
      *     derived schema. Field declaration order is load-bearing: the derived section
      *     order follows each section's first field, and the within-section order follows
-     *     declaration order, so the order here reproduces the hand-written schema
-     *     byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
+     *     declaration order, so the derived section and field order matches the
+     *     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
      *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+     *     encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
+     *     independent encryption modes that both produce an encrypted backup;
+     *     ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
+     *     ``post_run_encrypt`` so post-run takes precedence (matching the backend at
+     *     ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
+     *     is on — and the per-mode bool
+     *     ``FailRule``s in
      *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
      *     into the conditional-rule plan at class definition, so no
      *     ``@apply_conditional_rules`` decorator is needed. The config sub-models
@@ -12944,6 +12992,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__MysqlBackupsCreateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get: {
+    parameters: {
+      query?: {
+        /** @description Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch. */
+        service_id?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['framework__Choice'][];
         };
       };
       /** @description Validation Error */

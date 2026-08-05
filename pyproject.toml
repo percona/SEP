@@ -36,7 +36,7 @@ classifiers = [
 ]
 requires-python = ">=3.11.9,!=3.12.0,!=3.12.1,!=3.12.2,<3.14"
 dependencies = [
-    "aiohttp (>=3.14.1,<4.0.0)",
+    "aiohttp (>=3.14.3,<4.0.0)",
     "uvicorn[standard] (>=0.32.0,<0.33.0)",
     "sqlalchemy-celery-beat (>=0.8.4,<0.9.0)",
     "aioresponses (>=0.7.7,<0.8.0)",
@@ -66,7 +66,7 @@ dependencies = [
     "python-multipart (>=0.0.31,<0.0.32)",
     "croniter (>=6.0.0,<7.0.0)",
     "weasyprint (>=69.0,<70.0)",
-    "cryptography (>=49.0.0,<50.0.0)",
+    "cryptography (>=50.0.0,<51.0.0)",
 ]
 
 [tool.poetry]
@@ -296,7 +296,7 @@ order-by-type = false
 ]
 "app/sep/apps/backup_mongo/pbm_creds_common.py" = [
     "T201",   # canonical payload preamble prints diagnostics to stderr (as the shipped payloads do)
-    "PTH123", # payload preamble uses builtin open(); no pathlib is available at exec time
+    "PTH123", # payload preamble uses builtin open(), as the shipped payloads do
     "BLE001", # payload preamble mirrors a deliberate catch-all credentials-read guard
 ]
 "app/sep/sync/syncers/system_facts/payload.py" = [
@@ -320,7 +320,13 @@ markers = [
     "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
     "mysql: require a real MySQL service (SEP_TEST_MYSQL_DSN)",
 ]
+# A developer dotenv file must never reach the suite: CI runs with no .env, so
+# any setting it carries makes the local run a weaker experiment than CI. This
+# pin points PreEnvSettings.ENV_FILE at a committed dotenv file with no
+# assignments, so pytest ignores contributor-local dotenv files (exported env
+# vars can still override as usual).
 env = [
+    "ENV_FILE=tests/pytest.env",
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID=test-client-id",
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=test-client-secret",
     'AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
