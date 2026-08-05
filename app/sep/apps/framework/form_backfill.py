@@ -82,7 +82,7 @@ class FormBackfillContext:
 class AppBackfillStats:
     """Represent backfill outcome counters for a single in-scope app.
 
-    :param app_name: The declaring app's registry key.
+    :param app_key: The declaring app's registry key.
     :param owner: The task owner filter used when listing tasks.
     :param stamped: Tasks that received a new ``data['_form']`` stamp.
     :param skipped_existing: Tasks that already had ``data['_form']``.
@@ -91,7 +91,7 @@ class AppBackfillStats:
     :param skipped_error: Tasks whose reconstructor, stamp step, or persistence raised.
     """
 
-    app_name: str
+    app_key: str
     owner: str
     stamped: int = 0
     skipped_existing: int = 0
@@ -324,7 +324,7 @@ async def _rollback_backfill_session(
     session: AsyncSession,
     ctx: FormBackfillContext,
     *,
-    app_name: str,
+    app_key: str,
     task_name: str,
 ) -> None:
     """Roll back a failed per-task persist without aborting the batch.
@@ -334,7 +334,7 @@ async def _rollback_backfill_session(
 
     :param session: The tasks database session to reset.
     :param ctx: Shared backfill context for error logging.
-    :param app_name: The declaring app's registry key, for log context.
+    :param app_key: The declaring app's registry key, for log context.
     :param task_name: The task whose persist step failed.
     """
     try:
@@ -342,7 +342,7 @@ async def _rollback_backfill_session(
     except Exception:
         ctx.log.exception(
             "[%s] %s: rollback failed after persist error; continuing batch",
-            app_name,
+            app_key,
             task_name,
         )
 
@@ -359,7 +359,7 @@ async def _backfill_app(
     :param ctx: Shared backfill context.
     :return: Per-app outcome counters.
     """
-    stats = AppBackfillStats(app_name=entry.app_key, owner=entry.owner)
+    stats = AppBackfillStats(app_key=entry.app_key, owner=entry.owner)
     tasks = await TaskManager.list_active(session, owner=entry.owner)
     ctx.log.info(
         "[%s] scanning %s active task(s) for owner %s",
@@ -391,7 +391,7 @@ async def _backfill_app(
                     await _rollback_backfill_session(
                         session,
                         ctx,
-                        app_name=entry.app_key,
+                        app_key=entry.app_key,
                         task_name=task.name,
                     )
                 stats.skipped_error += 1

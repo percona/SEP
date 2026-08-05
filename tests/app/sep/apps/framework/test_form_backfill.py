@@ -162,7 +162,7 @@ async def test_rollback_backfill_session_swallows_rollback_failure():
     await _rollback_backfill_session(
         session,
         ctx,
-        app_name="checksums",
+        app_key="checksums",
         task_name="task-fail",
     )
 
