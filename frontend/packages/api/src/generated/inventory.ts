@@ -380,18 +380,13 @@ export interface paths {
      *     is set, otherwise return ``SchemaCompactResponse`` (without tables).
      *
      *     :param session: The async database session.
-     *     :type session: AsyncSession
      *     :param service: The resolved service dependency.
-     *     :type service: Service
-     *     :param search: Filter schemas by name using ILIKE matching.
-     *     :type search: str | None
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :param list_query: The resolved sort/search produced at the request
+     *         boundary.
      *     :param include_tables: Include nested tables in the response when set to
      *         any non-empty value. Defaults to compact mode (no tables).
-     *     :type include_tables: str | None
-     *     :param pagination: Validated offset/limit query parameters.
-     *     :type pagination: Pagination
      *     :return: A paginated response of schema responses.
-     *     :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
      */
     get: operations['services_list_schemas_by_service_services__service_id__schemas__get'];
     put?: never;
@@ -1736,6 +1731,8 @@ export interface operations {
         node_type?: string | null;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path?: never;
@@ -1897,6 +1894,8 @@ export interface operations {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path: {
@@ -2032,6 +2031,8 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path?: never;
@@ -2157,9 +2158,10 @@ export interface operations {
   schemas_list_tables_by_schema_schemas__schema_id__tables__get: {
     parameters: {
       query?: {
-        search?: string | null;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path: {
@@ -2230,6 +2232,8 @@ export interface operations {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path?: never;
@@ -2355,10 +2359,11 @@ export interface operations {
   services_list_schemas_by_service_services__service_id__schemas__get: {
     parameters: {
       query?: {
-        search?: string | null;
         include_tables?: string | null;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path: {
@@ -2516,6 +2521,8 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path?: never;
