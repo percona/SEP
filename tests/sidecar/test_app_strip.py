@@ -15,6 +15,7 @@
 """Cover the app-package strip the restricted embedded image runs."""
 
 from collections.abc import Iterable
+from configparser import ConfigParser
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,7 @@ from tests.app.sep import test_import_boundary
 from tests.sidecar.conftest import EMBEDDED_PROFILE
 
 APPS_ROOT = BASE_DIR / "app" / "sep" / "apps"
+ALEMBIC_INI = BASE_DIR / "alembic.ini"
 
 ACTIVATED_IN_SYNTHETIC_TREE = frozenset({"inventory", "atw", "mysql_backups"})
 """The apps the synthetic-tree profiles activate.
@@ -48,6 +50,63 @@ def _real_package_names() -> frozenset[str]:
         for child in APPS_ROOT.iterdir()
         if child.is_dir() and child.name != "__pycache__"
     )
+
+
+def _stripped_packages() -> frozenset[str]:
+    """Return the app packages the app-restricted image's strip removes.
+
+    :return: Every package directory outside the retained set.
+    """
+    retained = activated_apps(EMBEDDED_PROFILE) | INFRASTRUCTURE_PACKAGES
+    return _real_package_names() - retained
+
+
+def _owns_migrations(package_name: str) -> bool:
+    """Report whether an app package roots its own Alembic branch.
+
+    :param package_name: The app package to inspect.
+    :return: Whether it holds a ``migrations/versions`` directory.
+    """
+    return (APPS_ROOT / package_name / "migrations" / "versions").is_dir()
+
+
+def _versions_path(package_name: str) -> str:
+    """Return the repo-relative path an app's ``version_locations`` entry ends with.
+
+    :param package_name: The app package to address.
+    :return: The entry's trailing path segments.
+    """
+    return f"app/sep/apps/{package_name}/migrations/versions"
+
+
+def _sep_version_locations() -> tuple[str, ...]:
+    """Return the ``[sep] version_locations`` entries as ``alembic.ini`` writes them.
+
+    Interpolation stays off so the entries keep their ``%(here)s`` prefix, which
+    resolves against ``alembic.ini`` rather than the process's directory. The
+    split mirrors ``scripts/sync_alembic_version_locations.py``, which writes the
+    value with a hardcoded ``:`` rather than reading ``version_path_separator``;
+    that key names a separator Alembic resolves through its own keyword table, so
+    reading it back is not the same as knowing how the value was joined.
+
+    :return: The configured entries, in configuration order.
+    """
+    parser = ConfigParser(interpolation=None)
+    parser.read(ALEMBIC_INI, encoding="utf-8")
+    return tuple(parser["sep"]["version_locations"].split(":"))
+
+
+def _configures_app(entries: Iterable[str], package_name: str) -> bool:
+    """Report whether the entries address an app's migrations directory.
+
+    Comparing trailing segments rather than resolved paths keeps the
+    uninterpolated ``%(here)s`` prefix out of the comparison.
+
+    :param entries: The configured ``version_locations`` entries.
+    :param package_name: The app package to look for.
+    :return: Whether any entry addresses that app's ``migrations/versions``.
+    """
+    return any(entry.endswith(_versions_path(package_name)) for entry in entries)
 
 
 def _write_profile(path: Path, module_names: Iterable[str]) -> Path:
@@ -217,3 +276,54 @@ def test_infrastructure_packages_exist_in_the_repo():
 def test_infrastructure_packages_match_the_import_boundary_guard():
     """Assert the strip and the import-boundary guard retain the same packages."""
     assert INFRASTRUCTURE_PACKAGES == test_import_boundary.INFRASTRUCTURE_PACKAGES
+
+
+def test_stripped_apps_owning_migrations_stay_in_version_locations():
+    """Assert a stripped app that owns migrations keeps its configured location."""
+    entries = _sep_version_locations()
+    stripped_owners = sorted(
+        name for name in _stripped_packages() if _owns_migrations(name)
+    )
+
+    assert stripped_owners, (
+        "no app the strip removes owns migrations, so this guard covers nothing; "
+        "if the baked profile now activates every app that owns an Alembic "
+        "branch, the orphan-head filter has nothing left to protect and this "
+        "test should go with it"
+    )
+    for name in stripped_owners:
+        assert _configures_app(entries, name), (
+            f"The app-restricted image strips {name!r}, which owns migrations, "
+            f"but [sep] version_locations in alembic.ini configures no entry "
+            f"ending in {_versions_path(name)!r}. skip_unresolvable_heads in "
+            f"app/sep/migrations/_orphan_heads.py tells a stripped app apart "
+            f"from version skew by finding a configured location that is not a "
+            f"directory on disk, so an image missing this entry hard-fails its "
+            f"upgrade against a database a full image migrated. Restore the "
+            f"entry rather than relaxing this test."
+        )
+
+
+def test_stripped_apps_owning_no_migrations_need_no_version_locations_entry():
+    """Assert a stripped app that roots no branch is neither required nor listed.
+
+    Such an app is exempt from the sibling assertion, and carries no entry of its
+    own: an entry whose directory never exists on any image would report a
+    stripped app to the orphan-head filter even on the unrestricted one.
+    """
+    entries = _sep_version_locations()
+    stripped_non_owners = sorted(
+        name for name in _stripped_packages() if not _owns_migrations(name)
+    )
+
+    assert stripped_non_owners, "every app the strip removes owns migrations"
+    listed = [name for name in stripped_non_owners if _configures_app(entries, name)]
+    assert not listed, (
+        f"[sep] version_locations in alembic.ini configures entries for {listed!r}, "
+        f"which the app-restricted image strips and which own no "
+        f"migrations/versions directory. Those locations resolve nowhere on any "
+        f"image, so skip_unresolvable_heads in "
+        f"app/sep/migrations/_orphan_heads.py would read them as a stripped app "
+        f"and stop treating an unresolvable revision as version skew. Drop the "
+        f"entries, or restore the migrations they point at."
+    )
