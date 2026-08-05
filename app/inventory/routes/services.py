@@ -16,12 +16,10 @@
 """Define the routes for the Services resource."""
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.db import ListQuery, make_list_query_dep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import (
@@ -29,7 +27,12 @@ from app.inventory.crud import (
     ServiceManager,
     ServiceSystemObservationManager,
 )
-from app.inventory.deps import ServiceDep, SessionDep
+from app.inventory.deps import (
+    SchemaListQueryDep,
+    ServiceDep,
+    ServiceListQueryDep,
+    SessionDep,
+)
 from app.inventory.models import (
     Schema,
     SchemaCompactResponse,
@@ -47,9 +50,6 @@ from app.inventory.models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/services", tags=["services"])
-
-ServiceListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(ServiceManager))]
-SchemaListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(SchemaManager))]
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])

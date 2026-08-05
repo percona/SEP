@@ -16,16 +16,19 @@
 """Define the routes for the Schemas resource."""
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.db import ListQuery, make_list_query_dep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import SchemaManager, TableManager
-from app.inventory.deps import SchemaDep, SessionDep
+from app.inventory.deps import (
+    SchemaDep,
+    SchemaListQueryDep,
+    SessionDep,
+    TableListQueryDep,
+)
 from app.inventory.models import (
     Schema,
     SchemaDetailResponse,
@@ -39,9 +42,6 @@ from app.inventory.models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/schemas", tags=["schemas"])
-
-SchemaListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(SchemaManager))]
-TableListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(TableManager))]
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])

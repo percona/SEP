@@ -16,18 +16,21 @@
 """Define the routes for the Nodes resource."""
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.db import ListQuery, make_list_query_dep
 from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.crud import HostSystemObservationManager, NodeManager, ServiceManager
-from app.inventory.deps import NodeDep, SessionDep
+from app.inventory.deps import (
+    NodeDep,
+    NodeListQueryDep,
+    ServiceListQueryDep,
+    SessionDep,
+)
 from app.inventory.models import (
     HostSystemObservationResponse,
     HostSystemObservationWrite,
@@ -44,9 +47,6 @@ from app.inventory.models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
-
-NodeListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(NodeManager))]
-ServiceListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(ServiceManager))]
 
 
 @router.get("/", dependencies=[IsAuthenticatedDep])
