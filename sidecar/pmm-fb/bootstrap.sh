@@ -55,7 +55,10 @@ cd "${script_dir}" || exit 1
 
 if [[ -f .env ]]; then
     info "Keeping existing .env"
+    chmod 600 .env
     if ! grep -q '^SEP_GRAFANA_TOKEN=' .env; then
+        # A hand-edited .env may lack the trailing newline the append needs
+        [[ -z $(tail -c1 .env) ]] || printf '\n' >> .env
         printf 'SEP_GRAFANA_TOKEN=\n' >> .env
         success "Added the SEP_GRAFANA_TOKEN slot to the existing .env"
     fi
