@@ -52,6 +52,7 @@ from pathlib import Path
 import pytest
 
 from app import BASE_DIR
+from tests.app.import_ast import absolute_base, package_of
 
 APPS_ROOT = BASE_DIR / "app" / "sep" / "apps"
 
@@ -105,22 +106,6 @@ def _dynamic_import_target(node: ast.Call) -> str | None:
     return target.value.split(":", 1)[0]
 
 
-def _absolute_base(node: ast.ImportFrom, package: str) -> str | None:
-    """Return the absolute dotted path ``node``'s module part resolves to.
-
-    :param node: The ``from ... import`` node to resolve.
-    :param package: The dotted package the importing module belongs to.
-    :return: The absolute module path, or ``None`` when the level climbs past
-        the package root.
-    """
-    if node.level == 0:
-        return node.module
-    anchor = package.split(".")[: len(package.split(".")) - node.level + 1]
-    if not anchor:
-        return None
-    return ".".join([*anchor, node.module] if node.module else anchor)
-
-
 def _direct_import_edges(node: ast.AST, package: str) -> Iterator[tuple[str, int]]:
     """Yield the import edges ``node`` itself declares, ignoring its children.
 
@@ -138,7 +123,7 @@ def _direct_import_edges(node: ast.AST, package: str) -> Iterator[tuple[str, int
         for alias in node.names:
             yield alias.name, node.lineno
     elif isinstance(node, ast.ImportFrom):
-        base = _absolute_base(node, package)
+        base = absolute_base(node, package)
         if base:
             yield base, node.lineno
             for alias in node.names:
@@ -190,16 +175,6 @@ def _is_type_checking_guard(node: ast.AST) -> bool:
     return isinstance(test, ast.Name) and test.id == "TYPE_CHECKING"
 
 
-def _package_of(path: Path) -> str:
-    """Return the dotted package a module resolves its relative imports against.
-
-    :param path: The source path to derive the package from.
-    :return: The dotted package name, which for an ``__init__.py`` is its own
-        directory.
-    """
-    return ".".join(path.relative_to(BASE_DIR).parts[:-1])
-
-
 def _guarded_module_paths() -> Iterator[Path]:
     """Yield every ``app/**/*.py`` module the boundary rule binds.
 
@@ -246,7 +221,7 @@ def _violations() -> list[str]:
     for path in _guarded_module_paths():
         owner = _owning_app_package(path, app_packages)
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for module, lineno in _import_time_imports(tree, _package_of(path)):
+        for module, lineno in _import_time_imports(tree, package_of(path, BASE_DIR)):
             target = _app_package_of(module, app_packages)
             if target is None or target == owner:
                 continue
@@ -352,7 +327,9 @@ def test_import_time_edges_ignore_a_modules_own_app_package(
     owner = _owning_app_package(path, app_packages)
     reached = {
         target
-        for module, _ in _import_time_imports(ast.parse(source), _package_of(path))
+        for module, _ in _import_time_imports(
+            ast.parse(source), package_of(path, BASE_DIR)
+        )
         if (target := _app_package_of(module, app_packages)) is not None
         and target != owner
     }

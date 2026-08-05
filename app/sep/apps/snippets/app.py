@@ -29,6 +29,11 @@ carried as ``extra_routes``. ``GET /capabilities`` is wired through the framewor
 ``owner=ANY_OWNER``: a script app's derived routes never consume the owner
 (it only seeds the unused per-owner task dependency), and snippets declares no
 owner of its own — ``ANY`` is the honest "no owner restriction" value.
+
+Snippet ingestion contributes no ``periodic_task_schedules``: its task lives in
+the library (``app.sep.snippets.celery``), not this package, so the app owns no
+Celery module to prefix it with and its schedule is seeded unconditionally by
+``get_system_periodic_tasks``.
 """
 
 from app.sep.apps.framework.apps import TaskExecutionApp
