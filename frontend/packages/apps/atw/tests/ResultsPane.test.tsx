@@ -21,8 +21,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ResultsPane } from '../src/ResultsPane';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@sep/api', async () => ({
   apiClient: { get: vi.fn() },
+  ...(await import('./sepApiMock')).sepApiListStubs,
 }));
 
 // No test here mounts the log viewer: rows that stay collapsed leave it unmounted
