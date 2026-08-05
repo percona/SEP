@@ -1954,7 +1954,7 @@ def _openapi_param_names(path: str) -> set[str]:
     return {param["name"] for param in params}
 
 
-def _openapi_param(path: str, name: str) -> dict:
+def _openapi_param(path: str, name: str) -> dict[str, object]:
     """Return one named OpenAPI parameter object for a tasks GET path.
 
     :param path: OpenAPI path template (for example ``/{task}/history/``).
@@ -1962,7 +1962,7 @@ def _openapi_param(path: str, name: str) -> dict:
     :param name: Parameter name to look up (for example ``sort``).
     :type name: str
     :return: The matching OpenAPI parameter object.
-    :rtype: dict
+    :rtype: dict[str, object]
     :raises StopIteration: If no parameter with ``name`` exists on the path.
     """
     params = tasks_app.openapi()["paths"][path]["get"].get("parameters", [])

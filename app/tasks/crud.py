@@ -71,7 +71,6 @@ class TaskManager(BaseSQLModelManager):
     """
 
     Model = Task
-    ordering = [col(Task.created_at).desc(), col(Task.id).desc()]
     list_query_spec = ListQuerySpec(
         sortable={
             "name": col(Task.name),
