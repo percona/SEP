@@ -798,10 +798,7 @@ class TestRunSendLateDelivery:
         mocker: MockerFixture,
     ) -> None:
         """Leave a terminal row alone rather than resurrecting and uploading it."""
-        republish = mocker.patch(
-            "app.sep.apps.atw.send.republish_sep_settings_snapshot",
-            new_callable=AsyncMock,
-        )
+        overrides_read = mocker.spy(SettingsOverrideManager, "list")
         row = await _seed_send_log(send_session)
         row.status = AtwSendStatusEnum.FAILED
         row.finished_at = utc_now()
@@ -811,7 +808,7 @@ class TestRunSendLateDelivery:
 
         assert uploader.bundle_bytes is None
         tasks_api.get.assert_not_awaited()
-        republish.assert_not_awaited()
+        overrides_read.assert_not_called()
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status == AtwSendStatusEnum.FAILED
 
@@ -849,11 +846,8 @@ class TestRunSendStaleSnapshot:
         uploader: _FakeUploader,
         mocker: MockerFixture,
     ) -> None:
-        """Skip the forced refresh entirely when the first resolve succeeds."""
-        republish = mocker.patch(
-            "app.sep.apps.atw.send.republish_sep_settings_snapshot",
-            new_callable=AsyncMock,
-        )
+        """Read no override row when the first resolve already succeeds."""
+        overrides_read = mocker.spy(SettingsOverrideManager, "list")
         row = await _seed_send_log(send_session)
 
         await run_send(row.id)
@@ -861,7 +855,7 @@ class TestRunSendStaleSnapshot:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.SUCCESS
         assert uploader.called is True
-        republish.assert_not_awaited()
+        overrides_read.assert_not_called()
 
 
 @pytest.mark.asyncio
