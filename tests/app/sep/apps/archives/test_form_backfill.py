@@ -20,16 +20,15 @@ from types import SimpleNamespace
 import yaml
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.archives.app import app as archives_app
 from app.sep.apps.archives.constants import SwapDropEnum
 from app.sep.apps.archives.form_backfill import (
     _load_archives_config,
+    FORM_BACKFILL_ENTRIES,
     reconstruct_archives_form,
 )
 from app.sep.apps.archives.models import ArchivesCreate
 from app.sep.apps.framework.form_backfill import (
     _backfill_single_task,
-    _BackfillApp,
     FormBackfillContext,
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
@@ -409,7 +408,7 @@ def test_backfill_single_task_skips_archives_swap_drop_invalid():
             "WHERE": "id < 50",
         },
     )
-    entry = _BackfillApp(app=archives_app, reconstructor=reconstruct_archives_form)
+    entry = FORM_BACKFILL_ENTRIES[0]
     ctx = FormBackfillContext(
         log=__import__("logging").getLogger("test"),
         service_lookup=lookup,
@@ -444,7 +443,7 @@ def test_backfill_single_task_stamps_archives_form():
             "WHERE": "id < 50",
         },
     )
-    entry = _BackfillApp(app=archives_app, reconstructor=reconstruct_archives_form)
+    entry = FORM_BACKFILL_ENTRIES[0]
     ctx = FormBackfillContext(
         log=__import__("logging").getLogger("test"),
         service_lookup=lookup,

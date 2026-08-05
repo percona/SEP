@@ -314,13 +314,13 @@ def test_guarded_module_paths_leaves_no_apps_tree_module_out(
     [
         pytest.param(
             "app/sep/apps/inventory/deps.py",
-            "from app.sep.apps.inventory.sync import require_internal_token",
+            "from app.sep.apps.inventory.sync import run_inventory_sync",
             set(),
             id="own-package-exempt",
         ),
         pytest.param(
             "app/sep/apps/framework/form_backfill.py",
-            "from app.sep.apps.inventory.sync import require_internal_token",
+            "from app.sep.apps.inventory.sync import run_inventory_sync",
             {"inventory"},
             id="no-owner-nothing-exempt",
         ),

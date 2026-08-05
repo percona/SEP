@@ -26,7 +26,9 @@ the ``payload_builder`` escape hatch
 (:func:`~app.sep.apps.mysql_backups.restore.deps.build_restore_payload`)
 rather than the framework's auto-resolve three-phase path; the model-first
 :class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate` still drives
-``GET /schema`` and the create form.
+``GET /schema`` and the create form. ``service_id`` lives in the General section
+so the restore ``backup_source`` ``RemoteChoices`` cascade is available for every
+backup type (not only Mydumper).
 """
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
