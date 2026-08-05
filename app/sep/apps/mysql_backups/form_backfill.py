@@ -24,14 +24,18 @@ import yaml
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
+from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.mysql_backups.deps import parse_backup_task_data
-from app.sep.apps.mysql_backups.forms import BackupCreate, UploadProvider
+from app.sep.apps.mysql_backups.forms import BackupCreate, OWNER, UploadProvider
+from app.sep.apps.mysql_backups.restore.form_backfill import (
+    FORM_BACKFILL_ENTRY as RESTORE_FORM_BACKFILL_ENTRY,
+)
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
     from app.tasks.models import Task
 
-__all__ = ["reconstruct_mysql_backups_form"]
+__all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_mysql_backups_form"]
 
 _MYSQL_BACKUPS_FORM_FIELDS = frozenset(BackupCreate.model_fields)
 _UPLOAD_PROVIDER_BY_ALIAS = {provider.name: provider for provider in UploadProvider}
@@ -141,3 +145,14 @@ def reconstruct_mysql_backups_form(
         "alert_on_fail": task.alert_on_fail,
         **form_fields,
     }
+
+
+FORM_BACKFILL_ENTRIES = [
+    FormBackfillEntry(
+        app_key="mysql_backups",
+        owner=OWNER,
+        create_model=BackupCreate,
+        reconstructor=reconstruct_mysql_backups_form,
+    ),
+    RESTORE_FORM_BACKFILL_ENTRY,
+]

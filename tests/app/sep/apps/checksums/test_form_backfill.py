@@ -20,15 +20,14 @@ from types import SimpleNamespace
 import pytest
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.checksums.app import app as checksums_app
 from app.sep.apps.checksums.form_backfill import (
     _split_checksums_dsn_recursion,
+    FORM_BACKFILL_ENTRIES,
     reconstruct_checksums_form,
 )
 from app.sep.apps.checksums.models import ChecksumsForm
 from app.sep.apps.framework.form_backfill import (
     _backfill_single_task,
-    _BackfillApp,
     FormBackfillContext,
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
@@ -232,7 +231,7 @@ def test_backfill_single_task_stamps_checksums_form():
         name="chk-stamp",
         args="h=10.0.0.5,P=3306, --recursion-method=hosts --tables=db.t1",
     )
-    entry = _BackfillApp(app=checksums_app, reconstructor=reconstruct_checksums_form)
+    entry = FORM_BACKFILL_ENTRIES[0]
     ctx = FormBackfillContext(
         log=__import__("logging").getLogger("test"),
         service_lookup=lookup,

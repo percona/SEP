@@ -29,10 +29,10 @@ from app.core.requests import RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.sep.config import sep_settings
 from app.sep.main import (
-    _invalidate_pmm_clients,
     _make_remote_api_rebinder,
     _reseed_system_periodic_tasks,
 )
+from app.sep.settings_override import invalidate_pmm_clients
 from app.sep.snippets.config import snippets_settings
 
 
@@ -83,7 +83,7 @@ async def test_invalidate_pmm_clients_evicts_current_pmm_endpoint(
     settings._set_snapshot({"PMM": PMMSettings(endpoint="https://new-pmm.example.org")})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    await _invalidate_pmm_clients({})
+    await invalidate_pmm_clients({})
 
     invalidate.assert_awaited_once_with("https://new-pmm.example.org")
 
@@ -96,7 +96,7 @@ async def test_invalidate_pmm_clients_noop_without_endpoint(
     settings._set_snapshot({"PMM": PMMSettings(endpoint=None)})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    await _invalidate_pmm_clients({})
+    await invalidate_pmm_clients({})
 
     invalidate.assert_not_awaited()
 

@@ -14,5 +14,6 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from app.sep.apps.mysql_backups.app import app
+from app.sep.apps.mysql_backups.form_backfill import FORM_BACKFILL_ENTRIES
 
-__all__ = ["app"]
+__all__ = ["FORM_BACKFILL_ENTRIES", "app"]

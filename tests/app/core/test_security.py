@@ -15,7 +15,16 @@
 
 """Define tests for the app.core.security module."""
 
-from app.core.security import crypto_serializer, crypto_timestamp_serializer
+import pytest
+from pydantic import SecretStr
+
+from app.core.config import settings
+from app.core.security import (
+    crypto_serializer,
+    crypto_timestamp_serializer,
+    get_internal_token,
+    require_internal_token,
+)
 
 
 def test_crypto_serializer_basic():
@@ -32,3 +41,34 @@ def test_crypto_timestamp_serializer_basic():
     token = crypto_timestamp_serializer.dumps(payload)
     decoded_payload = crypto_timestamp_serializer.loads(token)
     assert decoded_payload == payload
+
+
+def test_get_internal_token_returns_secret(mocker):
+    """``get_internal_token`` returns the configured token's secret value."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("internal-secret"))
+    assert get_internal_token() == "internal-secret"
+
+
+def test_get_internal_token_returns_none_when_unset(mocker):
+    """``get_internal_token`` returns ``None`` when the token is unset."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
+    assert get_internal_token() is None
+
+
+def test_get_internal_token_returns_none_when_empty(mocker):
+    """``get_internal_token`` treats an empty ``SecretStr`` as absent."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(""))
+    assert get_internal_token() is None
+
+
+def test_require_internal_token_returns_secret(mocker):
+    """``require_internal_token`` returns the configured token's secret value."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("internal-secret"))
+    assert require_internal_token() == "internal-secret"
+
+
+def test_require_internal_token_raises_when_absent(mocker):
+    """``require_internal_token`` raises ``RuntimeError`` when the token is absent."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
+    with pytest.raises(RuntimeError, match="SEP_INTERNAL_TOKEN must be configured"):
+        require_internal_token()

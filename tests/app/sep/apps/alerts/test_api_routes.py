@@ -51,6 +51,9 @@ from app.sep.main import sep_app
 
 API_BASE = "/api/apps/alerts"
 BEARER_HEADERS = {"Authorization": "Bearer test-token"}
+#: The parent of every logger the request path emits through. Naming it keeps the
+#: "no record carries the secret" assertions from passing on an empty capture.
+_APP_LOGGER = "app"
 
 
 _TEMPLATE_A = AlertTemplate(
@@ -331,7 +334,7 @@ class TestApiInputHardening:
             receiver="default", routes=[]
         )
         bad_key = "key\x00\nctrl"
-        with caplog.at_level("DEBUG"):
+        with caplog.at_level("DEBUG", logger=_APP_LOGGER):
             response = api_client.post(
                 f"{API_BASE}/pagerduty", json={"integration_key": bad_key}
             )
@@ -605,7 +608,7 @@ class TestPagerDutySaveApi:
         mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
             receiver="default", routes=[]
         )
-        with caplog.at_level("DEBUG"):
+        with caplog.at_level("DEBUG", logger=_APP_LOGGER):
             response = api_client.post(
                 f"{API_BASE}/pagerduty",
                 json={"integration_key": "supersecretkey-xyz"},
@@ -719,7 +722,7 @@ class TestPagerDutyDeleteApi:
         mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
             receiver="default", routes=[]
         )
-        with caplog.at_level("DEBUG"):
+        with caplog.at_level("DEBUG", logger=_APP_LOGGER):
             response = api_client.post(f"{API_BASE}/pagerduty/delete")
         assert response.status_code == status.HTTP_200_OK
         for record in caplog.records:

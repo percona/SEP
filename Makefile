@@ -216,7 +216,13 @@ endif
 ifndef MSG
 	$(error MSG is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
 endif
-	@$(PYTHON) scripts/changelog.py add --ticket "$(TICKET)" --section "$(SECTION)" --message "$(MSG)" $(if $(FORCE),--force,)
+# TICKET, SECTION and MSG are forwarded through the recipe shell environment as
+# "$$VAR" — command-line variables are auto-exported, so the shell (not Make's
+# textual expansion) supplies each value and embedded quotes, spaces and backticks
+# stay literal (a literal '$' must be written as '$$' on the command line).
+# Interpolating "$(MSG)" instead pastes the raw text inside an already-open quoted string, where a `"` closes it and a backtick
+# command-substitutes; no caller-side quoting can prevent that.
+	@$(PYTHON) scripts/changelog.py add --ticket "$$TICKET" --section "$$SECTION" --message "$$MSG" $(if $(FORCE),--force,)
 
 changelog-check:
 	@$(PYTHON) scripts/changelog.py check

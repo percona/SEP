@@ -123,8 +123,20 @@ ports from the table above, the PMM connection and its API key, the whole Nomad
 subtree, the snippets source, sessions, security headers, and auth. What stays
 tunable is product behaviour: log level, PMM annotations, sync cadence, the
 footer and message-level display options, alerting policy and retention,
-anonymizer entities, and the task connectivity-check and log-retention
-settings.
+anonymizer entities, the diagnostics-delivery inputs, and the task
+connectivity-check and log-retention settings.
+
+Diagnostics delivery is the one tunable that is off until you configure it. The
+image bakes the receiver plan — its resolution steps, its upload spec, and the
+*names* of the credentials it needs — but ships those credentials empty, so no
+bundle leaves the container until an operator supplies them through
+`SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS`. That is a single whole-object PATCH
+carrying every declared secret name at once: a per-leaf write such as
+`DIAGNOSTICS_DELIVERY_INPUTS__secrets` is refused with `422`, and so is a
+payload naming a secret the baked plan does not declare or omitting one it
+does. The same key optionally carries an `endpoint` that replaces the baked
+receiver; omit it to keep the shipped one. Stored secrets read back as
+`**********`, and resubmitting that mask preserves the stored value.
 
 Rows written before the restriction applied — by a standalone deployment whose
 database was carried over, or by direct table access — are **inert**: the
