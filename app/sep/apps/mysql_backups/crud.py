@@ -15,6 +15,9 @@
 
 """Define database operations for the MySQL backup catalog."""
 
+from sqlalchemy import or_
+from sqlalchemy.sql import ColumnExpressionArgument
+from sqlmodel import and_, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
@@ -33,10 +36,44 @@ class MysqlBackupRunManager(BaseSQLModelManager):
     Model = MysqlBackupRun
 
     @classmethod
+    def _service_key(
+        cls, service_name: str, service_id: int | None
+    ) -> ColumnExpressionArgument[bool]:
+        """Return the predicate selecting one service's rows.
+
+        Prefers the inventory id, which survives a rename where the name does not.
+        The name is matched only for rows carrying *no* id — guarding that fallback
+        on ``IS NULL`` is what keeps two same-named services apart, since
+        ``Service.name`` carries no uniqueness constraint and an unguarded name
+        match would hand each service the other's runs.
+
+        :param service_name: The inventory service name to match rows by.
+        :param service_id: The inventory service id, or ``None`` when the caller
+            resolved no inventory service.
+        :return: The SQL predicate selecting this service's rows.
+        """
+        by_name = col(MysqlBackupRun.service_name) == service_name
+        if service_id is None:
+            return by_name
+        return or_(
+            col(MysqlBackupRun.service_id) == service_id,
+            and_(col(MysqlBackupRun.service_id).is_(None), by_name),
+        )
+
+    @classmethod
     async def list_for_service(
-        cls, session: AsyncSession, service_name: str, *, pagination: Pagination
+        cls,
+        session: AsyncSession,
+        service_name: str,
+        *,
+        service_id: int | None = None,
+        pagination: Pagination,
     ) -> PaginatedResponse[MysqlBackupRun]:
         """Return a page of a service's recorded backup runs, newest run first.
+
+        Keyed by :meth:`_service_key`. The reported total counts exactly the rows
+        this query can return, so a caller paging to a fixed cap is never cut short
+        by a total drawn from a wider key.
 
         Ordered by run completion (``finished_at`` desc), not insertion time, so
         a run that was catalogued late cannot jump ahead of a more recently
@@ -49,17 +86,19 @@ class MysqlBackupRunManager(BaseSQLModelManager):
 
         :param session: The database session to query on.
         :param service_name: The inventory service name to filter records by.
+        :param service_id: The inventory service id to prefer as the key, or
+            ``None`` (default) to key on the name alone.
         :param pagination: Validated offset/limit window for this page.
         :return: The requested page of the service's backup-run records, newest
             run first.
         """
         return await cls.list_paginated(
             session,
+            cls._service_key(service_name, service_id),
             order_by=[
                 NullsLastOrdering(MysqlBackupRun.finished_at, descending=True),
                 MysqlBackupRun.created_at.desc(),
                 MysqlBackupRun.id.desc(),
             ],
             pagination=pagination,
-            service_name=service_name,
         )
