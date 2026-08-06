@@ -26,6 +26,8 @@ Jenkins builds and publishes it alongside the other two.
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables. |
 | `settings.embedded.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
 | `restrict_apps.py` | Build-step strip for the app-restricted variant; removes every app package the baked profile does not activate. Removed during the build, so it is not present in the final image. |
+| `verify_image_apps.py` | Post-build assertion that an image's app set matches its own baked profile. Piped into the image, never copied into it. |
+| `verify_image_apps.sh` | Runs `verify_image_apps.py` inside an already-built image; used by both CI and the Jenkins build. |
 
 The image is built in **docker** manifest format rather than OCI, because OCI
 silently discards the `HEALTHCHECK` instruction.
@@ -56,6 +58,17 @@ The strip is driven by the `SEP_RESTRICT_APPS` build argument, which
 anything; the argument defaults to `0`, and any other value leaves the image
 unrestricted — which is why the general side-car build, which never passes it,
 keeps every app package.
+
+The set is asserted on the **published artifact**, not on a rebuild of it:
+`verify_image_apps.sh` pipes `verify_image_apps.py` into an already-built
+image's own interpreter, and both CI and the Jenkins build call it before
+anything is pushed. The check re-derives the expected set from the profile the
+image itself bakes rather than importing `restrict_apps.py` — which the build
+deletes from the image anyway, and which could only ever agree with the tree it
+produced. The general side-car image is checked in the opposite direction, so a
+`SEP_RESTRICT_APPS` value leaking into that build is caught rather than
+published. A run prints the set it verified, because a checker that silently
+never ran would otherwise be indistinguishable from a passing one.
 
 The strip removes an app's directory and leaves its `version_locations` entry in
 `alembic.ini` alone. That combination is load-bearing, not incidental. Each app
