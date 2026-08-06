@@ -29,7 +29,12 @@ from pydantic import BaseModel, ValidationError
 from pydantic_settings import PydanticBaseSettingsSource
 
 from app.core.auth.base import BaseAuthProvider
-from app.core.auth.config import AuthSettings, detect_removed_auth_user_model
+from app.core.auth.config import (
+    _LegacyAuthUserModelSettings,
+    _LegacyCasdoorSettings,
+    AuthSettings,
+    detect_removed_auth_user_model,
+)
 from app.core.auth.models import BaseTokenPayload, BaseUser
 from app.core.auth.providers.casdoor.models import CasdoorTokenPayload, CasdoorUser
 from app.core.auth.providers.casdoor.provider import CasdoorAuthProvider
@@ -296,3 +301,23 @@ class TestRemovedAuthUserModelDetector:
         )
         with pytest.raises(ValueError, match="AUTH_USER_MODEL is removed"):
             detect_removed_auth_user_model()
+
+
+def test_legacy_casdoor_settings_reads_secret_file(tmp_path):
+    """Resolve the legacy top-level ``CASDOOR`` block from a mounted secret file."""
+    (tmp_path / "CASDOOR").write_text(
+        '{"endpoint": "http://from-file:9999"}\n', encoding="utf-8"
+    )
+
+    instance = _LegacyCasdoorSettings(_secrets_dir=tmp_path)
+
+    assert instance.CASDOOR["endpoint"] == "http://from-file:9999"
+
+
+def test_legacy_auth_user_model_settings_reads_secret_file(tmp_path):
+    """Resolve the legacy ``AUTH_USER_MODEL`` key from a mounted secret file."""
+    (tmp_path / "AUTH_USER_MODEL").write_text("app.from.File\n", encoding="utf-8")
+
+    instance = _LegacyAuthUserModelSettings(_secrets_dir=tmp_path)
+
+    assert instance.AUTH_USER_MODEL == "app.from.File"
