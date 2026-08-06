@@ -34,7 +34,7 @@ from app.sep.apps.mysql_backups.deps import (
     OptionalCatalogServiceKey,
     ResolvedMysqlService,
 )
-from app.sep.apps.mysql_backups.models import BackupRunResponse
+from app.sep.apps.mysql_backups.models import BackupRunResponse, CatalogServiceKey
 from app.sep.deps import SessionDep
 
 router = APIRouter()
@@ -67,7 +67,9 @@ async def list_service_backups(
         run first.
     """
     return await MysqlBackupRunManager.list_for_service(
-        session, service.name, service_id=service.id, pagination=pagination
+        session,
+        CatalogServiceKey(service_name=service.name, service_id=service.id),
+        pagination=pagination,
     )
 
 
@@ -98,6 +100,4 @@ async def list_backup_source_choices(
     """
     if service_key is None:
         return []
-    return await choices_for_service(
-        session, service_key.service_name, service_id=service_key.service_id
-    )
+    return await choices_for_service(session, service_key)

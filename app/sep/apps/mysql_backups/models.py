@@ -32,6 +32,7 @@ plays the role of ``atw.categories`` — the piece split *out* because it, not
 the table, needed the heavier imports.
 """
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -109,6 +110,25 @@ class MysqlBackupRun(BaseSQLModel, table=True):
     finished_at: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone
     )
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogServiceKey:
+    """Carry the keys one service's catalog rows are selected by.
+
+    The two travel together everywhere the catalog is queried per service — the
+    manager builds one predicate from both, and the id is meaningless to a caller
+    without the name to fall back on. Lives here rather than in ``deps.py`` so the
+    manager can name it without importing the request layer.
+
+    :param service_name: The service name to match catalog rows by.
+    :param service_id: The inventory id to prefer as the key, or ``None`` when the
+        caller resolved no inventory service — a free-typed destination — and the
+        name is all there is.
+    """
+
+    service_name: str
+    service_id: int | None
 
 
 class BackupRunResponse(BaseModel):

@@ -26,13 +26,16 @@ from app.sep.apps.mysql_backups.deps import (
     _extract_backup_type_from_task,
     build_backup_task_payload,
     build_mysql_backups_api_task_response,
-    CatalogServiceKey,
     get_backups_task_info,
     parse_backup_task_data,
     resolve_optional_catalog_service_key,
 )
 from app.sep.apps.mysql_backups.forms import BackupCreate, UploadProvider
-from app.sep.apps.mysql_backups.models import BackupType, extract_backup_type_marker
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    CatalogServiceKey,
+    extract_backup_type_marker,
+)
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
 from app.sep.inventory import CreatedNode, CreatedService

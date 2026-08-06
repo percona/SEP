@@ -16,7 +16,6 @@
 """Define dependencies for the Backups plugin."""
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -31,7 +30,11 @@ from app.sep.apps.framework.spec import (
     resolve_refs,
 )
 from app.sep.apps.mysql_backups.forms import BackupCreate, BackupTaskResponse, OWNER
-from app.sep.apps.mysql_backups.models import BackupType, extract_backup_type_marker
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    CatalogServiceKey,
+    extract_backup_type_marker,
+)
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.spec import build_backup_spec
@@ -147,20 +150,6 @@ async def resolve_mysql_service(
 
 
 ResolvedMysqlService = Annotated[CreatedService, Depends(resolve_mysql_service)]
-
-
-@dataclass(frozen=True, slots=True)
-class CatalogServiceKey:
-    """Carry the keys a catalog query is made with.
-
-    :param service_name: The service name to match catalog rows by.
-    :param service_id: The inventory id to prefer as the key, or ``None`` when the
-        parent resolved to no inventory service — a free-typed destination — and
-        the name is all there is.
-    """
-
-    service_name: str
-    service_id: int | None
 
 
 async def resolve_optional_catalog_service_key(

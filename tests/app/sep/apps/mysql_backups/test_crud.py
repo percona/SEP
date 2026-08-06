@@ -23,9 +23,19 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.pagination import Pagination
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import MysqlBackupRun
+from app.sep.apps.mysql_backups.models import CatalogServiceKey, MysqlBackupRun
 
 _PAGE = Pagination()
+
+
+def _key(service_name: str, service_id: int | None = None) -> CatalogServiceKey:
+    """Return the catalog query key these tests query with.
+
+    :param service_name: The service name to match rows by.
+    :param service_id: The inventory id to prefer, or ``None`` for a name-only key.
+    :return: The assembled query key.
+    """
+    return CatalogServiceKey(service_name=service_name, service_id=service_id)
 
 
 class TestMysqlBackupRunManager:
@@ -79,7 +89,7 @@ class TestMysqlBackupRunManager:
             )
 
         page = await MysqlBackupRunManager.list_for_service(
-            session, "svc-a", pagination=_PAGE
+            session, _key("svc-a"), pagination=_PAGE
         )
 
         assert page.total == 3  # noqa: PLR2004
@@ -98,7 +108,7 @@ class TestMysqlBackupRunManager:
         )
 
         page = await MysqlBackupRunManager.list_for_service(
-            session, "svc-a", pagination=_PAGE
+            session, _key("svc-a"), pagination=_PAGE
         )
 
         assert page.total == 1
@@ -132,7 +142,7 @@ class TestMysqlBackupRunManager:
         )
 
         page = await MysqlBackupRunManager.list_for_service(
-            session, "svc-a", pagination=_PAGE
+            session, _key("svc-a"), pagination=_PAGE
         )
 
         assert [r.task_history_id for r in page.items] == [1, 2]
@@ -141,7 +151,7 @@ class TestMysqlBackupRunManager:
     async def test_empty_service_returns_empty_list(self, session) -> None:
         """Yield an empty list, not an error, for an unknown service."""
         page = await MysqlBackupRunManager.list_for_service(
-            session, "nope", pagination=_PAGE
+            session, _key("nope"), pagination=_PAGE
         )
         assert page.items == []
 
@@ -169,7 +179,7 @@ class TestListForServiceKey:
         await _save(session, task_history_id=1, service_name="old-name", service_id=7)
 
         page = await MysqlBackupRunManager.list_for_service(
-            session, "new-name", service_id=7, pagination=_PAGE
+            session, _key("new-name", service_id=7), pagination=_PAGE
         )
 
         assert page.total == 1
@@ -183,7 +193,7 @@ class TestListForServiceKey:
         await _save(session, task_history_id=1, service_name="svc-a", service_id=None)
 
         page = await MysqlBackupRunManager.list_for_service(
-            session, "svc-a", service_id=7, pagination=_PAGE
+            session, _key("svc-a", service_id=7), pagination=_PAGE
         )
 
         assert page.total == 1
@@ -201,7 +211,7 @@ class TestListForServiceKey:
         await _save(session, task_history_id=2, service_name="shared", service_id=8)
 
         page = await MysqlBackupRunManager.list_for_service(
-            session, "shared", service_id=7, pagination=_PAGE
+            session, _key("shared", service_id=7), pagination=_PAGE
         )
 
         assert page.total == 1
@@ -221,7 +231,7 @@ class TestListForServiceKey:
         await _save(session, task_history_id=2, service_name="typed", service_id=7)
 
         page = await MysqlBackupRunManager.list_for_service(
-            session, "typed", pagination=_PAGE
+            session, _key("typed"), pagination=_PAGE
         )
 
         assert page.total == 2  # noqa: PLR2004
@@ -240,11 +250,12 @@ class TestListForServiceKey:
         await _save(session, task_history_id=3, service_name="shared", service_id=8)
         await _save(session, task_history_id=4, service_name="other", service_id=None)
 
+        key = _key("shared", service_id=7)
         first = await MysqlBackupRunManager.list_for_service(
-            session, "shared", service_id=7, pagination=Pagination(offset=0, limit=1)
+            session, key, pagination=Pagination(offset=0, limit=1)
         )
         second = await MysqlBackupRunManager.list_for_service(
-            session, "shared", service_id=7, pagination=Pagination(offset=1, limit=100)
+            session, key, pagination=Pagination(offset=1, limit=100)
         )
 
         assert first.total == 2  # noqa: PLR2004
@@ -265,7 +276,7 @@ class TestListForServiceKey:
         await _save(session, task_history_id=1, service_name="old-name")
 
         page = await MysqlBackupRunManager.list_for_service(
-            session, "new-name", service_id=7, pagination=_PAGE
+            session, _key("new-name", service_id=7), pagination=_PAGE
         )
 
         assert page.total == 0
