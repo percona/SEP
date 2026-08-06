@@ -23,7 +23,7 @@ from datetime import timedelta
 from typing import Annotated
 
 import requests.exceptions
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import undefer
@@ -34,7 +34,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
-from app.core.db import ListQuery, make_list_query_dep
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPBadRequestException,
@@ -69,7 +68,9 @@ from app.tasks.deps import (
     SessionDep,
     TaskDep,
     TaskExecutor,
+    TaskHistoryListQueryDep,
     TaskHistoryWithTaskDep,
+    TaskListQueryDep,
     validate_chain_task_names,
 )
 from app.tasks.execution.utils import parse_payload
@@ -98,11 +99,6 @@ from app.tasks.run_result import maybe_record_run
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["tasks"])
-
-TaskListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(TaskManager))]
-TaskHistoryListQueryDep = Annotated[
-    ListQuery, Depends(make_list_query_dep(TaskHistoryManager))
-]
 
 
 @router.get(
