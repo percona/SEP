@@ -19,8 +19,9 @@ The section is read straight off YAML/env rather than mounted as a field on
 ``SEPSettings``: importing this module runs the ATW package ``__init__``, which
 pulls in the app definition and, transitively, ``sep_settings`` -- so a field
 default typed with :class:`AtwSettings` would cycle while ``SEPSettings`` is
-still being constructed. Consumers import :data:`atw_settings` at call time, as
-``app.sep.db.seed`` already does for the alerts section.
+still being constructed. Consumers import :data:`atw_settings` at call time (the app's
+``periodic_task_schedules`` factory and Celery tasks), matching how alerts
+reads its section.
 """
 
 __all__ = ["AtwSettings", "atw_settings"]

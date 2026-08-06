@@ -26,7 +26,12 @@ from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.constants import UNCOLLECTED_HOST_OBSERVATION_DETAIL
 from app.inventory.crud import HostSystemObservationManager, NodeManager, ServiceManager
-from app.inventory.deps import NodeDep, SessionDep
+from app.inventory.deps import (
+    NodeDep,
+    NodeListQueryDep,
+    ServiceListQueryDep,
+    SessionDep,
+)
 from app.inventory.models import (
     HostSystemObservationResponse,
     HostSystemObservationWrite,
@@ -49,6 +54,7 @@ router = APIRouter(prefix="/nodes", tags=["nodes"])
 async def list_nodes(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: NodeListQueryDep,
     external_id: NonEmptyStr | None = None,
     source: SourceEnum | None = None,
     node_type: NonEmptyStr | None = None,
@@ -59,8 +65,9 @@ async def list_nodes(
         source or "all",
         node_type or "all",
     )
-    return await NodeManager.list_paginated(
+    return await NodeManager.list_query_paginated(
         session,
+        list_query=list_query,
         select_related=[Node.services],
         pagination=pagination,
         external_id=external_id,
@@ -147,6 +154,7 @@ async def list_services_by_node(
     session: SessionDep,
     node: NodeDep,
     pagination: PaginationDep,
+    list_query: ServiceListQueryDep,
     service_type: ServiceTypeEnum | None = None,
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services by Node."""
@@ -155,8 +163,9 @@ async def list_services_by_node(
         node.id,
         service_type or "all",
     )
-    return await ServiceManager.list_paginated(
+    return await ServiceManager.list_query_paginated(
         session,
+        list_query=list_query,
         select_related=[Service.schemas],
         pagination=pagination,
         node_id=node.id,

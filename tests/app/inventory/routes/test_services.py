@@ -15,10 +15,15 @@
 
 """Define tests for inventory service routes."""
 
+from datetime import datetime, UTC
+
+import pytest
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
+from app.inventory.crud import SchemaManager
 from app.inventory.models import Node, Schema, Service, ServiceSystemObservation
 from tests.app.factories import (
     NodeWriteFactory,
@@ -28,6 +33,7 @@ from tests.app.factories import (
 )
 
 OFFSET_BEYOND_TOTAL = 999
+LIST_QUERY_MATCH_TOTAL = 2
 
 # Pinned verbatim rather than imported from app.inventory.constants: the wording is
 # part of the API contract, so an edit to the constant must fail the test.
@@ -46,6 +52,13 @@ class TestListServices:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_services_rejects_unknown_sort_key(
+        self, test_client: TestClient
+    ) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        response = test_client.get("/services/", params={"sort": "evil"})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_list_services_multiple(
         self, test_client: TestClient, service: Service
@@ -107,6 +120,79 @@ class TestListServices:
         data = response.json()
         assert data["total"] >= 1
         assert len(data["items"]) <= 1
+
+    def test_list_services_search_ilike(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return only services whose name matches the search case-insensitively."""
+        match = ServiceWriteFactory.build(name="AlphaSearchService", port=4401)
+        other = ServiceWriteFactory.build(name="OtherService", port=4402)
+        test_client.post(
+            f"/nodes/{node.id}/services/", json=match.model_dump(mode="json")
+        )
+        test_client.post(
+            f"/nodes/{node.id}/services/", json=other.model_dump(mode="json")
+        )
+
+        response = test_client.get("/services/", params={"search": "alphasearch"})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["name"] == match.name
+
+    def test_list_services_search_reports_filtered_total(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Filter rows by search and report the filtered total, not the page size."""
+        for index, suffix in enumerate(("a", "b")):
+            payload = ServiceWriteFactory.build(
+                name=f"FilterMatchService_{suffix}",
+                port=4500 + index,
+            )
+            test_client.post(
+                f"/nodes/{node.id}/services/", json=payload.model_dump(mode="json")
+            )
+        other = ServiceWriteFactory.build(name="UnrelatedService", port=4599)
+        test_client.post(
+            f"/nodes/{node.id}/services/", json=other.model_dump(mode="json")
+        )
+
+        response = test_client.get(
+            "/services/", params={"search": "filtermatchservice", "limit": 1}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == LIST_QUERY_MATCH_TOTAL
+        assert len(data["items"]) == 1
+
+    def test_list_services_deterministic_ordering_across_pages(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Sort equal names stably across pages via the id tie-breaker."""
+        shared_name = "SameSortService"
+        created_ids: list[int] = []
+        for index in range(LIST_QUERY_MATCH_TOTAL):
+            payload = ServiceWriteFactory.build(name=shared_name, port=4600 + index)
+            create_response = test_client.post(
+                f"/nodes/{node.id}/services/",
+                json=payload.model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+            created_ids.append(create_response.json()["id"])
+        created_ids.sort()
+
+        first_page = test_client.get(
+            "/services/",
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 0},
+        )
+        second_page = test_client.get(
+            "/services/",
+            params={"sort": "name", "search": shared_name, "limit": 1, "offset": 1},
+        )
+        assert first_page.status_code == status.HTTP_200_OK
+        assert second_page.status_code == status.HTTP_200_OK
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
 
 class TestRetrieveService:
@@ -280,6 +366,16 @@ class TestListSchemasByService:
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
+    def test_list_schemas_by_service_rejects_unknown_sort_key(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        response = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"sort": "evil"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
     def test_list_schemas_by_service(
         self, test_client: TestClient, service: Service, schema: Schema
     ) -> None:
@@ -295,7 +391,7 @@ class TestListSchemasByService:
     def test_list_schemas_by_service_search(
         self, test_client: TestClient, service: Service, schema: Schema
     ) -> None:
-        """Return only schemas whose name matches the search query."""
+        """Return only schemas whose name matches the search case-insensitively."""
         response = test_client.get(
             f"/services/{service.id}/schemas/",
             params={"search": schema.name[:3]},
@@ -378,6 +474,69 @@ class TestListSchemasByService:
         data = response.json()
         assert data["total"] >= 1
         assert len(data["items"]) <= 1
+
+    def test_list_schemas_by_service_search_reports_filtered_total(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Filter rows by search and report the filtered total, not the page size."""
+        for suffix in ("a", "b"):
+            payload = SchemaWriteFactory.build(name=f"FilterMatchSchema_{suffix}")
+            create_response = test_client.post(
+                f"/services/{service.id}/schemas/",
+                json=payload.model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+        other = SchemaWriteFactory.build(name="UnrelatedSchema")
+        test_client.post(
+            f"/services/{service.id}/schemas/",
+            json=other.model_dump(mode="json"),
+        )
+
+        response = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"search": "filtermatchschema", "limit": 1},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == LIST_QUERY_MATCH_TOTAL
+        assert len(data["items"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_list_schemas_by_service_deterministic_ordering_across_pages(
+        self, test_client: TestClient, session: AsyncSession, service: Service
+    ) -> None:
+        """Sort equal created_at stably across pages via the id tie-breaker.
+
+        Schema names are unique per service, so name ties cannot occur in this
+        nested list; exercise the tie-breaker on created_at instead.
+        """
+        shared_created_at = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+        created_ids: list[int] = []
+        for name in ("tie_schema_a", "tie_schema_b"):
+            row = await SchemaManager.create(
+                session,
+                SchemaWriteFactory.build(name=name),
+                service_id=service.id,
+            )
+            row.created_at = shared_created_at
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            created_ids.append(row.id)
+        created_ids.sort()
+
+        first_page = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"sort": "created_at", "limit": 1, "offset": 0},
+        )
+        second_page = test_client.get(
+            f"/services/{service.id}/schemas/",
+            params={"sort": "created_at", "limit": 1, "offset": 1},
+        )
+        assert first_page.status_code == status.HTTP_200_OK
+        assert second_page.status_code == status.HTTP_200_OK
+        assert first_page.json()["items"][0]["id"] == created_ids[0]
+        assert second_page.json()["items"][0]["id"] == created_ids[1]
 
     def test_list_schemas_by_service_include_tables_with_pagination(
         self, test_client: TestClient, service: Service, schema: Schema

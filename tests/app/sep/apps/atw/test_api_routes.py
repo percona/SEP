@@ -37,7 +37,11 @@ from app.sep.apps.atw.categories import (
     ParentCategory,
 )
 from app.sep.apps.atw.crud import AtwIncidentExecutionManager, AtwIncidentManager
-from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
+from app.sep.apps.atw.models import (
+    AtwIncident,
+    AtwIncidentExecution,
+    AtwIncidentResponse,
+)
 from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.snippets.models import Snippet
 
@@ -591,3 +595,93 @@ class TestAtwIncidentDelete:
             session, incident_id=incident_with_executions.id
         )
         assert remaining == 0
+
+
+class TestAtwIncidentCloseReopen:
+    """Check close and reopen action routes."""
+
+    def test_close_stamps_closed_at(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure closing an open incident stamps closed_at and returns it."""
+        response = api_client.post(f"{INCIDENTS_BASE}{seeded_incident.id}/close/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["closed_at"] is not None
+        assert payload["id"] == str(seeded_incident.id)
+
+    def test_double_close_returns_409_and_preserves_stamp(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure closing an already-closed incident is rejected without changing the stamp."""
+        first = api_client.post(f"{INCIDENTS_BASE}{seeded_incident.id}/close/")
+        assert first.status_code == status.HTTP_200_OK
+        first_stamp = first.json()["closed_at"]
+
+        second = api_client.post(f"{INCIDENTS_BASE}{seeded_incident.id}/close/")
+
+        assert second.status_code == status.HTTP_409_CONFLICT
+        unchanged = api_client.get(f"{INCIDENTS_BASE}{seeded_incident.id}")
+        assert unchanged.json()["closed_at"] == first_stamp
+
+    def test_reopen_clears_closed_at(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure reopening a closed incident clears closed_at."""
+        close_response = api_client.post(f"{INCIDENTS_BASE}{seeded_incident.id}/close/")
+        assert close_response.status_code == status.HTTP_200_OK
+
+        response = api_client.post(f"{INCIDENTS_BASE}{seeded_incident.id}/reopen/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["closed_at"] is None
+
+    def test_double_reopen_returns_409(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure reopening an already-open incident is rejected."""
+        response = api_client.post(f"{INCIDENTS_BASE}{seeded_incident.id}/reopen/")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_patch_and_delete_still_work_when_closed(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure rename and delete remain available on a closed incident."""
+        close_response = api_client.post(f"{INCIDENTS_BASE}{seeded_incident.id}/close/")
+        assert close_response.status_code == status.HTTP_200_OK
+
+        patch_response = api_client.patch(
+            f"{INCIDENTS_BASE}{seeded_incident.id}", json={"name": "Closed but renamed"}
+        )
+        assert patch_response.status_code == status.HTTP_200_OK
+        assert patch_response.json()["name"] == "Closed but renamed"
+
+        delete_response = api_client.delete(f"{INCIDENTS_BASE}{seeded_incident.id}")
+        assert delete_response.status_code == status.HTTP_204_NO_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_close_handler_returns_response_model(
+        self, session: AsyncSession, seeded_incident: AtwIncident
+    ) -> None:
+        """Return a stamped ``AtwIncidentResponse`` when closing an open incident."""
+        result = await atw_api_routes.atw_close_incident(session, seeded_incident)
+
+        assert isinstance(result, AtwIncidentResponse)
+        assert result.closed_at is not None
+        assert result.id == seeded_incident.id
+
+    @pytest.mark.asyncio
+    async def test_reopen_handler_returns_response_model(
+        self, session: AsyncSession, seeded_incident: AtwIncident
+    ) -> None:
+        """Return a cleared ``AtwIncidentResponse`` when reopening a closed incident."""
+        seeded_incident.closed_at = utc_now()
+        closed = await AtwIncidentManager.save(session, seeded_incident)
+
+        result = await atw_api_routes.atw_reopen_incident(session, closed)
+
+        assert isinstance(result, AtwIncidentResponse)
+        assert result.closed_at is None
+        assert result.id == seeded_incident.id
