@@ -210,6 +210,82 @@ async def test_start_refresh_task_runs_initial_load(
             await task
 
 
+class _HangingSession:
+    """Async session stand-in whose enter hangs until cancelled."""
+
+    async def __aenter__(self) -> "_HangingSession":
+        await asyncio.Event().wait()
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+
+def _hanging_session_maker_factory() -> object:
+    """Return a session maker whose sessions hang on enter."""
+    return _HangingSession
+
+
+@pytest.mark.asyncio
+async def test_start_refresh_task_seed_timeout_returns_within_budget(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Bound a hanging seed, keep the periodic task, and log expiry at ERROR."""
+    _proxy, registry = _make_proxies()
+    seed_timeout = 0.05
+
+    with caplog.at_level("ERROR", logger="app.core.settings_override.lifecycle"):
+        task = await asyncio.wait_for(
+            start_refresh_task(
+                _hanging_session_maker_factory,
+                registry,
+                interval=timedelta(seconds=3600),
+                seed_timeout=seed_timeout,
+            ),
+            timeout=1.0,
+        )
+    try:
+        assert not task.done()
+        assert any(
+            record.levelname == "ERROR"
+            and f"{seed_timeout:.2f}s" in record.message
+            and "unseeded" in record.message
+            for record in caplog.records
+        )
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_start_refresh_task_without_seed_timeout_awaits_the_seed(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Keep today's unbounded seed when no budget is supplied."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=override_value,
+            ),
+        )
+
+    task = await start_refresh_task(
+        lambda: session_maker, registry, interval=timedelta(seconds=3600)
+    )
+    try:
+        assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
 @pytest.mark.asyncio
 async def test_start_refresh_task_cancellable(
     session_maker: async_sessionmaker,
