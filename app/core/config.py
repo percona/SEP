@@ -291,10 +291,11 @@ class BaseYamlSettings(BaseSettings):
             directory, or one whose contents exceed the source's size ceiling.
         """
         secret_settings = NestedSecretsSettingsSource(file_secret_settings)
+        env_key = "fastapi_env"
         yaml_prefix = (
-            env_settings.env_vars.get("fastapi_env")
-            or dotenv_settings.env_vars.get("fastapi_env")
-            or secret_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
+            env_settings.env_vars.get(env_key)
+            or dotenv_settings.env_vars.get(env_key)
+            or secret_settings.env_vars.get(env_key, pre_env_settings.FASTAPI_ENV)
         )
         if cls.SETTINGS_PREFIXES:
             env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
