@@ -46,6 +46,7 @@ from pydantic import (
 )
 from pydantic_settings import (
     BaseSettings,
+    NestedSecretsSettingsSource,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
     YamlConfigSettingsSource,
@@ -67,6 +68,7 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field, not_overridable_field
 from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
+    EmptyStrToNone,
     LogLevel,
     NonEmptyStr,
     redact_credential_url,
@@ -175,19 +177,20 @@ class PreEnvSettings(BaseSettings):
 
     :param FASTAPI_ENV: The environment used (e.g. development, production).
         Defaults to "development".
-    :type FASTAPI_ENV: str
     :param ENV_FILE: The dot env file used to populate the applications settings.
         Defaults to ".env" in the current directory.
-    :type ENV_FILE: Path
     :param SETTINGS_FILE: The YAML file used to populate the applications settings.
         Defaults to "settings.yaml" in the current directory.
-    :type SETTINGS_FILE: Path
+    :param SECRETS_DIR: The directory holding mounted secret files, each named after
+        the canonical ``__``-nested variable it supplies. Defaults to unset, in which
+        case no secret files are read.
     """
 
     model_config = SettingsConfigDict(extra="ignore")
     FASTAPI_ENV: str = "development"
     ENV_FILE: Path = Path(".env")
     SETTINGS_FILE: Path = Path("settings.yaml")
+    SECRETS_DIR: Path | EmptyStrToNone = None
 
 
 pre_env_settings = PreEnvSettings()
@@ -251,6 +254,7 @@ class BaseYamlSettings(BaseSettings):
         env_file=pre_env_settings.ENV_FILE,
         env_nested_delimiter="__",
         yaml_file=pre_env_settings.SETTINGS_FILE,
+        secrets_dir=pre_env_settings.SECRETS_DIR,
         extra="ignore",
     )
     SETTINGS_PREFIXES: ClassVar[list[str]] = []
@@ -265,13 +269,36 @@ class BaseYamlSettings(BaseSettings):
         dotenv_settings: DotEnvSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Load settings from Yaml file."""
-        yaml_prefix = env_settings.env_vars.get(
-            "fastapi_env",
-        ) or dotenv_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
+        """Return the settings sources, highest priority first.
+
+        The order is init kwarg, environment variable, dotenv entry, secret file,
+        then YAML profile; each overrides the ones after it. Secret files are read
+        from the directory ``SECRETS_DIR`` names, keyed by the same canonical
+        ``__``-nested variable names their environment twins use.
+
+        ``FASTAPI_ENV`` selects the YAML profile block, and is read from the same
+        three sources in the same order, so the block loaded always matches the
+        value the resolved settings report.
+
+        :param settings_cls: The settings class being configured.
+        :param init_settings: The init-arguments source.
+        :param env_settings: The environment-variable source.
+        :param dotenv_settings: The dotenv-file source.
+        :param file_secret_settings: The file-secret source the secret-file source
+            derives its directory and settings class from.
+        :return: The settings sources, ordered highest-priority first.
+        :raises SettingsError: When ``SECRETS_DIR`` names a path that is not a
+            directory, or one whose contents exceed the source's size ceiling.
+        """
+        secret_settings = NestedSecretsSettingsSource(file_secret_settings)
+        yaml_prefix = (
+            env_settings.env_vars.get("fastapi_env")
+            or dotenv_settings.env_vars.get("fastapi_env")
+            or secret_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
+        )
         if cls.SETTINGS_PREFIXES:
             env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
-            for env_source in [env_settings, dotenv_settings]:
+            for env_source in [env_settings, dotenv_settings, secret_settings]:
                 env_vars = {}
                 for key, value in env_source.env_vars.items():
                     env_vars[
@@ -282,6 +309,7 @@ class BaseYamlSettings(BaseSettings):
             init_settings,
             env_settings,
             dotenv_settings,
+            secret_settings,
             YamlPrefixConfigSettingsSource(
                 settings_cls,
                 prefixes=(yaml_prefix, *cls.SETTINGS_PREFIXES),
