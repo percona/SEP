@@ -52,6 +52,17 @@ logger = logging.getLogger(__name__)
 
 SessionMakerFactory = Callable[[], async_sessionmaker]
 
+
+def _drain_cancelled_seed_task(task: asyncio.Task) -> None:
+    """Retrieve a cancelled seed task's outcome so it is not logged as unretrieved.
+
+    :param task: The cancelled (or finished) seed task.
+    """
+    if not task.cancelled():
+        with suppress(Exception):
+            task.exception()
+
+
 #: A rebind callback fired when a watched ``(setting_class, key)`` override
 #: changes value between refresh cycles. The callback receives the new effective
 #: snapshot mapping for its setting class; any exception it raises is caught and
@@ -234,11 +245,13 @@ async def start_refresh_task(
     against the effective snapshot directly during lifespan startup).
 
     When ``seed_timeout`` is set, the inline seed is bounded by
-    :func:`asyncio.wait_for`. On expiry the timeout is logged at ERROR and the
+    :func:`asyncio.wait`. On expiry the seed task is cancelled without
+    awaiting its unwind -- so a hung ``AsyncSession.__aexit__`` cannot push
+    the child past the budget -- the timeout is logged at ERROR, and the
     periodic refresher is still created, so the child starts with unseeded
-    (env-only) overrides rather than without a refresher. When ``seed_timeout``
-    is ``None`` the seed awaits unbounded, matching the historical behaviour
-    used by the web lifespans.
+    (env-only) overrides rather than without a refresher. When
+    ``seed_timeout`` is ``None`` the seed awaits unbounded, matching the
+    historical behaviour used by the web lifespans.
 
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``.
@@ -272,12 +285,18 @@ async def start_refresh_task(
     if seed_timeout is None:
         await refresh_all(session_maker_factory, proxies)
     else:
-        try:
-            await asyncio.wait_for(
-                refresh_all(session_maker_factory, proxies), seed_timeout
-            )
-        except TimeoutError:
-            logger.exception(
+        # Prefer ``asyncio.wait`` over ``wait_for``: ``wait_for`` awaits the
+        # cancelled coroutine's unwind, so a hung ``AsyncSession.__aexit__``
+        # (returning a stuck connection to the pool) would still blow the
+        # budget. Cancel without awaiting so the wall-clock bound holds.
+        seed_task = asyncio.create_task(refresh_all(session_maker_factory, proxies))
+        done, _ = await asyncio.wait({seed_task}, timeout=seed_timeout)
+        if done:
+            await seed_task
+        else:
+            seed_task.cancel()
+            seed_task.add_done_callback(_drain_cancelled_seed_task)
+            logger.error(
                 "Initial settings-override refresh exceeded its %.2fs seed "
                 "budget; starting the periodic refresher with unseeded "
                 "overrides",
