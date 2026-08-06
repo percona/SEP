@@ -36,16 +36,9 @@ from app.sep.apps.mysql_backups.forms import (
     UploadProvider,
 )
 from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.payload_variants import variant_name
 
 _BASE_REQUIREMENTS = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
-
-#: Upload providers in the order ``scripts/gen_xtrabackup_payload_variants.py``
-#: names its variants. Selecting all three dispatches the canonical payload.
-_XTRABACKUP_UPLOAD_PROVIDERS = (
-    (UploadProvider.RSYNC, "rsync"),
-    (UploadProvider.S3, "s3"),
-    (UploadProvider.GSUTIL, "gsutil"),
-)
 
 
 def _xtrabackup_payload_name(upload: list[UploadProvider]) -> str:
@@ -60,14 +53,7 @@ def _xtrabackup_payload_name(upload: list[UploadProvider]) -> str:
     :return: The payload filename beside this module.
     """
     selected = set(upload)
-    carried = [
-        slug for provider, slug in _XTRABACKUP_UPLOAD_PROVIDERS if provider in selected
-    ]
-    if len(carried) == len(_XTRABACKUP_UPLOAD_PROVIDERS):
-        return "xtrabackup_payload"
-    if not carried:
-        return "xtrabackup_noupload_payload"
-    return "xtrabackup_{}_payload".format("_".join(carried))
+    return variant_name(tuple(p.value for p in UploadProvider if p in selected))
 
 
 def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPythonSpec:
@@ -136,7 +122,7 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
         payload_name = _xtrabackup_payload_name(form.upload)
         # Only the variants carrying the S3 provider import boto3; asking for it
         # anyway would make the task install a dependency it never loads.
-        if UploadProvider.S3 in set(form.upload):
+        if UploadProvider.S3 in form.upload:
             requirements += "\nboto3"
         requirements += "\nfilelock"
     elif form.backup_type == BackupType.BINLOG:

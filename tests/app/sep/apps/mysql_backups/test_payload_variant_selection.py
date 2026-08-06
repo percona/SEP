@@ -26,8 +26,9 @@ import pytest
 
 from app.core.utils.path import resolve_payload_reference
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework.spec import ResolvedEntities
-from app.sep.apps.mysql_backups.forms import BackupCreate
+from app.sep.apps.framework.spec import ResolvedEntities, RunPythonSpec
+from app.sep.apps.mysql_backups.forms import BackupCreate, UploadProvider
+from app.sep.apps.mysql_backups.payload_variants import PROVIDERS
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.inventory import CreatedService
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
@@ -57,14 +58,17 @@ _SELECTIONS = [
 
 
 def _service() -> CreatedService:
-    """Return the inventory service the forms resolve against."""
+    """Return the inventory service the forms resolve against.
+
+    :return: The built ``CreatedService``.
+    """
     node = CreatedNodeFactory.build(address="db.internal", node_name="db-node")
     return CreatedServiceFactory.build(
         node=node, type=ServiceTypeEnum.MYSQL, name="svc-backups", port=3306
     )
 
 
-def _spec(upload: list[str], backup_type: str = "X"):
+def _spec(upload: list[str], backup_type: str = "X") -> RunPythonSpec:
     """Build the run-python spec for an upload selection.
 
     :param upload: The upload providers the form selects.
@@ -95,12 +99,16 @@ class TestVariantSelection:
     """Assert each upload selection dispatches the payload carrying its providers."""
 
     @pytest.mark.parametrize(("upload", "expected"), _SELECTIONS, ids=lambda v: str(v))
-    def test_selection_picks_its_variant(self, upload, expected) -> None:
+    def test_selection_picks_its_variant(
+        self, upload: list[str], expected: str
+    ) -> None:
         """Assert the selection resolves to the variant named for those providers."""
         assert _spec(upload).payload.endswith(f"/{expected}")
 
     @pytest.mark.parametrize(("upload", "expected"), _SELECTIONS, ids=lambda v: str(v))
-    def test_selected_variant_exists_on_disk(self, upload, expected) -> None:
+    def test_selected_variant_exists_on_disk(
+        self, upload: list[str], expected: str
+    ) -> None:
         """Assert every selection resolves to a payload file that actually ships."""
         assert resolve_payload_reference(_spec(upload).payload).is_file()
 
@@ -119,13 +127,11 @@ class TestVariantSelection:
 class TestBoto3Requirement:
     """Assert ``boto3`` is requested exactly when the dispatched variant needs it."""
 
-    @pytest.mark.parametrize(
-        ("upload", "expected"), [(u, "S3" in u) for u, _ in _SELECTIONS], ids=str
-    )
-    def test_boto3_tracks_the_s3_provider(self, upload, expected) -> None:
+    @pytest.mark.parametrize("upload", [upload for upload, _ in _SELECTIONS], ids=str)
+    def test_boto3_tracks_the_s3_provider(self, upload: list[str]) -> None:
         """Assert boto3 ships only for a variant carrying the S3 provider."""
         requirements = _spec(upload).requirements.splitlines()
-        assert ("boto3" in requirements) is expected
+        assert ("boto3" in requirements) is ("S3" in upload)
 
     def test_non_s3_variant_keeps_the_other_requirements(self) -> None:
         """Assert dropping boto3 leaves the rest of the requirement set intact."""
@@ -145,11 +151,26 @@ class TestOtherBackupTypesUnaffected:
         ("backup_type", "expected"),
         [("M", "mydumper_payload"), ("B", "binlog_payload")],
     )
-    def test_payload_is_not_variant_selected(self, backup_type, expected) -> None:
+    def test_payload_is_not_variant_selected(
+        self, backup_type: str, expected: str
+    ) -> None:
         """Assert mydumper and binlog keep their single payload for any selection."""
         assert _spec(["RSYNC"], backup_type).payload.endswith(f"/{expected}")
 
     @pytest.mark.parametrize("backup_type", ["M", "B"])
-    def test_boto3_still_ships(self, backup_type) -> None:
+    def test_boto3_still_ships(self, backup_type: str) -> None:
         """Assert both payloads keep boto3 -- each imports it regardless of upload."""
         assert "boto3" in _spec([], backup_type).requirements.splitlines()
+
+
+class TestNamingRule:
+    """Assert the shared naming rule still lines up with the form's enum."""
+
+    def test_provider_slugs_match_the_form_enum(self) -> None:
+        """Assert filename slugs and their order track ``UploadProvider``.
+
+        ``PROVIDERS`` is stdlib-only so the generator can read it without standing
+        up the app, which leaves the enum free to drift away from it. A renamed or
+        reordered member would silently dispatch a payload that does not exist.
+        """
+        assert tuple(provider.value for provider in UploadProvider) == PROVIDERS

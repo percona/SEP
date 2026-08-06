@@ -81,7 +81,7 @@ repos:
         description: "Ensure the generated xtrabackup payload variants match the canonical payload"
         entry: python3 scripts/gen_xtrabackup_payload_variants.py --check
         language: system
-        files: ^app/sep/apps/mysql_backups/xtrabackup[^/]*payload$
+        files: ^(app/sep/apps/mysql_backups/(xtrabackup[^/]*payload|payload_variants\.py)|scripts/gen_xtrabackup_payload_variants\.py)$
         pass_filenames: false
       - id: oxfmt
         name: oxfmt (frontend formatter)

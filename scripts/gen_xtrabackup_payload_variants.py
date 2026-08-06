@@ -39,17 +39,43 @@ Usage::
 
 import argparse
 import ast
+import builtins
+import importlib.util
 import itertools
 import re
 import sys
 from pathlib import Path
+from types import ModuleType
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CANONICAL_SOURCE = REPO_ROOT / "app/sep/apps/mysql_backups/xtrabackup_payload"
+PAYLOAD_DIR = REPO_ROOT / "app/sep/apps/mysql_backups"
 
-#: Upload providers in the order the canonical payload declares them. The order
-#: fixes variant filenames, so it must stay stable.
-PROVIDERS = ("rsync", "s3", "gsutil")
+
+def _load_naming_rule() -> ModuleType:
+    """Return the app module owning the provider order and variant filenames.
+
+    Loaded by path rather than imported: ``app.sep.apps.mysql_backups.__init__``
+    builds the FastAPI app, which a pre-commit hook must not have to stand up.
+
+    :return: The ``payload_variants`` module.
+    """
+    path = PAYLOAD_DIR / "payload_variants.py"
+    spec = importlib.util.spec_from_file_location("payload_variants", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load the variant naming rule from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_NAMING = _load_naming_rule()
+
+#: Upload providers in the order the canonical payload declares them, owned by the
+#: app module so the generator and the dispatcher cannot disagree on a filename.
+PROVIDERS: tuple[str, ...] = _NAMING.PROVIDERS
+variant_name = _NAMING.variant_name
+
+CANONICAL_SOURCE = PAYLOAD_DIR / _NAMING.CANONICAL_PAYLOAD_NAME
 
 #: Names each provider owns exclusively in the canonical payload. A variant that
 #: omits the provider must not mention any of them -- that is how the generator
@@ -76,29 +102,13 @@ class RegionError(RuntimeError):
     """Raise when the canonical source's region markers are malformed."""
 
 
-def variant_name(providers: tuple[str, ...]) -> str:
-    """Return the payload filename carrying exactly ``providers``.
-
-    The name ends in ``_payload`` so the ``check-nomad-payload-size`` pre-commit
-    hook's file pattern matches every variant.
-
-    :param providers: The providers the variant carries, in :data:`PROVIDERS` order.
-    :return: The variant's filename (the canonical name for the full set).
-    """
-    if len(providers) == len(PROVIDERS):
-        return CANONICAL_SOURCE.name
-    if not providers:
-        return "xtrabackup_noupload_payload"
-    return "xtrabackup_{}_payload".format("_".join(providers))
-
-
 def selections() -> list[tuple[str, ...]]:
     """Return every upload selection, from the empty set to all providers.
 
     :return: The eight provider tuples, each in :data:`PROVIDERS` order.
     """
     return [
-        tuple(p for p in PROVIDERS if p in set(combo))
+        combo
         for size in range(len(PROVIDERS) + 1)
         for combo in itertools.combinations(PROVIDERS, size)
     ]
@@ -159,29 +169,88 @@ def with_banner(text: str, providers: tuple[str, ...]) -> str:
     return "\n".join([lines[0], banner.rstrip("\n"), *lines[1:]])
 
 
+#: Module-level names the interpreter supplies, which no source line binds.
+_MODULE_DUNDERS = frozenset(
+    {"__file__", "__name__", "__doc__", "__spec__", "__loader__", "__package__"}
+)
+
+
+def bound_names(tree: ast.AST) -> set[str]:
+    """Return every name the module binds anywhere.
+
+    Scope is deliberately flattened: the check this feeds asks whether a name
+    survives *somewhere* in the variant, not whether each reference resolves under
+    Python's scoping rules. Flattening keeps it free of false alarms at the cost of
+    missing genuine scope errors, which are the canonical payload's problem, not the
+    generator's.
+
+    :param tree: The parsed variant source.
+    :return: The bound names, including imports, definitions, and arguments.
+    """
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store | ast.Del):
+            bound.add(node.id)
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            bound.update((a.asname or a.name).split(".")[0] for a in node.names)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            bound.add(node.name)
+            args = getattr(node, "args", None)
+            if args is not None:
+                bound.update(
+                    a.arg
+                    for a in (
+                        *args.posonlyargs,
+                        *args.args,
+                        *args.kwonlyargs,
+                        *([args.vararg] if args.vararg else []),
+                        *([args.kwarg] if args.kwarg else []),
+                    )
+                )
+        elif isinstance(node, ast.Lambda):
+            bound.update(a.arg for a in (*node.args.posonlyargs, *node.args.args))
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            bound.add(node.name)
+        elif isinstance(node, ast.Global | ast.Nonlocal):
+            bound.update(node.names)
+        elif isinstance(node, ast.MatchAs | ast.MatchStar) and node.name:
+            bound.add(node.name)
+    return bound
+
+
 def validate(text: str, omitted: tuple[str, ...], name: str) -> None:
     """Check a rendered variant parses and strands no reference to an omitted provider.
 
     A syntactically valid variant that still names a class it no longer defines
     would only fail at backup runtime, on a customer host -- so the generator
-    refuses to write it.
+    refuses to write it. Two passes catch that: an unbound-name sweep, which needs
+    no bookkeeping and so covers names added to a region later, and an
+    :data:`EXCLUSIVE_NAMES` intersection, which additionally catches a stranded name
+    the sweep cannot see because something else still binds it.
 
     :param text: The rendered variant source.
     :param omitted: The providers this variant dropped.
     :param name: The variant filename, for error messages.
-    :raises RegionError: When the variant does not parse, or mentions a name that
-        belongs exclusively to an omitted provider.
+    :raises RegionError: When the variant does not parse, references a name nothing
+        in it binds, or mentions a name belonging exclusively to an omitted provider.
     """
     try:
         tree = ast.parse(text)
     except SyntaxError as exc:
         raise RegionError(f"{name} does not parse: {exc}") from exc
 
-    referenced = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    loaded = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+    referenced = loaded | {
+        node.value.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+    }
     for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
-            referenced.add(node.value.id)
-        elif isinstance(node, ast.Import | ast.ImportFrom):
+        if isinstance(node, ast.Import | ast.ImportFrom):
             referenced.update((a.asname or a.name).split(".")[0] for a in node.names)
 
     for provider in omitted:
@@ -191,6 +260,13 @@ def validate(text: str, omitted: tuple[str, ...], name: str) -> None:
                 f"{name} omits {provider!r} but still references {stranded}; "
                 "widen that provider's GEN:UPLOAD region in the canonical payload"
             )
+
+    unbound = sorted(loaded - bound_names(tree) - set(dir(builtins)) - _MODULE_DUNDERS)
+    if unbound:
+        raise RegionError(
+            f"{name} references {unbound}, which nothing in it defines; "
+            "widen the GEN:UPLOAD region that owns those names"
+        )
 
 
 def build(source: str, providers: tuple[str, ...]) -> str:
@@ -275,4 +351,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
