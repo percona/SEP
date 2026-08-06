@@ -598,9 +598,9 @@ class PgBackRest(Backup):
         self.pg_incremental_cycle = server_data.get('PGBACKREST_INCREMENTAL_CYCLE', '1')
         self.pg_aes256_passfile = server_data.get('PG_AES256_PASSFILE')
 
-        valid_cycles = ['daily','weekly', '1', '2', '3', '4', '5', '6', '7']
+        valid_cycles = ['daily', 'weekly', '1', '2', '3', '4', '5', '6', '7']
         if str(self.pg_incremental_cycle) not in valid_cycles:
-            message = 'Invalid PGBACKREST_INCREMENTAL_CYCLE setting: %s. Should be one of: %s.' % (
+            msg = 'Invalid PGBACKREST_INCREMENTAL_CYCLE setting: %s. Should be one of: %s.' % (
                 self.pg_incremental_cycle, valid_cycles)
             raise BackupError(message)
 

@@ -52,8 +52,9 @@ def payload_module() -> ModuleType:
 
 
 def _make_pgbackrest(
-    payload_module: ModuleType, tmp_path: Path, **overrides: object
-) -> object:
+    payload_module: ModuleType, tmp_path: Path, **overrides: Any
+) -> Any:
+    """Build a PgBackRest instance backed by a temporary backup directory."""
     (tmp_path / "backup").mkdir(exist_ok=True)
     (tmp_path / "logs").mkdir(exist_ok=True)
     server_data = {
@@ -66,12 +67,12 @@ def _make_pgbackrest(
 
 
 class TestPgBackRestConfigKeys:
-    """Tests for PGBACKREST_-prefixed config key reads."""
+    """Cover PGBACKREST_-prefixed config key reads."""
 
     def test_reads_pgbackrest_prefixed_keys(
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
-        """A PgBackRest instance should read PGBACKREST_-prefixed keys."""
+        """Read PGBACKREST_-prefixed keys from the server config."""
         pg = _make_pgbackrest(
             payload_module,
             tmp_path,
@@ -87,12 +88,12 @@ class TestPgBackRestConfigKeys:
 
 
 class TestIncrementalCycleValidation:
-    """Tests for incremental-cycle normalization and validation."""
+    """Cover incremental-cycle normalization and validation."""
 
     def test_weekly_normalizes_to_1(
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
-        """A "weekly" cycle should normalize to "1" (Monday)."""
+        """Normalize a ``weekly`` cycle to ``1`` (Monday)."""
         pg = _make_pgbackrest(
             payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE="weekly"
         )
@@ -101,7 +102,7 @@ class TestIncrementalCycleValidation:
     def test_invalid_cycle_raises_backup_error(
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
-        """An invalid cycle value should raise a BackupError."""
+        """Raise a BackupError for an invalid cycle value."""
         with pytest.raises(payload_module.BackupError):
             _make_pgbackrest(
                 payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE="bogus"
@@ -109,13 +110,13 @@ class TestIncrementalCycleValidation:
 
 
 class TestFullBackupDecision:
-    """Tests for the FULL-backup weekday decision in _run_backup_command()."""
+    """Cover the FULL-backup weekday decision in _run_backup_command()."""
 
     def test_matching_weekday_triggers_full(
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
-        """A numeric cycle matching today's ISO weekday should trigger a FULL backup."""
-        today_iso = datetime.datetime.now(tz=datetime.UTC).isoweekday()
+        """Trigger a FULL backup when the cycle matches today's ISO weekday."""
+        today_iso = datetime.datetime.today().isoweekday()
         pg = _make_pgbackrest(
             payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE=str(today_iso)
         )
@@ -128,8 +129,8 @@ class TestFullBackupDecision:
     def test_non_matching_weekday_does_not_trigger_full(
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
-        """A numeric cycle not matching today's ISO weekday should not trigger a FULL backup."""
-        today_iso = datetime.datetime.now(tz=datetime.UTC).isoweekday()
+        """Skip the FULL backup when the cycle does not match today's ISO weekday."""
+        today_iso = datetime.datetime.today().isoweekday()
         other_day = "1" if today_iso != 1 else "2"
         pg = _make_pgbackrest(
             payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE=other_day
@@ -143,7 +144,7 @@ class TestFullBackupDecision:
     def test_daily_always_triggers_full(
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
-        """A "daily" cycle should always trigger a FULL backup."""
+        """Trigger a FULL backup for every ``daily`` cycle run."""
         pg = _make_pgbackrest(
             payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE="daily"
         )
@@ -155,12 +156,12 @@ class TestFullBackupDecision:
 
 
 class TestCreateStanzaRetentionCoercion:
-    """Tests for str() coercion of retention values in _create_stanza()."""
+    """Cover str() coercion of retention values in _create_stanza()."""
 
     def test_int_retention_values_do_not_raise(
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
-        """Integer retention values should not raise a TypeError in configparser."""
+        """Accept integer retention values without raising a TypeError."""
         cfg_file = tmp_path / "pgbackrest.conf"
         pg = _make_pgbackrest(
             payload_module,
