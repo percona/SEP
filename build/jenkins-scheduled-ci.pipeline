@@ -8,14 +8,11 @@ pipeline {
 	}
 
 	parameters {
-		gitParameter branch: 'origin/main',
-			defaultValue: 'main',
+		string(
 			name: 'releaseTag',
-			selectedValue: 'TOP',
-			sortMode: 'DESCENDING_SMART',
-			type: 'PT_REVISION',
-			requiredParameter: true,
-			useRepository: 'https://github.com/percona/SEP.git'
+			defaultValue: 'main',
+			description: 'Commit reference'
+		)
 		string(
 			name: 'defaultCmd',
 			defaultValue: '--log-level=DEBUG'

@@ -21,6 +21,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db import ListQuery, make_list_query_dep
 from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
 from app.inventory.db import get_async_session_maker
 from app.inventory.models import Node, Schema, Service, Table
@@ -115,3 +116,8 @@ NodeDep = Annotated[Node, Depends(get_node)]
 ServiceDep = Annotated[Service, Depends(get_service)]
 SchemaDep = Annotated[Schema, Depends(get_schema)]
 TableDep = Annotated[Table, Depends(get_table)]
+
+NodeListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(NodeManager))]
+ServiceListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(ServiceManager))]
+SchemaListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(SchemaManager))]
+TableListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(TableManager))]

@@ -20,7 +20,7 @@ from typing import Annotated
 from fastapi import Depends
 from pydantic import UUID4
 
-from app.core.exceptions import HTTPServiceUnavailableException
+from app.core.exceptions import HTTPConflictException, HTTPServiceUnavailableException
 from app.sep.apps.atw.crud import AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident
 from app.sep.bundle_upload.resolver import resolve_delivery_plan
@@ -39,6 +39,36 @@ async def get_atw_incident(session: SessionDep, incident_id: UUID4) -> AtwIncide
 
 
 AtwIncidentDep = Annotated[AtwIncident, Depends(get_atw_incident)]
+
+
+async def require_open_incident(incident: AtwIncidentDep) -> AtwIncident:
+    """Return the incident or raise if it has been closed.
+
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :return: The matching open incident.
+    :raises HTTPConflictException: If the incident is closed.
+    """
+    if incident.closed_at is not None:
+        raise HTTPConflictException(detail="This incident is closed.")
+    return incident
+
+
+OpenAtwIncidentDep = Annotated[AtwIncident, Depends(require_open_incident)]
+
+
+async def require_closed_incident(incident: AtwIncidentDep) -> AtwIncident:
+    """Return the incident or raise if it is still open.
+
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :return: The matching closed incident.
+    :raises HTTPConflictException: If the incident is already open.
+    """
+    if incident.closed_at is None:
+        raise HTTPConflictException(detail="This incident is already open.")
+    return incident
+
+
+ClosedAtwIncidentDep = Annotated[AtwIncident, Depends(require_closed_incident)]
 
 
 def diagnostics_send_disabled_reasons() -> list[str]:

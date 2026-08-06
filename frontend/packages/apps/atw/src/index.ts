@@ -32,6 +32,7 @@ export {
   useCreateAtwIncident,
   useUpdateAtwIncident,
   useDeleteAtwIncident,
+  useAtwIncidentLifecycle,
   useAtwMergedSchema,
   useAtwBatchExecute,
   useAtwIncidentExecutions,
