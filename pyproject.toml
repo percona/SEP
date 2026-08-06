@@ -354,15 +354,14 @@ show_missing = true
 skip_empty = true
 fail_under = 75
 
-# Optional mutation-testing pilot (SEP-1166). Not wired into make test / CI.
-# Mutmut runs pytest from a mutants/ sandbox copy; also_copy pulls config the
-# suite needs when loading app settings (WeasyPrint DYLD is still host env).
+# Optional mutation-testing pilot. Not wired into make test / CI.
+# Mutmut runs pytest from a mutants/ sandbox copy; also_copy pulls the config
+# the suite needs when loading app settings.
 [tool.mutmut]
 source_paths = ["app/"]
 only_mutate = ["app/core/db/utils.py"]
 pytest_add_cli_args_test_selection = ["tests/app/core/db/test_utils.py"]
 also_copy = ["settings.yaml", "templates", "static", "snippets", "data"]
-debug = false
 
 [tool.tox]
 env_list = ["3.11", "3.12", "3.13"]
