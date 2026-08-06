@@ -75,7 +75,12 @@ from pydantic import (
     StringConstraints,
 )
 
-from app.core.utils.fields import EnumFieldMixin, NonEmptyStr, StrippedNonEmptyStr
+from app.core.utils.fields import (
+    ArbitraryMapping,
+    EnumFieldMixin,
+    NonEmptyStr,
+    StrippedNonEmptyStr,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.rules import (
     CardinalityRule,
@@ -1093,7 +1098,6 @@ class DerivedTask(SchemaBaseModel):
         for plugin-specific identity fields (e.g. ``{"backup_type":
         "pbm_logical"}``) that the framework should not name itself.
         Defaults to ``None``.
-    :type data_overrides: dict[str, Any] | None
     :param parent_link: When true, set ``data["parent"]`` on the derived
         payload to the parent's ``name``. Defaults to ``True``.
     :type parent_link: bool
@@ -1102,7 +1106,7 @@ class DerivedTask(SchemaBaseModel):
     name_suffix: NonEmptyStr
     arg_substitutions: dict[str, str] | None = None
     payload_substitutions: dict[str, str] | None = None
-    data_overrides: dict[str, Any] | None = None
+    data_overrides: ArbitraryMapping | None = None
     parent_link: bool = True
 
 

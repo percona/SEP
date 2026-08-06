@@ -83,7 +83,7 @@ Answer whichever of these three applies:
 |---|---|---|
 | **Who** | fresh installs only, or existing installations too? | "reaches fresh installs and installer re-runs only; an existing installation keeps its rendered config until the installer runs again" — not "the new default applies" |
 | **When** | at upgrade, at restart, or on the next occurrence of some event? | "an override lands on the next task the worker executes" — not "without a restart" |
-| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | "workers pick the new values up on their next refresh, 30 seconds by default, so a send started inside that window fails as unconfigured and is not retried" — not "takes effect immediately" |
+| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | "worker-side refresh advances while tasks run rather than on a wall-clock interval, so an override has no fixed upper bound on when it lands and work enqueued in the meantime may still run against the old value" — not "takes effect immediately" |
 
 **Pick the section from what the change *is*.** The work-item type decides only
 once that answer is "a modification to behaviour that already shipped".
