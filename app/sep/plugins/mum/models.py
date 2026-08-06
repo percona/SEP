@@ -1,31 +1,32 @@
 """Define models for the MUM plugin."""
 
-from datetime import datetime
-from typing import List, Literal
+from typing import Literal
 
 from pydantic import BaseModel
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, Field, RequiredStr
 
+
 class MongoDBUsername(BaseCaseInsensitiveModel):
     """Represent the overall getuser_request configuration.
     :param get_user_json_payload: The PBM yaml payload to parse from CLI.
     :type get_user_json_payload: RequiredStr | EmptyStrToNone
     """
+
     get_user_json_payload: RequiredStr | EmptyStrToNone = Field(
         None, serialization_alias="get_user_json_payload"
     )
 
 
 class MongoDBUser(BaseCaseInsensitiveModel):
+    """Pydantic model representing all attributes of a MongoDB user.
     """
-    Pydantic model representing all attributes of a MongoDB user.
-    """
+
     id: str
     username: MongoDBUsername
     db: str
-    roles: List[dict] = Field(
+    roles: list[dict] = Field(
         ...,
         description="A list of documents, where each document specifies a role and the database to which the role applies."
     )

@@ -46,7 +46,6 @@ from app.sep.api.routes.settings import router as settings_router
 from app.sep.api.routes.task_history import router as task_history_router
 from app.sep.api.routes.task_stats import router as task_stats_router
 from app.sep.apps.framework.registry import AppRegistry, get_app_registry
-from app.sep.plugins.mongo_upgrade.routes import router as mongo_upgrade_router
 from app.sep.deps import (
     IsApiAdmin,
     IsApiAuthenticated,
@@ -54,6 +53,7 @@ from app.sep.deps import (
     require_app_enabled,
     RequireBearerForUnsafeMethods,
 )
+from app.sep.plugins.mongo_upgrade.routes import router as mongo_upgrade_router
 
 
 def build_apps_router(registry: AppRegistry) -> APIRouter:

@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+"""Define the API routes for the MongoDB rolling-upgrade plugin."""
+
 import asyncio
 import json
 import logging
@@ -94,13 +96,25 @@ async def _parse_role_from_logs(tasks_api: TaskAPI, task_history_id: str) -> dic
                     last_json = parsed
             except (json.JSONDecodeError, TypeError):
                 continue
-    except Exception:
+    except (OSError, ValueError, RuntimeError):
+        # A dead or malformed log stream must degrade to "no role data" for this
+        # host rather than fail the whole topology view.
         logger.warning("Failed to stream logs for task history %s", task_history_id, exc_info=True)
     return last_json
 
 
 @router.post("/upgrade", response_model=_UpgradeResponse, status_code=201)
 async def start_upgrade(body: _UpgradeRequest, tasks_api: TaskAPI) -> _UpgradeResponse:
+    """Dispatch a rolling MongoDB upgrade, one host per chained step.
+
+    The dispatched task upgrades ``body.target``; each entry in
+    ``body.chain_targets`` adds one further host, gated on the previous host
+    succeeding.
+
+    :param body: The upgrade parameters and the ordered list of follow-on hosts.
+    :param tasks_api: The Tasks API client.
+    :return: The root task history id of the chain.
+    """
     meta: dict[str, Any] = {
         "target": body.target,
         "mongo_release": body.mongo_release,
@@ -124,12 +138,21 @@ async def discover_topology(
     executor_hosts: ExecutorHosts,
     tasks_api: TaskAPI,
 ) -> _DiscoverResponse:
+    """Probe every executor host for its replica-set role.
+
+    Dispatches one ``discover-mongo`` run per host concurrently. A host whose
+    dispatch fails is logged and omitted rather than failing the request.
+
+    :param executor_hosts: The known executor hosts.
+    :param tasks_api: The Tasks API client.
+    :return: The dispatched runs, one per reachable host.
+    """
     runs = await asyncio.gather(
         *(_dispatch_discover(tasks_api, host_id, host_id) for host_id in executor_hosts),
         return_exceptions=True,
     )
     successful: list[_DiscoverRun] = []
-    for host_id, result in zip(executor_hosts, runs):
+    for host_id, result in zip(executor_hosts, runs, strict=False):
         if isinstance(result, Exception):
             logger.warning("Failed to dispatch discover-mongo on %s: %s", host_id, result)
         else:
@@ -142,6 +165,15 @@ async def topology_status(
     ids: Annotated[str, Query(description="Comma-separated task_history_ids")],
     tasks_api: TaskAPI,
 ) -> list[_TopologyEntry]:
+    """Return the status and discovered role for each supplied task history.
+
+    Roles are parsed from task logs only once a run has reached a terminal
+    status. A history that cannot be fetched is reported as ``unreachable``.
+
+    :param ids: Comma-separated task history ids to report on.
+    :param tasks_api: The Tasks API client.
+    :return: One entry per requested id, in the order requested.
+    """
     task_history_ids = [i.strip() for i in ids.split(",") if i.strip()]
 
     async def _fetch_one(task_history_id: str) -> _TopologyEntry:
@@ -171,7 +203,7 @@ async def topology_status(
         return_exceptions=True,
     )
     entries: list[_TopologyEntry] = []
-    for tid, result in zip(task_history_ids, results):
+    for tid, result in zip(task_history_ids, results, strict=False):
         if isinstance(result, Exception):
             logger.warning("Failed to fetch topology status for %s: %s", tid, result)
             entries.append(

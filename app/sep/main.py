@@ -32,6 +32,7 @@ from pydantic import HttpUrl, ValidationError
 from starlette.staticfiles import StaticFiles
 
 from app import __summary__, __version__
+from app.api.main import api_router as core_api_router
 from app.api.main import api_router as top_level_api_router
 from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth import config as auth_config
@@ -52,7 +53,6 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
-from app.api.main import api_router as core_api_router
 from app.sep.api.router import api_router
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR

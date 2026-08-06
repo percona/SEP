@@ -24,12 +24,12 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 import requests.exceptions
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import undefer
 from sqlalchemy_celery_beat import PeriodicTask
-from pydantic import BaseModel
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 

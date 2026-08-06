@@ -17,7 +17,7 @@
 
 from pathlib import Path
 
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner
+from app.tasks.models import Task, TaskBackendEnum
 
 MUM_TASK_NAME_BY_ACTION = {
     "list_users": "mum-user-list",
@@ -39,7 +39,7 @@ def _build_mum_task(task_name: str) -> Task:
     return Task(
         name=task_name,
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.MUM,
+        owner="MUM",
         protected=True,
         alert_on_fail=False,
         data={

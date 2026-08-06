@@ -1911,6 +1911,7 @@ class TestDispatchChainedTask:
     @pytest.mark.asyncio
     async def test_private_meta_not_propagated(self) -> None:
         """Assert private _chain_* keys are never carried into the next step's meta."""
+        parent_chain_depth = 2
         main_task = _make_chain_task("main-task")
         chain_task = _make_chain_task("chain-task")
         parent_history = _make_chain_history(
@@ -1919,7 +1920,7 @@ class TestDispatchChainedTask:
             {
                 "_chain_task_names": [chain_task.name],
                 "_chain_on_failure": True,
-                "_chain_depth": 2,
+                "_chain_depth": parent_chain_depth,
                 "restart_service": "mongod",
             },
         )
@@ -1945,7 +1946,8 @@ class TestDispatchChainedTask:
         dispatched_history = mock_dispatch.call_args[0][0]
         meta = dispatched_history.execution_request.meta
         assert meta.get("restart_service") == "mongod"
-        assert meta.get("_chain_depth") == 3
+        # The child's depth is the parent's (2, set above) plus this hop.
+        assert meta.get("_chain_depth") == parent_chain_depth + 1
         assert "_chain_task_names" not in meta
 
     @pytest.mark.asyncio

@@ -644,11 +644,11 @@ NOMAD_DISCOVER_MONGO = {
                                 " --quiet --eval"
                                 " 'JSON.stringify(Object.assign(db.hello(),{mongodVersion:db.version()}))'"
                                 " 2>/dev/null);"
-                                " if [ $? -ne 0 ] || [ -z \"$OUTPUT\" ]; then"
+                                ' if [ $? -ne 0 ] || [ -z "$OUTPUT" ]; then'
                                 " printf '{\"role\":\"unreachable\",\"error\":\"mongosh failed\"}\\n';"
                                 " exit 0;"
                                 " fi;"
-                                " echo \"$OUTPUT\" | python3 ${NOMAD_TASK_DIR}/parse_role.py"
+                                ' echo "$OUTPUT" | python3 ${NOMAD_TASK_DIR}/parse_role.py'
                             ),
                         ],
                     },
@@ -968,19 +968,19 @@ SYSTEM_TASKS = [
 try:
     from app.sep.plugins.mum.task import get_mum_tasks
 
-    for mum_task in get_mum_tasks():
-        SYSTEM_TASKS.append(
-            Task(
-                name=mum_task.name,
-                data=mum_task.data,
-                backend=mum_task.backend,
-                owner=mum_task.owner,
-                protected=mum_task.protected,
-                alert_on_fail=mum_task.alert_on_fail,
-                anonymize_mask=None,
-                created_by=SYSTEM_USER,
-            )
+    SYSTEM_TASKS.extend(
+        Task(
+            name=mum_task.name,
+            data=mum_task.data,
+            backend=mum_task.backend,
+            owner=mum_task.owner,
+            protected=mum_task.protected,
+            alert_on_fail=mum_task.alert_on_fail,
+            anonymize_mask=None,
+            created_by=SYSTEM_USER,
         )
+        for mum_task in get_mum_tasks()
+    )
 except ImportError:
     # MUM plugin not available, skip
     pass

@@ -39,11 +39,13 @@ from app.sep.deps import (
     IsAuthenticated,
     TaskAPI,  # [MUM-REPLACE] remove once live-request API is wired up
 )
-from app.sep.utils.decorators import csrf_exempt
-from app.sep.plugins.mum.task import (  # [MUM-REPLACE] task definitions not needed after migration
-    MUM_TASK_NAME_BY_ACTION,
+from app.sep.plugins.mum.task import (
     get_mum_task as get_mum_task_spec,
 )
+from app.sep.plugins.mum.task import (  # [MUM-REPLACE] task definitions not needed after migration
+    MUM_TASK_NAME_BY_ACTION,
+)
+from app.sep.utils.decorators import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -371,7 +373,7 @@ async def mum_list_users(
     except Exception as exc:
         logger.exception("Unexpected error while listing users for target '%s'", target)
         return JSONResponse(
-            content={"detail": f"Internal error: {str(exc)}"},
+            content={"detail": f"Internal error: {exc!s}"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -428,7 +430,7 @@ async def mum_list_roles(
     except Exception as exc:
         logger.exception("Unexpected error while listing roles for target '%s'", target)
         return JSONResponse(
-            content={"detail": f"Internal error: {str(exc)}"},
+            content={"detail": f"Internal error: {exc!s}"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -709,7 +711,7 @@ async def mum_create_role(
     except Exception as exc:
         logger.exception("Unexpected error while creating role for target '%s'", target)
         return JSONResponse(
-            content={"detail": f"Internal error: {str(exc)}"},
+            content={"detail": f"Internal error: {exc!s}"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -776,7 +778,7 @@ async def mum_update_role(
     except Exception as exc:
         logger.exception("Unexpected error while updating role for target '%s'", target)
         return JSONResponse(
-            content={"detail": f"Internal error: {str(exc)}"},
+            content={"detail": f"Internal error: {exc!s}"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -837,7 +839,7 @@ async def mum_delete_role(
     except Exception as exc:
         logger.exception("Unexpected error while deleting role for target '%s'", target)
         return JSONResponse(
-            content={"detail": f"Internal error: {str(exc)}"},
+            content={"detail": f"Internal error: {exc!s}"},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 

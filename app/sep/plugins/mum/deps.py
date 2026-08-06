@@ -3,17 +3,15 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Annotated
+from typing import Annotated
+
 from fastapi import Depends, Request
 from fastapi.encoders import jsonable_encoder
 
-
 from app.tasks.models import (
     TaskBackendEnum,
-    TaskOwner,
     TaskWrite,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +21,13 @@ async def get_users(
 
     requirements = "PyMongo"
 
-    payload_path = Path(__file__).parent / f"mum_payload"
+    payload_path = Path(__file__).parent / "mum_payload"
 
 
     return TaskWrite(
         name="MUM",
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.MUM,
+        owner="MUM",
         data={
             "task": "run-python",
             "meta": {

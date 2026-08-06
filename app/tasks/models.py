@@ -1266,12 +1266,12 @@ class NomadVariable(BaseModel):
     :param value: Variable value.
     :type value: str | bytes
     """
+
     path: str | bytes
     value: str | bytes
 
 class NomadVariableRequest:
-    """
-    Define a request of a new Nomad variable being created
+    """Define a request of a new Nomad variable being created
     :param nomad_variable: Represents a Nomad Variable
     :type nomad_variable: NomadVariable
     """
