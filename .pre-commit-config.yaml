@@ -76,6 +76,13 @@ repos:
         additional_dependencies: ["python-minifier==2.11.3"]
         files: ^app/sep/apps/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
         pass_filenames: true
+      - id: gen-xtrabackup-payload-variants
+        name: Check xtrabackup payload variants
+        description: "Ensure the generated xtrabackup payload variants match the canonical payload"
+        entry: python3 scripts/gen_xtrabackup_payload_variants.py --check
+        language: system
+        files: ^app/sep/apps/mysql_backups/xtrabackup[^/]*payload$
+        pass_filenames: false
       - id: oxfmt
         name: oxfmt (frontend formatter)
         description: "Format frontend code with oxfmt (Prettier-compatible)"

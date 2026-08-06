@@ -208,6 +208,12 @@ regen-pbm-payloads: venv
 regen-pbm-payloads-check: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_pbm_payloads.py --check
 
+regen-xtrabackup-variants: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_xtrabackup_payload_variants.py
+
+regen-xtrabackup-variants-check: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_xtrabackup_payload_variants.py --check
+
 changelog-add:
 ifndef TICKET
 	$(error TICKET is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
@@ -316,4 +322,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check
