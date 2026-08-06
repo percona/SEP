@@ -253,7 +253,7 @@ class TestLoggingConfig:
     """Test that ``LOGGING_CONFIG`` wires ``ContextFormatter`` for every process."""
 
     def test_dict_config_resolves_context_formatters(self) -> None:
-        """Assert both formatter entries resolve to ``ContextFormatter`` with expected fmt."""
+        """Assert both formatters resolve with matching fmt and skip_keys."""
         logging.config.dictConfig(LOGGING_CONFIG)
 
         default_formatter = logging.getLogger().handlers[0].formatter
@@ -263,3 +263,9 @@ class TestLoggingConfig:
         assert isinstance(uvicorn_formatter, ContextFormatter)
         assert default_formatter._style._fmt == _DEFAULT_FMT
         assert uvicorn_formatter._style._fmt == _UVICORN_FMT
+        assert default_formatter._skip_keys == frozenset(_DEFAULT_SKIP_KEYS)
+        assert uvicorn_formatter._skip_keys == frozenset(_UVICORN_SKIP_KEYS)
+        for key in default_formatter._skip_keys:
+            assert f"%({key})s" in default_formatter._style._fmt
+        for key in uvicorn_formatter._skip_keys:
+            assert f"%({key})s" in uvicorn_formatter._style._fmt
