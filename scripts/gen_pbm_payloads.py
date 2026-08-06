@@ -19,10 +19,11 @@
 Payloads are shipped by ``file://`` and can't import shared code, so this
 rewrites the block between each payload's ``# --- BEGIN/END GENERATED ... ---``
 markers with the canonical region from
-``app/sep/apps/backup_mongo/pbm_creds_common.py``. Any file under the search root
-carrying a BEGIN marker opts in; markerless files (e.g. ``pbm_snapshot_payload``)
-are left untouched. Regions carried by only a subset of payloads (config-apply,
-restore ``--yes``) sync to exactly that subset.
+``app/sep/apps/backup_mongo/pbm_creds_common.py``. Each region is independent: a
+payload opts into one by carrying that region's BEGIN marker as a full line, and a
+file with no markers is left untouched. Regions carried by only a subset of
+payloads (config-apply, restore ``--yes``, textfile-collector) sync to exactly
+that subset.
 
 Run without arguments to rewrite in place; run with ``--check`` (the CI guard) to
 fail without writing when a payload has drifted.
@@ -155,6 +156,9 @@ def main(argv: list[str] | None = None) -> int:
         RESTORE_YES_BEGIN,
         RESTORE_YES_END,
         restore_yes_source,
+        TEXTFILE_BEGIN,
+        TEXTFILE_END,
+        textfile_source,
     )
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -175,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         ("creds preamble", PREAMBLE_BEGIN, PREAMBLE_END, preamble_source()),
         ("config apply", CONFIG_APPLY_BEGIN, CONFIG_APPLY_END, config_apply_source()),
         ("restore yes", RESTORE_YES_BEGIN, RESTORE_YES_END, restore_yes_source()),
+        ("textfile collector", TEXTFILE_BEGIN, TEXTFILE_END, textfile_source()),
     )
 
     total_payloads = 0

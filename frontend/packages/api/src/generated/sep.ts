@@ -788,6 +788,31 @@ export interface paths {
     patch: operations['atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch'];
     trace?: never;
   };
+  '/api/apps/atw/incidents/{incident_id}/close/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Atw Close Incident
+     * @description Close a diagnostic incident, stamping the current UTC time.
+     *
+     *     :param session: The database session.
+     *     :param incident: The open incident resolved from the ``incident_id`` path parameter.
+     *     :return: The closed incident.
+     *     :raises HTTPConflictException: If the incident is already closed.
+     */
+    post: operations['atw_atw_close_incident_api_apps_atw_incidents__incident_id__close__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/atw/incidents/{incident_id}/executions/': {
     parameters: {
       query?: never;
@@ -839,6 +864,31 @@ export interface paths {
      *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/reopen/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Atw Reopen Incident
+     * @description Reopen a closed diagnostic incident, clearing its close timestamp.
+     *
+     *     :param session: The database session.
+     *     :param incident: The closed incident resolved from the ``incident_id`` path parameter.
+     *     :return: The reopened incident.
+     *     :raises HTTPConflictException: If the incident is already open.
+     */
+    post: operations['atw_atw_reopen_incident_api_apps_atw_incidents__incident_id__reopen__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3760,6 +3810,19 @@ export interface components {
       /** Total */
       total: number;
     };
+    /** PaginatedResponse[ArbitraryMapping] */
+    PaginatedResponse_ArbitraryMapping_: {
+      /** Items */
+      items: {
+        [key: string]: unknown;
+      }[];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[ServiceResponse] */
     PaginatedResponse_ServiceResponse_: {
       /** Items */
@@ -3786,17 +3849,6 @@ export interface components {
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
       items: components['schemas']['TaskHistoryResponse'][];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
-    };
-    /** PaginatedResponse[dict[str, Any]] */
-    PaginatedResponse_dict_str__Any__: {
-      /** Items */
-      items: Record<string, never>[];
       /** Limit */
       limit: number;
       /** Offset */
@@ -3910,7 +3962,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The unique identifier of the node on which the service is running.
      *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
@@ -3927,7 +3978,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -4348,13 +4401,11 @@ export interface components {
      *     :param target: The target system or environment.
      *     :type target: str
      *     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-     *     :type meta: dict | None
      *     :param payload: Optional payload or file path for parameterizing the task.
      *         Defaults to None.
      *     :type payload: str | None
      *     :param tracking: Tracking information for task execution. Defaults to a dictionary
      *         with keys for allocation and evaluation IDs.
-     *     :type tracking: dict | None
      */
     TaskExecutionRequest: {
       /** Eta */
@@ -4363,7 +4414,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never> | null;
+      meta: {
+        [key: string]: unknown;
+      } | null;
       /** Payload */
       payload?: string | null;
       /** Target */
@@ -4374,7 +4427,9 @@ export interface components {
        * Tracking
        * @default {}
        */
-      tracking: Record<string, never> | null;
+      tracking: {
+        [key: string]: unknown;
+      } | null;
     } & {
       [key: string]: unknown;
     };
@@ -4539,7 +4594,9 @@ export interface components {
       /** Created By */
       created_by: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Deleted At */
       deleted_at: string | null;
       /** Id */
@@ -4750,7 +4807,9 @@ export interface components {
       /** Id */
       id: number;
       /** Metadata */
-      metadata: Record<string, never>;
+      metadata: {
+        [key: string]: unknown;
+      };
     };
     /**
      * IndexBackupSummary
@@ -4950,7 +5009,9 @@ export interface components {
      */
     alerts__RestoreResponse: {
       /** Details */
-      details: Record<string, never>;
+      details: {
+        [key: string]: unknown;
+      };
       /**
        * Status
        * @constant
@@ -5124,7 +5185,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -5644,10 +5707,13 @@ export interface components {
      *     :param created_by: Username of the support engineer who created the incident.
      *     :param created_at: When the incident was created.
      *     :param updated_at: When the incident was last updated, if ever.
+     *     :param closed_at: When the incident was closed, if ever; ``None`` means open.
      */
     atw__AtwIncidentResponse: {
       /** Case Ref */
       case_ref: string | null;
+      /** Closed At */
+      closed_at: string | null;
       /**
        * Created At
        * Format: date-time
@@ -5734,7 +5800,9 @@ export interface components {
        */
       created_at: string;
       /** Detail */
-      detail: Record<string, never>;
+      detail: {
+        [key: string]: unknown;
+      };
       /** Finished At */
       finished_at: string | null;
       /**
@@ -5843,7 +5911,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Derived Tasks */
       derived_tasks?: components['schemas']['backup_mongo__BackupDerivedTaskSummary'][];
       /** Hostname */
@@ -5889,7 +5959,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -6096,7 +6168,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Derived Tasks */
       derived_tasks?: components['schemas']['backup_mongo__RestoreDerivedTaskSummary'][];
       /** Hostname */
@@ -6149,7 +6223,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -6324,7 +6400,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Host */
       host?: string | null;
       /** Hostname */
@@ -6370,7 +6448,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -6586,7 +6666,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -6622,7 +6704,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -6790,7 +6874,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Host */
       host?: string | null;
       /** Hostname */
@@ -6877,7 +6963,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -7274,7 +7362,6 @@ export interface components {
      *         for plugin-specific identity fields (e.g. ``{"backup_type":
      *         "pbm_logical"}``) that the framework should not name itself.
      *         Defaults to ``None``.
-     *     :type data_overrides: dict[str, Any] | None
      *     :param parent_link: When true, set ``data["parent"]`` on the derived
      *         payload to the parent's ``name``. Defaults to ``True``.
      *     :type parent_link: bool
@@ -7285,7 +7372,9 @@ export interface components {
         [key: string]: string;
       } | null;
       /** Data Overrides */
-      data_overrides?: Record<string, never> | null;
+      data_overrides?: {
+        [key: string]: unknown;
+      } | null;
       /** Name Suffix */
       name_suffix: string;
       /**
@@ -7948,7 +8037,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -8933,7 +9024,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -9179,7 +9272,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Host */
       host?: string | null;
       /** Hostname */
@@ -9462,7 +9557,9 @@ export interface components {
        */
       name: string;
       /** Period */
-      period?: Record<string, never>;
+      period?: {
+        [key: string]: unknown;
+      };
       /**
        * Size
        * @default 0
@@ -9744,12 +9841,9 @@ export interface components {
        */
       pdf_ready: boolean;
       /** Result */
-      result?:
-        | {
-            [key: string]: unknown;
-          }
-        | Record<string, never>
-        | null;
+      result?: {
+        [key: string]: unknown;
+      } | null;
       /** Status */
       status: string;
     };
@@ -9936,7 +10030,9 @@ export interface components {
      */
     tasks__TaskDetailResponse: {
       /** Execution History */
-      execution_history?: Record<string, never>;
+      execution_history?: {
+        [key: string]: unknown;
+      };
       /** Executor Hosts */
       executor_hosts?: components['schemas']['tasks__ExecutorHostMetadata'][];
       /** Periodic Summary */
@@ -10006,7 +10102,9 @@ export interface components {
      */
     topology__DualPrimaryEdge: {
       /** Data */
-      data?: Record<string, never>;
+      data?: {
+        [key: string]: unknown;
+      };
       /** Id */
       id: string;
       /** Source */
@@ -11360,6 +11458,37 @@ export interface operations {
       };
     };
   };
+  atw_atw_close_incident_api_apps_atw_incidents__incident_id__close__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get: {
     parameters: {
       query?: {
@@ -11416,6 +11545,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['atw__ATWBatchExecuteResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_reopen_incident_api_apps_atw_incidents__incident_id__reopen__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
         };
       };
       /** @description Validation Error */
@@ -12441,7 +12601,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PaginatedResponse_dict_str__Any__'];
+          'application/json': components['schemas']['PaginatedResponse_ArbitraryMapping_'];
         };
       };
       /** @description Validation Error */
@@ -13958,7 +14118,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -14464,7 +14626,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>[];
+          'application/json': {
+            [key: string]: unknown;
+          }[];
         };
       };
       /** @description Upstream Tasks API failure. */
@@ -14491,7 +14655,9 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': Record<string, never>;
+        'application/json': {
+          [key: string]: unknown;
+        };
       };
     };
     responses: {
@@ -14501,7 +14667,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -14577,7 +14745,9 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': Record<string, never>;
+        'application/json': {
+          [key: string]: unknown;
+        };
       };
     };
     responses: {
@@ -14587,7 +14757,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -14774,7 +14946,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -14816,7 +14990,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
