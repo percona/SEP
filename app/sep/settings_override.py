@@ -25,20 +25,20 @@ receivers register at worker startup even in an image that ships no app with a
 ``celery.tasks``.
 """
 
-from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 from celery.signals import worker_process_init, worker_process_shutdown
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.celery import celery
 from app.core.alerts.config import alert_settings, AlertSettings
-from app.core.config import Settings, settings
+from app.core.config import PMMSettings, Settings, settings
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     ProxyEntry,
     ProxyRegistry,
     publish_snapshot,
+    SnapshotChange,
 )
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.worker import WorkerRefresher
@@ -119,21 +119,28 @@ async def republish_sep_settings_snapshot(session: AsyncSession) -> None:
     await publish_snapshot(sep_settings, session, SEPSettings)
 
 
-async def invalidate_pmm_clients(_: Mapping[str, object]) -> None:
-    """Evict the cached PMM client on the current endpoint after a ``PMM`` override.
+async def invalidate_pmm_clients(change: SnapshotChange) -> None:
+    """Evict cached PMM clients on the previous and current endpoints after a ``PMM`` override.
 
-    A same-endpoint change (credentials, SSL) evicts the now-stale client so the
-    next :class:`PMMSyncer` key-misses to a fresh one via its ``default_factory``
-    PMM read. Known limitation: an endpoint change leaves the client keyed by the
-    old endpoint cached until ``close_all`` closes it at shutdown; syncers key on
-    the new endpoint, so nothing reads it in the meantime.
+    Evicts the ordered de-duplicated set of previous-and-current endpoints so a
+    same-endpoint change (credentials, SSL) collapses to a single eviction, while
+    an endpoint change also drops the client keyed by the endpoint no longer in
+    use. The next :class:`PMMSyncer` key-misses to a fresh client via its
+    ``default_factory`` PMM read. When ``PMM`` is absent from ``change.previous``
+    (override created), the prior effective value is the YAML/env one from the
+    proxy's wrapped instance.
 
-    :param _: The new effective ``Settings`` snapshot mapping (unused -- the
-        current PMM endpoint is re-read from the proxy).
+    :param change: The override snapshots on either side of the republish.
     """
-    endpoint = settings.PMM.endpoint
-    if endpoint is not None:
-        await settings.invalidate_client(str(endpoint))
+    previous_pmm = cast(PMMSettings | None, change.previous.get("PMM"))
+    if previous_pmm is None:
+        previous_pmm = settings._resolve().PMM  # noqa: SLF001
+    for endpoint in dict.fromkeys(
+        str(pmm.endpoint)
+        for pmm in (previous_pmm, settings.PMM)
+        if pmm is not None and pmm.endpoint is not None
+    ):
+        await settings.invalidate_client(endpoint)
 
 
 #: The callbacks the worker refresher registers -- deliberately a strict subset
