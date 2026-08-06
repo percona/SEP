@@ -18,7 +18,7 @@
 import base64
 import gzip
 import json as json_lib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -64,6 +64,7 @@ from tests.app.factories import build_task_history, TaskFactory
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
 PARENT_FILTER_TASK_COUNT = 3
+SEARCH_MATCH_TOTAL = 2
 
 
 @pytest_asyncio.fixture
@@ -542,9 +543,18 @@ async def test_list_task_history_excludes_internal_rows_before_pagination(
         TaskWrite.model_validate(TaskFactory.build(name="inventory-sync")),
     )
 
-    await TaskHistoryManager.save(session, build_task_history(user_task_a))
-    await TaskHistoryManager.save(session, build_task_history(user_task_b))
-    await TaskHistoryManager.save(session, build_task_history(internal_task))
+    # Distinct created_at values: utc_now() zeroes microseconds, so same-second
+    # inserts tie and the id ASC tie-breaker would keep the newest internal row
+    # off the first page under -created_at.
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    for task, created_at in (
+        (user_task_a, base),
+        (user_task_b, base + timedelta(minutes=1)),
+        (internal_task, base + timedelta(minutes=2)),
+    ):
+        history = build_task_history(task)
+        history.created_at = created_at
+        await TaskHistoryManager.save(session, history)
 
     unfiltered_response = test_client.get("/history/", params={"limit": 2})
     assert unfiltered_response.status_code == status.HTTP_200_OK
@@ -1930,6 +1940,203 @@ async def test_get_task_history_status_filter_with_pagination(
     data = response.json()
     assert data["total"] == 1
     assert len(data["items"]) == 1
+
+
+def _openapi_param_names(path: str) -> set[str]:
+    """Return query/path parameter names for a tasks OpenAPI GET path.
+
+    :param path: OpenAPI path template (for example ``/history/``).
+    :type path: str
+    :return: The set of parameter names declared on the GET operation.
+    :rtype: set[str]
+    """
+    params = tasks_app.openapi()["paths"][path]["get"].get("parameters", [])
+    return {param["name"] for param in params}
+
+
+def _openapi_param(path: str, name: str) -> dict[str, object]:
+    """Return one named OpenAPI parameter object for a tasks GET path.
+
+    :param path: OpenAPI path template (for example ``/{task}/history/``).
+    :type path: str
+    :param name: Parameter name to look up (for example ``sort``).
+    :type name: str
+    :return: The matching OpenAPI parameter object.
+    :rtype: dict[str, object]
+    :raises StopIteration: If no parameter with ``name`` exists on the path.
+    """
+    params = tasks_app.openapi()["paths"][path]["get"].get("parameters", [])
+    return next(param for param in params if param["name"] == name)
+
+
+class TestListQueryRouteParams:
+    """Cover list-query sort/search on the three tasks-service list endpoints."""
+
+    def test_sort_and_search_params_exposed_on_list_endpoints(self) -> None:
+        """Expose ``sort`` and ``search`` on each of the three tasks-service list endpoints."""
+        for path in ("/", "/history/", "/{task}/history/"):
+            names = _openapi_param_names(path)
+            assert "sort" in names
+            assert "search" in names
+
+    def test_task_history_endpoints_share_one_sort_search_surface(self) -> None:
+        """Drive both TaskHistory list routes from the same sort/search OpenAPI surface."""
+        all_history = {
+            "sort": _openapi_param("/history/", "sort"),
+            "search": _openapi_param("/history/", "search"),
+        }
+        by_task = {
+            "sort": _openapi_param("/{task}/history/", "sort"),
+            "search": _openapi_param("/{task}/history/", "search"),
+        }
+        assert all_history["sort"]["schema"] == by_task["sort"]["schema"]
+        assert all_history["sort"].get("default") == by_task["sort"].get("default")
+        assert all_history["search"]["schema"] == by_task["search"]["schema"]
+
+    @pytest.mark.asyncio
+    async def test_out_of_allowlist_sort_returns_422_on_list_tasks(
+        self, test_client
+    ) -> None:
+        """Reject an out-of-allowlist sort key on GET / with HTTP 422."""
+        response = test_client.get("/", params={"sort": "evil"})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_out_of_allowlist_sort_returns_422_on_both_history_endpoints(
+        self, test_client, created_task_with_history
+    ) -> None:
+        """Reject an out-of-allowlist sort key on both TaskHistory list endpoints."""
+        task_name = created_task_with_history.task.name
+        all_history = test_client.get("/history/", params={"sort": "evil"})
+        by_task = test_client.get(f"/{task_name}/history/", params={"sort": "evil"})
+        assert all_history.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert by_task.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_search_filters_and_reports_filtered_total(
+        self, test_client, session
+    ) -> None:
+        """Filter GET / by search and report the filtered total, not the page size."""
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="match-alpha")),
+        )
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="match-beta")),
+        )
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="other-gamma")),
+        )
+
+        response = test_client.get(
+            "/", params={"search": "match", "offset": 0, "limit": 1}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == SEARCH_MATCH_TOTAL
+        assert len(data["items"]) == 1
+        assert "match" in data["items"][0]["name"]
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_sort_by_name_ascending(
+        self, test_client, session
+    ) -> None:
+        """Apply the mapped ``name`` sort key on GET /."""
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="zeta-route")),
+        )
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="alpha-route")),
+        )
+
+        response = test_client.get("/", params={"sort": "name"})
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["name"] for item in response.json()["items"]] == [
+            "alpha-route",
+            "zeta-route",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_search_composes_with_owner_filter(
+        self, test_client, session
+    ) -> None:
+        """Keep the owner base restriction working alongside search on GET /."""
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="keep-match", owner="BACKUPS")
+            ),
+        )
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="drop-match", owner="ALTERS")
+            ),
+        )
+
+        response = test_client.get("/", params={"owner": "BACKUPS", "search": "match"})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == 1
+        assert data["items"][0]["name"] == "keep-match"
+
+    @pytest.mark.asyncio
+    async def test_history_search_filters_and_reports_filtered_total(
+        self, test_client, session
+    ) -> None:
+        """Filter both history list endpoints by executed_by search with filtered total."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="history-search-task")),
+        )
+        for executed_by in ("alice", "alice-ops", "bob"):
+            history = build_task_history(task)
+            history.executed_by = executed_by
+            await TaskHistoryManager.save(session, history)
+
+        all_history = test_client.get(
+            "/history/", params={"search": "alice", "limit": 1}
+        )
+        by_task = test_client.get(
+            f"/{task.name}/history/", params={"search": "alice", "limit": 1}
+        )
+        assert all_history.status_code == status.HTTP_200_OK
+        assert by_task.status_code == status.HTTP_200_OK
+        assert all_history.json()["total"] == SEARCH_MATCH_TOTAL
+        assert by_task.json()["total"] == SEARCH_MATCH_TOTAL
+        assert len(all_history.json()["items"]) == 1
+        assert len(by_task.json()["items"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_history_tie_broken_ordering_is_deterministic(
+        self, test_client, session
+    ) -> None:
+        """Keep TaskHistory list order deterministic across equal created_at values."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="history-tie-task")),
+        )
+        tied_at = datetime(2026, 1, 1, tzinfo=UTC)
+        ids = []
+        for status_value in (
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.FAILED,
+            TaskHistoryStatusEnum.RUNNING,
+        ):
+            history = build_task_history(task, status=status_value)
+            history.created_at = tied_at
+            saved = await TaskHistoryManager.save(session, history)
+            ids.append(saved.id)
+
+        response = test_client.get(
+            f"/{task.name}/history/", params={"sort": "-created_at"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["id"] for item in response.json()["items"]] == ids
 
 
 @pytest.mark.asyncio

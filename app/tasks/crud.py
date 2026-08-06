@@ -27,6 +27,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.db import ListQuery, ListQuerySpec
 from app.core.db.crud import BaseManager, BaseSQLModelManager
 from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
@@ -63,10 +64,25 @@ class TaskManager(BaseSQLModelManager):
 
     :ivar Model: The SQLModel class this manager is responsible for (``Task``).
     :vartype Model: type[Task]
+    :cvar ordering: Legacy default ordering (``created_at`` desc, ``id`` desc);
+        superseded by :attr:`list_query_spec` when set.
+    :cvar list_query_spec: Sort allowlist, searchable columns, default sort, and
+        unique ``id`` tie-breaker for Task list endpoints.
     """
 
     Model = Task
-    ordering = [col(Task.created_at).desc(), col(Task.id).desc()]
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "name": col(Task.name),
+            "backend": col(Task.backend),
+            "owner": col(Task.owner),
+            "created_at": col(Task.created_at),
+            "updated_at": col(Task.updated_at),
+        },
+        default_sort="-created_at",
+        tie_breaker=col(Task.id),
+        searchable=[col(Task.name), col(Task.owner)],
+    )
 
     @classmethod
     def _append_list_active_data_filters(
@@ -124,6 +140,8 @@ class TaskManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         pagination: Pagination,
+        *,
+        list_query: ListQuery,
         owner: str | None = None,
         target: str | None = None,
         parent_is_null: bool | None = None,
@@ -133,6 +151,8 @@ class TaskManager(BaseSQLModelManager):
         """Return a paginated response of active (non-deleted) tasks.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :param pagination: Validated offset/limit window for this page.
+        :param list_query: The resolved sort/search produced at the request boundary.
         :param owner: The owner of the tasks. If provided, only tasks for this owner
             will be listed.
         :param target: The execution target hostname. If provided, only tasks whose
@@ -144,7 +164,6 @@ class TaskManager(BaseSQLModelManager):
             matches this string.
         :param self_parent: When ``True``, only tasks whose ``data["parent"]`` equals
             ``Task.name`` are returned.
-        :param pagination: Validated offset/limit window for this page.
         :return: A paginated response containing active tasks and metadata.
         """
         where = [col(Task.deleted_at).is_(None)]
@@ -159,8 +178,12 @@ class TaskManager(BaseSQLModelManager):
             backup_type=backup_type,
             self_parent=self_parent,
         )
-        return await cls.list_paginated(
-            session, *where, pagination=pagination, **kwargs
+        return await cls.list_query_paginated(
+            session,
+            *where,
+            list_query=list_query,
+            pagination=pagination,
+            **kwargs,
         )
 
     @classmethod
@@ -300,9 +323,23 @@ class TaskHistoryManager(BaseSQLModelManager):
 
     :ivar Model: The SQLModel class this manager is responsible for (``TaskHistory``).
     :vartype Model: type[TaskHistory]
+    :cvar list_query_spec: Shared sort allowlist, searchable columns, default sort,
+        and unique ``id`` tie-breaker for both TaskHistory list endpoints.
     """
 
     Model = TaskHistory
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "created_at": col(TaskHistory.created_at),
+            "started_at": col(TaskHistory.started_at),
+            "finished_at": col(TaskHistory.finished_at),
+            "status": col(TaskHistory.status),
+            "executed_by": col(TaskHistory.executed_by),
+        },
+        default_sort="-created_at",
+        tie_breaker=col(TaskHistory.id),
+        searchable=[col(TaskHistory.executed_by)],
+    )
 
     @classmethod
     async def get_log_allocation_epoch(
@@ -451,6 +488,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         session: AsyncSession,
         task_name: str,
         pagination: Pagination,
+        list_query: ListQuery,
         status: TaskHistoryStatusEnum | None = None,
         snippet_filename: str | None = None,
         select_related_task: bool = False,
@@ -462,6 +500,9 @@ class TaskHistoryManager(BaseSQLModelManager):
         :type session: AsyncSession
         :param task_name: The name of the task to list histories for.
         :type task_name: str
+        :param pagination: Validated offset/limit window for this page.
+        :type pagination: Pagination
+        :param list_query: The resolved sort/search produced at the request boundary.
         :param status: The status of the task history. If provided, only histories
             with this status will be listed.
         :type status: TaskHistoryStatusEnum | None
@@ -471,17 +512,18 @@ class TaskHistoryManager(BaseSQLModelManager):
         :param select_related_task: Whether to include the related task data in the
             result. Defaults to False.
         :type select_related_task: bool
-        :param pagination: Validated offset/limit window for this page.
-        :type pagination: Pagination
         :param query_options: Additional SQLAlchemy query options to apply.
         :type query_options: Sequence
         :return: A paginated response containing task histories and metadata.
         :rtype: PaginatedResponse[TaskHistory]
         """
-        count_query = select(func.count()).select_from(TaskHistory).join(Task)
-        count_clauses = [col(Task.name) == task_name]
+        clauses = [
+            col(TaskHistory.task_id).in_(
+                select(Task.id).where(col(Task.name) == task_name)
+            )
+        ]
         if snippet_filename:
-            count_clauses.append(
+            clauses.append(
                 func_json_extract(
                     session.get_bind().name,
                     col(TaskHistory.execution_request),
@@ -490,19 +532,16 @@ class TaskHistoryManager(BaseSQLModelManager):
                 )
                 == snippet_filename
             )
-        count_query = cls._filter_query(count_query, *count_clauses, status=status)
-        total = await session.scalar(count_query) or 0
-        items = await cls.list_by_task_name(
-            session=session,
-            task_name=task_name,
-            status=status,
-            snippet_filename=snippet_filename,
-            select_related_task=select_related_task,
-            offset=pagination.offset,
-            limit=pagination.limit,
+        select_related = (TaskHistory.task,) if select_related_task else ()
+        return await cls.list_query_paginated(
+            session,
+            *clauses,
+            list_query=list_query,
+            select_related=select_related,
             query_options=query_options,
+            pagination=pagination,
+            status=status,
         )
-        return PaginatedResponse.from_pagination(items, total, pagination)
 
     @classmethod
     async def list_all_history_paginated(
@@ -510,6 +549,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         session: AsyncSession,
         *,
         pagination: Pagination,
+        list_query: ListQuery,
         status: TaskHistoryStatusEnum | None = None,
         exclude_internal: bool = False,
         query_options: Sequence = (),
@@ -518,6 +558,7 @@ class TaskHistoryManager(BaseSQLModelManager):
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :param pagination: Validated offset/limit window for this page.
+        :param list_query: The resolved sort/search produced at the request boundary.
         :param status: Optional exact status filter.
         :param exclude_internal: When ``True``, omit system-internal rows before
             counting and pagination, so ``limit=5`` always returns five user-facing
@@ -551,9 +592,10 @@ class TaskHistoryManager(BaseSQLModelManager):
                 col(TaskHistory.task_id).not_in(internal_ids),
                 col(TaskHistory.id).not_in(system_generic_history_ids),
             )
-        return await cls.list_paginated(
+        return await cls.list_query_paginated(
             session,
             *extra,
+            list_query=list_query,
             select_related=(TaskHistory.task,),
             query_options=query_options,
             pagination=pagination,

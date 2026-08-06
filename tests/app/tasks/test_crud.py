@@ -15,7 +15,7 @@
 
 """Define tests for the Tasks CRUD managers."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from uuid import uuid4
 
 import pytest
@@ -25,7 +25,9 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.db import ListQuery
+from app.core.db.list_query import build_search_predicate
+from app.core.db.utils import get_async_session_maker_from_engine, NullsLastOrdering
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.pagination import (
     DEFAULT_PAGINATION_LIMIT,
@@ -58,7 +60,50 @@ PAGINATED_TASK_COUNT = 2
 PAGINATED_CUSTOM_TASK_COUNT = 3
 PBM_CONFIG_BACKUP_TYPE = "pbm_config"
 PARENT_FILTER_TASK_COUNT = 3
+SEARCH_MATCH_TOTAL = 2
+TIE_BREAK_TOTAL = 3
 CHUNKS_AT_OR_BELOW_OFFSET = 2
+
+
+def _default_list_query(
+    manager: type[TaskManager] | type[TaskHistoryManager],
+) -> ListQuery:
+    """Build a default ListQuery from a manager's list_query_spec.
+
+    :param manager: The manager whose ``list_query_spec`` supplies the default sort.
+    :type manager: type[TaskManager] | type[TaskHistoryManager]
+    :return: A ListQuery with the spec default ordering and no search predicate.
+    :rtype: ListQuery
+    """
+    return ListQuery(
+        order_by=tuple(manager.list_query_spec.resolve_sort(None)),
+        search_predicate=None,
+    )
+
+
+def _list_query(
+    manager: type[TaskManager] | type[TaskHistoryManager],
+    *,
+    sort: str | None = None,
+    search: str | None = None,
+) -> ListQuery:
+    """Build a ListQuery with an optional sort key and search term.
+
+    :param manager: The manager whose ``list_query_spec`` bounds sort and search.
+    :type manager: type[TaskManager] | type[TaskHistoryManager]
+    :param sort: Public sort key (optionally ``-`` prefixed), or ``None`` to use the
+        spec default sort.
+    :type sort: str | None
+    :param search: Raw search term, or ``None`` / empty for no search predicate.
+    :type search: str | None
+    :return: A resolved ListQuery for the manager's list-query applier.
+    :rtype: ListQuery
+    """
+    spec = manager.list_query_spec
+    return ListQuery(
+        order_by=tuple(spec.resolve_sort(sort)),
+        search_predicate=build_search_predicate(search, spec.searchable),
+    )
 
 
 async def _create_task(
@@ -528,6 +573,221 @@ class TestTaskHistoryManagerListByTaskName:
         assert result == []
 
 
+class TestTaskAndHistoryManagerGetOrdering:
+    """Cover spec-derived default ordering used by non-HTTP list callers."""
+
+    def test_task_manager_derives_default_sort_from_spec(self) -> None:
+        """Return the Task ``list_query_spec`` default sort via ``_get_ordering``."""
+        ordering = list(TaskManager._get_ordering())
+        expected = TaskManager.list_query_spec.resolve_sort(None)
+
+        assert len(ordering) == len(expected)
+        assert isinstance(ordering[0], NullsLastOrdering)
+        assert isinstance(expected[0], NullsLastOrdering)
+        assert ordering[0].descending is expected[0].descending
+        assert ordering[0].column.compare(expected[0].column)
+        assert ordering[1].compare(expected[1])
+
+    def test_task_history_manager_derives_default_sort_from_spec(self) -> None:
+        """Return the history ``list_query_spec`` default sort via ``_get_ordering``."""
+        ordering = list(TaskHistoryManager._get_ordering())
+        expected = TaskHistoryManager.list_query_spec.resolve_sort(None)
+
+        assert len(ordering) == len(expected)
+        assert isinstance(ordering[0], NullsLastOrdering)
+        assert isinstance(expected[0], NullsLastOrdering)
+        assert ordering[0].descending is expected[0].descending
+        assert ordering[0].column.compare(expected[0].column)
+        assert ordering[1].compare(expected[1])
+
+
+class TestTaskHistoryManagerListByTaskNameOrdering:
+    """Cover ``list_by_task_name`` ordering driven by the shared history spec."""
+
+    @pytest.mark.asyncio
+    async def test_orders_by_created_at_descending(self, session: AsyncSession) -> None:
+        """Return histories newest-first when ``created_at`` values differ."""
+        task = await _create_task(session, name="order-created-at")
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        older = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.SUCCESS, created_at=base
+        )
+        newer = await _create_task_history(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.FAILED,
+            created_at=base + timedelta(minutes=1),
+        )
+
+        result = await TaskHistoryManager.list_by_task_name(
+            session=session, task_name="order-created-at"
+        )
+
+        assert [row.id for row in result] == [newer.id, older.id]
+
+    @pytest.mark.asyncio
+    async def test_tie_breaks_equal_created_at_by_id_ascending(
+        self, session: AsyncSession
+    ) -> None:
+        """Tie-break equal ``created_at`` values with ascending unique ``id``."""
+        task = await _create_task(session, name="order-tie-break")
+        tied_at = datetime(2026, 1, 1, tzinfo=UTC)
+        first = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.SUCCESS, created_at=tied_at
+        )
+        second = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.FAILED, created_at=tied_at
+        )
+        third = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.RUNNING, created_at=tied_at
+        )
+
+        result = await TaskHistoryManager.list_by_task_name(
+            session=session, task_name="order-tie-break"
+        )
+
+        assert [row.id for row in result] == [first.id, second.id, third.id]
+        assert first.id < second.id < third.id
+
+
+class TestTaskManagerListQueryPaginated:
+    """Cover TaskManager list-query applier sort, search, and filtered totals."""
+
+    @pytest.mark.asyncio
+    async def test_sort_by_name_ascending(self, session: AsyncSession) -> None:
+        """Map the public ``name`` sort key to ascending name order."""
+        await _create_task(session, name="zeta-task")
+        await _create_task(session, name="alpha-task")
+
+        result = await TaskManager.list_active_paginated(
+            session,
+            pagination=Pagination(),
+            list_query=_list_query(TaskManager, sort="name"),
+        )
+
+        assert [task.name for task in result.items] == ["alpha-task", "zeta-task"]
+
+    @pytest.mark.asyncio
+    async def test_search_filters_and_reports_filtered_total(
+        self, session: AsyncSession
+    ) -> None:
+        """Filter by name search and report the filtered total, not page size."""
+        await _create_task(session, name="match-one", owner="BACKUPS")
+        await _create_task(session, name="match-two", owner="BACKUPS")
+        await _create_task(session, name="other-task", owner="ALTERS")
+
+        result = await TaskManager.list_active_paginated(
+            session,
+            pagination=Pagination(offset=0, limit=1),
+            list_query=_list_query(TaskManager, search="match"),
+        )
+
+        assert result.total == SEARCH_MATCH_TOTAL
+        assert len(result.items) == 1
+        assert "match" in result.items[0].name
+
+    @pytest.mark.asyncio
+    async def test_search_composes_with_owner_base_restriction(
+        self, session: AsyncSession
+    ) -> None:
+        """Keep owner predicates separate from search and share them for the total."""
+        await _create_task(session, name="keep-match", owner="BACKUPS")
+        await _create_task(session, name="drop-match", owner="ALTERS")
+        await _create_task(session, name="keep-other", owner="BACKUPS")
+
+        result = await TaskManager.list_active_paginated(
+            session,
+            owner="BACKUPS",
+            pagination=Pagination(),
+            list_query=_list_query(TaskManager, search="match"),
+        )
+
+        assert result.total == 1
+        assert result.items[0].name == "keep-match"
+
+    @pytest.mark.asyncio
+    async def test_tie_broken_ordering_across_pages(
+        self, session: AsyncSession
+    ) -> None:
+        """Keep page order deterministic when the mapped sort key ties."""
+        tied_at = datetime(2026, 1, 1, tzinfo=UTC)
+        first = await _create_task(session, name="tie-a")
+        second = await _create_task(session, name="tie-b")
+        third = await _create_task(session, name="tie-c")
+        for task in (first, second, third):
+            task.created_at = tied_at
+            await TaskManager.save(session, task)
+
+        page_1 = await TaskManager.list_active_paginated(
+            session,
+            pagination=Pagination(offset=0, limit=2),
+            list_query=_list_query(TaskManager, sort="-created_at"),
+        )
+        page_2 = await TaskManager.list_active_paginated(
+            session,
+            pagination=Pagination(offset=2, limit=2),
+            list_query=_list_query(TaskManager, sort="-created_at"),
+        )
+
+        assert [task.id for task in page_1.items] == [first.id, second.id]
+        assert [task.id for task in page_2.items] == [third.id]
+        assert page_1.total == page_2.total == TIE_BREAK_TOTAL
+
+
+class TestTaskHistoryManagerListQueryPaginated:
+    """Cover TaskHistoryManager list-query applier search and filtered totals."""
+
+    @pytest.mark.asyncio
+    async def test_search_filters_executed_by_and_reports_filtered_total(
+        self, session: AsyncSession
+    ) -> None:
+        """Filter histories by executed_by ILIKE and report the filtered total."""
+        task = await _create_task(session, name="search-history-task")
+        await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.SUCCESS, executed_by="alice"
+        )
+        await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.FAILED, executed_by="alice-ops"
+        )
+        await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.RUNNING, executed_by="bob"
+        )
+
+        result = await TaskHistoryManager.list_by_task_name_paginated(
+            session=session,
+            task_name="search-history-task",
+            pagination=Pagination(offset=0, limit=1),
+            list_query=_list_query(TaskHistoryManager, search="alice"),
+        )
+
+        assert result.total == SEARCH_MATCH_TOTAL
+        assert len(result.items) == 1
+        assert "alice" in (result.items[0].executed_by or "")
+
+    @pytest.mark.asyncio
+    async def test_search_composes_with_status_base_restriction(
+        self, session: AsyncSession
+    ) -> None:
+        """Keep status predicates separate from search on the shared history surface."""
+        task = await _create_task(session, name="status-search-task")
+        await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.SUCCESS, executed_by="alice"
+        )
+        await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.FAILED, executed_by="alice"
+        )
+
+        result = await TaskHistoryManager.list_all_history_paginated(
+            session,
+            pagination=Pagination(),
+            list_query=_list_query(TaskHistoryManager, search="alice"),
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+
+        assert result.total == 1
+        assert result.items[0].status == TaskHistoryStatusEnum.SUCCESS
+
+
 # ---------------------------------------------------------------------------
 # TaskManager.list_active_paginated
 # ---------------------------------------------------------------------------
@@ -543,7 +803,9 @@ class TestTaskManagerListActivePaginated:
         await _create_task(session, name="pag-task-2")
 
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination()
+            session,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == PAGINATED_TASK_COUNT
@@ -558,7 +820,9 @@ class TestTaskManagerListActivePaginated:
             await _create_task(session, name=f"pag-custom-{i}")
 
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination(offset=0, limit=1)
+            session,
+            pagination=Pagination(offset=0, limit=1),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == PAGINATED_CUSTOM_TASK_COUNT
@@ -572,7 +836,10 @@ class TestTaskManagerListActivePaginated:
         await _create_task(session, name="pag-alter", owner="ALTERS")
 
         result = await TaskManager.list_active_paginated(
-            session, owner="BACKUPS", pagination=Pagination()
+            session,
+            owner="BACKUPS",
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -586,7 +853,9 @@ class TestTaskManagerListActivePaginated:
         await TaskManager.delete_by_name(session, "pag-deleted")
 
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination()
+            session,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -596,7 +865,9 @@ class TestTaskManagerListActivePaginated:
     async def test_empty_db_returns_zero_total(self, session: AsyncSession) -> None:
         """Assert empty database returns total of zero."""
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination()
+            session,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 0
@@ -608,7 +879,9 @@ class TestTaskManagerListActivePaginated:
         await _create_task(session, name="pag-beyond")
 
         result = await TaskManager.list_active_paginated(
-            session, pagination=Pagination(offset=999)
+            session,
+            pagination=Pagination(offset=999),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -632,10 +905,16 @@ class TestTaskManagerListActivePaginated:
         )
 
         null_parents = await TaskManager.list_active_paginated(
-            session, parent_is_null=True, pagination=Pagination()
+            session,
+            parent_is_null=True,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
         non_null_parents = await TaskManager.list_active_paginated(
-            session, parent_is_null=False, pagination=Pagination()
+            session,
+            parent_is_null=False,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert null_parents.total == 1
@@ -658,7 +937,10 @@ class TestTaskManagerListActivePaginated:
         )
 
         result = await TaskManager.list_active_paginated(
-            session, backup_type=PBM_CONFIG_BACKUP_TYPE, pagination=Pagination()
+            session,
+            backup_type=PBM_CONFIG_BACKUP_TYPE,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -684,7 +966,10 @@ class TestTaskManagerListActivePaginated:
         )
 
         result = await TaskManager.list_active_paginated(
-            session, self_parent=True, pagination=Pagination()
+            session,
+            self_parent=True,
+            pagination=Pagination(),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == 1
@@ -715,6 +1000,7 @@ class TestTaskManagerListActivePaginated:
             parent_is_null=True,
             backup_type=PBM_CONFIG_BACKUP_TYPE,
             pagination=Pagination(offset=1, limit=1),
+            list_query=_default_list_query(TaskManager),
         )
 
         assert result.total == PARENT_FILTER_TASK_COUNT
@@ -1115,6 +1401,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-history-task",
             pagination=Pagination(),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == HISTORY_FIXTURE_COUNT
@@ -1131,6 +1418,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-history-task",
             pagination=Pagination(limit=1),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == HISTORY_FIXTURE_COUNT
@@ -1146,6 +1434,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             task_name="pag-history-task",
             status=TaskHistoryStatusEnum.RUNNING,
             pagination=Pagination(),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == 1
@@ -1161,6 +1450,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-empty-task",
             pagination=Pagination(),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == 0
@@ -1175,6 +1465,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             session=session,
             task_name="pag-history-task",
             pagination=Pagination(offset=999),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == HISTORY_FIXTURE_COUNT
@@ -1192,6 +1483,7 @@ class TestTaskHistoryManagerListByTaskNamePaginated:
             task_name="pag-snippet-task",
             snippet_filename="config.yaml",
             pagination=Pagination(),
+            list_query=_default_list_query(TaskHistoryManager),
         )
 
         assert result.total == 1
