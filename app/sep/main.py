@@ -16,7 +16,7 @@
 """Define SEP routes."""
 
 import logging.config
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from traceback import format_exception
@@ -184,7 +184,7 @@ def _make_remote_api_rebinder(
     return _rebind
 
 
-async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
+async def _apply_logging_dictconfig(_: SnapshotChange) -> None:
     """Re-apply ``logging.config.dictConfig`` after a global ``LOGGING`` override.
 
     ``LOGGING`` is a HOT field, but ``LOGGING_CONFIG`` (the dict handed to
@@ -196,8 +196,8 @@ async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
     process without a restart. Failures are logged and swallowed: a malformed
     config must not take the process down mid-request.
 
-    :param _: The new effective ``Settings`` snapshot mapping (unused -- the level
-        is re-read from the proxy).
+    :param _: The override snapshots on either side of the republish (unused --
+        the level is re-read from the proxy).
     """
     try:
         config = deepcopy(settings.LOGGING_CONFIG)
@@ -208,7 +208,7 @@ async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
         logger.exception("Failed to re-apply logging config after LOGGING override")
 
 
-async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
+async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     """Re-seed the SEP beat schedule after a hot interval override.
 
     Wired for both ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``) and
@@ -224,8 +224,8 @@ async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
     Updating the ``IntervalSchedule`` bumps ``PeriodicTaskChanged.last_update``, so
     Celery beat reloads the schedule on its next scheduler tick without a restart.
 
-    :param _: The new effective settings snapshot mapping (unused -- the interval is
-        re-read from the proxy by the task-set builder).
+    :param _: The override snapshots on either side of the republish (unused -- the
+        interval is re-read from the proxy by the task-set builder).
     """
     await init_periodic_tasks_db(get_system_periodic_tasks(), "sep__")
 
