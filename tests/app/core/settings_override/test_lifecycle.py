@@ -29,8 +29,10 @@ from sqlmodel.pool import StaticPool
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
+    fire_change_callbacks,
     ProxyEntry,
     refresh_all,
+    SnapshotChange,
     start_refresh_task,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -363,6 +365,32 @@ async def test_refresh_all_fires_callback_for_changed_key(
     await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _callback})
     assert fired == [True]
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_fire_change_callbacks_delivers_snapshot_change_on_delete() -> None:
+    """Callbacks receive a SnapshotChange; on delete the key is absent from current."""
+    previous = {"CONNECTIVITY_CHECK_DEFAULT": True}
+    current: dict[str, object] = {}
+    received: list[object] = []
+
+    async def _callback(change: object) -> None:
+        received.append(change)
+
+    await fire_change_callbacks(
+        {_CALLBACK_KEY: _callback},
+        SettingClassEnum.SEP_SETTINGS,
+        previous,
+        current,
+    )
+
+    assert len(received) == 1
+    change = received[0]
+    assert isinstance(change, SnapshotChange)
+    assert change.previous == previous
+    assert change.current == current
+    assert "CONNECTIVITY_CHECK_DEFAULT" not in change.current
+    assert change.previous["CONNECTIVITY_CHECK_DEFAULT"] is True
 
 
 @pytest.mark.asyncio

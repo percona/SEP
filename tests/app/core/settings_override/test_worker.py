@@ -16,7 +16,6 @@
 """Tests for the reusable prefork-child settings-override refresher handle."""
 
 import asyncio
-from collections.abc import Mapping
 from contextlib import suppress
 from datetime import timedelta
 
@@ -30,6 +29,7 @@ from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     ProxyEntry,
     ProxyRegistry,
+    SnapshotChange,
 )
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
@@ -41,8 +41,8 @@ from app.tasks.config import TasksSettings
 INTERVAL = timedelta(seconds=30)
 
 
-async def _noop_callback(_: Mapping[str, object]) -> None:
-    """Accept a snapshot and do nothing; a stand-in registry entry."""
+async def _noop_callback(_: SnapshotChange) -> None:
+    """Accept a snapshot change and do nothing; a stand-in registry entry."""
 
 
 def _make_registry() -> ProxyRegistry:
