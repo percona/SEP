@@ -54,9 +54,9 @@ SessionMakerFactory = Callable[[], async_sessionmaker]
 
 
 def _drain_cancelled_seed_task(task: asyncio.Task) -> None:
-    """Retrieve a cancelled seed task's outcome so it is not logged as unretrieved.
+    """Retrieve a finished seed task's exception so it is not logged as unretrieved.
 
-    :param task: The cancelled (or finished) seed task.
+    :param task: The finished seed task (cancelled tasks are ignored).
     """
     if not task.cancelled():
         with suppress(Exception):
