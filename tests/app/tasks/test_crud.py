@@ -71,9 +71,7 @@ def _default_list_query(
     """Build a default ListQuery from a manager's list_query_spec.
 
     :param manager: The manager whose ``list_query_spec`` supplies the default sort.
-    :type manager: type[TaskManager] | type[TaskHistoryManager]
     :return: A ListQuery with the spec default ordering and no search predicate.
-    :rtype: ListQuery
     """
     return ListQuery(
         order_by=tuple(manager.list_query_spec.resolve_sort(None)),
@@ -90,14 +88,10 @@ def _list_query(
     """Build a ListQuery with an optional sort key and search term.
 
     :param manager: The manager whose ``list_query_spec`` bounds sort and search.
-    :type manager: type[TaskManager] | type[TaskHistoryManager]
     :param sort: Public sort key (optionally ``-`` prefixed), or ``None`` to use the
         spec default sort.
-    :type sort: str | None
     :param search: Raw search term, or ``None`` / empty for no search predicate.
-    :type search: str | None
     :return: A resolved ListQuery for the manager's list-query applier.
-    :rtype: ListQuery
     """
     spec = manager.list_query_spec
     return ListQuery(
@@ -629,7 +623,7 @@ class TestTaskHistoryManagerListByTaskNameOrdering:
     async def test_tie_breaks_equal_created_at_by_id_ascending(
         self, session: AsyncSession
     ) -> None:
-        """Tie-break equal ``created_at`` values with ascending unique ``id``."""
+        """Resolve ties on equal ``created_at`` values with ascending unique ``id``."""
         task = await _create_task(session, name="order-tie-break")
         tied_at = datetime(2026, 1, 1, tzinfo=UTC)
         first = await _create_task_history(

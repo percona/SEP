@@ -63,7 +63,6 @@ class TaskManager(BaseSQLModelManager):
     such as listing active tasks, retrieving tasks by name, and deleting tasks.
 
     :ivar Model: The SQLModel class this manager is responsible for (``Task``).
-    :vartype Model: type[Task]
     :cvar ordering: Legacy default ordering (``created_at`` desc, ``id`` desc);
         superseded by :attr:`list_query_spec` when set.
     :cvar list_query_spec: Sort allowlist, searchable columns, default sort, and
@@ -322,7 +321,6 @@ class TaskHistoryManager(BaseSQLModelManager):
     """Manage task history operations, including listing task histories by task name.
 
     :ivar Model: The SQLModel class this manager is responsible for (``TaskHistory``).
-    :vartype Model: type[TaskHistory]
     :cvar list_query_spec: Shared sort allowlist, searchable columns, default sort,
         and unique ``id`` tie-breaker for both TaskHistory list endpoints.
     """
@@ -497,25 +495,17 @@ class TaskHistoryManager(BaseSQLModelManager):
         """Return a paginated response of task histories by the task's name.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
         :param task_name: The name of the task to list histories for.
-        :type task_name: str
         :param pagination: Validated offset/limit window for this page.
-        :type pagination: Pagination
         :param list_query: The resolved sort/search produced at the request boundary.
         :param status: The status of the task history. If provided, only histories
             with this status will be listed.
-        :type status: TaskHistoryStatusEnum | None
         :param snippet_filename: If provided, filter task histories by the specified
             snippet filename in the task's metadata.
-        :type snippet_filename: str | None
         :param select_related_task: Whether to include the related task data in the
             result. Defaults to False.
-        :type select_related_task: bool
         :param query_options: Additional SQLAlchemy query options to apply.
-        :type query_options: Sequence
         :return: A paginated response containing task histories and metadata.
-        :rtype: PaginatedResponse[TaskHistory]
         """
         clauses = [
             col(TaskHistory.task_id).in_(
