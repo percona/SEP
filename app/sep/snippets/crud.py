@@ -160,6 +160,31 @@ class SnippetManager(BaseSQLModelManager):
         )
 
     @classmethod
+    async def snippet_list_all(
+        cls,
+        session: AsyncSession,
+        *,
+        list_query: SnippetListQuery,
+    ) -> list[Snippet]:
+        """Return every snippet matching a list query, unsliced.
+
+        The unpaginated sibling of :meth:`snippet_list_page`, for the caller that wants
+        the whole filtered set rather than a window: same predicates, same Core-resolved
+        search and ordering, no offset or limit. Core exposes no unpaginated
+        ``list_query_*`` helper, so the search predicate is folded into the whereclause
+        set here the way :meth:`~app.core.db.crud.BaseManager.list_query_paginated` does.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :param list_query: The validated sort/search/filter selections.
+        :return: The filtered, ordered snippets across the whole table.
+        :raises sqlalchemy.exc.SQLAlchemyError: When the query fails to execute.
+        """
+        filters = cls._list_query_filters(list_query)
+        if list_query.core.search_predicate is not None:
+            filters.append(list_query.core.search_predicate)
+        return await cls.list(session, *filters, order_by=list_query.core.order_by)
+
+    @classmethod
     async def list_service_types(cls, session: AsyncSession) -> tuple[list[str], bool]:
         """Return the distinct service types across the whole snippets table.
 

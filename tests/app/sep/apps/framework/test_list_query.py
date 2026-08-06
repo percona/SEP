@@ -26,7 +26,12 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import cast, column, String
 
-from app.core.db.list_query import ListQuerySpec, UnknownSortKeyError
+from app.core.db.list_query import (
+    ListQuerySpec,
+    SEARCH_PARAM_DESCRIPTION,
+    SORT_PARAM_DESCRIPTION,
+    UnknownSortKeyError,
+)
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import Pagination
 from app.sep.apps.framework import list_query as list_query_module
@@ -130,6 +135,27 @@ class TestMakeInMemoryListQueryDep:
         dep = make_in_memory_list_query_dep(SPEC)
         with pytest.raises(HTTPUnprocessableEntityException):
             dep(sort="-bogus", search=None)
+
+    def test_params_carry_the_allowlist_enum_and_descriptions(self) -> None:
+        """Declare the params through Core, so both paths document one contract."""
+        dep = make_in_memory_list_query_dep(SPEC)
+        declarations = {
+            name: param.default
+            for name, param in inspect.signature(dep).parameters.items()
+        }
+
+        assert declarations["sort"].json_schema_extra == {
+            "enum": [
+                "created_at",
+                "-created_at",
+                "filename",
+                "-filename",
+                "title",
+                "-title",
+            ]
+        }
+        assert declarations["sort"].description == SORT_PARAM_DESCRIPTION
+        assert declarations["search"].description == SEARCH_PARAM_DESCRIPTION
 
 
 class TestApplyInMemorySort:

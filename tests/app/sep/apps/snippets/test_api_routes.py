@@ -214,7 +214,7 @@ class TestSnippetsApiList:
         response = test_client.get(f"{API_BASE}/", params={"sort": "meta"})
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "meta" in response.json()["detail"]
+        assert response.json()["detail"] == "Invalid sort key: 'meta'"
 
     async def test_invalid_approval_selection_is_rejected_at_the_boundary(
         self, test_client

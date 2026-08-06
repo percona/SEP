@@ -225,10 +225,13 @@ async def _list_scripts(
     data queries share predicates and the ``total`` matches the visible page. The rows
     go through :func:`_detach` so they stay usable after the request-less session
     closes, mirroring :func:`_load_script`. The snippets list route always derives a
-    query, so
-    ``list_query`` and ``pagination`` are always supplied; the ``None`` branches keep
-    the hook honest against the framework's non-query call shapes, where an absent
-    ``pagination`` means the whole set rather than a default-sized first page.
+    query, so ``list_query`` and ``pagination`` are always supplied; the ``None``
+    branches keep the hook honest against the framework's non-query call shapes, where an
+    absent ``pagination`` means the whole set rather than a default-sized first page. A
+    query with no pagination is answered unsliced but still filtered, searched, and
+    ordered — the shape
+    :func:`~app.sep.apps.framework.list_query.in_memory_list_scripts` honours for a
+    disk-backed source, so the two implementations of the one contract agree.
 
     :param list_query: The resolved sort/search/filter selections, or ``None`` for the
         manager's default ordering with no filters.
@@ -239,7 +242,11 @@ async def _list_scripts(
     async_session = get_async_session_maker()
     async with async_session() as session:
         if pagination is None:
-            rows = await SnippetManager.list(session)
+            rows = await (
+                SnippetManager.list(session)
+                if list_query is None
+                else SnippetManager.snippet_list_all(session, list_query=list_query)
+            )
             total = len(rows)
         else:
             page = await (

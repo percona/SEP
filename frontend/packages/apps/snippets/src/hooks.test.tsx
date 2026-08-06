@@ -265,8 +265,6 @@ describe('useSnippets', () => {
   it('pins the newest-first sort rather than relying on the endpoint default', async () => {
     responseBody = { items: [], total: 0, offset: 0, limit: 50 };
 
-    // The endpoint defaults to approved-first, since the manager spec is the single
-    // ordering authority for every consumer; this page wants newest-first and says so.
     const { result } = renderHook(() => useSnippets(), { wrapper: makeWrapper() });
 
     await waitFor(() => {

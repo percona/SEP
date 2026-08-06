@@ -78,11 +78,11 @@ __all__ = [
     "build_disk_script_source",
 ]
 
-# Every disk-backed source lists the same shape — a flat directory of scripts, one row
-# per file — so the allowlist is fully determined by ``_DiskScript``'s attributes and is
-# shared rather than restated per app. ``filename`` is the tie-breaker because a
-# directory cannot hold two entries under one name, which makes it unique by
-# construction where no surrogate id exists.
+#: Every disk-backed source lists the same shape — a flat directory of scripts, one row
+#: per file — so the allowlist is fully determined by ``_DiskScript``'s attributes and is
+#: shared rather than restated per app. ``filename`` is the tie-breaker because a
+#: directory cannot hold two entries under one name, which makes it unique by
+#: construction where no surrogate id exists.
 DISK_SCRIPT_LIST_QUERY_SPEC = ListQuerySpec(
     sortable={
         "filename": column("filename"),

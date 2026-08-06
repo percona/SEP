@@ -207,6 +207,29 @@ class TestLoadAndListScripts:
         assert [script.filename for script in scripts] == ["approved.sh"]
         assert total == 1
 
+    async def test_query_without_pagination_filters_unsliced(
+        self,
+        request_less_session: AsyncSession,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+    ) -> None:
+        """Honour a query with no pagination, matching ``in_memory_list_scripts``.
+
+        The framework's own adapter filters and orders the whole set unsliced for this
+        shape, so the SQL-backed hook must not fall back to the unfiltered set.
+        """
+        count = Pagination().limit + 5
+        for index in range(count):
+            await create_snippet(f"keep-{index:03d}.sh")
+        await create_snippet("drop.sh")
+
+        scripts, total = await snippet_source.list_scripts(
+            _snippet_query(sort="-filename", search="keep"), None
+        )
+
+        assert len(scripts) == count
+        assert total == count
+        assert scripts[0].filename == f"keep-{count - 1:03d}.sh"
+
 
 class TestLoadScriptsBatch:
     """Cover the batch ``load_scripts`` hook (one query, detached rows, filtering)."""

@@ -33,9 +33,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar
 
-from fastapi import Query
-
-from app.core.db.list_query import UnknownSortKeyError
+from app.core.db.list_query import (
+    search_query_param,
+    sort_query_param,
+    UnknownSortKeyError,
+)
 from app.core.exceptions import HTTPUnprocessableEntityException
 
 if TYPE_CHECKING:
@@ -164,14 +166,12 @@ def make_in_memory_list_query_dep(
     only when the spec's searchable set is non-empty, and an out-of-allowlist sort key
     rejected with HTTP 422. The allowlist check, the error type, and the 422 mapping are
     Core's, reached through :meth:`ListQuerySpec.resolve_sort` and
-    :class:`UnknownSortKeyError`. What is duplicated is narrower and deliberate: Core
-    exposes no seam for the ``Query(default=spec.default_sort)`` parameter declaration
-    or the two-statically-defined-inner-functions shape that FastAPI needs to reflect
-    the params into OpenAPI, so those lines are restated here.
-
-    .. todo:: Extract a shared parameter-declaration helper in ``app.core.db`` and
-       delete the restated declarations, leaving this factory to supply only the
-       in-memory value type. Tracked separately; ``app.core.db`` is out of scope here.
+    :class:`UnknownSortKeyError`. The parameter declarations themselves are Core's too,
+    through :func:`~app.core.db.list_query.sort_query_param` and
+    :func:`~app.core.db.list_query.search_query_param`, so the description and the
+    allowlist ``enum`` a generated client reads are identical on both paths. What
+    remains restated is the two-statically-defined-inner-functions shape FastAPI needs
+    to reflect the params into OpenAPI.
 
     :param spec: The spec whose allowlist and searchable set bound the request.
     :return: A dependency callable resolving the request into an
@@ -185,15 +185,15 @@ def make_in_memory_list_query_dep(
     if spec.search_enabled:
 
         def _in_memory_list_query_dep(
-            sort: str = Query(default=spec.default_sort),
-            search: str | None = Query(default=None),
+            sort: str = sort_query_param(spec),
+            search: str | None = search_query_param(),
         ) -> InMemoryListQuery:
             return _build_in_memory_query(spec, sort, search)
 
         return _in_memory_list_query_dep
 
     def _in_memory_list_query_dep_no_search(
-        sort: str = Query(default=spec.default_sort),
+        sort: str = sort_query_param(spec),
     ) -> InMemoryListQuery:
         return _build_in_memory_query(spec, sort, None)
 

@@ -1643,7 +1643,9 @@ class TestDeriveScriptRoutesListQueryGuard:
 
     ``derive_script_routes`` is public and wired directly by callers outside
     ``TaskExecutionApp``, so it cannot lean on the app-level validator: without a spec
-    it would register the no-query handler and quietly discard the source's filters.
+    it would register the no-query handler and quietly discard the source's filters, and
+    without a pagination dependency it registers the unpaginated route, which mounts no
+    query dependency whether a spec was supplied or not.
     """
 
     def test_in_memory_source_without_spec_raises(self) -> None:
@@ -1668,9 +1670,25 @@ class TestDeriveScriptRoutesListQueryGuard:
                 pagination_dep=make_pagination_dep(max_limit=50),
             )
 
+    def test_spec_without_pagination_dep_raises(self) -> None:
+        """Reject a spec on an unpaginated route, which exposes no query params."""
+        with pytest.raises(ValueError, match="no pagination_dep"):
+            _script_router(list_query_spec=_STUB_SPEC, in_memory_list_query=True)
+
+    def test_spec_without_pagination_dep_raises_for_a_plain_source(self) -> None:
+        """Reject the pairing even when the source resolves no query of its own."""
+        with pytest.raises(ValueError, match="no pagination_dep"):
+            _script_router(list_query_spec=_STUB_SPEC)
+
     def test_plain_source_without_spec_is_accepted(self) -> None:
         """Leave a source that resolves no query alone, so the guard is not too broad."""
         router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
+
+        assert router.routes
+
+    def test_unpaginated_plain_source_is_accepted(self) -> None:
+        """Leave the unpaginated no-spec wiring alone — nothing is being dropped."""
+        router = _script_router()
 
         assert router.routes
 

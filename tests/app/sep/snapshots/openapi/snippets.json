@@ -3709,16 +3709,31 @@
             }
           },
           {
+            "description": "Sort key; prefix with '-' for descending order.",
             "in": "query",
             "name": "sort",
             "required": false,
             "schema": {
               "default": "-approved_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "approved_at",
+                "-approved_at",
+                "created_at",
+                "-created_at",
+                "filename",
+                "-filename",
+                "service_type",
+                "-service_type",
+                "title",
+                "-title"
+              ],
               "title": "Sort",
               "type": "string"
             }
           },
           {
+            "description": "Case-insensitive search across the searchable columns.",
             "in": "query",
             "name": "search",
             "required": false,
@@ -3731,6 +3746,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
             }
           }

@@ -1672,31 +1672,44 @@ def derive_cascade_create_route(
     )
 
 
-def _reject_unspecced_list_query(
+def _reject_unexposed_list_query(
     source: ScriptSource[Any],
     *,
     name: str,
+    pagination_dep: PaginationDependency | None,
     list_query_spec: ListQuerySpec | None,
 ) -> None:
-    """Reject a source that resolves a list query the route would not expose.
+    """Reject either half-wiring of a list query the derived route would not expose.
 
-    Without a spec the derived list route registers the handler that takes no query
-    parameter, so the source's own dependency is never mounted and its filters vanish
-    silently. ``TaskExecutionApp`` checks the same pairing, but this seam is public and
-    wired directly, so it cannot rely on that.
+    Both directions end the same way — a query resolved but never reaching the route.
+    Without a spec the list route registers the handler that takes no query parameter,
+    so the source's own dependency is never mounted. Without a pagination dependency the
+    route is the unpaginated ``list_scripts()``, which calls ``list_scripts(None, None)``
+    and mounts no query dependency either, spec or not. ``TaskExecutionApp`` checks the
+    same two pairings, but this seam is public and wired directly, so it cannot rely on
+    that.
 
     :param source: The script source whose query knobs to check.
     :param name: The app name, for the error message.
+    :param pagination_dep: The pagination dependency the caller supplied, if any.
     :param list_query_spec: The spec the caller supplied, if any.
-    :raises ValueError: When the source resolves a list query but no spec was supplied.
+    :raises ValueError: When the source resolves a list query but no spec was supplied,
+        or when a spec was supplied for a route that derives no paginated list.
     """
-    if list_query_spec is None and (
-        source.list_query_dep is not None or source.in_memory_list_query
-    ):
+    if list_query_spec is None:
+        if source.list_query_dep is not None or source.in_memory_list_query:
+            raise ValueError(
+                f"derive_script_routes: {name!r} source resolves a list query "
+                "(list_query_dep or in_memory_list_query) but no list_query_spec was "
+                "supplied, so the derived list route would expose none of it"
+            )
+        return
+    if pagination_dep is None:
         raise ValueError(
-            f"derive_script_routes: {name!r} source resolves a list query "
-            "(list_query_dep or in_memory_list_query) but no list_query_spec was "
-            "supplied, so the derived list route would expose none of it"
+            f"derive_script_routes: {name!r} was given a list_query_spec but no "
+            "pagination_dep, so the derived list route is the unpaginated one and "
+            "exposes no sort/search params — supply pagination_dep or drop "
+            "list_query_spec"
         )
 
 
@@ -1734,18 +1747,26 @@ def derive_script_routes(
         When given, the list route takes that dependency (wrapped in
         ``Annotated[Pagination, Depends(...)]``) and returns a ``PaginatedResponse``.
         When ``None`` the list returns a plain list.
-    :param list_query_spec: The app's sort/search allowlist. When given (and the
-        route is paginated), the list route exposes exactly Core's ``sort`` param
-        (plus ``search`` when the spec has searchable columns) via the SQL dependency
-        or, for a source that sets ``in_memory_list_query``, the in-memory dependency;
-        the resolved query is handed to ``source.list_scripts``. When ``None`` the
-        paginated route fetches the full set and returns a client-side slice, so a
-        source that resolves a query is rejected rather than silently narrowed.
+    :param list_query_spec: The app's sort/search allowlist. When given, the list route
+        exposes exactly Core's ``sort`` param (plus ``search`` when the spec has
+        searchable columns) via the SQL dependency or, for a source that sets
+        ``in_memory_list_query``, the in-memory dependency; the resolved query is handed
+        to ``source.list_scripts``. It requires ``pagination_dep``, since the unpaginated
+        route mounts no query dependency. When ``None`` the paginated route fetches the
+        full set and returns a client-side slice, so a source that resolves a query is
+        rejected rather than silently narrowed.
     :return: A plugin ``APIRouter`` carrying the derived script surface.
     :raises ValueError: When the source resolves a list query (via ``list_query_dep``
-        or ``in_memory_list_query``) but no ``list_query_spec`` was supplied.
+        or ``in_memory_list_query``) but no ``list_query_spec`` was supplied, or when a
+        ``list_query_spec`` is supplied without a ``pagination_dep`` — the unpaginated
+        list route exposes no query either way.
     """
-    _reject_unspecced_list_query(source, name=name, list_query_spec=list_query_spec)
+    _reject_unexposed_list_query(
+        source,
+        name=name,
+        pagination_dep=pagination_dep,
+        list_query_spec=list_query_spec,
+    )
     router = APIRouter()
     if source.static_schema is not None:
         schema_endpoint(router, source.static_schema)

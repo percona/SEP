@@ -904,9 +904,10 @@ class TaskExecutionApp(BaseApp):
                     "in_memory_list_query"
                 )
             return
-        is_spec = isinstance(spec, ListQuerySpec)
-        if not is_spec:
-            raise ValueError(
+        if not isinstance(spec, ListQuerySpec):
+            # ValueError, not TypeError, so Pydantic folds it into the model's own
+            # validation error rather than letting it escape the validator.
+            raise ValueError(  # noqa: TRY004
                 "TaskExecutionApp: list_query_spec must be a ListQuerySpec, got "
                 f"{type(spec).__name__}"
             )
@@ -915,9 +916,9 @@ class TaskExecutionApp(BaseApp):
                 "TaskExecutionApp: list_query_spec backs only the derived script list "
                 "route; a model-first app derives its own list — drop list_query_spec"
             )
-        unpaginated = isinstance(self.pagination, _NoPagination)
-        if unpaginated:
-            raise ValueError(
+        if isinstance(self.pagination, _NoPagination):
+            # A misconfigured pairing, not a type error — see the note above on ValueError.
+            raise ValueError(  # noqa: TRY004
                 "TaskExecutionApp: the derived script list is unpaginated under "
                 "NO_PAGINATION and exposes no sort/search params — enable pagination "
                 "or drop list_query_spec"

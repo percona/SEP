@@ -13800,7 +13800,19 @@ export interface operations {
         service_type?: string | null;
         /** @description When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'. */
         uncategorized?: boolean;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'approved_at'
+          | '-approved_at'
+          | 'created_at'
+          | '-created_at'
+          | 'filename'
+          | '-filename'
+          | 'service_type'
+          | '-service_type'
+          | 'title'
+          | '-title';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
