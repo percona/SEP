@@ -33,10 +33,41 @@ from app.sep.apps.mysql_backups.forms import (
     BackupConfigAll,
     BackupConfigServer,
     BackupCreate,
+    UploadProvider,
 )
 from app.sep.apps.mysql_backups.models import BackupType
 
-_BASE_REQUIREMENTS = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
+_BASE_REQUIREMENTS = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
+
+#: Upload providers in the order ``scripts/gen_xtrabackup_payload_variants.py``
+#: names its variants. Selecting all three dispatches the canonical payload.
+_XTRABACKUP_UPLOAD_PROVIDERS = (
+    (UploadProvider.RSYNC, "rsync"),
+    (UploadProvider.S3, "s3"),
+    (UploadProvider.GSUTIL, "gsutil"),
+)
+
+
+def _xtrabackup_payload_name(upload: list[UploadProvider]) -> str:
+    """Return the xtrabackup payload variant carrying exactly the selected providers.
+
+    The canonical payload ships all three upload-provider classes and sits within a
+    few bytes of the 16 KiB Nomad dispatch limit, so every other selection gets a
+    generated variant with the unreachable providers omitted. Keyed on the set of
+    providers, so the form's ordering does not change the dispatched payload.
+
+    :param upload: The upload providers the form selected (possibly empty).
+    :return: The payload filename beside this module.
+    """
+    selected = set(upload)
+    carried = [
+        slug for provider, slug in _XTRABACKUP_UPLOAD_PROVIDERS if provider in selected
+    ]
+    if len(carried) == len(_XTRABACKUP_UPLOAD_PROVIDERS):
+        return "xtrabackup_payload"
+    if not carried:
+        return "xtrabackup_noupload_payload"
+    return "xtrabackup_{}_payload".format("_".join(carried))
 
 
 def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPythonSpec:
@@ -100,12 +131,17 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
     requirements = _BASE_REQUIREMENTS
     if form.backup_type == BackupType.MYDUMPER:
         payload_name = "mydumper_payload"
-        requirements += "\nfilelock"
+        requirements += "\nboto3\nfilelock"
     elif form.backup_type == BackupType.XTRABACKUP:
-        payload_name = "xtrabackup_payload"
+        payload_name = _xtrabackup_payload_name(form.upload)
+        # Only the variants carrying the S3 provider import boto3; asking for it
+        # anyway would make the task install a dependency it never loads.
+        if UploadProvider.S3 in set(form.upload):
+            requirements += "\nboto3"
         requirements += "\nfilelock"
     elif form.backup_type == BackupType.BINLOG:
         payload_name = "binlog_payload"
+        requirements += "\nboto3"
     else:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
     return RunPythonSpec(

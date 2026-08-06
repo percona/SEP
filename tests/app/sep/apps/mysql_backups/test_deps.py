@@ -56,7 +56,9 @@ from app.tasks.models import (
         ),
         (
             BackupType.XTRABACKUP,
-            "xtrabackup_payload",
+            # The form selects S3 + Rsync, so the dispatch carries the variant with
+            # those two providers and omits the Google Cloud Storage one.
+            "xtrabackup_rsync_s3_payload",
             "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
             "localhost",
         ),
