@@ -156,7 +156,9 @@ def main() -> None:
     Prints the verified app set on success so a build log records which set was
     asserted, and so a caller can tell a real pass from a checker that never ran.
 
-    :raises SystemExit: With the joined problems when the tree does not match.
+    :raises SystemExit: With the joined problems when the tree does not match,
+        or with ``argparse``'s own usage message when ``mode`` is neither
+        ``restricted`` nor ``unrestricted``.
     :raises Exception: Propagates every failure the comparison reports —
         ``OSError``, ``yaml.YAMLError``, ``TypeError`` and ``KeyError`` — so an
         unreadable or malformed profile fails the step loudly.

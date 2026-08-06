@@ -187,11 +187,14 @@ def test_wrapper_rejects_an_empty_verdict(fake_runtime: FakeRuntime):
     assert "never ran" in result.stderr
 
 
-def test_wrapper_propagates_a_runtime_failure(fake_runtime: FakeRuntime):
-    """Assert a failing runtime is not reported as a pass."""
-    result = fake_runtime.run(IMAGE, "restricted", exit_code=1)
+@pytest.mark.parametrize("exit_code", [1, 7])
+def test_wrapper_propagates_a_runtime_failure(
+    fake_runtime: FakeRuntime, exit_code: int
+):
+    """Assert a failing runtime's own status reaches the caller unchanged."""
+    result = fake_runtime.run(IMAGE, "restricted", exit_code=exit_code)
 
-    assert result.returncode != 0
+    assert result.returncode == exit_code
 
 
 def test_wrapper_rejects_a_wrong_argument_count(fake_runtime: FakeRuntime):
