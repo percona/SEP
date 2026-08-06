@@ -158,7 +158,9 @@ async def _ensure_mum_task(tasks_api: TaskAPI, task_name: str) -> dict[str, Any]
     task_data = {
         "name": task_spec.name,
         "backend": task_spec.backend.value,
-        "owner": task_spec.owner.value,
+        # ``owner`` is a plain str on Task (main deleted the TaskOwner enum, which
+        # was only a value vocabulary), so serialize it directly, not via ``.value``.
+        "owner": task_spec.owner,
         "protected": task_spec.protected,
         "alert_on_fail": task_spec.alert_on_fail,
         "data": task_spec.data,
