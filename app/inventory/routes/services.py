@@ -18,7 +18,6 @@
 import logging
 
 from fastapi import APIRouter, status
-from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.pagination import PaginatedResponse
@@ -28,7 +27,12 @@ from app.inventory.crud import (
     ServiceManager,
     ServiceSystemObservationManager,
 )
-from app.inventory.deps import ServiceDep, SessionDep
+from app.inventory.deps import (
+    SchemaListQueryDep,
+    ServiceDep,
+    ServiceListQueryDep,
+    SessionDep,
+)
 from app.inventory.models import (
     Schema,
     SchemaCompactResponse,
@@ -52,12 +56,14 @@ router = APIRouter(prefix="/services", tags=["services"])
 async def list_services(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: ServiceListQueryDep,
     service_type: ServiceTypeEnum | None = None,
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services."""
     logger.debug("Listing services for type '%s'", service_type or "all")
-    return await ServiceManager.list_paginated(
+    return await ServiceManager.list_query_paginated(
         session,
+        list_query=list_query,
         select_related=[Service.schemas, Service.node],
         pagination=pagination,
         type=service_type,
@@ -132,7 +138,7 @@ async def list_schemas_by_service(
     session: SessionDep,
     service: ServiceDep,
     pagination: PaginationDep,
-    search: str | None = None,
+    list_query: SchemaListQueryDep,
     include_tables: str | None = None,
 ) -> PaginatedResponse[SchemaResponse | SchemaCompactResponse]:
     """List Schemas by Service.
@@ -141,27 +147,19 @@ async def list_schemas_by_service(
     is set, otherwise return ``SchemaCompactResponse`` (without tables).
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param service: The resolved service dependency.
-    :type service: Service
-    :param search: Filter schemas by name using ILIKE matching.
-    :type search: str | None
+    :param pagination: Validated offset/limit query parameters.
+    :param list_query: The resolved sort/search produced at the request
+        boundary.
     :param include_tables: Include nested tables in the response when set to
         any non-empty value. Defaults to compact mode (no tables).
-    :type include_tables: str | None
-    :param pagination: Validated offset/limit query parameters.
-    :type pagination: Pagination
     :return: A paginated response of schema responses.
-    :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
     """
     logger.debug("Listing schemas for service '%s'", service.id)
-    whereclause = []
-    if search:
-        whereclause.append(col(Schema.name).ilike(f"%{search}%"))
     select_related = [Schema.tables] if include_tables else []
-    result = await SchemaManager.list_paginated(
+    result = await SchemaManager.list_query_paginated(
         session,
-        *whereclause,
+        list_query=list_query,
         select_related=select_related,
         pagination=pagination,
         service_id=service.id,

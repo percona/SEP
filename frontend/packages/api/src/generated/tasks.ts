@@ -1767,6 +1767,8 @@ export interface operations {
         self_parent?: boolean | null;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path?: never;
@@ -2019,6 +2021,8 @@ export interface operations {
         exclude_internal?: boolean;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path?: never;
@@ -2744,6 +2748,8 @@ export interface operations {
         snippet_filename?: string | null;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path: {

@@ -296,7 +296,7 @@ order-by-type = false
 ]
 "app/sep/apps/backup_mongo/pbm_creds_common.py" = [
     "T201",   # canonical payload preamble prints diagnostics to stderr (as the shipped payloads do)
-    "PTH123", # payload preamble uses builtin open(); no pathlib is available at exec time
+    "PTH123", # payload preamble uses builtin open(), as the shipped payloads do
     "BLE001", # payload preamble mirrors a deliberate catch-all credentials-read guard
 ]
 "app/sep/sync/syncers/system_facts/payload.py" = [
