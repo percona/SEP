@@ -47,6 +47,7 @@ from pydantic import BaseModel
 
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.core.requests.remote_api import RemoteAPI
+from app.core.utils.fields import ArbitraryMapping
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
@@ -1800,7 +1801,7 @@ def derive_script_routes(
     )
     async def script_history(
         script: script_param, tasks_api: TaskAPI
-    ) -> dict[str, Any]:
+    ) -> ArbitraryMapping:
         """Proxy the per-script execution history from the Tasks API by filename."""
         return await tasks_api.get(
             f"/{script.execution_task_name}/history/",
