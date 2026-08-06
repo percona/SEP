@@ -34,7 +34,12 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db.models import BaseUUIDSQLModel, DateTimeWithTimezone
 from app.core.utils.date_time import utc_now
-from app.core.utils.fields import EnumFieldMixin, NonEmptyStr, UTCDatetime
+from app.core.utils.fields import (
+    ARBITRARY_ARGS_SCHEMA,
+    EnumFieldMixin,
+    NonEmptyStr,
+    UTCDatetime,
+)
 
 
 def _default_incident_name() -> str:
@@ -268,7 +273,7 @@ class AtwSendLogResponse(BaseModel):
     started_at: UTCDatetime | None
     finished_at: UTCDatetime | None
     created_at: UTCDatetime
-    detail: dict[str, Any]
+    detail: dict[str, Any] = Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)
 
 
 class AtwConfigResponse(BaseModel):
