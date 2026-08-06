@@ -40,12 +40,13 @@ from typing_extensions import TypeVar
 
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.pagination import Pagination
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, NonEmptyStr
 from app.core.utils.iterators import unique_everseen
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
 __all__ = [
+    "ARBITRARY_ARGS_SCHEMA",
     "ScriptExecuteWrite",
     "ScriptExecutionResponse",
     "ScriptPreviewResponse",
@@ -54,15 +55,6 @@ __all__ = [
     "make_script_dep",
     "resolve_scripts",
 ]
-
-ARBITRARY_ARGS_SCHEMA = {"additionalProperties": True}
-"""Advertise a free-form argument map.
-
-A ``dict[str, object]`` field otherwise serialises as a bare ``type: object``,
-which the TypeScript generator reads as ``Record<string, never>`` — a map no
-typed caller can populate. Naming the open contract keeps the generated client
-usable for every script app's execute payload.
-"""
 
 
 @runtime_checkable

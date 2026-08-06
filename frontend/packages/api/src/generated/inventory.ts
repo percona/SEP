@@ -517,15 +517,15 @@ export interface components {
      *     :param os_version: The observed operating system version.
      *     :type os_version: str | None
      *     :param installed_packages: Snapshot of installed packages.
-     *     :type installed_packages: list[dict[str, Any]] | None
      *     :param config: Snapshot of host configuration.
-     *     :type config: dict[str, Any] | None
      *     :param observed_at: When this observation was collected.
      *     :type observed_at: UTCDatetime
      */
     HostSystemObservationResponse: {
       /** Config */
-      config?: Record<string, never> | null;
+      config?: {
+        [key: string]: unknown;
+      } | null;
       /**
        * Created At
        * Format: date-time
@@ -534,7 +534,11 @@ export interface components {
       /** Id */
       id: number | null;
       /** Installed Packages */
-      installed_packages?: Record<string, never>[] | null;
+      installed_packages?:
+        | {
+            [key: string]: unknown;
+          }[]
+        | null;
       /** Node Id */
       node_id: number;
       /**
@@ -556,17 +560,21 @@ export interface components {
      *     :param os_version: The observed operating system version. Defaults to None.
      *     :type os_version: str | None
      *     :param installed_packages: Snapshot of installed packages. Defaults to None.
-     *     :type installed_packages: list[dict[str, Any]] | None
      *     :param config: Snapshot of host configuration. Defaults to None.
-     *     :type config: dict[str, Any] | None
      *     :param observed_at: When this observation was collected.
      *     :type observed_at: UTCDatetime
      */
     HostSystemObservationWrite: {
       /** Config */
-      config?: Record<string, never> | null;
+      config?: {
+        [key: string]: unknown;
+      } | null;
       /** Installed Packages */
-      installed_packages?: Record<string, never>[] | null;
+      installed_packages?:
+        | {
+            [key: string]: unknown;
+          }[]
+        | null;
       /** Node Id */
       node_id?: number | null;
       /**
@@ -968,7 +976,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The unique identifier of the node on which the service is running.
      *         Must be unique for external_id, as defined by composite index
      *         ix_service_external_id_node_id, and for port, as defined by composite index
@@ -988,7 +995,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1034,7 +1043,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The unique identifier of the node on which the service is running.
      *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
@@ -1051,7 +1059,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1100,7 +1110,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The unique identifier of the node on which the service is running.
      *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
@@ -1117,7 +1126,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1247,7 +1258,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running. Defaults to None.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service. Defaults to None.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The foreign key referencing the node to which the service belongs.
      *         Defaults to None.
      *     :type node_id: int | None
@@ -1256,7 +1266,9 @@ export interface components {
       /** Cluster */
       cluster?: string | null;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1476,7 +1488,9 @@ export interface components {
       /** Id */
       id: number | null;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1517,7 +1531,9 @@ export interface components {
       /** Id */
       id: number | null;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1555,7 +1571,9 @@ export interface components {
       /** Id */
       id: number | null;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1578,7 +1596,9 @@ export interface components {
       /** Create */
       create: string;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
