@@ -22,17 +22,17 @@ import yaml
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill import (
     _backfill_single_task,
-    _BackfillApp,
     FormBackfillContext,
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.sep.apps.mysql_backups.app import app as mysql_backups_app
 from app.sep.apps.mysql_backups.form_backfill import (
     _extract_upload_from_meta,
+    FORM_BACKFILL_ENTRIES,
     reconstruct_mysql_backups_form,
 )
-from app.sep.apps.mysql_backups.models import BackupCreate, BackupType
+from app.sep.apps.mysql_backups.forms import BackupCreate
+from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 from app.tasks.models import Task, TaskBackendEnum
 
@@ -278,9 +278,7 @@ def test_backfill_single_task_stamps_mysql_backups_form():
         upload=["RSYNC"],
         all_servers={"RSYNC_PATH": "/remote/backups"},
     )
-    entry = _BackfillApp(
-        app=mysql_backups_app, reconstructor=reconstruct_mysql_backups_form
-    )
+    entry = FORM_BACKFILL_ENTRIES[0]
     ctx = FormBackfillContext(
         log=__import__("logging").getLogger("test"),
         service_lookup=lookup,

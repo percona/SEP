@@ -22,13 +22,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
-import { AppDetailPage, resolveTabFromSplat } from './AppDetailPage';
+import { AppDetailPage, resolveTabFromSplat, type TaskExecuteAction } from './AppDetailPage';
 
 const mockDeleteMutate = vi.fn();
 const mockExecuteMutate = vi.fn();
 const mockUseAppTask = vi.fn();
 const mockUseAppEntityDetail = vi.fn();
-const { stopMutate } = vi.hoisted(() => ({ stopMutate: vi.fn() }));
+const { stopMutate, useAppTasksMock } = vi.hoisted(() => ({
+  stopMutate: vi.fn(),
+  useAppTasksMock: vi.fn(),
+}));
 interface MockStatsResult {
   data: unknown;
   isLoading: boolean;
@@ -41,20 +44,23 @@ const mockUseTaskStats = vi.fn<(...args: unknown[]) => MockStatsResult>(() => ({
   isError: false,
 }));
 
-// Manual factory keeps axios out of the resolution graph.
-vi.mock('@sep/api', () => ({
-  useAppTask: (...args: unknown[]) => mockUseAppTask(...args),
-  // Consumed transitively by the generic ScheduleSummary (gated on
-  // capabilities.scheduling) via useScheduledTasksForApp. No tasks ->
-  // the summary renders its "Not scheduled" state, leaving the execute/delete
-  // flows under test untouched.
-  useAppTasks: () => ({
-    data: { items: [], pagination: null },
+function defaultAppTasksResult(items: { name: string }[] = []) {
+  return {
+    data: { items, pagination: null },
     isLoading: false,
     isError: false,
     error: null,
     refetch: vi.fn(),
-  }),
+  };
+}
+
+// Manual factory keeps axios out of the resolution graph.
+vi.mock('@sep/api', () => ({
+  useAppTask: (...args: unknown[]) => mockUseAppTask(...args),
+  // Consumed by ScheduleSummary (via useScheduledTasksForApp) and by ActionBar
+  // when capabilities.chaining is set. Default empty list keeps schedule summary
+  // in its "Not scheduled" state.
+  useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
   useDeleteAppTask: () => ({
     mutateAsync: mockDeleteMutate,
     isPending: false,
@@ -75,6 +81,11 @@ vi.mock('@sep/api', () => ({
     }
   },
 }));
+
+beforeEach(() => {
+  useAppTasksMock.mockReset();
+  useAppTasksMock.mockReturnValue(defaultAppTasksResult());
+});
 
 vi.mock('../../hooks', () => ({
   useTaskHistoryByName: () => ({ data: { items: [] }, isLoading: false, error: null }),
@@ -490,7 +501,7 @@ describe('AppDetailPage execute flow', () => {
     await waitFor(() => expect(mockExecuteMutate).toHaveBeenCalledWith({ taskName: 'FECHK' }));
   });
 
-  it('shows error snackbar and closes dialog on execute failure', async () => {
+  it('shows error snackbar and keeps dialog open on execute failure', async () => {
     mockExecuteMutate.mockReset();
     mockExecuteMutate.mockRejectedValue(new Error('Execute failed'));
     mockUseAppTask.mockReturnValue({
@@ -505,8 +516,8 @@ describe('AppDetailPage execute flow', () => {
     const dialog = await screen.findByRole('dialog');
     await userEvent.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
 
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByText('Execute failed')).toBeInTheDocument());
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('closes dialog without calling execute when cancelled', async () => {
@@ -637,7 +648,255 @@ describe('AppDetailPage execute flow', () => {
   });
 });
 
-function renderWithSchema(customSchema: AppSchema, path = '/apps/checksums/task/FECHK') {
+describe('AppDetailPage — execute chain composition', () => {
+  const backupMongoExecuteActions = (task: Record<string, unknown>): TaskExecuteAction[] => [
+    {
+      label: 'Sync Config',
+      taskName: String(task.name),
+      testId: 'backup-mongo-sync-config',
+    },
+    {
+      label: 'Run Logical Backup',
+      taskName: 'pbm-backup-logical',
+      testId: 'backup-mongo-logical-backup',
+    },
+  ];
+
+  beforeEach(() => {
+    mockExecuteMutate.mockReset();
+    mockExecuteMutate.mockResolvedValue({ id: 99 });
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    useAppTasksMock.mockReturnValue(
+      defaultAppTasksResult([{ name: 'FECHK' }, { name: 'other-task' }]),
+    );
+  });
+
+  async function addTaskToChain(dialog: HTMLElement, taskName: string) {
+    const user = userEvent.setup();
+    await user.click(within(dialog).getByRole('combobox'));
+    await user.click(await screen.findByRole('option', { name: taskName }));
+  }
+
+  function renderBackupMongoChainPage() {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'pbm-backup',
+        status: 'completed',
+        derived_tasks: [{ name: 'pbm-backup-logical', backup_type: 'pbm_logical', status: null }],
+      },
+      isLoading: false,
+    });
+    useAppTasksMock.mockReturnValue(
+      defaultAppTasksResult([
+        { name: 'pbm-backup' },
+        { name: 'pbm-backup-logical' },
+        { name: 'other-task' },
+      ]),
+    );
+    return renderWithSchema(makeSchema({ chaining: true }), {
+      pluginName: 'backup_mongo',
+      path: '/apps/backup_mongo/task/pbm-backup',
+      getTaskExecuteActions: backupMongoExecuteActions,
+    });
+  }
+
+  it('renders ChainBuilder when chaining is true', async () => {
+    renderWithSchema(makeSchema({ chaining: true }));
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+    expect(await screen.findByTestId('chain-builder')).toBeInTheDocument();
+    expect(useAppTasksMock).toHaveBeenCalledWith(
+      'checksums',
+      undefined,
+      expect.objectContaining({ fetchAllPages: true, enabled: true }),
+    );
+  });
+
+  it('shows a loading state while chainable tasks are fetching', async () => {
+    useAppTasksMock.mockReturnValue({
+      ...defaultAppTasksResult(),
+      data: undefined,
+      isLoading: true,
+    });
+    renderWithSchema(makeSchema({ chaining: true }));
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+    expect(await screen.findByTestId('chain-tasks-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('chain-builder')).not.toBeInTheDocument();
+  });
+
+  it('shows an error when chainable tasks fail to load', async () => {
+    useAppTasksMock.mockReturnValue({
+      ...defaultAppTasksResult(),
+      data: undefined,
+      isError: true,
+      error: new Error('network down'),
+    });
+    renderWithSchema(makeSchema({ chaining: true }));
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+    expect(await screen.findByTestId('chain-tasks-error')).toHaveTextContent(/network down/);
+    expect(screen.queryByTestId('chain-builder')).not.toBeInTheDocument();
+  });
+
+  it('does not render ChainBuilder when chaining is false', async () => {
+    renderWithSchema(makeSchema({ chaining: false }));
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+    await screen.findByRole('dialog');
+    expect(screen.queryByTestId('chain-builder')).not.toBeInTheDocument();
+  });
+
+  it('does not render ChainBuilder when chaining is absent', async () => {
+    renderWithSchema(makeSchema(undefined));
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+    await screen.findByRole('dialog');
+    expect(screen.queryByTestId('chain-builder')).not.toBeInTheDocument();
+  });
+
+  it('does not enable the app-tasks fetch when chaining is disabled', async () => {
+    renderWithSchema(makeSchema({ chaining: false }));
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+    await screen.findByRole('dialog');
+    expect(useAppTasksMock).toHaveBeenCalledWith(
+      'checksums',
+      undefined,
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it('posts composed chain_task_names and chain_on_failure on confirm', async () => {
+    const user = userEvent.setup();
+    renderWithSchema(makeSchema({ chaining: true }));
+    await user.click(screen.getByTestId('plugin-task-execute'));
+    const dialog = await screen.findByRole('dialog');
+    await addTaskToChain(dialog, 'other-task');
+    await user.click(within(dialog).getByTestId('chain-on-failure-checkbox'));
+    await user.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
+    await waitFor(() =>
+      expect(mockExecuteMutate).toHaveBeenCalledWith({
+        taskName: 'FECHK',
+        executeBody: {
+          chain_task_names: ['other-task'],
+          chain_on_failure: true,
+        },
+      }),
+    );
+  });
+
+  it('omits chain fields when the chain is empty', async () => {
+    renderWithSchema(makeSchema({ chaining: true }));
+    await userEvent.click(screen.getByTestId('plugin-task-execute'));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByTestId('chain-builder')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
+    await waitFor(() => expect(mockExecuteMutate).toHaveBeenCalled());
+    const body = mockExecuteMutate.mock.calls.at(-1)?.[0] as {
+      taskName: string;
+      executeBody?: Record<string, unknown>;
+    };
+    expect(body.taskName).toBe('FECHK');
+    expect(body.executeBody?.chain_task_names).toBeUndefined();
+    expect(body.executeBody?.chain_on_failure).toBeUndefined();
+  });
+
+  it('merges chain into existing action executeBody', async () => {
+    const user = userEvent.setup();
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'my-alter', status: 'completed' },
+      isLoading: false,
+    });
+    useAppTasksMock.mockReturnValue(
+      defaultAppTasksResult([{ name: 'my-alter-pre-checks' }, { name: 'other-task' }]),
+    );
+
+    renderWithSchema(makeSchema({ chaining: true }), {
+      pluginName: 'alters',
+      path: '/apps/alters/task/my-alter',
+      getTaskExecuteActions: () => [
+        {
+          label: 'Pre-checks',
+          taskName: 'my-alter-pre-checks',
+          testId: 'alters-pre-checks-execute',
+          executeBody: { eta: '2099-01-01T00:00:00Z' },
+        },
+      ],
+    });
+
+    await user.click(screen.getByTestId('alters-pre-checks-execute'));
+    const dialog = await screen.findByRole('dialog');
+    await addTaskToChain(dialog, 'other-task');
+    await user.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
+
+    await waitFor(() =>
+      expect(mockExecuteMutate).toHaveBeenCalledWith({
+        taskName: 'my-alter-pre-checks',
+        executeBody: {
+          eta: '2099-01-01T00:00:00Z',
+          chain_task_names: ['other-task'],
+          chain_on_failure: false,
+        },
+      }),
+    );
+  });
+
+  it('keys currentTaskName to the pending execute action, not the page task', async () => {
+    const user = userEvent.setup();
+    renderBackupMongoChainPage();
+
+    await user.click(screen.getByTestId('backup-mongo-logical-backup'));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByTestId('chain-builder')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('combobox'));
+    const logicalOption = await screen.findByRole('option', { name: 'pbm-backup-logical' });
+    expect(logicalOption).toHaveAttribute('aria-disabled', 'true');
+    const pageTaskOption = await screen.findByRole('option', { name: 'pbm-backup' });
+    expect(pageTaskOption).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('resets chain when opening a different execute action', async () => {
+    const user = userEvent.setup();
+    renderBackupMongoChainPage();
+
+    await user.click(screen.getByTestId('backup-mongo-sync-config'));
+    let dialog = await screen.findByRole('dialog');
+    await addTaskToChain(dialog, 'other-task');
+    expect(within(dialog).getByTestId('chain-sequence')).toHaveTextContent('other-task');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    await user.click(screen.getByTestId('backup-mongo-logical-backup'));
+    dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByTestId('chain-builder')).toBeInTheDocument();
+    expect(within(dialog).queryByTestId('chain-sequence')).not.toBeInTheDocument();
+  });
+
+  it('keeps dialog open with composed chain when execute fails', async () => {
+    const user = userEvent.setup();
+    mockExecuteMutate.mockRejectedValue(new Error('Chain contains a cycle'));
+    renderWithSchema(makeSchema({ chaining: true }));
+    await user.click(screen.getByTestId('plugin-task-execute'));
+    const dialog = await screen.findByRole('dialog');
+    await addTaskToChain(dialog, 'other-task');
+    await user.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
+    await screen.findByText(/Chain contains a cycle/);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByTestId('chain-sequence')).toHaveTextContent(
+      'other-task',
+    );
+  });
+});
+
+function renderWithSchema(
+  customSchema: AppSchema,
+  options: {
+    path?: string;
+    pluginName?: string;
+    getTaskExecuteActions?: (task: Record<string, unknown>) => TaskExecuteAction[] | undefined;
+  } = {},
+) {
+  const pluginName = options.pluginName ?? 'checksums';
+  const path = options.path ?? `/apps/${pluginName}/task/FECHK`;
   return render(
     <QueryClientProvider client={makeClient()}>
       <SnackbarProvider>
@@ -645,7 +904,13 @@ function renderWithSchema(customSchema: AppSchema, path = '/apps/checksums/task/
           <Routes>
             <Route
               path="/apps/:plugin/task/:id/*"
-              element={<AppDetailPage schema={customSchema} pluginName="checksums" />}
+              element={
+                <AppDetailPage
+                  schema={customSchema}
+                  pluginName={pluginName}
+                  getTaskExecuteActions={options.getTaskExecuteActions}
+                />
+              }
             />
             <Route path="/apps/:plugin" element={<div>list page</div>} />
           </Routes>

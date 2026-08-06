@@ -134,10 +134,13 @@ export interface paths {
      *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
      *     ``detail`` are preserved through the proxy.
      *
-     *     For a local class: idempotent -- deleting a (class, key) pair that has no
-     *     override row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE
-     *     field responds 409 -- the field cannot have an override row in the first
-     *     place, so the operator's intent is unsatisfiable.
+     *     For a local class the DELETE is idempotent: deleting a (class, key) pair
+     *     that has no override row succeeds with 204. Attempting to delete a field
+     *     the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
+     *     override row in the first place and the operator's intent is
+     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+     *     may still carry a row written before the restriction applied, so that
+     *     row is deleted normally and only the no-row case answers 409.
      *
      *     After republishing the snapshot, fires the rebind callbacks for the
      *     reverted key so a HOT target rebinds to its restored value without
@@ -152,7 +155,8 @@ export interface paths {
      *         the router wires none).
      *     :raises HTTPNotFoundException: If the class isn't exposed or the key
      *         doesn't exist on the class.
-     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has
+     *         no row to delete.
      *     :raises HTTPUnprocessableEntityException: If ``key`` names a
      *         ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
      *         target an individual ``parent__leaf`` instead).
@@ -893,7 +897,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never>;
+      meta: {
+        [key: string]: unknown;
+      };
       /** Payload */
       payload?: string | null;
     };
@@ -1263,7 +1269,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never>;
+      meta: {
+        [key: string]: unknown;
+      };
       /** Payload */
       payload?: string | null;
     };
@@ -1276,13 +1284,11 @@ export interface components {
      *     :param target: The target system or environment.
      *     :type target: str
      *     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-     *     :type meta: dict | None
      *     :param payload: Optional payload or file path for parameterizing the task.
      *         Defaults to None.
      *     :type payload: str | None
      *     :param tracking: Tracking information for task execution. Defaults to a dictionary
      *         with keys for allocation and evaluation IDs.
-     *     :type tracking: dict | None
      */
     TaskExecutionRequest: {
       /** Eta */
@@ -1291,7 +1297,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never> | null;
+      meta: {
+        [key: string]: unknown;
+      } | null;
       /** Payload */
       payload?: string | null;
       /** Target */
@@ -1302,7 +1310,9 @@ export interface components {
        * Tracking
        * @default {}
        */
-      tracking: Record<string, never> | null;
+      tracking: {
+        [key: string]: unknown;
+      } | null;
     } & {
       [key: string]: unknown;
     };
@@ -1552,7 +1562,9 @@ export interface components {
       /** Created By */
       created_by: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Deleted At */
       deleted_at: string | null;
       /** Id */
@@ -1600,7 +1612,9 @@ export interface components {
        *     :return: A dictionary summarizing average, last, and total task durations.
        *     :rtype: dict[str, Any]
        */
-      readonly duration: Record<string, never>;
+      readonly duration: {
+        [key: string]: unknown;
+      };
       /**
        * Engine
        * @default nomad
@@ -1621,7 +1635,9 @@ export interface components {
        *     :return: A dictionary summarizing the number of passed and failed tasks.
        *     :rtype: dict[str, int]
        */
-      readonly status: Record<string, never>;
+      readonly status: {
+        [key: string]: number;
+      };
       /**
        * Total
        * @description Return the total number of tasks.
@@ -1666,7 +1682,9 @@ export interface components {
       /** @default nomad */
       backend: components['schemas']['TaskBackendEnum'];
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /**
        * Is Template
        * @default false
@@ -1749,6 +1767,8 @@ export interface operations {
         self_parent?: boolean | null;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path?: never;
@@ -2001,6 +2021,8 @@ export interface operations {
         exclude_internal?: boolean;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path?: never;
@@ -2726,6 +2748,8 @@ export interface operations {
         snippet_filename?: string | null;
         offset?: number;
         limit?: number;
+        sort?: string;
+        search?: string | null;
       };
       header?: never;
       path: {

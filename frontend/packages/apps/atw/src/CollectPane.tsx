@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Autocomplete, Box, CircularProgress, TextField, Typography } from '@mui/material';
 import { SchemaFormRenderer, SNIPPET_FORM_RESERVED_FIELD_NAMES } from '@sep/framework';
 import type { FormSection, SectionField } from '@sep/api';
@@ -25,6 +25,7 @@ import type { AtwBatchExecuteResponse, AtwBatchExecuteWrite, AtwSnippetSummary }
 
 export interface CollectPaneProps {
   incidentId: string;
+  isClosed?: boolean;
 }
 
 /** Namespace prefix for a selected snippet's override fields, keyed by position. */
@@ -123,7 +124,7 @@ function batchItemErrors(response: AtwBatchExecuteResponse): string[] {
  * selected snippet), and batch-execute every selection against the incident.
  * Per-task status is polled by the Results pane's execution list.
  */
-export function CollectPane({ incidentId }: CollectPaneProps) {
+export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) {
   const [available, setAvailable] = useState<AtwSnippetSummary[]>([]);
   const [selected, setSelected] = useState<AtwSnippetSummary[]>([]);
   const [itemErrors, setItemErrors] = useState<string[]>([]);
@@ -132,8 +133,17 @@ export function CollectPane({ incidentId }: CollectPaneProps) {
     setAvailable(snippets);
   }, []);
 
+  useEffect(() => {
+    if (!isClosed) {
+      return;
+    }
+    setSelected([]);
+    setAvailable([]);
+    setItemErrors([]);
+  }, [isClosed]);
+
   const selectedNames = useMemo(() => selected.map((snippet) => snippet.name), [selected]);
-  const schemaQuery = useAtwMergedSchema(selectedNames);
+  const schemaQuery = useAtwMergedSchema(isClosed ? [] : selectedNames);
   const batchMutation = useAtwBatchExecute(incidentId);
 
   // Options merge the current category's snippets with the current selection so
@@ -211,10 +221,17 @@ export function CollectPane({ incidentId }: CollectPaneProps) {
         Collect
       </Typography>
 
-      <CategoryBrowser onSnippetsChange={handleSnippetsChange} />
+      {isClosed && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          This incident is closed. Reopen it to run more diagnostic snippets.
+        </Alert>
+      )}
+
+      {!isClosed && <CategoryBrowser onSnippetsChange={handleSnippetsChange} />}
 
       <Autocomplete
         multiple
+        disabled={isClosed}
         sx={{ mt: 3 }}
         options={options}
         value={selected}
@@ -270,7 +287,7 @@ export function CollectPane({ incidentId }: CollectPaneProps) {
         </Alert>
       )}
 
-      {selected.length > 0 && schemaQuery.data && (
+      {selected.length > 0 && schemaQuery.data && !isClosed && (
         <Box sx={{ mt: 3 }}>
           <SchemaFormRenderer
             key={formKey}

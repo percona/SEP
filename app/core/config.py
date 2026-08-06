@@ -26,7 +26,7 @@ from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Self, TypeVar
+from typing import Annotated, Any, ClassVar, Literal, Self, TypeVar
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, FastAPI
@@ -41,10 +41,12 @@ from pydantic import (
     model_validator,
     PositiveInt,
     SecretStr,
+    StringConstraints,
     validate_call,
 )
 from pydantic_settings import (
     BaseSettings,
+    NestedSecretsSettingsSource,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
     YamlConfigSettingsSource,
@@ -63,9 +65,10 @@ from app.core.models import BaseLowercaseModel
 from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import hot_field
+from app.core.settings_override.registry import hot_field, not_overridable_field
 from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
+    EmptyStrToNone,
     LogLevel,
     NonEmptyStr,
     redact_credential_url,
@@ -174,19 +177,20 @@ class PreEnvSettings(BaseSettings):
 
     :param FASTAPI_ENV: The environment used (e.g. development, production).
         Defaults to "development".
-    :type FASTAPI_ENV: str
     :param ENV_FILE: The dot env file used to populate the applications settings.
         Defaults to ".env" in the current directory.
-    :type ENV_FILE: Path
     :param SETTINGS_FILE: The YAML file used to populate the applications settings.
         Defaults to "settings.yaml" in the current directory.
-    :type SETTINGS_FILE: Path
+    :param SECRETS_DIR: The directory holding mounted secret files, each named after
+        the canonical ``__``-nested variable it supplies. Defaults to unset, in which
+        case no secret files are read.
     """
 
     model_config = SettingsConfigDict(extra="ignore")
     FASTAPI_ENV: str = "development"
     ENV_FILE: Path = Path(".env")
     SETTINGS_FILE: Path = Path("settings.yaml")
+    SECRETS_DIR: Path | EmptyStrToNone = None
 
 
 pre_env_settings = PreEnvSettings()
@@ -250,6 +254,7 @@ class BaseYamlSettings(BaseSettings):
         env_file=pre_env_settings.ENV_FILE,
         env_nested_delimiter="__",
         yaml_file=pre_env_settings.SETTINGS_FILE,
+        secrets_dir=pre_env_settings.SECRETS_DIR,
         extra="ignore",
     )
     SETTINGS_PREFIXES: ClassVar[list[str]] = []
@@ -264,13 +269,37 @@ class BaseYamlSettings(BaseSettings):
         dotenv_settings: DotEnvSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Load settings from Yaml file."""
-        yaml_prefix = env_settings.env_vars.get(
-            "fastapi_env",
-        ) or dotenv_settings.env_vars.get("fastapi_env", pre_env_settings.FASTAPI_ENV)
+        """Return the settings sources, highest priority first.
+
+        The order is init kwarg, environment variable, dotenv entry, secret file,
+        then YAML profile; each overrides the ones after it. Secret files are read
+        from the directory ``SECRETS_DIR`` names, keyed by the same canonical
+        ``__``-nested variable names their environment twins use.
+
+        ``FASTAPI_ENV`` selects the YAML profile block, and is read from the same
+        three sources in the same order, so the block loaded always matches the
+        value the resolved settings report.
+
+        :param settings_cls: The settings class being configured.
+        :param init_settings: The init-arguments source.
+        :param env_settings: The environment-variable source.
+        :param dotenv_settings: The dotenv-file source.
+        :param file_secret_settings: The file-secret source the secret-file source
+            derives its directory and settings class from.
+        :return: The settings sources, ordered highest-priority first.
+        :raises SettingsError: When ``SECRETS_DIR`` names a path that is not a
+            directory, or one whose contents exceed the source's size ceiling.
+        """
+        secret_settings = NestedSecretsSettingsSource(file_secret_settings)
+        env_key = "fastapi_env"
+        yaml_prefix = (
+            env_settings.env_vars.get(env_key)
+            or dotenv_settings.env_vars.get(env_key)
+            or secret_settings.env_vars.get(env_key, pre_env_settings.FASTAPI_ENV)
+        )
         if cls.SETTINGS_PREFIXES:
             env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
-            for env_source in [env_settings, dotenv_settings]:
+            for env_source in [env_settings, dotenv_settings, secret_settings]:
                 env_vars = {}
                 for key, value in env_source.env_vars.items():
                     env_vars[
@@ -281,6 +310,7 @@ class BaseYamlSettings(BaseSettings):
             init_settings,
             env_settings,
             dotenv_settings,
+            secret_settings,
             YamlPrefixConfigSettingsSource(
                 settings_cls,
                 prefixes=(yaml_prefix, *cls.SETTINGS_PREFIXES),
@@ -344,16 +374,16 @@ class PMMSettings(BaseLowercaseModel):
 
 _INTERNAL_TOKEN_LABEL = b"sep-internal-token"
 
+SettingsOverrideKey = Annotated[str, StringConstraints(pattern=r"^[^\s.]+\.[^\s.]+$")]
+
 
 class Settings(BaseYamlSettings):
     """Define the main application settings.
 
     :param CELERY: Celery configuration options.
-    :type CELERY: CeleryOptions
     :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same
         user. Defaults to False, meaning all previous sessions will be invalidated once
         a new one is created.
-    :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
         ``secrets.token_urlsafe(32)``.
     :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
@@ -362,33 +392,32 @@ class Settings(BaseYamlSettings):
         every process sharing ``SECRET_KEY`` resolves the identical token.
         Generate an explicit value with ``openssl rand -hex 32`` to rotate it
         independently of ``SECRET_KEY``.
-    :type SEP_INTERNAL_TOKEN: SecretStr | None
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
-    :type LOGGING: LogLevel
     :param LOGGING_CONFIG: dictConfig logging configuration.
-    :type LOGGING_CONFIG: dict[str, Any]
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
-    :type SSL_CAFILE: RelativeFilePathField | None
     :param BASE_URL: The application's base URL.
-    :type BASE_URL: URL | None
     :param BACKEND_CORS_ORIGINS: A global list of allowed CORS origins, to be used as
         the default BACKEND_CORS_ORIGINS setting across all apps.
-    :type BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None
     :param ALLOWED_HOSTS: A global list of trusted domain names or wildcards, to be used
         as the default ALLOWED_HOSTS setting across all apps.
-    :type ALLOWED_HOSTS: list[str]
     :param SECURITY_HEADERS: Global options for the SecurityHeadersMiddleware, to be
         used as the default SECURITY_HEADERS setting across all apps.
-    :type SECURITY_HEADERS: SecurityHeadersOptions | None
     :param PMM: PMM connection and authentication configuration.
-    :type PMM: PMMSettings
     :param SETTINGS_OVERRIDE_REFRESH_INTERVAL: How often each service refreshes its
         DB-backed setting overrides. Defaults to 30 seconds.
-    :type SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds
     :param SETTINGS_OVERRIDE_REFRESHER_ENABLED: Master kill-switch for the DB-override
         background refresher. Tests set this to ``False`` to keep ``TestClient``
         lifespans hermetic; production leaves it ``True``.
-    :type SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool
+    :param SETTINGS_OVERRIDE_ALLOWED_KEYS: The exhaustive set of settings keys the
+        override API may write, each spelled ``"<SettingsClassName>.<KEY>"`` (the
+        key being a top-level field name or a ``__``-delimited nested path).
+        ``None``, the default, places no restriction. A set activates a
+        default-locked allowlist: any pair it does not name is refused. The
+        allowlist only ever *restricts*: a field that is already not overridable
+        stays that way even when listed. Whether the named class and field exist
+        is not checked at load time, so a typo'd entry allows nothing rather than
+        raising; whitespace anywhere in an entry is rejected outright, since such
+        an entry reads correct but matches nothing.
     """
 
     CELERY: CeleryOptions
@@ -405,6 +434,9 @@ class Settings(BaseYamlSettings):
     PMM: PMMSettings = hot_field(PMMSettings())
     SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
     SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
+    SETTINGS_OVERRIDE_ALLOWED_KEYS: set[SettingsOverrideKey] | None = (
+        not_overridable_field(None)
+    )
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
     @computed_field

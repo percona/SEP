@@ -33,18 +33,16 @@ from starlette.staticfiles import StaticFiles
 
 from app import __summary__, __version__
 from app.api.main import api_router as top_level_api_router
-from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth import config as auth_config
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.celery.utils import init_periodic_tasks_db
-from app.core.config import create_app, default_lifespan, Settings, settings
+from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.settings_override.lifecycle import (
-    ProxyEntry,
     RefreshCallback,
     settings_override_refresher,
 )
@@ -53,11 +51,10 @@ from app.core.utils import run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
-from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
-from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
-from app.sep.apps.framework.registry import get_app_registry
-from app.sep.apps.snippets.celery import sync_snippets
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.apps.framework.registry import (
+    get_app_registry,
+)
+from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
 from app.sep.deps import (
@@ -77,8 +74,13 @@ from app.sep.deps import (
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
-from app.sep.middleware.messages.config import messages_settings, MessagesSettings
-from app.sep.snippets.config import snippets_settings, SnippetsSettings
+from app.sep.middleware.messages.config import messages_settings
+from app.sep.settings_override import (
+    build_sep_override_proxies,
+    invalidate_pmm_clients,
+)
+from app.sep.snippets.celery import sync_snippets
+from app.sep.snippets.config import snippets_settings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
 
@@ -169,25 +171,6 @@ def _make_remote_api_rebinder(
     return _rebind
 
 
-async def _invalidate_pmm_clients(_: Mapping[str, object]) -> None:
-    """Evict the cached PMM client on the current endpoint after a ``PMM`` override.
-
-    A same-endpoint change (credentials, SSL) evicts the now-stale client so the
-    next :class:`PMMSyncer` key-misses to a fresh one via its ``default_factory``
-    PMM read. Known limitation: when the PMM *endpoint itself* changes, the client
-    keyed by the **old** endpoint is not evicted here (this callback only sees the
-    new endpoint); it is harmless -- new syncers key-miss to a fresh client on the
-    new endpoint -- and the old client is closed at shutdown via ``close_all``.
-
-    :param _: The new effective ``Settings`` snapshot mapping (unused -- the
-        current PMM endpoint is re-read from the proxy).
-    :type _: Mapping[str, object]
-    """
-    endpoint = settings.PMM.endpoint
-    if endpoint is not None:
-        await settings.invalidate_client(str(endpoint))
-
-
 async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
     """Re-apply ``logging.config.dictConfig`` after a global ``LOGGING`` override.
 
@@ -239,13 +222,9 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Wire the SEP-side settings override refresher into a lifespan.
 
     Force-resolves ``messages_settings`` (fail-fast validation), then starts the
-    background refresher for the ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``,
-    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global), ``ALERT_SETTINGS`` and
-    ``ALERTS_SETTINGS`` proxies for the duration of the wrapped block.
-    ``SETTINGS`` and ``ALERT_SETTINGS`` wrap shared module-level proxies
-    (``settings`` / ``alert_settings``); the SEP refresher is their **sole**
-    owner so that under the combined ``app.main:app`` the Tasks refresher does
-    not also publish into them from the Tasks database.
+    background refresher for the duration of the wrapped block over the proxy
+    map :func:`build_sep_override_proxies` composes -- the shared set every SEP
+    process refreshes, so no wiring drifts from another's.
     Endpoint and PMM rebind callbacks are built here -- where ``app`` is
     available -- so both run modes wire them.
 
@@ -262,9 +241,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     :param app: The FastAPI application instance, used to wire endpoint rebind
         callbacks against ``app.state``.
-    :type app: FastAPI
-    :yield: None
-    :rtype: AsyncGenerator[None, None]
+    :return: None
     """
     # Force-resolve ``messages_settings`` so the proxy's underlying Pydantic
     # instance is constructed (and validated) before any lifespan side
@@ -291,7 +268,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ssl_keyfile=tasks_settings.SSL_KEYFILE,
             ssl_certfile=tasks_settings.SSL_CERTFILE,
         ),
-        (SettingClassEnum.SETTINGS, "PMM"): _invalidate_pmm_clients,
+        (SettingClassEnum.SETTINGS, "PMM"): invalidate_pmm_clients,
         (SettingClassEnum.SETTINGS, "LOGGING"): _apply_logging_dictconfig,
         (
             SettingClassEnum.SNIPPETS_SETTINGS,
@@ -312,20 +289,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     sep_app.state.override_callbacks = callbacks
     async with settings_override_refresher(
         get_async_session_maker,
-        {
-            SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
-            SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
-                snippets_settings, SnippetsSettings
-            ),
-            SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
-                messages_settings, MessagesSettings
-            ),
-            SettingClassEnum.SETTINGS: ProxyEntry(settings, Settings),
-            SettingClassEnum.ALERT_SETTINGS: ProxyEntry(alert_settings, AlertSettings),
-            SettingClassEnum.ALERTS_SETTINGS: ProxyEntry(
-                alerts_settings, AlertsSettings
-            ),
-        },
+        build_sep_override_proxies(),
         settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
         enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
         callbacks=callbacks,
@@ -395,7 +359,7 @@ sep_app.add_middleware(CSRFMiddleware)
 sep_app.add_middleware(messages.MessagesMiddleware)
 
 
-imported_plugins = set()
+jinja_ui_mounted = False
 for app in get_app_registry():
     if app.jinja_router is None:
         continue
@@ -407,36 +371,24 @@ for app in get_app_registry():
     sep_app.include_router(
         app.jinja_router, prefix=app.uri_path, dependencies=plugin_deps
     )
-    imported_plugins.add(app.key)
+    jinja_ui_mounted = True
 
-_TASK_INFRA_PLUGINS = frozenset(
-    {
-        "alters",
-        "archives",
-        "tasks",
-        "mysql_backups",
-        "backup_mongo",
-        "backup_pg",
-        "checksums",
-    }
-)
-
-if _TASK_INFRA_PLUGINS & imported_plugins:
+if any(app.uses_task_data for app in get_app_registry()):
     from app.sep.routes.download_files import router as download_files_router
     from app.sep.routes.execution_events import router as execution_events_router
-    from app.sep.routes.inventory_ajax import router as inventory_ajax_router
-    from app.sep.routes.stop_task import router as stop_task_router
     from app.sep.routes.stream_logs import router as stream_logs_router
 
-    sep_app.include_router(inventory_ajax_router, prefix="/inventory-api")
     sep_app.include_router(stream_logs_router, prefix="/stream-logs")
     sep_app.include_router(download_files_router, prefix="/files")
     sep_app.include_router(execution_events_router, prefix="/execution-events")
-    sep_app.include_router(stop_task_router, prefix="/stop-task")
 
-if (_TASK_INFRA_PLUGINS | {"inventory"}) & imported_plugins:
+if jinja_ui_mounted:
+    from app.sep.routes.inventory_ajax import router as inventory_ajax_router
     from app.sep.routes.periodic_tasks import router as periodic_tasks_router
+    from app.sep.routes.stop_task import router as stop_task_router
 
+    sep_app.include_router(inventory_ajax_router, prefix="/inventory-api")
+    sep_app.include_router(stop_task_router, prefix="/stop-task")
     sep_app.include_router(periodic_tasks_router, prefix="/periodic")
 
 if any(app.artifact_base_dirs for app in get_app_registry()):
@@ -447,20 +399,8 @@ if any(app.artifact_base_dirs for app in get_app_registry()):
 sep_app.include_router(api_router)
 sep_app.include_router(top_level_api_router, include_in_schema=False)
 
-if "snippets" in imported_plugins:
-    sep_app.mount(
-        "/static/snippets",
-        AuthenticatedStaticFiles(directory=snippets_settings.SNIPPETS_DIR),
-        name="snippets_files",
-    )
-if "dipper" in imported_plugins:
-    sep_app.mount(
-        "/static/dipper",
-        AuthenticatedStaticFiles(directory=DIPPER_PAYLOADS_DIR),
-        name="dipper_files",
-    )
 for app in get_app_registry():
-    for static_mount in getattr(app, "static_mounts", ()):
+    for static_mount in app.static_mounts:
         sep_app.mount(
             static_mount.path,
             AuthenticatedStaticFiles(directory=static_mount.directory),

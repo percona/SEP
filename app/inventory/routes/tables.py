@@ -23,7 +23,7 @@ from app.api.deps import IsAuthenticatedDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import TableManager
-from app.inventory.deps import SessionDep, TableDep
+from app.inventory.deps import SessionDep, TableDep, TableListQueryDep
 from app.inventory.models import Table, TableDetailResponse, TableResponse, TableWrite
 
 logger = logging.getLogger(__name__)
@@ -35,11 +35,13 @@ router = APIRouter(prefix="/tables", tags=["tables"])
 async def list_tables(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: TableListQueryDep,
 ) -> PaginatedResponse[TableResponse]:
     """List Tables."""
     logger.debug("Listing tables")
-    return await TableManager.list_paginated(
+    return await TableManager.list_query_paginated(
         session,
+        list_query=list_query,
         pagination=pagination,
     )
 

@@ -16,24 +16,36 @@
 """Define tests for the app.sep.main module."""
 
 import importlib
-from unittest.mock import Mock
+from contextlib import asynccontextmanager, contextmanager
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import HTTPException, Request, status
+from fastapi import APIRouter, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
+from starlette.routing import Mount
 
 import app.sep.main as main_module
+from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth.exceptions import (
     BaseAuthProviderException,
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
+from app.core.settings_override.lifecycle import ProxyEntry
+from app.core.settings_override.models import SettingClassEnum
 from app.sep.api.router import apps_router
-from app.sep.apps.framework.registry import get_app_registry
-from app.sep.config import App, sep_settings
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
+from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
+from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.registry import (
+    AppRegistry,
+    build_app_registry,
+    get_app_registry,
+)
+from app.sep.config import App, sep_settings, SEPSettings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.exceptions import LoginRedirectException
 from app.sep.main import (
@@ -46,7 +58,24 @@ from app.sep.main import (
 )
 from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
+from app.sep.snippets.config import snippets_settings
 from tests.app.factories import OAuthTokenFactory
+from tests.app.sep.conftest import REDUCED_ACTIVATION
+
+_ORIGINAL_SEP_APP = main_module.sep_app
+
+
+def _reload_restoring_identity() -> None:
+    """Reload ``app.sep.main`` and put the original ``sep_app`` object back.
+
+    ``importlib.reload`` re-executes the module in the same ``__dict__``,
+    rebuilding ``sep_app`` as a new object while every consumer that did
+    ``from app.sep.main import sep_app`` still holds the discarded one.
+    Restoring the original binding keeps those consumers live; the rebuilt
+    app is built over the real registry, so the two are interchangeable.
+    """
+    importlib.reload(main_module)
+    main_module.sep_app = _ORIGINAL_SEP_APP
 
 
 def _route_has_app_guard(route) -> bool:
@@ -322,6 +351,38 @@ class TestLogin:
         template_patch.assert_called_once()
 
 
+@pytest.mark.asyncio
+class TestBootSnippetIngestion:
+    """Cover the ``SYNC_ON_STARTUP`` boot ingestion in ``sep_startup``.
+
+    The sync task is library-owned and statically included, so boot ingestion is
+    gated only on the setting -- never on the snippets app being activated. It is
+    deliberately not re-homed as an app-owned startup hook, which would run only
+    when the app ships.
+    """
+
+    async def test_enqueues_sync_with_the_snippets_app_deactivated(self, mocker):
+        """Fire the sync at boot from an activation list without snippets."""
+        mocker.patch.object(main_module, "init_sep_db", new_callable=AsyncMock)
+        mocker.patch.object(snippets_settings, "SYNC_ON_STARTUP", new=True)
+        mocker.patch.object(sep_settings, "APPS", [App(module_name="inventory")])
+        delay = mocker.patch.object(main_module.sync_snippets, "delay")
+
+        await main_module.sep_startup()
+
+        delay.assert_called_once_with()
+
+    async def test_does_not_enqueue_when_the_setting_is_off(self, mocker):
+        """Leave the sync unqueued when ``SYNC_ON_STARTUP`` is disabled."""
+        mocker.patch.object(main_module, "init_sep_db", new_callable=AsyncMock)
+        mocker.patch.object(snippets_settings, "SYNC_ON_STARTUP", new=False)
+        delay = mocker.patch.object(main_module.sync_snippets, "delay")
+
+        await main_module.sep_startup()
+
+        delay.assert_not_called()
+
+
 class TestAmbientSsoStartupWarning:
     """Test the startup warning for an inert ambient-SSO toggle."""
 
@@ -446,7 +507,113 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     finally:
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
+        _reload_restoring_identity()
+
+
+def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
+    """Rebuild ``sep_app`` against the PMM-embedded activation list.
+
+    Proves the registry and mount composition survive an activation list that
+    omits alerts and dipper. It does **not** prove import-cleanliness against a
+    tree with those packages stripped -- the dev checkout can still import them.
+    ``tests/app/sep/test_import_boundary.py`` is what enforces that.
+    """
+    original_apps = sep_settings.APPS
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
+    get_app_registry.cache_clear()
+
+    try:
         importlib.reload(main_module)
+
+        keys = {app.key for app in get_app_registry()}
+        assert "alerts" not in keys
+        assert "dipper" not in keys
+    finally:
+        sep_settings.APPS = original_apps
+        get_app_registry.cache_clear()
+        _reload_restoring_identity()
+
+
+async def _refresher_proxy_map(mocker) -> dict[SettingClassEnum, ProxyEntry]:
+    """Return the proxy map ``sep_overrides_lifespan`` hands to the refresher.
+
+    :param mocker: The ``pytest-mock`` fixture used to stub the refresher.
+    :return: The composed app-owned-plus-SEP proxy map.
+    """
+    captured: dict[SettingClassEnum, ProxyEntry] = {}
+
+    @asynccontextmanager
+    async def fake_refresher(_session_maker, proxies, *_args, **_kwargs):
+        captured.update(proxies)
+        yield
+
+    mocker.patch.object(main_module, "settings_override_refresher", fake_refresher)
+    original_callbacks = getattr(main_module.sep_app.state, "override_callbacks", None)
+    try:
+        async with main_module.sep_overrides_lifespan(FastAPI()):
+            pass
+    finally:
+        main_module.sep_app.state.override_callbacks = original_callbacks
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
+    """Compose the refresher map from the app-owned seam plus SEP's own set."""
+    proxies = await _refresher_proxy_map(mocker)
+
+    assert set(proxies) == {
+        SettingClassEnum.SEP_SETTINGS,
+        SettingClassEnum.SNIPPETS_SETTINGS,
+        SettingClassEnum.MESSAGES_SETTINGS,
+        SettingClassEnum.SETTINGS,
+        SettingClassEnum.ALERT_SETTINGS,
+        SettingClassEnum.ALERTS_SETTINGS,
+    }
+    alerts_entry = proxies[SettingClassEnum.ALERTS_SETTINGS]
+    assert alerts_entry.proxy is alerts_settings
+    assert alerts_entry.settings_cls is AlertsSettings
+
+
+@pytest.mark.asyncio
+async def test_lifespan_refreshes_exactly_the_shared_builder_map(mocker):
+    """Hand the refresher whatever ``build_sep_override_proxies`` composes.
+
+    The Celery worker's SEP-side handler refreshes the same builder's output, so
+    delegating here -- rather than composing an equivalent set inline -- is what
+    keeps the two processes from drifting.
+    """
+    sentinel = {
+        SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+    }
+    mocker.patch.object(
+        main_module, "build_sep_override_proxies", return_value=sentinel
+    )
+
+    proxies = await _refresher_proxy_map(mocker)
+
+    assert proxies == sentinel
+
+
+@pytest.mark.asyncio
+async def test_proxy_map_drops_alerts_but_keeps_core_alert_settings(mocker):
+    """Drop ``ALERTS_SETTINGS`` under reduced activation, keeping ``ALERT_SETTINGS``.
+
+    ``ALERT_SETTINGS`` arrives from SEP's own set rather than the app-owned
+    seam, so the PMM-embedded profile still refreshes the alert-delivery config
+    that the Tasks worker and seven non-alerts apps read.
+    """
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
+    get_app_registry.cache_clear()
+    try:
+        proxies = await _refresher_proxy_map(mocker)
+    finally:
+        get_app_registry.cache_clear()
+
+    assert SettingClassEnum.ALERTS_SETTINGS not in proxies
+    alert_entry = proxies[SettingClassEnum.ALERT_SETTINGS]
+    assert alert_entry.proxy is alert_settings
+    assert alert_entry.settings_cls is AlertSettings
 
 
 def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
@@ -471,7 +638,181 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
     finally:
         sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
+        _reload_restoring_identity()
+
+
+@contextmanager
+def _reloaded_against(mocker, registry):
+    """Rebuild ``sep_app`` over ``registry``, restoring the real one on exit.
+
+    Patches the registry accessor at its **source** module: ``importlib.reload``
+    re-executes ``main``'s ``from ... import get_app_registry``, which would
+    rebind over a patch applied to ``app.sep.main``.
+
+    :param mocker: The ``pytest-mock`` fixture used to install the patch.
+    :param registry: The registry ``app.sep.main`` should be rebuilt over.
+    :return: The ``sep_app`` built from ``registry``.
+    """
+    mocker.patch(
+        "app.sep.apps.framework.registry.get_app_registry", return_value=registry
+    )
+    try:
         importlib.reload(main_module)
+        yield main_module.sep_app
+    finally:
+        mocker.stopall()
+        get_app_registry.cache_clear()
+        _reload_restoring_identity()
+
+
+@pytest.fixture
+def jinja_free_registry() -> AppRegistry:
+    """Return the real registry with every ``jinja_router`` stripped."""
+    get_app_registry.cache_clear()
+    return AppRegistry(
+        [
+            app.model_copy(update={"jinja_router": None})
+            for app in build_app_registry(sep_settings.APPS)
+        ]
+    )
+
+
+def test_reload_helpers_restore_sep_app_identity(mocker, jinja_free_registry):
+    """Verify reload-based helpers leave ``sep_app``'s identity intact.
+
+    Consumers across ~53 modules bind ``sep_app`` by value at import. A reload
+    that leaves a rebuilt object in the module dict silently strands them.
+    """
+    assert main_module.sep_app is sep_app
+
+    with _reloaded_against(mocker, jinja_free_registry) as rebuilt:
+        assert rebuilt is not sep_app
+
+    assert main_module.sep_app is sep_app
+
+
+class TestJinjaDecoupledMounts:
+    """Cover the shared data surface's independence from Jinja-router mounting."""
+
+    def test_task_data_surface_survives_zero_jinja_routers(
+        self, mocker, jinja_free_registry: AppRegistry
+    ) -> None:
+        """Mount the shared task-data routes and payload dirs with no Jinja UI at all."""
+        with _reloaded_against(mocker, jinja_free_registry) as app:
+            route_names = {route.name for route in app.routes}
+            assert "list_task_history_files" in route_names
+            assert "task_logs_event_stream" in route_names
+            assert "list_task_execution_events" in route_names
+
+            mounts = {
+                route.path: route.name
+                for route in app.routes
+                if isinstance(route, Mount)
+            }
+            assert mounts["/static/snippets"] == "snippets_files"
+            assert mounts["/static/dipper"] == "dipper_files"
+
+            assert "periodic_task_create" not in route_names
+            assert "stop_task_execution" not in route_names
+
+    def test_payload_mounts_precede_catch_all_static(
+        self, mocker, jinja_free_registry: AppRegistry
+    ) -> None:
+        """Register both payload mounts ahead of the catch-all ``/static`` mount."""
+        with _reloaded_against(mocker, jinja_free_registry) as app:
+            paths = [route.path for route in app.routes if isinstance(route, Mount)]
+
+            assert paths.index("/static/snippets") < paths.index("/static")
+            assert paths.index("/static/dipper") < paths.index("/static")
+
+    def test_task_data_routers_absent_without_a_declaring_app(self, mocker) -> None:
+        """Withhold the shared task-data routes when no app declares it needs them."""
+        registry = AppRegistry(
+            [
+                BaseApp(
+                    key="legacy",
+                    name="Legacy",
+                    uri_path="/legacy",
+                    jinja_router=APIRouter(),
+                )
+            ]
+        )
+
+        with _reloaded_against(mocker, registry) as app:
+            route_names = {route.name for route in app.routes}
+            assert "list_task_history_files" not in route_names
+            assert "task_logs_event_stream" not in route_names
+            assert "list_task_execution_events" not in route_names
+
+            assert "periodic_task_create" in route_names
+            assert "stop_task_execution" in route_names
+
+    def test_empty_registry_mounts_neither_surface(self, mocker) -> None:
+        """Mount no shared routers and no payload dirs when no app is activated."""
+        with _reloaded_against(mocker, AppRegistry([])) as app:
+            route_names = {route.name for route in app.routes}
+            assert "list_task_history_files" not in route_names
+            assert "periodic_task_create" not in route_names
+
+            mounts = {route.path for route in app.routes if isinstance(route, Mount)}
+            assert "/static/snippets" not in mounts
+            assert "/static/dipper" not in mounts
+            assert "/static" in mounts
+
+    def test_child_apps_inherit_uses_task_data(self) -> None:
+        """Cover a child app inheriting the opt-in with no declaration of its own."""
+        get_app_registry.cache_clear()
+        registry = build_app_registry(sep_settings.APPS)
+
+        assert registry.get("mysql_backups/restore").uses_task_data is True
+
+
+class TestPayloadStaticMounts:
+    """Cover the authenticated payload mounts end-to-end over real HTTP."""
+
+    def test_snippets_payload_mount_serves_authenticated(
+        self, mocker, test_client: TestClient
+    ) -> None:
+        """Serve a snippets payload file to an authenticated caller."""
+        mocker.patch("app.sep.utils.static.get_current_user", new=AsyncMock())
+        filename = next(p.name for p in snippets_settings.SNIPPETS_DIR.glob("*.sh"))
+
+        response = test_client.get(f"/static/snippets/{filename}")
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_snippets_payload_mount_rejects_anonymous(
+        self, test_client: TestClient
+    ) -> None:
+        """Refuse an anonymous request for a snippets payload file."""
+        filename = next(p.name for p in snippets_settings.SNIPPETS_DIR.glob("*.sh"))
+
+        response = test_client.get(
+            f"/static/snippets/{filename}", follow_redirects=False
+        )
+
+        assert response.status_code != status.HTTP_200_OK
+
+    def test_dipper_payload_mount_serves_authenticated(
+        self, mocker, test_client: TestClient
+    ) -> None:
+        """Serve a dipper payload file to an authenticated caller."""
+        mocker.patch("app.sep.utils.static.get_current_user", new=AsyncMock())
+        filename = next(p.name for p in DIPPER_PAYLOADS_DIR.glob("*.sh"))
+
+        response = test_client.get(f"/static/dipper/{filename}")
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_dipper_payload_mount_rejects_anonymous(
+        self, test_client: TestClient
+    ) -> None:
+        """Refuse an anonymous request for a dipper payload file."""
+        filename = next(p.name for p in DIPPER_PAYLOADS_DIR.glob("*.sh"))
+
+        response = test_client.get(f"/static/dipper/{filename}", follow_redirects=False)
+
+        assert response.status_code != status.HTTP_200_OK
 
 
 class TestExceptionHandlers:
@@ -927,72 +1268,89 @@ class TestAppStateGuards:
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
 
+    @pytest.mark.parametrize(
+        "route",
+        [
+            "/api/apps/atw/",
+            "/api/apps/alert_troubleshooting/",
+            "/alert-troubleshooting/",
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_atw_json_route_503s_when_snippets_disabled(
-        self, guarded_client: TestClient, session
+    async def test_snippet_consumer_routes_survive_a_snippets_disable(
+        self, guarded_client: TestClient, session, route: str
     ) -> None:
-        """Atw's JSON route 503s when the ``snippets`` app it requires is disabled.
+        """Keep ATW and Alert Troubleshooting routes reachable past a snippets disable.
 
-        The gate reports atw's own key, so the user never sees the raw
-        ``App 'snippets' is currently disabled`` leak from the execute path.
+        Both read snippet scripts from the library rather than the snippets app,
+        so neither declares ``requires_apps`` and the gate has nothing to trip on.
         """
         session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
         await session.commit()
 
-        response = guarded_client.get("/api/apps/atw/")
-
-        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert "atw" in response.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_atw_json_route_reachable_when_snippets_enabled(
-        self, guarded_client: TestClient, session
-    ) -> None:
-        """Atw's JSON route is reachable when snippets is enabled (no regression)."""
-        response = guarded_client.get("/api/apps/atw/")
+        response = guarded_client.get(route)
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
 
     @pytest.mark.parametrize(
         "route",
-        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
+        [
+            "/api/apps/atw/",
+            "/api/apps/alert_troubleshooting/",
+            "/alert-troubleshooting/",
+        ],
     )
     @pytest.mark.asyncio
-    async def test_alert_troubleshooting_routes_503_when_snippets_disabled(
-        self, guarded_client: TestClient, session, route: str
+    async def test_snippet_consumer_routes_reachable_by_default(
+        self, guarded_client: TestClient, route: str
     ) -> None:
-        """Return 503 from Alert Troubleshooting routes when snippets is disabled.
-
-        The gate names ``alert_troubleshooting`` itself so callers never see the
-        raw ``App 'snippets' is currently disabled`` leak from the snippets path.
-        """
-        session.add(
-            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
-        )
-        await session.commit()
-
-        response = guarded_client.get(route)
-
-        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert (
-            response.json()["detail"]
-            == "App 'alert_troubleshooting' is currently disabled."
-        )
-
-    @pytest.mark.parametrize(
-        "route",
-        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
-    )
-    @pytest.mark.asyncio
-    async def test_alert_troubleshooting_routes_reachable_when_snippets_enabled(
-        self, guarded_client: TestClient, session, route: str
-    ) -> None:
-        """Keep Alert Troubleshooting routes reachable when snippets is enabled."""
+        """Keep ATW and Alert Troubleshooting routes reachable with no state rows."""
         response = guarded_client.get(route)
 
         assert response.status_code == status.HTTP_200_OK
+
+    @pytest.mark.asyncio
+    async def test_dependency_disabled_route_503s_naming_its_own_key(
+        self, guarded_client: TestClient, session, mocker
+    ) -> None:
+        """Return 503 naming the gated app, not the dependency that is off.
+
+        No shipped app declares ``requires_apps`` any more, so the guard's
+        dependency arm is exercised against a synthetic registry: the route stays
+        the real mounted one (the gate closure-captured ``atw`` at mount time)
+        while the graph it resolves through is injected.
+        """
+        registry = AppRegistry(
+            [
+                BaseApp(
+                    key="atw",
+                    name="atw",
+                    display_name="ATW",
+                    uri_path="/atw",
+                    requires_apps=("provider",),
+                ),
+                BaseApp(
+                    key="provider",
+                    name="provider",
+                    display_name="Provider",
+                    uri_path="/provider",
+                ),
+            ]
+        )
+        mocker.patch(
+            "app.sep.apps.framework.registry.get_app_registry", return_value=registry
+        )
+        session.add(
+            AppState(app_key="provider", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert response.json()["detail"] == "App 'atw' is currently disabled."
 
     def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
         """Every non-protected UI plugin route carries the app-state guard."""

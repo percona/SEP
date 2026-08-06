@@ -26,6 +26,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
     Choices,
+    RemoteChoices,
     SchemaRef,
     ServiceRef,
     TaskFormModel,
@@ -37,7 +38,7 @@ BACKUP_SOURCE_SHELLBACKTICK = "`"
 BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
 
 
-def _validate_backup_source_shell_safe(value: str) -> str:
+def ensure_backup_source_shell_safe(value: str) -> str:
     """Reject shell metacharacters in a backup-source path (defense in depth).
 
     Shared by every model carrying ``backup_source`` so the create form and the
@@ -229,7 +230,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     @classmethod
     def validate_backup_source_shell_safe(cls, value: str) -> str:
         """Reject shell metacharacters in backup source (defense in depth)."""
-        return _validate_backup_source_shell_safe(value)
+        return ensure_backup_source_shell_safe(value)
 
 
 class RestoreConfigServer(BaseRestoreConfigServer):
@@ -298,12 +299,23 @@ class RestoreCreate(TaskFormModel):
         Ui(section="Task"),
     ]
 
+    service_id: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
+        Ui(label="Destination Database Service", section="General"),
+    ] = None
     backup_source: Annotated[
         NonEmptyStr,
+        RemoteChoices(
+            endpoint="/apps/mysql_backups/backup-sources/choices",
+            allow_custom=True,
+        ),
         Ui(
             section="General",
+            depends_on="service_id",
             description=(
-                "Where the backup is stored. Use a local path "
+                "Where the backup is stored. Select a database service above to "
+                "list its completed backups, then pick one — or enter a local path "
                 "(/backups/mydumper/20240101), a remote host (db01:/path/to/backup), "
                 "s3://bucket/path, or gs://bucket/path. Add /latest to any of these "
                 "to restore the most recent backup. Avoid these characters: $ ; | & ( ) `"
@@ -333,11 +345,6 @@ class RestoreCreate(TaskFormModel):
         Ui(label="GPG password file", section="General"),
     ] = None
 
-    service_id: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
-        Ui(label="Destination Database Service", section="Mydumper"),
-    ] = None
     schema_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         SchemaRef(allow_custom=True),
@@ -481,7 +488,7 @@ class RestoreCreate(TaskFormModel):
     @classmethod
     def validate_backup_source_shell_safe(cls, value: str) -> str:
         """Reject shell metacharacters in backup source (defense in depth)."""
-        return _validate_backup_source_shell_safe(value)
+        return ensure_backup_source_shell_safe(value)
 
 
 class RestoresResponse(BaseTaskResponse):

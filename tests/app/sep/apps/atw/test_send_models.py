@@ -29,7 +29,7 @@ from app.sep.apps.atw.models import (
     AtwSendLogResponse,
     AtwSendStatusEnum,
 )
-from tests.app.factories import AtwSendLogFactory
+from tests.app.sep.apps.atw.factories import AtwSendLogFactory
 
 _EXPECTED_SEND_LOG_COUNT = 2
 

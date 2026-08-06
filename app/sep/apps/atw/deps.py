@@ -20,10 +20,10 @@ from typing import Annotated
 from fastapi import Depends
 from pydantic import UUID4
 
-from app.core.exceptions import HTTPServiceUnavailableException
+from app.core.exceptions import HTTPConflictException, HTTPServiceUnavailableException
 from app.sep.apps.atw.crud import AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident
-from app.sep.config import sep_settings
+from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.deps import SessionDep
 
 
@@ -41,16 +41,49 @@ async def get_atw_incident(session: SessionDep, incident_id: UUID4) -> AtwIncide
 AtwIncidentDep = Annotated[AtwIncident, Depends(get_atw_incident)]
 
 
+async def require_open_incident(incident: AtwIncidentDep) -> AtwIncident:
+    """Return the incident or raise if it has been closed.
+
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :return: The matching open incident.
+    :raises HTTPConflictException: If the incident is closed.
+    """
+    if incident.closed_at is not None:
+        raise HTTPConflictException(detail="This incident is closed.")
+    return incident
+
+
+OpenAtwIncidentDep = Annotated[AtwIncident, Depends(require_open_incident)]
+
+
+async def require_closed_incident(incident: AtwIncidentDep) -> AtwIncident:
+    """Return the incident or raise if it is still open.
+
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :return: The matching closed incident.
+    :raises HTTPConflictException: If the incident is already open.
+    """
+    if incident.closed_at is None:
+        raise HTTPConflictException(detail="This incident is already open.")
+    return incident
+
+
+ClosedAtwIncidentDep = Annotated[AtwIncident, Depends(require_closed_incident)]
+
+
 def diagnostics_send_disabled_reasons() -> list[str]:
     """Return why the incident send action is unavailable, empty when it is not.
 
-    ``DIAGNOSTICS_DELIVERY`` is validated as a whole at settings load, so a
-    partially-configured receiver cannot exist at run time and the list carries
-    at most this one reason.
+    The plan is resolved from the baked skeleton and its runtime inputs on every
+    call, so a partially-configured receiver -- a declared secret left without a
+    value -- is reported here rather than failing mid-send.
+    ``resolve_delivery_plan`` logs which names are missing; the reason surfaced
+    to the UI stays generic, because it reaches an operator who cannot act on
+    the receiver's internal secret names.
 
     :return: The reasons to withhold the send action from the UI.
     """
-    if sep_settings.DIAGNOSTICS_DELIVERY is None:
+    if resolve_delivery_plan() is None:
         return ["Diagnostics delivery is not configured"]
     return []
 

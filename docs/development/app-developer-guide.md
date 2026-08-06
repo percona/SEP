@@ -631,8 +631,9 @@ remains the app's `FormRules` responsibility (see the predicate DSL below).
 
 When the options cannot be listed statically at all, `RemoteChoices` marks a
 field whose options the form fetches live from an endpoint the app serves (with
-optional `depends_on` cascading). No app in the tree uses it yet — see its
-docstring in `app/sep/apps/framework/form_dsl/markers.py`.
+optional `depends_on` cascading). MySQL Restores uses it for `backup_source`
+(see `app/sep/apps/mysql_backups/restore/models.py`); the marker docstring in
+`app/sep/apps/framework/form_dsl/markers.py` covers the contract.
 
 ### `FieldWidget`
 
@@ -662,11 +663,9 @@ backup_priority: Annotated[
 
 Four markers bind a field to **inventory**: `ServiceRef`, `SchemaRef`, `TableRef`,
 and `HostRef`. They make the field a dropdown resolved from inventory —
-`ServiceRef`, `SchemaRef`, and `TableRef` optionally take `allow_custom=True`
-to also accept a typed name — and they drive the connectivity and cascade
-wiring. `HostRef` declares the same `allow_custom` flag and emits it on the
-wire, but the host selector does not yet honor it, so a free-typed host is
-not currently accepted by the UI. The Alters app uses all four together:
+each optionally takes `allow_custom=True` to also accept a typed name — and
+they drive the connectivity and cascade wiring. The Alters app uses all four
+together:
 
 <!-- src: app/sep/apps/alters/models.py :: AltersCreate -->
 ```python
@@ -816,7 +815,7 @@ Rules are often *generated* rather than written one by one. MySQL Backups
 stamps out the same rule per mode-owned boolean, failing validation when one is
 set outside its mode:
 
-<!-- src: app/sep/apps/mysql_backups/models.py :: BackupCreate -->
+<!-- src: app/sep/apps/mysql_backups/forms.py :: BackupCreate -->
 ```python
 __form_rules__: ClassVar[FormRules] = FormRules(
     fail_when=tuple(
@@ -841,7 +840,7 @@ itself: `Requires` makes the field mandatory when its predicate holds,
 Backups' encryption recipient is required exactly when encryption is on, and
 rejected when it is off:
 
-<!-- src: app/sep/apps/mysql_backups/models.py :: BackupCreate -->
+<!-- src: app/sep/apps/mysql_backups/forms.py :: BackupCreate -->
 ```python
 encryption_recipient: Annotated[
     NonEmptyStr | EmptyStrToNone,
@@ -1084,7 +1083,7 @@ extension point (`app/sep/apps/framework/script_source.py`): each script supplie
 its own form schema, and listing/execute/history derive from the source. Snippets
 wires one:
 
-<!-- src: app/sep/apps/snippets/script_source.py :: snippet_source -->
+<!-- src: app/sep/snippets/script_source.py :: snippet_source -->
 ```python
 snippet_source = ScriptSource(
     script_dir=snippets_settings.SNIPPETS_DIR,
@@ -1198,11 +1197,22 @@ rules and you need to pin which one tripped.
 
 ### Factory conventions
 
-Test data comes from `polyfactory` factories in `tests/app/factories.py` — build with
-`.build()` and customise inline (`CasdoorUserFactory.build(is_admin=True)`). Never
-hand-roll a `dict` for a model a factory already covers. The contract suite's own
-task/inventory seeding goes through the `MockTaskAPI` / `MockInventoryAPI` helpers in
+Test data comes from `polyfactory` factories — build with `.build()` and customise
+inline (`CasdoorUserFactory.build(is_admin=True)`). Never hand-roll a `dict` for a
+model a factory already covers. The contract suite's own task/inventory seeding goes
+through the `MockTaskAPI` / `MockInventoryAPI` helpers in
 `tests/app/sep/apps/framework/kit.py`, not raw dicts.
+
+**Your app's factories live in your app's test package** —
+`tests/app/sep/apps/<app>/factories.py`, imported by your tests as
+`from tests.app.sep.apps.<app>.factories import <App>CreateFactory`. Only core,
+cross-app factories (auth, tasks, inventory) belong in `tests/app/factories.py`; that
+module is imported by the whole test tree, so a factory for your models there couples
+the shared file to your app and outlives it. The directory already has an
+`__init__.py`, so no packaging step is needed — just add the module.
+`tests/app/test_factories_boundary.py` fails the build if a module at the root of the
+test tree imports `app.sep.apps.*`, or re-exports one of your factories from
+`tests.app.sep.apps.*`.
 
 ### How conformance runs in CI
 
