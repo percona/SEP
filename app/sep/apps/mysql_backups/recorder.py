@@ -36,6 +36,7 @@ from typing import Any, TypeVar
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.sep.apps.meta_keys import SERVICE_ID_META_KEY
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import (
     BackupType,
@@ -89,6 +90,30 @@ def _coerce(value: Any, expected: type[T], field: str) -> T | None:
     return kept
 
 
+def _positive_int(value: Any, field: str) -> int | None:
+    """Return ``value`` only when it is a positive ``int``, else ``None``.
+
+    Layers a range guard over :func:`_coerce` for the inventory ids carried in
+    task meta, which start at 1. A non-positive id would key the row to a service
+    that cannot exist *and* drop it out of the ``service_id IS NULL`` name
+    fallback the catalog query uses, leaving the row unreachable — recording it as
+    absent keeps the name path open.
+
+    :param value: The candidate value pulled from the task meta.
+    :param field: The meta key name, used only in the drop warning.
+    :return: ``value`` when it is a positive ``int``, otherwise ``None``.
+    """
+    coerced = _coerce(value, int, field)
+    if coerced is not None and coerced <= 0:
+        logger.warning(
+            "Dropping out-of-range meta field %r: expected a positive id, got %r.",
+            field,
+            coerced,
+        )
+        return None
+    return coerced
+
+
 async def record_backup_run(
     session: AsyncSession,  # noqa: ARG001 — seam contract; see below
     history: TaskHistory,
@@ -137,6 +162,7 @@ async def record_backup_run(
     record = MysqlBackupRun(
         task_history_id=history.id,
         service_name=_coerce(meta.get("_service_name"), str, "_service_name"),
+        service_id=_positive_int(meta.get(SERVICE_ID_META_KEY), SERVICE_ID_META_KEY),
         hostname=_coerce(meta.get("target"), str, "target"),
         backup_type=backup_type,
         location=_coerce(reported.get("backup_dir"), str, "backup_dir"),
