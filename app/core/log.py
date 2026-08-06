@@ -15,16 +15,22 @@
 
 """Define contextual logging utilities with ContextVar-backed log enrichment."""
 
+from collections.abc import Iterable
 from contextvars import ContextVar
 from logging import Filter, LogRecord
 from logging import Formatter as _Formatter
+from typing import Any
 
-request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
-correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="-")
-user_var: ContextVar[str] = ContextVar("user", default="-")
-endpoint_var: ContextVar[str] = ContextVar("endpoint", default="-")
-task_id_var: ContextVar[str] = ContextVar("task_id", default="-")
-task_name_var: ContextVar[str] = ContextVar("task_name", default="-")
+_DEFAULT_SENTINEL = "-"
+
+request_id_var: ContextVar[str] = ContextVar("request_id", default=_DEFAULT_SENTINEL)
+correlation_id_var: ContextVar[str] = ContextVar(
+    "correlation_id", default=_DEFAULT_SENTINEL
+)
+user_var: ContextVar[str] = ContextVar("user", default=_DEFAULT_SENTINEL)
+endpoint_var: ContextVar[str] = ContextVar("endpoint", default=_DEFAULT_SENTINEL)
+task_id_var: ContextVar[str] = ContextVar("task_id", default=_DEFAULT_SENTINEL)
+task_name_var: ContextVar[str] = ContextVar("task_name", default=_DEFAULT_SENTINEL)
 
 _CONTEXT_VARS: dict[str, ContextVar[str]] = {
     "request_id": request_id_var,
@@ -59,13 +65,25 @@ class ContextFilter(Filter):
 class ContextFormatter(_Formatter):
     """Format logs with the populated request and task context fields appended.
 
-    ``ContextFilter`` injects attributes on every ``LogRecord``. The configured
-    base formatter is expected to already render the ``correlation_id`` in its
-    human-oriented position; this formatter only appends the other context
-    fields whose value differs from the default ``"-"``.
+    ``ContextFilter`` injects attributes on every ``LogRecord``. Keys listed in
+    ``skip_keys`` are omitted from the appended ``key=value`` suffix so they can
+    be rendered by the base ``fmt`` string without duplication. Declare
+    ``skip_keys`` next to ``fmt`` in the logging dictConfig.
     """
 
-    _DEFAULT_SENTINEL = "-"
+    def __init__(
+        self,
+        *args: Any,
+        skip_keys: Iterable[str] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize the formatter.
+
+        :param skip_keys: Context keys already rendered by ``fmt``; omitted from
+            the appended suffix. Defaults to none skipped.
+        """
+        super().__init__(*args, **kwargs)
+        self._skip_keys = frozenset(skip_keys or ())
 
     def format(self, record: LogRecord) -> str:
         """Format a log record and append non-default context fields.
@@ -77,14 +95,11 @@ class ContextFormatter(_Formatter):
         parts: list[str] = []
 
         for key in _CONTEXT_VARS:
-            if key == "correlation_id":
+            if key in self._skip_keys:
                 continue
-            raw_value = getattr(record, key, self._DEFAULT_SENTINEL)
-            if raw_value != self._DEFAULT_SENTINEL:
-                value = str(raw_value).replace("\n", "\\n").replace("\r", "\\r")
-                if any(ch.isspace() for ch in value) or "=" in value:
-                    value = repr(value)
-                parts.append(f"{key}={value}")
+            raw_value = getattr(record, key, _DEFAULT_SENTINEL)
+            if raw_value != _DEFAULT_SENTINEL:
+                parts.append(f"{key}={str(raw_value)!r}")
 
         if not parts:
             return base
@@ -108,4 +123,4 @@ def set_log_context(**kwargs: str) -> None:
 def clear_log_context() -> None:
     """Reset all context variables to their default value."""
     for var in _CONTEXT_VARS.values():
-        var.set("-")
+        var.set(_DEFAULT_SENTINEL)
