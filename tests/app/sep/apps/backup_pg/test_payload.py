@@ -16,9 +16,11 @@
 
 import datetime
 import importlib.util
+import logging
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -63,7 +65,15 @@ def _make_pgbackrest(
         "LOGGING_DIR": str(tmp_path / "logs"),
     }
     server_data.update(overrides)
-    return payload_module.PgBackRest(server_data, logger=MagicMock())
+    return payload_module.PgBackRest(server_data, logger=MagicMock(spec=logging.Logger))
+
+
+def _captured_backup_cmd(pg: Any) -> list[str]:
+    """Run _run_backup_command() and return the command list passed to Popen."""
+    with patch("subprocess.Popen") as mock_popen:
+        mock_popen.return_value.returncode = 0
+        pg._run_backup_command()
+        return mock_popen.call_args[0][0]
 
 
 class TestPgBackRestConfigKeys:
@@ -103,10 +113,11 @@ class TestIncrementalCycleValidation:
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
         """Raise a BackupError for an invalid cycle value."""
+        pg = _make_pgbackrest(
+            payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE="bogus"
+        )
         with pytest.raises(payload_module.BackupError):
-            _make_pgbackrest(
-                payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE="bogus"
-            )
+            pg._run_backup_command()
 
 
 class TestFullBackupDecision:
@@ -120,10 +131,7 @@ class TestFullBackupDecision:
         pg = _make_pgbackrest(
             payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE=str(today_iso)
         )
-        with patch("subprocess.Popen") as mock_popen:
-            mock_popen.return_value.returncode = 0
-            pg._run_backup_command()
-            cmd = mock_popen.call_args[0][0]
+        cmd = _captured_backup_cmd(pg)
         assert "--type=full" in cmd
 
     def test_non_matching_weekday_does_not_trigger_full(
@@ -135,10 +143,7 @@ class TestFullBackupDecision:
         pg = _make_pgbackrest(
             payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE=other_day
         )
-        with patch("subprocess.Popen") as mock_popen:
-            mock_popen.return_value.returncode = 0
-            pg._run_backup_command()
-            cmd = mock_popen.call_args[0][0]
+        cmd = _captured_backup_cmd(pg)
         assert "--type=full" not in cmd
 
     def test_daily_always_triggers_full(
@@ -148,10 +153,7 @@ class TestFullBackupDecision:
         pg = _make_pgbackrest(
             payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE="daily"
         )
-        with patch("subprocess.Popen") as mock_popen:
-            mock_popen.return_value.returncode = 0
-            pg._run_backup_command()
-            cmd = mock_popen.call_args[0][0]
+        cmd = _captured_backup_cmd(pg)
         assert "--type=full" in cmd
 
 
