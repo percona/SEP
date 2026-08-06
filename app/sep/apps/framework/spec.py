@@ -61,6 +61,7 @@ from app.sep.apps.framework.form_dsl import (
     ServiceRef,
     TableRef,
 )
+from app.sep.apps.meta_keys import SERVICE_ID_META_KEY
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -87,6 +88,7 @@ __all__ = [
     "build_run_python_task",
     "resolve_refs",
     "stamp_form_input",
+    "stamp_service_id",
     "validate_arg_formats",
 ]
 
@@ -384,6 +386,22 @@ async def resolve_refs(
     )
 
 
+def stamp_service_id(meta: dict[str, Any], service: CreatedService) -> None:
+    """Stamp the resolved service's inventory id into an envelope's ``meta``.
+
+    The id identifies the service across a later rename, which the name does not,
+    so a consumer keyed on it survives one. A service carrying no primary key
+    stamps no key at all — a consumer reads the absence as "no id known", with no
+    ``None`` to special-case — which is why every producer must share this omit
+    rule rather than reimplement it.
+
+    :param meta: The envelope ``meta`` dict, stamped in place.
+    :param service: The resolved inventory service the task is created against.
+    """
+    if service.id is not None:
+        meta[SERVICE_ID_META_KEY] = service.id
+
+
 def assemble_envelope(
     spec: EnvelopeSpec,
     resolved: ResolvedEntities,
@@ -404,6 +422,9 @@ def assemble_envelope(
     the service's type. The spec supplies the verb-specific keys (``command`` /
     ``args`` and any ``extra_meta`` for run-command; ``config`` / ``requirements``
     / ``payload`` for run-python).
+
+    Stamp the service id through :func:`stamp_service_id`, so a consumer keying on
+    it survives a later rename of the service.
 
     Stamp ``output_files_path`` from the envelope's task name, so a task whose job
     spec pins a working directory is created knowing where its output files land —
@@ -455,6 +476,7 @@ def assemble_envelope(
     data = spec.to_envelope_data(
         host=target_host, service_name=service.name, connectivity=connectivity
     )
+    stamp_service_id(data["meta"], service)
 
     return TaskWrite(
         name=name,

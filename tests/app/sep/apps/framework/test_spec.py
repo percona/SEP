@@ -50,6 +50,7 @@ from app.sep.apps.framework.spec import (
     RunCommandSpec,
     RunPythonSpec,
     stamp_form_input,
+    stamp_service_id,
     validate_arg_formats,
 )
 from app.sep.connectivity import (
@@ -66,6 +67,7 @@ from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
     CreatedServiceFactory,
+    MOCK_CREATED_SERVICE_ID,
 )
 
 
@@ -127,6 +129,7 @@ class TestAssembleEnvelopeRunCommand:
                 CONNECTIVITY_META_HOST_KEY: "db-host",
                 CONNECTIVITY_META_PORT_KEY: 3306,
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: "mysql",
+                "_service_id": MOCK_CREATED_SERVICE_ID,
             },
         }
         assert write.name == "task-1"
@@ -165,6 +168,7 @@ class TestAssembleEnvelopeRunCommand:
             CONNECTIVITY_META_HOST_KEY,
             CONNECTIVITY_META_PORT_KEY,
             CONNECTIVITY_META_SERVICE_TYPE_KEY,
+            "_service_id",
         ]
 
     def test_port_default_fallback_when_service_port_none(self) -> None:
@@ -221,6 +225,7 @@ class TestAssembleEnvelopeRunPython:
                 CONNECTIVITY_META_HOST_KEY: "pg-host",
                 CONNECTIVITY_META_PORT_KEY: 5432,
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: "postgresql",
+                "_service_id": MOCK_CREATED_SERVICE_ID,
             },
             "payload": "file:///plugin/payload",
         }
@@ -243,6 +248,92 @@ class TestAssembleEnvelopeRunPython:
         )
 
         assert write.data["meta"][CONNECTIVITY_META_PORT_KEY] == DEFAULT_POSTGRESQL_PORT
+
+
+class TestAssembleEnvelopeServiceId:
+    """Cover the ``_service_id`` meta stamp taken from the resolved service."""
+
+    def test_stamps_resolved_service_id(self) -> None:
+        """Stamp the resolved service's inventory id into the envelope meta."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        spec = RunCommandSpec(command="cmd", args="")
+
+        write = assemble_envelope(
+            spec,
+            ResolvedEntities(service=service, entities={}),
+            name="task-1",
+            owner="CHECKSUMS",
+        )
+
+        assert write.data["meta"]["_service_id"] == MOCK_CREATED_SERVICE_ID
+
+    def test_omits_key_when_service_has_no_id(self) -> None:
+        """Stamp no key at all for a service carrying no inventory id.
+
+        An absent key is what the catalog recorder reads as "no id known", so a
+        service with no primary key must leave the meta untouched rather than
+        stamp a ``None`` the recorder would have to special-case.
+        """
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        service.id = None
+        spec = RunCommandSpec(command="cmd", args="")
+
+        write = assemble_envelope(
+            spec,
+            ResolvedEntities(service=service, entities={}),
+            name="task-1",
+            owner="CHECKSUMS",
+        )
+
+        assert "_service_id" not in write.data["meta"]
+
+
+class TestStampServiceId:
+    """Cover the stamp shared by every envelope producer.
+
+    Both the framework's :func:`assemble_envelope` and the checksums legacy Jinja
+    builder stamp through this one helper, so the omit-when-absent rule cannot
+    drift between them.
+    """
+
+    def test_stamps_the_id_leaving_other_keys_untouched(self) -> None:
+        """Add only the id key to a meta dict that already carries others."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        meta = {"command": "cmd"}
+
+        stamp_service_id(meta, service)
+
+        assert meta == {"command": "cmd", "_service_id": MOCK_CREATED_SERVICE_ID}
+
+    def test_stamps_nothing_when_the_service_has_no_id(self) -> None:
+        """Leave the meta unchanged rather than stamp a ``None`` id."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        service.id = None
+        meta = {"command": "cmd"}
+
+        stamp_service_id(meta, service)
+
+        assert meta == {"command": "cmd"}
 
 
 class TestAssembleEnvelopeGuards:

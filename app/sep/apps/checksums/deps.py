@@ -45,6 +45,7 @@ from app.sep.apps.framework.spec import (
     assemble_envelope,
     resolve_refs,
     stamp_form_input,
+    stamp_service_id,
 )
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
@@ -152,23 +153,23 @@ def assemble_checksum_payload(
         tables_arg=tables_arg,
     )
 
+    meta: dict[str, Any] = {
+        "command": "pt-table-checksum",
+        "args": shlex.join(args),
+        "target": form.hostname,
+        "_service_name": service.name,
+        "_service_host": service.node.address,
+        "_service_port": service.port,
+        CONNECTIVITY_META_HOST_KEY: service.node.address,
+        CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
+        CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
+    }
+    stamp_service_id(meta, service)
+
     return TaskWrite(
         owner=OWNER,
         backend=TaskBackendEnum.PROXY,
-        data={
-            "task": "run-command",
-            "meta": {
-                "command": "pt-table-checksum",
-                "args": shlex.join(args),
-                "target": form.hostname,
-                "_service_name": service.name,
-                "_service_host": service.node.address,
-                "_service_port": service.port,
-                CONNECTIVITY_META_HOST_KEY: service.node.address,
-                CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
-                CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
-            },
-        },
+        data={"task": "run-command", "meta": meta},
         name=form.task_name,
         target=form.hostname,
         alert_on_fail=form.alert_on_fail,
