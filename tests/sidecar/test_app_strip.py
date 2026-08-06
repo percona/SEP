@@ -176,6 +176,15 @@ def test_activated_apps_does_not_list_snippets():
     assert "snippets" not in activated
 
 
+def test_checker_activated_apps_rejects_a_non_mapping_root(tmp_path: Path):
+    """Assert an empty profile, which parses to ``None``, raises ``TypeError``."""
+    profile = tmp_path / "settings.yaml"
+    profile.write_text("", encoding="utf-8")
+
+    with pytest.raises(TypeError):
+        verify_image_apps.activated_apps(profile)
+
+
 def test_restrict_keeps_the_activated_apps_and_infrastructure(
     synthetic_tree: tuple[Path, Path],
 ):

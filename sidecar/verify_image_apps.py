@@ -27,7 +27,6 @@ the code producing the tree could only ever agree with it.
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -57,10 +56,15 @@ def activated_apps(profile: Path) -> frozenset[str]:
     :return: The ``SEP.APPS`` module names.
     :raises OSError: When the profile cannot be read.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
+    :raises TypeError: When the profile's root is not a mapping.
     :raises KeyError: When the profile carries no activation list, or an entry
         in it declares no module name.
     """
-    document: dict[str, Any] = yaml.safe_load(profile.read_text(encoding="utf-8"))
+    document = yaml.safe_load(profile.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise TypeError(
+            f"{profile} is not a settings mapping: parsed as {type(document).__name__}"
+        )
     return frozenset(
         entry["MODULE_NAME"] for entry in document["default"]["SEP"]["APPS"]
     )
@@ -86,6 +90,7 @@ def retained_packages(profile: Path) -> frozenset[str]:
     :return: The activated apps plus the infrastructure packages.
     :raises OSError: When the profile cannot be read.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
+    :raises TypeError: When the profile's root is not a mapping.
     :raises KeyError: When the profile carries no activation list, or an entry
         in it declares no module name.
     """
@@ -101,6 +106,7 @@ def restricted_problems(profile: Path, apps_root: Path) -> list[str]:
     :raises OSError: When the profile cannot be read or ``apps_root`` cannot be
         listed.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
+    :raises TypeError: When the profile's root is not a mapping.
     :raises KeyError: When the profile carries no activation list, or an entry
         in it declares no module name.
     """
@@ -129,6 +135,7 @@ def unrestricted_problems(profile: Path, apps_root: Path) -> list[str]:
     :raises OSError: When the profile cannot be read or ``apps_root`` cannot be
         listed.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
+    :raises TypeError: When the profile's root is not a mapping.
     :raises KeyError: When the profile carries no activation list, or an entry
         in it declares no module name.
     """
@@ -151,8 +158,8 @@ def main() -> None:
 
     :raises SystemExit: With the joined problems when the tree does not match.
     :raises Exception: Propagates every failure the comparison reports —
-        ``OSError``, ``yaml.YAMLError`` and ``KeyError`` — so an unreadable or
-        malformed profile fails the step loudly.
+        ``OSError``, ``yaml.YAMLError``, ``TypeError`` and ``KeyError`` — so an
+        unreadable or malformed profile fails the step loudly.
     """
     checks = {
         "restricted": restricted_problems,
