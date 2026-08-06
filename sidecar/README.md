@@ -9,6 +9,12 @@ Build it with `make image-sidecar` (tag `sep:${RELEASE_VER}-sidecar`). Jenkins
 builds and publishes the same tag with a `-sidecar` suffix on both the internal
 and Docker Hub registries.
 
+An **app-restricted** variant of the same image is built by
+`make image-sidecar-embedded` (tag `sep:${RELEASE_VER}-embedded`). It is the
+side-car recipe with the app strip switched on, so it ships only the app
+packages the embedded settings profile activates — see [App set](#app-set).
+Jenkins builds and publishes it alongside the other two.
+
 ## What it contains
 
 | Input | Role |
@@ -19,6 +25,7 @@ and Docker Hub registries.
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables. |
 | `settings.embedded.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
+| `restrict_apps.py` | Build-step strip for the app-restricted variant; removes every app package the baked profile does not activate. Removed during the build, so it is not present in the final image. |
 
 The image is built in **docker** manifest format rather than OCI, because OCI
 silently discards the `HEALTHCHECK` instruction.
@@ -35,6 +42,48 @@ single file and `YamlPrefixConfigSettingsSource` reads only that one — there i
 no baked-file-plus-overlay merge. So a **partial** override is
 environment-variable-only, and a **full** override is a bind mount at
 `/home/sep/app/settings.yaml`, which replaces the baked profile wholesale.
+
+### App set
+
+The app-restricted image ships exactly the apps `settings.embedded.yaml`'s
+`SEP.APPS` activates, plus `framework` and `shared`, which shipped modules reach
+and which the activation list never names. Nothing else declares the set: changing
+which apps the image ships is an edit to `SEP.APPS` and nothing else, and the
+build fails if an activated app has no package to keep.
+
+The strip is driven by the `SEP_RESTRICT_APPS` build argument, which
+`image-sidecar-embedded` passes as `1`. Only the exact value `1` strips
+anything; the argument defaults to `0`, and any other value leaves the image
+unrestricted — which is why the general side-car build, which never passes it,
+keeps every app package.
+
+The strip removes an app's directory and leaves its `version_locations` entry in
+`alembic.ini` alone. That combination is load-bearing, not incidental. Each app
+owning migrations is an independent Alembic branch recorded in the shared
+`alembic_version_sep` table, so a database a full image migrated carries head
+rows for apps this image does not ship. `skip_unresolvable_heads` in
+`app/sep/migrations/_orphan_heads.py` drops those rows from the heads it hands
+Alembic — but only when a configured `version_locations` entry is absent from
+disk, which is what a stripped app looks like. With every configured location
+present, an unresolvable revision means version skew instead and the upgrade
+hard-fails by design. So pruning a stripped app's entry — regenerating the list
+in an already-stripped tree, or rewriting the file during the build — turns a
+working upgrade into a failed one. `tests/sidecar/test_app_strip.py` asserts the
+entries survive for every app the strip removes that owns migrations; an app
+owning none needs no entry, and must not carry one.
+
+On this image an `SEP.APPS` override can therefore only **narrow** the baked
+set, never widen it. Registry construction imports each activated module, so
+activating a package the image does not ship raises `ModuleNotFoundError` and
+the container fails to start. The two surfaces that reach `SEP.APPS` are a bind
+mount at `/home/sep/app/settings.yaml` (which, per above, replaces the profile
+wholesale — so its `SEP.APPS` must be a subset of the baked one) and the
+`SEP__APPS` environment variable; the runtime settings-override API cannot,
+because `SEP.APPS` is absent from `SETTINGS_OVERRIDE_ALLOWED_KEYS`.
+
+The two unrestricted images (`sep:${RELEASE_VER}` and
+`sep:${RELEASE_VER}-sidecar`) ship every app package, so neither constraint
+applies to them.
 
 ### Deployment inputs
 
