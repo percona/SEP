@@ -22,6 +22,7 @@ __all__ = [
     "ProxyEntry",
     "ProxyRegistry",
     "RefreshCallback",
+    "SnapshotChange",
     "fire_change_callbacks",
     "publish_snapshot",
     "refresh_all",
@@ -52,11 +53,32 @@ logger = logging.getLogger(__name__)
 
 SessionMakerFactory = Callable[[], async_sessionmaker]
 
+
+class SnapshotChange(NamedTuple):
+    """The override snapshots on either side of a republish.
+
+    A snapshot holds active overrides only -- never an effective view -- so a
+    key may be absent from ``previous``, ``current``, or both. When a key is
+    absent the prior (or new) effective value is the YAML/env one reachable
+    through the proxy's wrapped instance.
+
+    :param previous: The snapshot in effect before the republish.
+    :type previous: Mapping[str, object]
+    :param current: The snapshot now in effect.
+    :type current: Mapping[str, object]
+    """
+
+    previous: Mapping[str, object]
+    current: Mapping[str, object]
+
+
 #: A rebind callback fired when a watched ``(setting_class, key)`` override
-#: changes value between refresh cycles. The callback receives the new effective
-#: snapshot mapping for its setting class; any exception it raises is caught and
-#: logged by :func:`refresh_all` so one failing callback cannot break the cycle.
-RefreshCallback = Callable[[Mapping[str, object]], Awaitable[None]]
+#: changes value between refresh cycles. The callback receives a
+#: :class:`SnapshotChange` carrying the override snapshots on either side of
+#: the republish (overrides-only; a key may be absent from either side). Any
+#: exception it raises is caught and logged by :func:`fire_change_callbacks`
+#: so one failing callback cannot break the cycle.
+RefreshCallback = Callable[[SnapshotChange], Awaitable[None]]
 CallbackRegistry = dict[tuple[SettingClassEnum, str], RefreshCallback]
 
 
@@ -114,8 +136,15 @@ async def fire_change_callbacks(
 
     Compares ``previous`` against ``current`` and, for each ``(setting_class,
     key)`` whose value differs and has a registered callback, awaits the
-    callback. Each callback runs inside its own ``try/except`` so one failure
-    neither aborts the cycle nor blocks the remaining callbacks.
+    callback with a :class:`SnapshotChange` carrying both mappings. Each
+    callback runs inside its own ``try/except`` so one failure neither aborts
+    the cycle nor blocks the remaining callbacks.
+
+    Both mappings are override snapshots only -- never an effective view -- so a
+    key may be absent from either side (for example on the override-delete path
+    the changed key is gone from ``current``). Callbacks that need the previous
+    effective value when the key is absent recover it through the proxy's
+    wrapped YAML/env instance.
 
     Shared by the background refresher (:func:`refresh_all`, diffing the snapshot
     it just rebuilt) and the settings-API PATCH/DELETE handlers (diffing the
@@ -127,11 +156,12 @@ async def fire_change_callbacks(
     :type callbacks: CallbackRegistry
     :param setting_class: The class whose snapshot was just republished.
     :type setting_class: SettingClassEnum
-    :param previous: The snapshot in effect before the republish.
+    :param previous: The override snapshot in effect before the republish.
     :type previous: Mapping[str, object]
-    :param current: The snapshot now in effect.
+    :param current: The override snapshot now in effect.
     :type current: Mapping[str, object]
     """
+    change = SnapshotChange(previous, current)
     for key in previous.keys() | current.keys():
         if previous.get(key) == current.get(key):
             continue
@@ -139,7 +169,7 @@ async def fire_change_callbacks(
         if callback is None:
             continue
         try:
-            await callback(current)
+            await callback(change)
         except Exception:
             logger.exception(
                 "Rebind callback for %s.%s failed; keeping previous binding",
