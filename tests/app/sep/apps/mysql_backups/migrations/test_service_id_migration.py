@@ -16,6 +16,7 @@
 """Define tests for the MySQL backup catalog ``service_id`` column migration."""
 
 from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
 _SERVICE_ID_REVISION = "b7c8d9e0f1a2"
@@ -24,73 +25,31 @@ _TABLE = "mysql_backup_run"
 _INDEX = "ix_mysql_backup_run_service_id"
 
 
-def _run_columns(sync_url: str) -> set[str]:
-    """Return column names on ``mysql_backup_run``, or empty if absent.
+def _run_state(sync_url: str) -> tuple[set[str], set[str]]:
+    """Return column names and index names on ``mysql_backup_run``.
 
     :param sync_url: Sync SQLAlchemy URL of the migrated test database.
-    :return: The table's column names, or an empty set when it does not exist.
+    :return: The table's column names and index names, both empty when it does
+        not exist.
     """
     engine = create_engine(sync_url)
     try:
         inspector = inspect(engine)
         if _TABLE not in inspector.get_table_names():
-            return set()
-        return {column["name"] for column in inspector.get_columns(_TABLE)}
+            return set(), set()
+        return (
+            {column["name"] for column in inspector.get_columns(_TABLE)},
+            {index["name"] for index in inspector.get_indexes(_TABLE)},
+        )
     finally:
         engine.dispose()
 
 
-def _run_indexes(sync_url: str) -> set[str]:
-    """Return index names on ``mysql_backup_run``, or empty if absent.
+def _add_service_id_by_hand(sync_url: str) -> None:
+    """Add ``service_id`` outside the migration chain.
 
     :param sync_url: Sync SQLAlchemy URL of the migrated test database.
-    :return: The table's index names, or an empty set when it does not exist.
     """
-    engine = create_engine(sync_url)
-    try:
-        inspector = inspect(engine)
-        if _TABLE not in inspector.get_table_names():
-            return set()
-        return {index["name"] for index in inspector.get_indexes(_TABLE)}
-    finally:
-        engine.dispose()
-
-
-def test_upgrade_adds_service_id_column(sep_alembic_config):
-    """Assert upgrade stamps ``service_id`` onto ``mysql_backup_run``."""
-    cfg, sync_url = sep_alembic_config
-    command.upgrade(cfg, _SERVICE_ID_REVISION)
-    assert "service_id" in _run_columns(sync_url)
-
-
-def test_upgrade_indexes_service_id(sep_alembic_config):
-    """Assert upgrade indexes ``service_id``, the new per-service query key."""
-    cfg, sync_url = sep_alembic_config
-    command.upgrade(cfg, _SERVICE_ID_REVISION)
-    assert _INDEX in _run_indexes(sync_url)
-
-
-def test_downgrade_drops_service_id_column_and_index(sep_alembic_config):
-    """Assert downgrade removes both the column and its index."""
-    cfg, sync_url = sep_alembic_config
-    command.upgrade(cfg, _SERVICE_ID_REVISION)
-    command.downgrade(cfg, _PRE_SERVICE_ID_REVISION)
-
-    assert "service_id" not in _run_columns(sync_url)
-    assert _INDEX not in _run_indexes(sync_url)
-
-
-def test_upgrade_skips_a_table_that_already_carries_the_column(sep_alembic_config):
-    """Assert upgrade no-ops instead of failing when the column already exists.
-
-    The revision guards on ``sa.inspect`` because an installation whose schema was
-    created from the models rather than replayed from the chain already carries the
-    column when this revision runs. Simulated by adding it by hand at the previous
-    revision, which an unguarded ``add_column`` would then fail on.
-    """
-    cfg, sync_url = sep_alembic_config
-    command.upgrade(cfg, _PRE_SERVICE_ID_REVISION)
-
     engine = create_engine(sync_url)
     try:
         with engine.begin() as connection:
@@ -98,40 +57,96 @@ def test_upgrade_skips_a_table_that_already_carries_the_column(sep_alembic_confi
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, _SERVICE_ID_REVISION)
 
-    assert "service_id" in _run_columns(sync_url)
+class TestServiceIdMigration:
+    """Define tests for the ``service_id`` column and index revision."""
 
+    def test_upgrade_adds_service_id_column(
+        self, sep_alembic_config: tuple[Config, str]
+    ) -> None:
+        """Assert upgrade stamps ``service_id`` onto ``mysql_backup_run``."""
+        cfg, sync_url = sep_alembic_config
+        command.upgrade(cfg, _SERVICE_ID_REVISION)
 
-def test_upgrade_backfills_the_index_when_only_the_column_exists(sep_alembic_config):
-    """Assert upgrade still indexes a column added outside the migration chain."""
-    cfg, sync_url = sep_alembic_config
-    command.upgrade(cfg, _PRE_SERVICE_ID_REVISION)
+        columns, _ = _run_state(sync_url)
 
-    engine = create_engine(sync_url)
-    try:
-        with engine.begin() as connection:
-            connection.execute(text(f"ALTER TABLE {_TABLE} ADD COLUMN service_id INT"))
-    finally:
-        engine.dispose()
+        assert "service_id" in columns
 
-    command.upgrade(cfg, _SERVICE_ID_REVISION)
+    def test_upgrade_indexes_service_id(
+        self, sep_alembic_config: tuple[Config, str]
+    ) -> None:
+        """Assert upgrade indexes ``service_id``, the new per-service query key."""
+        cfg, sync_url = sep_alembic_config
+        command.upgrade(cfg, _SERVICE_ID_REVISION)
 
-    assert _INDEX in _run_indexes(sync_url)
+        _, indexes = _run_state(sync_url)
 
+        assert _INDEX in indexes
 
-def test_downgrade_drops_the_column_when_the_index_is_already_gone(sep_alembic_config):
-    """Assert downgrade tolerates a schema whose index was dropped by hand."""
-    cfg, sync_url = sep_alembic_config
-    command.upgrade(cfg, _SERVICE_ID_REVISION)
+    def test_downgrade_drops_service_id_column_and_index(
+        self, sep_alembic_config: tuple[Config, str]
+    ) -> None:
+        """Assert downgrade removes both the column and its index."""
+        cfg, sync_url = sep_alembic_config
+        command.upgrade(cfg, _SERVICE_ID_REVISION)
+        command.downgrade(cfg, _PRE_SERVICE_ID_REVISION)
 
-    engine = create_engine(sync_url)
-    try:
-        with engine.begin() as connection:
-            connection.execute(text(f"DROP INDEX {_INDEX}"))
-    finally:
-        engine.dispose()
+        columns, indexes = _run_state(sync_url)
 
-    command.downgrade(cfg, _PRE_SERVICE_ID_REVISION)
+        assert "service_id" not in columns
+        assert _INDEX not in indexes
 
-    assert "service_id" not in _run_columns(sync_url)
+    def test_upgrade_skips_a_table_that_already_carries_the_column(
+        self, sep_alembic_config: tuple[Config, str]
+    ) -> None:
+        """Assert upgrade no-ops instead of failing when the column already exists.
+
+        The revision guards on ``sa.inspect`` because an installation whose schema
+        was created from the models rather than replayed from the chain already
+        carries the column when this revision runs. Simulated by adding it by hand
+        at the previous revision, which an unguarded ``add_column`` would then fail
+        on.
+        """
+        cfg, sync_url = sep_alembic_config
+        command.upgrade(cfg, _PRE_SERVICE_ID_REVISION)
+        _add_service_id_by_hand(sync_url)
+
+        command.upgrade(cfg, _SERVICE_ID_REVISION)
+
+        columns, _ = _run_state(sync_url)
+
+        assert "service_id" in columns
+
+    def test_upgrade_backfills_the_index_when_only_the_column_exists(
+        self, sep_alembic_config: tuple[Config, str]
+    ) -> None:
+        """Assert upgrade still indexes a column added outside the chain."""
+        cfg, sync_url = sep_alembic_config
+        command.upgrade(cfg, _PRE_SERVICE_ID_REVISION)
+        _add_service_id_by_hand(sync_url)
+
+        command.upgrade(cfg, _SERVICE_ID_REVISION)
+
+        _, indexes = _run_state(sync_url)
+
+        assert _INDEX in indexes
+
+    def test_downgrade_drops_the_column_when_the_index_is_already_gone(
+        self, sep_alembic_config: tuple[Config, str]
+    ) -> None:
+        """Assert downgrade tolerates a schema whose index was dropped by hand."""
+        cfg, sync_url = sep_alembic_config
+        command.upgrade(cfg, _SERVICE_ID_REVISION)
+
+        engine = create_engine(sync_url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(text(f"DROP INDEX {_INDEX}"))
+        finally:
+            engine.dispose()
+
+        command.downgrade(cfg, _PRE_SERVICE_ID_REVISION)
+
+        columns, _ = _run_state(sync_url)
+
+        assert "service_id" not in columns

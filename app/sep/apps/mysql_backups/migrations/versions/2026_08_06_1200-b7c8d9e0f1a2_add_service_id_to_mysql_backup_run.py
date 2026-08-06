@@ -39,43 +39,35 @@ COLUMN = "service_id"
 INDEX = "ix_mysql_backup_run_service_id"
 
 
-def _existing_columns(bind: Connection) -> set[str]:
-    """Return the column names on ``mysql_backup_run``.
+def _table_state(bind: Connection) -> tuple[set[str], set[str]]:
+    """Return the column names and index names on ``mysql_backup_run``.
 
     :param bind: The active migration connection.
-    :return: The table's column names, or an empty set when the table is absent.
+    :return: The table's column names and index names, both empty when the table
+        is absent.
     """
     inspector = sa.inspect(bind)
     if TABLE not in inspector.get_table_names():
-        return set()
-    return {column["name"] for column in inspector.get_columns(TABLE)}
-
-
-def _existing_indexes(bind: Connection) -> set[str]:
-    """Return the index names on ``mysql_backup_run``.
-
-    :param bind: The active migration connection.
-    :return: The table's index names, or an empty set when the table is absent.
-    """
-    inspector = sa.inspect(bind)
-    if TABLE not in inspector.get_table_names():
-        return set()
-    return {index["name"] for index in inspector.get_indexes(TABLE)}
+        return set(), set()
+    return (
+        {column["name"] for column in inspector.get_columns(TABLE)},
+        {index["name"] for index in inspector.get_indexes(TABLE)},
+    )
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
+    columns, indexes = _table_state(op.get_bind())
     # The column and the index are guarded separately: a schema created from the
     # models, or hand-patched with a bare ALTER, can carry one without the other.
-    if COLUMN not in _existing_columns(bind):
+    if COLUMN not in columns:
         op.add_column(TABLE, sa.Column(COLUMN, sa.Integer(), nullable=True))
-    if INDEX not in _existing_indexes(bind):
+    if INDEX not in indexes:
         op.create_index(op.f(INDEX), TABLE, [COLUMN], unique=False)
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    if INDEX in _existing_indexes(bind):
+    columns, indexes = _table_state(op.get_bind())
+    if INDEX in indexes:
         op.drop_index(op.f(INDEX), table_name=TABLE)
-    if COLUMN in _existing_columns(bind):
+    if COLUMN in columns:
         op.drop_column(TABLE, COLUMN)
