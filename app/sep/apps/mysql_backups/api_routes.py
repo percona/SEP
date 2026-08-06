@@ -28,10 +28,10 @@ from fastapi import APIRouter
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.sep.apps.framework.schema import Choice
-from app.sep.apps.mysql_backups.backup_source_choices import choices_for_service_name
+from app.sep.apps.mysql_backups.backup_source_choices import choices_for_service
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.deps import (
-    OptionalMysqlServiceName,
+    OptionalCatalogServiceKey,
     ResolvedMysqlService,
 )
 from app.sep.apps.mysql_backups.models import BackupRunResponse
@@ -55,6 +55,10 @@ async def list_service_backups(
     blocked by an empty catalog but is still told when the service itself is
     unknown.
 
+    The query is keyed on the resolved service's inventory id, so a rename between
+    recording a run and asking for it cannot detach the rows; runs recorded before
+    the id was stored are still matched by the name they were written with.
+
     :param service: The inventory service resolved from the ``service_id`` path
         parameter.
     :param session: The database session the catalog is queried on.
@@ -63,14 +67,14 @@ async def list_service_backups(
         run first.
     """
     return await MysqlBackupRunManager.list_for_service(
-        session, service.name, pagination=pagination
+        session, service.name, service_id=service.id, pagination=pagination
     )
 
 
 @router.get("/backup-sources/choices")
 async def list_backup_source_choices(
     session: SessionDep,
-    service_name: OptionalMysqlServiceName,
+    service_key: OptionalCatalogServiceKey,
 ) -> list[Choice]:  # pagination-ok: bounded by DEFAULT_PAGINATION_LIMIT
     """Return ``Choice`` options for a MySQL service's restore ``backup_source``.
 
@@ -84,13 +88,16 @@ async def list_backup_source_choices(
     Free-typed (non-numeric) parents query the catalog by that name without an
     Inventory type check — matching ``ServiceRef(allow_custom=True)`` on the
     restore form, where the destination may be a name that has no MySQL
-    inventory row. Numeric parents still require a resolvable MySQL service.
+    inventory row. Numeric parents still require a resolvable MySQL service, and
+    are keyed on its inventory id so a rename does not empty the selector.
 
     :param session: The database session the catalog is queried on.
-    :param service_name: The cascade parent resolved to a catalog service name,
-        or ``None`` when the parent is unusable.
+    :param service_key: The cascade parent resolved to the catalog query keys, or
+        ``None`` when the parent is unusable.
     :return: Choice-compatible options for the restore backup-source selector.
     """
-    if service_name is None:
+    if service_key is None:
         return []
-    return await choices_for_service_name(session, service_name)
+    return await choices_for_service(
+        session, service_key.service_name, service_id=service_key.service_id
+    )

@@ -20,23 +20,28 @@ from typing import Any
 import pytest
 import yaml
 
+from app.core.exceptions import HTTPNotFoundException
 from app.core.utils.path import resolve_payload_reference
 from app.sep.apps.mysql_backups.deps import (
     _extract_backup_type_from_task,
     build_backup_task_payload,
     build_mysql_backups_api_task_response,
+    CatalogServiceKey,
     get_backups_task_info,
     parse_backup_task_data,
+    resolve_optional_catalog_service_key,
 )
 from app.sep.apps.mysql_backups.forms import BackupCreate, UploadProvider
 from app.sep.apps.mysql_backups.models import BackupType, extract_backup_type_marker
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
+from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
 from app.sep.inventory import CreatedNode, CreatedService
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
     TaskWrite,
 )
+from tests.app.sep.apps.mysql_backups.conftest import inventory_mock, service_payload
 
 
 @pytest.mark.asyncio
@@ -747,3 +752,121 @@ class TestBuildMysqlBackupsApiTaskResponse:
 
         assert result.created_by == "uid-123"
         assert result.last_updated_by == "uid-456"
+
+
+#: Digits ``str.isdigit`` accepts but ``int`` cannot parse, written as escapes so
+#: the literals stay legible (and unambiguous) in source.
+_UNPARSABLE_DIGITS = ["\N{SUPERSCRIPT TWO}", "\N{SUPERSCRIPT ONE}\N{SUPERSCRIPT TWO}"]
+
+#: A decimal digit outside ASCII, which ``int`` does parse.
+_NON_ASCII_DECIMAL_SEVEN = "\N{ARABIC-INDIC DIGIT SEVEN}"
+
+_RESOLVED_SERVICE_ID = 7
+
+
+class TestResolveOptionalCatalogServiceKey:
+    """Cover every branch of the restore cascade parent's catalog-key resolution."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "submitted",
+        [None, "", "   ", UNKNOWN_SERVICE_SENTINEL],
+        ids=["omitted", "blank", "whitespace", "sentinel"],
+    )
+    async def test_unusable_parent_yields_none(self, submitted) -> None:
+        """Yield ``None`` for a parent the catalog cannot be keyed from.
+
+        The route turns ``None`` into an empty option list rather than an error, so
+        free-text entry is never blocked by a failed options fetch.
+        """
+        inventory = inventory_mock()
+
+        assert await resolve_optional_catalog_service_key(inventory, submitted) is None
+        inventory.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_numeric_parent_yields_both_keys(self) -> None:
+        """Yield the resolved service's name and id for a numeric parent."""
+        inventory = inventory_mock(
+            service_payload("svc-a", service_id=_RESOLVED_SERVICE_ID)
+        )
+
+        key = await resolve_optional_catalog_service_key(inventory, "7")
+
+        assert key == CatalogServiceKey(
+            service_name="svc-a", service_id=_RESOLVED_SERVICE_ID
+        )
+
+    @pytest.mark.asyncio
+    async def test_numeric_parent_yields_the_resolved_name_not_the_submitted_one(
+        self,
+    ) -> None:
+        """Take the name from inventory, so a rename resolves to the current one."""
+        inventory = inventory_mock(
+            service_payload("new-name", service_id=_RESOLVED_SERVICE_ID)
+        )
+
+        key = await resolve_optional_catalog_service_key(inventory, "7")
+
+        assert key is not None
+        assert key.service_name == "new-name"
+        assert key.service_id == _RESOLVED_SERVICE_ID
+
+    @pytest.mark.asyncio
+    async def test_unknown_numeric_parent_yields_none(self) -> None:
+        """Degrade an unresolvable inventory id to ``None``."""
+        inventory = inventory_mock(raises=HTTPNotFoundException(detail="gone"))
+
+        assert await resolve_optional_catalog_service_key(inventory, "7") is None
+
+    @pytest.mark.asyncio
+    async def test_custom_parent_yields_the_raw_name_and_no_id(self) -> None:
+        """Pass a free-typed destination through unresolved, with no id.
+
+        The ``ServiceRef(allow_custom=True)`` escape hatch: no Inventory call and
+        no type check, so a name with no inventory row can still be queried.
+        """
+        inventory = inventory_mock()
+
+        key = await resolve_optional_catalog_service_key(inventory, " custom-svc ")
+
+        assert key == CatalogServiceKey(service_name="custom-svc", service_id=None)
+        inventory.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("submitted", _UNPARSABLE_DIGITS, ids=["one", "two"])
+    async def test_unicode_digit_parent_takes_the_custom_branch(
+        self, submitted
+    ) -> None:
+        """Treat an ``int``-unparsable unicode digit as a free-typed name.
+
+        ``str.isdigit`` accepts these but ``int`` rejects them, so gating on it
+        would send them down the numeric branch and raise a ``ValueError`` out of
+        the dependency as a 500 — the one failure the escape hatch exists to
+        prevent.
+        """
+        inventory = inventory_mock()
+
+        key = await resolve_optional_catalog_service_key(inventory, submitted)
+
+        assert key == CatalogServiceKey(service_name=submitted, service_id=None)
+        inventory.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_ascii_decimal_parent_resolves_as_numeric(self) -> None:
+        """Resolve a non-ASCII decimal digit, which ``int`` does parse.
+
+        ``str.isdecimal`` must not be tightened to ASCII-only: these reach the
+        numeric branch today and resolve to a real service.
+        """
+        inventory = inventory_mock(
+            service_payload("svc-a", service_id=_RESOLVED_SERVICE_ID)
+        )
+
+        key = await resolve_optional_catalog_service_key(
+            inventory, _NON_ASCII_DECIMAL_SEVEN
+        )
+
+        assert key == CatalogServiceKey(
+            service_name="svc-a", service_id=_RESOLVED_SERVICE_ID
+        )

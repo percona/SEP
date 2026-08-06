@@ -119,10 +119,10 @@ def backup_run_to_choice(run: MysqlBackupRun) -> Choice | None:
     return Choice(value=value, label=backup_source_label(run, value=value))
 
 
-async def choices_for_service_name(
-    session: AsyncSession, service_name: str
+async def choices_for_service(
+    session: AsyncSession, service_name: str, *, service_id: int | None = None
 ) -> list[Choice]:
-    """Return Choice options for ``service_name``, newest first.
+    """Return Choice options for a service's catalogued runs, newest first.
 
     Pages catalog rows until ``DEFAULT_PAGINATION_LIMIT`` valid choices are
     collected (or rows/pages are exhausted), so filtered-out runs do not shrink
@@ -130,6 +130,8 @@ async def choices_for_service_name(
 
     :param session: The database session the catalog is queried on.
     :param service_name: The inventory service name to filter catalog rows by.
+    :param service_id: The inventory service id to prefer as the query key, or
+        ``None`` (default) for a free-typed destination that has no inventory row.
     :return: Choice-compatible options; at most ``DEFAULT_PAGINATION_LIMIT`` items.
     """
     choices: list[Choice] = []
@@ -138,6 +140,7 @@ async def choices_for_service_name(
         page = await MysqlBackupRunManager.list_for_service(
             session,
             service_name,
+            service_id=service_id,
             pagination=Pagination(offset=offset, limit=DEFAULT_PAGINATION_LIMIT),
         )
         for run in page.items:

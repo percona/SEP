@@ -16,6 +16,7 @@
 """Define dependencies for the Backups plugin."""
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -128,9 +129,10 @@ async def resolve_mysql_service(
     is a real client error, not an empty catalog. The catalog query distinguishes
     the two — this raises for a service that does not exist, while a service that
     exists but has no recorded runs yields an empty list. A resolvable service of
-    the wrong type is treated the same as an unknown one: the catalog query has no
-    way to tell the two apart (it filters on ``service_name`` alone), so serving
-    it would let a same-named non-MySQL service leak another service's rows.
+    the wrong type is treated the same as an unknown one: the catalog holds only
+    MySQL runs and falls back to matching on ``service_name`` for rows carrying no
+    id, so serving a non-MySQL service would let it leak the runs of a MySQL
+    service that happens to share its name.
 
     :param service_id: The inventory id of the service to resolve.
     :param inventory_api: The Inventory API client used to resolve the service.
@@ -147,33 +149,53 @@ async def resolve_mysql_service(
 ResolvedMysqlService = Annotated[CreatedService, Depends(resolve_mysql_service)]
 
 
-async def resolve_optional_mysql_service_name(
+@dataclass(frozen=True, slots=True)
+class CatalogServiceKey:
+    """Carry the keys a catalog query is made with.
+
+    :param service_name: The service name to match catalog rows by.
+    :param service_id: The inventory id to prefer as the key, or ``None`` when the
+        parent resolved to no inventory service — a free-typed destination — and
+        the name is all there is.
+    """
+
+    service_name: str
+    service_id: int | None
+
+
+async def resolve_optional_catalog_service_key(
     inventory_api: InventoryAPI,
     service_id: str | None = Query(
         None,
         description=(
             "Cascade parent from the restore form. Inventory numeric ids are "
-            "resolved to a MySQL service name; custom names query the catalog "
-            "directly. Omitted, blank, sentinel, or unknown values yield an "
-            "empty list so free-text entry is never blocked by a failed "
-            "options fetch."
+            "resolved to a MySQL service, keying the catalog query on its id; "
+            "custom names query the catalog by name directly. Omitted, blank, "
+            "sentinel, or unknown values yield an empty list so free-text entry "
+            "is never blocked by a failed options fetch."
         ),
     ),
-) -> str | None:
-    """Resolve the cascade parent to a catalog service name, or ``None``.
+) -> CatalogServiceKey | None:
+    """Resolve the cascade parent to the catalog query keys, or ``None``.
 
     Numeric ids go through :func:`resolve_mysql_service` (MySQL-typed only) and
-    degrade unknown ids to ``None``. Non-numeric values are returned as-is so a
-    free-typed restore destination can still list catalog rows by that name —
-    deliberately unguarded by Inventory type checks, matching the restore form's
-    ``ServiceRef(allow_custom=True)`` escape hatch. Omitted, blank, and
-    sentinel parents also yield ``None``.
+    yield both keys, so a rename between recording and querying cannot detach the
+    rows; unknown ids degrade to ``None``. Non-numeric values yield the raw value
+    as the name and no id, so a free-typed restore destination can still list
+    catalog rows by that name — deliberately unguarded by Inventory type checks,
+    matching the restore form's ``ServiceRef(allow_custom=True)`` escape hatch.
+    Omitted, blank, and sentinel parents also yield ``None``.
+
+    The numeric test is ``str.isdecimal``, not ``str.isdigit``: the latter also
+    accepts digits ``int`` cannot parse (superscripts such as ``"²"``), which would
+    take the numeric branch and raise out of this dependency as a 500 — the one
+    failure mode the free-text escape hatch exists to avoid.
 
     :param inventory_api: The Inventory API client used to resolve numeric ids.
     :param service_id: The cascade parent's submitted value, or ``None`` when
         omitted.
-    :return: A service name to query the catalog with, or ``None`` when the
-        parent is unusable.
+    :return: The keys to query the catalog with, or ``None`` when the parent is
+        unusable.
     :raises HTTPException: When the Inventory lookup fails with a status other
         than 404.
     """
@@ -182,17 +204,17 @@ async def resolve_optional_mysql_service_name(
     trimmed = service_id.strip()
     if not trimmed or trimmed == UNKNOWN_SERVICE_SENTINEL:
         return None
-    if not trimmed.isdigit():
-        return trimmed
+    if not trimmed.isdecimal():
+        return CatalogServiceKey(service_name=trimmed, service_id=None)
     try:
         service = await resolve_mysql_service(int(trimmed), inventory_api)
     except HTTPNotFoundException:
         return None
-    return service.name
+    return CatalogServiceKey(service_name=service.name, service_id=service.id)
 
 
-OptionalMysqlServiceName = Annotated[
-    str | None, Depends(resolve_optional_mysql_service_name)
+OptionalCatalogServiceKey = Annotated[
+    CatalogServiceKey | None, Depends(resolve_optional_catalog_service_key)
 ]
 
 
