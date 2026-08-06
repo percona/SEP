@@ -388,10 +388,10 @@
 | app/tasks/connectivity/payload.py                                                                                     |       69 |        1 |        8 |        1 |     97% |       161 |
 | app/tasks/connectivity/routes.py                                                                                      |       16 |        0 |        2 |        0 |    100% |           |
 | app/tasks/connectivity/service.py                                                                                     |      145 |        2 |       54 |        6 |     96% |172, 431-\>430, 451-\>450, 457-\>456, 472, 484-\>483 |
-| app/tasks/crud.py                                                                                                     |      264 |        3 |       68 |        4 |     98% |438-\>440, 571, 766, 768 |
+| app/tasks/crud.py                                                                                                     |      263 |        5 |       68 |        6 |     97% |473-\>475, 476, 478, 603, 798, 800 |
 | app/tasks/db/engine.py                                                                                                |        7 |        0 |        0 |        0 |    100% |           |
 | app/tasks/db/seed.py                                                                                                  |       68 |       25 |       24 |        3 |     57% |481-\>494, 495-\>509, 511-569, 598 |
-| app/tasks/deps.py                                                                                                     |      101 |        3 |       30 |        1 |     97% |61-63, 115-\>124 |
+| app/tasks/deps.py                                                                                                     |      104 |        3 |       30 |        1 |     97% |62-64, 116-\>125 |
 | app/tasks/execution/exceptions.py                                                                                     |        8 |        0 |        0 |        0 |    100% |           |
 | app/tasks/execution/executors/celery/models.py                                                                        |       82 |        0 |       14 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/exceptions.py                                                                     |        4 |        0 |        0 |        0 |    100% |           |
@@ -452,10 +452,10 @@
 | app/tasks/periodic/models.py                                                                                          |      111 |        5 |       34 |        5 |     93% |220, 255, 309, 325, 394 |
 | app/tasks/periodic/routes.py                                                                                          |       60 |        5 |       12 |        3 |     89% |65-71, 121-\>123, 143-146, 159 |
 | app/tasks/periodic/utils.py                                                                                           |       22 |        0 |        6 |        1 |     96% |   85-\>86 |
-| app/tasks/routes.py                                                                                                   |      232 |       22 |       46 |        4 |     89% |142-146, 229-235, 268, 318-324, 331, 375-376, 404, 444, 463, 627, 641, 649, 675, 683-\>685, 706-707 |
+| app/tasks/routes.py                                                                                                   |      232 |       22 |       46 |        4 |     89% |146-150, 233-239, 272, 322-328, 335, 379-380, 410, 452, 471, 635, 649, 657, 683, 691-\>693, 714-715 |
 | app/tasks/run\_result.py                                                                                              |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                          |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                             | **34554** | **7174** | **9042** |  **763** | **77%** |           |
+| **TOTAL**                                                                                                             | **34556** | **7176** | **9042** |  **765** | **77%** |           |
 
 
 ## Setup coverage badge
