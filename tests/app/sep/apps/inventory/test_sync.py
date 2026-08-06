@@ -24,8 +24,6 @@ from pydantic import SecretStr
 
 from app.core.config import settings
 from app.sep.apps.inventory.sync import (
-    get_internal_token,
-    require_internal_token,
     run_inventory_sync,
     run_node_sync,
     run_scheduled_inventory_sync,
@@ -104,37 +102,6 @@ def created_schema(created_service) -> CreatedSchema:
 def created_table() -> CreatedTable:
     """Return a fake created Table."""
     return CreatedTableFactory.build()
-
-
-def test_get_internal_token_returns_secret(mocker):
-    """``get_internal_token`` returns the configured token's secret value."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("internal-secret"))
-    assert get_internal_token() == "internal-secret"
-
-
-def test_get_internal_token_returns_none_when_unset(mocker):
-    """``get_internal_token`` returns ``None`` when the token is unset."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
-    assert get_internal_token() is None
-
-
-def test_get_internal_token_returns_none_when_empty(mocker):
-    """``get_internal_token`` treats an empty ``SecretStr`` as absent."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(""))
-    assert get_internal_token() is None
-
-
-def test_require_internal_token_returns_secret(mocker):
-    """``require_internal_token`` returns the configured token's secret value."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("internal-secret"))
-    assert require_internal_token() == "internal-secret"
-
-
-def test_require_internal_token_raises_when_absent(mocker):
-    """``require_internal_token`` raises ``RuntimeError`` when the token is absent."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
-    with pytest.raises(RuntimeError, match="SEP_INTERNAL_TOKEN must be configured"):
-        require_internal_token()
 
 
 @pytest.mark.asyncio

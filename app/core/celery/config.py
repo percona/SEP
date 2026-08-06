@@ -32,9 +32,17 @@ from pydantic import (
 from app.core.models import BaseLowercaseModel
 from app.core.utils.fields import StrCredentialAnyUrl, StrDatabaseUrl, StrRelativePath
 
-#: Service modules seeding the Celery ``include`` base. Not ``SEP.APPS`` apps, so
-#: they are not registry-derived; ``build_celery_include`` prepends them.
-STATIC_CELERY_INCLUDE: tuple[str, ...] = ("app.tasks.celery",)
+#: Modules seeding the Celery ``include`` base. Not ``SEP.APPS`` apps, so they are
+#: not registry-derived; ``build_celery_include`` prepends them. Every entry must
+#: register regardless of which apps an image ships -- the tasks service, the
+#: library-owned snippet ingestion, the drain reconciler whose beat row is
+#: seeded unconditionally, and the SEP-side settings-override refresher.
+STATIC_CELERY_INCLUDE: tuple[str, ...] = (
+    "app.tasks.celery",
+    "app.sep.snippets.celery",
+    "app.sep.app_drain",
+    "app.sep.settings_override",
+)
 
 
 class PoolEngineOptions(BaseModel):

@@ -20,13 +20,39 @@ path, carrying the existing JSON ``api_router`` (the category listing + schema)
 and ``atw_schema`` so the conformance suite reads the schema from the definition.
 ``atw`` owns no task and derives no execute route -- execution is delegated to the
 snippets ``ScriptSource`` surface, consumed by the React ``AtwPage``. It nests
-under the shared ``snippets`` nav group alongside the snippets app.
+under the shared ``snippets`` nav group alongside the snippets app. The staged-
+bundle purge beat schedule is contributed via ``periodic_task_schedules``.
 """
 
+from typing import cast
+
+from app.core.celery.models import IntervalSchedule
 from app.sep.apps.atw.api_routes import router as api_router
+from app.sep.apps.atw.config import atw_settings
 from app.sep.apps.atw.schema import atw_schema
-from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.nav_icons import NavIcon
+
+
+def _atw_periodic_tasks() -> list[AppPeriodicTask]:
+    """Contribute the bundle-purge sweep while cleanup is configured.
+
+    ``cleanup_interval`` may be ``None`` to unregister the sweep entirely, so this
+    is kept as a callable: the contribution is variable-length (0 or 1) and a plain
+    list literal would commit to a fixed set at ``BaseApp(...)`` construction.
+
+    :return: The purge contrib, or an empty list when cleanup is disabled.
+    """
+    if atw_settings.cleanup_interval is None:
+        return []
+    return [
+        AppPeriodicTask(
+            name="sep__purge_atw_bundles",
+            task="purge_atw_bundles",
+            schedule=lambda: cast(IntervalSchedule, atw_settings.cleanup_interval),
+        ),
+    ]
+
 
 app = BaseApp(
     name="atw",
@@ -40,6 +66,6 @@ app = BaseApp(
     nav_icon=NavIcon.SUPPORT_AGENT,
     api_router=api_router,
     schema=atw_schema,
-    requires_apps=("snippets",),
+    periodic_task_schedules=_atw_periodic_tasks,
     uses_task_data=True,
 )

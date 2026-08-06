@@ -15,12 +15,12 @@
 
 """One-time backfill of ``data['_form']`` for legacy framework-migrated task apps.
 
-The orchestrator enumerates in-scope task apps — each a
-:class:`~app.sep.apps.framework.apps.TaskExecutionApp` or a plain
-:class:`~app.sep.apps.framework.base.BaseApp` (e.g. alters) — finds tasks owned by each
-app that lack the reserved form key, reconstructs a create-model-shaped body, validates
-it, and stamps ``data['_form']`` on success. Each per-task step is isolated so one failure
-never aborts the batch; re-runs skip tasks that already carry the stamp.
+The orchestrator enumerates the entries activated apps declare through
+:func:`~app.sep.apps.framework.form_backfill_registry.collect_form_backfill_entries`,
+finds tasks owned by each that lack the reserved form key, reconstructs a
+create-model-shaped body, validates it, and stamps ``data['_form']`` on success. Each
+per-task step is isolated so one failure never aborts the batch; re-runs skip tasks that
+already carry the stamp.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ import logging
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any, TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -40,31 +41,17 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.inventory.db import get_async_session_maker as get_inventory_session_maker
-from app.sep.apps.alters.app import app as alters_app
-from app.sep.apps.alters.form_backfill import reconstruct_alters_form
-from app.sep.apps.alters.models import AltersCreate
-from app.sep.apps.alters.models import OWNER as ALTERS_OWNER
-from app.sep.apps.archives.app import app as archives_app
-from app.sep.apps.archives.form_backfill import reconstruct_archives_form
-from app.sep.apps.backup_pg.app import app as backup_pg_app
-from app.sep.apps.backup_pg.form_backfill import reconstruct_backup_pg_form
-from app.sep.apps.checksums.app import app as checksums_app
-from app.sep.apps.checksums.form_backfill import reconstruct_checksums_form
-from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.form_backfill_inventory import (
     load_schema_id_lookup,
     load_service_id_lookup,
     SchemaIdLookup,
     ServiceIdLookup,
 )
-from app.sep.apps.framework.form_dsl import AppFormModel
-from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
-from app.sep.apps.mysql_backups.app import app as mysql_backups_app
-from app.sep.apps.mysql_backups.form_backfill import reconstruct_mysql_backups_form
-from app.sep.apps.mysql_backups.restore.app import app as mysql_restores_app
-from app.sep.apps.mysql_backups.restore.form_backfill import (
-    reconstruct_mysql_restores_form,
+from app.sep.apps.framework.form_backfill_registry import (
+    collect_form_backfill_entries,
+    FormBackfillEntry,
 )
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.models import Task, TaskWrite
@@ -95,7 +82,7 @@ class FormBackfillContext:
 class AppBackfillStats:
     """Represent backfill outcome counters for a single in-scope app.
 
-    :param app_name: The registry :attr:`~app.sep.apps.framework.apps.TaskExecutionApp.name`.
+    :param app_key: The declaring app's registry key.
     :param owner: The task owner filter used when listing tasks.
     :param stamped: Tasks that received a new ``data['_form']`` stamp.
     :param skipped_existing: Tasks that already had ``data['_form']``.
@@ -104,7 +91,7 @@ class AppBackfillStats:
     :param skipped_error: Tasks whose reconstructor, stamp step, or persistence raised.
     """
 
-    app_name: str
+    app_key: str
     owner: str
     stamped: int = 0
     skipped_existing: int = 0
@@ -174,69 +161,6 @@ class _TaskBackfillOutcome:
     stamped_data: dict[str, Any] | None = None
 
 
-@dataclass(frozen=True)
-class _BackfillApp:
-    """Bind an in-scope task app to its reconstructor.
-
-    :param app: The in-scope task app definition (a ``TaskExecutionApp`` or a
-        plain :class:`~app.sep.apps.framework.base.BaseApp`).
-    :param reconstructor: The per-app legacy form reconstructor.
-    :param owner_override: The task owner to list by, for a ``BaseApp`` that does
-        not expose ``owner``. Falls back to ``app.owner`` when ``None``.
-    :param create_model_override: The create/update form model, for a ``BaseApp``
-        that does not expose a derived ``create_model``. Falls back to
-        ``app.create_model`` when ``None``.
-    """
-
-    app: BaseApp
-    reconstructor: FormReconstructor
-    owner_override: str | None = None
-    create_model_override: type[AppFormModel] | None = None
-
-    @property
-    def app_name(self) -> str:
-        """Return the app's registry name."""
-        return self.app.name
-
-    @property
-    def owner(self) -> str:
-        """Return the task owner the app lists tasks by."""
-        return self.owner_override or self.app.owner
-
-    @property
-    def create_model(self) -> type[AppFormModel]:
-        """Return the app's create/update form model."""
-        return self.create_model_override or self.app.create_model
-
-
-def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
-    """Return the in-scope apps and their reconstructors.
-
-    :return: The apps whose legacy tasks are eligible for ``data['_form']`` backfill.
-    """
-    entries: list[_BackfillApp] = [
-        _BackfillApp(app=archives_app, reconstructor=reconstruct_archives_form),
-        _BackfillApp(app=checksums_app, reconstructor=reconstruct_checksums_form),
-        _BackfillApp(app=backup_pg_app, reconstructor=reconstruct_backup_pg_form),
-        _BackfillApp(
-            app=mysql_backups_app, reconstructor=reconstruct_mysql_backups_form
-        ),
-        _BackfillApp(
-            app=mysql_restores_app, reconstructor=reconstruct_mysql_restores_form
-        ),
-        _BackfillApp(
-            app=alters_app,
-            reconstructor=reconstruct_alters_form,
-            owner_override=ALTERS_OWNER,
-            create_model_override=AltersCreate,
-        ),
-    ]
-    return tuple(entries)
-
-
-IN_SCOPE_APPS: tuple[_BackfillApp, ...] = _build_in_scope_apps()
-
-
 def _task_write_from_task(task: Task, data: dict[str, Any]) -> TaskWrite:
     """Build a ``TaskWrite`` envelope from an existing task row and ``data`` payload.
 
@@ -295,20 +219,20 @@ async def _persist_stamped_form(
 
 def _backfill_single_task(
     task: Task,
-    entry: _BackfillApp,
+    entry: FormBackfillEntry,
     ctx: FormBackfillContext,
 ) -> _TaskBackfillOutcome:
     """Skip ineligible tasks, then run the reconstruct → validate → stamp pipeline.
 
     :param task: The legacy task row to backfill.
-    :param entry: The in-scope app definition and reconstructor.
+    :param entry: The declaring app's backfill entry.
     :param ctx: Shared backfill context.
     :return: The outcome label and optional stamped ``data`` dict to persist.
     """
     if RESERVED_FORM_KEY in task.data:
         ctx.log.debug(
             "[%s] %s: already has %r; skipping",
-            entry.app_name,
+            entry.app_key,
             task.name,
             RESERVED_FORM_KEY,
         )
@@ -317,7 +241,7 @@ def _backfill_single_task(
     if ctx.service_lookup is None:
         ctx.log.info(
             "[%s] %s: no inventory service lookup; skipping",
-            entry.app_name,
+            entry.app_key,
             task.name,
         )
         return _TaskBackfillOutcome("skipped_unreconstructable")
@@ -327,13 +251,13 @@ def _backfill_single_task(
 
 def _reconstruct_validate_stamp(
     task: Task,
-    entry: _BackfillApp,
+    entry: FormBackfillEntry,
     ctx: FormBackfillContext,
 ) -> _TaskBackfillOutcome:
     """Reconstruct, validate, and stamp ``data['_form']`` for an eligible task.
 
     :param task: The legacy task row to backfill.
-    :param entry: The in-scope app definition and reconstructor.
+    :param entry: The declaring app's backfill entry.
     :param ctx: Shared backfill context.
     :return: The outcome label and optional stamped ``data`` dict to persist.
     """
@@ -342,7 +266,7 @@ def _reconstruct_validate_stamp(
     except Exception:
         ctx.log.exception(
             "[%s] %s: reconstructor raised; skipping",
-            entry.app_name,
+            entry.app_key,
             task.name,
         )
         return _TaskBackfillOutcome("skipped_error")
@@ -350,7 +274,7 @@ def _reconstruct_validate_stamp(
     if raw_form is None:
         ctx.log.info(
             "[%s] %s: could not reconstruct form; skipping",
-            entry.app_name,
+            entry.app_key,
             task.name,
         )
         return _TaskBackfillOutcome("skipped_unreconstructable")
@@ -360,7 +284,7 @@ def _reconstruct_validate_stamp(
     except ValidationError as exc:
         ctx.log.info(
             "[%s] %s: reconstructed form failed validation; skipping: %s",
-            entry.app_name,
+            entry.app_key,
             task.name,
             exc.errors(),
         )
@@ -373,7 +297,7 @@ def _reconstruct_validate_stamp(
     except Exception:
         ctx.log.exception(
             "[%s] %s: stamp_form_input raised; skipping",
-            entry.app_name,
+            entry.app_key,
             task.name,
         )
         return _TaskBackfillOutcome("skipped_error")
@@ -381,14 +305,14 @@ def _reconstruct_validate_stamp(
     if ctx.dry_run:
         ctx.log.info(
             "[%s] %s: dry-run would stamp %r",
-            entry.app_name,
+            entry.app_key,
             task.name,
             RESERVED_FORM_KEY,
         )
     else:
         ctx.log.info(
             "[%s] %s: stamped %r",
-            entry.app_name,
+            entry.app_key,
             task.name,
             RESERVED_FORM_KEY,
         )
@@ -400,7 +324,7 @@ async def _rollback_backfill_session(
     session: AsyncSession,
     ctx: FormBackfillContext,
     *,
-    app_name: str,
+    app_key: str,
     task_name: str,
 ) -> None:
     """Roll back a failed per-task persist without aborting the batch.
@@ -410,7 +334,7 @@ async def _rollback_backfill_session(
 
     :param session: The tasks database session to reset.
     :param ctx: Shared backfill context for error logging.
-    :param app_name: The in-scope app name for log context.
+    :param app_key: The declaring app's registry key, for log context.
     :param task_name: The task whose persist step failed.
     """
     try:
@@ -418,28 +342,28 @@ async def _rollback_backfill_session(
     except Exception:
         ctx.log.exception(
             "[%s] %s: rollback failed after persist error; continuing batch",
-            app_name,
+            app_key,
             task_name,
         )
 
 
 async def _backfill_app(
     session: AsyncSession,
-    entry: _BackfillApp,
+    entry: FormBackfillEntry,
     ctx: FormBackfillContext,
 ) -> AppBackfillStats:
     """Backfill all legacy tasks for a single in-scope app.
 
     :param session: The tasks database session.
-    :param entry: The app definition and reconstructor.
+    :param entry: The declaring app's backfill entry.
     :param ctx: Shared backfill context.
     :return: Per-app outcome counters.
     """
-    stats = AppBackfillStats(app_name=entry.app_name, owner=entry.owner)
+    stats = AppBackfillStats(app_key=entry.app_key, owner=entry.owner)
     tasks = await TaskManager.list_active(session, owner=entry.owner)
     ctx.log.info(
         "[%s] scanning %s active task(s) for owner %s",
-        entry.app_name,
+        entry.app_key,
         len(tasks),
         entry.owner,
     )
@@ -459,7 +383,7 @@ async def _backfill_app(
             except Exception:
                 ctx.log.exception(
                     "[%s] %s: failed to persist %r; skipping",
-                    entry.app_name,
+                    entry.app_key,
                     task.name,
                     RESERVED_FORM_KEY,
                 )
@@ -467,7 +391,7 @@ async def _backfill_app(
                     await _rollback_backfill_session(
                         session,
                         ctx,
-                        app_name=entry.app_name,
+                        app_key=entry.app_key,
                         task_name=task.name,
                     )
                 stats.skipped_error += 1
@@ -497,7 +421,7 @@ async def run_backfill(
     owner_filter = set(owners) if owners is not None else None
     entries = [
         entry
-        for entry in IN_SCOPE_APPS
+        for entry in collect_form_backfill_entries()
         if owner_filter is None or entry.owner in owner_filter
     ]
     summary = BackfillSummary(dry_run=dry_run)
@@ -535,20 +459,22 @@ async def run_backfill(
     return summary
 
 
-_VALID_OWNERS: frozenset[str] = frozenset(entry.owner for entry in IN_SCOPE_APPS)
-
-
-def _owner_from_cli(value: str) -> str:
+def _owner_from_cli(value: str, valid_owners: frozenset[str]) -> str:
     """Parse a CLI ``--owner`` value into an in-scope owner string.
 
     :param value: The owner string (for example ``CHECKSUMS``), case-insensitive.
+    :param valid_owners: The owners declared by the collected backfill entries.
     :return: The normalized (upper-cased) owner string.
     :raises argparse.ArgumentTypeError: When ``value`` names no in-scope app owner.
     """
     normalized = value.strip().upper()
-    if normalized in _VALID_OWNERS:
+    if normalized in valid_owners:
         return normalized
-    valid = ", ".join(sorted(_VALID_OWNERS))
+    if not valid_owners:
+        raise argparse.ArgumentTypeError(
+            f"unknown owner {value!r}; no activated app declares a form backfill"
+        )
+    valid = ", ".join(sorted(valid_owners))
     raise argparse.ArgumentTypeError(
         f"unknown owner {value!r}; expected one of: {valid}"
     )
@@ -559,12 +485,20 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     :return: A parser exposing ``--dry-run``, ``--owner``, and ``--verbose``.
     """
-    parser = argparse.ArgumentParser(
-        description=(
+    entries = collect_form_backfill_entries()
+    valid_owners = frozenset(entry.owner for entry in entries)
+    if entries:
+        app_keys = ", ".join(entry.app_key for entry in entries)
+        description = (
             "Backfill data['_form'] on legacy tasks for framework-migrated apps "
-            "(archives, checksums, backup_pg, mysql_backups, restores, alters)."
-        ),
-    )
+            f"({app_keys})."
+        )
+    else:
+        description = (
+            "Backfill data['_form'] on legacy tasks. No activated app declares "
+            "a form backfill."
+        )
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -573,7 +507,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--owner",
         action="append",
-        type=_owner_from_cli,
+        type=partial(_owner_from_cli, valid_owners=valid_owners),
         dest="owners",
         metavar="OWNER",
         help=(

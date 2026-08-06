@@ -75,7 +75,12 @@ from pydantic import (
     StringConstraints,
 )
 
-from app.core.utils.fields import EnumFieldMixin, NonEmptyStr, StrippedNonEmptyStr
+from app.core.utils.fields import (
+    ArbitraryMapping,
+    EnumFieldMixin,
+    NonEmptyStr,
+    StrippedNonEmptyStr,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.rules import (
     CardinalityRule,
@@ -704,8 +709,9 @@ class RemoteChoiceField(BaseField):
     ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
     / ``disabled_reason``). When ``depends_on`` is set, the fetch is
     parameterised by the dependency's value (appended as a query parameter named
-    after ``depends_on``) and the field stays disabled/empty until the
-    dependency has a value. When ``allow_custom`` is set, the renderer also
+    after ``depends_on``) and the field offers no options until the dependency
+    has a value, staying disabled while it waits unless ``allow_custom`` keeps
+    free-text entry open. When ``allow_custom`` is set, the renderer also
     accepts a free-typed value. The endpoint response contract is a JSON array
     of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
     "disabled"?: bool, "disabled_reason"?: str}``.
@@ -1103,7 +1109,6 @@ class DerivedTask(SchemaBaseModel):
         for plugin-specific identity fields (e.g. ``{"backup_type":
         "pbm_logical"}``) that the framework should not name itself.
         Defaults to ``None``.
-    :type data_overrides: dict[str, Any] | None
     :param parent_link: When true, set ``data["parent"]`` on the derived
         payload to the parent's ``name``. Defaults to ``True``.
     :type parent_link: bool
@@ -1112,7 +1117,7 @@ class DerivedTask(SchemaBaseModel):
     name_suffix: NonEmptyStr
     arg_substitutions: dict[str, str] | None = None
     payload_substitutions: dict[str, str] | None = None
-    data_overrides: dict[str, Any] | None = None
+    data_overrides: ArbitraryMapping | None = None
     parent_link: bool = True
 
 

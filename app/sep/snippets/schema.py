@@ -66,6 +66,7 @@ from app.sep.apps.framework.schema import (
     SUDO_FIELD_NAME,
 )
 from app.sep.snippets.config import SnippetSudoOption
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
@@ -372,6 +373,18 @@ def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
                     label="Run with sudo",
                     default=True,
                     description=("This snippet is configured to always run with sudo."),
+                ),
+            ),
+        )
+    if snippet.allow_extra_args:
+        execution_fields.append(
+            cast(
+                AnyField,
+                StringField(
+                    name=EXTRA_ARGS_FIELD_NAME,
+                    label="Extra Args",
+                    placeholder="e.g. --verbose",
+                    description="Any extra args to pass to the snippet execution command",
                 ),
             ),
         )

@@ -15,8 +15,6 @@
 
 """Define the database initial data for the SEP app."""
 
-import json
-
 from sqlmodel import col
 
 from app.core.celery.utils import (
@@ -40,15 +38,24 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     Computed on demand rather than baked into a module-level constant at import
     so a HOT settings override is reflected the next time the set is rebuilt (e.g. when
     the override refresh callback re-seeds the beat schedule), without an application
-    restart. The plugin-gated schedules (``alerts`` backup, ``report``
-    generation) are keyed to their own settings and are included verbatim; their
-    live-reload is not handled here and still requires a restart.
+    restart. App-owned schedules come from each registry entry that declares
+    ``periodic_task_schedules`` (a plain list or a factory returning one); a
+    factory is invoked on every call, and each entry's ``schedule`` thunk is
+    evaluated then so hot intervals are re-read.
 
     An app-owned schedule is emitted only when the owning app contributes a Celery
     module path (``App.celery_module_path``). An app absent from the activation
     list or opted out of the Celery ``include`` owns no registered task, so its
     schedule is skipped rather than seeded with a ``None``-prefixed ``task_name``
-    that would point at nothing the worker imports.
+    that would point at nothing the worker imports. The seed path stamps
+    ``owner_app_key`` from ``app.key`` and prefixes each entry's ``task`` with
+    the resolved Celery module.
+
+    Snippet ingestion is the carve-out: its task lives in the library
+    (``app.sep.snippets.celery``) and is named in ``STATIC_CELERY_INCLUDE``, so it
+    registers whether or not the snippets app ships. Its schedule is therefore
+    emitted unconditionally against the static path and carries no
+    ``owner_app_key`` -- disabling the snippets app must not gate it.
 
     :return: The schedule/task pairs to seed into the Celery beat database.
     """
@@ -64,115 +71,45 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
         ),
     ]
 
-    if snippets_celery := app_celery_module_for("snippets"):
-        system_tasks.append(
-            SystemPeriodicTaskSchedule(
-                schedule=snippets_settings.SYNC_INTERVAL,
-                tasks=[
-                    SystemPeriodicTaskData(
-                        name="sep__sync_snippets",
-                        task_name=f"{snippets_celery}.sync_snippets",
-                        owner_app_key="snippets",
-                    ),
-                ],
-            ),
-        )
-
-    if alerts_celery := app_celery_module_for("alerts"):
-        from app.sep.apps.alerts.config import alerts_settings
-
-        system_tasks.append(
-            SystemPeriodicTaskSchedule(
-                schedule=alerts_settings.BACKUP_INTERVAL,
-                tasks=[
-                    SystemPeriodicTaskData(
-                        name="sep__backup_alert_config",
-                        task_name=f"{alerts_celery}.backup_alert_config",
-                        owner_app_key="alerts",
-                    ),
-                ],
-            ),
-        )
-
-    if report_celery := app_celery_module_for("report"):
-        system_tasks.extend(_report_periodic_tasks(report_celery))
-
-    if atw_celery := app_celery_module_for("atw"):
-        from app.sep.apps.atw.config import atw_settings
-
-        if atw_settings.cleanup_interval is not None:
-            system_tasks.append(
-                SystemPeriodicTaskSchedule(
-                    schedule=atw_settings.cleanup_interval,
-                    tasks=[
-                        SystemPeriodicTaskData(
-                            name="sep__purge_atw_bundles",
-                            task_name=f"{atw_celery}.purge_atw_bundles",
-                            owner_app_key="atw",
-                        ),
-                    ],
-                ),
-            )
-
-    return system_tasks
-
-
-def _report_periodic_tasks(report_celery: str) -> list[SystemPeriodicTaskSchedule]:
-    """Build the health-report generation and artifact-purge schedules.
-
-    Split out of :func:`get_system_periodic_tasks` so that per-schedule
-    ``kwargs`` assembly does not inflate the caller's branch count.
-
-    :param report_celery: The report app's Celery module path, used as the
-        ``task_name`` prefix for both report tasks.
-    :return: One generation schedule per configured health-report entry, followed
-        by the artifact-purge schedule.
-    """
-    schedules = []
-    for idx, entry in enumerate(sep_settings.HEALTH_REPORT.schedules):
-        suffix = f"_{idx}" if idx else ""
-        task_kwargs = {}
-        if entry.since != "now-7d":
-            task_kwargs["since"] = entry.since
-        if entry.until != "now":
-            task_kwargs["until"] = entry.until
-        if not entry.full:
-            task_kwargs["full"] = entry.full
-        if entry.refresh:
-            task_kwargs["refresh"] = entry.refresh
-        if entry.sections is not None:
-            task_kwargs["sections"] = entry.sections
-        if entry.upload:
-            task_kwargs["upload"] = entry.upload
-        schedules.append(
-            SystemPeriodicTaskSchedule(
-                schedule=entry.schedule,
-                tasks=[
-                    SystemPeriodicTaskData(
-                        name=f"sep__generate_health_report{suffix}",
-                        task_name=f"{report_celery}.generate_health_report",
-                        extra_kwargs={"kwargs": json.dumps(task_kwargs)}
-                        if task_kwargs
-                        else None,
-                        owner_app_key="report",
-                    ),
-                ],
-            ),
-        )
-
-    schedules.append(
+    system_tasks.append(
         SystemPeriodicTaskSchedule(
-            schedule=sep_settings.HEALTH_REPORT.cleanup_interval,
+            schedule=snippets_settings.SYNC_INTERVAL,
             tasks=[
                 SystemPeriodicTaskData(
-                    name="sep__purge_report_artifacts",
-                    task_name=f"{report_celery}.purge_report_artifacts",
-                    owner_app_key="report",
+                    name="sep__sync_snippets",
+                    task_name="app.sep.snippets.celery.sync_snippets",
                 ),
             ],
         ),
     )
-    return schedules
+
+    for app in get_app_registry():
+        if app.periodic_task_schedules is None:
+            continue
+        celery_module = app_celery_module_for(app.key)
+        if not celery_module:
+            continue
+        specs = (
+            app.periodic_task_schedules()
+            if callable(app.periodic_task_schedules)
+            else app.periodic_task_schedules
+        )
+        system_tasks.extend(
+            SystemPeriodicTaskSchedule(
+                schedule=spec.schedule(),
+                tasks=[
+                    SystemPeriodicTaskData(
+                        name=spec.name,
+                        task_name=f"{celery_module}.{spec.task}",
+                        extra_kwargs=spec.extra_kwargs,
+                        owner_app_key=app.key,
+                    ),
+                ],
+            )
+            for spec in specs
+        )
+
+    return system_tasks
 
 
 async def init_sep_db() -> None:

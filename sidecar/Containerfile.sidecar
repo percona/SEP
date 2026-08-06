@@ -64,6 +64,16 @@ ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 # path still replaces it wholesale.
 COPY --chown=0:1001 --chmod=440 ./sidecar/settings.embedded.yaml ./settings.yaml
 
+# Restricted variant: strip every app package the baked profile does not
+# activate. Off by default, so the general side-car build is unaffected; the
+# retained set is derived from settings.yaml and named nowhere in this recipe.
+ARG SEP_RESTRICT_APPS=0
+COPY --chown=0:0 --chmod=400 ./sidecar/restrict_apps.py /tmp/restrict_apps.py
+RUN if [ "$SEP_RESTRICT_APPS" = "1" ]; then \
+        python /tmp/restrict_apps.py settings.yaml app/sep/apps; \
+    fi && \
+    rm -f /tmp/restrict_apps.py
+
 # No compose file injects this for the side-car, so the loader would otherwise
 # fall back to the development defaults
 ENV FASTAPI_ENV=production_docker
@@ -71,12 +81,6 @@ ENV FASTAPI_ENV=production_docker
 # Every program's stdout is a supervisord pipe, not a tty, so unbuffer it to
 # keep `docker logs` complete when a program dies
 ENV PYTHONUNBUFFERED=1
-
-# The settings the embedded deployment leaves to an administrator; everything else
-# is refused by the override API because this image provisions it. Carried as an
-# env var only until it can move into the baked profile -- env outranks YAML
-# permanently, so the two cannot coexist
-ENV SETTINGS_OVERRIDE_ALLOWED_KEYS='["Settings.LOGGING","Settings.PMM__annotations_enabled","SEPSettings.SYNC_REFRESH_TIME","SEPSettings.CONNECTIVITY_CHECK_DEFAULT","SEPSettings.FOOTER_TEMPLATE","MessagesSettings.LEVEL","AlertsSettings.BACKUP_INTERVAL__every","AlertsSettings.BACKUP_INTERVAL__period","AlertsSettings.BACKUP_RETENTION","AlertsSettings.ALERT_FOLDER_NAME","AlertSettings.PROVIDERS","AlertSettings.SOURCE_PREFIX","AlertSettings.SOURCE_SUFFIX","AnonymizerSettings.DEFAULT_ENTITIES","TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK","TasksSettings.LOG_RETENTION_DAYS"]'
 
 RUN chmod -R u+X,g+X $APP_HOME
 

@@ -18,7 +18,7 @@
 Exercise the setting itself (env parsing through the real ``Settings()`` source
 chain, entry-format validation), the ``policy`` predicates that read it, the
 fail-closed and restrict-only invariants, and the value the side-car image
-ships in its Containerfile.
+bakes into its embedded settings profile.
 """
 
 import json
@@ -27,6 +27,7 @@ import sys
 from collections.abc import Callable
 
 import pytest
+import yaml
 
 from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
@@ -39,10 +40,9 @@ from app.core.settings_override.policy import (
 )
 from app.core.settings_override.registry import (
     field_reload_classification,
-    is_nested_overridable_parent,
     iter_class_fields,
-    iter_nested_leaf_keys,
     ReloadClassification,
+    rendered_leaf_keys,
     resolve_nested_field,
     resolve_nested_field_metadata,
 )
@@ -53,9 +53,7 @@ from app.sep.middleware.messages.config import MessagesSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
-
-CONTAINERFILE = BASE_DIR / "sidecar" / "Containerfile.sidecar"
-ENV_LINE_PREFIX = "ENV SETTINGS_OVERRIDE_ALLOWED_KEYS="
+from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE
 
 #: Every settings class reachable from the settings router, keyed by the enum
 #: member whose value is the class ``__name__``.
@@ -88,34 +86,34 @@ CARVE_OUT_KEY = "Settings.PMM__annotations_enabled"
 
 
 def shipped_allowed_keys() -> list[str]:
-    """Return the allowlist the side-car Containerfile bakes into the image."""
-    for line in CONTAINERFILE.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped.startswith(ENV_LINE_PREFIX):
-            raw = stripped.removeprefix(ENV_LINE_PREFIX).strip()
-            return json.loads(raw.strip("'"))
-    pytest.fail(f"No {ENV_LINE_PREFIX!r} line in {CONTAINERFILE}")
+    """Return the allowlist the side-car profile bakes into the image.
+
+    Fail the run outright when the profile does not carry the key: the
+    restriction's negative assertions are all satisfied by an empty list, so
+    degrading to one would leave them green while guarding nothing.
+
+    :return: The entries the embedded profile declares.
+    """
+    profile = yaml.safe_load(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
+    entries = profile["default"].get(ALLOWLIST_KEY)
+    if not isinstance(entries, list):
+        pytest.fail(f"{ALLOWLIST_KEY} is not a list in {EMBEDDED_PROFILE}: {entries!r}")
+    return entries
 
 
 def listed_hot_keys(settings_cls: type) -> set[str]:
     """Return the keys the settings list renders HOT for one settings class.
 
-    Mirrors ``_field_responses``: a nested-overridable parent is replaced in the
-    listing by its enumerated leaves, so an entry naming such a parent addresses
-    no rendered row and unlocks none of its leaves.
+    Shares ``_field_responses``' row selection through ``rendered_leaf_keys``, so
+    an entry naming a parent the listing replaces with its leaves addresses no
+    rendered row and unlocks none of them.
 
     :param settings_cls: The Pydantic settings class to render.
     :return: The rendered keys that are currently overridable.
     """
     hot: set[str] = set()
     for field_meta in iter_class_fields(settings_cls):
-        leaves = (
-            list(iter_nested_leaf_keys(settings_cls, field_meta.key))
-            if is_nested_overridable_parent(
-                settings_cls, field_meta.key, include_policy_gate=False
-            )
-            else []
-        )
+        leaves = rendered_leaf_keys(settings_cls, field_meta.key)
         if not leaves:
             if field_meta.reload is ReloadClassification.HOT:
                 hot.add(field_meta.key)

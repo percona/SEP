@@ -9,6 +9,12 @@ Build it with `make image-sidecar` (tag `sep:${RELEASE_VER}-sidecar`). Jenkins
 builds and publishes the same tag with a `-sidecar` suffix on both the internal
 and Docker Hub registries.
 
+An **app-restricted** variant of the same image is built by
+`make image-sidecar-embedded` (tag `sep:${RELEASE_VER}-embedded`). It is the
+side-car recipe with the app strip switched on, so it ships only the app
+packages the embedded settings profile activates — see [App set](#app-set).
+Jenkins builds and publishes it alongside the other two.
+
 ## What it contains
 
 | Input | Role |
@@ -19,6 +25,7 @@ and Docker Hub registries.
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables. |
 | `settings.embedded.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
+| `restrict_apps.py` | Build-step strip for the app-restricted variant; removes every app package the baked profile does not activate. Removed during the build, so it is not present in the final image. |
 
 The image is built in **docker** manifest format rather than OCI, because OCI
 silently discards the `HEALTHCHECK` instruction.
@@ -35,6 +42,48 @@ single file and `YamlPrefixConfigSettingsSource` reads only that one — there i
 no baked-file-plus-overlay merge. So a **partial** override is
 environment-variable-only, and a **full** override is a bind mount at
 `/home/sep/app/settings.yaml`, which replaces the baked profile wholesale.
+
+### App set
+
+The app-restricted image ships exactly the apps `settings.embedded.yaml`'s
+`SEP.APPS` activates, plus `framework` and `shared`, which shipped modules reach
+and which the activation list never names. Nothing else declares the set: changing
+which apps the image ships is an edit to `SEP.APPS` and nothing else, and the
+build fails if an activated app has no package to keep.
+
+The strip is driven by the `SEP_RESTRICT_APPS` build argument, which
+`image-sidecar-embedded` passes as `1`. Only the exact value `1` strips
+anything; the argument defaults to `0`, and any other value leaves the image
+unrestricted — which is why the general side-car build, which never passes it,
+keeps every app package.
+
+The strip removes an app's directory and leaves its `version_locations` entry in
+`alembic.ini` alone. That combination is load-bearing, not incidental. Each app
+owning migrations is an independent Alembic branch recorded in the shared
+`alembic_version_sep` table, so a database a full image migrated carries head
+rows for apps this image does not ship. `skip_unresolvable_heads` in
+`app/sep/migrations/_orphan_heads.py` drops those rows from the heads it hands
+Alembic — but only when a configured `version_locations` entry is absent from
+disk, which is what a stripped app looks like. With every configured location
+present, an unresolvable revision means version skew instead and the upgrade
+hard-fails by design. So pruning a stripped app's entry — regenerating the list
+in an already-stripped tree, or rewriting the file during the build — turns a
+working upgrade into a failed one. `tests/sidecar/test_app_strip.py` asserts the
+entries survive for every app the strip removes that owns migrations; an app
+owning none needs no entry, and must not carry one.
+
+On this image an `SEP.APPS` override can therefore only **narrow** the baked
+set, never widen it. Registry construction imports each activated module, so
+activating a package the image does not ship raises `ModuleNotFoundError` and
+the container fails to start. The two surfaces that reach `SEP.APPS` are a bind
+mount at `/home/sep/app/settings.yaml` (which, per above, replaces the profile
+wholesale — so its `SEP.APPS` must be a subset of the baked one) and the
+`SEP__APPS` environment variable; the runtime settings-override API cannot,
+because `SEP.APPS` is absent from `SETTINGS_OVERRIDE_ALLOWED_KEYS`.
+
+The two unrestricted images (`sep:${RELEASE_VER}` and
+`sep:${RELEASE_VER}-sidecar`) ship every app package, so neither constraint
+applies to them.
 
 ### Deployment inputs
 
@@ -117,8 +166,20 @@ ports from the table above, the PMM connection and its API key, the whole Nomad
 subtree, the snippets source, sessions, security headers, and auth. What stays
 tunable is product behaviour: log level, PMM annotations, sync cadence, the
 footer and message-level display options, alerting policy and retention,
-anonymizer entities, and the task connectivity-check and log-retention
-settings.
+anonymizer entities, the diagnostics-delivery inputs, and the task
+connectivity-check and log-retention settings.
+
+Diagnostics delivery is the one tunable that is off until you configure it. The
+image bakes the receiver plan — its resolution steps, its upload spec, and the
+*names* of the credentials it needs — but ships those credentials empty, so no
+bundle leaves the container until an operator supplies them through
+`SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS`. That is a single whole-object PATCH
+carrying every declared secret name at once: a per-leaf write such as
+`DIAGNOSTICS_DELIVERY_INPUTS__secrets` is refused with `422`, and so is a
+payload naming a secret the baked plan does not declare or omitting one it
+does. The same key optionally carries an `endpoint` that replaces the baked
+receiver; omit it to keep the shipped one. Stored secrets read back as
+`**********`, and resubmitting that mask preserves the stored value.
 
 Rows written before the restriction applied — by a standalone deployment whose
 database was carried over, or by direct table access — are **inert**: the
@@ -132,9 +193,12 @@ special case: any deployment can set it (bare env var, or a `default:` key in
 `settings.yaml`) to harden its own override surface. Leaving it unset — the
 default everywhere else — keeps every overridable setting overridable. It can
 never be changed through the API, only through the deployment's own
-configuration. Note that if this value later moves into the mounted profile,
-the `ENV` line in the Containerfile has to go: environment outranks
-`settings.yaml`, so the baked value would otherwise win permanently.
+configuration. This image carries it as a `default:` key in
+`settings.embedded.yaml`, so the bind mount that replaces that file is what
+changes the list. A replacement that omits the key does not preserve the
+shipped list — it lifts the restriction entirely, since an absent key reads the
+same as a deployment that never set one. An environment variable of the same
+name still outranks the profile, as it does for every other setting here.
 
 ## Volumes
 

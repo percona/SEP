@@ -788,6 +788,31 @@ export interface paths {
     patch: operations['atw_atw_update_incident_api_apps_atw_incidents__incident_id__patch'];
     trace?: never;
   };
+  '/api/apps/atw/incidents/{incident_id}/close/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Atw Close Incident
+     * @description Close a diagnostic incident, stamping the current UTC time.
+     *
+     *     :param session: The database session.
+     *     :param incident: The open incident resolved from the ``incident_id`` path parameter.
+     *     :return: The closed incident.
+     *     :raises HTTPConflictException: If the incident is already closed.
+     */
+    post: operations['atw_atw_close_incident_api_apps_atw_incidents__incident_id__close__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/atw/incidents/{incident_id}/executions/': {
     parameters: {
       query?: never;
@@ -839,6 +864,31 @@ export interface paths {
      *         failing the whole request before any item is dispatched.
      */
     post: operations['atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/incidents/{incident_id}/reopen/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Atw Reopen Incident
+     * @description Reopen a closed diagnostic incident, clearing its close timestamp.
+     *
+     *     :param session: The database session.
+     *     :param incident: The closed incident resolved from the ``incident_id`` path parameter.
+     *     :return: The reopened incident.
+     *     :raises HTTPConflictException: If the incident is already open.
+     */
+    post: operations['atw_atw_reopen_incident_api_apps_atw_incidents__incident_id__reopen__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1734,6 +1784,43 @@ export interface paths {
     put?: never;
     /** Create */
     post: operations['mysql_backups__create_api_apps_mysql_backups__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/mysql_backups/backup-sources/choices': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Backup Source Choices
+     * @description Return ``Choice`` options for a MySQL service's restore ``backup_source``.
+     *
+     *     The ``service_id`` query parameter (cascade parent name on the restore form)
+     *     selects which catalog rows to map. Options are newest-first and capped at
+     *     :data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain
+     *     reachable via free-text). An omitted, empty, sentinel, or unknown parent
+     *     yields ``[]`` rather than a ``404``, so the RemoteChoices free-text escape
+     *     hatch stays usable. Other Inventory API failures still propagate.
+     *
+     *     Free-typed (non-numeric) parents query the catalog by that name without an
+     *     Inventory type check — matching ``ServiceRef(allow_custom=True)`` on the
+     *     restore form, where the destination may be a name that has no MySQL
+     *     inventory row. Numeric parents still require a resolvable MySQL service.
+     *
+     *     :param session: The database session the catalog is queried on.
+     *     :param service_name: The cascade parent resolved to a catalog service name,
+     *         or ``None`` when the parent is unusable.
+     *     :return: Choice-compatible options for the restore backup-source selector.
+     */
+    get: operations['mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -3473,6 +3560,32 @@ export interface components {
       lifecycle_state: components['schemas']['AppLifecycleEnum'];
     };
     /**
+     * BatchApprovalResponse
+     * @description Successful response for the batch-approve endpoint.
+     *
+     *     :param approved: Filenames whose approval state was toggled by this
+     *         request (newly approved as a result of the call).
+     *     :type approved: list[str]
+     *     :param skipped_already_approved: Filenames that were already approved
+     *         when the call started; the request is treated as a soft-skip
+     *         (idempotent).
+     *     :type skipped_already_approved: list[str]
+     */
+    BatchApprovalResponse: {
+      /** Approved */
+      approved: string[];
+      /**
+       * Count
+       * @description Return the number of newly approved snippets.
+       *
+       *     :return: Length of ``approved``.
+       *     :rtype: int
+       */
+      readonly count: number;
+      /** Skipped Already Approved */
+      skipped_already_approved: string[];
+    };
+    /**
      * ConnectivityCheckRequest
      * @description Carry the required set of services to probe.
      *
@@ -3697,10 +3810,34 @@ export interface components {
       /** Total */
       total: number;
     };
+    /** PaginatedResponse[ArbitraryMapping] */
+    PaginatedResponse_ArbitraryMapping_: {
+      /** Items */
+      items: {
+        [key: string]: unknown;
+      }[];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[ServiceResponse] */
     PaginatedResponse_ServiceResponse_: {
       /** Items */
       items: components['schemas']['ServiceResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[SnippetResponse] */
+    PaginatedResponse_SnippetResponse_: {
+      /** Items */
+      items: components['schemas']['SnippetResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -3719,16 +3856,19 @@ export interface components {
       /** Total */
       total: number;
     };
-    /** PaginatedResponse[dict[str, Any]] */
-    PaginatedResponse_dict_str__Any__: {
-      /** Items */
-      items: Record<string, never>[];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
+    /**
+     * RefreshResponse
+     * @description Represent the successful result of a manual snippets-refresh operation.
+     *
+     *     :param refreshed_at: UTC timestamp at which the refresh completed.
+     *     :type refreshed_at: datetime
+     */
+    RefreshResponse: {
+      /**
+       * Refreshed At
+       * Format: date-time
+       */
+      refreshed_at: string;
     };
     /**
      * ReloadClassification
@@ -3822,7 +3962,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The unique identifier of the node on which the service is running.
      *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
@@ -3839,7 +3978,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -4061,6 +4202,128 @@ export interface components {
      */
     SnippetApprovalFilter: 'all' | 'approved' | 'not_approved';
     /**
+     * SnippetBatchApproveRequest
+     * @description Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.
+     *
+     *     Unlike the Form-bound :class:`~app.sep.snippets.deps.SnippetBatchApproveForm`
+     *     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
+     *     parses it as JSON.
+     *
+     *     :param filenames: Unique, non-empty list of snippet filenames to approve in a
+     *         single atomic operation. Duplicates are silently deduplicated by
+     *         ``UniqueList``.
+     */
+    SnippetBatchApproveRequest: {
+      /** Filenames */
+      filenames: string[];
+    };
+    /**
+     * SnippetResponse
+     * @description Represent a snippet entity as exposed by the JSON API.
+     *
+     *     :param filename: The snippet's filename on disk; doubles as its
+     *         identifier in the API.
+     *     :type filename: NonEmptyStr
+     *     :param title: The display title for the snippet (snippet metadata's
+     *         ``title`` field, falling back to ``filename`` when unset).
+     *     :type title: NonEmptyStr
+     *     :param description: The snippet's free-text description, or an empty
+     *         string when no description is set in metadata.
+     *     :type description: str
+     *     :param service_type: The snippet's free-form service type
+     *         (``service_type`` metadata field, for example ``"mysql"`` or
+     *         ``"mongodb"``), or ``None`` when the snippet declares no service
+     *         type. Distinct from the inventory ``ServiceTypeEnum``.
+     *     :type service_type: str | None
+     *     :param size: Snippet file size in bytes.
+     *     :type size: int
+     *     :param md5_digest: 32-character MD5 hex digest of the snippet file.
+     *     :type md5_digest: str
+     *     :param is_approved: Whether the snippet has been approved for execution.
+     *     :type is_approved: bool
+     *     :param approved_at: When the snippet was last approved, or ``None`` if
+     *         unapproved.
+     *     :type approved_at: datetime | None
+     *     :param updated_by: User id that last toggled the approval state, or
+     *         ``None`` if no toggle has occurred.
+     *     :type updated_by: str | None
+     *     :param reason: Free-form reason recorded the last time the snippet's
+     *         approval state changed.
+     *     :type reason: str
+     *     :param requires_sudo: Whether the snippet requires sudo for execution
+     *         (either always-sudo or sudo is user-toggleable).
+     *     :type requires_sudo: bool
+     *     :param sudo_optional: Whether the user can toggle sudo at execution
+     *         time.
+     *     :type sudo_optional: bool
+     *     :param sudo_default: Default value for the sudo toggle when
+     *         ``sudo_optional`` is ``True``.
+     *     :type sudo_default: bool
+     *     :param interpreter: The shell/interpreter command used to execute the
+     *         snippet (for example, ``"bash"`` or ``"python3"``); ``None`` when
+     *         no interpreter mapping resolves.
+     *     :type interpreter: str | None
+     *     :param created_at: When the snippet row was first inserted.
+     *     :type created_at: datetime
+     *     :param updated_at: When the snippet row was last updated, or ``None``
+     *         if never updated since insert.
+     *     :type updated_at: datetime | None
+     */
+    SnippetResponse: {
+      /** Approved At */
+      approved_at?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Description */
+      description: string;
+      /** Filename */
+      filename: string;
+      /** Interpreter */
+      interpreter?: string | null;
+      /** Is Approved */
+      is_approved: boolean;
+      /** Md5 Digest */
+      md5_digest: string;
+      /** Reason */
+      reason: string;
+      /** Requires Sudo */
+      requires_sudo: boolean;
+      /** Service Type */
+      service_type?: string | null;
+      /** Size */
+      size: number;
+      /** Sudo Default */
+      sudo_default: boolean;
+      /** Sudo Optional */
+      sudo_optional: boolean;
+      /** Title */
+      title: string;
+      /** Updated At */
+      updated_at?: string | null;
+      /** Updated By */
+      updated_by?: string | null;
+    };
+    /**
+     * SnippetServiceTypesResponse
+     * @description Carry the whole-dataset service-type facet for the list filter.
+     *
+     *     Sourced across every snippet (not the loaded page) so the list page's
+     *     service-type dropdown can offer every value the dataset contains.
+     *
+     *     :param service_types: The sorted distinct non-blank service types.
+     *     :param has_uncategorized: Whether any snippet has an absent or blank service
+     *         type (surfaced as the "Uncategorized" filter option).
+     */
+    SnippetServiceTypesResponse: {
+      /** Has Uncategorized */
+      has_uncategorized: boolean;
+      /** Service Types */
+      service_types: string[];
+    };
+    /**
      * SnippetSortDirection
      * @description Enumerate the sort direction.
      *
@@ -4084,6 +4347,28 @@ export interface components {
      * @enum {string}
      */
     SnippetSortKey: 'created_at' | 'filename' | 'approved_at' | 'title' | 'service_type';
+    /**
+     * SnippetsCapabilitiesResponse
+     * @description Represent per-deployment capability flags for the Snippets plugin.
+     *
+     *     Exposes flags that gate the visibility of admin-only UI affordances
+     *     (currently the manual refresh button) so the React shell can decide
+     *     whether to render those controls without probing the gated endpoints.
+     *
+     *     Distinct from :class:`~app.sep.apps.framework.schema.Capabilities`,
+     *     which describes static UI feature flags on
+     *     :attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`
+     *     (chaining, scheduling, alert_on_fail). This model is the per-
+     *     deployment runtime counterpart returned by ``GET /capabilities``.
+     *
+     *     :param manual_sync_enabled: Whether manual snippet refresh is enabled
+     *         in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).
+     *     :type manual_sync_enabled: bool
+     */
+    SnippetsCapabilitiesResponse: {
+      /** Manual Sync Enabled */
+      manual_sync_enabled: boolean;
+    };
     /**
      * SourceEnum
      * @description Enumeration of possible data sources for a node.
@@ -4116,13 +4401,11 @@ export interface components {
      *     :param target: The target system or environment.
      *     :type target: str
      *     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-     *     :type meta: dict | None
      *     :param payload: Optional payload or file path for parameterizing the task.
      *         Defaults to None.
      *     :type payload: str | None
      *     :param tracking: Tracking information for task execution. Defaults to a dictionary
      *         with keys for allocation and evaluation IDs.
-     *     :type tracking: dict | None
      */
     TaskExecutionRequest: {
       /** Eta */
@@ -4131,7 +4414,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never> | null;
+      meta: {
+        [key: string]: unknown;
+      } | null;
       /** Payload */
       payload?: string | null;
       /** Target */
@@ -4142,7 +4427,9 @@ export interface components {
        * Tracking
        * @default {}
        */
-      tracking: Record<string, never> | null;
+      tracking: {
+        [key: string]: unknown;
+      } | null;
     } & {
       [key: string]: unknown;
     };
@@ -4307,7 +4594,9 @@ export interface components {
       /** Created By */
       created_by: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Deleted At */
       deleted_at: string | null;
       /** Id */
@@ -4363,7 +4652,7 @@ export interface components {
     alert_troubleshooting__AlertDetailResponse: {
       alert: components['schemas']['alert_troubleshooting__AlertInfo'];
       /** Snippets */
-      snippets: components['schemas']['snippets__SnippetResponse'][];
+      snippets: components['schemas']['SnippetResponse'][];
     };
     /**
      * AlertGroup
@@ -4518,7 +4807,9 @@ export interface components {
       /** Id */
       id: number;
       /** Metadata */
-      metadata: Record<string, never>;
+      metadata: {
+        [key: string]: unknown;
+      };
     };
     /**
      * IndexBackupSummary
@@ -4718,7 +5009,9 @@ export interface components {
      */
     alerts__RestoreResponse: {
       /** Details */
-      details: Record<string, never>;
+      details: {
+        [key: string]: unknown;
+      };
       /**
        * Status
        * @constant
@@ -4892,7 +5185,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -5177,7 +5472,9 @@ export interface components {
      *     :param sudo: The sudo choice applied to every item; snippets whose sudo
      *         option is not optional ignore it.
      *     :param shared_args: Arguments offered to every item, filtered per snippet to
-     *         the parameters that snippet declares.
+     *         the parameters that snippet declares. ``NON_SHAREABLE_FIELD_NAMES`` (e.g.
+     *         Extra Args) are never applied from ``shared_args``, even for a snippet
+     *         that declares a field with that name.
      *     :param items: The snippets to execute, at least one and at most
      *         ``MAX_BATCH_SNIPPETS``.
      */
@@ -5297,7 +5594,9 @@ export interface components {
      *     ``AppSchema`` section carries only a display title.
      *
      *     :param shared: The batch-level execution fields followed by every parameter
-     *         the selection declares identically.
+     *         the selection declares identically, excluding ``NON_SHAREABLE_FIELD_NAMES``
+     *         (e.g. Extra Args), which stay per-snippet even when every item declares
+     *         them.
      *     :param per_snippet: The remaining per-snippet fields, in request order.
      */
     atw__ATWMergedSchemaResponse: {
@@ -5408,10 +5707,13 @@ export interface components {
      *     :param created_by: Username of the support engineer who created the incident.
      *     :param created_at: When the incident was created.
      *     :param updated_at: When the incident was last updated, if ever.
+     *     :param closed_at: When the incident was closed, if ever; ``None`` means open.
      */
     atw__AtwIncidentResponse: {
       /** Case Ref */
       case_ref: string | null;
+      /** Closed At */
+      closed_at: string | null;
       /**
        * Created At
        * Format: date-time
@@ -5498,7 +5800,9 @@ export interface components {
        */
       created_at: string;
       /** Detail */
-      detail: Record<string, never>;
+      detail: {
+        [key: string]: unknown;
+      };
       /** Finished At */
       finished_at: string | null;
       /**
@@ -5607,7 +5911,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Derived Tasks */
       derived_tasks?: components['schemas']['backup_mongo__BackupDerivedTaskSummary'][];
       /** Hostname */
@@ -5653,7 +5959,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -5860,7 +6168,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Derived Tasks */
       derived_tasks?: components['schemas']['backup_mongo__RestoreDerivedTaskSummary'][];
       /** Hostname */
@@ -5913,7 +6223,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -6088,7 +6400,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Host */
       host?: string | null;
       /** Hostname */
@@ -6134,7 +6448,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -6350,7 +6666,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -6386,7 +6704,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -6554,7 +6874,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Host */
       host?: string | null;
       /** Hostname */
@@ -6641,7 +6963,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Id */
       id?: number | null;
       /** Last Executed At */
@@ -7038,7 +7362,6 @@ export interface components {
      *         for plugin-specific identity fields (e.g. ``{"backup_type":
      *         "pbm_logical"}``) that the framework should not name itself.
      *         Defaults to ``None``.
-     *     :type data_overrides: dict[str, Any] | None
      *     :param parent_link: When true, set ``data["parent"]`` on the derived
      *         payload to the parent's ``name``. Defaults to ``True``.
      *     :type parent_link: bool
@@ -7049,7 +7372,9 @@ export interface components {
         [key: string]: string;
       } | null;
       /** Data Overrides */
-      data_overrides?: Record<string, never> | null;
+      data_overrides?: {
+        [key: string]: unknown;
+      } | null;
       /** Name Suffix */
       name_suffix: string;
       /**
@@ -7712,7 +8037,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -7854,8 +8181,9 @@ export interface components {
      *     ``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``
      *     / ``disabled_reason``). When ``depends_on`` is set, the fetch is
      *     parameterised by the dependency's value (appended as a query parameter named
-     *     after ``depends_on``) and the field stays disabled/empty until the
-     *     dependency has a value. When ``allow_custom`` is set, the renderer also
+     *     after ``depends_on``) and the field offers no options until the dependency
+     *     has a value, staying disabled while it waits unless ``allow_custom`` keeps
+     *     free-text entry open. When ``allow_custom`` is set, the renderer also
      *     accepts a free-typed value. The endpoint response contract is a JSON array
      *     of objects shaped like :class:`Choice`: ``{"value": str, "label": str,
      *     "disabled"?: bool, "disabled_reason"?: str}``.
@@ -8412,10 +8740,16 @@ export interface components {
      *     XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
      *     derived schema. Field declaration order is load-bearing: the derived section
      *     order follows each section's first field, and the within-section order follows
-     *     declaration order, so the order here reproduces the hand-written schema
-     *     byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
+     *     declaration order, so the derived section and field order matches the
+     *     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
      *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+     *     encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
+     *     independent encryption modes that both produce an encrypted backup;
+     *     ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
+     *     ``post_run_encrypt`` so post-run takes precedence (matching the backend at
+     *     ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
+     *     is on — and the per-mode bool
+     *     ``FailRule``s in
      *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
      *     into the conditional-rule plan at class definition, so no
      *     ``@apply_conditional_rules`` decorator is needed. The config sub-models
@@ -8690,7 +9024,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Hostname */
       hostname?: string | null;
       /** Id */
@@ -8936,7 +9272,9 @@ export interface components {
       /** Created By */
       created_by?: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Host */
       host?: string | null;
       /** Hostname */
@@ -9219,7 +9557,9 @@ export interface components {
        */
       name: string;
       /** Period */
-      period?: Record<string, never>;
+      period?: {
+        [key: string]: unknown;
+      };
       /**
        * Size
        * @default 0
@@ -9501,12 +9841,9 @@ export interface components {
        */
       pdf_ready: boolean;
       /** Result */
-      result?:
-        | {
-            [key: string]: unknown;
-          }
-        | Record<string, never>
-        | null;
+      result?: {
+        [key: string]: unknown;
+      } | null;
       /** Status */
       status: string;
     };
@@ -9596,202 +9933,6 @@ export interface components {
     report__UptimeSection: {
       /** Entries */
       entries?: components['schemas']['report__UptimeEntry'][];
-    };
-    /**
-     * BatchApprovalResponse
-     * @description Successful response for the batch-approve endpoint.
-     *
-     *     :param approved: Filenames whose approval state was toggled by this
-     *         request (newly approved as a result of the call).
-     *     :type approved: list[str]
-     *     :param skipped_already_approved: Filenames that were already approved
-     *         when the call started; the request is treated as a soft-skip
-     *         (idempotent).
-     *     :type skipped_already_approved: list[str]
-     */
-    snippets__BatchApprovalResponse: {
-      /** Approved */
-      approved: string[];
-      /**
-       * Count
-       * @description Return the number of newly approved snippets.
-       *
-       *     :return: Length of ``approved``.
-       *     :rtype: int
-       */
-      readonly count: number;
-      /** Skipped Already Approved */
-      skipped_already_approved: string[];
-    };
-    /** PaginatedResponse[SnippetResponse] */
-    snippets__PaginatedResponse_SnippetResponse_: {
-      /** Items */
-      items: components['schemas']['snippets__SnippetResponse'][];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
-    };
-    /**
-     * RefreshResponse
-     * @description Represent the successful result of a manual snippets-refresh operation.
-     *
-     *     :param refreshed_at: UTC timestamp at which the refresh completed.
-     *     :type refreshed_at: datetime
-     */
-    snippets__RefreshResponse: {
-      /**
-       * Refreshed At
-       * Format: date-time
-       */
-      refreshed_at: string;
-    };
-    /**
-     * SnippetBatchApproveRequest
-     * @description Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.
-     *
-     *     Unlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`
-     *     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
-     *     parses it as JSON.
-     *
-     *     :param filenames: Unique, non-empty list of snippet filenames to approve in a
-     *         single atomic operation. Duplicates are silently deduplicated by
-     *         ``UniqueList``.
-     *     :type filenames: UniqueList[NonEmptyStr]
-     */
-    snippets__SnippetBatchApproveRequest: {
-      /** Filenames */
-      filenames: string[];
-    };
-    /**
-     * SnippetResponse
-     * @description Represent a snippet entity as exposed by the JSON API.
-     *
-     *     :param filename: The snippet's filename on disk; doubles as its
-     *         identifier in the API.
-     *     :type filename: NonEmptyStr
-     *     :param title: The display title for the snippet (snippet metadata's
-     *         ``title`` field, falling back to ``filename`` when unset).
-     *     :type title: NonEmptyStr
-     *     :param description: The snippet's free-text description, or an empty
-     *         string when no description is set in metadata.
-     *     :type description: str
-     *     :param service_type: The snippet's free-form service type
-     *         (``service_type`` metadata field, for example ``"mysql"`` or
-     *         ``"mongodb"``), or ``None`` when the snippet declares no service
-     *         type. Distinct from the inventory ``ServiceTypeEnum``.
-     *     :type service_type: str | None
-     *     :param size: Snippet file size in bytes.
-     *     :type size: int
-     *     :param md5_digest: 32-character MD5 hex digest of the snippet file.
-     *     :type md5_digest: str
-     *     :param is_approved: Whether the snippet has been approved for execution.
-     *     :type is_approved: bool
-     *     :param approved_at: When the snippet was last approved, or ``None`` if
-     *         unapproved.
-     *     :type approved_at: datetime | None
-     *     :param updated_by: User id that last toggled the approval state, or
-     *         ``None`` if no toggle has occurred.
-     *     :type updated_by: str | None
-     *     :param reason: Free-form reason recorded the last time the snippet's
-     *         approval state changed.
-     *     :type reason: str
-     *     :param requires_sudo: Whether the snippet requires sudo for execution
-     *         (either always-sudo or sudo is user-toggleable).
-     *     :type requires_sudo: bool
-     *     :param sudo_optional: Whether the user can toggle sudo at execution
-     *         time.
-     *     :type sudo_optional: bool
-     *     :param sudo_default: Default value for the sudo toggle when
-     *         ``sudo_optional`` is ``True``.
-     *     :type sudo_default: bool
-     *     :param interpreter: The shell/interpreter command used to execute the
-     *         snippet (for example, ``"bash"`` or ``"python3"``); ``None`` when
-     *         no interpreter mapping resolves.
-     *     :type interpreter: str | None
-     *     :param created_at: When the snippet row was first inserted.
-     *     :type created_at: datetime
-     *     :param updated_at: When the snippet row was last updated, or ``None``
-     *         if never updated since insert.
-     *     :type updated_at: datetime | None
-     */
-    snippets__SnippetResponse: {
-      /** Approved At */
-      approved_at?: string | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Description */
-      description: string;
-      /** Filename */
-      filename: string;
-      /** Interpreter */
-      interpreter?: string | null;
-      /** Is Approved */
-      is_approved: boolean;
-      /** Md5 Digest */
-      md5_digest: string;
-      /** Reason */
-      reason: string;
-      /** Requires Sudo */
-      requires_sudo: boolean;
-      /** Service Type */
-      service_type?: string | null;
-      /** Size */
-      size: number;
-      /** Sudo Default */
-      sudo_default: boolean;
-      /** Sudo Optional */
-      sudo_optional: boolean;
-      /** Title */
-      title: string;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Updated By */
-      updated_by?: string | null;
-    };
-    /**
-     * SnippetServiceTypesResponse
-     * @description Carry the whole-dataset service-type facet for the list filter.
-     *
-     *     Sourced across every snippet (not the loaded page) so the list page's
-     *     service-type dropdown can offer every value the dataset contains.
-     *
-     *     :param service_types: The sorted distinct non-blank service types.
-     *     :param has_uncategorized: Whether any snippet has an absent or blank service
-     *         type (surfaced as the "Uncategorized" filter option).
-     */
-    snippets__SnippetServiceTypesResponse: {
-      /** Has Uncategorized */
-      has_uncategorized: boolean;
-      /** Service Types */
-      service_types: string[];
-    };
-    /**
-     * SnippetsCapabilitiesResponse
-     * @description Represent per-deployment capability flags for the Snippets plugin.
-     *
-     *     Exposes flags that gate the visibility of admin-only UI affordances
-     *     (currently the manual refresh button) so the React shell can decide
-     *     whether to render those controls without probing the gated endpoints.
-     *
-     *     Distinct from :class:`~app.sep.apps.framework.schema.Capabilities`,
-     *     which describes static UI feature flags on
-     *     :attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`
-     *     (chaining, scheduling, alert_on_fail). This model is the per-
-     *     deployment runtime counterpart returned by ``GET /capabilities``.
-     *
-     *     :param manual_sync_enabled: Whether manual snippet refresh is enabled
-     *         in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).
-     *     :type manual_sync_enabled: bool
-     */
-    snippets__SnippetsCapabilitiesResponse: {
-      /** Manual Sync Enabled */
-      manual_sync_enabled: boolean;
     };
     /**
      * ExecutorHostMetadata
@@ -9889,7 +10030,9 @@ export interface components {
      */
     tasks__TaskDetailResponse: {
       /** Execution History */
-      execution_history?: Record<string, never>;
+      execution_history?: {
+        [key: string]: unknown;
+      };
       /** Executor Hosts */
       executor_hosts?: components['schemas']['tasks__ExecutorHostMetadata'][];
       /** Periodic Summary */
@@ -9959,7 +10102,9 @@ export interface components {
      */
     topology__DualPrimaryEdge: {
       /** Data */
-      data?: Record<string, never>;
+      data?: {
+        [key: string]: unknown;
+      };
       /** Id */
       id: string;
       /** Source */
@@ -11313,6 +11458,37 @@ export interface operations {
       };
     };
   };
+  atw_atw_close_incident_api_apps_atw_incidents__incident_id__close__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   atw_atw_list_incident_executions_api_apps_atw_incidents__incident_id__executions__get: {
     parameters: {
       query?: {
@@ -11369,6 +11545,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['atw__ATWBatchExecuteResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_reopen_incident_api_apps_atw_incidents__incident_id__reopen__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        incident_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwIncidentResponse'];
         };
       };
       /** @description Validation Error */
@@ -12394,7 +12601,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PaginatedResponse_dict_str__Any__'];
+          'application/json': components['schemas']['PaginatedResponse_ArbitraryMapping_'];
         };
       };
       /** @description Validation Error */
@@ -12945,6 +13152,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__MysqlBackupsCreateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get: {
+    parameters: {
+      query?: {
+        /** @description Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch. */
+        service_id?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['framework__Choice'][];
         };
       };
       /** @description Validation Error */
@@ -13604,7 +13843,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__PaginatedResponse_SnippetResponse_'];
+          'application/json': components['schemas']['PaginatedResponse_SnippetResponse_'];
         };
       };
       /** @description Validation Error */
@@ -13627,7 +13866,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['snippets__SnippetBatchApproveRequest'];
+        'application/json': components['schemas']['SnippetBatchApproveRequest'];
       };
     };
     responses: {
@@ -13637,7 +13876,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__BatchApprovalResponse'];
+          'application/json': components['schemas']['BatchApprovalResponse'];
         };
       };
       /** @description Validation Error */
@@ -13666,7 +13905,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__SnippetsCapabilitiesResponse'];
+          'application/json': components['schemas']['SnippetsCapabilitiesResponse'];
         };
       };
     };
@@ -13686,7 +13925,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__RefreshResponse'];
+          'application/json': components['schemas']['RefreshResponse'];
         };
       };
     };
@@ -13726,7 +13965,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__SnippetServiceTypesResponse'];
+          'application/json': components['schemas']['SnippetServiceTypesResponse'];
         };
       };
     };
@@ -13749,7 +13988,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['snippets__SnippetResponse'];
+          'application/json': components['schemas']['SnippetResponse'];
         };
       };
       /** @description Validation Error */
@@ -13879,7 +14118,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -14385,7 +14626,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>[];
+          'application/json': {
+            [key: string]: unknown;
+          }[];
         };
       };
       /** @description Upstream Tasks API failure. */
@@ -14412,7 +14655,9 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': Record<string, never>;
+        'application/json': {
+          [key: string]: unknown;
+        };
       };
     };
     responses: {
@@ -14422,7 +14667,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -14498,7 +14745,9 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': Record<string, never>;
+        'application/json': {
+          [key: string]: unknown;
+        };
       };
     };
     responses: {
@@ -14508,7 +14757,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -14695,7 +14946,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
@@ -14737,7 +14990,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': Record<string, never>;
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */
