@@ -114,10 +114,14 @@ LOGGING_CONFIG = {
     },
     "formatters": {
         "default": {
-            "format": "%(name)s: [%(correlation_id)s] %(message)s <%(process)d>",
+            "()": "app.core.log.ContextFormatter",
+            "fmt": "%(name)s: [%(correlation_id)s] %(message)s <%(process)d>",
+            "skip_keys": ["correlation_id"],
         },
         "uvicorn": {
-            "format": "uvicorn: [%(correlation_id)s] %(message)s <%(process)d>",
+            "()": "app.core.log.ContextFormatter",
+            "fmt": "uvicorn: [%(correlation_id)s] %(message)s <%(process)d>",
+            "skip_keys": ["correlation_id"],
         },
     },
     "handlers": {
