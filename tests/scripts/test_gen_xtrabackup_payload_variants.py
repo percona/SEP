@@ -108,7 +108,7 @@ class TestInSyncGuard:
     """Assert the shipped variants match the canonical payload (CI drift guard)."""
 
     def test_check_mode_reports_no_drift(self) -> None:
-        """``--check`` exits 0 for the checked-in tree."""
+        """Assert ``--check`` exits 0 for the checked-in tree."""
         assert gen_variants.main(["--check"]) == 0
 
     def test_selections_cover_every_combination(self) -> None:
@@ -134,14 +134,14 @@ class TestInSyncGuard:
         assert all(name.endswith("_payload") for name in _EXPECTED_NAMES.values())
 
     def test_canonical_is_never_rewritten(self, sandbox: Path) -> None:
-        """The canonical payload is the all-providers variant and stays hand-edited."""
+        """Assert the canonical all-providers payload stays hand-edited."""
         canonical = sandbox / gen_variants.CANONICAL_SOURCE.name
         before = canonical.read_text(encoding="utf-8")
         assert gen_variants.main([]) == 0
         assert canonical.read_text(encoding="utf-8") == before
 
     def test_check_mode_reports_drift(self, sandbox: Path) -> None:
-        """``--check`` fails on a variant edited away from the canonical source."""
+        """Assert ``--check`` fails on a variant edited away from the canonical source."""
         drifted = sandbox / "xtrabackup_rsync_payload"
         edited = drifted.read_text(encoding="utf-8") + "DRIFT = 1\n"
         drifted.write_text(edited, encoding="utf-8")
@@ -149,7 +149,7 @@ class TestInSyncGuard:
         assert drifted.read_text(encoding="utf-8") == edited
 
     def test_rewrite_repairs_drift(self, sandbox: Path) -> None:
-        """A regeneration run restores a drifted variant and clears ``--check``."""
+        """Assert a regeneration run restores a drifted variant and clears ``--check``."""
         drifted = sandbox / "xtrabackup_rsync_payload"
         drifted.write_text(
             drifted.read_text(encoding="utf-8") + "DRIFT = 1\n", encoding="utf-8"
@@ -210,7 +210,7 @@ class TestRenderedVariants:
             assert gen_variants.END not in text
 
     def test_render_is_idempotent(self) -> None:
-        """Re-rendering an in-sync variant is a no-op (round-trip stable)."""
+        """Assert re-rendering an in-sync variant is a no-op (round-trip stable)."""
         for providers in gen_variants.selections():
             path = _variant_path(providers)
             if path == gen_variants.CANONICAL_SOURCE:
@@ -224,29 +224,29 @@ class TestMalformedRegions:
     """Assert the generator refuses a canonical source it cannot read unambiguously."""
 
     def test_unterminated_region_raises(self) -> None:
-        """An opened region with no END is a hard error, not a silent truncation."""
+        """Reject an opened region with no END rather than silently truncating."""
         with pytest.raises(gen_variants.RegionError, match="unterminated"):
             gen_variants.render(f"a\n{gen_variants.BEGIN} rsync\nb\n", ())
 
     def test_nested_region_raises(self) -> None:
-        """Two overlapping regions are rejected -- the omission would be ambiguous."""
+        """Reject two overlapping regions -- the omission would be ambiguous."""
         source = f"{gen_variants.BEGIN} rsync\n{gen_variants.BEGIN} s3\nx\n"
         with pytest.raises(gen_variants.RegionError, match="nested"):
             gen_variants.render(source, ())
 
     def test_unopened_end_raises(self) -> None:
-        """A stray END marker is rejected rather than ignored."""
+        """Reject a stray END marker rather than ignoring it."""
         with pytest.raises(gen_variants.RegionError, match="unopened"):
             gen_variants.render(f"a\n{gen_variants.END} rsync\n", ())
 
     def test_unknown_provider_raises(self) -> None:
-        """A marker naming a provider the generator does not know is a hard error."""
+        """Reject a marker naming a provider the generator does not know."""
         source = f"{gen_variants.BEGIN} azure\nx\n{gen_variants.END} azure\n"
         with pytest.raises(gen_variants.RegionError, match="unknown provider"):
             gen_variants.render(source, ())
 
     def test_stranded_reference_is_rejected(self) -> None:
-        """A region drawn too narrowly leaves an orphan, which must fail at build time.
+        """Reject an orphan left behind by a region drawn too narrowly.
 
         This is the hazard the payload's own test suite cannot catch: the variant
         parses, but names a class it no longer defines, and only breaks on a
@@ -262,7 +262,7 @@ class TestMalformedRegions:
         gen_variants.validate("x = 1\n", ("rsync", "s3", "gsutil"), "fake_payload")
 
     def test_unbound_name_is_rejected(self) -> None:
-        """A name no line in the variant binds is an orphan, whatever region owns it.
+        """Reject a name no line in the variant binds, whatever region owns it.
 
         The exclusive-name list is hand-maintained, so it cannot know about a symbol
         added to a region later. This sweep needs no bookkeeping and catches it.
