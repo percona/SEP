@@ -101,3 +101,37 @@ def test_upgrade_skips_a_table_that_already_carries_the_column(sep_alembic_confi
     command.upgrade(cfg, _SERVICE_ID_REVISION)
 
     assert "service_id" in _run_columns(sync_url)
+
+
+def test_upgrade_backfills_the_index_when_only_the_column_exists(sep_alembic_config):
+    """Assert upgrade still indexes a column added outside the migration chain."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _PRE_SERVICE_ID_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(f"ALTER TABLE {_TABLE} ADD COLUMN service_id INT"))
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, _SERVICE_ID_REVISION)
+
+    assert _INDEX in _run_indexes(sync_url)
+
+
+def test_downgrade_drops_the_column_when_the_index_is_already_gone(sep_alembic_config):
+    """Assert downgrade tolerates a schema whose index was dropped by hand."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SERVICE_ID_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(f"DROP INDEX {_INDEX}"))
+    finally:
+        engine.dispose()
+
+    command.downgrade(cfg, _PRE_SERVICE_ID_REVISION)
+
+    assert "service_id" not in _run_columns(sync_url)

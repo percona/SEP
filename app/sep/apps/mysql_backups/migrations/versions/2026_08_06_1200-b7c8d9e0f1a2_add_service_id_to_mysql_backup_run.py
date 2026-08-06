@@ -34,41 +34,48 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def _has_service_id(bind: Connection) -> bool:
-    """Return whether ``mysql_backup_run.service_id`` already exists.
+TABLE = "mysql_backup_run"
+COLUMN = "service_id"
+INDEX = "ix_mysql_backup_run_service_id"
+
+
+def _existing_columns(bind: Connection) -> set[str]:
+    """Return the column names on ``mysql_backup_run``.
 
     :param bind: The active migration connection.
-    :return: ``True`` when the table exists and already carries the column.
+    :return: The table's column names, or an empty set when the table is absent.
     """
     inspector = sa.inspect(bind)
-    if "mysql_backup_run" not in inspector.get_table_names():
-        return False
-    return any(
-        column["name"] == "service_id"
-        for column in inspector.get_columns("mysql_backup_run")
-    )
+    if TABLE not in inspector.get_table_names():
+        return set()
+    return {column["name"] for column in inspector.get_columns(TABLE)}
+
+
+def _existing_indexes(bind: Connection) -> set[str]:
+    """Return the index names on ``mysql_backup_run``.
+
+    :param bind: The active migration connection.
+    :return: The table's index names, or an empty set when the table is absent.
+    """
+    inspector = sa.inspect(bind)
+    if TABLE not in inspector.get_table_names():
+        return set()
+    return {index["name"] for index in inspector.get_indexes(TABLE)}
 
 
 def upgrade() -> None:
     bind = op.get_bind()
-    if _has_service_id(bind):
-        return
-    op.add_column(
-        "mysql_backup_run", sa.Column("service_id", sa.Integer(), nullable=True)
-    )
-    op.create_index(
-        op.f("ix_mysql_backup_run_service_id"),
-        "mysql_backup_run",
-        ["service_id"],
-        unique=False,
-    )
+    # The column and the index are guarded separately: a schema created from the
+    # models, or hand-patched with a bare ALTER, can carry one without the other.
+    if COLUMN not in _existing_columns(bind):
+        op.add_column(TABLE, sa.Column(COLUMN, sa.Integer(), nullable=True))
+    if INDEX not in _existing_indexes(bind):
+        op.create_index(op.f(INDEX), TABLE, [COLUMN], unique=False)
 
 
 def downgrade() -> None:
     bind = op.get_bind()
-    if not _has_service_id(bind):
-        return
-    op.drop_index(
-        op.f("ix_mysql_backup_run_service_id"), table_name="mysql_backup_run"
-    )
-    op.drop_column("mysql_backup_run", "service_id")
+    if INDEX in _existing_indexes(bind):
+        op.drop_index(op.f(INDEX), table_name=TABLE)
+    if COLUMN in _existing_columns(bind):
+        op.drop_column(TABLE, COLUMN)
