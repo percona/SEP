@@ -16,7 +16,7 @@
 """Define SEP routes."""
 
 import logging.config
-from collections.abc import AsyncGenerator, Callable, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from traceback import format_exception
@@ -28,7 +28,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import HttpUrl, ValidationError
+from pydantic import ValidationError
 from starlette.staticfiles import StaticFiles
 
 from app import __summary__, __version__
@@ -45,8 +45,10 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.settings_override.lifecycle import (
     RefreshCallback,
     settings_override_refresher,
+    SnapshotChange,
 )
 from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils import run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
@@ -126,7 +128,8 @@ async def sep_startup() -> None:
 def _make_remote_api_rebinder(
     app: FastAPI,
     name: str,
-    endpoint_getter: Callable[[], HttpUrl],
+    proxy: OverridableSettingsProxy,
+    key: str,
     **ssl: Any,
 ) -> RefreshCallback:
     """Build a rebind callback for an ``app.state`` RemoteAPI endpoint override.
@@ -136,17 +139,21 @@ def _make_remote_api_rebinder(
     the new endpoint and the old one closed. Under the combined ``app.main:app``
     no ``app.state`` client exists -- ``get_*_client`` falls back to the
     registry-cached ``get_remote_api`` per request, which already key-misses to
-    the new HOT endpoint -- so the callback only evicts any stale client left on
-    the new endpoint.
+    the new HOT endpoint -- so the callback evicts the ordered de-duplicated set
+    of previous-and-current endpoints (covering endpoint moves as well as
+    same-endpoint credential/SSL changes). When ``key`` is absent from
+    ``change.previous`` (override created), the prior effective value is the
+    YAML/env one from the proxy's wrapped instance.
 
     :param app: The FastAPI application whose ``state`` holds the client.
     :type app: FastAPI
     :param name: The ``app.state`` attribute name (``inventory_api`` /
         ``tasks_api``).
     :type name: str
-    :param endpoint_getter: A zero-argument callable returning the current
-        (override-aware) endpoint.
-    :type endpoint_getter: Callable[[], HttpUrl]
+    :param proxy: The overridable settings proxy that owns the endpoint field.
+    :type proxy: OverridableSettingsProxy
+    :param key: The top-level snapshot key for the endpoint field.
+    :type key: str
     :param ssl: SSL keyword arguments forwarded to :class:`RemoteAPI` (not HOT,
         captured once at wiring time).
     :type ssl: Any
@@ -154,11 +161,17 @@ def _make_remote_api_rebinder(
     :rtype: RefreshCallback
     """
 
-    async def _rebind(_: Mapping[str, object]) -> None:
-        new_endpoint = endpoint_getter()
+    async def _rebind(change: SnapshotChange) -> None:
+        new_endpoint = getattr(proxy, key)
         old = getattr(app.state, name, None)
         if old is None:
-            await settings.invalidate_client(str(new_endpoint))
+            previous_endpoint = change.previous.get(key)
+            if previous_endpoint is None:
+                previous_endpoint = getattr(proxy._resolve(), key)  # noqa: SLF001
+            for endpoint in dict.fromkeys(
+                str(ep) for ep in (previous_endpoint, new_endpoint) if ep is not None
+            ):
+                await settings.invalidate_client(endpoint)
             return
         try:
             new_api = await RemoteAPI(endpoint=new_endpoint, **ssl).open()
@@ -255,7 +268,8 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ): _make_remote_api_rebinder(
             app,
             "inventory_api",
-            lambda: sep_settings.INVENTORY_ENDPOINT,
+            sep_settings,
+            "INVENTORY_ENDPOINT",
             ssl_cafile=settings.SSL_CAFILE,
             ssl_keyfile=inventory_settings.SSL_KEYFILE,
             ssl_certfile=inventory_settings.SSL_CERTFILE,
@@ -263,7 +277,8 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"): _make_remote_api_rebinder(
             app,
             "tasks_api",
-            lambda: sep_settings.TASKS_ENDPOINT,
+            sep_settings,
+            "TASKS_ENDPOINT",
             ssl_cafile=settings.SSL_CAFILE,
             ssl_keyfile=tasks_settings.SSL_KEYFILE,
             ssl_certfile=tasks_settings.SSL_CERTFILE,
