@@ -41,7 +41,7 @@ def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
     """Return the field names a ``model_dump(by_alias=True)`` of ``model`` emits.
 
     Build the set of wire names a list/detail row serialises: every
-    ``model_fields`` entry whose ``exclude`` is unset, resolved through
+    ``model_fields`` entry not marked ``exclude=True``, resolved through
     ``serialization_alias`` then ``alias`` then the attribute name, unioned
     with every computed field resolved through its alias then attribute name.
     Use this — not ``model_fields`` alone — when validating that a
