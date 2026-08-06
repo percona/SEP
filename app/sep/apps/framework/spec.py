@@ -87,8 +87,8 @@ __all__ = [
     "build_command_args",
     "build_run_python_task",
     "resolve_refs",
+    "service_id_meta",
     "stamp_form_input",
-    "stamp_service_id",
     "validate_arg_formats",
 ]
 
@@ -386,20 +386,20 @@ async def resolve_refs(
     )
 
 
-def stamp_service_id(meta: dict[str, Any], service: CreatedService) -> None:
-    """Stamp the resolved service's inventory id into an envelope's ``meta``.
+def service_id_meta(service: CreatedService) -> dict[str, int]:
+    """Return the ``meta`` fragment naming the resolved service's inventory id.
 
     The id identifies the service across a later rename, which the name does not,
     so a consumer keyed on it survives one. A service carrying no primary key
-    stamps no key at all — a consumer reads the absence as "no id known", with no
-    ``None`` to special-case — which is why every producer must share this omit
-    rule rather than reimplement it.
+    yields an empty fragment and so stamps no key at all — a consumer reads the
+    absence as "no id known", with no ``None`` to special-case — which is why every
+    producer must merge this fragment rather than reimplement the omit rule.
 
-    :param meta: The envelope ``meta`` dict, stamped in place.
     :param service: The resolved inventory service the task is created against.
+    :return: The single-key fragment to merge into ``meta``, empty when the service
+        carries no primary key.
     """
-    if service.id is not None:
-        meta[SERVICE_ID_META_KEY] = service.id
+    return {} if service.id is None else {SERVICE_ID_META_KEY: service.id}
 
 
 def assemble_envelope(
@@ -423,7 +423,7 @@ def assemble_envelope(
     ``args`` and any ``extra_meta`` for run-command; ``config`` / ``requirements``
     / ``payload`` for run-python).
 
-    Stamp the service id through :func:`stamp_service_id`, so a consumer keying on
+    Stamp the service id through :func:`service_id_meta`, so a consumer keying on
     it survives a later rename of the service.
 
     Stamp ``output_files_path`` from the envelope's task name, so a task whose job
@@ -476,7 +476,7 @@ def assemble_envelope(
     data = spec.to_envelope_data(
         host=target_host, service_name=service.name, connectivity=connectivity
     )
-    stamp_service_id(data["meta"], service)
+    data["meta"] |= service_id_meta(service)
 
     return TaskWrite(
         name=name,

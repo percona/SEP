@@ -49,8 +49,8 @@ from app.sep.apps.framework.spec import (
     ResolvedEntities,
     RunCommandSpec,
     RunPythonSpec,
+    service_id_meta,
     stamp_form_input,
-    stamp_service_id,
     validate_arg_formats,
 )
 from app.sep.connectivity import (
@@ -298,30 +298,27 @@ class TestAssembleEnvelopeServiceId:
         assert "_service_id" not in write.data["meta"]
 
 
-class TestStampServiceId:
-    """Cover the stamp shared by every envelope producer.
+class TestServiceIdMeta:
+    """Cover the meta fragment shared by every envelope producer.
 
     Both the framework's :func:`assemble_envelope` and the checksums legacy Jinja
-    builder stamp through this one helper, so the omit-when-absent rule cannot
-    drift between them.
+    builder merge this one fragment, so the omit-when-absent rule cannot drift
+    between them.
     """
 
-    def test_stamps_the_id_leaving_other_keys_untouched(self) -> None:
-        """Add only the id key to a meta dict that already carries others."""
+    def test_names_the_resolved_service_id(self) -> None:
+        """Return the id under its meta key and nothing else."""
         service = _service(
             address="db-host",
             service_type=ServiceTypeEnum.MYSQL,
             name="svc-1",
             port=3306,
         )
-        meta = {"command": "cmd"}
 
-        stamp_service_id(meta, service)
+        assert service_id_meta(service) == {"_service_id": MOCK_CREATED_SERVICE_ID}
 
-        assert meta == {"command": "cmd", "_service_id": MOCK_CREATED_SERVICE_ID}
-
-    def test_stamps_nothing_when_the_service_has_no_id(self) -> None:
-        """Leave the meta unchanged rather than stamp a ``None`` id."""
+    def test_yields_an_empty_fragment_when_the_service_has_no_id(self) -> None:
+        """Stamp nothing at all rather than a ``None`` id."""
         service = _service(
             address="db-host",
             service_type=ServiceTypeEnum.MYSQL,
@@ -329,11 +326,8 @@ class TestStampServiceId:
             port=3306,
         )
         service.id = None
-        meta = {"command": "cmd"}
 
-        stamp_service_id(meta, service)
-
-        assert meta == {"command": "cmd"}
+        assert service_id_meta(service) == {}
 
 
 class TestAssembleEnvelopeGuards:
