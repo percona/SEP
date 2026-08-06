@@ -101,7 +101,7 @@ async def republish_sep_settings_snapshot(session: AsyncSession) -> None:
     time, while an awaited republish inside a task body is driven by the same
     ``run_until_complete`` that drives the task.
 
-    Only ``SEP_SETTINGS`` is republished, and no rebind callback fires --
+    Only ``SEP_SETTINGS`` is republished, and no rebind callback fires:
     ``publish_snapshot`` has no callback channel. That is harmless for a worker
     caller, whose ``WORKER_OVERRIDE_CALLBACKS`` watches ``SETTINGS`` alone. It
     would not be for a web-process caller: ``sep_overrides_lifespan`` registers
@@ -111,7 +111,7 @@ async def republish_sep_settings_snapshot(session: AsyncSession) -> None:
 
     :param session: A session bound to the SEP database, used to read the
         override rows.
-    :raises Exception: Propagates whatever ``publish_snapshot`` raises -- in
+    :raises Exception: Propagates whatever ``publish_snapshot`` raises, in
         practice ``SQLAlchemyError`` from the override-row query. There is no
         per-proxy handler here as there is in ``refresh_all``; the caller owns
         the failure.

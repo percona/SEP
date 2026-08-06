@@ -922,7 +922,7 @@ class TestRunSendFailures:
 
         The failure originates inside the real query path rather than in a
         mocked helper, so the rollback runs against the session that then has to
-        carry the terminal write -- which is why the row is read back through a
+        carry the terminal write, which is why the row is read back through a
         separate session instead of the in-flight instance.
         """
         mocker.patch.object(

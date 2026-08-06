@@ -577,7 +577,7 @@ async def run_send(send_log_id: UUID) -> None:
 
     Every failure family lands as a ``FAILED`` row carrying its reason: the row is
     the only place a support engineer can learn what happened, so the terminal
-    write is guaranteed rather than best-effort -- short of the database itself
+    write is guaranteed rather than best-effort — short of the database itself
     being unreachable, where the row is left to the stale sweep instead.
 
     :param send_log_id: The send log driving this attempt.
@@ -620,10 +620,11 @@ async def _resolve_plan_after_refresh(session: AsyncSession) -> DeliveryPlan | N
     :param session: The database session.
     :return: The plan resolved against the fresh snapshot, or ``None`` when
         delivery is genuinely unconfigured or the republish failed.
-    :raises Exception: Propagates a ``session.rollback()`` that itself fails --
-        the only path out of here that is not a returned ``None``. The database
-        is unreachable at that point, so no terminal write was going to land
-        either way and the row is left to the stale sweep.
+    :raises Exception: Propagates a ``session.rollback()`` that itself fails.
+        That is the only exit from the failure branch that is not a returned
+        ``None``. The database is unreachable at that point, so no terminal
+        write was going to land either way and the row is left to the stale
+        sweep.
     """
     try:
         await republish_sep_settings_snapshot(session)

@@ -439,7 +439,7 @@ class TestRepublishSepSettingsSnapshot:
         """Publish the changed value without notifying any rebind callback.
 
         ``publish_snapshot`` has no callback channel, so the diff-and-fire step
-        ``refresh_all`` performs never runs -- which is why the helper's
+        ``refresh_all`` performs never runs, which is why the helper's
         docstring scopes it to callers whose registry watches another class.
         """
         fire = mocker.spy(lifecycle, "fire_change_callbacks")
