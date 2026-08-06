@@ -31,6 +31,7 @@ from app.sep.snippets.forms import (
     TextInputElement,
     TextInputHTMLElement,
 )
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     serialize_cli_value,
     SnippetMetaParameter,
@@ -87,6 +88,24 @@ class TestSetDefaultStep:
             name="start", type=SnippetMetaParameterType.DATETIME
         )
         assert param.step is None
+
+
+class TestReservedParameterName:
+    """Test rejection of parameter names reserved for synthesized fields."""
+
+    def test_extra_args_name_raises(self):
+        """Raise when a parameter is named after the synthesized Extra Args field."""
+        with pytest.raises(ValidationError, match="reserved"):
+            SnippetMetaParameter(
+                name=EXTRA_ARGS_FIELD_NAME, type=SnippetMetaParameterType.STR
+            )
+
+    def test_other_names_are_unaffected(self):
+        """Verify an unreserved name is still accepted."""
+        param = SnippetMetaParameter(
+            name="extra_args_suffix", type=SnippetMetaParameterType.STR
+        )
+        assert param.name == "extra_args_suffix"
 
 
 class TestDatetimeTypeResolution:

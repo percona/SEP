@@ -197,6 +197,7 @@
             "type": "integer"
           },
           "metadata": {
+            "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
           }
@@ -520,6 +521,7 @@
         "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.",
         "properties": {
           "details": {
+            "additionalProperties": true,
             "title": "Details",
             "type": "object"
           },

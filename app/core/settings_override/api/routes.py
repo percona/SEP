@@ -66,12 +66,12 @@ from app.core.settings_override.registry import (
     is_hot_reloadable,
     is_nested_overridable_parent,
     iter_class_fields,
-    iter_nested_leaf_keys,
     materialize_override_value,
     NESTED_VALUE_MISSING,
     override_keys_for_rows,
     preserve_patch_credential_url_value,
     ReloadClassification,
+    rendered_leaf_keys,
     resolve_nested_field,
     resolve_nested_field_metadata,
     resolve_nested_value,
@@ -398,11 +398,10 @@ def _field_responses(
 ) -> list[SettingResponse]:
     """Return one response for a plain field, or one per leaf for a nested parent.
 
-    A nested-overridable parent is expanded into one response per enumerated leaf
-    (each leaf's metadata resolved via :func:`resolve_nested_field_metadata`),
-    replacing the parent's single summary entry. A scalar field -- including a
-    scalar HOT field, which is a nested-overridable parent but yields no leaves --
-    keeps its single entry.
+    :func:`rendered_leaf_keys` decides which shape a field takes. When it names
+    leaves, each becomes its own response (metadata resolved via
+    :func:`resolve_nested_field_metadata`) in place of the parent's single
+    summary entry; when it names none, the parent keeps that entry.
 
     :param setting_class: The settings class identifier (enum member).
     :param settings_cls: The Pydantic settings class declaring ``field_meta``.
@@ -413,13 +412,7 @@ def _field_responses(
         under current runtime state; ``None`` marks every field applicable.
     :return: One or more responses for the field.
     """
-    leaves = (
-        list(iter_nested_leaf_keys(settings_cls, field_meta.key))
-        if is_nested_overridable_parent(
-            settings_cls, field_meta.key, include_policy_gate=False
-        )
-        else []
-    )
+    leaves = rendered_leaf_keys(settings_cls, field_meta.key)
     if not leaves:
         return [
             _settings_response_from_field(

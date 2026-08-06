@@ -35,11 +35,8 @@ default:
     - SEPSettings.SYNC_REFRESH_TIME
     - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
     - SEPSettings.FOOTER_TEMPLATE
+    - SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS
     - MessagesSettings.LEVEL
-    - AlertsSettings.BACKUP_INTERVAL__every
-    - AlertsSettings.BACKUP_INTERVAL__period
-    - AlertsSettings.BACKUP_RETENTION
-    - AlertsSettings.ALERT_FOLDER_NAME
     - AlertSettings.PROVIDERS
     - AlertSettings.SOURCE_PREFIX
     - AlertSettings.SOURCE_SUFFIX
@@ -79,6 +76,39 @@ default:
       NAME: sep
       PORT: 5432
       USER: sep
+    # Where diagnostics bundles go once an operator supplies the credentials.
+    # The secret names are declared but empty: the plan's cross-reference
+    # validator requires every cited name to be declared, and the values arrive
+    # through DIAGNOSTICS_DELIVERY_INPUTS. Delivery stays off until they do.
+    DIAGNOSTICS_DELIVERY:
+      endpoint: https://percona.service-now.com/
+      max_bundle_size_mb: 30
+      secrets:
+        sn_api_key: ""
+        client_token: ""
+      resolution_steps:
+        - name: resolve_ticket
+          method: POST
+          path: api/pellc/percona_connector/ticket_details
+          headers:
+            x-sn-apikey: {source: secret, name: sn_api_key}
+          body:
+            client_token: {source: secret, name: client_token}
+            ticket_number: {source: input, field: case_ref}
+          outputs:
+            table_name: /result/table_name
+            ticket_id: /result/ticket_id
+      upload:
+        path: api/now/attachment/upload
+        headers:
+          x-sn-apikey: {source: secret, name: sn_api_key}
+          Accept: {source: literal, value: application/json}
+        fields:
+          table_name: {source: output, step: resolve_ticket, output: table_name}
+          table_sys_id: {source: output, step: resolve_ticket, output: ticket_id}
+        file_field: uploadFile
+        file_content_type: application/zip
+        reference_pointer: /result/sys_id
     INVENTORY_ENDPOINT: http://127.0.0.1:9001
     TASKS_ENDPOINT: http://127.0.0.1:9002
     UVICORN_HOST: 0.0.0.0
@@ -88,9 +118,6 @@ default:
     SSL_KEYFILE: null
     APPS:
       - MODULE_NAME: inventory
-      # Activated only to satisfy atw's requires_apps declaration; drop once that
-      # declaration goes away.
-      - MODULE_NAME: snippets
       - MODULE_NAME: atw
       - MODULE_NAME: mysql_backups
     SYNCERS:

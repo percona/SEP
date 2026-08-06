@@ -15,22 +15,25 @@
 
 """Compose the Tasks sub-app's settings REST API."""
 
-__all__ = ["router"]
+__all__ = ["TASKS_ADMIN_SETTINGS_CLASSES", "router"]
 
 from fastapi import APIRouter
 
 from app.api.deps import IsAdminDep
 from app.core.settings_override.api import build_settings_router
+from app.core.settings_override.api.routes import ClassEntry
 from app.core.settings_override.models import SettingClassEnum
 from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.deps import SessionDep
 
+TASKS_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
+    (SettingClassEnum.TASKS_SETTINGS, TasksSettings, tasks_settings),
+    (SettingClassEnum.ANONYMIZER_SETTINGS, AnonymizerSettings, anonymizer_settings),
+]
+
 _settings_router = build_settings_router(
-    classes=[
-        (SettingClassEnum.TASKS_SETTINGS, TasksSettings, tasks_settings),
-        (SettingClassEnum.ANONYMIZER_SETTINGS, AnonymizerSettings, anonymizer_settings),
-    ],
+    classes=TASKS_ADMIN_SETTINGS_CLASSES,
     session_dep=SessionDep,
     admin_dep=IsAdminDep,
 )

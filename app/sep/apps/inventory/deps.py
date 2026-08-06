@@ -28,6 +28,7 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.security import require_internal_token
 from app.core.utils import import_var
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings, SyncOptions
@@ -507,20 +508,4 @@ InventoryPluginJsonObjectBody = Annotated[
 ]
 
 
-def provide_internal_token() -> str:
-    """Resolve the internal service token for request-scoped injection.
-
-    Adapts ``require_internal_token`` for FastAPI dependency injection. The
-    import is local because ``sync`` imports syncer helpers from this module at
-    module load, so importing ``require_internal_token`` at module level would
-    create a circular import.
-
-    :return: The internal service token's secret value.
-    :raises RuntimeError: When no internal token is configured or derived.
-    """
-    from app.sep.apps.inventory.sync import require_internal_token
-
-    return require_internal_token()
-
-
-InternalTokenDep = Annotated[str, Depends(provide_internal_token)]
+InternalTokenDep = Annotated[str, Depends(require_internal_token)]

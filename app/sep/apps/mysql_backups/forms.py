@@ -48,6 +48,8 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 from app.sep.apps.framework.rules import (
+    AllFalsy,
+    AnyTruthy,
     Contains,
     F,
     FailRule,
@@ -223,10 +225,16 @@ class BackupCreate(TaskFormModel):
     XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
     derived schema. Field declaration order is load-bearing: the derived section
     order follows each section's first field, and the within-section order follows
-    declaration order, so the order here reproduces the hand-written schema
-    byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
+    declaration order, so the derived section and field order matches the
+    hand-written schema. The conditional gating that the legacy ``schema.py`` declared
     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-    encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+    encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
+    independent encryption modes that both produce an encrypted backup;
+    ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
+    ``post_run_encrypt`` so post-run takes precedence (matching the backend at
+    ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
+    is on — and the per-mode bool
+    ``FailRule``s in
     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
     into the conditional-rule plan at class definition, so no
     ``@apply_conditional_rules`` decorator is needed. The config sub-models
@@ -464,18 +472,76 @@ class BackupCreate(TaskFormModel):
         Ui(label="Alternative binlog host", section="Binlog"),
     ] = None
 
-    encrypt: Annotated[bool, Ui(label="Encrypt backup", section="Encryption")] = False
+    encrypt: Annotated[
+        bool,
+        Ui(
+            label="Encrypt backup",
+            section="Encryption",
+            description=(
+                "GPG-encrypt the backup in place. Combine with 'Encrypt using "
+                "tmpdir', or use 'Encrypt after backup completes' for post-run "
+                "encryption instead. Either encryption option needs a recipient."
+            ),
+        ),
+    ] = False
     encrypt_using_tmpdir: Annotated[
-        bool, Ui(label="Encrypt using tmpdir", section="Encryption")
+        bool,
+        Forbidden(
+            when=falsy("encrypt"),
+            message="'encrypt_using_tmpdir' requires 'encrypt' to be enabled.",
+        ),
+        Forbidden(
+            when=truthy("post_run_encrypt"),
+            message=(
+                "'encrypt_using_tmpdir' cannot be combined with 'post_run_encrypt'."
+            ),
+        ),
+        Ui(
+            label="Encrypt using tmpdir",
+            section="Encryption",
+            description=(
+                "Encrypt in a temporary directory during the backup. Requires "
+                "'Encrypt backup'; mutually exclusive with 'Encrypt after backup "
+                "completes'."
+            ),
+        ),
     ] = False
     post_run_encrypt: Annotated[
-        bool, Ui(label="Encrypt after backup completes", section="Encryption")
+        bool,
+        Ui(
+            label="Encrypt after backup completes",
+            section="Encryption",
+            description=(
+                "GPG-encrypt the finished backup once it completes. Independent of "
+                "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. "
+                "Needs an encryption recipient."
+            ),
+        ),
     ] = False
     encryption_recipient: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Requires(when=truthy("encrypt")),
-        Forbidden(when=falsy("encrypt")),
-        Ui(label="Encryption recipient", section="Encryption"),
+        Requires(
+            when=AnyTruthy(["encrypt", "post_run_encrypt"]),
+            message=(
+                "'encryption_recipient' is required when 'encrypt' or "
+                "'post_run_encrypt' is enabled."
+            ),
+        ),
+        Forbidden(
+            when=AllFalsy(["encrypt", "post_run_encrypt"]),
+            message=(
+                "'encryption_recipient' must not be set when no encryption mode is "
+                "enabled."
+            ),
+        ),
+        Ui(
+            label="Encryption recipient",
+            section="Encryption",
+            description=(
+                "GPG recipient/key the backup is encrypted for. Required when "
+                "either encryption mode is enabled."
+            ),
+        ),
     ] = None
 
     upload: Annotated[

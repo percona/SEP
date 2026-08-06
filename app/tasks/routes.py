@@ -68,7 +68,9 @@ from app.tasks.deps import (
     SessionDep,
     TaskDep,
     TaskExecutor,
+    TaskHistoryListQueryDep,
     TaskHistoryWithTaskDep,
+    TaskListQueryDep,
     validate_chain_task_names,
 )
 from app.tasks.execution.utils import parse_payload
@@ -107,6 +109,7 @@ router = APIRouter(tags=["tasks"])
 async def list_tasks(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: TaskListQueryDep,
     owner: str | None = None,
     target: str | None = None,
     parent_is_null: bool | None = None,
@@ -123,6 +126,7 @@ async def list_tasks(
         backup_type=backup_type,
         self_parent=self_parent,
         pagination=pagination,
+        list_query=list_query,
     )
 
 
@@ -387,6 +391,7 @@ async def _populate_has_logs(
 async def list_task_history(
     session: SessionDep,
     pagination: PaginationDep,
+    list_query: TaskHistoryListQueryDep,
     *,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
     exclude_internal: Annotated[bool, Query()] = False,
@@ -397,6 +402,7 @@ async def list_task_history(
         session,
         query_options=[undefer(TaskHistory.execution_request)],
         pagination=pagination,
+        list_query=list_query,
         status=task_status,
         exclude_internal=exclude_internal,
     )
@@ -426,6 +432,7 @@ async def get_task_history(
     session: SessionDep,
     task: str,
     pagination: PaginationDep,
+    list_query: TaskHistoryListQueryDep,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
     snippet_filename: NonEmptyStr | None = None,
 ) -> PaginatedResponse[TaskHistory]:
@@ -438,6 +445,7 @@ async def get_task_history(
         select_related_task=True,
         snippet_filename=snippet_filename,
         pagination=pagination,
+        list_query=list_query,
         query_options=[undefer(TaskHistory.execution_request)],
     )
     await _populate_has_logs(session, response.items)
