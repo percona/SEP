@@ -18,14 +18,39 @@
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, model_validator, SkipValidation
 
+from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import URIPath
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.nav_icons import NavIcon
+
+
+class AppPeriodicTask(NamedTuple):
+    """Carry one app's beat-schedule contribution.
+
+    Holds only what an app knows about its own periodic work. The system
+    periodic-task rebuild stamps ``owner_app_key`` from the registry entry's
+    ``key`` and prefixes ``task`` with the app's Celery module path.
+    ``schedule`` is a thunk so hot interval overrides (``BACKUP_INTERVAL``,
+    ``SYNC_INTERVAL``, …) are re-read on each seed rather than frozen at
+    ``BaseApp(...)`` construction.
+
+    :param name: Beat periodic-task name (e.g. ``sep__sync_snippets``).
+    :param task: Unqualified Celery task attribute on the app's celery module
+        (e.g. ``sync_snippets``).
+    :param schedule: Zero-arg callable returning the live interval or crontab.
+    :param extra_kwargs: Optional kwargs forwarded to the beat ``PeriodicTask``
+        row (e.g. serialized task kwargs).
+    """
+
+    name: str
+    task: str
+    schedule: Callable[[], IntervalSchedule | CrontabSchedule]
+    extra_kwargs: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +124,12 @@ class BaseApp(BaseModel):
         this app owns to a thunk returning that type's download base directory.
         The generic artifact-download route flattens these across the registry
         to resolve a signed token to a file on disk; defaults to empty.
+    :param periodic_task_schedules: This app's beat contributions as a plain
+        list of :class:`AppPeriodicTask`, a zero-arg callable returning such a
+        list (for variable-length expansion), or ``None`` when the app owns
+        none. Resolved on every system periodic-task rebuild; each entry's
+        ``schedule`` thunk is invoked then so hot intervals are re-read.
+        Defaults to ``None``.
     :param static_mounts: Authenticated static mounts for the app's payload
         directories, collected from the registry and mounted in ``app/sep/main.py``
         through :class:`~app.sep.utils.static.AuthenticatedStaticFiles`. Defaults to
@@ -134,6 +165,9 @@ class BaseApp(BaseModel):
     artifact_base_dirs: SkipValidation[Mapping[str, Callable[[], Path]]] = Field(
         default_factory=dict
     )
+    periodic_task_schedules: SkipValidation[
+        list[AppPeriodicTask] | Callable[[], list[AppPeriodicTask]] | None
+    ] = None
     static_mounts: tuple[StaticMount, ...] = ()
     uses_task_data: bool = False
 

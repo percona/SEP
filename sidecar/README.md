@@ -43,6 +43,26 @@ no baked-file-plus-overlay merge. So a **partial** override is
 environment-variable-only, and a **full** override is a bind mount at
 `/home/sep/app/settings.yaml`, which replaces the baked profile wholesale.
 
+**Mounted secret files reach only part of this image.** SEP reads settings from
+files in the directory `SECRETS_DIR` names, but `settings-env.sh` runs first and
+decides which canonical names a file can still reach. The deployment inputs in
+the table below — the `SEP_*` names — are shell inputs that script expands, not
+settings fields, so none of them is ever mountable under its own name. What a
+file can supply is a *canonical destination*, and that splits three ways:
+
+| Canonical name | Mountable? |
+|---|---|
+| `SECRET_KEY` | **No.** `settings-env.sh` exits 1 when it is unset and `entrypoint.sh` only reaches `exec supervisord` afterwards, so no Python process ever starts to read the file. |
+| `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT`, `CELERY__BEAT_DBURI` | **No.** Exported unconditionally, and the environment outranks a secret file. |
+| The three `*__DATABASE__PASSWORD`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes, while the matching `SEP_*` input is left unset.** Each is exported only inside the `if` guarding its raw input, so supplying that input shadows the file. |
+| `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical and never touched by the script. |
+
+So a file is the passwords-and-tokens channel on this image, and the raw `SEP_*`
+input and a mounted file are alternatives for the same value rather than layers:
+set one or the other, not both. The `SECRET_KEY` gate is the hard limit, and it
+stands until **SEP-1775** teaches `settings-env.sh` to read mounted files and fan
+them out to the values it derives.
+
 ### App set
 
 The app-restricted image ships exactly the apps `settings.embedded.yaml`'s
@@ -56,6 +76,21 @@ The strip is driven by the `SEP_RESTRICT_APPS` build argument, which
 anything; the argument defaults to `0`, and any other value leaves the image
 unrestricted — which is why the general side-car build, which never passes it,
 keeps every app package.
+
+The strip removes an app's directory and leaves its `version_locations` entry in
+`alembic.ini` alone. That combination is load-bearing, not incidental. Each app
+owning migrations is an independent Alembic branch recorded in the shared
+`alembic_version_sep` table, so a database a full image migrated carries head
+rows for apps this image does not ship. `skip_unresolvable_heads` in
+`app/sep/migrations/_orphan_heads.py` drops those rows from the heads it hands
+Alembic — but only when a configured `version_locations` entry is absent from
+disk, which is what a stripped app looks like. With every configured location
+present, an unresolvable revision means version skew instead and the upgrade
+hard-fails by design. So pruning a stripped app's entry — regenerating the list
+in an already-stripped tree, or rewriting the file during the build — turns a
+working upgrade into a failed one. `tests/sidecar/test_app_strip.py` asserts the
+entries survive for every app the strip removes that owns migrations; an app
+owning none needs no entry, and must not carry one.
 
 On this image an `SEP.APPS` override can therefore only **narrow** the baked
 set, never widen it. Registry construction imports each activated module, so
@@ -72,7 +107,10 @@ applies to them.
 
 ### Deployment inputs
 
-Expanded by `settings-env.sh` into the canonical settings variables:
+Expanded by `settings-env.sh` into the canonical settings variables. Each is an
+environment variable and none is mountable under its own name; several of the
+canonical destinations they expand to are, while the input itself is left unset —
+see the note under [Runtime configuration](#runtime-configuration):
 
 | Input | Required | Default | Canonical destinations |
 |---|---|---|---|
