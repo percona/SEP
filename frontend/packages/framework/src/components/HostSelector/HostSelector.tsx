@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { useFormContext } from 'react-hook-form';
+import { get, useFormContext } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useSnackbar } from 'notistack';
 import { useHosts, type HostOption } from '../../hooks/useHosts';
@@ -213,9 +213,16 @@ export function HostSelector({
   const { data, isLoading, isError, error, refetch } = useHosts();
   const hosts = data ?? EMPTY_HOSTS;
   const empty = !isLoading && !isError && hosts.length === 0;
-  const fieldError = errors[name]?.message as string | undefined;
+  // Path-aware: a one-of branch field carries a dotted name (`source.host`),
+  // which `errors[name]` would never resolve.
+  const fieldError = get(errors, name)?.message as string | undefined;
   const freeSolo = Boolean(allowCustom);
-  const inputDisabled = Boolean(disabled) || isError;
+  // A failed hosts query does not disable the control: `onOpen` holds the only
+  // `refetch()` trigger and a disabled Autocomplete never opens, so one failure
+  // would wedge the field until the page remounts. The error stays visible
+  // through `text` / `showError` / the snackbar. Same reasoning as
+  // StandaloneHostSelector.
+  const inputDisabled = Boolean(disabled);
   const showError = isError || Boolean(fieldError);
   const text = resolveHelperText({
     helperText,
