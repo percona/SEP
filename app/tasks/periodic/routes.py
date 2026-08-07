@@ -23,6 +23,8 @@ from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.core.utils.iterators import unique_everseen
 from app.tasks.crud import TaskManager
 from app.tasks.deps import (
@@ -44,22 +46,22 @@ router = APIRouter(prefix="/periodic", tags=["periodic", "schedule", "tasks"])
 logger = logging.getLogger(__name__)
 
 
-# TODO: Pagination  # noqa: TD002, TD003
 @router.get(
     "/",
     dependencies=[IsAuthenticatedDep],
-    response_model=list[PeriodicTaskResponse],
+    response_model=PaginatedResponse[PeriodicTaskResponse],
 )
 async def list_periodic_tasks(
     session: CeleryBeatSessionDep,
     tasks_session: SessionDep,
+    pagination: PaginationDep,
     owner: str | None = None,
     enabled: bool | None = None,
-) -> list[PeriodicTask]:
-    """List all periodic tasks."""
+) -> PaginatedResponse[PeriodicTask]:
+    """List periodic tasks for the requested page window."""
     if owner is None:
-        periodic_tasks = await PeriodicTaskManager.list(
-            session=session, enabled=enabled
+        page = await PeriodicTaskManager.list_paginated(
+            session, enabled=enabled, pagination=pagination
         )
     else:
         tasks_names = [
@@ -68,10 +70,14 @@ async def list_periodic_tasks(
                 session=tasks_session, owner=owner
             )
         ]
-        periodic_tasks = await PeriodicTaskManager.list_by_task_names(
-            session, *tasks_names, enabled=enabled
+        page = await PeriodicTaskManager.list_paginated(
+            session,
+            PeriodicTaskManager.build_where_clause_by_task_names(*tasks_names),
+            enabled=enabled,
+            pagination=pagination,
         )
-    return await attach_last_run_status(tasks_session, periodic_tasks)
+    await attach_last_run_status(tasks_session, page.items)
+    return page
 
 
 @router.get(
