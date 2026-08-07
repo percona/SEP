@@ -22,7 +22,7 @@ execute-route factory.
 
 import functools
 import inspect
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -34,8 +34,10 @@ from fastapi.dependencies.utils import get_flat_dependant
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import column
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.db.list_query import ListQuerySpec
 from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import make_pagination_dep
@@ -58,6 +60,10 @@ from app.sep.apps.framework.api import (
     schema_endpoint,
 )
 from app.sep.apps.framework.deps import make_task_dep
+from app.sep.apps.framework.list_query import (
+    default_in_memory_query,
+    in_memory_list_scripts,
+)
 from app.sep.apps.framework.rules import (
     CardinalityRule,
     F,
@@ -1323,17 +1329,31 @@ class _ScriptListRow(BaseModel):
     filename: str
 
 
+_STUB_SPEC = ListQuerySpec(
+    sortable={"filename": column("filename")},
+    default_sort="filename",
+    tie_breaker=column("filename"),
+    searchable=(column("filename"),),
+)
+
+
 def _make_script_source(
     *,
     list_response_model: type[BaseModel] | None = None,
-    list_query_dep: object = None,
-    list_page: object = None,
+    rows: list[_StubScript] | None = None,
+    in_memory_list_query: bool = False,
 ) -> ScriptSource[_StubScript]:
-    """Build a minimal ``ScriptSource`` for ``derive_script_routes`` tests."""
-    script = _StubScript()
+    """Build a minimal ``ScriptSource`` for ``derive_script_routes`` tests.
 
-    async def _list_scripts() -> list[_StubScript]:
-        return [script]
+    ``list_scripts`` honours the widened contract through the same framework adapter a
+    real materializing source uses, so the stub cannot drift from production's shape.
+    """
+    scripts = rows if rows is not None else [_StubScript()]
+
+    async def _materialize() -> list[_StubScript]:
+        return scripts
+
+    _list_scripts = in_memory_list_scripts(_materialize, _STUB_SPEC)
 
     async def _load_script(filename: str) -> _StubScript:
         return _StubScript(filename)
@@ -1346,8 +1366,7 @@ def _make_script_source(
         build_execution_meta=lambda _script, _request: BaseModel(),
         list_response=lambda stub: _ScriptListRow(filename=stub.filename),
         list_response_model=list_response_model,
-        list_query_dep=list_query_dep,
-        list_page=list_page,
+        in_memory_list_query=in_memory_list_query,
     )
 
 
@@ -1355,15 +1374,17 @@ def _script_router(**overrides: object) -> APIRouter:
     """Build a ``derive_script_routes`` router with sane synthetic defaults."""
     pagination_dep = overrides.pop("pagination_dep", None)
     list_response_model = overrides.pop("list_response_model", _ScriptListRow)
+    list_query_spec = overrides.pop("list_query_spec", None)
     source = _make_script_source(
         list_response_model=list_response_model,
-        list_query_dep=overrides.pop("list_query_dep", None),
-        list_page=overrides.pop("list_page", None),
+        rows=overrides.pop("rows", None),
+        in_memory_list_query=overrides.pop("in_memory_list_query", False),
     )
     return derive_script_routes(
         source,
         name="test-scripts",
         pagination_dep=pagination_dep,
+        list_query_spec=list_query_spec,
     )
 
 
@@ -1617,85 +1638,124 @@ class TestDeriveScriptRoutesPaginatedList:
         assert body["items"] == []
 
 
-def _search_list_query_dep(q: str | None = None) -> str | None:
-    """Parse an opt-in ``q`` list-query param for the seam regression test."""
-    return q
+class TestDeriveScriptRoutesListQueryGuard:
+    """Pin that the seam refuses to silently drop a source's list query.
+
+    ``derive_script_routes`` is public and wired directly by callers outside
+    ``TaskExecutionApp``, so it cannot lean on the app-level validator: without a spec
+    it would register the no-query handler and quietly discard the source's filters, and
+    without a pagination dependency it registers the unpaginated route, which mounts no
+    query dependency whether a spec was supplied or not.
+    """
+
+    def test_in_memory_source_without_spec_raises(self) -> None:
+        """Reject an in-memory source when no spec was supplied."""
+        with pytest.raises(ValueError, match="no list_query_spec was supplied"):
+            _script_router(
+                pagination_dep=make_pagination_dep(max_limit=50),
+                in_memory_list_query=True,
+            )
+
+    def test_source_with_list_query_dep_without_spec_raises(self) -> None:
+        """Reject a source supplying its own dependency when no spec was supplied."""
+        source = replace(
+            _make_script_source(),
+            list_query_dep=lambda: default_in_memory_query(_STUB_SPEC),
+        )
+
+        with pytest.raises(ValueError, match="no list_query_spec was supplied"):
+            derive_script_routes(
+                source,
+                name="test-scripts",
+                pagination_dep=make_pagination_dep(max_limit=50),
+            )
+
+    def test_spec_without_pagination_dep_raises(self) -> None:
+        """Reject a spec on an unpaginated route, which exposes no query params."""
+        with pytest.raises(ValueError, match="no pagination_dep"):
+            _script_router(list_query_spec=_STUB_SPEC, in_memory_list_query=True)
+
+    def test_spec_without_pagination_dep_raises_for_a_plain_source(self) -> None:
+        """Reject the pairing even when the source resolves no query of its own."""
+        with pytest.raises(ValueError, match="no pagination_dep"):
+            _script_router(list_query_spec=_STUB_SPEC)
+
+    def test_plain_source_without_spec_is_accepted(self) -> None:
+        """Leave a source that resolves no query alone, so the guard is not too broad."""
+        router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
+
+        assert router.routes
+
+    def test_unpaginated_plain_source_is_accepted(self) -> None:
+        """Leave the unpaginated no-spec wiring alone — nothing is being dropped."""
+        router = _script_router()
+
+        assert router.routes
 
 
 class TestDeriveScriptRoutesListQuerySeam:
-    """Cover the opt-in ``list_query_dep``/``list_page`` seam on the list route."""
+    """Cover the ``list_query_spec`` sort/search seam on the derived list route."""
 
-    def _routed_source(self) -> ScriptSource[_StubScript]:
-        rows = [_StubScript("alpha.sh"), _StubScript("beta.sh")]
-
-        async def _list_page(pagination, list_query) -> PaginatedResponse:
-            matched = [
-                row for row in rows if not list_query or list_query in row.filename
-            ]
-            return PaginatedResponse.from_pagination(
-                pagination.slice(matched), len(matched), pagination
-            )
-
-        return _make_script_source(
-            list_response_model=_ScriptListRow,
-            list_query_dep=_search_list_query_dep,
-            list_page=_list_page,
-        )
-
-    def test_only_list_query_dep_raises(self) -> None:
-        """Reject a source that sets ``list_query_dep`` without ``list_page``."""
-        with pytest.raises(ValueError, match="both or neither"):
-            _make_script_source(
-                list_response_model=_ScriptListRow,
-                list_query_dep=_search_list_query_dep,
-            )
-
-    def test_only_list_page_raises(self) -> None:
-        """Reject a source that sets ``list_page`` without ``list_query_dep``."""
-
-        async def _list_page(pagination, list_query) -> PaginatedResponse:
-            return PaginatedResponse.from_pagination([], 0, pagination)
-
-        with pytest.raises(ValueError, match="both or neither"):
-            _make_script_source(
-                list_response_model=_ScriptListRow, list_page=_list_page
-            )
-
-    def test_opt_in_routes_through_list_page(self, regular_user: CasdoorUser) -> None:
-        """Filter via ``list_page`` and its filtered total when the seam is set."""
-        router = derive_script_routes(
-            self._routed_source(),
-            name="test-scripts",
+    def _routed_router(self) -> APIRouter:
+        return _script_router(
             pagination_dep=make_pagination_dep(max_limit=50),
+            list_query_spec=_STUB_SPEC,
+            in_memory_list_query=True,
+            rows=[_StubScript("alpha.sh"), _StubScript("beta.sh")],
         )
-        client = _authed_script_client(router, regular_user)
 
-        response = client.get(f"{_SCRIPT_BASE_URL}/", params={"q": "alpha"})
+    def test_spec_routes_search_through_list_scripts(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Filter via the spec's ``search`` param and its filtered total."""
+        client = _authed_script_client(self._routed_router(), regular_user)
+
+        response = client.get(f"{_SCRIPT_BASE_URL}/", params={"search": "alpha"})
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["total"] == 1
         assert [item["filename"] for item in body["items"]] == ["alpha.sh"]
 
-    def test_opt_in_exposes_the_list_query_param(self) -> None:
-        """Declare the list-query param on the route when the seam is set."""
-        router = derive_script_routes(
-            self._routed_source(),
-            name="test-scripts",
-            pagination_dep=make_pagination_dep(max_limit=50),
-        )
-        route = _route_for(router, "/", "GET")
+    def test_spec_orders_by_sort_param(self, regular_user: CasdoorUser) -> None:
+        """Order rows by the spec's ``sort`` param (``-`` prefix descending)."""
+        client = _authed_script_client(self._routed_router(), regular_user)
+
+        response = client.get(f"{_SCRIPT_BASE_URL}/", params={"sort": "-filename"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["filename"] for item in response.json()["items"]] == [
+            "beta.sh",
+            "alpha.sh",
+        ]
+
+    def test_invalid_sort_key_rejected_with_422(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Reject an out-of-allowlist sort key at the boundary with 422."""
+        client = _authed_script_client(self._routed_router(), regular_user)
+
+        response = client.get(f"{_SCRIPT_BASE_URL}/", params={"sort": "bogus"})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_spec_exposes_sort_and_search_params(self) -> None:
+        """Declare exactly ``sort`` and ``search`` on the route when a spec is set."""
+        route = _route_for(self._routed_router(), "/", "GET")
         flat = get_flat_dependant(route.dependant)
 
-        assert "q" in {param.name for param in flat.query_params}
+        param_names = {param.name for param in flat.query_params}
+        assert {"sort", "search"} <= param_names
 
-    def test_without_seam_uses_fetch_all_slice(self, regular_user: CasdoorUser) -> None:
-        """Keep the fetch-all-then-slice path when the source omits the seam."""
+    def test_without_spec_exposes_no_query_params(self) -> None:
+        """Keep the fetch-all-then-slice path when the app declares no spec."""
         router = _script_router(pagination_dep=make_pagination_dep(max_limit=50))
         route = _route_for(router, "/", "GET")
         flat = get_flat_dependant(route.dependant)
 
-        assert "q" not in {param.name for param in flat.query_params}
+        param_names = {param.name for param in flat.query_params}
+        assert "sort" not in param_names
+        assert "search" not in param_names
 
 
 class TestDeriveCrudRoutesCreateSkip:

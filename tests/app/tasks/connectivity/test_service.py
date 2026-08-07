@@ -24,6 +24,7 @@ import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.tasks import hook_resolver
 from app.tasks.connectivity.constants import (
     PROVISIONING_TIMEOUT,
 )
@@ -206,6 +207,21 @@ class TestCheckConnectivityRealSession:
         return await TaskManager.create(session, task_write)
 
     @pytest_asyncio.fixture
+    async def recorder_run_python_task(self, session: AsyncSession) -> Task:
+        """Persist a ``run-python`` task row that declares a run-result recorder."""
+        task_write = TaskWrite.model_validate(
+            TaskFactory.build(
+                name="run-python",
+                backend=TaskBackendEnum.NOMAD,
+                is_template=False,
+                protected=False,
+                alert_on_fail=False,
+                run_result_recorder="pkg:rec",
+            )
+        )
+        return await TaskManager.create(session, task_write)
+
+    @pytest_asyncio.fixture
     async def async_session_maker(self, session: AsyncSession):
         """Return a session-maker bound to the current test engine."""
         return get_async_session_maker_from_engine(session.bind)
@@ -310,6 +326,67 @@ class TestCheckConnectivityRealSession:
         assert await TaskHistoryLogManager.exists(
             session, task_history_id=result.task_history_id
         )
+
+    async def test_terminal_run_records_nothing(
+        self,
+        session: AsyncSession,
+        recorder_run_python_task: Task,
+        async_session_maker,
+        mocker,
+    ) -> None:
+        """Skip recording for the probe's own run even when it reaches SUCCESS.
+
+        The poll loop drives ``sync_task_history`` directly rather than through
+        either sync seam, so a recorder declared on the shared ``run-python`` task
+        must not observe it — the probe parses its own verdict.
+        """
+        recorded = []
+
+        async def _recorder(db, history, result):
+            recorded.append(result)
+
+        request = _make_request(timeout=POLL_INTERVAL * 2)
+
+        async def sync_task_history(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
+            assert writer_session is not None
+            await self._append_log(
+                writer_session,
+                queue_item.id,
+                TaskLogType.STDOUT,
+                json.dumps({"success": True}),
+            )
+            queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            return queue_item
+
+        mock_executor = MagicMock(spec=BaseExecutor)
+        mock_executor.sync_task_history = sync_task_history
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder}, clear=True)
+        with (
+            patch(
+                "app.tasks.connectivity.service.dispatch_queue_item",
+                side_effect=self._real_dispatch_running,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_async_session_maker",
+                return_value=async_session_maker,
+            ),
+            patch(
+                "app.tasks.run_result.get_async_session_maker",
+                return_value=async_session_maker,
+            ),
+        ):
+            result = await check_connectivity(session, request)
+
+        assert result.success is True
+        assert recorded == []
 
     async def test_unresolvable_payload_fails_terminally(
         self,

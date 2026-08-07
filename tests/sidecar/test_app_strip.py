@@ -14,6 +14,8 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Cover the app-package strip the restricted embedded image runs."""
 
+import shutil
+import sys
 from collections.abc import Iterable
 from configparser import ConfigParser
 from pathlib import Path
@@ -22,12 +24,19 @@ import pytest
 import yaml
 
 from app import BASE_DIR
+from sidecar import verify_image_apps
 from sidecar.restrict_apps import activated_apps, INFRASTRUCTURE_PACKAGES, restrict
 from tests.app.sep import test_import_boundary
 from tests.sidecar.conftest import EMBEDDED_PROFILE
 
 APPS_ROOT = BASE_DIR / "app" / "sep" / "apps"
 ALEMBIC_INI = BASE_DIR / "alembic.ini"
+
+RESTRICTED_DEPARTURE_KINDS = 2
+"""The departures a restricted tree can report: a set mismatch and a lost module."""
+
+USAGE_EXIT_CODE = 2
+"""The status ``argparse`` exits with when it refuses the command line."""
 
 ACTIVATED_IN_SYNTHETIC_TREE = frozenset({"inventory", "atw", "mysql_backups"})
 """The apps the synthetic-tree profiles activate.
@@ -165,6 +174,24 @@ def test_activated_apps_does_not_list_snippets():
 
     assert activated, "the baked profile activates no apps"
     assert "snippets" not in activated
+
+
+def test_activated_apps_rejects_a_non_mapping_root(tmp_path: Path):
+    """Assert an empty profile, which parses to ``None``, raises ``TypeError``."""
+    profile = tmp_path / "settings.yaml"
+    profile.write_text("", encoding="utf-8")
+
+    with pytest.raises(TypeError):
+        activated_apps(profile)
+
+
+def test_checker_activated_apps_rejects_a_non_mapping_root(tmp_path: Path):
+    """Assert an empty profile, which parses to ``None``, raises ``TypeError``."""
+    profile = tmp_path / "settings.yaml"
+    profile.write_text("", encoding="utf-8")
+
+    with pytest.raises(TypeError):
+        verify_image_apps.activated_apps(profile)
 
 
 def test_restrict_keeps_the_activated_apps_and_infrastructure(
@@ -327,3 +354,193 @@ def test_stripped_apps_owning_no_migrations_need_no_version_locations_entry():
         f"and stop treating an unresolvable revision as version skew. Drop the "
         f"entries, or restore the migrations they point at."
     )
+
+
+@pytest.fixture
+def stripped_tree(synthetic_tree: tuple[Path, Path]) -> tuple[Path, Path]:
+    """Strip the synthetic tree and restore the loose module the strip spares.
+
+    :param synthetic_tree: The profile and the unstripped apps root.
+    :return: The same profile and the now-stripped apps root.
+    """
+    profile, apps_root = synthetic_tree
+    restrict(profile, apps_root)
+    (apps_root / verify_image_apps.LOOSE_MODULE).touch()
+    return profile, apps_root
+
+
+@pytest.fixture
+def image_tree(tmp_path: Path) -> Path:
+    """Build an app home shaped like the restricted image's, already stripped.
+
+    ``verify_image_apps.main`` resolves both the profile and the apps root from
+    one app home, so driving it needs that layout rather than the two
+    independent paths ``synthetic_tree`` yields.
+
+    :param tmp_path: The per-test temporary directory.
+    :return: The app home to hand ``--app-home``.
+    """
+    app_home = tmp_path / "app_home"
+    apps_root = _build_apps_tree(
+        app_home / "app" / "sep" / "apps", _real_package_names()
+    )
+    profile = _write_profile(app_home / "settings.yaml", ACTIVATED_IN_SYNTHETIC_TREE)
+    restrict(profile, apps_root)
+    (apps_root / verify_image_apps.LOOSE_MODULE).touch()
+    return app_home
+
+
+def _run_main(app_home: Path, mode: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Invoke the checker's entry point as the piped-in script is invoked.
+
+    :param app_home: The tree to check.
+    :param mode: The direction to assert.
+    :param monkeypatch: The argv patcher.
+    """
+    monkeypatch.setattr(
+        sys, "argv", ["verify_image_apps", "--app-home", str(app_home), mode]
+    )
+    verify_image_apps.main()
+
+
+def test_checker_activated_apps_reads_the_profile_activation_list(
+    embedded_profile_data: dict,
+):
+    """Assert the checker's own derivation returns the baked profile's names."""
+    expected = {
+        entry["MODULE_NAME"]
+        for entry in embedded_profile_data["default"]["SEP"]["APPS"]
+    }
+
+    assert verify_image_apps.activated_apps(EMBEDDED_PROFILE) == expected
+
+
+def test_checker_infrastructure_packages_match_the_strip():
+    """Assert the checker and the strip retain the same non-app packages."""
+    assert verify_image_apps.INFRASTRUCTURE_PACKAGES == INFRASTRUCTURE_PACKAGES
+
+
+def test_present_packages_ignores_loose_modules(tmp_path: Path):
+    """Assert only directories count as shipped app packages."""
+    apps_root = _build_apps_tree(tmp_path / "apps", ACTIVATED_IN_SYNTHETIC_TREE)
+    for name in ("__init__.py", "labels.py", "nav_icons.py"):
+        (apps_root / name).touch()
+
+    assert verify_image_apps.present_packages(apps_root) == ACTIVATED_IN_SYNTHETIC_TREE
+
+
+def test_restricted_mode_accepts_a_stripped_tree(stripped_tree: tuple[Path, Path]):
+    """Assert a tree the strip just produced reports no departure."""
+    profile, apps_root = stripped_tree
+
+    assert verify_image_apps.restricted_problems(profile, apps_root) == []
+
+
+def test_restricted_mode_rejects_an_unstripped_tree(synthetic_tree: tuple[Path, Path]):
+    """Assert every package the strip should have removed is named."""
+    profile, apps_root = synthetic_tree
+    (apps_root / verify_image_apps.LOOSE_MODULE).touch()
+    unshipped = _real_package_names() - (
+        ACTIVATED_IN_SYNTHETIC_TREE | INFRASTRUCTURE_PACKAGES
+    )
+
+    problems = verify_image_apps.restricted_problems(profile, apps_root)
+
+    assert unshipped, "the synthetic tree activates every package it holds"
+    assert len(problems) == 1
+    for name in unshipped:
+        assert name in problems[0]
+
+
+def test_restricted_mode_rejects_a_stripped_activated_app(
+    stripped_tree: tuple[Path, Path],
+):
+    """Assert a package the profile activates going missing is named."""
+    profile, apps_root = stripped_tree
+    removed = min(ACTIVATED_IN_SYNTHETIC_TREE)
+    shutil.rmtree(apps_root / removed)
+
+    problems = verify_image_apps.restricted_problems(profile, apps_root)
+
+    assert len(problems) == 1
+    assert removed in problems[0]
+
+
+def test_restricted_mode_rejects_a_missing_loose_module(
+    stripped_tree: tuple[Path, Path],
+):
+    """Assert the apps-root loose module going missing is reported on its own."""
+    profile, apps_root = stripped_tree
+    (apps_root / verify_image_apps.LOOSE_MODULE).unlink()
+
+    problems = verify_image_apps.restricted_problems(profile, apps_root)
+
+    assert len(problems) == 1
+    assert verify_image_apps.LOOSE_MODULE in problems[0]
+
+
+def test_restricted_mode_reports_every_departure_at_once(
+    synthetic_tree: tuple[Path, Path],
+):
+    """Assert a set mismatch does not mask a missing loose module."""
+    profile, apps_root = synthetic_tree
+
+    problems = verify_image_apps.restricted_problems(profile, apps_root)
+
+    assert len(problems) == RESTRICTED_DEPARTURE_KINDS
+
+
+def test_unrestricted_mode_accepts_an_unstripped_tree(
+    synthetic_tree: tuple[Path, Path],
+):
+    """Assert a tree keeping the unactivated packages reports no departure."""
+    profile, apps_root = synthetic_tree
+
+    assert verify_image_apps.unrestricted_problems(profile, apps_root) == []
+
+
+def test_unrestricted_mode_rejects_a_stripped_tree(stripped_tree: tuple[Path, Path]):
+    """Assert the strip reaching an image that must ship every app is reported."""
+    profile, apps_root = stripped_tree
+
+    problems = verify_image_apps.unrestricted_problems(profile, apps_root)
+
+    assert len(problems) == 1
+    for name in ACTIVATED_IN_SYNTHETIC_TREE:
+        assert name in problems[0]
+
+
+def test_main_prints_the_verified_app_set(
+    image_tree: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    """Assert a passing run names the mode and every package it verified."""
+    _run_main(image_tree, "restricted", monkeypatch)
+
+    printed = capsys.readouterr().out
+    assert "restricted" in printed
+    for name in ACTIVATED_IN_SYNTHETIC_TREE | INFRASTRUCTURE_PACKAGES:
+        assert name in printed
+
+
+def test_main_exits_when_an_unshipped_package_survived(
+    image_tree: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Assert a restricted image keeping an unactivated package fails the run."""
+    (image_tree / "app" / "sep" / "apps" / "unshipped").mkdir()
+
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main(image_tree, "restricted", monkeypatch)
+
+    assert "unshipped" in str(excinfo.value)
+
+
+def test_main_rejects_an_unknown_mode(
+    image_tree: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Assert a mode outside the two directions is refused by the parser."""
+    with pytest.raises(SystemExit) as excinfo:
+        _run_main(image_tree, "bogus", monkeypatch)
+
+    assert excinfo.value.code == USAGE_EXIT_CODE
