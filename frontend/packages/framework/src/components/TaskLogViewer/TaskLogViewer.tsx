@@ -168,11 +168,14 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
     }
   }, [textByStep, stepOrder, topTab, activeStep]);
 
-  // Execution events deliberately carry no unread indicator: they arrive over
-  // SSE on every pushed event, and badging them pulled attention away from
-  // stdout and stderr, which are the reason the console is open.
-  const handleTopTab = (value: LogType) => {
+  const handleTopTab = (value: TopTab) => {
     setTopTab(value);
+    // Execution events deliberately carry no unread indicator: they arrive over
+    // SSE on every pushed event, and badging them pulled attention away from
+    // stdout and stderr, which are the reason the console is open.
+    if (value === 'events') {
+      return;
+    }
     setUnreadTypes((prev) => {
       if (!prev.has(value)) {
         return prev;
@@ -246,6 +249,10 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
         >
           <Tab
             value="stdout"
+            // MUI gives every tab tabIndex -1 when no tab is selected, which
+            // would strand keyboard users outside the strip while the events
+            // view is open. Keep one entry point; arrow keys move from there.
+            {...(topTab === 'events' ? { tabIndex: 0 } : {})}
             label={
               <Badge color="primary" variant="dot" invisible={!unreadTypes.has('stdout')}>
                 <span>stdout</span>
@@ -265,8 +272,10 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
         <Button
           size="small"
           color="inherit"
-          onClick={() => setTopTab('events')}
-          aria-pressed={topTab === 'events'}
+          onClick={() => handleTopTab('events')}
+          // Not a toggle: a second click is a no-op and the way back is a
+          // primary tab, so mark it as the current view rather than pressed.
+          aria-current={topTab === 'events' ? 'true' : undefined}
           sx={{
             ml: 1,
             textTransform: 'none',
