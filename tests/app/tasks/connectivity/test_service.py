@@ -216,7 +216,7 @@ class TestCheckConnectivityRealSession:
                 is_template=False,
                 protected=False,
                 alert_on_fail=False,
-                run_result_recorder="pkg:rec",
+                run_result_recorder="app.sep.apps.pkg:rec",
             )
         )
         return await TaskManager.create(session, task_write)
@@ -364,7 +364,9 @@ class TestCheckConnectivityRealSession:
         mock_executor = MagicMock(spec=BaseExecutor)
         mock_executor.sync_task_history = sync_task_history
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder}, clear=True)
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder}, clear=True
+        )
         with (
             patch(
                 "app.tasks.connectivity.service.dispatch_queue_item",
