@@ -254,9 +254,7 @@ class TestWorkerRefresherStart:
     ) -> None:
         """Forward the caller's callbacks, passing ``None`` when none are given."""
         recorded: dict[str, object] = {}
-        monkeypatch.setattr(
-            START_REFRESH_TASK, recording_start_refresh_task(recorded)
-        )
+        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
         refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
 
         refresher.start(INTERVAL, enabled=True, **start_kwargs)
@@ -287,9 +285,7 @@ class TestWorkerRefresherStart:
     ) -> None:
         """Apply the safety fraction once in ``start``, or omit when unset."""
         recorded: dict[str, object] = {}
-        monkeypatch.setattr(
-            START_REFRESH_TASK, recording_start_refresh_task(recorded)
-        )
+        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
         refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
         start_kwargs = (
             {"proc_alive_timeout": proc_alive_timeout}

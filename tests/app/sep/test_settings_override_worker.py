@@ -311,9 +311,7 @@ class TestSepWorkerHandlers:
     ) -> None:
         """Derive the seed budget from Celery's prefork liveness deadline."""
         recorded: dict[str, object] = {}
-        monkeypatch.setattr(
-            START_REFRESH_TASK, recording_start_refresh_task(recorded)
-        )
+        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
         monkeypatch.setattr(sep_worker.celery.conf, "worker_proc_alive_timeout", 6.0)
 
         start_sep_settings_override_refresher()
