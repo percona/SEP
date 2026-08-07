@@ -925,7 +925,7 @@ class TestRunSendFailures:
         """Blame the drift on the terminal row, not the never-configured state.
 
         Inverts the previous contract, under which this row read exactly like a
-        deployment that never configured delivery -- yet re-supplying the inputs
+        deployment that never configured delivery — yet re-supplying the inputs
         and configuring delivery from scratch are opposite actions.
         """
         mocker.patch.object(
@@ -980,7 +980,7 @@ class TestRunSendFailures:
         """Keep blaming the drift when the re-read that might clear it fails.
 
         The refresh is what would notice the operator re-supplying the inputs.
-        A transient database error means it noticed nothing -- not that the
+        A transient database error means it noticed nothing — not that the
         drift the worker's own snapshot already shows has gone away.
         """
         mocker.patch.object(

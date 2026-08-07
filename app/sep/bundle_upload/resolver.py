@@ -62,8 +62,8 @@ class DeliveryPlanResolution:
     """Report the effective delivery plan, or why there is not one.
 
     Exactly one member is set. The reason exists because three distinct causes
-    -- no baked plan, a declared secret left empty, and inputs that no longer
-    fit the plan -- would otherwise collapse into one indistinguishable "not
+    — no baked plan, a declared secret left empty, and inputs that no longer
+    fit the plan — would otherwise collapse into one indistinguishable "not
     configured", and the last of them calls for a different action from the
     other two.
 
@@ -134,7 +134,7 @@ def resolve_delivery_plan() -> DeliveryPlanResolution:
     environment-set value never passed a name check at all.
 
     Check order carries meaning. A deployment with no baked plan is
-    unconfigured, never drifted -- there is nothing to have drifted from. Drift
+    unconfigured, never drifted — there is nothing to have drifted from. Drift
     is then decided before the empty-value check, because a rename produces both
     symptoms and only the rename is actionable.
 
