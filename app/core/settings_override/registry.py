@@ -178,13 +178,9 @@ class MaterializerContext(NamedTuple):
     instead of calling :func:`coerce_field_value` directly.
 
     :param settings_cls: The Pydantic settings class that owns the field.
-    :type settings_cls: type[BaseYamlSettings]
     :param field_name: The name of the field being materialized.
-    :type field_name: str
     :param field_info: The Pydantic field metadata for the field.
-    :type field_info: FieldInfo
     :param raw: The raw, JSON-decoded value stored on the override row.
-    :type raw: Any
     :param purpose: Whether the value is a payload submitted now or a row
         stored earlier. Defaults to the strict :attr:`MaterializerPurpose.VALIDATE`
         so a materializer that ignores it keeps write-time semantics on both
@@ -669,17 +665,12 @@ def materialize_override_value(
     that ignores it is therefore unaffected.
 
     :param settings_cls: The Pydantic settings class that owns the field.
-    :type settings_cls: type[BaseYamlSettings]
     :param field_name: The name of the field being materialized.
-    :type field_name: str
     :param field_info: The Pydantic field metadata for the field.
-    :type field_info: FieldInfo
     :param raw: The raw, JSON-decoded override value.
-    :type raw: Any
     :param purpose: Whether ``raw`` is a payload submitted now or a row stored
         earlier.
     :return: The materialized (or coerced) typed value.
-    :rtype: Any
     :raises ValidationError: If coercion or the materializer's validation fails.
     :raises ValueError: If a ``mode="before"`` validator rejects ``raw``.
     """
