@@ -911,6 +911,28 @@ class TestExtraRoutePrecedence:
         assert response.json()["name"] == "ping"
 
 
+class _ComputedListResponse(BaseModel):
+    """Represent a list response whose dump includes a computed field."""
+
+    name: str
+
+    @computed_field(alias="wire_label")
+    @property
+    def label(self) -> str:
+        """Return a derived label under its serialized alias."""
+        return self.name.upper()
+
+
+def _computed_list_builder(
+    task: Task,
+    *,
+    status: object = None,
+    context: dict | None = None,
+) -> _ComputedListResponse:
+    """Build the computed-list response so the list route matches the gate."""
+    return _ComputedListResponse(name=task.name)
+
+
 class TestDefinitionValidation:
     """Cover the construction-time guards on the definition."""
 
@@ -1167,7 +1189,11 @@ class TestDefinitionValidation:
                 ]
             ),
         )
-        app_def = _synth_app(response_model=_ComputedListResponse, views=views)
+        app_def = _synth_app(
+            response_model=_ComputedListResponse,
+            response_builder=_computed_list_builder,
+            views=views,
+        )
         assert app_def.api_router is not None
 
     def test_create_model_with_malformed_arg_format_raises(self) -> None:
@@ -1192,18 +1218,6 @@ class TestDefinitionValidation:
             views=bad_views,
         )
         assert app_def.api_router is not None
-
-
-class _ComputedListResponse(BaseModel):
-    """Represent a list response whose dump includes a computed field."""
-
-    name: str
-
-    @computed_field(alias="wire_label")
-    @property
-    def label(self) -> str:
-        """Return a derived label under its serialized alias."""
-        return self.name.upper()
 
 
 class _AltListResponse(BaseModel):
