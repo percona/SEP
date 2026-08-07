@@ -100,7 +100,12 @@ function isRunningStatus(status?: string): boolean {
   return (status ?? '').toLowerCase() === 'running';
 }
 
-function countLines(text: string): number {
+/**
+ * Line count, saturating at `limit + 1`. Callers only need to know whether a
+ * pane is over the threshold, so a large log stops being scanned as soon as it
+ * provably is — no full pass over megabytes of "All lines" output.
+ */
+function countLinesUpTo(text: string, limit: number): number {
   if (text === '') {
     return 0;
   }
@@ -108,6 +113,9 @@ function countLines(text: string): number {
   for (let index = 0; index < text.length; index += 1) {
     if (text[index] === '\n') {
       lines += 1;
+      if (lines > limit) {
+        return lines;
+      }
     }
   }
   // A trailing fragment without its newline is still a line on screen.
@@ -115,14 +123,18 @@ function countLines(text: string): number {
 }
 
 /**
- * Largest line count across every step and both streams. The line-cap decision
- * uses this rather than the visible pane so the control does not appear and
- * disappear as the user moves between step or stream tabs.
+ * Largest line count across every step and both streams, saturating at
+ * `limit + 1`. The line-cap decision uses this rather than the visible pane so
+ * the control does not appear and disappear as the user moves between step or
+ * stream tabs.
  */
-function maxPaneLineCount(textByStep: Record<string, StepText>): number {
+function maxPaneLineCountUpTo(textByStep: Record<string, StepText>, limit: number): number {
   let max = 0;
   for (const pane of Object.values(textByStep)) {
-    max = Math.max(max, countLines(pane.stdout), countLines(pane.stderr));
+    max = Math.max(max, countLinesUpTo(pane.stdout, limit), countLinesUpTo(pane.stderr, limit));
+    if (max > limit) {
+      return max;
+    }
   }
   return max;
 }
@@ -292,11 +304,15 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
     if (running || streamStatus !== 'finished') {
       return true;
     }
-    const maxLines = maxPaneLineCount(textByStep);
+    // Saturated at one over the threshold: any pane above it keeps the select
+    // regardless of the requested cap, so the exact count no longer matters.
+    const maxLines = maxPaneLineCountUpTo(textByStep, SMALLEST_LOG_TAIL_OPTION);
+    if (maxLines > SMALLEST_LOG_TAIL_OPTION) {
+      return true;
+    }
     // A pane sitting exactly at the requested cap may have been trimmed
     // server-side, so only a count strictly below the cap proves completeness.
-    const provablyComplete = effectiveTailLines === undefined || maxLines < effectiveTailLines;
-    return !provablyComplete || maxLines > SMALLEST_LOG_TAIL_OPTION;
+    return effectiveTailLines !== undefined && maxLines >= effectiveTailLines;
   }, [running, streamStatus, textByStep, effectiveTailLines]);
 
   return (
