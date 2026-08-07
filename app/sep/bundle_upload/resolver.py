@@ -68,7 +68,7 @@ class DeliveryPlanResolution:
     other two.
 
     Build one through :meth:`resolved` or :meth:`unavailable` rather than the
-    constructor, so the two members cannot both be set or both be ``None``.
+    constructor, which states the same invariant but only as a runtime refusal.
 
     :param plan: The plan to deliver with, or ``None`` when there is none.
     :param reason: The operator-facing reason there is no plan, or ``None``
@@ -77,6 +77,21 @@ class DeliveryPlanResolution:
 
     plan: DeliveryPlan | None
     reason: str | None
+
+    def __post_init__(self) -> None:
+        """Refuse a resolution that carries both outcomes, or neither.
+
+        Callers read one member off the other's emptiness, so an instance
+        holding neither would report a deployment as able to deliver with no
+        plan to deliver by.
+
+        :raises ValueError: When both members are set, or neither is.
+        """
+        if (self.plan is None) == (self.reason is None):
+            raise ValueError(
+                "A delivery plan resolution carries either a plan or a reason "
+                "for there being none, not both and not neither."
+            )
 
     @classmethod
     def resolved(cls, plan: DeliveryPlan) -> "DeliveryPlanResolution":

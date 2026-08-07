@@ -39,7 +39,7 @@ import time
 import zipfile
 from datetime import timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 from uuid import UUID, uuid4
 
 from aiohttp import ClientError
@@ -57,7 +57,7 @@ from app.sep.apps.atw.config import atw_settings
 from app.sep.apps.atw.crud import AtwIncidentManager, AtwSendLogManager
 from app.sep.apps.atw.models import AtwSendLog, AtwSendStatusEnum
 from app.sep.bundle_upload.factory import get_delivery_executor
-from app.sep.bundle_upload.plan import StepRecord
+from app.sep.bundle_upload.plan import DeliveryPlan, StepRecord
 from app.sep.bundle_upload.resolver import DeliveryPlanResolution, resolve_delivery_plan
 from app.sep.bundle_upload.seam import BundleSource
 from app.sep.config import sep_settings
@@ -680,7 +680,8 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     if (reason := resolution.reason) is not None:
         await _fail(session, row, detail, [], reason)
         return
-    plan = resolution.plan
+    # A resolution refuses to hold neither member, so an empty reason is a plan.
+    plan = cast(DeliveryPlan, resolution.plan)
 
     incident = await AtwIncidentManager.get_or_404(session, id=row.incident_id)
     incident_name = incident.name

@@ -22,6 +22,7 @@ from pytest_mock import MockerFixture
 
 from app.sep.bundle_upload.plan import DeliveryPlan, UploadStep
 from app.sep.bundle_upload.resolver import (
+    DeliveryPlanResolution,
     DRIFTED_INPUTS_REASON,
     resolve_delivery_plan,
     UNCONFIGURED_REASON,
@@ -377,3 +378,32 @@ class TestDriftedInputs:
 
         assert "sn_api_key" not in reason
         assert "renamed_token" not in reason
+
+
+class TestDeliveryPlanResolutionInvariant:
+    """Cover the one-outcome rule the resolution type states."""
+
+    def test_a_plan_alone_builds(self) -> None:
+        """Accept the shape a deployment able to deliver produces."""
+        plan = _plan({"sn_api_key": "key-value"})
+
+        assert DeliveryPlanResolution.resolved(plan).plan is plan
+
+    def test_a_reason_alone_builds(self) -> None:
+        """Accept the shape a deployment unable to deliver produces."""
+        assert (
+            DeliveryPlanResolution.unavailable(UNCONFIGURED_REASON).reason
+            == UNCONFIGURED_REASON
+        )
+
+    def test_carrying_both_outcomes_is_refused(self) -> None:
+        """Refuse a resolution a caller would read two contradictory ways."""
+        with pytest.raises(ValueError, match="not both and not neither"):
+            DeliveryPlanResolution(
+                plan=_plan({"sn_api_key": "key-value"}), reason=UNCONFIGURED_REASON
+            )
+
+    def test_carrying_neither_outcome_is_refused(self) -> None:
+        """Refuse the empty resolution, which reads as a plan that is missing."""
+        with pytest.raises(ValueError, match="not both and not neither"):
+            DeliveryPlanResolution(plan=None, reason=None)
