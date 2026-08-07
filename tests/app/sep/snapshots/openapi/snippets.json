@@ -281,27 +281,6 @@
         "title": "SnippetServiceTypesResponse",
         "type": "object"
       },
-      "SnippetSortDirection": {
-        "description": "Enumerate the sort direction.\n\n:cvar ASC: Ascending order.\n:cvar DESC: Descending order.",
-        "enum": [
-          "asc",
-          "desc"
-        ],
-        "title": "SnippetSortDirection",
-        "type": "string"
-      },
-      "SnippetSortKey": {
-        "description": "Enumerate the allowlisted public sort keys.\n\nMembership is the type: an out-of-allowlist key fails to coerce at the\nrequest boundary, so no raw client-supplied column name can reach a query.\n\n:cvar CREATED_AT: Sort by the ``created_at`` column.\n:cvar FILENAME: Sort by the ``filename`` column.\n:cvar APPROVED_AT: Sort by the ``approved_at`` column.\n:cvar TITLE: Sort by the ``meta.title`` JSON value.\n:cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.",
-        "enum": [
-          "created_at",
-          "filename",
-          "approved_at",
-          "title",
-          "service_type"
-        ],
-        "title": "SnippetSortKey",
-        "type": "string"
-      },
       "SnippetsCapabilitiesResponse": {
         "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.apps.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
         "properties": {
@@ -3662,7 +3641,7 @@
   "paths": {
     "/api/apps/snippets/": {
       "get": {
-        "description": "List scripts as a server-filtered, sorted, paginated projection.",
+        "description": "List scripts as a filtered, sorted, paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
         "parameters": [
           {
@@ -3686,46 +3665,6 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Case-insensitive search over filename, title, description.",
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Case-insensitive search over filename, title, description.",
-              "title": "Search"
-            }
-          },
-          {
-            "description": "Sort key; one of the allowlisted public sort keys.",
-            "in": "query",
-            "name": "sort",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortKey",
-              "default": "created_at",
-              "description": "Sort key; one of the allowlisted public sort keys."
-            }
-          },
-          {
-            "description": "Sort direction.",
-            "in": "query",
-            "name": "order",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortDirection",
-              "default": "desc",
-              "description": "Sort direction."
             }
           },
           {
@@ -3767,6 +3706,48 @@
               "description": "When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'.",
               "title": "Uncategorized",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Sort key; prefix with '-' for descending order.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-approved_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "approved_at",
+                "-approved_at",
+                "created_at",
+                "-created_at",
+                "filename",
+                "-filename",
+                "service_type",
+                "-service_type",
+                "title",
+                "-title"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Case-insensitive search across the searchable columns.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive search across the searchable columns.",
+              "title": "Search"
             }
           }
         ],

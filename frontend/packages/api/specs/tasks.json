@@ -1777,16 +1777,31 @@
             }
           },
           {
+            "description": "Sort key; prefix with '-' for descending order.",
             "in": "query",
             "name": "sort",
             "required": false,
             "schema": {
               "default": "-created_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "backend",
+                "-backend",
+                "created_at",
+                "-created_at",
+                "name",
+                "-name",
+                "owner",
+                "-owner",
+                "updated_at",
+                "-updated_at"
+              ],
               "title": "Sort",
               "type": "string"
             }
           },
           {
+            "description": "Case-insensitive search across the searchable columns.",
             "in": "query",
             "name": "search",
             "required": false,
@@ -1799,6 +1814,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
             }
           }
@@ -2239,16 +2255,31 @@
             }
           },
           {
+            "description": "Sort key; prefix with '-' for descending order.",
             "in": "query",
             "name": "sort",
             "required": false,
             "schema": {
               "default": "-created_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "created_at",
+                "-created_at",
+                "executed_by",
+                "-executed_by",
+                "finished_at",
+                "-finished_at",
+                "started_at",
+                "-started_at",
+                "status",
+                "-status"
+              ],
               "title": "Sort",
               "type": "string"
             }
           },
           {
+            "description": "Case-insensitive search across the searchable columns.",
             "in": "query",
             "name": "search",
             "required": false,
@@ -2261,6 +2292,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
             }
           }
@@ -3550,16 +3582,31 @@
             }
           },
           {
+            "description": "Sort key; prefix with '-' for descending order.",
             "in": "query",
             "name": "sort",
             "required": false,
             "schema": {
               "default": "-created_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "created_at",
+                "-created_at",
+                "executed_by",
+                "-executed_by",
+                "finished_at",
+                "-finished_at",
+                "started_at",
+                "-started_at",
+                "status",
+                "-status"
+              ],
               "title": "Sort",
               "type": "string"
             }
           },
           {
+            "description": "Case-insensitive search across the searchable columns.",
             "in": "query",
             "name": "search",
             "required": false,
@@ -3572,6 +3619,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
             }
           }
