@@ -50,7 +50,7 @@ from app.tasks.models import (
     TaskWrite,
     TransformPayloadRequest,
 )
-from tests.app.factories import TaskFactory
+from tests.app.factories import TaskFactory, TaskResponseFactory
 
 ENCODE_MASK_INT_INPUT = 42
 FILE_METADATA_TEST_SIZE = 100
@@ -247,6 +247,58 @@ class TestTaskBaseValidation:
                 backend=TaskBackendEnum.CELERY,
                 protected=False,
             )
+
+
+class TestTaskWriteHookPathValidation:
+    """Test the hook-path allow-list enforced on TaskWrite."""
+
+    HOOK_FIELDS = ("alert_detail_builder", "run_result_recorder")
+
+    @staticmethod
+    def _write(**overrides: object) -> TaskWrite:
+        """Build a minimal valid TaskWrite, overriding the given fields.
+
+        :param overrides: Field values to set on the model.
+        :return: The constructed model.
+        """
+        return TaskWrite(name="hook-task", data={"task": "run-python"}, **overrides)
+
+    @pytest.mark.parametrize("field", HOOK_FIELDS)
+    @pytest.mark.parametrize("path", ["os:system", "builtins:eval", "no_colon_here"])
+    def test_rejects_path_outside_allow_list(self, field: str, path: str) -> None:
+        """Assert a hook path outside the allow-listed namespace is rejected."""
+        with pytest.raises(ValidationError, match="app.sep.apps"):
+            self._write(**{field: path})
+
+    @pytest.mark.parametrize("field", HOOK_FIELDS)
+    def test_rejection_names_the_field(self, field: str) -> None:
+        """Assert the rejection message names the offending field."""
+        with pytest.raises(ValidationError, match=field):
+            self._write(**{field: "os:system"})
+
+    @pytest.mark.parametrize("field", HOOK_FIELDS)
+    def test_accepts_allow_listed_path(self, field: str) -> None:
+        """Assert an allow-listed hook path is accepted unchanged."""
+        write = self._write(**{field: ALERT_DETAIL_BUILDER})
+
+        assert getattr(write, field) == ALERT_DETAIL_BUILDER
+
+    @pytest.mark.parametrize("field", HOOK_FIELDS)
+    def test_accepts_none(self, field: str) -> None:
+        """Assert an unset hook field stays None."""
+        assert getattr(self._write(**{field: None}), field) is None
+
+    @pytest.mark.parametrize("factory", [TaskFactory, TaskResponseFactory])
+    def test_reading_back_a_stored_non_conforming_path_succeeds(self, factory) -> None:
+        """Assert the allow-list constrains writes only, never read-back.
+
+        A row whose hook path predates the allow-list must still serialise.
+        """
+        legacy_path = "app.sep.plugins.archives.alerts:build"
+
+        instance = factory.build(alert_detail_builder=legacy_path)
+
+        assert instance.alert_detail_builder == legacy_path
 
 
 class TestTask:

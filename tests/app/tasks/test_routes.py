@@ -36,6 +36,8 @@ from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
 from app.core.utils.date_time import make_datetime_utc
+from app.sep.apps.archives.alerts import ALERT_DETAIL_BUILDER
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks import hook_resolver
 from app.tasks.config import PreExecutionCheckMode, tasks_settings
 from app.tasks.connectivity.models import ConnectivityServiceType
@@ -199,12 +201,12 @@ async def test_create_task_success(test_client):
 async def test_create_task_persists_run_result_recorder(test_client):
     """Assert a created task's run_result_recorder round-trips through the POST body."""
     task_data = TaskFactory.build(
-        name="recorder-task", run_result_recorder="pkg.mod:recorder"
+        name="recorder-task", run_result_recorder="app.sep.apps.pkg.mod:recorder"
     )
     payload = TaskWrite.model_validate(task_data).model_dump(mode="json")
     response = test_client.post("/", json=payload)
     assert response.status_code == status.HTTP_201_CREATED
-    assert response.json()["run_result_recorder"] == "pkg.mod:recorder"
+    assert response.json()["run_result_recorder"] == "app.sep.apps.pkg.mod:recorder"
 
 
 @pytest.mark.asyncio
@@ -237,6 +239,62 @@ async def test_update_task_not_found(test_client):
     ).model_dump(mode="json")
     response = test_client.put("/nonexistent", json=payload)
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.parametrize("field", ["alert_detail_builder", "run_result_recorder"])
+@pytest.mark.parametrize("hook_path", ["os:system", "builtins:eval", "no_colon_here"])
+@pytest.mark.asyncio
+async def test_create_task_rejects_hook_path_outside_allow_list(
+    test_client, field, hook_path
+):
+    """Assert POST rejects a hook path outside the allow-listed namespace."""
+    payload = TaskWrite.model_validate(TaskFactory.build(name="evil-task")).model_dump(
+        mode="json"
+    )
+    payload[field] = hook_path
+
+    response = test_client.post("/", json=payload)
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert "app.sep.apps" in response.text
+
+
+@pytest.mark.parametrize("field", ["alert_detail_builder", "run_result_recorder"])
+@pytest.mark.asyncio
+async def test_update_task_rejects_hook_path_outside_allow_list(
+    test_client, created_task, field
+):
+    """Assert PUT rejects a hook path outside the allow-listed namespace."""
+    payload = TaskWrite.model_validate(
+        TaskFactory.build(name=created_task.name)
+    ).model_dump(mode="json")
+    payload[field] = "os:system"
+
+    response = test_client.put(f"/{created_task.name}", json=payload)
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert field in response.text
+
+
+@pytest.mark.parametrize(
+    ("field", "hook_path"),
+    [
+        ("alert_detail_builder", ALERT_DETAIL_BUILDER),
+        ("run_result_recorder", RUN_RESULT_RECORDER),
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_task_accepts_in_tree_hook_path(test_client, field, hook_path):
+    """Assert a non-admin caller can still create a task stamping a shipped hook."""
+    payload = TaskWrite.model_validate(TaskFactory.build(name="app-task")).model_dump(
+        mode="json"
+    )
+    payload[field] = hook_path
+
+    response = test_client.post("/", json=payload)
+
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()[field] == hook_path
 
 
 async def _seed_running_over_success(session, name: str, finished):
@@ -3003,7 +3061,9 @@ class TestSyncTaskHistoryRealSession:
         async def _recorder(recorder_session, history, run_result):
             recorded.append(run_result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder}, clear=True)
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder}, clear=True
+        )
 
         task = await TaskManager.create(
             session,
@@ -3014,7 +3074,7 @@ class TestSyncTaskHistoryRealSession:
                     is_template=False,
                     protected=False,
                     alert_on_fail=False,
-                    run_result_recorder="pkg:rec",
+                    run_result_recorder="app.sep.apps.pkg:rec",
                     output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
                 )
             ),
