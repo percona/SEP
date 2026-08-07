@@ -58,6 +58,7 @@ async def test_endpoint_rebinder_swaps_app_state_client(
     sep_settings._set_snapshot({"INVENTORY_ENDPOINT": "https://new-inv.example.org"})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
+    new = None
     rebind = _make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
@@ -69,8 +70,9 @@ async def test_endpoint_rebinder_swaps_app_state_client(
         assert str(new.endpoint).startswith("https://new-inv.example.org")
         assert old._session is None  # the previous client was drained
         invalidate.assert_not_awaited()
-        await new.close()
     finally:
+        if new is not None:
+            await new.close()
         sep_settings._set_snapshot({})
 
 
