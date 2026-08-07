@@ -113,10 +113,14 @@ See the [secrets section](#secrets) of the README for more details.
 SEP will read settings in the following order of priority:
 1. Environment variables
 2. .env file
-3. Settings file
+3. Secret files
+4. Settings file
 
 By default, the .env file is expected to be `.env` and the settings file `settings.yaml`.
 You can change that by using the environment variables `ENV_FILE` and `SETTINGS_FILE`.
+Secret files are read from the directory named by `SECRETS_DIR`, which is unset by
+default; when unset, no secret files are read. See the
+[secrets section](#secrets) for how to name them.
 
 The [settings.yaml](https://github.com/percona/SEP/blob/main/settings.yaml) has base settings that you can (but don't need to) change.
 
@@ -330,6 +334,26 @@ You can create a basic .env file template by running the following command in th
 ```shell
 echo -e "AUTH__PROVIDER__CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nAUTH__PROVIDER__CASDOOR__CLIENT_SECRET=YOUR_CASDOOR_CLIENT_SECRET\n" > .env
 ```
+
+#### Supplying a setting as a mounted file
+
+Any setting can instead be supplied as a file inside the directory `SECRETS_DIR` names,
+which keeps the value out of the process environment. Name the file after the canonical
+`__`-nested variable the setting already uses — `SECRET_KEY`,
+`SEP__DATABASE__PASSWORD`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` — and put
+the value in its contents. `/run/secrets` is the conventional mount point:
+
+```shell
+mkdir -p /run/secrets
+openssl rand -hex 32 > /run/secrets/SECRET_KEY
+SECRETS_DIR=/run/secrets uvicorn app.main:app
+```
+
+Surrounding whitespace is stripped, so a trailing newline is fine. A file only applies
+when nothing higher in the priority list supplies the same setting: an environment
+variable and a .env entry both still win over a file. A configured directory that does
+not exist logs a warning and is otherwise ignored, and a directory holding no matching
+file changes nothing.
 
 #### Getting Casdoor's Client ID and Client Secret
 

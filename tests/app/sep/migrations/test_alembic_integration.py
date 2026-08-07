@@ -32,7 +32,6 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
 
 from app.sep.apps.alerts.models import AlertBackup
-from app.sep.config import sep_settings
 
 from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION
 
@@ -66,31 +65,6 @@ def _insert_appstate_enabled(conn, app_key: str, enabled: int) -> None:
         "VALUES ('2026-01-01 00:00:00', ?, ?)",
         (app_key, enabled),
     )
-
-
-@pytest.fixture
-def sep_alembic_config(tmp_path, monkeypatch):
-    """Yield an Alembic ``Config`` pointing at a temp SQLite file.
-
-    Patch ``sep_settings.DATABASE.HOST`` and ``NAME`` so that the
-    computed ``DATABASE.URL`` property evaluates to a temp SQLite path
-    when ``env.py`` reads it.
-
-    :param tmp_path: Pytest's per-test temporary directory.
-    :type tmp_path: Path
-    :param monkeypatch: Pytest monkeypatch fixture.
-    :type monkeypatch: pytest.MonkeyPatch
-    :return: A tuple of (Config, sync sqlite URL) for the test DB.
-    :rtype: tuple[Config, str]
-    """
-    db_path = tmp_path / "test_sep.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(sep_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(sep_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="sep")
-    return cfg, sync_url
 
 
 def _get_stamped_revisions(sync_url: str) -> set[str]:

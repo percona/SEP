@@ -29,6 +29,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from celery.signals import worker_process_init, worker_process_shutdown
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.celery import celery
 from app.core.alerts.config import alert_settings, AlertSettings
@@ -37,6 +38,7 @@ from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     ProxyEntry,
     ProxyRegistry,
+    publish_snapshot,
 )
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.worker import WorkerRefresher
@@ -90,6 +92,33 @@ def build_sep_override_proxies() -> ProxyRegistry:
     return proxies
 
 
+async def republish_sep_settings_snapshot(session: AsyncSession) -> None:
+    """Republish the SEP settings snapshot from a session already in hand.
+
+    Let a Celery task take a decision against overrides written after its child
+    last refreshed: the worker's refresher advances only while something drives
+    ``celery.loop``, so a child can hold a pre-write snapshot for an unbounded
+    time, while an awaited republish inside a task body is driven by the same
+    ``run_until_complete`` that drives the task.
+
+    Only ``SEP_SETTINGS`` is republished, and no rebind callback fires:
+    ``publish_snapshot`` has no callback channel. That is harmless for a worker
+    caller, whose ``WORKER_OVERRIDE_CALLBACKS`` watches ``SETTINGS`` alone. It
+    would not be for a web-process caller: ``sep_overrides_lifespan`` registers
+    ``SEP_SETTINGS`` rebinders for ``INVENTORY_ENDPOINT``, ``TASKS_ENDPOINT``
+    and ``APP_DRAIN``, and republishing here leaves the periodic refresher an
+    empty diff, so those rebinds would silently never fire.
+
+    :param session: A session bound to the SEP database, used to read the
+        override rows.
+    :raises Exception: Propagates whatever ``publish_snapshot`` raises, in
+        practice ``SQLAlchemyError`` from the override-row query. There is no
+        per-proxy handler here as there is in ``refresh_all``; the caller owns
+        the failure.
+    """
+    await publish_snapshot(sep_settings, session, SEPSettings)
+
+
 async def invalidate_pmm_clients(_: Mapping[str, object]) -> None:
     """Evict the cached PMM client on the current endpoint after a ``PMM`` override.
 
@@ -134,7 +163,11 @@ def start_sep_settings_override_refresher(**_: Any) -> None:
     opens one session per call, so one refresher serves exactly one database.
     Periodic progress is best-effort, advancing only while a task drives
     ``celery.loop.run_until_complete``; the initial inline refresh still seeds
-    the snapshot before this handler returns.
+    the snapshot before this handler returns, bounded by a fraction of
+    ``celery.conf.worker_proc_alive_timeout`` so a hanging database cannot
+    push the child past the prefork pool's liveness deadline. On seed expiry
+    the periodic refresher still starts and the child runs with env-only
+    overrides until a later cycle lands.
 
     ``messages_settings._resolve()`` runs unconditionally for validation even
     when the refresher is disabled, as ``sep_overrides_lifespan`` does. The two
@@ -148,14 +181,16 @@ def start_sep_settings_override_refresher(**_: Any) -> None:
     :raises Exception: Propagates whatever composing the proxy registry or the
         initial inline refresh raises -- a malformed app-owned declaration
         (``TypeError`` / ``ValueError``) or a session-maker failure -- and is
-        absorbed the same way. Per-proxy refresh failures are caught and logged
-        inside ``refresh_all``.
+        absorbed the same way. Per-proxy refresh failures and a bounded-seed
+        expiry are caught and logged inside the refresher; the latter still
+        starts the periodic task.
     """
     messages_settings._resolve()  # noqa: SLF001
     _refresher.start(
         settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
         enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
         callbacks=WORKER_OVERRIDE_CALLBACKS,
+        proc_alive_timeout=celery.conf.worker_proc_alive_timeout,
     )
 
 

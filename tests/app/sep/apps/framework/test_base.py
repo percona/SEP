@@ -18,8 +18,10 @@
 from pathlib import Path
 
 from fastapi import APIRouter
+from sqlalchemy_celery_beat.models import Period
 
-from app.sep.apps.framework.base import BaseApp, StaticMount
+from app.core.celery.models import IntervalSchedule
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp, StaticMount
 
 
 class TestBaseAppDisplayName:
@@ -106,6 +108,56 @@ class TestBaseAppArtifactBaseDirs:
             artifact_base_dirs={"dipper": lambda: Path("/tmp/payloads")},
         )
         assert app.artifact_base_dirs["dipper"]() == Path("/tmp/payloads")
+
+
+class TestBaseAppPeriodicTaskSchedules:
+    """Cover the ``periodic_task_schedules`` beat-contribution seam."""
+
+    def test_periodic_task_schedules_defaults_to_none(self) -> None:
+        """Return ``None`` when the field is unset."""
+        app = BaseApp(name="Inventory", uri_path="/inventory")
+        assert app.periodic_task_schedules is None
+
+    def test_periodic_task_schedules_carries_list_declaration(self) -> None:
+        """Carry a plain list of app-owned schedule specs."""
+        interval = IntervalSchedule(every=10, period=Period.MINUTES)
+        specs = [
+            AppPeriodicTask(
+                name="sep__example",
+                task="example_task",
+                schedule=lambda: interval,
+            ),
+        ]
+        app = BaseApp(
+            name="Example",
+            uri_path="/example",
+            periodic_task_schedules=specs,
+        )
+        assert app.periodic_task_schedules is specs
+        assert app.periodic_task_schedules[0].name == "sep__example"
+        assert app.periodic_task_schedules[0].schedule() == interval
+
+    def test_periodic_task_schedules_carries_callable_declaration(self) -> None:
+        """Carry a declared factory that returns specs when called."""
+        interval = IntervalSchedule(every=10, period=Period.MINUTES)
+        specs = [
+            AppPeriodicTask(
+                name="sep__example",
+                task="example_task",
+                schedule=lambda: interval,
+            ),
+        ]
+
+        def _factory() -> list[AppPeriodicTask]:
+            return specs
+
+        app = BaseApp(
+            name="Example",
+            uri_path="/example",
+            periodic_task_schedules=_factory,
+        )
+        assert app.periodic_task_schedules is _factory
+        assert app.periodic_task_schedules() == specs
 
 
 class TestBaseAppStaticMounts:

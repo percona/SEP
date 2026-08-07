@@ -21,13 +21,14 @@ calls the Tasks sub-app directly. ``GET /`` either lists all history
 ``POST /{id}/stop/`` proxies a stop request for a single history row.
 """
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Query
 
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
+from app.core.utils.fields import ArbitraryMapping
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.api.proxy import reraise_upstream_tasks_errors
 from app.sep.api.task_history_merge import (
@@ -103,7 +104,9 @@ async def list_merged_task_history(
     dependencies=[RequireBearerForUnsafeMethods],
     responses=UPSTREAM_TASKS_502_RESPONSE,
 )
-async def stop_task_history(task_history_id: int, tasks_api: TaskAPI) -> dict[str, Any]:
+async def stop_task_history(
+    task_history_id: int, tasks_api: TaskAPI
+) -> ArbitraryMapping:
     """Dispatch a stop request for a single task-history row to the Tasks API.
 
     :param task_history_id: The id of the task-history row to stop.

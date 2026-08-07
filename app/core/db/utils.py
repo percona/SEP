@@ -77,7 +77,8 @@ def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
     """Build a service API async engine, forwarding only the set pool options.
 
     Unset pool fields are omitted so the engine keeps SQLAlchemy's own defaults,
-    leaving standalone deployments unchanged.
+    leaving standalone deployments unchanged. An unset or SQLite-inapplicable
+    ``CONNECT_TIMEOUT`` likewise omits ``connect_args`` entirely.
 
     :param database: The service database options carrying the URL and any
         configured pool sizing.
@@ -87,6 +88,7 @@ def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
         database.URL,
         echo=False,
         json_serializer=json_serializer,
+        **database.connect_engine_kwargs,
         **database.pool_engine_kwargs,
     )
 
