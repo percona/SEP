@@ -158,11 +158,14 @@ export function AppListPage({
         : rows.filter((row) => RUNNING_STATUSES.has(row.status as TaskHistoryStatus)).length,
     [multi, rows],
   );
-  const listView = multi ? entitySchema!.list_view : schema.list_view!;
+  // `list_view` is optional on the top-level schema, and an unresolved entity
+  // route (unknown `entityName` on an entity schema) falls back to it, so it can
+  // be absent here — guarded below once every hook has run.
+  const listView = multi ? entitySchema!.list_view : schema.list_view;
   const title = multi ? entitySchema!.display_name : schema.display_name;
   const description = multi ? entitySchema?.description : schema.description;
 
-  const hasActionsColumn = listView.columns.some((c) => c.format === 'actions');
+  const hasActionsColumn = listView?.columns.some((c) => c.format === 'actions') ?? false;
   const deleteEntity = useDeleteAppEntity(
     pluginName,
     entityName ?? '',
@@ -202,6 +205,14 @@ export function AppListPage({
       },
     });
   };
+
+  if (!listView) {
+    return (
+      <Box sx={{ py: 2 }}>
+        <Typography variant="h5">Not found</Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box>
