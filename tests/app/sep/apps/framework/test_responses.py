@@ -20,7 +20,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, computed_field, ConfigDict, Field
 
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.requests import RemoteAPI
@@ -32,7 +32,10 @@ from app.sep.apps.framework import (
     ConnectivityWarning,
     derive_create_response_model,
 )
-from app.sep.apps.framework.responses import dump_with_excluded_fields
+from app.sep.apps.framework.responses import (
+    dump_with_excluded_fields,
+    serialized_field_names,
+)
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import Task, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
@@ -519,6 +522,72 @@ class TestDeriveCreateResponseModel:
 
         assert field.annotation == (ConnectivityWarning | None)
         assert field.is_required() is False
+
+
+class _PlainModel(BaseModel):
+    """Carry a single plain serializable field."""
+
+    name: str
+
+
+class _ExcludedModel(BaseModel):
+    """Carry a plain field and a serialization-excluded sibling."""
+
+    name: str
+    secret: str = Field(exclude=True)
+
+
+class _ComputedModel(BaseModel):
+    """Carry plain, computed, and aliased computed fields that serialize."""
+
+    name: str
+
+    @computed_field
+    @property
+    def label(self) -> str:
+        """Return a derived label for the dump."""
+        return self.name.upper()
+
+    @computed_field(alias="wire_label")
+    @property
+    def aliased_label(self) -> str:
+        """Return a derived label under an aliased wire name."""
+        return self.label
+
+
+class _AliasedModel(BaseModel):
+    """Carry fields whose dump keys differ from their attribute names."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    internal_name: str = Field(alias="wire_name")
+    both: str = Field(alias="alias_only", serialization_alias="ser_wins")
+
+
+class TestSerializedFieldNames:
+    """Test suite for ``serialized_field_names``."""
+
+    @pytest.mark.parametrize(
+        ("model", "kwargs", "expected"),
+        [
+            (_PlainModel, {"name": "x"}, frozenset({"name"})),
+            (_ExcludedModel, {"name": "x", "secret": "s"}, frozenset({"name"})),
+            (_ComputedModel, {"name": "x"}, frozenset({"name", "label", "wire_label"})),
+            (
+                _AliasedModel,
+                {"wire_name": "x", "alias_only": "y"},
+                frozenset({"wire_name", "ser_wins"}),
+            ),
+        ],
+        ids=["plain", "exclude_true", "computed_field", "aliased"],
+    )
+    def test_serialized_field_names(
+        self, model: type[BaseModel], kwargs: dict[str, str], expected: frozenset[str]
+    ) -> None:
+        """Match names emitted by ``model_dump(by_alias=True)``."""
+        names = serialized_field_names(model)
+        assert names == expected
+        assert names == set(model(**kwargs).model_dump(by_alias=True))
 
 
 class TestBaseTaskResponse:

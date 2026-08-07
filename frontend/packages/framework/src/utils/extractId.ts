@@ -17,8 +17,9 @@
 
 /**
  * Extract a numeric id from a value that may be:
- *   - a finite number (returned as-is),
- *   - a numeric string (parsed),
+ *   - a safe-integer number (returned as-is),
+ *   - a decimal-integer string (parsed; fractional, hex, whitespace-only and
+ *     otherwise non-integer strings return `null`),
  *   - an option object with an `id` field (recursively extracted),
  *   - or anything else (returns `null`).
  *
@@ -27,12 +28,21 @@
  * (scalar form, possibly stringified).
  */
 export function extractId(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
+  if (typeof value === 'number') {
+    // Same bar as the string branch below: a fractional or unsafe-integer id
+    // would otherwise pass here and enable a lookup no service can satisfy.
+    return Number.isSafeInteger(value) ? value : null;
   }
   if (typeof value === 'string' && value !== '') {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
+    // Only decimal integers: `Number` would coerce a whitespace-only string to
+    // `0` and accept `'1.5'` / `'0x10'`, each of which then reads as a
+    // resolvable inventory id and fires a lookup for a service that cannot exist.
+    const trimmed = value.trim();
+    if (!/^-?\d+$/.test(trimmed)) {
+      return null;
+    }
+    const n = Number(trimmed);
+    return Number.isSafeInteger(n) ? n : null;
   }
   if (value && typeof value === 'object' && 'id' in value) {
     return extractId((value as { id: unknown }).id);
