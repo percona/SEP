@@ -27,6 +27,7 @@ __all__ = [
     "InheritedMarkers",
     "Materializer",
     "MaterializerContext",
+    "MaterializerPurpose",
     "ReloadClassification",
     "canonical_override_key",
     "chain_has_advanced",
@@ -150,6 +151,24 @@ class FieldMarkerKey(StrEnum):
     MATERIALIZER = "materializer"
 
 
+class MaterializerPurpose(StrEnum):
+    """Name why a materializer is running, so read and write may diverge.
+
+    A materializer that cross-checks its payload against state the deployment
+    holds elsewhere needs both verdicts. Rejecting a payload submitted *now*
+    against state it does not match is a client error. A row stored *earlier*
+    against state that has since changed is a deployment condition the operator
+    has to be told about, and raising there only drops the row and erases the
+    evidence.
+
+    :cvar VALIDATE: A payload submitted through the settings API right now.
+    :cvar SNAPSHOT: A row stored earlier, being read back into a snapshot.
+    """
+
+    VALIDATE = "validate"
+    SNAPSHOT = "snapshot"
+
+
 class MaterializerContext(NamedTuple):
     """Bundle the inputs a snapshot materializer may consult.
 
@@ -166,12 +185,17 @@ class MaterializerContext(NamedTuple):
     :type field_info: FieldInfo
     :param raw: The raw, JSON-decoded value stored on the override row.
     :type raw: Any
+    :param purpose: Whether the value is a payload submitted now or a row
+        stored earlier. Defaults to the strict :attr:`MaterializerPurpose.VALIDATE`
+        so a materializer that ignores it keeps write-time semantics on both
+        paths.
     """
 
     settings_cls: type[BaseYamlSettings]
     field_name: str
     field_info: FieldInfo
     raw: Any
+    purpose: MaterializerPurpose = MaterializerPurpose.VALIDATE
 
 
 Materializer = Callable[[MaterializerContext], Any]
@@ -628,6 +652,8 @@ def materialize_override_value(
     field_name: str,
     field_info: FieldInfo,
     raw: Any,
+    *,
+    purpose: MaterializerPurpose = MaterializerPurpose.VALIDATE,
 ) -> Any:
     """Turn a raw override value into its typed snapshot value.
 
@@ -638,6 +664,10 @@ def materialize_override_value(
     materializer-backed field (``PROVIDERS``, ``FOOTER_TEMPLATE``)
     would otherwise be accepted on snapshot load but rejected by the API.
 
+    ``purpose`` is the one channel through which the two paths may diverge, and
+    the snapshot builder is the only caller that sets it. Every materializer
+    that ignores it is therefore unaffected.
+
     :param settings_cls: The Pydantic settings class that owns the field.
     :type settings_cls: type[BaseYamlSettings]
     :param field_name: The name of the field being materialized.
@@ -646,6 +676,8 @@ def materialize_override_value(
     :type field_info: FieldInfo
     :param raw: The raw, JSON-decoded override value.
     :type raw: Any
+    :param purpose: Whether ``raw`` is a payload submitted now or a row stored
+        earlier.
     :return: The materialized (or coerced) typed value.
     :rtype: Any
     :raises ValidationError: If coercion or the materializer's validation fails.
@@ -654,7 +686,7 @@ def materialize_override_value(
     materializer = field_materializer(settings_cls, field_name)
     if materializer is not None:
         return materializer(
-            MaterializerContext(settings_cls, field_name, field_info, raw)
+            MaterializerContext(settings_cls, field_name, field_info, raw, purpose)
         )
     return coerce_field_value(field_info, raw)
 
