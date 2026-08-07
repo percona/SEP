@@ -32,6 +32,7 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     hot_field,
     nested_overridable_field,
+    not_overridable_field,
 )
 from app.tasks.execution.executors.nomad import NomadExecutor
 
@@ -101,11 +102,12 @@ class TasksSettings(BaseYamlAppSettings):
         positive. Defaults to 1000.
     :param HOOK_MODULE_ALLOWLIST: The module roots a per-task hook path
         (``alert_detail_builder``, ``run_result_recorder``) may name. A path is
-        admitted when its module equals a root or is a submodule of one. Read at
-        startup and deliberately **not** runtime-overridable: widening the
-        namespace live would itself be a privilege-escalation path, since the
-        resolved callable is imported and invoked by the tasks service. Defaults
-        to the namespace holding the shipped task apps.
+        admitted when its module equals a root or is a submodule of one.
+        Environment- and YAML-only, and deliberately **not** exposed as a
+        runtime-overridable setting: widening the namespace live would itself be
+        a privilege-escalation path, since the resolved callable is imported and
+        invoked by the tasks service. Defaults to the namespace holding the
+        shipped task apps.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -131,7 +133,7 @@ class TasksSettings(BaseYamlAppSettings):
     )
     LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600, advanced=True)
     LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000, advanced=True)
-    HOOK_MODULE_ALLOWLIST: tuple[str, ...] = ("app.sep.apps",)
+    HOOK_MODULE_ALLOWLIST: tuple[str, ...] = not_overridable_field(("app.sep.apps",))
 
 
 tasks_settings: TasksSettings = OverridableSettingsProxy(
