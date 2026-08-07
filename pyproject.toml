@@ -295,6 +295,9 @@ order-by-type = false
     "T201", # CLI scripts use print() for user-facing output
     "S603", # CLI scripts coordinate git/gh/make subprocesses with literal arg lists
 ]
+"sidecar/verify_image_apps.py" = [
+    "T201", # the verdict line is the gate's only non-silent success signal
+]
 "app/sep/apps/backup_mongo/pbm_creds_common.py" = [
     "T201",   # canonical payload preamble prints diagnostics to stderr (as the shipped payloads do)
     "PTH123", # payload preamble uses builtin open(), as the shipped payloads do
