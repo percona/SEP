@@ -162,11 +162,17 @@ class _TaskBackfillOutcome:
 
 
 def _task_write_from_task(task: Task, data: dict[str, Any]) -> TaskWrite:
-    """Build a ``TaskWrite`` envelope from an existing task row and ``data`` payload.
+    """Build the ``TaskWrite`` envelope that carries ``data`` through stamping.
+
+    The envelope is a carrier, not an update body: :func:`stamp_form_input` writes
+    only to ``write.data``, and that dict — not the envelope — is what the caller
+    persists. The two hook-path fields are therefore left unset rather than copied
+    off the row, so a stored path predating the ``TaskWrite`` allow-list cannot
+    fail validation here and cost an otherwise eligible row its backfill.
 
     :param task: The persisted task row.
     :param data: The ``data`` dict to carry on the write (including any stamp).
-    :return: A ``TaskWrite`` suitable for :meth:`~app.tasks.crud.TaskManager.update`.
+    :return: A ``TaskWrite`` carrying ``data`` for stamping.
     """
     return TaskWrite(
         name=task.name,
@@ -176,8 +182,6 @@ def _task_write_from_task(task: Task, data: dict[str, Any]) -> TaskWrite:
         is_template=task.is_template,
         protected=task.protected,
         alert_on_fail=task.alert_on_fail,
-        alert_detail_builder=task.alert_detail_builder,
-        run_result_recorder=task.run_result_recorder,
         output_files_path=task.output_files_path,
         anonymize_mask=task.anonymize_mask,
     )
@@ -291,16 +295,7 @@ def _reconstruct_validate_stamp(
         return _TaskBackfillOutcome("skipped_invalid")
 
     stamped_data = deepcopy(task.data)
-    try:
-        write = _task_write_from_task(task, stamped_data)
-    except ValidationError as exc:
-        ctx.log.info(
-            "[%s] %s: stored row fails write-model validation; skipping: %s",
-            entry.app_key,
-            task.name,
-            exc.errors(),
-        )
-        return _TaskBackfillOutcome("skipped_error")
+    write = _task_write_from_task(task, stamped_data)
 
     try:
         stamp_form_input(write, validated_form)
