@@ -42,6 +42,7 @@ from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import _reconcile_nomad, tasks_app
+from tests.app.core.settings_override.conftest import hanging_session_maker_factory
 
 
 @pytest_asyncio.fixture(name="session_maker")
@@ -210,22 +211,6 @@ async def test_start_refresh_task_runs_initial_load(
             await task
 
 
-class _HangingSession:
-    """Async session stand-in whose enter hangs until cancelled."""
-
-    async def __aenter__(self) -> "_HangingSession":
-        await asyncio.Event().wait()
-        return self
-
-    async def __aexit__(self, *_exc: object) -> None:
-        return None
-
-
-def _hanging_session_maker_factory() -> object:
-    """Return a session maker whose sessions hang on enter."""
-    return _HangingSession
-
-
 @pytest.mark.asyncio
 async def test_start_refresh_task_seed_timeout_returns_within_budget(
     caplog: pytest.LogCaptureFixture,
@@ -237,7 +222,7 @@ async def test_start_refresh_task_seed_timeout_returns_within_budget(
     with caplog.at_level("ERROR", logger="app.core.settings_override.lifecycle"):
         task = await asyncio.wait_for(
             start_refresh_task(
-                _hanging_session_maker_factory,
+                hanging_session_maker_factory,
                 registry,
                 interval=timedelta(seconds=3600),
                 seed_timeout=seed_timeout,

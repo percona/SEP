@@ -54,9 +54,15 @@ from app.tasks.models import (
     TaskHistoryStatusEnum,
     TaskWrite,
 )
+from tests.app.core.settings_override.conftest import (
+    HangingSession,
+    recording_start_refresh_task,
+    START_REFRESH_TASK,
+)
 from tests.app.factories import TaskFactory
 
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+WorkerLoopEnv = tuple[asyncio.AbstractEventLoop, async_sessionmaker]
 
 
 def _write_cert(path: Path, *, not_valid_after: datetime) -> None:
@@ -334,46 +340,29 @@ class TestWorkerRefresherHandlers:
         assert baseline + 1234 == tasks_settings.STALENESS_THRESHOLD_SECONDS
 
     def test_init_forwards_a_budget_from_worker_proc_alive_timeout(
-        self, worker_loop_env, monkeypatch
-    ):
+        self,
+        worker_loop_env: WorkerLoopEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Derive the seed budget from Celery's prefork liveness deadline."""
         recorded: dict[str, object] = {}
-
-        async def _fake_start(
-            session_maker_factory: object,
-            proxies: object,
-            interval: object,
-            callbacks: object = None,
-            *,
-            seed_timeout: float | None = None,
-        ) -> asyncio.Task:
-            recorded["seed_timeout"] = seed_timeout
-            return asyncio.create_task(asyncio.sleep(3600))
-
         monkeypatch.setattr(
-            "app.core.settings_override.worker.start_refresh_task", _fake_start
+            START_REFRESH_TASK, recording_start_refresh_task(recorded)
         )
-        monkeypatch.setattr(celery_module.celery.conf, "worker_proc_alive_timeout", 4.0)
+        monkeypatch.setattr(celery_module.celery.conf, "worker_proc_alive_timeout", 6.0)
 
         start_settings_override_refresher()
 
-        assert recorded["seed_timeout"] == pytest.approx(4.0 * SEED_TIMEOUT_FRACTION)
+        assert recorded["seed_timeout"] == pytest.approx(6.0 * SEED_TIMEOUT_FRACTION)
 
     def test_init_returns_with_a_running_refresher_when_the_seed_hangs(
-        self, worker_loop_env, monkeypatch
-    ):
+        self,
+        worker_loop_env: WorkerLoopEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Keep the periodic refresher after a hanging seed hits its budget."""
-
-        class _HangingSession:
-            async def __aenter__(self) -> "_HangingSession":
-                await asyncio.Event().wait()
-                return self
-
-            async def __aexit__(self, *_exc: object) -> None:
-                return None
-
         monkeypatch.setattr(
-            celery_module, "get_async_session_maker", lambda: _HangingSession
+            celery_module, "get_async_session_maker", lambda: HangingSession
         )
         monkeypatch.setattr(celery_module.celery.conf, "worker_proc_alive_timeout", 0.1)
 
