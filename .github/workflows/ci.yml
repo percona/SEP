@@ -56,6 +56,7 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
       shell: ${{ steps.filter.outputs.shell }}
       sidecar: ${{ steps.filter.outputs.sidecar }}
+      pipeline: ${{ steps.filter.outputs.pipeline }}
     steps:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -106,6 +107,9 @@ jobs:
               - 'Containerfile.base'
               - 'alembic.ini'
               - 'Makefile'
+            pipeline:
+              - 'build/**/*.pipeline'
+              - 'scripts/lint_pipelines.groovy'
 
   precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
@@ -384,6 +388,35 @@ jobs:
       - name: Smoke test - verify the general side-car image is unrestricted
         run: sidecar/verify_image_apps.sh "sep:HEAD-sidecar" unrestricted
 
+  pipeline-syntax:
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.pipeline == 'true'
+      }}
+    needs:
+      - label-gate
+      - changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Parse Jenkins pipeline Groovy syntax
+        run: |
+          pipelines=()
+          while IFS= read -r pipeline; do
+            pipelines+=("$pipeline")
+          done < <(git ls-files -- ':(glob)build/**/*.pipeline')
+          ((${#pipelines[@]})) || {
+            echo "::error::No build/**/*.pipeline files found."
+            exit 1
+          }
+          docker run --rm -v "$PWD:/w" -w /w \
+            groovy@sha256:fcfaaa9eba20ccc3b438a70cb599e721996758ecf22de70dc0a85302c97822aa \
+            groovy scripts/lint_pipelines.groovy \
+            "${pipelines[@]}"
+
   ci-success:
     if: always()
     needs:
@@ -396,6 +429,7 @@ jobs:
       - frontend
       - build
       - build-sidecar
+      - pipeline-syntax
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any dependency failed or was cancelled
