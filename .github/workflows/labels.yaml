@@ -25,16 +25,22 @@ jobs:
           sync-labels: true
       # large-diff and app-isolated cannot be expressed by actions/labeler: one
       # counts lines, the other is an "all files in one app slice" predicate.
-      # Logic lives in .github/scripts/blast-radius/; checkout the base branch
-      # only so PR-head code is never executed in this privileged workflow.
-      - name: Checkout base branch workflow scripts
+      # Logic lives in scripts/compute_blast_radius_labels.py; checkout the
+      # base branch only so PR-head code is never executed in this workflow.
+      - name: Checkout base branch tooling
         if: github.event_name == 'pull_request_target'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.pull_request.base.sha }}
-          sparse-checkout: .github
+          sparse-checkout: |
+            .github
+            scripts
       - name: Compute blast-radius labels
         if: github.event_name == 'pull_request_target'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        with:
-          script-path: .github/scripts/blast-radius/apply-labels.js
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/compute_blast_radius_labels.py \
+            --owner "${{ github.repository_owner }}" \
+            --repo "${{ github.event.repository.name }}" \
+            --pr-number "${{ github.event.pull_request.number }}"

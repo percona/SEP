@@ -159,10 +159,6 @@ pyrightconfig.json
 [Ss]cripts
 !/scripts/
 !/tests/scripts/
-!/.github/scripts/
-!/.github/scripts/**
-!/tests/github/scripts/
-!/tests/github/scripts/**
 pyvenv.cfg
 pip-selfcheck.json
 
