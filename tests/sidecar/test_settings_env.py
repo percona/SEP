@@ -18,6 +18,7 @@ import os
 import re
 import shlex
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -534,19 +535,19 @@ def test_a_secret_in_a_subdirectory_does_not_supply_a_name(tmp_path: Path):
 
 
 @pytest.mark.parametrize(
-    "secrets_dir_name",
-    ["absent", "empty", "unrelated-file"],
+    "build_secrets_dir",
+    [
+        lambda tmp_path: str(tmp_path / "missing"),
+        write_secrets,
+        lambda tmp_path: write_secrets(tmp_path, UNRELATED="value"),
+    ],
+    ids=["absent", "empty", "unrelated-file"],
 )
 def test_an_unusable_secrets_directory_changes_nothing(
-    tmp_path: Path, secrets_dir_name: str
+    tmp_path: Path, build_secrets_dir: Callable[[Path], str]
 ):
     """Leave today's exported environment untouched when no file matches a name."""
-    if secrets_dir_name == "absent":
-        secrets_dir = str(tmp_path / "missing")
-    elif secrets_dir_name == "empty":
-        secrets_dir = write_secrets(tmp_path)
-    else:
-        secrets_dir = write_secrets(tmp_path, UNRELATED="value")
+    secrets_dir = build_secrets_dir(tmp_path)
     baseline = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw"))
 
     environment = exported(
