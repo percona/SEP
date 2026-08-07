@@ -181,7 +181,7 @@ def test_e2e_alias_is_resolved(tmp_path):
 
 
 def test_framework_and_shared_are_excluded(tmp_path):
-    """Never emit labels for the ``framework`` and ``shared`` internals."""
+    """Omit labels for the ``framework`` and ``shared`` internals."""
     repo = _valid_repo(tmp_path)
     _make_app(repo, "framework")
     _make_app(repo, "shared")

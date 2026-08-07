@@ -63,7 +63,7 @@ _GLOB_LINE = re.compile(r"^\s*-\s*'([^']+)'\s*$")
 _REGEX_ESCAPE = re.compile(r"[.*+?^${}()|[\]\\]")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PrFile:
     """Represent one changed file entry from the pulls list-files API."""
 
@@ -72,7 +72,7 @@ class PrFile:
     deletions: int = 0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BlastRadiusResult:
     """Carry the blast-radius signals derived from a PR file list."""
 
@@ -86,20 +86,44 @@ class GitHubClient(Protocol):
     """Describe the subset of the GitHub REST API used by this script."""
 
     def list_pr_files(self, owner: str, repo: str, pr_number: int) -> list[PrFile]:
-        """Return every changed file for a pull request."""
+        """Return every changed file for a pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param pr_number: Pull request number.
+        :return: Every changed file, across all result pages.
+        """
 
     def list_issue_labels(self, owner: str, repo: str, issue_number: int) -> set[str]:
-        """Return label names currently on an issue or pull request."""
+        """Return label names currently on an issue or pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param issue_number: Issue or pull request number.
+        :return: Label names currently attached.
+        """
 
     def add_issue_labels(
         self, owner: str, repo: str, issue_number: int, labels: list[str]
     ) -> None:
-        """Attach one or more labels to an issue or pull request."""
+        """Attach one or more labels to an issue or pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param issue_number: Issue or pull request number.
+        :param labels: Label names to attach.
+        """
 
     def remove_issue_label(
         self, owner: str, repo: str, issue_number: int, name: str
     ) -> None:
-        """Remove a single label from an issue or pull request."""
+        """Remove a single label from an issue or pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param issue_number: Issue or pull request number.
+        :param name: Label name to detach.
+        """
 
 
 def is_generated(filename: str) -> bool:
@@ -271,7 +295,13 @@ class UrllibGitHubClient:
             raise
 
     def list_pr_files(self, owner: str, repo: str, pr_number: int) -> list[PrFile]:
-        """Return every changed file for a pull request."""
+        """Return every changed file for a pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param pr_number: Pull request number.
+        :return: Every changed file, across all result pages.
+        """
         files: list[PrFile] = []
         page = 1
         while True:
@@ -294,7 +324,13 @@ class UrllibGitHubClient:
         return files
 
     def list_issue_labels(self, owner: str, repo: str, issue_number: int) -> set[str]:
-        """Return label names currently on an issue or pull request."""
+        """Return label names currently on an issue or pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param issue_number: Issue or pull request number.
+        :return: Label names currently attached.
+        """
         labels: set[str] = set()
         page = 1
         while True:
@@ -312,7 +348,13 @@ class UrllibGitHubClient:
     def add_issue_labels(
         self, owner: str, repo: str, issue_number: int, labels: list[str]
     ) -> None:
-        """Attach one or more labels to an issue or pull request."""
+        """Attach one or more labels to an issue or pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param issue_number: Issue or pull request number.
+        :param labels: Label names to attach.
+        """
         path = f"/repos/{owner}/{repo}/issues/{issue_number}/labels"
         self._request("POST", path, body=labels)
 
@@ -323,6 +365,11 @@ class UrllibGitHubClient:
 
         A ``404`` is tolerated here: the label may already be gone when the
         workflow re-runs on a new push.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param issue_number: Issue or pull request number.
+        :param name: Label name to detach.
         """
         encoded = urllib.parse.quote(name, safe="")
         path = f"/repos/{owner}/{repo}/issues/{issue_number}/labels/{encoded}"
