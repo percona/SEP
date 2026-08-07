@@ -56,6 +56,7 @@ from app.core.settings_override.registry import (
     hot_field,
     materialize_template,
     MaterializerContext,
+    MaterializerPurpose,
     nested_overridable_field,
     not_overridable_field,
     SECRET_STR_MASK,
@@ -654,6 +655,15 @@ def materialize_delivery_plan_inputs(ctx: MaterializerContext) -> Any:
     runs at both enforcement points the override module provides, and is the only
     place a candidate payload is seen before it is stored.
 
+    The name check applies to a payload submitted *now*
+    (:attr:`~app.core.settings_override.MaterializerPurpose.VALIDATE`) and not to
+    a row stored *earlier*. A row written against a skeleton an image upgrade has
+    since changed is a deployment condition the operator has to be told about, and
+    raising here would only drop the row from the snapshot, leaving
+    :func:`~app.sep.bundle_upload.resolver.resolve_delivery_plan` unable to tell
+    drift from a deployment that never configured delivery. Shape coercion stays
+    strict on both paths, so a malformed row is still dropped.
+
     Reading the skeleton off ``sep_settings`` is safe because
     ``DIAGNOSTICS_DELIVERY`` is ``not_overridable_field``, so it never comes from
     the snapshot being rebuilt.
@@ -661,12 +671,12 @@ def materialize_delivery_plan_inputs(ctx: MaterializerContext) -> Any:
     :param ctx: The materialization context.
     :return: The validated inputs, or ``None`` when the override clears them.
     :raises ValidationError: When the payload does not match the field's shape.
-    :raises ValueError: When the secret names are not exactly the ones the
-        skeleton declares.
+    :raises ValueError: When a submitted payload's secret names are not exactly
+        the ones the skeleton declares.
     """
     inputs = coerce_field_value(ctx.field_info, ctx.raw)
-    if inputs is None:
-        return None
+    if inputs is None or ctx.purpose is MaterializerPurpose.SNAPSHOT:
+        return inputs
     skeleton = sep_settings.DIAGNOSTICS_DELIVERY
     declared = frozenset(skeleton.secrets) if skeleton is not None else frozenset()
     submitted = frozenset(inputs.secrets)
