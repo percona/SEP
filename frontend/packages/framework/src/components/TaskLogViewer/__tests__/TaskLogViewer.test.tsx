@@ -293,6 +293,25 @@ describe('TaskLogViewer', () => {
     expect(getTailSelect()).toBeInTheDocument();
   });
 
+  it('keeps the line cap when a short finished log ends in a stream error', async () => {
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="25" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('25');
+    act(() => {
+      handle.pushMessage({ msg: lines(2), step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushNamed('sep-error', { detail: 'gateway blew up' });
+    });
+    await waitFor(() => expect(screen.getByText('gateway blew up')).toBeInTheDocument());
+
+    // An aborted stream never proves the log is complete.
+    expect(getTailSelect()).toBeInTheDocument();
+  });
+
   it('keeps the line cap visible but disabled for a running task with a short log', async () => {
     render(
       <QueryWrapper>

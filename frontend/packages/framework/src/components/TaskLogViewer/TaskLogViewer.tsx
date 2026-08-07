@@ -53,16 +53,20 @@ export const LOG_TAIL_LINE_OPTIONS = [
 
 export type LogTailLineChoice = (typeof LOG_TAIL_LINE_OPTIONS)[number]['value'];
 
+const NUMERIC_LOG_TAIL_OPTIONS = LOG_TAIL_LINE_OPTIONS.map((option) => Number(option.value)).filter(
+  (value) => Number.isFinite(value),
+);
+
 /**
  * Smallest numeric cap on offer. A proven-complete log at or below this size
  * looks identical under every option, so the select has nothing left to do.
  * Derived from the options list so changing the list moves the threshold.
+ *
+ * Falls back to 0 when the list holds no numeric option: `Math.min()` of an
+ * empty list is Infinity, which would hide the select for every finished task.
  */
-const SMALLEST_LOG_TAIL_OPTION = Math.min(
-  ...LOG_TAIL_LINE_OPTIONS.map((option) => Number(option.value)).filter((value) =>
-    Number.isFinite(value),
-  ),
-);
+const SMALLEST_LOG_TAIL_OPTION =
+  NUMERIC_LOG_TAIL_OPTIONS.length > 0 ? Math.min(...NUMERIC_LOG_TAIL_OPTIONS) : 0;
 
 const LOG_TAIL_STORAGE_KEY = 'sep.taskLogViewer.tail';
 
