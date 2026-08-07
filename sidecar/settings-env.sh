@@ -49,7 +49,12 @@ export_canonical() {
     current="${!name:-}"
     if [[ -n $current ]]; then
         export "$name=$current"
-    elif ! secret_file_supplies "$name"; then
+    elif secret_file_supplies "$name"; then
+        # Cleared rather than merely left alone: a name inherited as the empty
+        # string counts as supplied on the environment side, so leaving it in
+        # place would rank it above the file this branch defers to.
+        unset "$name"
+    else
         export "$name=$derived"
     fi
 }
@@ -58,7 +63,11 @@ export_canonical() {
 # class-definition time, so without an explicit value each supervisord child
 # resolves a different key -- breaking session-cookie and CSRF validation across
 # processes, and giving each process a different HMAC-derived SEP_INTERNAL_TOKEN.
-if [[ -z ${SECRET_KEY:-} ]] && ! secret_file_supplies SECRET_KEY; then
+# The one name whose file must hold a value rather than merely exist: the
+# settings classes refuse an empty key outright, so admitting one here would
+# replace this gate's single actionable line with five crashing children.
+if [[ -z ${SECRET_KEY:-} ]] &&
+    [[ -z "$(secret_file_supplies SECRET_KEY && read_secret_file SECRET_KEY)" ]]; then
     echo "[entrypoint] SECRET_KEY is required. Generate one with" \
         "'openssl rand -hex 32' and pass it to the container, or mount it as a" \
         "file named SECRET_KEY under SECRETS_DIR." >&2
@@ -107,7 +116,9 @@ fi
 
 if [[ -n ${CELERY__BEAT_DBURI:-} ]]; then
     export CELERY__BEAT_DBURI
-elif ! secret_file_supplies CELERY__BEAT_DBURI; then
+elif secret_file_supplies CELERY__BEAT_DBURI; then
+    unset CELERY__BEAT_DBURI
+else
     # Deriving puts a file-supplied password back into the environment inside the
     # URI. Refusing to derive is worse -- celery-beat would get a password-less
     # URI -- so a mounted CELERY__BEAT_DBURI is the deployment's way out.

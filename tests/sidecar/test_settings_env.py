@@ -287,6 +287,39 @@ def test_the_missing_key_message_names_the_file_channel(tmp_path: Path):
     assert "SECRETS_DIR" in result.stderr
 
 
+@pytest.mark.parametrize("contents", ["", "\n  \n"], ids=["empty", "whitespace-only"])
+def test_a_blank_secret_key_file_does_not_satisfy_the_gate(
+    tmp_path: Path, contents: str
+):
+    """Fail fast on a key file that strips to nothing.
+
+    The settings classes reject an empty key outright, so admitting one here
+    trades this gate's single actionable line for five crashing children.
+    """
+    secrets_dir = write_secrets(tmp_path, SECRET_KEY=contents)
+
+    result = source_helper(SECRETS_DIR=secrets_dir)
+
+    assert result.returncode != 0
+    assert "SECRET_KEY" in result.stderr
+
+
+@pytest.mark.parametrize("name", ["SEP__DATABASE__PASSWORD", "CELERY__BEAT_DBURI"])
+def test_a_blank_variable_does_not_shadow_the_file_it_defers_to(
+    tmp_path: Path, name: str
+):
+    """Clear a blank inherited name, which pydantic would rank above the file."""
+    secrets_dir = write_secrets(tmp_path, **{name: "from-file"})
+
+    environment = exported(
+        source_helper(
+            SECRET_KEY="k", SEP_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir, **{name: ""}
+        )
+    )
+
+    assert name not in environment
+
+
 def test_a_mounted_canonical_name_is_left_unexported(tmp_path: Path):
     """Suppress only the derived export the file supplies, leaving its siblings."""
     secrets_dir = write_secrets(tmp_path, TASKS__DATABASE__PASSWORD="from-file")
