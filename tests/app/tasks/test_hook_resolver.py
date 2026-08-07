@@ -131,11 +131,24 @@ class TestAllowList:
 
     def test_rejection_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """Log the rejected path before raising."""
-        with (
-            caplog.at_level(logging.WARNING, logger=hook_resolver.__name__),
-            pytest.raises(HookPathNotAllowedError),
-        ):
-            validate_hook_path("os:system", field="run_result_recorder")
+        # ``caplog`` attaches its handler to the root logger, which makes it an
+        # unreliable place to capture an ``app.*`` record: ``LOGGING_CONFIG``
+        # declares the root logger, so applying it clears root's handlers and
+        # takes that capturing handler with them, and it also sets
+        # ``propagate=False`` on ``app``, so the record would stop short of root
+        # regardless. Whether the config has been applied yet depends on what
+        # else ran first, so capture on the emitting logger, which the config
+        # never touches, to keep the assertion order-independent.
+        emitting_logger = logging.getLogger(hook_resolver.__name__)
+        emitting_logger.addHandler(caplog.handler)
+        try:
+            with (
+                caplog.at_level(logging.WARNING, logger=hook_resolver.__name__),
+                pytest.raises(HookPathNotAllowedError),
+            ):
+                validate_hook_path("os:system", field="run_result_recorder")
+        finally:
+            emitting_logger.removeHandler(caplog.handler)
 
         assert "os:system" in caplog.text
         assert "run_result_recorder" in caplog.text
