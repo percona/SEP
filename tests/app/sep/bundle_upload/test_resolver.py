@@ -63,7 +63,7 @@ def no_inputs_fixture(mocker: MockerFixture) -> None:
 class TestSkeletonOnly:
     """Cover the resolver's behaviour when no runtime inputs are supplied."""
 
-    def test_returns_none_without_a_baked_plan(
+    def test_reports_the_unconfigured_reason_without_a_baked_plan(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Report the ordinary unconfigured state silently, without a log line."""
@@ -212,7 +212,7 @@ class TestMergedInputs:
         assert plan is not None
         assert plan.secrets["client_token"].get_secret_value() == "baked-token"
 
-    def test_returns_none_when_the_merged_plan_fails_validation(
+    def test_reports_the_unconfigured_reason_when_the_merged_plan_fails_validation(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Degrade to unconfigured instead of raising into the request path.
