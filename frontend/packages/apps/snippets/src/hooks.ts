@@ -187,6 +187,16 @@ export type SnippetsListFilters = {
 };
 
 /**
+ * Sort key the list page requests, newest snippet first.
+ *
+ * Sent explicitly rather than relying on the endpoint default, which is
+ * approved-first (`-approved_at`) because the backing manager's default ordering is
+ * the single authority for every consumer of that entity. This page wants the
+ * newest rows on top, so it states that at the call site.
+ */
+const SNIPPETS_LIST_SORT = '-created_at';
+
+/**
  * Fetch a page of snippet entities discovered by the backend.
  */
 export function useSnippets(options?: AppListQueryOptions & SnippetsListFilters) {
@@ -200,14 +210,22 @@ export function useSnippets(options?: AppListQueryOptions & SnippetsListFilters)
   return useQuery<AppListResult<SnippetResponse>>({
     queryKey: [
       ...SNIPPETS_LIST_QUERY_KEY,
-      { offset, limit, search, approval, serviceType, uncategorized },
+      { offset, limit, search, approval, serviceType, uncategorized, sort: SNIPPETS_LIST_SORT },
     ],
     enabled: options?.enabled !== false,
     queryFn: async () => {
       const { data } = await apiClient.get<SnippetResponse[] | PaginatedAppList<SnippetResponse>>(
         `${SNIPPETS_BASE}/`,
         {
-          params: { offset, limit, search, approval, service_type: serviceType, uncategorized },
+          params: {
+            offset,
+            limit,
+            search,
+            approval,
+            service_type: serviceType,
+            uncategorized,
+            sort: SNIPPETS_LIST_SORT,
+          },
         },
       );
       return normalizeAppListResponse(data);

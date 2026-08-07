@@ -2202,7 +2202,7 @@ export interface paths {
     };
     /**
      * List
-     * @description List scripts as a server-filtered, sorted, paginated projection.
+     * @description List scripts as a filtered, sorted, paginated projection.
      */
     get: operations['snippets_snippets_api_list_api_apps_snippets__get'];
     put?: never;
@@ -4328,30 +4328,6 @@ export interface components {
       /** Service Types */
       service_types: string[];
     };
-    /**
-     * SnippetSortDirection
-     * @description Enumerate the sort direction.
-     *
-     *     :cvar ASC: Ascending order.
-     *     :cvar DESC: Descending order.
-     * @enum {string}
-     */
-    SnippetSortDirection: 'asc' | 'desc';
-    /**
-     * SnippetSortKey
-     * @description Enumerate the allowlisted public sort keys.
-     *
-     *     Membership is the type: an out-of-allowlist key fails to coerce at the
-     *     request boundary, so no raw client-supplied column name can reach a query.
-     *
-     *     :cvar CREATED_AT: Sort by the ``created_at`` column.
-     *     :cvar FILENAME: Sort by the ``filename`` column.
-     *     :cvar APPROVED_AT: Sort by the ``approved_at`` column.
-     *     :cvar TITLE: Sort by the ``meta.title`` JSON value.
-     *     :cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.
-     * @enum {string}
-     */
-    SnippetSortKey: 'created_at' | 'filename' | 'approved_at' | 'title' | 'service_type';
     /**
      * SnippetsCapabilitiesResponse
      * @description Represent per-deployment capability flags for the Snippets plugin.
@@ -13827,18 +13803,26 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        /** @description Case-insensitive search over filename, title, description. */
-        search?: string | null;
-        /** @description Sort key; one of the allowlisted public sort keys. */
-        sort?: components['schemas']['SnippetSortKey'];
-        /** @description Sort direction. */
-        order?: components['schemas']['SnippetSortDirection'];
         /** @description Approval-status filter. */
         approval?: components['schemas']['SnippetApprovalFilter'];
         /** @description Service-type equality filter, or omitted for no filter. */
         service_type?: string | null;
         /** @description When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'. */
         uncategorized?: boolean;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'approved_at'
+          | '-approved_at'
+          | 'created_at'
+          | '-created_at'
+          | 'filename'
+          | '-filename'
+          | 'service_type'
+          | '-service_type'
+          | 'title'
+          | '-title';
+        /** @description Case-insensitive search across the searchable columns. */
+        search?: string | null;
       };
       header?: never;
       path?: never;
