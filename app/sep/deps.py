@@ -1135,7 +1135,11 @@ async def get_tasks_context(
                 case _:
                     history_tasks.append(hist)
     annotate_tasks_with_connectivity(tasks)
-    periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
+    periodic_tasks = await fetch_all_dict_items(
+        lambda pagination: tasks_api.get(
+            "/periodic/", params={"owner": owner, **pagination.model_dump()}
+        )
+    )
 
     alert_on_fail_available = bool(alert_settings.PROVIDERS)
     context = default_context or {}
@@ -1214,7 +1218,11 @@ async def get_tasks_index_context(
         "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
     )
     scheduled_tasks = response["items"]
-    periodic_tasks = await tasks_api.get("/periodic/", params={"enabled": "True"})
+    periodic_tasks = await fetch_all_dict_items(
+        lambda pagination: tasks_api.get(
+            "/periodic/", params={"enabled": "True", **pagination.model_dump()}
+        )
+    )
     response = await tasks_api.get("/")
     task_owner_mapping = {task["name"]: task["owner"] for task in response["items"]}
     for periodic_task in periodic_tasks:
