@@ -127,7 +127,7 @@ class TestFullBackupDecision:
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
         """Trigger a FULL backup when the cycle matches today's ISO weekday."""
-        today_iso = datetime.datetime.today().isoweekday()
+        today_iso = datetime.datetime.now(datetime.UTC).isoweekday()
         pg = _make_pgbackrest(
             payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE=str(today_iso)
         )
@@ -138,7 +138,7 @@ class TestFullBackupDecision:
         self, payload_module: ModuleType, tmp_path: Path
     ) -> None:
         """Skip the FULL backup when the cycle does not match today's ISO weekday."""
-        today_iso = datetime.datetime.today().isoweekday()
+        today_iso = datetime.datetime.now(datetime.UTC).isoweekday()
         other_day = "1" if today_iso != 1 else "2"
         pg = _make_pgbackrest(
             payload_module, tmp_path, PGBACKREST_INCREMENTAL_CYCLE=other_day
