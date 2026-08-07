@@ -565,20 +565,26 @@ class _AliasedModel(BaseModel):
 
 
 @pytest.mark.parametrize(
-    ("model", "expected"),
+    ("model", "kwargs", "expected"),
     [
-        (_PlainModel, frozenset({"name"})),
-        (_ExcludedModel, frozenset({"name"})),
-        (_ComputedModel, frozenset({"name", "label", "wire_label"})),
-        (_AliasedModel, frozenset({"wire_name", "ser_wins"})),
+        (_PlainModel, {"name": "x"}, frozenset({"name"})),
+        (_ExcludedModel, {"name": "x", "secret": "s"}, frozenset({"name"})),
+        (_ComputedModel, {"name": "x"}, frozenset({"name", "label", "wire_label"})),
+        (
+            _AliasedModel,
+            {"wire_name": "x", "alias_only": "y"},
+            frozenset({"wire_name", "ser_wins"}),
+        ),
     ],
     ids=["plain", "exclude_true", "computed_field", "aliased"],
 )
 def test_serialized_field_names(
-    model: type[BaseModel], expected: frozenset[str]
+    model: type[BaseModel], kwargs: dict[str, str], expected: frozenset[str]
 ) -> None:
     """Match names emitted by ``model_dump(by_alias=True)``."""
-    assert serialized_field_names(model) == expected
+    names = serialized_field_names(model)
+    assert names == expected
+    assert names == set(model(**kwargs).model_dump(by_alias=True))
 
 
 class TestBaseTaskResponse:
