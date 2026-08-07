@@ -197,7 +197,7 @@ async def resolve_optional_catalog_service_key(
         return CatalogServiceKey(service_name=trimmed, service_id=None)
     try:
         service = await resolve_mysql_service(int(trimmed), inventory_api)
-    except HTTPNotFoundException:
+    except (ValueError, HTTPNotFoundException):
         return None
     return CatalogServiceKey(service_name=service.name, service_id=service.id)
 

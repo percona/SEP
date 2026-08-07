@@ -57,6 +57,8 @@ def _table_state(bind: Connection) -> tuple[set[str], set[str]]:
 
 def upgrade() -> None:
     columns, indexes = _table_state(op.get_bind())
+    if not columns and not indexes:
+        return
     # The column and the index are guarded separately: a schema created from the
     # models, or hand-patched with a bare ALTER, can carry one without the other.
     if COLUMN not in columns:

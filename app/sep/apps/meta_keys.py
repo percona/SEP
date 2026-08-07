@@ -29,3 +29,7 @@ from one place without either importing the other.
 #: Inventory id of the service a task was created against. Absent when the
 #: resolved service carried no primary key.
 SERVICE_ID_META_KEY = "_service_id"
+
+#: Name of the service a task was created against. Present on every task that
+#: resolved a service, regardless of whether the id was also stamped.
+SERVICE_NAME_META_KEY = "_service_name"

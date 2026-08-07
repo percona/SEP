@@ -36,7 +36,7 @@ from typing import Any, TypeVar
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.sep.apps.meta_keys import SERVICE_ID_META_KEY
+from app.sep.apps.meta_keys import SERVICE_ID_META_KEY, SERVICE_NAME_META_KEY
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import (
     BackupType,
@@ -161,7 +161,7 @@ async def record_backup_run(
 
     record = MysqlBackupRun(
         task_history_id=history.id,
-        service_name=_coerce(meta.get("_service_name"), str, "_service_name"),
+        service_name=_coerce(meta.get(SERVICE_NAME_META_KEY), str, SERVICE_NAME_META_KEY),
         service_id=_positive_int(meta.get(SERVICE_ID_META_KEY), SERVICE_ID_META_KEY),
         hostname=_coerce(meta.get("target"), str, "target"),
         backup_type=backup_type,

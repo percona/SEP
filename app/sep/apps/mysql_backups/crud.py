@@ -41,11 +41,14 @@ class MysqlBackupRunManager(BaseSQLModelManager):
     ) -> ColumnExpressionArgument[bool]:
         """Return the predicate selecting one service's rows.
 
-        Prefers the inventory id, which survives a rename where the name does not.
-        The name is matched only for rows carrying *no* id — guarding that fallback
-        on ``IS NULL`` is what keeps two same-named services apart, since
-        ``Service.name`` carries no uniqueness constraint and an unguarded name
-        match would hand each service the other's runs.
+        When an id is known, the name is matched only for rows carrying *no* id —
+        guarding that fallback on ``IS NULL`` is what keeps two same-named services
+        apart, since ``Service.name`` carries no uniqueness constraint and an
+        unguarded name match would hand each service the other's runs.
+
+        A key with no id (free-typed destination with no inventory row) has only
+        the name to match on, so it matches every row recorded under that name
+        regardless of whether those rows carry an id.
 
         :param key: The service name and optional inventory id to select rows by.
         :return: The SQL predicate selecting this service's rows.

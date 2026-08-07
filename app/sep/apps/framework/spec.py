@@ -61,7 +61,7 @@ from app.sep.apps.framework.form_dsl import (
     ServiceRef,
     TableRef,
 )
-from app.sep.apps.meta_keys import SERVICE_ID_META_KEY
+from app.sep.apps.meta_keys import SERVICE_ID_META_KEY, SERVICE_NAME_META_KEY
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -159,7 +159,7 @@ class RunCommandSpec:
                 "command": self.command,
                 "args": self.args,
                 "target": host,
-                "_service_name": service_name,
+                SERVICE_NAME_META_KEY: service_name,
                 **self.extra_meta,
                 **connectivity,
             },
@@ -198,7 +198,7 @@ class RunPythonSpec:
                 "config": self.config,
                 "target": host,
                 "requirements": self.requirements,
-                "_service_name": service_name,
+                SERVICE_NAME_META_KEY: service_name,
                 **self.extra_meta,
                 **connectivity,
             },
@@ -537,7 +537,7 @@ def build_run_python_task(
         "requirements": requirements,
     }
     if service_name is not None:
-        meta["_service_name"] = service_name
+        meta[SERVICE_NAME_META_KEY] = service_name
     data = {
         "task": RUN_PYTHON_TASK,
         "meta": meta,
