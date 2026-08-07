@@ -296,12 +296,13 @@ endif
 			*) jenkins_job="Build" ;; \
 		esac; \
 		echo "==> Triggering Jenkins $${jenkins_job} build for $${tag}..."; \
-		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
-			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			--data-urlencode "releaseTag=$${tag}" \
-			--data-urlencode "notifySlack=true" \
-			--data-urlencode "pushImage=true" \
-			--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
+		if printf 'user = "%s:%s"\n' "$${JENKINS_USER}" "$${JENKINS_API_TOKEN}" \
+			| curl -sSf -k --config - \
+				-X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
+				--data-urlencode "releaseTag=$${tag}" \
+				--data-urlencode "notifySlack=true" \
+				--data-urlencode "pushImage=true" \
+				--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
 			echo "    Jenkins build triggered successfully."; \
 			if [ -n "$(WEBHOOK_URL_ENV)" ] && [ -n "$(WEBHOOK_AUTH_ENV)" ]; then \
 				$(PYTHON) scripts/post_jira_webhook.py \
@@ -333,15 +334,22 @@ lint-pipelines:
 		echo "error: no build/**/*.pipeline files found"; \
 		exit 1; \
 	fi; \
-	crumb="$$(curl -sSf -k -u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-		"$${JENKINS_URL}/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)")"; \
+	crumb="$$(printf 'user = "%s:%s"\n' "$${JENKINS_USER}" "$${JENKINS_API_TOKEN}" \
+		| curl -sSf -k --config - \
+			"$${JENKINS_URL}/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)")"; \
 	failures=0; \
 	for f in "$${files[@]}"; do \
 		echo "==> Declarative-lint $${f}..."; \
-		resp="$$(curl -sS -k -u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			-H "$${crumb}" \
-			-F "jenkinsfile=<$${f}" \
-			"$${JENKINS_URL}/pipeline-model-converter/validate")"; \
+		if ! resp="$$(printf 'user = "%s:%s"\n' "$${JENKINS_USER}" "$${JENKINS_API_TOKEN}" \
+			| curl -sS -k --config - --fail-with-body \
+				-H "$${crumb}" \
+				-F "jenkinsfile=<$${f}" \
+				"$${JENKINS_URL}/pipeline-model-converter/validate")"; then \
+			echo "$${resp}"; \
+			echo "error: request to Jenkins failed for $${f}"; \
+			failures=$$((failures+1)); \
+			continue; \
+		fi; \
 		echo "$${resp}"; \
 		case "$${resp}" in \
 			*"successfully validated"*) ;; \
