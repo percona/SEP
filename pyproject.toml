@@ -153,6 +153,7 @@ pytest-xdist = "^3.5"
 pytest-timeout = "^2.3.1"
 pymysql = "^1.1.3"
 myloginpath = "^0.0.4"
+mutmut = "^3.6.0"
 
 [tool.poetry.requires-plugins]
 poetry-plugin-export = "^1.9.0"
@@ -356,6 +357,15 @@ omit = [
 show_missing = true
 skip_empty = true
 fail_under = 75
+
+# Optional mutation-testing pilot. Not wired into make test / CI.
+# Mutmut runs pytest from a mutants/ sandbox copy; also_copy pulls the config
+# the suite needs when loading app settings.
+[tool.mutmut]
+source_paths = ["app/"]
+only_mutate = ["app/core/db/utils.py"]
+pytest_add_cli_args_test_selection = ["tests/app/core/db/test_utils.py"]
+also_copy = ["settings.yaml", "templates", "static", "snippets", "data"]
 
 [tool.tox]
 env_list = ["3.11", "3.12", "3.13"]
