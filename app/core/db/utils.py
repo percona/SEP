@@ -84,12 +84,11 @@ def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
         configured pool sizing.
     :return: A configured asynchronous engine.
     """
-    connect_args = database.connect_args
     return create_async_engine(
         database.URL,
         echo=False,
         json_serializer=json_serializer,
-        **({"connect_args": connect_args} if connect_args else {}),
+        **database.connect_engine_kwargs,
         **database.pool_engine_kwargs,
     )
 

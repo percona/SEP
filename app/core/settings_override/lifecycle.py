@@ -59,8 +59,7 @@ def _drain_cancelled_seed_task(task: asyncio.Task) -> None:
     :param task: The finished seed task (cancelled tasks are ignored).
     """
     if not task.cancelled():
-        with suppress(Exception):
-            task.exception()
+        task.exception()
 
 
 #: A rebind callback fired when a watched ``(setting_class, key)`` override
@@ -267,7 +266,6 @@ async def start_refresh_task(
     :type callbacks: CallbackRegistry | None
     :param seed_timeout: Optional wall-clock budget in seconds for the inline
         seed. ``None`` (the default) leaves the seed unbounded.
-    :type seed_timeout: float | None
     :return: The background refresh task. Callers must cancel and await this
         task during shutdown to drain pending iterations cleanly.
     :rtype: asyncio.Task

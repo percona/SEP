@@ -154,26 +154,28 @@ def test_pool_engine_kwargs_includes_zero_max_overflow():
     ("engine", "expected"),
     [
         pytest.param(
-            AsyncDatabaseEngine.POSTGRESQL, {"timeout": 2.5}, id="asyncpg-timeout"
+            AsyncDatabaseEngine.POSTGRESQL,
+            {"connect_args": {"timeout": 2.5}},
+            id="asyncpg-timeout",
         ),
         pytest.param(
             AsyncDatabaseEngine.MYSQL,
-            {"connect_timeout": 2.5},
+            {"connect_args": {"connect_timeout": 2.5}},
             id="aiomysql-connect-timeout",
         ),
         pytest.param(AsyncDatabaseEngine.SQLITE, {}, id="sqlite-omitted"),
     ],
 )
-def test_connect_args_maps_per_dialect(engine, expected):
+def test_connect_engine_kwargs_maps_per_dialect(engine, expected):
     """Map CONNECT_TIMEOUT to the driver key each dialect understands."""
     db_options = DatabaseOptions(
         ENGINE=engine, NAME="testdb", HOST="localhost", CONNECT_TIMEOUT=2.5
     )
 
-    assert db_options.connect_args == expected
+    assert db_options.connect_engine_kwargs == expected
 
 
-def test_connect_args_empty_when_unset():
+def test_connect_engine_kwargs_empty_when_unset():
     """Yield no connect_args when CONNECT_TIMEOUT is unset."""
     db_options = DatabaseOptions(
         ENGINE=AsyncDatabaseEngine.POSTGRESQL,
@@ -181,7 +183,7 @@ def test_connect_args_empty_when_unset():
         HOST="localhost",
     )
 
-    assert db_options.connect_args == {}
+    assert db_options.connect_engine_kwargs == {}
 
 
 @pytest.mark.parametrize(

@@ -122,18 +122,19 @@ class DatabaseOptions(BaseModel):
         }
 
     @property
-    def connect_args(self) -> dict[str, float]:
-        """Return the dialect-specific connect-timeout kwarg, or an empty mapping.
+    def connect_engine_kwargs(self) -> dict[str, dict[str, float]]:
+        """Return ``connect_args`` as a ``create_engine`` kwarg, or ``{}``.
 
         An unset ``CONNECT_TIMEOUT``, or an engine with no connect-timeout
         meaning (SQLite), yields ``{}`` so the caller can omit ``connect_args``
-        from ``create_async_engine`` entirely.
+        from ``create_async_engine`` entirely — the same omit-when-empty
+        contract as :attr:`pool_engine_kwargs`.
 
-        :return: A single-key mapping for the active dialect, or ``{}``.
+        :return: ``{"connect_args": {dialect_key: timeout}}`` or ``{}``.
         """
         if self.CONNECT_TIMEOUT is None:
             return {}
         key = _CONNECT_TIMEOUT_KEYS.get(self.ENGINE)
         if key is None:
             return {}
-        return {key: self.CONNECT_TIMEOUT}
+        return {"connect_args": {key: self.CONNECT_TIMEOUT}}
