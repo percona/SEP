@@ -1,42 +1,5 @@
 // vim: ts=8:sts=8:sw=8:ft=groovy:noai:noet
 
-// TODO: move to shared, or refactor to a single job that calls the others
-Boolean notifyStatusViaSlack(String buildStatus) {
-	println("buildStatus: " + buildStatus);
-
-	if (env.NOTIFY_SLACK != true || env.BRANCH_NAME != "main") {
-		return true;
-	}
-
-	println("checking status");
-
-	Boolean status = true
-
-	String color = "good";
-	String base_message = "${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|View>)";
-	String message_prefix = buildStatus;
-
-	switch (buildStatus) {
-		case "SUCCESS":
-			break;
-		case "UNSTABLE":
-			color = "warning";
-			break;
-		case "FAILURE":
-			color = "danger";
-			break;
-	}
-
-	try {
-		println("slackSend color: " + color + " message: " + message_prefix + " " + base_message);
-		slackSend (color: color, message: message_prefix + " " + base_message);
-	} catch (Exception e) {
-		status = false;
-	} finally {
-		return status;
-	}
-}
-
 pipeline {
 	agent {
 		node {
@@ -58,11 +21,6 @@ pipeline {
 			choices: [
 				'3.11'
 			]
-		)
-		booleanParam(
-			name: 'notifySlack',
-			defaultValue: false,
-			description: 'Send notifications to Slack'
 		)
 		booleanParam(
 			name: 'pushImage',
@@ -119,7 +77,6 @@ pipeline {
 				build job: 'SEP/Audit', parameters: [
 					[$class: 'StringParameterValue', name: 'releaseTag', value: "${RELEASE_VER}"],
 					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
-					[$class: 'BooleanParameterValue', name: 'notifySlack', value: Boolean.valueOf("${params.notifySlack}")]
 				], propagate: true, wait: true
 			}
 		}
@@ -129,7 +86,6 @@ pipeline {
 				build job: 'SEP/Build', parameters: [
 					[$class: 'StringParameterValue', name: 'releaseTag', value: "${RELEASE_VER}"],
 					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
-					[$class: 'BooleanParameterValue', name: 'notifySlack', value: Boolean.valueOf("${params.notifySlack}")],
 					[$class: 'BooleanParameterValue', name: 'pushImage', value: Boolean.valueOf("${params.pushImage}")],
 					[$class: 'BooleanParameterValue', name: 'pushImageDocker', value: Boolean.valueOf("${params.pushImageDocker}")]
 				], propagate: true, wait: true
@@ -148,7 +104,6 @@ pipeline {
 
 	post {
 		always {
-			notifyStatusViaSlack(currentBuild.currentResult)
 			cleanWs()
 		}
 	}
