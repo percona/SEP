@@ -64,6 +64,7 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.responses import (
     BaseTaskResponse,
     build_default_task_response,
+    serialized_field_names,
     TaskResponseBuilder,
 )
 from app.sep.apps.framework.schema import (
@@ -961,20 +962,26 @@ class TaskExecutionApp(BaseApp):
             )
 
     def _validate_view_columns(self) -> None:
-        """Reject a ``list_view`` column key that is not a response-model field.
+        """Reject a ``list_view`` column key absent from the serialized list row.
 
         Enforce at construction — collecting every unknown column and raising once —
         so a column typo is rejected up front rather than rendering a blank column at
-        runtime. Skip ``schema=`` passthrough apps (no ``create_model``) and
-        model-first apps that declare no ``list_view``; detail-view ``data.*`` paths
-        stay free-form and are checked by the conformance suite instead.
+        runtime. Compare keys against the names
+        ``response_model.model_dump(by_alias=True)`` emits (see
+        :func:`~app.sep.apps.framework.responses.serialized_field_names`), not
+        ``model_fields`` alone. ``by_alias=True`` matches the derived list route,
+        which pins ``response_model_by_alias=True``. Keys are compared whole, so a
+        dotted path or a synthetic (``_actions``) key is rejected; no model-first
+        app uses one today. Skip ``schema=`` passthrough apps (no ``create_model``)
+        and model-first apps that declare no ``list_view``; detail-view ``data.*``
+        paths stay free-form and are checked by the conformance suite instead.
 
-        :raises ValueError: When a ``views.list_view`` column ``key`` is not a field
-            on ``response_model``.
+        :raises ValueError: When a ``views.list_view`` column ``key`` is not present
+            in the serialized ``response_model`` row.
         """
         if self.create_model is None or self.views.list_view is None:
             return
-        response_fields = set(self.response_model.model_fields)
+        response_fields = serialized_field_names(self.response_model)
         unknown = [
             column.key
             for column in self.views.list_view.columns
@@ -982,8 +989,8 @@ class TaskExecutionApp(BaseApp):
         ]
         if unknown:
             raise ValueError(
-                f"TaskExecutionApp: list_view column keys {unknown} are not fields "
-                f"on {self.response_model.__name__}"
+                f"TaskExecutionApp: list_view column keys {unknown} are not present "
+                f"in the serialized {self.response_model.__name__} row"
             )
 
     def _validate_arg_formats(self) -> None:

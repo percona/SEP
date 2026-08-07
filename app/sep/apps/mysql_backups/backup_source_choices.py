@@ -23,7 +23,11 @@ from app.core.pagination import DEFAULT_PAGINATION_LIMIT, Pagination
 from app.core.utils import shorten_text
 from app.sep.apps.framework.schema import Choice
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import BackupType, MysqlBackupRun
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    CatalogServiceKey,
+    MysqlBackupRun,
+)
 from app.sep.apps.mysql_backups.restore.models import ensure_backup_source_shell_safe
 
 _TYPE_LABELS = {
@@ -119,17 +123,18 @@ def backup_run_to_choice(run: MysqlBackupRun) -> Choice | None:
     return Choice(value=value, label=backup_source_label(run, value=value))
 
 
-async def choices_for_service_name(
-    session: AsyncSession, service_name: str
+async def choices_for_service(
+    session: AsyncSession, key: CatalogServiceKey
 ) -> list[Choice]:
-    """Return Choice options for ``service_name``, newest first.
+    """Return Choice options for a service's catalogued runs, newest first.
 
     Pages catalog rows until ``DEFAULT_PAGINATION_LIMIT`` valid choices are
     collected (or rows/pages are exhausted), so filtered-out runs do not shrink
     the usable option set below the intended cap.
 
     :param session: The database session the catalog is queried on.
-    :param service_name: The inventory service name to filter catalog rows by.
+    :param key: The service whose catalog rows are mapped to options; a free-typed
+        destination with no inventory row carries a name and no id.
     :return: Choice-compatible options; at most ``DEFAULT_PAGINATION_LIMIT`` items.
     """
     choices: list[Choice] = []
@@ -137,7 +142,7 @@ async def choices_for_service_name(
     for _ in range(_MAX_CHOICE_SCAN_PAGES):
         page = await MysqlBackupRunManager.list_for_service(
             session,
-            service_name,
+            key,
             pagination=Pagination(offset=offset, limit=DEFAULT_PAGINATION_LIMIT),
         )
         for run in page.items:

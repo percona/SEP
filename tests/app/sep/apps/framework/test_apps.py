@@ -31,7 +31,7 @@ import pytest
 from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, computed_field, ValidationError
 from sqlalchemy import column
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
@@ -988,6 +988,28 @@ class TestListQuerySpecValidation:
         assert app.list_query_spec is _SCRIPT_LIST_SPEC
 
 
+class _ComputedListResponse(BaseModel):
+    """Represent a list response whose dump includes a computed field."""
+
+    name: str
+
+    @computed_field(alias="wire_label")
+    @property
+    def label(self) -> str:
+        """Return a derived label under its serialized alias."""
+        return self.name.upper()
+
+
+def _computed_list_builder(
+    task: Task,
+    *,
+    status: object = None,
+    context: dict | None = None,
+) -> _ComputedListResponse:
+    """Build the computed-list response so the list route matches the gate."""
+    return _ComputedListResponse(name=task.name)
+
+
 class TestDefinitionValidation:
     """Cover the construction-time guards on the definition."""
 
@@ -1215,8 +1237,8 @@ class TestDefinitionValidation:
         with pytest.raises(ValueError, match="delete_handler"):
             _synth_app(delete_handler=_delete_handler)
 
-    def test_list_view_column_absent_from_response_model_raises(self) -> None:
-        """Reject a ``list_view`` column key that is not a field on the response model."""
+    def test_list_view_column_absent_from_serialized_row_raises(self) -> None:
+        """Reject a ``list_view`` column key absent from the serialized response row."""
         bad_views = Views(
             layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
             list_view=ListView(columns=[Column(key="ghost_field", label="Ghost")]),
@@ -1224,13 +1246,40 @@ class TestDefinitionValidation:
         with pytest.raises(ValueError, match="ghost_field"):
             _synth_app(views=bad_views)
 
+    def test_list_view_column_on_excluded_response_field_raises(self) -> None:
+        """Reject a ``list_view`` column keyed on a ``Field(exclude=True)`` response field."""
+        bad_views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(columns=[Column(key="service_type", label="Service")]),
+        )
+        with pytest.raises(ValueError, match="service_type"):
+            _synth_app(views=bad_views)
+
+    def test_list_view_column_on_aliased_computed_field_constructs(self) -> None:
+        """Construct cleanly when a column keys an aliased computed field."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(key="wire_label", label="Label"),
+                ]
+            ),
+        )
+        app_def = _synth_app(
+            response_model=_ComputedListResponse,
+            response_builder=_computed_list_builder,
+            views=views,
+        )
+        assert app_def.api_router is not None
+
     def test_create_model_with_malformed_arg_format_raises(self) -> None:
         """Reject a ``create_model`` whose ``ArgFormat`` template has an unsupported placeholder."""
         with pytest.raises(ValueError, match="unsupported placeholder"):
             _synth_app(create_model=_BadArgFormatForm)
 
-    def test_list_view_columns_present_in_response_model_construct(self) -> None:
-        """Construct cleanly when every ``list_view`` column resolves to a response field."""
+    def test_list_view_columns_present_in_serialized_row_construct(self) -> None:
+        """Construct cleanly when every ``list_view`` column is in the serialized row."""
         assert _synth_app().api_router is not None
 
     def test_schema_passthrough_skips_list_view_column_validation(self) -> None:
