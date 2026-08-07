@@ -23,9 +23,9 @@ import { MemoryRouter } from 'react-router';
 import type { ReactNode } from 'react';
 import { IncidentListPage } from '../src/IncidentListPage';
 
-vi.mock('@sep/api', async () => ({
+vi.mock('@sep/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sep/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
-  ...(await import('./sepApiMock')).sepApiListStubs,
 }));
 
 import { apiClient } from '@sep/api';

@@ -200,8 +200,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
     setAvailable(snippets);
   }, []);
 
-  // Debounce the picker's own text so typing drives one request per pause, not
-  // one per keystroke. Matches the Snippet Manager list's 300ms window.
+  // Matches the Snippet Manager list's 300ms window.
   useEffect(() => {
     const handle = setTimeout(
       () => setDebouncedSearch(searchInput.trim()),
@@ -234,9 +233,6 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
     [searchResults],
   );
 
-  // Options merge the current category's snippets and the search results with
-  // the current selection, so already-picked snippets from another category or
-  // an earlier search still render as removable chips.
   const options = useMemo(
     () => mergeSnippetOptions(selected, available, searchResults),
     [available, selected, searchResults],
@@ -391,12 +387,15 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
             : 'No approved snippet matches this search.'
         }
         getOptionLabel={(option) => option.title}
+        // Without this MUI keys each row on the label, and titles are not unique
+        // by contract — two snippets sharing one would collide on re-render.
+        getOptionKey={(option) => option.name}
         isOptionEqualToValue={(option, value) => option.name === value.name}
         renderOption={(props, option) => {
           const { key, ...liProps } = props as typeof props & { key: string };
           return (
             // The server matches filename and description too, so a hit can look
-            // unrelated to the typed term; show the filename under the title.
+            // unrelated to the typed term.
             <Box component="li" key={key} {...liProps} sx={{ display: 'block' }}>
               <Typography variant="body2">{option.title}</Typography>
               <Typography variant="caption" color="text.secondary">

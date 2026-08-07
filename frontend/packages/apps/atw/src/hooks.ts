@@ -109,8 +109,10 @@ export function useAtwCategories() {
  *
  * The endpoint is paginated, so a broad term can match more snippets than one
  * page holds; the picker reports that overflow rather than dropping it
- * silently. Kept at the shared app-list default, which is also the largest
- * `limit` some plugin list routes accept.
+ * silently. Kept at the shared app-list default for consistency with every
+ * other app list — the snippets route itself would serve up to
+ * `MAX_PAGINATION_LIMIT` (200), so raising this is a deliberate change, not a
+ * ceiling to lift.
  */
 export const ATW_SNIPPET_SEARCH_LIMIT = DEFAULT_APP_LIST_LIMIT;
 

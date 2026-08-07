@@ -23,9 +23,9 @@ import type { ReactNode } from 'react';
 import { CollectPane } from '../src/CollectPane';
 import { toAtwSnippetSummary } from '../src/hooks';
 
-vi.mock('@sep/api', async () => ({
+vi.mock('@sep/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sep/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
-  ...(await import('./sepApiMock')).sepApiListStubs,
 }));
 
 import { apiClient } from '@sep/api';
@@ -163,6 +163,31 @@ describe('CollectPane snippet search', () => {
     expect(
       await screen.findByRole('option', { name: /PT Summary/ }, { timeout: 3000 }),
     ).toBeVisible();
+  });
+
+  it('renders two same-titled hits as distinct rows', async () => {
+    mockApis({
+      items: [
+        { filename: 'ops/pt-summary.sh', title: 'Summary', description: 'Toolkit summary.' },
+        { filename: 'diag/summary.sh', title: 'Summary', description: 'Diagnostic summary.' },
+      ],
+    });
+    // Titles are not unique by contract, and searching reaches every approved
+    // snippet rather than the curated ATW subset, so a collision is reachable.
+    // Without `getOptionKey` MUI keys each row on the label, and the list
+    // rebuilds on every keystroke — duplicate keys risk a dropped row.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderPane(<CollectPane incidentId="inc-1" />);
+
+    await typeSearch('summary');
+
+    const options = await screen.findAllByRole('option', { name: /Summary/ }, { timeout: 3000 });
+    expect(options.map((option) => option.textContent)).toEqual([
+      expect.stringContaining('ops/pt-summary.sh'),
+      expect.stringContaining('diag/summary.sh'),
+    ]);
+    expect(consoleError.mock.calls.flat().join(' ')).not.toContain('same key');
+    consoleError.mockRestore();
   });
 
   it('drops the previous term’s hits while the next search is in flight', async () => {
