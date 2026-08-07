@@ -23,8 +23,9 @@ import {
   type EnabledAppOverride,
 } from './mockEnabledApps';
 
-// atw is guarded (wrapAppRoute) and declares requires_apps=("snippets",), so
-// navigating here while atw is effective-disabled renders AppDisabledPage.
+// atw is guarded (wrapAppRoute), so navigating here while atw is
+// effective-disabled renders AppDisabledPage. The blocking_dependencies in the
+// mocks below are synthetic: no shipped app declares requires_apps today.
 const APP_ROUTE = '/atw';
 const APP_DISPLAY_NAME = 'Collect Diagnostic Data';
 
@@ -161,8 +162,8 @@ test.describe('Disabled-app splash', () => {
   });
 
   test('names every blocking app in the plural message', async ({ page }) => {
-    // Synthetic: atw declares only ``snippets`` today. Two blockers exercise the
-    // guard's key->display_name mapping and the plural sentence end-to-end.
+    // Synthetic: no shipped app declares requires_apps. Two blockers exercise
+    // the guard's key->display_name mapping and the plural sentence end-to-end.
     await mockApis(page, {
       snippets: { enabled: false },
       tasks: { enabled: false },

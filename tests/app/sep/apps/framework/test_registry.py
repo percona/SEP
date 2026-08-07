@@ -28,10 +28,12 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.core.alerts.config import alert_settings, AlertSettings
+from app.core.celery.config import STATIC_CELERY_INCLUDE
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
@@ -49,6 +51,7 @@ from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.config import App, sep_settings
 from app.sep.models import AppLifecycleEnum, AppState
+from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
 @pytest.fixture(autouse=True)
@@ -216,9 +219,14 @@ class TestCeleryDerivation:
     """Cover the registry-derived Celery include + seed-prefix accessors."""
 
     def _apps(self) -> list[App]:
-        """Return a mixed activation list: two celery apps, one without, one opt-out."""
+        """Return a mixed activation list: two celery apps, one without, one opt-out.
+
+        ``celery_module_path`` is auto-derived by a filesystem probe, so the
+        celery-bearing exemplars must be apps that really ship a ``celery.py`` --
+        a synthetic module name would derive ``None``.
+        """
         return [
-            App(name="Snippet Manager", module_name="snippets"),
+            App(name="Collect Diagnostic Data", module_name="atw"),
             App(name="Checksums", module_name="checksums"),
             App(name="Alerts", module_name="alerts"),
             App(name="Report", module_name="report", celery_module_path=None),
@@ -227,7 +235,7 @@ class TestCeleryDerivation:
     def test_module_paths_ordered_and_filtered(self) -> None:
         """Return only celery-bearing apps, in activation order, opt-out excluded."""
         assert app_celery_module_paths(self._apps()) == [
-            "app.sep.apps.snippets.celery",
+            "app.sep.apps.atw.celery",
             "app.sep.apps.alerts.celery",
         ]
 
@@ -237,28 +245,38 @@ class TestCeleryDerivation:
         assert app_celery_module_paths(apps) == ["app.tasks.celery"]
 
     def test_build_include_prepends_static_base(self) -> None:
-        """Put the tasks service first, then the app modules."""
+        """Compose the static base first, then the app modules."""
         assert build_celery_include(self._apps()) == [
-            "app.tasks.celery",
-            "app.sep.apps.snippets.celery",
+            *STATIC_CELERY_INCLUDE,
+            "app.sep.apps.atw.celery",
             "app.sep.apps.alerts.celery",
         ]
 
     def test_build_include_empty_apps_is_static_base_only(self) -> None:
-        """Return exactly the static service base when no apps are configured."""
-        assert build_celery_include([]) == ["app.tasks.celery"]
+        """Return exactly the static base when no apps are configured."""
+        assert build_celery_include([]) == list(STATIC_CELERY_INCLUDE)
+
+    def test_static_base_carries_the_app_independent_modules(self) -> None:
+        """Pin the base: tasks service, snippet sync, drain, SEP override refresher.
+
+        The last three must register in an image shipping no app with a
+        ``celery.py``, so they cannot be registry-derived.
+        """
+        assert STATIC_CELERY_INCLUDE == (
+            "app.tasks.celery",
+            "app.sep.snippets.celery",
+            "app.sep.app_drain",
+            "app.sep.settings_override",
+        )
 
     def test_build_include_dedupes_static_base_collision(self) -> None:
         """Drop an app module that duplicates the static base, keeping first-seen order."""
         apps = [App(module_name="checksums", celery_module_path="app.tasks.celery")]
-        assert build_celery_include(apps) == ["app.tasks.celery"]
+        assert build_celery_include(apps) == list(STATIC_CELERY_INCLUDE)
 
     def test_module_for_key(self) -> None:
         """Map an app key to its celery module."""
-        assert (
-            app_celery_module_for("snippets", self._apps())
-            == "app.sep.apps.snippets.celery"
-        )
+        assert app_celery_module_for("atw", self._apps()) == "app.sep.apps.atw.celery"
 
     def test_module_for_key_none_when_absent_or_opted_out(self) -> None:
         """Resolve unknown keys and opt-out/no-celery apps to ``None``."""
@@ -547,10 +565,15 @@ class TestBespokeBaseAppDefinitions:
         """Register the schemaless bespoke definitions without an ``app_schema``."""
         assert get_app_registry().get(plugin).app_schema is None
 
-    def test_alert_troubleshooting_requires_snippets(self) -> None:
-        """Declare snippets as a required app for Alert Troubleshooting."""
-        app = get_app_registry().get("alert_troubleshooting")
-        assert app.requires_apps == ("snippets",)
+    @pytest.mark.parametrize("plugin", ["alert_troubleshooting", "atw"])
+    def test_snippet_consumers_declare_no_required_apps(self, plugin: str) -> None:
+        """Consume the snippets library without gating on the snippets app.
+
+        Both read snippet *scripts* from ``app/sep/snippets/``, which ships
+        independently of the app package, so neither may re-acquire a
+        ``requires_apps`` edge that would hide it when the snippets UI is off.
+        """
+        assert get_app_registry().get(plugin).requires_apps == ()
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
     def test_legacy_router_reexport_preserved(self, plugin: str) -> None:
@@ -614,14 +637,22 @@ class TestCollectAppOwnedSettingsClasses:
     """Tests for ``collect_app_owned_settings_classes``."""
 
     def test_collects_alerts_declaration(self) -> None:
-        """Return the alerts app's ``AlertSettings`` entry."""
+        """Return the alerts app's own ``AlertsSettings`` entry."""
         entries = collect_app_owned_settings_classes([App(module_name="alerts")])
         assert len(entries) == 1
         entry = entries[0]
-        assert entry.setting_class == SettingClassEnum.ALERT_SETTINGS
+        assert entry.setting_class == SettingClassEnum.ALERTS_SETTINGS
         assert entry.app_key == "alerts"
-        assert entry.settings_cls is AlertSettings
-        assert entry.proxy is alert_settings
+        assert entry.settings_cls is AlertsSettings
+        assert entry.proxy is alerts_settings
+
+    def test_reduced_activation_declares_no_alerts_entry(self) -> None:
+        """Yield no alerts entry under the PMM-embedded activation list."""
+        entries = collect_app_owned_settings_classes(REDUCED_ACTIVATION)
+        assert SettingClassEnum.ALERTS_SETTINGS not in {
+            entry.setting_class for entry in entries
+        }
+        assert "alerts" not in {entry.app_key for entry in entries}
 
     def test_skips_plugins_without_declaration(self) -> None:
         """Ignore activation entries that export no ``APP_OWNED_SETTINGS_CLASSES``."""
@@ -631,14 +662,14 @@ class TestCollectAppOwnedSettingsClasses:
     def test_rejects_duplicate_setting_class(self, mocker: MockerFixture) -> None:
         """Fail when the same settings class is declared by two distinct apps.
 
-        Two entries share ``ALERT_SETTINGS`` across two distinctly-keyed apps
+        Two entries share ``ALERTS_SETTINGS`` across two distinctly-keyed apps
         (``alerts`` and ``checksums``), so the duplicate-setting-class guard --
         not the duplicate-app-key guard -- is what trips.
         """
         dup_entry = AppOwnedClassEntry(
-            setting_class=SettingClassEnum.ALERT_SETTINGS,
-            settings_cls=AlertSettings,
-            proxy=alert_settings,
+            setting_class=SettingClassEnum.ALERTS_SETTINGS,
+            settings_cls=AlertsSettings,
+            proxy=alerts_settings,
             app_key="checksums",
         )
         fake_module = mocker.MagicMock()
@@ -865,6 +896,17 @@ class TestRequiresAppsValidation:
         """Build a well-formed dependency graph without error."""
         registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
         assert registry.keys() == ["a", "b"]
+
+    def test_declared_dependency_survives_onto_the_built_app(self) -> None:
+        """Read a declared ``requires_apps`` tuple back off the registered app.
+
+        Synthetic stand-in for the retired live-registry assertion: no shipped app
+        declares ``requires_apps`` any more, so the declaration-to-registry
+        round-trip needs its own fixture to stay covered.
+        """
+        registry = AppRegistry([_dep_app("a", requires_apps=("b",)), _dep_app("b")])
+        assert registry.get("a").requires_apps == ("b",)
+        assert registry.get("b").requires_apps == ()
 
     def test_child_apps_with_requires_apps_raises(self) -> None:
         """Reject combining ``child_apps`` with ``requires_apps``.

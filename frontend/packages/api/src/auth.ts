@@ -16,7 +16,7 @@
  */
 
 import { apiClient } from './client';
-import type { SPAOAuthTokenResponse, User } from './types/api';
+import type { SessionExchangeTokenResponse, SPAOAuthTokenResponse, User } from './types/api';
 
 /**
  * POST /api/oauth/login
@@ -66,6 +66,20 @@ export async function postRefresh(): Promise<SPAOAuthTokenResponse> {
  */
 export async function postSession(): Promise<SPAOAuthTokenResponse> {
   const { data } = await apiClient.post<SPAOAuthTokenResponse>('/oauth/session');
+  return data;
+}
+
+/**
+ * POST /api/oauth/session/exchange
+ *
+ * Exchange an ambient PMM/Grafana session cookie for a short-lived SEP bearer.
+ * The browser sends the `grafana_session` cookie automatically; there is no
+ * request body. Unlike `postSession`, no cookie is set and no refresh token is
+ * issued — the caller holds the token in memory and re-exchanges before
+ * `expires_in` elapses. A 401 means "no valid ambient session".
+ */
+export async function postSessionExchange(): Promise<SessionExchangeTokenResponse> {
+  const { data } = await apiClient.post<SessionExchangeTokenResponse>('/oauth/session/exchange');
   return data;
 }
 

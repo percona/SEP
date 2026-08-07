@@ -15,6 +15,8 @@
 
 """Define tests for the app.core.db.config module."""
 
+from urllib.parse import unquote, urlsplit
+
 import pytest
 from pydantic import ValidationError
 
@@ -70,6 +72,36 @@ def test_database_options_url_with_postgresql():
 
     expected_url = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
     assert expected_url == db_options.URL
+
+
+def test_database_options_url_round_trips_a_password_with_reserved_characters():
+    """Encode a password whose reserved characters would otherwise end the authority."""
+    db_options = DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
+        HOST="localhost",
+        PORT=5432,
+        USER="user",
+        PASSWORD="p@ss:w/rd123",
+        NAME="testdb",
+    )
+
+    expected_url = "postgresql+asyncpg://user:p%40ss%3Aw%2Frd123@localhost:5432/testdb"
+    assert expected_url == db_options.URL
+    assert unquote(urlsplit(db_options.URL).password) == "p@ss:w/rd123"
+
+
+def test_database_options_url_round_trips_a_user_with_reserved_characters():
+    """Encode a user whose reserved characters would otherwise end the credentials."""
+    db_options = DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
+        HOST="localhost",
+        PORT=5432,
+        USER="us/er:name",
+        PASSWORD="pass",
+        NAME="testdb",
+    )
+
+    assert unquote(urlsplit(db_options.URL).username) == "us/er:name"
 
 
 def test_database_options_password_masked_in_repr():

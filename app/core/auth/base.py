@@ -20,7 +20,12 @@ from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import ClassVar
 
-from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken
+from app.core.auth.models import (
+    BaseTokenPayload,
+    BaseUser,
+    OAuthToken,
+    SessionExchangeTokenResponse,
+)
 
 
 class BaseAuthProvider(ABC):
@@ -74,3 +79,19 @@ class BaseAuthProvider(ABC):
             without overriding this method.
         """
         raise NotImplementedError
+
+    async def exchange_ambient_session(
+        self,
+        cookies: Mapping[str, str],  # noqa: ARG002
+    ) -> SessionExchangeTokenResponse | None:
+        """Mint a short-lived bearer from an ambient session cookie on the request.
+
+        Unlike :meth:`resolve_ambient_session`, default to denying rather than
+        raising: a provider written before this seam existed then refuses the
+        exchange instead of surfacing a 500, which is the safe outcome for a
+        credential-minting endpoint.
+
+        :param cookies: The request cookies, keyed by name.
+        :return: The minted bearer on a valid ambient session, else ``None``.
+        """
+        return None

@@ -35,6 +35,7 @@ import yaml
 from aiofiles.ospath import getsize
 from async_lru import alru_cache
 from pydantic import (
+    AliasChoices,
     BaseModel,
     BeforeValidator,
     computed_field,
@@ -83,6 +84,7 @@ from app.sep.snippets.forms import (
     SubmitButtonElement,
     TextInputElement,
 )
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     META_KEY_DESCRIPTION,
     META_KEY_SERVICE_TYPE,
@@ -334,7 +336,7 @@ class BaseSnippetArgs(BaseModel):
     :type executor_host: NonEmptyStr
     """
 
-    extra_args_field: ClassVar[str] = "extra_args"
+    extra_args_field: ClassVar[str] = EXTRA_ARGS_FIELD_NAME
     sudo_field: ClassVar[str] = "sudo"
     executor_host: NonEmptyStr = Field(
         validation_alias=EXECUTOR_HOSTS_INPUT_NAME, exclude=True
@@ -955,7 +957,13 @@ class BaseSnippet(BaseModel):
         if add_extra_args_field:
             fields[BaseSnippetArgs.extra_args_field] = (
                 ExtraArgsField,
-                Field(default_factory=list, alias=EXTRA_ARGS_INPUT_NAME),
+                Field(
+                    default_factory=list,
+                    validation_alias=AliasChoices(
+                        EXTRA_ARGS_INPUT_NAME, EXTRA_ARGS_FIELD_NAME
+                    ),
+                    serialization_alias=EXTRA_ARGS_FIELD_NAME,
+                ),
             )
 
         if add_sudo_field:

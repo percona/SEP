@@ -158,7 +158,7 @@ describe('InventorySchedulePage', () => {
         makePeriodic({
           id: 10,
           execute_request: {
-            meta: { syncer: 'myapp.SyncerA' } as unknown as Record<string, never>,
+            meta: { syncer: 'myapp.SyncerA' },
             chain_task_names: [],
             chain_on_failure: false,
           },
@@ -181,7 +181,7 @@ describe('InventorySchedulePage', () => {
         makePeriodic({
           id: 12,
           execute_request: {
-            meta: { syncer: 'unknown.Syncer' } as unknown as Record<string, never>,
+            meta: { syncer: 'unknown.Syncer' },
             chain_task_names: [],
             chain_on_failure: false,
           },
@@ -367,7 +367,7 @@ describe('InventorySchedulePage', () => {
           id: 30,
           enabled: true,
           execute_request: {
-            meta: { syncer: 'myapp.SyncerA' } as unknown as Record<string, never>,
+            meta: { syncer: 'myapp.SyncerA' },
             chain_task_names: [],
             chain_on_failure: false,
           },

@@ -16,6 +16,7 @@
 """Fixtures for ``tests/app/core/settings_override/``."""
 
 import logging
+from collections.abc import Callable
 
 import pytest
 import pytest_asyncio
@@ -24,6 +25,7 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
+from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 
@@ -42,6 +44,23 @@ def _propagate_cache_logs() -> None:
     app_logger.propagate = True
     yield
     app_logger.propagate = previous
+
+
+@pytest.fixture(name="restrict")
+def restrict_fixture(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """Return a callable pinning ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` to given entries.
+
+    Pins the value on the already-constructed proxy rather than through the
+    environment, which the singleton no longer reads.
+
+    :param monkeypatch: The pytest patcher whose undo restores the real value.
+    :return: A callable taking the ``"ClassName.KEY"`` entries to allow.
+    """
+
+    def _restrict(*entries: str) -> None:
+        monkeypatch.setattr(settings, "SETTINGS_OVERRIDE_ALLOWED_KEYS", set(entries))
+
+    return _restrict
 
 
 @pytest_asyncio.fixture(name="session")

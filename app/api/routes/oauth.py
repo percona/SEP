@@ -24,10 +24,14 @@ from pydantic import BaseModel, ValidationError
 
 from app.api.deps import CurrentUser, RefreshTokenCookie
 from app.core.auth.exceptions import HTTPUnauthorizedException, InactiveUserException
-from app.core.auth.models import OAuthToken, SPAOAuthTokenResponse
+from app.core.auth.models import (
+    OAuthToken,
+    SessionExchangeTokenResponse,
+    SPAOAuthTokenResponse,
+)
 from app.core.auth.utils import get_user_model
 from app.sep.config import sep_settings
-from app.sep.deps import resolve_ambient_session_token
+from app.sep.deps import resolve_ambient_exchange_token, resolve_ambient_session_token
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +180,53 @@ async def spa_session_login(
         access_token=oauth_token.access_token,
         expires_in=oauth_token.expires_in,
     )
+
+
+@router.post("/session/exchange")
+async def spa_session_exchange(
+    request: Request,
+    response: Response,
+) -> SessionExchangeTokenResponse:
+    """Mint a short-lived SEP bearer from an ambient Grafana session.
+
+    Serves an embedded client that already carries the host's session cookie on
+    the same origin. Unlike ``POST /session``, set no cookie and issue no refresh
+    token: the caller holds the bearer in memory and exchanges again before it
+    expires, so the deployment never shares a long-lived credential.
+
+    Every exchange re-reads the identity from the provider and no validation is
+    cached, so a role change takes effect within one bearer lifetime. A
+    signed-out browser loses embedded access just as fast, because without the
+    session cookie it cannot obtain another bearer -- though whether a
+    *previously copied* host cookie stops working depends on the host revoking
+    its own session server-side, which is outside SEP's control.
+
+    Carries no auth dependency by design: the caller is not yet SEP-authenticated,
+    and the ambient session cookie is the credential being presented. No CSRF
+    primitive applies either -- ``IsCsrfValidated`` guards form data on the
+    server-rendered login route, and requiring a Bearer token cannot gate an
+    endpoint whose purpose is to issue one. That is safe because a cross-origin
+    attacker cannot read this response (the CORS posture is an explicit
+    per-environment origin allowlist, with the middleware absent when none is
+    configured), and the bearer-authenticated calls the token enables are
+    CSRF-exempt by design, since browsers never attach an ``Authorization``
+    header automatically.
+
+    Every failure -- no cookie, a rejected session, an unreachable provider --
+    denies with the same ``401`` rather than reporting a reason the route cannot
+    distinguish.
+
+    :param request: The incoming request, carrying the ambient session cookie.
+    :param response: The HTTP response, marked uncacheable so no intermediary
+        stores the minted bearer.
+    :return: The minted bearer and its lifetime.
+    :raises HTTPUnauthorizedException: If there is no valid ambient session.
+    """
+    exchange_token = await resolve_ambient_exchange_token(request)
+    if exchange_token is None:
+        raise HTTPUnauthorizedException("No valid ambient session.")
+    response.headers["Cache-Control"] = "no-store"
+    return exchange_token
 
 
 @router.post("/refresh")

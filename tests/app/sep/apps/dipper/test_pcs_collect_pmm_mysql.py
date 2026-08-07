@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from app.sep.snippets.schema import field_for
+
 SCRIPT = (
     Path(__file__).parents[5] / "app/sep/apps/dipper/payloads/pcs-collect-pmm-mysql.py"
 )
@@ -211,7 +213,6 @@ class TestPcsCollectPmmMysqlListVisibility:
     @pytest.mark.asyncio
     async def test_schema_forbids_gated_fields_when_list(self):
         """The synthesised schema hides the gated fields when ``list`` is truthy."""
-        from app.sep.apps.snippets.schema import field_for
         from app.sep.snippets.models.snippet import BaseSnippet
 
         meta = await BaseSnippet.get_meta_by_path(SCRIPT)

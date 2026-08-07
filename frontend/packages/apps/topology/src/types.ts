@@ -106,7 +106,7 @@ export type TopologyEdge =
       source: string;
       target: string;
       type: 'dual_primary';
-      data?: Record<string, never>;
+      data?: { [key: string]: unknown };
     };
 
 export interface TopologyGraphSummary {

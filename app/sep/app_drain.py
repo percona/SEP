@@ -25,11 +25,12 @@ transition once the count reaches zero; and a periodic reconciler prunes rows
 orphaned by a worker crash or a force-disable ``revoke(terminate=True)`` (where
 ``task_postrun`` never runs).
 
-This module is imported from the app-owned Celery modules in the Celery ``include`` list
-(e.g. :mod:`app.sep.apps.snippets.celery`, :mod:`app.sep.apps.alerts.celery`,
-:mod:`app.sep.apps.report.celery`) so its Celery task and signal receivers register
-at worker startup — this module is not included directly, so registration rides on that
-import rather than autodiscovery.
+This module is named directly in ``STATIC_CELERY_INCLUDE`` so its Celery task and
+signal receivers register at worker startup even in an image that ships no app
+with a ``celery.py``. Registration therefore no longer rides on a transitive
+import from the app-owned Celery modules (:mod:`app.sep.apps.alerts.celery`,
+:mod:`app.sep.apps.report.celery`), which would leave the unconditionally-seeded
+``sep__reconcile_disabling_apps`` beat row pointing at an unregistered task.
 """
 
 import logging
@@ -60,9 +61,9 @@ def owned_by(app_key: str) -> Callable[[Any], Any]:
 
     Apply *above* ``@celery.task`` so it stamps the registered task object::
 
-        @owned_by("snippets")
+        @owned_by("alerts")
         @celery.task
-        def sync_snippets() -> None: ...
+        def backup_alert_config() -> None: ...
 
     The ``task_prerun`` / ``task_postrun`` receivers read the tag off the running
     task to count it toward its app's drain. A task without the tag (every
@@ -160,7 +161,7 @@ async def track_app_task(session: AsyncSession, app_key: str) -> AsyncIterator[N
     """Count a non-Celery, in-request unit of work in the drain counter.
 
     Wraps a direct (non-Celery) call to a drainable coroutine -- e.g. the manual
-    snippet-refresh routes awaiting :func:`app.sep.apps.snippets.celery.update_snippets` -- so
+    snippet-refresh routes awaiting :func:`app.sep.snippets.celery.update_snippets` -- so
     it shows up in the per-app :class:`app.sep.models.AppRunningTask` count
     exactly as a Celery task does via the ``task_prerun``/``task_postrun``
     receivers. Without it a concurrent disable would see zero in-flight work and

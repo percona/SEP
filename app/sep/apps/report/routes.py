@@ -13,7 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the report plugin."""
+"""Define legacy Jinja routes for the report app.
+
+These Jinja2 routes are deprecated. The JSON API equivalents live under
+``/api/apps/report/`` and the React UI consumes them via
+``frontend/packages/apps/report``. Every response from this router carries the
+RFC 8594 ``Deprecation: true`` header and emits a WARNING on hit; the routes
+remain mounted only until the Jinja layer is removed.
+"""
 
 import logging
 from typing import Annotated
@@ -22,6 +29,7 @@ from fastapi import APIRouter, Form, Query, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
 
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.apps.report.celery import (
     render_report_pdf_job,
     upload_report_snapshot_job,
@@ -39,7 +47,7 @@ from .service import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 

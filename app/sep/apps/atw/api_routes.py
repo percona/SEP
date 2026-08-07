@@ -62,8 +62,10 @@ from app.sep.apps.atw.crud import (
 )
 from app.sep.apps.atw.deps import (
     AtwIncidentDep,
+    ClosedAtwIncidentDep,
     diagnostics_send_disabled_reasons,
     IsDiagnosticsSendConfigured,
+    OpenAtwIncidentDep,
 )
 from app.sep.apps.atw.models import (
     AtwConfigResponse,
@@ -79,11 +81,11 @@ from app.sep.apps.atw.models import (
 )
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.apps.snippets.script_source import snippet_not_found_detail, SnippetScript
 from app.sep.deps import ApiCurrentUser, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +281,38 @@ async def atw_delete_incident(session: SessionDep, incident: AtwIncidentDep) -> 
     await AtwIncidentManager.delete(session, incident)
 
 
+@router.post("/incidents/{incident_id}/close/")
+async def atw_close_incident(
+    session: SessionDep, incident: OpenAtwIncidentDep
+) -> AtwIncidentResponse:
+    """Close a diagnostic incident, stamping the current UTC time.
+
+    :param session: The database session.
+    :param incident: The open incident resolved from the ``incident_id`` path parameter.
+    :return: The closed incident.
+    :raises HTTPConflictException: If the incident is already closed.
+    """
+    incident.closed_at = utc_now()
+    saved = await AtwIncidentManager.save(session, incident)
+    return AtwIncidentResponse.model_validate(saved)
+
+
+@router.post("/incidents/{incident_id}/reopen/")
+async def atw_reopen_incident(
+    session: SessionDep, incident: ClosedAtwIncidentDep
+) -> AtwIncidentResponse:
+    """Reopen a closed diagnostic incident, clearing its close timestamp.
+
+    :param session: The database session.
+    :param incident: The closed incident resolved from the ``incident_id`` path parameter.
+    :return: The reopened incident.
+    :raises HTTPConflictException: If the incident is already open.
+    """
+    incident.closed_at = None
+    saved = await AtwIncidentManager.save(session, incident)
+    return AtwIncidentResponse.model_validate(saved)
+
+
 @router.get("/execution-schema/")
 async def atw_execution_schema(
     snippet_filename: Annotated[
@@ -349,7 +383,7 @@ def _failure_detail(exc: Exception) -> str | list[dict[str, Any]]:
 )
 async def atw_batch_execute(
     session: SessionDep,
-    incident: AtwIncidentDep,
+    incident: OpenAtwIncidentDep,
     body: ATWBatchExecuteWrite,
     tasks_api: TaskAPI,
 ) -> ATWBatchExecuteResponse:

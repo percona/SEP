@@ -37,6 +37,11 @@ pipeline {
 			defaultValue: false,
 			description: 'Push the image to the Docker registry'
 		)
+		string(
+			name: 'customImageTag',
+			defaultValue: '',
+			description: 'Optional image tag override (OCI tag: starts [A-Za-z0-9_], then [A-Za-z0-9._-], max 128; the latest* family and release tags vX.Y.Z are reserved); skips git-tag naming, never pushes :latest'
+		)
 	}
 
 	options {
@@ -106,6 +111,27 @@ pipeline {
 
 					def isStableSemverTag = (env.GIT_TAG ==~ /^v\d+\.\d+\.\d+$/)
 					env.PUSH_LATEST = (env.GIT_TAG_COUNT.toInteger() > 0 && isStableSemverTag) ? "true" : "false"
+
+					def customTag = (params.customImageTag ?: '').trim()
+					if (customTag) {
+						if (!(customTag ==~ /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/)) {
+							currentBuild.result = "FAILURE"
+							throw new Exception("Invalid customImageTag '${customTag}': must match ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\$ (max 128 chars)")
+						}
+						// GIT_TAG drives the unguarded primary push, so a "latest" family or
+						// release-semver tag would republish an image the registry already
+						// maps to a different commit
+						if (customTag ==~ /^latest([._-].*)?$/ || customTag ==~ /^v\d+\.\d+\.\d+$/) {
+							currentBuild.result = "FAILURE"
+							throw new Exception("Reserved customImageTag: ${customTag}")
+						}
+						env.GIT_TAG = customTag
+						env.GIT_TAG_SHORT = customTag
+						env.RELEASE_VER = customTag
+						env.PUSH_LATEST = "false"
+						sh "git tag -f -- \"${customTag}\" HEAD"
+						echo "Using custom image tag: ${customTag}"
+					}
 				}
 			}
 		}
@@ -157,6 +183,22 @@ pipeline {
 					set -o pipefail
 
 					RELEASE_VER="${GIT_TAG}" make image-sidecar
+				'''
+			}
+		}
+
+		stage('Build SEP embedded image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			steps {
+				echo "Building SEP embedded image for ${RELEASE_VER} .."
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					RELEASE_VER="${GIT_TAG}" make image-sidecar-embedded
 				'''
 			}
 		}
@@ -262,6 +304,61 @@ pipeline {
 								podman image push --authfile .dockerhub sep:${GIT_TAG}-sidecar docker.io/percona/percona-sep:latest-sidecar
 							else
 								echo "Skipping Docker Hub :${GIT_TAG_SHORT}-sidecar and :latest-sidecar push (not a stable release tag): ${GIT_TAG}"
+							fi
+
+							podman logout --authfile .dockerhub docker.io
+							'''
+						}
+					}
+				}
+			}
+		}
+
+		stage('Push SEP embedded image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			when {
+				expression {
+					return params.pushImage
+				}
+			}
+
+			steps {
+
+				withCredentials([string(credentialsId: 'SEP_DOCKER_HUB_WRITE_TOKEN', variable: 'DOCKER_TOKEN')]) {
+					sh '''
+						set -o errexit
+						set -o pipefail
+
+						podman image push sep:${GIT_TAG}-embedded labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG}-embedded
+
+						if [ "${PUSH_LATEST}" = "true" ]; then
+							podman image tag sep:${GIT_TAG}-embedded sep:${GIT_TAG_SHORT}-embedded
+							podman image push sep:${GIT_TAG_SHORT}-embedded labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG_SHORT}-embedded
+							echo "Pushing labbox-mini.tp.int.percona.com:5555/sep:latest-embedded"
+							podman image push sep:${GIT_TAG}-embedded labbox-mini.tp.int.percona.com:5555/sep:latest-embedded
+						else
+							echo "Skipping internal :${GIT_TAG_SHORT}-embedded and :latest-embedded push (not a stable release tag): ${GIT_TAG}"
+						fi
+					'''
+
+					script {
+						if (params.pushImageDocker) {
+							sh '''
+							set -o errexit
+							set -o pipefail
+
+							echo -n "${DOCKER_TOKEN}" | podman login --authfile .dockerhub --username percona --password-stdin docker.io
+							podman image push --authfile .dockerhub sep:${GIT_TAG}-embedded docker.io/percona/percona-sep:${GIT_TAG}-embedded
+
+							if [ "${PUSH_LATEST}" = "true" ]; then
+								podman image push --authfile .dockerhub sep:${GIT_TAG_SHORT}-embedded docker.io/percona/percona-sep:${GIT_TAG_SHORT}-embedded
+								echo "Pushing docker.io/percona/percona-sep:latest-embedded"
+								podman image push --authfile .dockerhub sep:${GIT_TAG}-embedded docker.io/percona/percona-sep:latest-embedded
+							else
+								echo "Skipping Docker Hub :${GIT_TAG_SHORT}-embedded and :latest-embedded push (not a stable release tag): ${GIT_TAG}"
 							fi
 
 							podman logout --authfile .dockerhub docker.io

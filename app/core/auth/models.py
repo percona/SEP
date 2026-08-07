@@ -77,22 +77,33 @@ class SPAOAuthTokenResponse(BaseModel):
     expires_in: TimedeltaSeconds
 
 
+class SessionExchangeTokenResponse(BaseModel):
+    """Represent the bearer returned when an ambient session is exchanged.
+
+    Mirror :class:`SPAOAuthTokenResponse`'s field names so a client's token
+    provider reads the same shape, but keep the contract separate: no refresh
+    token is issued and no cookie is set, so the holder renews by exchanging
+    again rather than by refreshing.
+
+    :param access_token: The short-lived token used to access protected
+        resources.
+    :param expires_in: The time duration after which the token expires.
+    """
+
+    access_token: str
+    expires_in: TimedeltaSeconds
+
+
 class BaseTokenPayload(BaseModel, ABC):
-    """Base abstract class representing the payload of a JWT token.
+    """Represent the payload of a JWT token.
 
     :param iss: The issuer of the token.
-    :type iss: str
     :param sub: The subject or user identifier the token refers to.
-    :type sub: str
     :param aud: The audience for whom the token is intended.
-    :type aud: list[str]
     :param exp: The expiration time of the token.
-    :type exp: FutureDatetime
     :param nbf: The time before which the token must not be accepted for
         processing.
-    :type nbf: PastDatetime
     :param jti: The JWT token identifier.
-    :type jti: str
     """
 
     iss: str
@@ -324,6 +335,21 @@ class BaseUser(BaseModel, ABC):
         """
 
     @classmethod
+    async def from_bearer(cls, token: str) -> Self:
+        """Create a user instance from a token presented as an API Bearer credential.
+
+        Default to :meth:`from_jwt`, so a provider whose Bearer surface accepts
+        exactly what its session-cookie surface accepts needs no override. A
+        provider that mints an additional credential type valid *only* as a
+        Bearer overrides this; widening the cookie surface then requires calling
+        a different method rather than passing a different argument.
+
+        :param token: The token carried in the ``Authorization: Bearer`` header.
+        :return: An instance of the user model.
+        """
+        return await cls.from_jwt(token)
+
+    @classmethod
     @abstractmethod
     async def from_code(cls, code: str) -> Self:
         """Create a user instance from an authorization code.
@@ -333,9 +359,7 @@ class BaseUser(BaseModel, ABC):
         instance.
 
         :param code: The authorization code received from the OAuth2 provider.
-        :type code: str
         :return: An instance of the user model.
-        :rtype: Self
         """
 
     @classmethod
