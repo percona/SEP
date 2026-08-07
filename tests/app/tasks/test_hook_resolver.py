@@ -137,9 +137,12 @@ class TestAllowList:
         # takes that capturing handler with them, and it also sets
         # ``propagate=False`` on ``app``, so the record would stop short of root
         # regardless. Whether the config has been applied yet depends on what
-        # else ran first, so capture on the emitting logger, which the config
-        # never touches, to keep the assertion order-independent.
+        # else ran first, and dictConfig may also disable existing non-root
+        # loggers. Capture on the emitting logger and force-enable it for this
+        # assertion to keep the test order-independent.
         emitting_logger = logging.getLogger(hook_resolver.__name__)
+        was_disabled = emitting_logger.disabled
+        emitting_logger.disabled = False
         emitting_logger.addHandler(caplog.handler)
         try:
             with (
@@ -149,6 +152,7 @@ class TestAllowList:
                 validate_hook_path("os:system", field="run_result_recorder")
         finally:
             emitting_logger.removeHandler(caplog.handler)
+            emitting_logger.disabled = was_disabled
 
         assert "os:system" in caplog.text
         assert "run_result_recorder" in caplog.text
