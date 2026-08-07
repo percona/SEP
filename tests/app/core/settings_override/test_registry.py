@@ -110,6 +110,19 @@ def test_materialize_template_builds_template_from_string() -> None:
     assert result.template == "$summary"
 
 
+def test_materialize_template_passes_through_existing_template() -> None:
+    """Assert ``materialize_template`` returns an already-``Template`` value unchanged."""
+    tmpl = Template("$version")
+    result = materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", tmpl))
+    assert result is tmpl
+
+
+def test_materialize_template_rejects_non_string() -> None:
+    """Reject a non-string, non-``Template`` override instead of passing it through."""
+    with pytest.raises(ValueError, match="must be a string"):
+        materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
+
+
 def _purpose_probe(seen: list[MaterializerPurpose]) -> type[BaseModel]:
     """Build a probe class whose materializer records the purpose it ran for.
 
@@ -123,7 +136,7 @@ def _purpose_probe(seen: list[MaterializerPurpose]) -> type[BaseModel]:
         return ctx.raw
 
     class _Probe(BaseModel):
-        """A probe model whose HOT field records how it was materialized."""
+        """Represent a model whose HOT field records how it was materialized."""
 
         value: str = hot_field("", materializer=_record)
 
@@ -162,19 +175,6 @@ class TestMaterializerPurpose:
         )
 
         assert seen == [MaterializerPurpose.SNAPSHOT]
-
-
-def test_materialize_template_passes_through_existing_template() -> None:
-    """Assert ``materialize_template`` returns an already-``Template`` value unchanged."""
-    tmpl = Template("$version")
-    result = materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", tmpl))
-    assert result is tmpl
-
-
-def test_materialize_template_rejects_non_string() -> None:
-    """Reject a non-string, non-``Template`` override instead of passing it through."""
-    with pytest.raises(ValueError, match="must be a string"):
-        materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
 
 
 def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
