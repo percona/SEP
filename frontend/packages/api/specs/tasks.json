@@ -199,6 +199,37 @@
         "type": "object"
       },
       "JsonValue": {},
+      "PaginatedResponse_PeriodicTaskResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodicTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[PeriodicTaskResponse]",
+        "type": "object"
+      },
       "PaginatedResponse_TaskHistoryResponse_": {
         "properties": {
           "items": {
@@ -2891,7 +2922,7 @@
     },
     "/periodic/": {
       "get": {
-        "description": "List all periodic tasks.",
+        "description": "List periodic tasks for the requested page window.",
         "operationId": "periodic_list_periodic_tasks_periodic__get",
         "parameters": [
           {
@@ -2925,6 +2956,29 @@
               ],
               "title": "Enabled"
             }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -2932,11 +2986,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PeriodicTaskResponse"
-                  },
-                  "title": "Response Periodic List Periodic Tasks Periodic  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_PeriodicTaskResponse_"
                 }
               }
             },

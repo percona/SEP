@@ -462,7 +462,7 @@ export interface paths {
     };
     /**
      * List Periodic Tasks
-     * @description List all periodic tasks.
+     * @description List periodic tasks for the requested page window.
      */
     get: operations['periodic_list_periodic_tasks_periodic__get'];
     put?: never;
@@ -787,6 +787,17 @@ export interface components {
       period: components['schemas']['Period'];
     };
     JsonValue: unknown;
+    /** PaginatedResponse[PeriodicTaskResponse] */
+    PaginatedResponse_PeriodicTaskResponse_: {
+      /** Items */
+      items: components['schemas']['PeriodicTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[TaskHistoryResponse] */
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
@@ -2390,6 +2401,8 @@ export interface operations {
       query?: {
         owner?: string | null;
         enabled?: boolean | null;
+        offset?: number;
+        limit?: number;
       };
       header?: never;
       path?: never;
@@ -2403,7 +2416,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PeriodicTaskResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_PeriodicTaskResponse_'];
         };
       };
       /** @description Validation Error */
