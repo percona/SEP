@@ -13,18 +13,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Build a delivery-plan executor over a pooled transport for a configured plan.
+"""Build a delivery-plan executor over a per-send transport for a configured plan.
 
-The transport client is pooled per origin and derives its own base path, so a
+The transport client is scoped to one send rather than pooled: the receiver
+endpoint is operator-changeable at run time, and a client cached on its origin
+outlives the origin it was keyed on. The client derives its own base path, so a
 configured endpoint carrying a path prefix or query string cannot be handed to
 the client wholesale -- those parts are rebased onto the plan's own steps here.
 """
 
 __all__ = ["get_delivery_executor", "split_endpoint"]
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from urllib.parse import parse_qsl, urlparse
 
-from app.core.config import settings
 from app.core.requests import RemoteAPI
 from app.sep.bundle_upload.plan import (
     DeliveryPlan,
@@ -38,7 +41,7 @@ from app.sep.bundle_upload.plan import (
 def split_endpoint(endpoint: str) -> tuple[str, str, dict[str, str]]:
     """Split a configured endpoint into origin, request path, and query pairs.
 
-    The transport client is pooled per origin and derives its own base path, so
+    The transport client is built on the origin and derives its own base path, so
     the path and query travel in the plan instead. Repeated query keys collapse
     to the last occurrence.
 
@@ -114,10 +117,16 @@ def _rebased_plan(
     return plan.model_copy(update={"resolution_steps": steps, "upload": upload})
 
 
+@asynccontextmanager
 async def get_delivery_executor(
     plan: DeliveryPlan, *, step_observer: StepObserver | None = None
-) -> DeliveryPlanExecutor:
-    """Build an executor for ``plan`` over a transport pooled on its origin.
+) -> AsyncIterator[DeliveryPlanExecutor]:
+    """Yield an executor for ``plan`` over a transport that lasts one send.
+
+    One transport spans the whole block, so every resolution step and the
+    terminal upload of a single ``upload_bundle`` call reuse one connection. The
+    transport is closed on the way out, however the block ends, and the executor
+    is unusable afterwards. Build a new one per send.
 
     :param plan: The configured delivery plan to run.
     :param step_observer: A synchronous callback notified as each resolution step
@@ -127,5 +136,5 @@ async def get_delivery_executor(
     origin, path, query = split_endpoint(str(plan.endpoint))
     if path != "/" or query:
         plan = _rebased_plan(plan, path=path, query=query)
-    api = await settings.get_remote_api(RemoteAPI, endpoint=origin)
-    return DeliveryPlanExecutor(plan, api, step_observer=step_observer)
+    async with RemoteAPI(endpoint=origin) as api:
+        yield DeliveryPlanExecutor(plan, api, step_observer=step_observer)
