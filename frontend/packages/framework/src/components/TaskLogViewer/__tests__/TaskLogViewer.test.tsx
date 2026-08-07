@@ -75,6 +75,25 @@ describe('TaskLogViewer', () => {
     return handle;
   }
 
+  function getEventHandle(id: string): SseStreamHandle {
+    const handle = mock.pending
+      .filter((h) => h.url.split('?')[0] === `/stream-logs/${id}/execution-events`)
+      .at(-1);
+    if (!handle) {
+      throw new Error(`No execution-events stream handle for ${id}`);
+    }
+    return handle;
+  }
+
+  /** The primary stdout/stderr strip; the per-step strip is a second tablist. */
+  function getPrimaryTabList() {
+    return screen.getAllByRole('tablist')[0];
+  }
+
+  function getEventsButton() {
+    return screen.getByRole('button', { name: /execution events/i });
+  }
+
   function getTailSelect() {
     return screen.getByRole('combobox');
   }
@@ -231,7 +250,7 @@ describe('TaskLogViewer', () => {
     expect(dotAfter?.classList.contains('MuiBadge-invisible')).toBe(true);
   });
 
-  it('switches pane when clicking the Execution events tab', async () => {
+  it('opens the execution events panel from the demoted control in one interaction', async () => {
     render(
       <QueryWrapper>
         <TaskLogViewer taskHistoryId="1" taskStatus="RUNNING" />
@@ -246,10 +265,137 @@ describe('TaskLogViewer', () => {
     await waitFor(() => expect(screen.getByTestId('log-output')).toBeInTheDocument());
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('tab', { name: /execution events/i }));
+    await user.click(getEventsButton());
 
     expect(screen.queryByTestId('log-output')).not.toBeInTheDocument();
     expect(screen.getByText(/no execution events yet/i)).toBeInTheDocument();
+    expect(getEventsButton()).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('renders exactly two primary tabs, stdout and stderr', async () => {
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="30" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const tabs = within(getPrimaryTabList()).getAllByRole('tab');
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['stdout', 'stderr']);
+    expect(screen.queryByRole('tab', { name: /execution events/i })).toBeNull();
+  });
+
+  it('shows no unread indicator while a running task pushes execution events', async () => {
+    const { container } = render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="31" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const eventHandle = getEventHandle('31');
+    act(() => {
+      eventHandle.pushMessage({
+        timestamp: '2026-04-28T10:00:00Z',
+        type: 'STEP_STARTED',
+        description: 'setup started',
+        step: 'setup',
+      });
+    });
+    await flushPromises();
+
+    expect(getEventsButton().querySelector('.MuiBadge-dot')).toBeNull();
+    // Nothing anywhere in the console badges while the events view is closed.
+    expect(container.querySelectorAll('.MuiBadge-dot:not(.MuiBadge-invisible)')).toHaveLength(0);
+
+    // The event really did arrive while the view was closed.
+    const user = userEvent.setup();
+    await user.click(getEventsButton());
+    expect(screen.getByText(/setup started/)).toBeInTheDocument();
+  });
+
+  it('leaves the primary tabs unselected for the events view and returns in one click', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="32" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('32');
+    act(() => {
+      handle.pushMessage({ msg: 'out\n', step: 'setup', type: 'stdout', offset: 1 });
+    });
+    await waitFor(() => expect(screen.getByTestId('log-output')).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(getEventsButton());
+
+    const tabs = within(getPrimaryTabList()).getAllByRole('tab');
+    expect(tabs.every((tab) => tab.getAttribute('aria-selected') === 'false')).toBe(true);
+    // MUI warns when Tabs `value` is not one of its children; passing false must not.
+    const tabsWarnings = consoleError.mock.calls.filter((call) =>
+      call.some((arg) => typeof arg === 'string' && /Tabs/.test(arg)),
+    );
+    expect(tabsWarnings).toEqual([]);
+
+    await user.click(screen.getByRole('tab', { name: /stdout/i }));
+    expect(screen.getByTestId('log-output')).toBeInTheDocument();
+    expect(getEventsButton()).toHaveAttribute('aria-pressed', 'false');
+
+    consoleError.mockRestore();
+  });
+
+  it('keeps events search and per-step grouping from the demoted entry point', async () => {
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="33" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('33');
+    act(() => {
+      handle.pushMessage({ msg: 'out\n', step: 'log-step', type: 'stdout', offset: 1 });
+    });
+
+    const eventHandle = getEventHandle('33');
+    act(() => {
+      eventHandle.pushMessage({
+        timestamp: '2026-04-28T10:00:00Z',
+        type: 'STEP_STARTED',
+        description: 'setup started',
+        step: 'setup',
+      });
+      eventHandle.pushMessage({
+        timestamp: '2026-04-28T10:00:05Z',
+        type: 'STEP_FINISHED',
+        description: 'build finished',
+        step: 'build',
+      });
+    });
+    await flushPromises();
+
+    const user = userEvent.setup();
+    await user.click(getEventsButton());
+
+    // The step strip lists the execution-event steps, not the log steps.
+    await waitFor(() => {
+      const stepTabs = within(screen.getAllByRole('tablist')[1]).getAllByRole('tab');
+      expect(stepTabs.map((tab) => tab.textContent)).toEqual(['setup', 'build']);
+    });
+    expect(screen.getByText(/setup started/)).toBeInTheDocument();
+
+    // Selecting a step filters the events shown.
+    await user.click(screen.getByRole('tab', { name: 'build' }));
+    expect(screen.getByText(/build finished/)).toBeInTheDocument();
+    expect(screen.queryByText(/setup started/)).toBeNull();
+
+    // The search box still narrows within the selected step.
+    await user.type(screen.getByPlaceholderText(/search events/i), 'nothing-matches');
+    expect(screen.getByText(/no events match/i)).toBeInTheDocument();
   });
 
   it('triggers a blob download when the download button is clicked', async () => {
