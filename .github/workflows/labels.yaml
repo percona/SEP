@@ -17,5 +17,124 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
+      # sync-labels: true removes an app:/svc: label once a force-push means its
+      # paths no longer match. Labeler only manages labels defined in its config,
+      # so the app-isolated/large-diff labels below are left untouched here.
       - uses: actions/labeler@f27b608878404679385c85cfa523b85ccb86e213 # v6.1.0
-...
+        with:
+          sync-labels: true
+      # large-diff and app-isolated cannot be expressed by actions/labeler: one
+      # counts lines, the other is an "all files in one app slice" predicate.
+      # Compute both from the PR file list. Runs with the base repo's trusted
+      # token; never checks out or executes PR-head code.
+      - name: Compute blast-radius labels
+        if: github.event_name == 'pull_request_target'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const LARGE_DIFF_THRESHOLD = 1500;
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.info('No pull_request in payload; skipping.');
+              return;
+            }
+            const { owner, repo } = context.repo;
+
+            // Generated files are discounted from the changed-line count so a
+            // lockfile or regenerated client does not read as a large diff.
+            const isGenerated = (name) =>
+              name.startsWith('frontend/packages/api/src/generated/') ||
+              name.startsWith('frontend/packages/api/specs/') ||
+              name === 'poetry.lock' ||
+              name === 'frontend/pnpm-lock.yaml';
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100,
+            });
+
+            let changedLines = 0;
+            for (const f of files) {
+              if (!isGenerated(f.filename)) {
+                changedLines += (f.additions || 0) + (f.deletions || 0);
+              }
+            }
+            const largeDiff = changedLines > LARGE_DIFF_THRESHOLD;
+
+            // Derive app-slice membership from the generated app:<name> rules in
+            // the base config, keeping a single source of truth with labeler.yml.
+            const cfg = await github.rest.repos.getContent({
+              owner, repo, path: '.github/labeler.yml', ref: pr.base.sha,
+            });
+            const labelerText = Buffer.from(cfg.data.content, 'base64').toString('utf8');
+
+            const appGlobs = {};
+            let currentLabel = null;
+            for (const line of labelerText.split('\n')) {
+              const keyMatch = line.match(/^([A-Za-z0-9:_-]+):\s*$/);
+              if (keyMatch) {
+                currentLabel = keyMatch[1].startsWith('app:') ? keyMatch[1] : null;
+                if (currentLabel) appGlobs[currentLabel] = [];
+                continue;
+              }
+              if (!currentLabel) continue;
+              const globMatch = line.match(/^\s*-\s*'([^']+)'\s*$/);
+              if (globMatch) appGlobs[currentLabel].push(globMatch[1]);
+            }
+
+            const matchGlob = (glob, filename) => {
+              if (glob.endsWith('/**')) {
+                return filename.startsWith(glob.slice(0, -2));
+              }
+              const pattern = glob
+                .split('*')
+                .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                .join('[^/]*');
+              return new RegExp(`^${pattern}$`).test(filename);
+            };
+            const appOf = (filename) => {
+              for (const [label, globs] of Object.entries(appGlobs)) {
+                if (globs.some((glob) => matchGlob(glob, filename))) return label;
+              }
+              return null;
+            };
+
+            const touchedApps = new Set();
+            let hasNonAppFile = false;
+            for (const f of files) {
+              const app = appOf(f.filename);
+              if (app === null) hasNonAppFile = true;
+              else touchedApps.add(app);
+            }
+            const appIsolated =
+              files.length > 0 && !hasNonAppFile && touchedApps.size === 1;
+
+            core.info(
+              `changedLines=${changedLines} largeDiff=${largeDiff} ` +
+                `appIsolated=${appIsolated} apps=[${[...touchedApps].join(', ')}]`,
+            );
+
+            const desired = { 'large-diff': largeDiff, 'app-isolated': appIsolated };
+            const present = new Set(
+              (
+                await github.paginate(github.rest.issues.listLabelsOnIssue, {
+                  owner, repo, issue_number: pr.number, per_page: 100,
+                })
+              ).map((label) => label.name),
+            );
+            for (const [name, want] of Object.entries(desired)) {
+              if (want && !present.has(name)) {
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: pr.number, labels: [name],
+                });
+                core.info(`Added ${name}`);
+              } else if (!want && present.has(name)) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number: pr.number, name,
+                  });
+                  core.info(`Removed ${name}`);
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                }
+              }
+            }
