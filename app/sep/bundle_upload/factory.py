@@ -126,12 +126,12 @@ async def get_delivery_executor(
     One transport spans the whole block, so every resolution step and the
     terminal upload of a single ``upload_bundle`` call reuse one connection. The
     transport is closed on the way out, however the block ends, and the executor
-    is unusable afterwards -- build a new one per send.
+    is unusable afterwards. Build a new one per send.
 
     :param plan: The configured delivery plan to run.
     :param step_observer: A synchronous callback notified as each resolution step
         starts and completes, for a caller that records send progress.
-    :yield: The executor bound to the plan and its transport.
+    :return: The executor bound to the plan and its transport.
     """
     origin, path, query = split_endpoint(str(plan.endpoint))
     if path != "/" or query:
