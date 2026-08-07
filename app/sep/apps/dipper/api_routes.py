@@ -35,6 +35,7 @@ from fastapi import status as http_status
 
 from app.core.exceptions import HTTPNotFoundException, HTTPUnprocessableEntityException
 from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
+from app.core.utils.fields import ArbitraryMapping
 from app.sep.apps.dipper.constants import CollectorTypeEnum
 from app.sep.apps.dipper.deps import (
     build_dipper_execution_meta,
@@ -86,7 +87,7 @@ def _snippet_filename_for(history: dict[str, Any]) -> str | None:
 @router.get("/")
 async def dipper_api_list(
     tasks_api: TaskAPI, pagination: PaginationDep
-) -> PaginatedResponse[dict[str, Any]]:
+) -> PaginatedResponse[ArbitraryMapping]:
     """Return Dipper execution history rows.
 
     :param tasks_api: Async client for the tasks sub-app.

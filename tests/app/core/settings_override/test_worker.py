@@ -33,10 +33,14 @@ from app.core.settings_override.lifecycle import (
 )
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.worker import WorkerRefresher
+from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION, WorkerRefresher
 from app.core.utils import json_serializer
 from app.sep.config import SEPSettings
 from app.tasks.config import TasksSettings
+from tests.app.core.settings_override.conftest import (
+    recording_start_refresh_task,
+    START_REFRESH_TASK,
+)
 
 INTERVAL = timedelta(seconds=30)
 
@@ -250,25 +254,52 @@ class TestWorkerRefresherStart:
     ) -> None:
         """Forward the caller's callbacks, passing ``None`` when none are given."""
         recorded: dict[str, object] = {}
-
-        async def _fake_start(
-            session_maker_factory: object,
-            proxies: ProxyRegistry,
-            interval: timedelta,
-            callbacks: CallbackRegistry | None = None,
-        ) -> asyncio.Task:
-            recorded["callbacks"] = callbacks
-            return asyncio.create_task(asyncio.sleep(3600))
-
-        monkeypatch.setattr(
-            "app.core.settings_override.worker.start_refresh_task", _fake_start
-        )
+        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
         refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
 
         refresher.start(INTERVAL, enabled=True, **start_kwargs)
 
         try:
             assert recorded["callbacks"] is expected
+        finally:
+            refresher.stop()
+
+    @pytest.mark.parametrize(
+        ("proc_alive_timeout", "expected_seed_timeout"),
+        [
+            pytest.param(
+                4.0,
+                4.0 * SEED_TIMEOUT_FRACTION,
+                id="derived-from-deadline",
+            ),
+            pytest.param(None, None, id="unset-leaves-unbounded"),
+        ],
+    )
+    def test_start_forwards_seed_timeout_from_proc_alive_timeout(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        session_maker: async_sessionmaker,
+        monkeypatch: pytest.MonkeyPatch,
+        proc_alive_timeout: float | None,
+        expected_seed_timeout: float | None,
+    ) -> None:
+        """Apply the safety fraction once in ``start``, or omit when unset."""
+        recorded: dict[str, object] = {}
+        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
+        refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
+        start_kwargs = (
+            {"proc_alive_timeout": proc_alive_timeout}
+            if proc_alive_timeout is not None
+            else {}
+        )
+
+        refresher.start(INTERVAL, enabled=True, **start_kwargs)
+
+        try:
+            if expected_seed_timeout is None:
+                assert recorded["seed_timeout"] is None
+            else:
+                assert recorded["seed_timeout"] == pytest.approx(expected_seed_timeout)
         finally:
             refresher.stop()
 
