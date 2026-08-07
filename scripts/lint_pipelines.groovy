@@ -1,16 +1,6 @@
 #!/usr/bin/env groovy
-/**
- * Offline Groovy syntax check for Jenkins pipeline files.
- *
- * Coverage boundary: this script parses Groovy syntax only via
- * GroovyShell.parse. It does NOT validate the Jenkins Declarative
- * model — a misspelled or misplaced Declarative section (for example
- * ``stagez { }``) is valid Groovy and will still pass. Use
- * ``make lint-pipelines`` against a reachable Jenkins controller for
- * full Declarative-model validation.
- *
- * Usage: groovy scripts/lint_pipelines.groovy build/*.pipeline
- */
+// Parses Groovy syntax only (GroovyShell.parse). Does not validate the
+// Jenkins Declarative model — use ``make lint-pipelines`` for that.
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
 
 int failures = 0

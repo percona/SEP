@@ -409,9 +409,6 @@ jobs:
       - name: Smoke test - verify the general side-car image is unrestricted
         run: docker run --rm --entrypoint /bin/sh "sep:HEAD-sidecar" -c 'test -d /home/sep/app/app/sep/apps/report'
 
-  # Offline Groovy parse only — does not validate the Jenkins Declarative model.
-  # Misspelled/misplaced Declarative sections still pass; use `make lint-pipelines`
-  # against a reachable controller for full Declarative validation.
   pipeline-syntax:
     if: >-
       ${{

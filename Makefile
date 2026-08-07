@@ -316,9 +316,7 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-# Full Jenkins Declarative-model validation (requires controller access).
-# CI only runs an offline Groovy parse; this target posts each file to
-# pipeline-model-converter/validate. Usage: make lint-pipelines [FILE=build/x.pipeline]
+# Jenkins Declarative validate. Usage: make lint-pipelines [FILE=build/x.pipeline]
 lint-pipelines:
 	@set -euo pipefail; \
 	if [ -z "$${JENKINS_URL:-}" ] || [ -z "$${JENKINS_USER:-}" ] || [ -z "$${JENKINS_API_TOKEN:-}" ]; then \
