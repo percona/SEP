@@ -105,11 +105,18 @@ class GrafanaUserFactory(ModelFactory[GrafanaUser]):
 
 
 class TaskFactory(ModelFactory[Task]):
-    """Define factory for Task instances."""
+    """Define factory for Task instances.
+
+    Pins the hook-path fields to None so the random strings polyfactory would
+    otherwise generate for them do not trip the ``TaskWrite`` allow-list
+    validator wherever a built task is revalidated as a write.
+    """
 
     is_template: bool = False
     protected: bool = False
     backend: TaskBackendEnum = TaskBackendEnum.NOMAD
+    alert_detail_builder = None
+    run_result_recorder = None
 
 
 class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
@@ -117,14 +124,23 @@ class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
 
 
 class GeneratedTaskFactory(ModelFactory[TaskWrite]):
-    """Define factory for GenerateTask instances."""
+    """Define factory for GenerateTask instances.
+
+    Pins the hook-path fields to None so factory-generated values do not trip
+    the ``TaskWrite`` allow-list validator.
+    """
+
+    alert_detail_builder = None
+    run_result_recorder = None
 
 
 class TaskResponseFactory(ModelFactory[TaskResponse]):
     """Define factory for TaskResponse instances.
 
     Pins ``backend`` to Nomad so the ``TaskBase`` proxy-backend validator (which
-    requires a ``data["task"]`` key) does not reject factory-generated data.
+    requires a ``data["task"]`` key) does not reject factory-generated data, and
+    the hook-path fields to None so they do not trip the ``TaskWrite``
+    allow-list validator wherever a built response is revalidated as a write.
     """
 
     backend: TaskBackendEnum = TaskBackendEnum.NOMAD
@@ -133,6 +149,8 @@ class TaskResponseFactory(ModelFactory[TaskResponse]):
     deleted_at = None
     created_by = None
     last_updated_by = None
+    alert_detail_builder = None
+    run_result_recorder = None
 
 
 class TaskHistoryResponseFactory(ModelFactory[TaskHistoryResponse]):
