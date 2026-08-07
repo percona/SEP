@@ -214,10 +214,10 @@
 | app/sep/apps/dipper/routes.py                                                                                         |       64 |       38 |       12 |        1 |     36% |    90-195 |
 | app/sep/apps/dipper/schema.py                                                                                         |       35 |        1 |       10 |        1 |     96% |       236 |
 | app/sep/apps/framework/api.py                                                                                         |      322 |       10 |      124 |        8 |     96% |138-\>136, 193-198, 720, 727, 855, 861, 866, 872, 887, 1294 |
-| app/sep/apps/framework/apps.py                                                                                        |      318 |        8 |      124 |        7 |     97% |135, 516, 680, 696, 713, 773, 787, 794 |
+| app/sep/apps/framework/apps.py                                                                                        |      318 |        8 |      124 |        7 |     97% |136, 517, 681, 697, 714, 774, 788, 795 |
 | app/sep/apps/framework/base.py                                                                                        |       49 |        2 |        6 |        2 |     93% |  179, 186 |
 | app/sep/apps/framework/cascade.py                                                                                     |      189 |        0 |       62 |        2 |     99% |133-\>135, 149-\>151 |
-| app/sep/apps/framework/conformance.py                                                                                 |      101 |        9 |       52 |        7 |     88% |68, 173, 209-213, 272, 285, 289, 337 |
+| app/sep/apps/framework/conformance.py                                                                                 |      101 |        9 |       52 |        7 |     88% |68, 173, 209-213, 273, 286, 290, 338 |
 | app/sep/apps/framework/connectivity.py                                                                                |       25 |        0 |        6 |        0 |    100% |           |
 | app/sep/apps/framework/deprecation.py                                                                                 |       22 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/framework/deps.py                                                                                        |       15 |        0 |        2 |        0 |    100% |           |
@@ -231,7 +231,7 @@
 | app/sep/apps/framework/form\_dsl/model.py                                                                             |       17 |        1 |        2 |        1 |     89% |        70 |
 | app/sep/apps/framework/form\_dsl/pt\_toolkit.py                                                                       |       56 |        0 |       26 |        0 |    100% |           |
 | app/sep/apps/framework/registry.py                                                                                    |      177 |        4 |       92 |        4 |     97% |410, 416, 418, 437 |
-| app/sep/apps/framework/responses.py                                                                                   |       81 |        0 |       12 |        0 |    100% |           |
+| app/sep/apps/framework/responses.py                                                                                   |       93 |        1 |       20 |        1 |     98% |        62 |
 | app/sep/apps/framework/rules.py                                                                                       |      538 |        7 |      130 |        5 |     98% |323, 328, 333, 545, 861, 1348, 1368 |
 | app/sep/apps/framework/scaffold.py                                                                                    |      429 |       29 |      150 |       20 |     91% |281, 292, 304, 421, 516, 519, 539-\>546, 542, 593-595, 629, 670, 674, 874, 1103-1106, 1132, 1134, 1148-1151, 1177, 1182-1185, 1204, 1244 |
 | app/sep/apps/framework/schema.py                                                                                      |      393 |        2 |      114 |        2 |     99% |1315, 1767 |
@@ -455,7 +455,7 @@
 | app/tasks/routes.py                                                                                                   |      232 |       22 |       46 |        4 |     89% |146-150, 233-239, 272, 322-328, 335, 379-380, 410, 452, 471, 635, 649, 657, 683, 691-\>693, 714-715 |
 | app/tasks/run\_result.py                                                                                              |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                          |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                             | **34631** | **7173** | **9062** |  **766** | **77%** |           |
+| **TOTAL**                                                                                                             | **34643** | **7174** | **9070** |  **767** | **77%** |           |
 
 
 ## Setup coverage badge
