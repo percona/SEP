@@ -697,7 +697,8 @@ class PgBackRest(Backup):
     def _run_backup_command(self):
         """Run backup command.
 
-        :raises BackupError: If ``pg_incremental_cycle`` is not a recognised value.
+        :raises BackupError: If ``pg_incremental_cycle`` is not a recognised value
+            or if pgbackrest exits with a non-zero return code.
         """
         valid_cycles = ['daily', 'weekly', '1', '2', '3', '4', '5', '6', '7']
         if str(self.pg_incremental_cycle) not in valid_cycles:
