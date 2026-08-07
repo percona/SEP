@@ -21,6 +21,7 @@ from typing import Any
 
 from sqlalchemy.sql._typing import _ColumnExpressionArgument, ColumnExpressionArgument
 from sqlalchemy_celery_beat import PeriodicTask
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 
@@ -39,7 +40,16 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
 
     :ivar Model: The SQLAlchemy class this manager is responsible for (`PeriodicTask`).
     :vartype Model: type[PeriodicTask]
+    :cvar ordering: The default ordering for listing periodic tasks. `PeriodicTask`
+        is not a `BaseSQLModel`, so `BaseManager._get_ordering()` has no
+        `created_at` fallback to offer and would leave SELECTs unordered, making
+        offset pagination undefined. The primary key is unique, so ordering by it
+        alone is total and needs no tie-breaker. Business-meaningful ordering is
+        SEP-304.
+    :vartype ordering: list[ColumnExpressionOrStrLabelArgument]
     """
+
+    ordering = [col(PeriodicTask.id)]
 
     @classmethod
     def _filter_query(
