@@ -692,3 +692,33 @@ class TestCreateAppAsyncEngine:
             assert engine.pool._max_overflow == _SQLALCHEMY_DEFAULT_MAX_OVERFLOW
         finally:
             await engine.dispose()
+
+    def test_forwards_connect_args_when_set(self, monkeypatch: pytest.MonkeyPatch):
+        """Forward dialect-mapped connect_args into create_async_engine."""
+        recorded: dict[str, object] = {}
+        engine = MagicMock()
+
+        def _fake_create(*_args, **kwargs):
+            recorded.update(kwargs)
+            return engine
+
+        monkeypatch.setattr("app.core.db.utils.create_async_engine", _fake_create)
+
+        create_app_async_engine(self._postgres_options(CONNECT_TIMEOUT=2.5))
+
+        assert recorded["connect_args"] == {"timeout": 2.5}
+
+    def test_omits_connect_args_when_unset(self, monkeypatch: pytest.MonkeyPatch):
+        """Pass no connect_args kwarg when CONNECT_TIMEOUT is unset."""
+        recorded: dict[str, object] = {}
+        engine = MagicMock()
+
+        def _fake_create(*_args, **kwargs):
+            recorded.update(kwargs)
+            return engine
+
+        monkeypatch.setattr("app.core.db.utils.create_async_engine", _fake_create)
+
+        create_app_async_engine(self._postgres_options())
+
+        assert "connect_args" not in recorded
