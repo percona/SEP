@@ -350,6 +350,19 @@ def test_a_mounted_password_reaches_the_beat_uri_percent_encoded(tmp_path: Path)
     )
 
 
+def test_a_mounted_password_supplies_only_the_name_it_is_named_for(tmp_path: Path):
+    """Leave the sibling services unsupplied, since only the raw input fans out.
+
+    This is why the documented mount recipe names all three password files.
+    """
+    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="from-file")
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert "INVENTORY__DATABASE__PASSWORD" not in environment
+    assert "TASKS__DATABASE__PASSWORD" not in environment
+
+
 def test_mounting_the_beat_uri_suppresses_the_derivation(tmp_path: Path):
     """Keep the password out of the environment entirely, which is the mount to use."""
     secrets_dir = write_secrets(

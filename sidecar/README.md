@@ -64,10 +64,15 @@ name. What a file supplies is a *canonical destination*:
 The resolution order is: an explicitly-set canonical environment variable, then a
 file of that name, then the value derived from the raw `SEP_*` input.
 
-**To keep the database password out of the environment, mount
-`SEP__DATABASE__PASSWORD` *and* `CELERY__BEAT_DBURI`.** Mounting only the first
-still puts the password into the derived beat-store URI, since celery-beat has no
-file channel of its own; mounting the second suppresses that derivation.
+**To keep the database password out of the environment, mount all three
+`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files *and* `CELERY__BEAT_DBURI`.**
+A file supplies exactly the one canonical name it is named for: the fan-out of a
+single password to all three services happens only through the `SEP_DB_PASSWORD`
+input, which is an environment variable and so the very thing this mount avoids.
+Mounting `SEP__DATABASE__PASSWORD` alone leaves `InventorySettings` and
+`TasksSettings` with no password at all. `CELERY__BEAT_DBURI` is the fourth file
+because celery-beat has no file channel of its own — without it the derivation
+puts the password back into the environment inside the URI.
 
 Constraints on the directory: entries must be regular files directly inside it (a
 name in a subdirectory matches no setting). File names are matched
@@ -180,8 +185,10 @@ Already canonical, so they are passed straight through with no expansion:
 Any canonical variable can also be set directly — an explicit
 `TASKS__DATABASE__HOST` outranks the one derived from `SEP_DB_HOST`. It overrides
 only itself, though: setting `SEP__DATABASE__PASSWORD` by hand leaves the other
-two services and `CELERY__BEAT_DBURI` on whatever `SEP_DB_PASSWORD` supplied, so
-prefer the deployment input when you want the value to fan out.
+two services on whatever `SEP_DB_PASSWORD` supplied, so prefer the deployment
+input when you want the value to fan out. `CELERY__BEAT_DBURI` is the exception —
+it follows the same order as the canonical exports, so an explicitly-set or
+mounted `SEP__DATABASE__PASSWORD` reaches the derived beat-store URI.
 
 ### Not deployment inputs
 
