@@ -324,14 +324,19 @@ lint-pipelines:
 		exit 0; \
 	fi; \
 	if [ -n "$(FILE)" ]; then \
-		files="$(FILE)"; \
+		files=("$(FILE)"); \
 	else \
-		files="$$(ls build/*.pipeline)"; \
+		files=(); \
+		while IFS= read -r file; do files+=("$${file}"); done < <(git ls-files -- ':(glob)build/**/*.pipeline'); \
+	fi; \
+	if [ "$${#files[@]}" -eq 0 ]; then \
+		echo "error: no build/**/*.pipeline files found"; \
+		exit 1; \
 	fi; \
 	crumb="$$(curl -sSf -k -u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
 		"$${JENKINS_URL}/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)")"; \
 	failures=0; \
-	for f in $${files}; do \
+	for f in "$${files[@]}"; do \
 		echo "==> Declarative-lint $${f}..."; \
 		resp="$$(curl -sS -k -u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
 			-H "$${crumb}" \
