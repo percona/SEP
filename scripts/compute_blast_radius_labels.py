@@ -267,7 +267,7 @@ class UrllibGitHubClient:
         method: str,
         path: str,
         *,
-        body: dict[str, Any] | list[str] | None = None,
+        body: dict[str, Any] | None = None,
         tolerate_missing: bool = False,
     ) -> Any:
         url = f"{self._api_url}{path}"
@@ -356,7 +356,7 @@ class UrllibGitHubClient:
         :param labels: Label names to attach.
         """
         path = f"/repos/{owner}/{repo}/issues/{issue_number}/labels"
-        self._request("POST", path, body=labels)
+        self._request("POST", path, body={"labels": labels})
 
     def remove_issue_label(
         self, owner: str, repo: str, issue_number: int, name: str
