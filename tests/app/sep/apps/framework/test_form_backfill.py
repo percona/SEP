@@ -259,6 +259,35 @@ def test_backfill_single_task_skips_invalid_reconstructed_form():
     assert RESERVED_FORM_KEY not in task.data
 
 
+def test_backfill_single_task_skips_row_rejected_by_the_write_model():
+    """A stored hook path the write model rejects skips the row, not the run.
+
+    ``TaskWrite`` constrains hook paths to an allow-listed namespace, so a row
+    predating that constraint must not abort the whole backfill.
+    """
+    task = _minimal_task(data={"meta": {}})
+    task.alert_detail_builder = "app.sep.plugins.archives.alerts:build"
+
+    def _valid_body(_task: Task, _ctx: FormBackfillContext) -> dict:
+        return {
+            "task_name": _task.name,
+            "hostname": "executor-1",
+            "service_id": 1,
+            "recursion_method": "processlist",
+        }
+
+    entry = _entry(_valid_body)
+    ctx = FormBackfillContext(
+        log=logging.getLogger("test"), service_lookup=_EMPTY_SERVICE_LOOKUP
+    )
+
+    outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "skipped_error"
+    assert outcome.stamped_data is None
+    assert RESERVED_FORM_KEY not in task.data
+
+
 @pytest.mark.asyncio
 async def test_backfill_single_task_stamp_preserves_audit_fields_on_persist(
     tasks_session: AsyncSession,

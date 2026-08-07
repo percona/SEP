@@ -291,7 +291,17 @@ def _reconstruct_validate_stamp(
         return _TaskBackfillOutcome("skipped_invalid")
 
     stamped_data = deepcopy(task.data)
-    write = _task_write_from_task(task, stamped_data)
+    try:
+        write = _task_write_from_task(task, stamped_data)
+    except ValidationError as exc:
+        ctx.log.info(
+            "[%s] %s: stored row fails write-model validation; skipping: %s",
+            entry.app_key,
+            task.name,
+            exc.errors(),
+        )
+        return _TaskBackfillOutcome("skipped_error")
+
     try:
         stamp_form_input(write, validated_form)
     except Exception:
