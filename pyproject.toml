@@ -365,5 +365,3 @@ commands = [["make", "test"]]
 profile = "jinja"
 extension = "html.j2"
 ignore = "H021"
-
-# SEP-1728 labeling smoke (temporary — revert pending)
