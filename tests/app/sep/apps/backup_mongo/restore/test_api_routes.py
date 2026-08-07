@@ -15,8 +15,11 @@
 
 """Tests for restore JSON API routes under /api/apps/backup_mongo/restore/."""
 
+from collections import defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 import yaml
@@ -25,11 +28,9 @@ from fastapi import HTTPException, status
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.sep.apps.backup_mongo.models import BackupType
-from app.sep.apps.backup_mongo.restore.models import OWNER
 from app.sep.apps.backup_mongo.restore.spec import RESTORE_CONFIG_PAYLOAD_MARKER
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.inventory import CreatedService
-from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
@@ -37,9 +38,24 @@ from tests.app.factories import TaskFactory
 API_BASE = "/api/apps/backup_mongo/restore"
 EMAIL_MASK = PIIEntity.encode_selection({PIIEntity.EMAIL_ADDRESS})
 EXPECTED_EMAIL_ENTITIES = [PIIEntity.EMAIL_ADDRESS.name]
-EXPECTED_DEFAULT_ENTITIES = sorted(
-    entity.name for entity in anonymizer_settings.DEFAULT_ENTITIES[OWNER]
+# Pin a non-empty fallback set so mask=None coverage stays meaningful under the
+# empty development DEFAULT_ENTITIES profile.
+FALLBACK_DEFAULT_ENTITY_SET = {PIIEntity.CREDIT_CARD, PIIEntity.EMAIL_ADDRESS}
+EXPECTED_FALLBACK_DEFAULT_ENTITIES = sorted(
+    entity.name for entity in FALLBACK_DEFAULT_ENTITY_SET
 )
+
+
+@contextmanager
+def patch_fallback_default_entities() -> Iterator[None]:
+    """Patch response defaults to a known non-empty entity set for mask=None tests."""
+    with patch("app.sep.apps.framework.responses.anonymizer_settings") as mock_settings:
+        mock_settings.DEFAULT_ENTITIES = defaultdict(
+            lambda: FALLBACK_DEFAULT_ENTITY_SET
+        )
+        yield
+
+
 EXPECTED_LOGICAL_RESTORE_POSTS = 3
 EXPECTED_PHYSICAL_RESTORE_POSTS = 4
 DEFAULT_PAGE_LIMIT = 50
@@ -315,12 +331,13 @@ class TestRestoreMongoApiList:
         mock_task_api_dep.get = mock_task_api_parent_list(parent)
         mock_task_api_dep.post = AsyncMock(return_value={})
 
-        response = test_client.get(f"{API_BASE}/")
+        with patch_fallback_default_entities():
+            response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
         item = response.json()["items"][0]
         assert item["anonymize_mask"] is None
-        assert item["anonymized_entities"] == EXPECTED_DEFAULT_ENTITIES
+        assert item["anonymized_entities"] == EXPECTED_FALLBACK_DEFAULT_ENTITIES
 
     def test_list_paginates_with_offset_and_limit(
         self, test_client, mock_task_api_dep
@@ -678,12 +695,13 @@ class TestRestoreMongoApiDetail:
         parent = build_restore_task("parent-restore", anonymize_mask=None)
         mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-restore": parent})
 
-        response = test_client.get(f"{API_BASE}/parent-restore")
+        with patch_fallback_default_entities():
+            response = test_client.get(f"{API_BASE}/parent-restore")
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["anonymize_mask"] is None
-        assert body["anonymized_entities"] == EXPECTED_DEFAULT_ENTITIES
+        assert body["anonymized_entities"] == EXPECTED_FALLBACK_DEFAULT_ENTITIES
 
     def test_detail_tolerates_history_fetch_failure_for_one_child(
         self, test_client, mock_task_api_dep

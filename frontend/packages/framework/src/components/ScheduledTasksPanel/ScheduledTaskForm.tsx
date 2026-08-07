@@ -246,7 +246,7 @@ export function ScheduledTaskForm({
     const hasChain = values.chain.chain_task_names.length > 0;
     const execute_request = hasChain
       ? {
-          meta: {} as Record<string, never>,
+          meta: {},
           chain_task_names: values.chain.chain_task_names,
           chain_on_failure: values.chain.chain_on_failure,
         }

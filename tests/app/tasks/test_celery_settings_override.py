@@ -36,6 +36,7 @@ from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION
 from app.core.utils import json_serializer
 from app.tasks import celery as celery_module
 from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
@@ -53,9 +54,15 @@ from app.tasks.models import (
     TaskHistoryStatusEnum,
     TaskWrite,
 )
+from tests.app.core.settings_override.conftest import (
+    HangingSession,
+    recording_start_refresh_task,
+    START_REFRESH_TASK,
+)
 from tests.app.factories import TaskFactory
 
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+WorkerLoopEnv = tuple[asyncio.AbstractEventLoop, async_sessionmaker]
 
 
 def _write_cert(path: Path, *, not_valid_after: datetime) -> None:
@@ -103,7 +110,7 @@ def worker_loop_env(monkeypatch):
     """
     loop = asyncio.new_event_loop()
     monkeypatch.setattr(celery_module.celery, "loop", loop)
-    monkeypatch.setattr(celery_module._refresher_handle, "task", None)
+monkeypatch.setattr(celery_module._refresher, "task", None)
     monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", True)
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -274,46 +281,46 @@ class TestWorkerRefresherHandlers:
 
     def test_disabled_resolves_proxy_and_starts_no_task(self, monkeypatch, mocker):
         """Resolve the proxy but start no background task when disabled."""
-        monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
-        monkeypatch.setattr(celery_module._refresher_handle, "task", None)
+monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
+        monkeypatch.setattr(celery_module._refresher, "task", None)
         mock_anonymizer = MagicMock(spec=OverridableSettingsProxy)
         monkeypatch.setattr(celery_module, "anonymizer_settings", mock_anonymizer)
-        start = mocker.patch("app.tasks.celery.start_refresh_task")
+        start = mocker.patch("app.core.settings_override.worker.start_refresh_task")
 
         start_settings_override_refresher()
 
         mock_anonymizer._resolve.assert_called_once_with()
         start.assert_not_called()
-        assert celery_module._refresher_handle.task is None
+        assert celery_module._refresher.task is None
 
     def test_shutdown_is_noop_when_not_started(self, monkeypatch):
         """Handle a never-started refresher as a no-op on shutdown."""
-        monkeypatch.setattr(celery_module._refresher_handle, "task", None)
+        monkeypatch.setattr(celery_module._refresher, "task", None)
         stop_settings_override_refresher()
-        assert celery_module._refresher_handle.task is None
+        assert celery_module._refresher.task is None
 
     def test_shutdown_cancels_and_drains_started_refresher(self, worker_loop_env):
         """Stop and drain the started refresher, clearing the handle."""
         loop, _ = worker_loop_env
         start_settings_override_refresher()
-        task = celery_module._refresher_handle.task
+        task = celery_module._refresher.task
         assert task is not None
 
         stop_settings_override_refresher()
 
-        assert celery_module._refresher_handle.task is None
+        assert celery_module._refresher.task is None
         assert task.cancelled() or task.done()
 
     def test_init_is_idempotent_when_already_running(self, worker_loop_env):
         """Keep the running refresher and start no second task on re-entry."""
         loop, _ = worker_loop_env
         start_settings_override_refresher()
-        first_task = celery_module._refresher_handle.task
+        first_task = celery_module._refresher.task
         assert first_task is not None
 
         start_settings_override_refresher()
 
-        assert celery_module._refresher_handle.task is first_task
+        assert celery_module._refresher.task is first_task
         assert not first_task.done()
 
     def test_post_init_override_visible_after_loop_driven(self, worker_loop_env):
@@ -331,6 +338,36 @@ class TestWorkerRefresherHandlers:
         )
         loop.run_until_complete(refresh_all(lambda: maker, _tasks_proxies()))
         assert baseline + 1234 == tasks_settings.STALENESS_THRESHOLD_SECONDS
+
+    def test_init_forwards_a_budget_from_worker_proc_alive_timeout(
+        self,
+        worker_loop_env: WorkerLoopEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Derive the seed budget from Celery's prefork liveness deadline."""
+        recorded: dict[str, object] = {}
+        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
+        monkeypatch.setattr(celery_module.celery.conf, "worker_proc_alive_timeout", 6.0)
+
+        start_settings_override_refresher()
+
+        assert recorded["seed_timeout"] == pytest.approx(6.0 * SEED_TIMEOUT_FRACTION)
+
+    def test_init_returns_with_a_running_refresher_when_the_seed_hangs(
+        self,
+        worker_loop_env: WorkerLoopEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Keep the periodic refresher after a hanging seed hits its budget."""
+        monkeypatch.setattr(
+            celery_module, "get_async_session_maker", lambda: HangingSession
+        )
+        monkeypatch.setattr(celery_module.celery.conf, "worker_proc_alive_timeout", 0.1)
+
+        start_settings_override_refresher()
+
+        assert celery_module._refresher.task is not None
+        assert not celery_module._refresher.task.done()
 
 
 class TestSyncRunningItemsRespectsOverriddenTtl:

@@ -19,10 +19,9 @@ This module defines functions for executing tasks asynchronously via Celery,
 along with utility functions to process queue items.
 """
 
-import asyncio
 import json
 import logging
-from contextlib import AsyncExitStack, suppress
+from contextlib import AsyncExitStack
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -54,8 +53,9 @@ from app.core.exceptions import (
     HTTPConflictException,
 )
 from app.core.pmm import await_annotation, schedule_annotation
-from app.core.settings_override.lifecycle import ProxyEntry, start_refresh_task
+from app.core.settings_override.lifecycle import ProxyEntry, ProxyRegistry
 from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.worker import WorkerRefresher
 from app.core.utils import utc_now
 from app.core.utils.fields import DatabaseDialect
 from app.core.utils.path import PayloadReferenceError
@@ -107,13 +107,24 @@ def task_revoked_handler(*, request: Context, expired: bool, **kwargs: Any) -> N
         celery.loop.run_until_complete(delete_task_history(queue_id))
 
 
-class _RefresherHandle:
-    """Hold the per-prefork-child settings-override refresher task."""
+def build_tasks_override_proxies() -> ProxyRegistry:
+    """Compose the Tasks-side proxy registry.
 
-    task: asyncio.Task | None = None
+    :return: The Tasks and Anonymizer proxy entries keyed by class identifier.
+    """
+    return {
+        SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_settings, TasksSettings),
+        SettingClassEnum.ANONYMIZER_SETTINGS: ProxyEntry(
+            anonymizer_settings, AnonymizerSettings
+        ),
+    }
 
 
-_refresher_handle = _RefresherHandle()
+_refresher = WorkerRefresher(
+    lambda: celery.loop,
+    lambda: get_async_session_maker(),
+    build_tasks_override_proxies,
+)
 
 
 @worker_process_init.connect
@@ -123,40 +134,37 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     Wired to ``worker_process_init`` so each prefork child runs its own refresher
     bound to that child's event loop. ``app.celery`` registers
     ``init_child_event_loop`` first (it is imported before this module), so Celery
-    dispatches it first and the child loop is recreated before this handler binds
-    ``start_refresh_task`` to it. The initial inline refresh inside
-    ``start_refresh_task`` seeds the snapshot before the handler returns; periodic
+    dispatches it first and the child loop is recreated before ``WorkerRefresher``
+    resolves it. The enabled gate, the idempotent early-return, the initial inline
+    refresh and the shutdown drain all live in :class:`WorkerRefresher`; periodic
     progress thereafter is best-effort, advancing only while a task drives
-    ``celery.loop.run_until_complete``.
+    ``celery.loop.run_until_complete``. The inline seed is bounded by a fraction
+    of ``celery.conf.worker_proc_alive_timeout`` so a hanging database cannot
+    push the child past the prefork pool's liveness deadline; on expiry the
+    periodic refresher still starts and the child runs with env-only overrides
+    until a later cycle lands.
 
-    ``anonymizer_settings._resolve()`` runs unconditionally for fail-fast
-    validation even when the refresher is disabled, mirroring
-    ``messages_settings._resolve()`` in ``sep_overrides_lifespan``.
-
-    The handler is idempotent: if a refresher task is already running for this
-    child it returns without starting a second one, so a re-entry (a direct call,
-    or an unexpected second ``worker_process_init``) cannot leak the prior task.
+    ``anonymizer_settings._resolve()`` runs unconditionally for validation even
+    when the refresher is disabled, as ``messages_settings._resolve()`` does in
+    ``sep_overrides_lifespan``. The two differ in consequence: the lifespan's
+    call aborts startup, while Celery catches and logs whatever a signal
+    receiver raises, so an invalid config here leaves the child running without
+    this refresher.
 
     :param kwargs: The ``worker_process_init`` signal keyword arguments (unused).
+    :raises ValidationError: Propagates from ``anonymizer_settings._resolve()``
+        when the anonymizer config is invalid. Celery logs it and carries on
+        dispatching; the child starts without this refresher.
+    :raises Exception: Propagates a session-maker failure from the initial
+        inline refresh, absorbed the same way. Per-proxy refresh failures and
+        a bounded-seed expiry are caught and logged inside the refresher; the
+        latter still starts the periodic task.
     """
     anonymizer_settings._resolve()  # noqa: SLF001
-    if not settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED:
-        return
-    if _refresher_handle.task is not None and not _refresher_handle.task.done():
-        return
-    _refresher_handle.task = celery.loop.run_until_complete(
-        start_refresh_task(
-            get_async_session_maker,
-            {
-                SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
-                    tasks_settings, TasksSettings
-                ),
-                SettingClassEnum.ANONYMIZER_SETTINGS: ProxyEntry(
-                    anonymizer_settings, AnonymizerSettings
-                ),
-            },
-            settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL,
-        )
+_refresher.start(
+        settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL,
+        enabled=settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED,
+        proc_alive_timeout=celery.conf.worker_proc_alive_timeout,
     )
 
 
@@ -170,12 +178,7 @@ def stop_settings_override_refresher(**kwargs: Any) -> None:
     :param kwargs: The ``worker_process_shutdown`` signal keyword arguments
         (unused).
     """
-    if _refresher_handle.task is None:
-        return
-    _refresher_handle.task.cancel()
-    with suppress(asyncio.CancelledError):
-        celery.loop.run_until_complete(_refresher_handle.task)
-    _refresher_handle.task = None
+    _refresher.stop()
 
 
 @celery.task(

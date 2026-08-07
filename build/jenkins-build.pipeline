@@ -187,6 +187,41 @@ pipeline {
 			}
 		}
 
+		stage('Build SEP embedded image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			steps {
+				echo "Building SEP embedded image for ${RELEASE_VER} .."
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					RELEASE_VER="${GIT_TAG}" make image-sidecar-embedded
+				'''
+			}
+		}
+
+		stage('Verify image app sets') {
+			options {
+				timeout(time: 5, unit: 'MINUTES')
+			}
+
+			steps {
+				echo "Verifying the app sets of the ${RELEASE_VER} images .."
+				sh '''
+					set -o errexit
+					set -o pipefail
+
+					export CONTAINER_RUNTIME=podman
+
+					sidecar/verify_image_apps.sh "sep:${GIT_TAG}-embedded" restricted
+					sidecar/verify_image_apps.sh "sep:${GIT_TAG}-sidecar" unrestricted
+				'''
+			}
+		}
+
 		stage('Push SEP image') {
 			options {
 				timeout(time: 10, unit: 'MINUTES')
@@ -288,6 +323,61 @@ pipeline {
 								podman image push --authfile .dockerhub sep:${GIT_TAG}-sidecar docker.io/percona/percona-sep:latest-sidecar
 							else
 								echo "Skipping Docker Hub :${GIT_TAG_SHORT}-sidecar and :latest-sidecar push (not a stable release tag): ${GIT_TAG}"
+							fi
+
+							podman logout --authfile .dockerhub docker.io
+							'''
+						}
+					}
+				}
+			}
+		}
+
+		stage('Push SEP embedded image') {
+			options {
+				timeout(time: 10, unit: 'MINUTES')
+			}
+
+			when {
+				expression {
+					return params.pushImage
+				}
+			}
+
+			steps {
+
+				withCredentials([string(credentialsId: 'SEP_DOCKER_HUB_WRITE_TOKEN', variable: 'DOCKER_TOKEN')]) {
+					sh '''
+						set -o errexit
+						set -o pipefail
+
+						podman image push sep:${GIT_TAG}-embedded labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG}-embedded
+
+						if [ "${PUSH_LATEST}" = "true" ]; then
+							podman image tag sep:${GIT_TAG}-embedded sep:${GIT_TAG_SHORT}-embedded
+							podman image push sep:${GIT_TAG_SHORT}-embedded labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG_SHORT}-embedded
+							echo "Pushing labbox-mini.tp.int.percona.com:5555/sep:latest-embedded"
+							podman image push sep:${GIT_TAG}-embedded labbox-mini.tp.int.percona.com:5555/sep:latest-embedded
+						else
+							echo "Skipping internal :${GIT_TAG_SHORT}-embedded and :latest-embedded push (not a stable release tag): ${GIT_TAG}"
+						fi
+					'''
+
+					script {
+						if (params.pushImageDocker) {
+							sh '''
+							set -o errexit
+							set -o pipefail
+
+							echo -n "${DOCKER_TOKEN}" | podman login --authfile .dockerhub --username percona --password-stdin docker.io
+							podman image push --authfile .dockerhub sep:${GIT_TAG}-embedded docker.io/percona/percona-sep:${GIT_TAG}-embedded
+
+							if [ "${PUSH_LATEST}" = "true" ]; then
+								podman image push --authfile .dockerhub sep:${GIT_TAG_SHORT}-embedded docker.io/percona/percona-sep:${GIT_TAG_SHORT}-embedded
+								echo "Pushing docker.io/percona/percona-sep:latest-embedded"
+								podman image push --authfile .dockerhub sep:${GIT_TAG}-embedded docker.io/percona/percona-sep:latest-embedded
+							else
+								echo "Skipping Docker Hub :${GIT_TAG_SHORT}-embedded and :latest-embedded push (not a stable release tag): ${GIT_TAG}"
 							fi
 
 							podman logout --authfile .dockerhub docker.io

@@ -426,6 +426,7 @@ def test_hot_field_names_sep_settings() -> None:
             "INVENTORY_ENDPOINT",
             "TASKS_ENDPOINT",
             "FOOTER_TEMPLATE",
+            "DIAGNOSTICS_DELIVERY_INPUTS",
         }
     )
 
@@ -516,10 +517,11 @@ def test_reload_classification_values() -> None:
         "INVENTORY_ENDPOINT",
         "TASKS_ENDPOINT",
         "FOOTER_TEMPLATE",
+        "DIAGNOSTICS_DELIVERY_INPUTS",
     ],
 )
 def test_sep_settings_marked_advanced(field_name: str) -> None:
-    """Assert the five promoted SEP settings carry the advanced flag."""
+    """Assert the promoted SEP settings carry the advanced flag."""
     assert is_advanced_field(SEPSettings.model_fields[field_name]) is True
 
 

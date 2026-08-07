@@ -33,18 +33,16 @@ from starlette.staticfiles import StaticFiles
 
 from app import __summary__, __version__
 from app.api.main import api_router as top_level_api_router
-from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth import config as auth_config
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.celery.utils import init_periodic_tasks_db
-from app.core.config import create_app, default_lifespan, Settings, settings
+from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.settings_override.lifecycle import (
-    ProxyEntry,
     RefreshCallback,
     settings_override_refresher,
 )
@@ -54,10 +52,9 @@ from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
 from app.sep.apps.framework.registry import (
-    collect_app_owned_settings_classes,
     get_app_registry,
 )
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
 from app.sep.deps import (
@@ -77,9 +74,13 @@ from app.sep.deps import (
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
-from app.sep.middleware.messages.config import messages_settings, MessagesSettings
+from app.sep.middleware.messages.config import messages_settings
+from app.sep.settings_override import (
+    build_sep_override_proxies,
+    invalidate_pmm_clients,
+)
 from app.sep.snippets.celery import sync_snippets
-from app.sep.snippets.config import snippets_settings, SnippetsSettings
+from app.sep.snippets.config import snippets_settings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
 
@@ -170,25 +171,6 @@ def _make_remote_api_rebinder(
     return _rebind
 
 
-async def _invalidate_pmm_clients(_: Mapping[str, object]) -> None:
-    """Evict the cached PMM client on the current endpoint after a ``PMM`` override.
-
-    A same-endpoint change (credentials, SSL) evicts the now-stale client so the
-    next :class:`PMMSyncer` key-misses to a fresh one via its ``default_factory``
-    PMM read. Known limitation: when the PMM *endpoint itself* changes, the client
-    keyed by the **old** endpoint is not evicted here (this callback only sees the
-    new endpoint); it is harmless -- new syncers key-miss to a fresh client on the
-    new endpoint -- and the old client is closed at shutdown via ``close_all``.
-
-    :param _: The new effective ``Settings`` snapshot mapping (unused -- the
-        current PMM endpoint is re-read from the proxy).
-    :type _: Mapping[str, object]
-    """
-    endpoint = settings.PMM.endpoint
-    if endpoint is not None:
-        await settings.invalidate_client(str(endpoint))
-
-
 async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
     """Re-apply ``logging.config.dictConfig`` after a global ``LOGGING`` override.
 
@@ -240,15 +222,9 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Wire the SEP-side settings override refresher into a lifespan.
 
     Force-resolves ``messages_settings`` (fail-fast validation), then starts the
-    background refresher for the duration of the wrapped block over a proxy map
-    composed from whatever the activated apps declare plus SEP's own
-    ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``, ``MESSAGES_SETTINGS``, ``SETTINGS``
-    (global) and ``ALERT_SETTINGS``. SEP's own entries are applied **over** the
-    app-owned ones, so ``SETTINGS`` and ``ALERT_SETTINGS`` -- shared
-    module-level proxies (``settings`` / ``alert_settings``) -- keep the SEP
-    refresher as their **sole** owner even if an app were to declare them: under
-    the combined ``app.main:app`` the Tasks refresher must not also publish into
-    them from the Tasks database.
+    background refresher for the duration of the wrapped block over the proxy
+    map :func:`build_sep_override_proxies` composes -- the shared set every SEP
+    process refreshes, so no wiring drifts from another's.
     Endpoint and PMM rebind callbacks are built here -- where ``app`` is
     available -- so both run modes wire them.
 
@@ -292,7 +268,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ssl_keyfile=tasks_settings.SSL_KEYFILE,
             ssl_certfile=tasks_settings.SSL_CERTFILE,
         ),
-        (SettingClassEnum.SETTINGS, "PMM"): _invalidate_pmm_clients,
+        (SettingClassEnum.SETTINGS, "PMM"): invalidate_pmm_clients,
         (SettingClassEnum.SETTINGS, "LOGGING"): _apply_logging_dictconfig,
         (
             SettingClassEnum.SNIPPETS_SETTINGS,
@@ -311,26 +287,9 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
     # the settings-API handlers read it.
     sep_app.state.override_callbacks = callbacks
-    proxies = {
-        entry.setting_class: ProxyEntry(entry.proxy, entry.settings_cls)
-        for entry in collect_app_owned_settings_classes()
-    }
-    proxies.update(
-        {
-            SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
-            SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
-                snippets_settings, SnippetsSettings
-            ),
-            SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
-                messages_settings, MessagesSettings
-            ),
-            SettingClassEnum.SETTINGS: ProxyEntry(settings, Settings),
-            SettingClassEnum.ALERT_SETTINGS: ProxyEntry(alert_settings, AlertSettings),
-        }
-    )
     async with settings_override_refresher(
         get_async_session_maker,
-        proxies,
+        build_sep_override_proxies(),
         settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL,
         enabled=settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED,
         callbacks=callbacks,

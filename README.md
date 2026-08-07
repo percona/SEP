@@ -113,10 +113,14 @@ See the [secrets section](#secrets) of the README for more details.
 SEP will read settings in the following order of priority:
 1. Environment variables
 2. .env file
-3. Settings file
+3. Secret files
+4. Settings file
 
 By default, the .env file is expected to be `.env` and the settings file `settings.yaml`.
 You can change that by using the environment variables `ENV_FILE` and `SETTINGS_FILE`.
+Secret files are read from the directory named by `SECRETS_DIR`, which is unset by
+default; when unset, no secret files are read. See the
+[secrets section](#secrets) for how to name them.
 
 The [settings.yaml](https://github.com/percona/SEP/blob/main/settings.yaml) has base settings that you can (but don't need to) change.
 
@@ -147,7 +151,7 @@ These are some, but not all, the possible settings you can have, per app:
 | TASKS__NOMAD__MINIFY_PAYLOAD | tasks   | no       | True                                                | True                                             |
 | TASKS__NOMAD__LOG_SOCKET_READ_TIMEOUT | tasks | no | 10                                        | 10                                               |
 | TASKS__SYNC_LOCK_TTL       | tasks     | no       | 300                                                 | 300                                              |
-| TASKS__ANONYMIZER__DEFAULT_ENTITIES | tasks | no | "*"                                         | "*"                                              |
+| TASKS__ANONYMIZER__DEFAULT_ENTITIES | tasks | no | seven high-confidence entities (see below) | `[]` (anonymization disabled) |
 | TASKS__EXECUTE_MODE        | tasks     | no       | background                                          | N/A                                              |
 | TASKS__DATABASE__ENGINE    | tasks     | no       | sqlite                                              | N/A                                              |
 | TASKS__DATABASE__NAME      | tasks     | no       | tasks.db                                            | N/A                                              |
@@ -248,10 +252,19 @@ The anonymizer plugin can be configured through the `TASKS__ANONYMIZER` section:
 ```yaml
 TASKS:
   ANONYMIZER:
-    DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
+    DEFAULT_ENTITIES:
+      - CREDIT_CARD
+      - EMAIL_ADDRESS
+      - IBAN_CODE
+      - IP_ADDRESS
+      - PHONE_NUMBER
+      - US_SSN
+      - US_ITIN
 ```
 
-The `DEFAULT_ENTITIES` setting specifies which Personally Identifiable Information (PII) entities should be anonymized by default.
+The `DEFAULT_ENTITIES` setting specifies which Personally Identifiable Information (PII) entities should be anonymized by default when a task does not set an explicit `anonymize_mask`. The shipped `default:` profile uses the seven high-confidence entities above (checksum-validated or strong-regex recognizers). The `development:` profile sets `DEFAULT_ENTITIES` to an empty list so local task logs stay readable and no Presidio/spaCy engine is constructed.
+
+Profile overlays merge onto `default:`: a non-empty list prepends to the inherited list, and an empty list clears it. To narrow the set relative to `default:`, edit the `default:` block or use a runtime settings override (do not rely on a shorter non-empty profile list alone). Operators can restore any of the fourteen `PIIEntity` members through `settings.yaml` or a runtime settings override without a code change. Use `"*"` to select every supported entity.
 
 ### Sync Configuration
 
@@ -321,6 +334,26 @@ You can create a basic .env file template by running the following command in th
 ```shell
 echo -e "AUTH__PROVIDER__CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nAUTH__PROVIDER__CASDOOR__CLIENT_SECRET=YOUR_CASDOOR_CLIENT_SECRET\n" > .env
 ```
+
+#### Supplying a setting as a mounted file
+
+Any setting can instead be supplied as a file inside the directory `SECRETS_DIR` names,
+which keeps the value out of the process environment. Name the file after the canonical
+`__`-nested variable the setting already uses — `SECRET_KEY`,
+`SEP__DATABASE__PASSWORD`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` — and put
+the value in its contents. `/run/secrets` is the conventional mount point:
+
+```shell
+mkdir -p /run/secrets
+openssl rand -hex 32 > /run/secrets/SECRET_KEY
+SECRETS_DIR=/run/secrets uvicorn app.main:app
+```
+
+Surrounding whitespace is stripped, so a trailing newline is fine. A file only applies
+when nothing higher in the priority list supplies the same setting: an environment
+variable and a .env entry both still win over a file. A configured directory that does
+not exist logs a warning and is otherwise ignored, and a directory holding no matching
+file changes nothing.
 
 #### Getting Casdoor's Client ID and Client Secret
 
