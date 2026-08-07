@@ -74,6 +74,12 @@ Mounting `SEP__DATABASE__PASSWORD` alone leaves `InventorySettings` and
 because celery-beat has no file channel of its own — without it the derivation
 puts the password back into the environment inside the URI.
 
+`SEP__DATABASE__HOST` and `SEP__DATABASE__PORT` are the exception to that
+one-name rule. Each seeds the `SEP_DB_HOST` / `SEP_DB_PORT` shell input the wait
+loops and all three services derive from, so mounting either moves every service
+rather than only SEP — there is no way to point one service at a different host
+with a file alone.
+
 Constraints on the directory: entries must be regular files directly inside it (a
 name in a subdirectory matches no setting). File names are matched
 case-insensitively, by both the script and the settings classes — but two files

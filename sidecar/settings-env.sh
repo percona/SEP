@@ -78,8 +78,10 @@ if [[ -z ${SECRET_KEY:-} ]]; then
     unset SECRET_KEY
 fi
 
-# Seeded from the file only when the canonical variable is unset, since an
-# explicit one shadows the file and the wait loops must follow the value in force.
+# The migrate wait loops read SEP_DB_HOST/SEP_DB_PORT below, so a mounted host or
+# port has to seed them before their defaults apply -- and seeding all three
+# services off it is why a mounted host is not confined to SEP the way a mounted
+# password is.
 if [[ -z ${SEP__DATABASE__HOST:-} ]] && secret_file_supplies SEP__DATABASE__HOST; then
     SEP_DB_HOST="$(read_secret_file SEP__DATABASE__HOST)"
 fi
