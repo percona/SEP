@@ -197,6 +197,25 @@ Ensure all tests pass before pushing your code:
 make test
 ```
 
+Mutation testing (`mutmut`) is an optional local spike tool, not part of
+`make test`, pre-commit, or CI. Configuration for the pilot scoped to
+`app/core/db/utils.py` lives under `[tool.mutmut]` in `pyproject.toml`. Run it
+from the repo root; it writes a gitignored `mutants/` working copy:
+
+```shell
+poetry run mutmut run           # generate and test mutants
+poetry run mutmut results       # list surviving mutants
+poetry run mutmut show <mutant> # diff for a single mutant
+```
+
+On macOS, export the Homebrew library path first. `mutmut` invokes pytest
+directly, so it bypasses the wrapper that `make test` uses to make WeasyPrint's
+native libraries resolvable:
+
+```shell
+export DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix)/lib:${DYLD_FALLBACK_LIBRARY_PATH}"
+```
+
 ## Getting Help
 
 If you have any questions or need assistance, feel free to reach out:
