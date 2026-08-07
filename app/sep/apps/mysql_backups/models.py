@@ -32,6 +32,7 @@ plays the role of ``atw.categories`` — the piece split *out* because it, not
 the table, needed the heavier imports.
 """
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -65,11 +66,18 @@ class MysqlBackupRun(BaseSQLModel, table=True):
     :param task_history_id: The id of the ``TaskHistory`` this run belongs to;
         unique, so one run maps to exactly one record.
     :param service_name: The inventory service name the backup was taken from
-        (the task's ``_service_name`` meta), used as the per-service query key.
-        Not a foreign key — the catalog is sep-owned and joins to inventory by
-        name only, so two MySQL services sharing a name (``Service.name`` carries
-        no uniqueness constraint) would have their rows merged under either id.
-
+        (the task's ``_service_name`` meta), kept as the fallback query key for
+        rows carrying no :attr:`service_id` and as the only usable key for a
+        free-typed restore destination that has no inventory row at all. A row
+        reached this way can still be confused with another service's: two MySQL
+        services may share a name, since ``Service.name`` carries no uniqueness
+        constraint.
+    :param service_id: The inventory id of the service the backup was taken from
+        (the task's ``_service_id`` meta), preferred as the per-service query key
+        because it survives a rename, which the name does not. Not a foreign key
+        — the catalog is sep-owned and inventory lives in a separate database, so
+        nothing enforces that the id still resolves. Empty on rows recorded
+        before the id was stamped, which is what keeps the name fallback needed.
     :param hostname: The backup target host (the task's ``target`` meta).
     :param backup_type: The backup tool the run used, mydumper or xtrabackup.
     :param location: The resolved on-disk directory the run produced, stored
@@ -85,6 +93,7 @@ class MysqlBackupRun(BaseSQLModel, table=True):
 
     task_history_id: int = SQLField(unique=True, index=True)
     service_name: str | None = SQLField(default=None, index=True)
+    service_id: int | None = SQLField(default=None, index=True)
     hostname: str | None = None
     backup_type: BackupType = SQLField(
         sa_column=Column(
@@ -103,11 +112,32 @@ class MysqlBackupRun(BaseSQLModel, table=True):
     )
 
 
+@dataclass(frozen=True, slots=True)
+class CatalogServiceKey:
+    """Carry the keys one service's catalog rows are selected by.
+
+    The two travel together everywhere the catalog is queried per service — the
+    manager builds one predicate from both, and the id is meaningless to a caller
+    without the name to fall back on. Lives here rather than in ``deps.py`` so the
+    manager can name it without importing the request layer.
+
+    :param service_name: The service name to match catalog rows by.
+    :param service_id: The inventory id to prefer as the key, or ``None`` when the
+        caller resolved no inventory service — a free-typed destination — and the
+        name is all there is.
+    """
+
+    service_name: str
+    service_id: int | None
+
+
 class BackupRunResponse(BaseModel):
     """Expose one catalog record over the per-service query path.
 
     :param id: The record's primary key.
     :param service_name: The inventory service the backup was taken from.
+    :param service_id: The inventory id of that service, or ``None`` on a record
+        written before the id was stamped.
     :param hostname: The backup target host.
     :param backup_type: The backup tool, ``"M"`` (mydumper) or ``"X"`` (xtrabackup).
         Narrower than :class:`BackupType`: binlog runs are never catalogued, so
@@ -123,6 +153,7 @@ class BackupRunResponse(BaseModel):
 
     id: int
     service_name: str | None
+    service_id: int | None
     hostname: str | None
     backup_type: Literal["M", "X"]
     location: str | None
