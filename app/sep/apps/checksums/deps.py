@@ -169,7 +169,7 @@ def assemble_checksum_payload(
                 CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
                 # This builder never reaches assemble_envelope, so it merges the
-                # framework's fragment rather than restating the omit-when-absent rule.
+                # framework's fragment directly.
                 **service_id_meta(service),
             },
         },
