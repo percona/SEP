@@ -316,4 +316,35 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check
+# Full Jenkins Declarative-model validation (requires controller access).
+# CI only runs an offline Groovy parse; this target posts each file to
+# pipeline-model-converter/validate. Usage: make lint-pipelines [FILE=build/x.pipeline]
+lint-pipelines:
+	@set -euo pipefail; \
+	if [ -z "$${JENKINS_URL:-}" ] || [ -z "$${JENKINS_USER:-}" ] || [ -z "$${JENKINS_API_TOKEN:-}" ]; then \
+		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Declarative lint."; \
+		exit 0; \
+	fi; \
+	if [ -n "$(FILE)" ]; then \
+		files="$(FILE)"; \
+	else \
+		files="$$(ls build/*.pipeline)"; \
+	fi; \
+	crumb="$$(curl -sSf -k -u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
+		"$${JENKINS_URL}/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)")"; \
+	failures=0; \
+	for f in $${files}; do \
+		echo "==> Declarative-lint $${f}..."; \
+		resp="$$(curl -sS -k -u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
+			-H "$${crumb}" \
+			-F "jenkinsfile=<$${f}" \
+			"$${JENKINS_URL}/pipeline-model-converter/validate")"; \
+		echo "$${resp}"; \
+		case "$${resp}" in \
+			*"successfully validated"*) ;; \
+			*) echo "error: Declarative validation failed for $${f}"; failures=$$((failures+1)) ;; \
+		esac; \
+	done; \
+	if [ "$${failures}" -ne 0 ]; then exit 1; fi
+
+.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check

@@ -56,6 +56,7 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
       shell: ${{ steps.filter.outputs.shell }}
       sidecar: ${{ steps.filter.outputs.sidecar }}
+      pipeline: ${{ steps.filter.outputs.pipeline }}
     steps:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -106,6 +107,9 @@ jobs:
               - 'Containerfile.base'
               - 'alembic.ini'
               - 'Makefile'
+            pipeline:
+              - 'build/**/*.pipeline'
+              - 'scripts/lint_pipelines.groovy'
 
   precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
@@ -405,6 +409,30 @@ jobs:
       - name: Smoke test - verify the general side-car image is unrestricted
         run: docker run --rm --entrypoint /bin/sh "sep:HEAD-sidecar" -c 'test -d /home/sep/app/app/sep/apps/report'
 
+  # Offline Groovy parse only — does not validate the Jenkins Declarative model.
+  # Misspelled/misplaced Declarative sections still pass; use `make lint-pipelines`
+  # against a reachable controller for full Declarative validation.
+  pipeline-syntax:
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.pipeline == 'true'
+      }}
+    needs:
+      - label-gate
+      - changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Parse Jenkins pipeline Groovy syntax
+        run: >-
+          docker run --rm -v "$PWD:/w" -w /w
+          groovy@sha256:fcfaaa9eba20ccc3b438a70cb599e721996758ecf22de70dc0a85302c97822aa
+          groovy scripts/lint_pipelines.groovy
+          build/*.pipeline
+
   ci-success:
     if: always()
     needs:
@@ -417,6 +445,7 @@ jobs:
       - frontend
       - build
       - build-sidecar
+      - pipeline-syntax
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any dependency failed or was cancelled
