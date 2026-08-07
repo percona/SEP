@@ -83,13 +83,20 @@ source .env
 # mount sees the new content without a recreate
 render() {
     local template="$1" target="$2"
-    sed -e "s|__SEP_BEARER_TOKEN__|${SEP_INTERNAL_TOKEN}|g" \
-        "${template}" > ".render.tmp"
-    cat .render.tmp > "${target}"
-    rm -f .render.tmp
+    local rendered
+    rendered="$(sed -e "s|__SEP_BEARER_TOKEN__|${SEP_INTERNAL_TOKEN}|g" \
+        "${template}")" || {
+        error "Render failed for ${target}; leaving it unchanged"
+        return 1
+    }
+    [[ -n ${rendered} ]] || {
+        error "Render produced empty output for ${target}; leaving it unchanged"
+        return 1
+    }
+    printf '%s\n' "${rendered}" > "${target}"
     success "Rendered ${target}"
 }
 
-render pmm.conf.template pmm.conf
+render pmm.conf.template pmm.conf || exit 1
 
 info "Next: docker compose up -d   (or: podman compose up -d)"
