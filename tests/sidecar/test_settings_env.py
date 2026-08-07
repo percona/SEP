@@ -304,6 +304,15 @@ def test_a_blank_secret_key_file_does_not_satisfy_the_gate(
     assert "SECRET_KEY" in result.stderr
 
 
+def test_a_blank_secret_key_variable_does_not_shadow_the_file(tmp_path: Path):
+    """Clear a blank inherited key, which every child would read over the file."""
+    secrets_dir = write_secrets(tmp_path, SECRET_KEY="from-file")
+
+    environment = exported(source_helper(SECRET_KEY="", SECRETS_DIR=secrets_dir))
+
+    assert "SECRET_KEY" not in environment
+
+
 @pytest.mark.parametrize("name", ["SEP__DATABASE__PASSWORD", "CELERY__BEAT_DBURI"])
 def test_a_blank_variable_does_not_shadow_the_file_it_defers_to(
     tmp_path: Path, name: str

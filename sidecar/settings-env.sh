@@ -66,12 +66,16 @@ export_canonical() {
 # The one name whose file must hold a value rather than merely exist: the
 # settings classes refuse an empty key outright, so admitting one here would
 # replace this gate's single actionable line with five crashing children.
-if [[ -z ${SECRET_KEY:-} ]] &&
-    [[ -z "$(secret_file_supplies SECRET_KEY && read_secret_file SECRET_KEY)" ]]; then
-    echo "[entrypoint] SECRET_KEY is required. Generate one with" \
-        "'openssl rand -hex 32' and pass it to the container, or mount it as a" \
-        "file named SECRET_KEY under SECRETS_DIR." >&2
-    exit 1
+if [[ -z ${SECRET_KEY:-} ]]; then
+    if [[ -z "$(secret_file_supplies SECRET_KEY && read_secret_file SECRET_KEY)" ]]; then
+        echo "[entrypoint] SECRET_KEY is required. Generate one with" \
+            "'openssl rand -hex 32' and pass it to the container, or mount it as a" \
+            "file named SECRET_KEY under SECRETS_DIR." >&2
+        exit 1
+    fi
+    # Cleared for the same reason export_canonical clears a deferred name: an
+    # inherited empty string outranks the file every child then reads.
+    unset SECRET_KEY
 fi
 
 # Seeded from the file only when the canonical variable is unset, since an

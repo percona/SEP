@@ -83,6 +83,13 @@ ignored by both; the Kubernetes `..data` projected layout resolves normally.
 `SECRETS_DIR` has no baked default, so a side-car that mounts nothing is
 unaffected.
 
+When you mount a file for a name, leave that variable **unset** rather than
+empty. A canonical variable set to the empty string outranks a file of the same
+name, because a blank environment variable still counts as supplied. The script
+clears the blank for `SECRET_KEY` and for every name it derives, but a name
+whose `SEP_*` guard is inactive — `PMM__API_KEY` with no `SEP_GRAFANA_TOKEN`
+set, say — is left as it found it, and the mount goes unused.
+
 ### App set
 
 The app-restricted image ships exactly the apps `settings.embedded.yaml`'s
