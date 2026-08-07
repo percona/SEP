@@ -39,7 +39,10 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LABELER = REPO_ROOT / ".github" / "labeler.yml"
@@ -62,7 +65,7 @@ _REGEX_ESCAPE = re.compile(r"[.*+?^${}()|[\]\\]")
 
 @dataclass(frozen=True)
 class PrFile:
-    """One changed file entry from the pulls list-files API."""
+    """Represent one changed file entry from the pulls list-files API."""
 
     filename: str
     additions: int = 0
@@ -71,7 +74,7 @@ class PrFile:
 
 @dataclass(frozen=True)
 class BlastRadiusResult:
-    """Blast-radius signals derived from a PR file list."""
+    """Carry the blast-radius signals derived from a PR file list."""
 
     changed_lines: int
     large_diff: bool
@@ -80,7 +83,7 @@ class BlastRadiusResult:
 
 
 class GitHubClient(Protocol):
-    """Subset of the GitHub REST API used by this script."""
+    """Describe the subset of the GitHub REST API used by this script."""
 
     def list_pr_files(self, owner: str, repo: str, pr_number: int) -> list[PrFile]:
         """Return every changed file for a pull request."""
@@ -205,7 +208,7 @@ def sync_blast_radius_labels(
     pr_number: int,
     result: BlastRadiusResult,
     *,
-    log: Any = print,
+    log: Callable[[str], None] = print,
 ) -> None:
     """Add or remove blast-radius labels to match ``result``.
 
@@ -229,7 +232,7 @@ def sync_blast_radius_labels(
 
 
 class UrllibGitHubClient:
-    """Minimal GitHub REST client backed by stdlib ``urllib``."""
+    """Wrap the GitHub REST API using stdlib ``urllib``."""
 
     def __init__(self, token: str, api_url: str = GITHUB_API) -> None:
         self._api_url = api_url.rstrip("/")
@@ -241,6 +244,7 @@ class UrllibGitHubClient:
         path: str,
         *,
         body: dict[str, Any] | list[str] | None = None,
+        tolerate_missing: bool = False,
     ) -> Any:
         url = f"{self._api_url}{path}"
         data = None
@@ -262,7 +266,7 @@ class UrllibGitHubClient:
                     return None
                 return json.loads(payload)
         except urllib.error.HTTPError as exc:
-            if exc.code == HTTP_NOT_FOUND:
+            if tolerate_missing and exc.code == HTTP_NOT_FOUND:
                 return None
             raise
 
@@ -315,10 +319,14 @@ class UrllibGitHubClient:
     def remove_issue_label(
         self, owner: str, repo: str, issue_number: int, name: str
     ) -> None:
-        """Remove a single label from an issue or pull request."""
+        """Remove a single label from an issue or pull request.
+
+        A ``404`` is tolerated here: the label may already be gone when the
+        workflow re-runs on a new push.
+        """
         encoded = urllib.parse.quote(name, safe="")
         path = f"/repos/{owner}/{repo}/issues/{issue_number}/labels/{encoded}"
-        self._request("DELETE", path)
+        self._request("DELETE", path, tolerate_missing=True)
 
 
 def apply_blast_radius_labels(
@@ -328,7 +336,7 @@ def apply_blast_radius_labels(
     pr_number: int,
     labeler_path: Path,
     *,
-    log: Any = print,
+    log: Callable[[str], None] = print,
 ) -> BlastRadiusResult:
     """Fetch PR files, compute blast-radius signals, and sync labels.
 

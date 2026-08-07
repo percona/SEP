@@ -20,6 +20,8 @@ import sys
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "compute_blast_radius_labels.py"
 
@@ -260,3 +262,30 @@ def test_main_reports_missing_labeler_cleanly(monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "file not found" in err
     assert "Traceback" not in err
+
+
+def test_request_raises_on_unexpected_not_found(monkeypatch):
+    """Surface a 404 from the file list instead of reporting zero files."""
+
+    def _raise(*_args, **_kwargs):
+        raise compute_blast_radius_labels.urllib.error.HTTPError(
+            "https://api.github.com", 404, "Not Found", {}, None
+        )
+
+    monkeypatch.setattr(compute_blast_radius_labels.urllib.request, "urlopen", _raise)
+    client = compute_blast_radius_labels.UrllibGitHubClient("token")
+    with pytest.raises(compute_blast_radius_labels.urllib.error.HTTPError):
+        client.list_pr_files("percona", "SEP", 1)
+
+
+def test_remove_issue_label_tolerates_a_missing_label(monkeypatch):
+    """Treat a 404 on label removal as a benign already-removed race."""
+
+    def _raise(*_args, **_kwargs):
+        raise compute_blast_radius_labels.urllib.error.HTTPError(
+            "https://api.github.com", 404, "Not Found", {}, None
+        )
+
+    monkeypatch.setattr(compute_blast_radius_labels.urllib.request, "urlopen", _raise)
+    client = compute_blast_radius_labels.UrllibGitHubClient("token")
+    client.remove_issue_label("percona", "SEP", 1, "large-diff")
