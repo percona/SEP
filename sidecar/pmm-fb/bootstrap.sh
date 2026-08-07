@@ -93,7 +93,10 @@ render() {
         error "Render produced empty output for ${target}; leaving it unchanged"
         return 1
     }
-    printf '%s\n' "${rendered}" > "${target}"
+    printf '%s\n' "${rendered}" > "${target}" || {
+        error "Could not write ${target}"
+        return 1
+    }
     success "Rendered ${target}"
 }
 
