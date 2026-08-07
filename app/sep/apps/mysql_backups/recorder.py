@@ -161,7 +161,9 @@ async def record_backup_run(
 
     record = MysqlBackupRun(
         task_history_id=history.id,
-        service_name=_coerce(meta.get(SERVICE_NAME_META_KEY), str, SERVICE_NAME_META_KEY),
+        service_name=_coerce(
+            meta.get(SERVICE_NAME_META_KEY), str, SERVICE_NAME_META_KEY
+        ),
         service_id=_positive_int(meta.get(SERVICE_ID_META_KEY), SERVICE_ID_META_KEY),
         hostname=_coerce(meta.get("target"), str, "target"),
         backup_type=backup_type,

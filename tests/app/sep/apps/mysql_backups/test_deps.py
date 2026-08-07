@@ -15,10 +15,12 @@
 
 """Define tests for the app.sep.apps.mysql_backups.deps module."""
 
+import sys
 from typing import Any
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.utils.path import resolve_payload_reference
@@ -844,9 +846,8 @@ class TestResolveOptionalCatalogServiceKey:
         """Treat an ``int``-unparsable unicode digit as a free-typed name.
 
         ``str.isdigit`` accepts these but ``int`` rejects them, so gating on it
-        would send them down the numeric branch and raise a ``ValueError`` out of
-        the dependency as a 500 — the one failure the escape hatch exists to
-        prevent.
+        would send them down the numeric branch and degrade them to ``None``
+        instead of the name lookup the escape hatch exists to serve.
         """
         inventory = inventory_mock()
 
@@ -854,6 +855,34 @@ class TestResolveOptionalCatalogServiceKey:
 
         assert key == CatalogServiceKey(service_name=submitted, service_id=None)
         inventory.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_oversized_decimal_parent_yields_none(self) -> None:
+        """Degrade a decimal string longer than ``int`` will parse to ``None``.
+
+        ``str.isdecimal`` is ``True`` for a decimal of any length, but ``int``
+        refuses one over ``sys.get_int_max_str_digits()``. The parse guard turns
+        that into the same ``None`` every other unusable parent yields, rather
+        than raising out of the dependency as a 500.
+        """
+        inventory = inventory_mock()
+        oversized = "1" * (sys.get_int_max_str_digits() + 1)
+
+        assert await resolve_optional_catalog_service_key(inventory, oversized) is None
+        inventory.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_malformed_inventory_payload_surfaces(self) -> None:
+        """Let a malformed Inventory payload raise instead of degrading to ``None``.
+
+        ``pydantic.ValidationError`` subclasses ``ValueError``, so guarding the
+        whole resolve call against ``ValueError`` would serve an empty picker on
+        exactly the upstream-data fault an operator needs to hear about.
+        """
+        inventory = inventory_mock({"id": _RESOLVED_SERVICE_ID})
+
+        with pytest.raises(ValidationError):
+            await resolve_optional_catalog_service_key(inventory, "7")
 
     @pytest.mark.asyncio
     async def test_non_ascii_decimal_parent_resolves_as_numeric(self) -> None:

@@ -58,6 +58,19 @@ def _add_service_id_by_hand(sync_url: str) -> None:
         engine.dispose()
 
 
+def _drop_run_table_by_hand(sync_url: str) -> None:
+    """Drop ``mysql_backup_run`` outside the migration chain.
+
+    :param sync_url: Sync SQLAlchemy URL of the migrated test database.
+    """
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(f"DROP TABLE {_TABLE}"))
+    finally:
+        engine.dispose()
+
+
 class TestServiceIdMigration:
     """Define tests for the ``service_id`` column and index revision."""
 
@@ -130,6 +143,25 @@ class TestServiceIdMigration:
         _, indexes = _run_state(sync_url)
 
         assert _INDEX in indexes
+
+    def test_upgrade_no_ops_when_the_table_is_absent(
+        self, sep_alembic_config: tuple[Config, str]
+    ) -> None:
+        """Assert upgrade skips a schema with no ``mysql_backup_run`` at all.
+
+        ``_table_state`` reports an absent table as two empty sets, which the
+        column guard alone would read as "column missing" and run ``add_column``
+        against nothing. Unreachable through the linear chain, so simulated by
+        dropping the table by hand at the previous revision; the point is that
+        upgrade honours the same absent-table contract downgrade does.
+        """
+        cfg, sync_url = sep_alembic_config
+        command.upgrade(cfg, _PRE_SERVICE_ID_REVISION)
+        _drop_run_table_by_hand(sync_url)
+
+        command.upgrade(cfg, _SERVICE_ID_REVISION)
+
+        assert _run_state(sync_url) == (set(), set())
 
     def test_downgrade_drops_the_column_when_the_index_is_already_gone(
         self, sep_alembic_config: tuple[Config, str]

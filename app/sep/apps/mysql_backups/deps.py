@@ -177,8 +177,12 @@ async def resolve_optional_catalog_service_key(
 
     The numeric test is ``str.isdecimal``, not ``str.isdigit``: the latter also
     accepts digits ``int`` cannot parse (superscripts such as ``"²"``), which would
-    take the numeric branch and raise out of this dependency as a 500 — the one
-    failure mode the free-text escape hatch exists to avoid.
+    take the numeric branch and degrade to ``None`` rather than reaching the name
+    branch the free-text escape hatch exists to serve. A decimal string ``int``
+    still cannot parse — one longer than ``sys.get_int_max_str_digits()`` — has no
+    usable name reading either, so it degrades to ``None``. The parse is guarded on
+    its own so that a ``pydantic.ValidationError`` from resolving the service, being
+    a ``ValueError`` subclass, is not swallowed as an unparsable id.
 
     :param inventory_api: The Inventory API client used to resolve numeric ids.
     :param service_id: The cascade parent's submitted value, or ``None`` when
@@ -196,8 +200,12 @@ async def resolve_optional_catalog_service_key(
     if not trimmed.isdecimal():
         return CatalogServiceKey(service_name=trimmed, service_id=None)
     try:
-        service = await resolve_mysql_service(int(trimmed), inventory_api)
-    except (ValueError, HTTPNotFoundException):
+        parsed = int(trimmed)
+    except ValueError:
+        return None
+    try:
+        service = await resolve_mysql_service(parsed, inventory_api)
+    except HTTPNotFoundException:
         return None
     return CatalogServiceKey(service_name=service.name, service_id=service.id)
 
