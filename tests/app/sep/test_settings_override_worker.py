@@ -40,6 +40,7 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
+from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION
 from app.core.utils import json_serializer
 from app.sep import settings_override as sep_worker
 from app.sep.config import sep_settings
@@ -52,6 +53,11 @@ from app.sep.settings_override import (
     WORKER_OVERRIDE_CALLBACKS,
 )
 from app.tasks.celery import build_tasks_override_proxies
+from tests.app.core.settings_override.conftest import (
+    HangingSession,
+    recording_start_refresh_task,
+    START_REFRESH_TASK,
+)
 
 SEP_CORE_CLASSES = frozenset(
     {
@@ -297,6 +303,36 @@ class TestSepWorkerHandlers:
         start_sep_settings_override_refresher()
 
         assert alert_settings.SOURCE_PREFIX == "worker-"
+
+    def test_init_forwards_a_budget_from_worker_proc_alive_timeout(
+        self,
+        worker_loop_env: WorkerLoopEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Derive the seed budget from Celery's prefork liveness deadline."""
+        recorded: dict[str, object] = {}
+        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
+        monkeypatch.setattr(sep_worker.celery.conf, "worker_proc_alive_timeout", 6.0)
+
+        start_sep_settings_override_refresher()
+
+        assert recorded["seed_timeout"] == pytest.approx(6.0 * SEED_TIMEOUT_FRACTION)
+
+    def test_init_returns_with_a_running_refresher_when_the_seed_hangs(
+        self,
+        worker_loop_env: WorkerLoopEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Keep the periodic refresher after a hanging seed hits its budget."""
+        monkeypatch.setattr(
+            sep_worker, "get_async_session_maker", lambda: HangingSession
+        )
+        monkeypatch.setattr(sep_worker.celery.conf, "worker_proc_alive_timeout", 0.1)
+
+        start_sep_settings_override_refresher()
+
+        assert sep_worker._refresher.task is not None
+        assert not sep_worker._refresher.task.done()
 
 
 class TestWorkerPmmClientInvalidation:
