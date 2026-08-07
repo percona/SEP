@@ -24,8 +24,8 @@ args.each { String path ->
 		failures++
 		e.errorCollector.errors.each { err ->
 			def cause = err.cause
-			Integer line = cause?.hasProperty('line') ? cause.line : null
-			Integer column = cause?.hasProperty('column') ? cause.column : null
+			Integer line = cause?.hasProperty('startLine') ? cause.startLine : null
+			Integer column = cause?.hasProperty('startColumn') ? cause.startColumn : null
 			String where = (line != null && column != null) ? "${path}:${line}:${column}" : path
 			String message = cause?.message ?: err.toString()
 			System.err.println("error: ${where}: ${message}")
