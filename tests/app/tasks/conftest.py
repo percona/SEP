@@ -37,6 +37,20 @@ from app.tasks.main import tasks_app
 from app.tasks.models import TaskHistory, TaskWrite
 from tests.app.factories import build_task_history, TaskFactory
 
+#: The per-task hook-path fields the ``TaskWrite`` allow-list constrains.
+HOOK_PATH_FIELDS = ("alert_detail_builder", "run_result_recorder")
+
+#: Hook paths the allow-list must reject: an arbitrary importable callable, a pair
+#: with no separator, and a pair with either half left empty.
+REJECTED_HOOK_PATHS = (
+    "os:system",
+    "builtins:eval",
+    "no_colon_here",
+    ":build_owner_alert_details",
+    "app.sep.apps.archives.alerts:",
+    ":",
+)
+
 
 @pytest_asyncio.fixture(name="session")
 async def session_fixture() -> AsyncSession:

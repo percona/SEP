@@ -124,7 +124,7 @@ class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
 
 
 class GeneratedTaskFactory(ModelFactory[TaskWrite]):
-    """Define factory for GenerateTask instances.
+    """Define factory for TaskWrite instances.
 
     Pins the hook-path fields to None so factory-generated values do not trip
     the ``TaskWrite`` allow-list validator.

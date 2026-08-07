@@ -19,6 +19,7 @@ import importlib
 import logging
 
 import pytest
+from pytest_mock import MockerFixture
 
 from app.sep.apps.archives import alerts as archive_alerts
 from app.tasks import hook_resolver
@@ -79,7 +80,7 @@ class TestAllowList:
             "app.sep.appsevil.mod:builder",
         ],
     )
-    def test_rejects_module_outside_allow_listed_namespace(self, path):
+    def test_rejects_module_outside_allow_listed_namespace(self, path: str) -> None:
         """Reject a path whose module is not under an allow-listed root."""
         with pytest.raises(HookPathNotAllowedError, match="app.sep.apps"):
             validate_hook_path(path)
@@ -99,12 +100,12 @@ class TestAllowList:
             "app.sep.apps.archives.alerts:_private",
         ],
     )
-    def test_rejects_malformed_path(self, path):
+    def test_rejects_malformed_path(self, path: str) -> None:
         """Reject a path that is not a well-formed ``"module:function"`` pair."""
         with pytest.raises(HookPathNotAllowedError):
             validate_hook_path(path)
 
-    def test_accepts_allow_listed_path(self):
+    def test_accepts_allow_listed_path(self) -> None:
         """Return the path unchanged when it names an allow-listed module."""
         assert validate_hook_path(ALLOWED_PATH) == ALLOWED_PATH
 
@@ -115,20 +116,20 @@ class TestAllowList:
             "app.sep.apps.mysql_backups.recorder:record_backup_run",
         ],
     )
-    def test_accepts_every_in_tree_hook(self, path):
+    def test_accepts_every_in_tree_hook(self, path: str) -> None:
         """Admit both hook values the shipped task apps stamp onto their tasks."""
         assert validate_hook_path(path) == path
 
-    def test_accepts_allow_listed_root_itself(self):
+    def test_accepts_allow_listed_root_itself(self) -> None:
         """Admit a callable living in the allow-listed root module itself."""
         assert validate_hook_path("app.sep.apps:builder") == "app.sep.apps:builder"
 
-    def test_rejection_names_the_offending_field(self):
+    def test_rejection_names_the_offending_field(self) -> None:
         """Name the offending field in the rejection message."""
         with pytest.raises(HookPathNotAllowedError, match="alert_detail_builder"):
             validate_hook_path("os:system", field="alert_detail_builder")
 
-    def test_rejection_is_logged(self, caplog):
+    def test_rejection_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """Log the rejected path before raising."""
         with (
             caplog.at_level(logging.WARNING, logger=hook_resolver.__name__),
@@ -139,7 +140,7 @@ class TestAllowList:
         assert "os:system" in caplog.text
         assert "run_result_recorder" in caplog.text
 
-    def test_rejects_before_importing(self, mocker):
+    def test_rejects_before_importing(self, mocker: MockerFixture) -> None:
         """Reject a denied module without importing it."""
         spy = mocker.spy(importlib, "import_module")
 
@@ -148,21 +149,21 @@ class TestAllowList:
 
         spy.assert_not_called()
 
-    def test_rejects_denied_path_already_in_cache(self, mocker):
+    def test_rejects_denied_path_already_in_cache(self, mocker: MockerFixture) -> None:
         """Fail closed on a denied path even when the cache already holds it."""
         mocker.patch.dict(hook_resolver._RESOLVED, {"os:system": print}, clear=True)
 
         with pytest.raises(HookPathNotAllowedError):
             resolve_hook("os:system")
 
-    def test_does_not_cache_a_denied_path(self):
+    def test_does_not_cache_a_denied_path(self) -> None:
         """Leave the cache untouched when a path is rejected."""
         with pytest.raises(HookPathNotAllowedError):
             resolve_hook("os:system")
 
         assert "os:system" not in hook_resolver._RESOLVED
 
-    def test_honours_an_extended_allow_list(self, mocker):
+    def test_honours_an_extended_allow_list(self, mocker: MockerFixture) -> None:
         """Admit a module under a root added to the configured allow-list."""
         mocker.patch(
             "app.tasks.config.tasks_settings.HOOK_MODULE_ALLOWLIST",
@@ -173,6 +174,6 @@ class TestAllowList:
 
         assert resolved == "app.tasks.alert_hooks:build_owner_alert_details"
 
-    def test_is_a_value_error(self):
+    def test_is_a_value_error(self) -> None:
         """Subclass ``ValueError`` so existing hook call sites keep degrading."""
         assert issubclass(HookPathNotAllowedError, ValueError)

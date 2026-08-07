@@ -28,6 +28,7 @@ import requests.exceptions
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user, SERVICE_PRINCIPAL_ID
 from app.core.celery.deps import get_session as get_celery_beat_session
@@ -62,6 +63,7 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.factories import build_task_history, TaskFactory
+from tests.app.tasks.conftest import HOOK_PATH_FIELDS, REJECTED_HOOK_PATHS
 
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
@@ -241,60 +243,68 @@ async def test_update_task_not_found(test_client):
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
-@pytest.mark.parametrize("field", ["alert_detail_builder", "run_result_recorder"])
-@pytest.mark.parametrize("hook_path", ["os:system", "builtins:eval", "no_colon_here"])
-@pytest.mark.asyncio
-async def test_create_task_rejects_hook_path_outside_allow_list(
-    test_client, field, hook_path
-):
-    """Assert POST rejects a hook path outside the allow-listed namespace."""
-    payload = TaskWrite.model_validate(TaskFactory.build(name="evil-task")).model_dump(
-        mode="json"
+class TestTaskHookPathAllowList:
+    """Test the hook-path allow-list as enforced across the task write endpoints."""
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    @pytest.mark.parametrize("hook_path", REJECTED_HOOK_PATHS)
+    @pytest.mark.asyncio
+    async def test_create_rejects_hook_path_outside_allow_list(
+        self, test_client: TestClient, field: str, hook_path: str
+    ) -> None:
+        """Assert POST rejects a hook path the allow-list denies."""
+        payload = TaskWrite.model_validate(
+            TaskFactory.build(name="evil-task")
+        ).model_dump(mode="json")
+        payload[field] = hook_path
+
+        response = test_client.post("/", json=payload)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert "app.sep.apps" in response.text
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    @pytest.mark.parametrize("hook_path", REJECTED_HOOK_PATHS)
+    @pytest.mark.asyncio
+    async def test_update_rejects_hook_path_outside_allow_list(
+        self,
+        test_client: TestClient,
+        created_task: Task,
+        field: str,
+        hook_path: str,
+    ) -> None:
+        """Assert PUT rejects a hook path the allow-list denies."""
+        payload = TaskWrite.model_validate(
+            TaskFactory.build(name=created_task.name)
+        ).model_dump(mode="json")
+        payload[field] = hook_path
+
+        response = test_client.put(f"/{created_task.name}", json=payload)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert field in response.text
+
+    @pytest.mark.parametrize(
+        ("field", "hook_path"),
+        [
+            ("alert_detail_builder", ALERT_DETAIL_BUILDER),
+            ("run_result_recorder", RUN_RESULT_RECORDER),
+        ],
     )
-    payload[field] = hook_path
+    @pytest.mark.asyncio
+    async def test_create_accepts_in_tree_hook_path(
+        self, test_client: TestClient, field: str, hook_path: str
+    ) -> None:
+        """Assert a non-admin caller can still create a task stamping a shipped hook."""
+        payload = TaskWrite.model_validate(
+            TaskFactory.build(name="app-task")
+        ).model_dump(mode="json")
+        payload[field] = hook_path
 
-    response = test_client.post("/", json=payload)
+        response = test_client.post("/", json=payload)
 
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-    assert "app.sep.apps" in response.text
-
-
-@pytest.mark.parametrize("field", ["alert_detail_builder", "run_result_recorder"])
-@pytest.mark.asyncio
-async def test_update_task_rejects_hook_path_outside_allow_list(
-    test_client, created_task, field
-):
-    """Assert PUT rejects a hook path outside the allow-listed namespace."""
-    payload = TaskWrite.model_validate(
-        TaskFactory.build(name=created_task.name)
-    ).model_dump(mode="json")
-    payload[field] = "os:system"
-
-    response = test_client.put(f"/{created_task.name}", json=payload)
-
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-    assert field in response.text
-
-
-@pytest.mark.parametrize(
-    ("field", "hook_path"),
-    [
-        ("alert_detail_builder", ALERT_DETAIL_BUILDER),
-        ("run_result_recorder", RUN_RESULT_RECORDER),
-    ],
-)
-@pytest.mark.asyncio
-async def test_create_task_accepts_in_tree_hook_path(test_client, field, hook_path):
-    """Assert a non-admin caller can still create a task stamping a shipped hook."""
-    payload = TaskWrite.model_validate(TaskFactory.build(name="app-task")).model_dump(
-        mode="json"
-    )
-    payload[field] = hook_path
-
-    response = test_client.post("/", json=payload)
-
-    assert response.status_code == status.HTTP_201_CREATED
-    assert response.json()[field] == hook_path
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()[field] == hook_path
 
 
 async def _seed_running_over_success(session, name: str, finished):
