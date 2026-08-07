@@ -33,7 +33,8 @@ const { apiMock, useAppTasksMock } = vi.hoisted(() => ({
   useAppTasksMock: vi.fn(),
 }));
 
-vi.mock('@sep/api', () => ({
+vi.mock('@sep/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sep/api')>()),
   apiClient: apiMock,
   useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
 }));

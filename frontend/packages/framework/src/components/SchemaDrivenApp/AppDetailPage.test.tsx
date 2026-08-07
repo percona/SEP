@@ -61,6 +61,10 @@ vi.mock('@sep/api', () => ({
   // when capabilities.chaining is set. Default empty list keeps schedule summary
   // in its "Not scheduled" state.
   useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
+  DEFAULT_APP_LIST_LIMIT: 50,
+  MAX_FETCH_ALL_PAGES: 50,
+  normalizeAppListResponse: (data: unknown) =>
+    Array.isArray(data) ? { items: data, pagination: null } : { items: [], pagination: null },
   useDeleteAppTask: () => ({
     mutateAsync: mockDeleteMutate,
     isPending: false,
@@ -71,7 +75,11 @@ vi.mock('@sep/api', () => ({
   getToken: () => null,
   refreshAccessToken: vi.fn(),
   emitUnauthorized: vi.fn(),
-  apiClient: { get: vi.fn(), post: vi.fn(), defaults: {} },
+  apiClient: {
+    get: vi.fn().mockResolvedValue({ data: [] }),
+    post: vi.fn(),
+    defaults: {},
+  },
   setTokenProvider: vi.fn(),
   ApiError: class ApiError extends Error {
     status?: number;

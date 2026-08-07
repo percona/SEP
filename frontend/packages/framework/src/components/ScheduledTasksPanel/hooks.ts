@@ -16,7 +16,14 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, useAppTasks, type TasksComponents } from '@sep/api';
+import {
+  apiClient,
+  DEFAULT_APP_LIST_LIMIT,
+  MAX_FETCH_ALL_PAGES,
+  normalizeAppListResponse,
+  useAppTasks,
+  type TasksComponents,
+} from '@sep/api';
 
 export type PeriodicTaskResponse = TasksComponents['schemas']['PeriodicTaskResponse'];
 export type PeriodicTaskCreate = TasksComponents['schemas']['PeriodicTaskCreate'];
@@ -26,10 +33,51 @@ export type CrontabSchedule = TasksComponents['schemas']['CrontabSchedule'];
 export type PeriodicTaskExecuteRequest = TasksComponents['schemas']['PeriodicTaskExecuteRequest'];
 
 const PERIODIC_LIST_KEY = ['periodic'] as const;
+const PERIODIC_LIST_PATH = '/sep/periodic-tasks/';
 const POLL_INTERVAL_MS = 30_000;
 
 interface AppTask extends Record<string, unknown> {
   name: string;
+}
+
+/**
+ * Walk every page of the SEP periodic-task list before client-side filtering.
+ *
+ * Mirrors ``fetchAllAppListPages`` so a large schedule table cannot hide this
+ * plugin's rows past the first page. Bare-array responses (stories/tests)
+ * short-circuit after one request; hitting the page cap surfaces a warning
+ * rather than silently dropping schedules.
+ */
+async function fetchAllPeriodicTasks(): Promise<PeriodicTaskResponse[]> {
+  const out: PeriodicTaskResponse[] = [];
+  let offset = 0;
+  let lastTotal: number | null = null;
+  const limit = DEFAULT_APP_LIST_LIMIT;
+
+  for (let iter = 0; iter < MAX_FETCH_ALL_PAGES; iter++) {
+    const { data } = await apiClient.get(PERIODIC_LIST_PATH, {
+      params: { offset, limit },
+    });
+    const page = normalizeAppListResponse<PeriodicTaskResponse>(data);
+
+    if (page.pagination === null) {
+      return page.items;
+    }
+
+    lastTotal = page.pagination.total;
+    out.push(...page.items);
+    offset += page.items.length;
+    if (offset >= page.pagination.total || page.items.length === 0) {
+      return out;
+    }
+  }
+
+  // eslint-disable-next-line no-console -- surface silent schedule-list truncation
+  console.warn(
+    `[api] fetchAllPages truncated ${PERIODIC_LIST_PATH} at ${out.length} of ${lastTotal ?? '?'} items ` +
+      `(cap ${MAX_FETCH_ALL_PAGES}×${limit})`,
+  );
+  return out;
 }
 
 /**
@@ -64,10 +112,7 @@ export function useScheduledTasksForApp(
 
   const periodicQuery = useQuery<PeriodicTaskResponse[], Error, PeriodicTaskResponse[]>({
     queryKey: PERIODIC_LIST_KEY,
-    queryFn: async () => {
-      const { data } = await apiClient.get<PeriodicTaskResponse[]>('/sep/periodic-tasks/');
-      return data;
-    },
+    queryFn: fetchAllPeriodicTasks,
     refetchInterval: disablePolling ? false : pollingIntervalMs,
   });
 
