@@ -57,7 +57,7 @@ async def list_periodic_tasks(
     pagination: PaginationDep,
     owner: str | None = None,
     enabled: bool | None = None,
-) -> PaginatedResponse[PeriodicTask]:
+) -> PaginatedResponse[PeriodicTaskResponse]:
     """List periodic tasks for the requested page window."""
     if owner is None:
         page = await PeriodicTaskManager.list_paginated(
