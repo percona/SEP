@@ -27,6 +27,7 @@ from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.db.list_query import ListQuery, make_list_query_dep
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
@@ -42,13 +43,7 @@ from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.snippets.crud import SnippetManager
-from app.sep.snippets.list_query import (
-    DEFAULT_SNIPPET_SORT_KEY,
-    SnippetApprovalFilter,
-    SnippetListQuery,
-    SnippetSortDirection,
-    SnippetSortKey,
-)
+from app.sep.snippets.list_query import SnippetApprovalFilter, SnippetListQuery
 from app.sep.snippets.models.responses import (
     BatchApprovalErrorResponse,
     SnippetBatchApproveRequest,
@@ -551,19 +546,11 @@ SnippetBatchExistenceDep = Annotated[
     SnippetBatchExistenceResult, Depends(get_batch_existence)
 ]
 
+CoreListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(SnippetManager))]
+
 
 def get_snippet_list_query(
-    search: Annotated[
-        str | None,
-        Query(description="Case-insensitive search over filename, title, description."),
-    ] = None,
-    sort: Annotated[
-        SnippetSortKey,
-        Query(description="Sort key; one of the allowlisted public sort keys."),
-    ] = DEFAULT_SNIPPET_SORT_KEY,
-    order: Annotated[
-        SnippetSortDirection, Query(description="Sort direction.")
-    ] = SnippetSortDirection.DESC,
+    core: CoreListQueryDep,
     approval: Annotated[
         SnippetApprovalFilter, Query(description="Approval-status filter.")
     ] = SnippetApprovalFilter.ALL,
@@ -583,24 +570,22 @@ def get_snippet_list_query(
         ),
     ] = False,
 ) -> SnippetListQuery:
-    """Parse the opt-in snippets list-query parameters.
+    """Compose the Core sort/search with the snippets filter parameters.
 
-    ``sort`` is typed as :class:`SnippetSortKey`, so an out-of-allowlist key
-    fails enum coercion at the request boundary (a 422 keyed to the ``sort``
-    query param) and no raw client-supplied column name can reach the query.
+    ``sort`` and ``search`` are declared and validated by the Core dependency built
+    from :attr:`~app.sep.snippets.crud.SnippetManager.list_query_spec`, so an
+    out-of-allowlist sort key is rejected there with a 422 and no raw client-supplied
+    column name reaches query construction. This wrapper only adds the snippets
+    filters, which stay separate predicates rather than spec members.
 
-    :param search: Free-text search term, or ``None`` for no search.
-    :param sort: The requested public sort key.
-    :param order: The requested sort direction.
+    :param core: The Core-resolved sort and search.
     :param approval: The requested approval-status filter.
     :param service_type: The requested service-type equality filter.
     :param uncategorized: When ``True``, filter to snippets with no service type.
     :return: An immutable list-query value object.
     """
     return SnippetListQuery(
-        search=search,
-        sort_key=sort,
-        sort_direction=order,
+        core=core,
         approval=approval,
         service_type=service_type,
         uncategorized=uncategorized,

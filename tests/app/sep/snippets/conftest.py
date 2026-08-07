@@ -44,8 +44,8 @@ def _bind_request_less_session(request_less_session: AsyncSession) -> None:
 def seed_snippet() -> SeedSnippet:
     """Return an async factory persisting a Snippet with given meta and approval.
 
-    Promoted here so the SQLite and PostgreSQL list-query tests share one seeding
-    definition instead of re-declaring the row shape per module.
+    Promoted here so the SQLite, PostgreSQL and MySQL list-query tests share one
+    seeding definition instead of re-declaring the row shape per module.
 
     :return: An awaitable ``(session, filename, *, title, description,
         service_type, approved)`` factory returning the persisted snippet.
