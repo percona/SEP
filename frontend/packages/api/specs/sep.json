@@ -592,6 +592,38 @@
         "title": "PaginatedResponse[Any]",
         "type": "object"
       },
+      "PaginatedResponse_ArbitraryMapping_": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[ArbitraryMapping]",
+        "type": "object"
+      },
       "PaginatedResponse_ServiceResponse_": {
         "properties": {
           "items": {
@@ -685,37 +717,6 @@
         "title": "PaginatedResponse[TaskHistoryResponse]",
         "type": "object"
       },
-      "PaginatedResponse_dict_str__Any__": {
-        "properties": {
-          "items": {
-            "items": {
-              "type": "object"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "PaginatedResponse[dict[str, Any]]",
-        "type": "object"
-      },
       "RefreshResponse": {
         "description": "Represent the successful result of a manual snippets-refresh operation.\n\n:param refreshed_at: UTC timestamp at which the refresh completed.\n:type refreshed_at: datetime",
         "properties": {
@@ -802,7 +803,7 @@
         "type": "string"
       },
       "ServiceResponse": {
-        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:type custom_labels: dict[str, Any] | None\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
+        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
         "properties": {
           "cluster": {
             "anyOf": [
@@ -823,6 +824,7 @@
           "custom_labels": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -1358,7 +1360,7 @@
       },
       "TaskExecutionRequest": {
         "additionalProperties": true,
-        "description": "Represent an execution request.\n\n:param task: The task name.\n:type task: str\n:param target: The target system or environment.\n:type target: str\n:param meta: Additional metadata for the task. Defaults to an empty dictionary.\n:type meta: dict | None\n:param payload: Optional payload or file path for parameterizing the task.\n    Defaults to None.\n:type payload: str | None\n:param tracking: Tracking information for task execution. Defaults to a dictionary\n    with keys for allocation and evaluation IDs.\n:type tracking: dict | None",
+        "description": "Represent an execution request.\n\n:param task: The task name.\n:type task: str\n:param target: The target system or environment.\n:type target: str\n:param meta: Additional metadata for the task. Defaults to an empty dictionary.\n:param payload: Optional payload or file path for parameterizing the task.\n    Defaults to None.\n:type payload: str | None\n:param tracking: Tracking information for task execution. Defaults to a dictionary\n    with keys for allocation and evaluation IDs.",
         "properties": {
           "eta": {
             "anyOf": [
@@ -1375,6 +1377,7 @@
           "meta": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -1406,6 +1409,7 @@
           "tracking": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -1619,6 +1623,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -2003,6 +2008,7 @@
             "type": "integer"
           },
           "metadata": {
+            "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
           }
@@ -2326,6 +2332,7 @@
         "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.",
         "properties": {
           "details": {
+            "additionalProperties": true,
             "title": "Details",
             "type": "object"
           },
@@ -2633,6 +2640,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -3846,6 +3854,7 @@
             "type": "string"
           },
           "detail": {
+            "additionalProperties": true,
             "title": "Detail",
             "type": "object"
           },
@@ -4106,6 +4115,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -4283,6 +4293,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -4773,6 +4784,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -4944,6 +4956,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -5393,6 +5406,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -5574,6 +5588,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -5978,6 +5993,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -6121,6 +6137,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -6517,6 +6534,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -6694,6 +6712,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -7301,7 +7320,7 @@
       },
       "framework__DerivedTask": {
         "additionalProperties": false,
-        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:type data_overrides: dict[str, Any] | None\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
         "properties": {
           "arg_substitutions": {
             "anyOf": [
@@ -7320,6 +7339,7 @@
           "data_overrides": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -8739,6 +8759,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -10934,6 +10955,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -11687,6 +11709,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -12101,6 +12124,7 @@
             "type": "string"
           },
           "period": {
+            "additionalProperties": true,
             "title": "Period",
             "type": "object"
           },
@@ -12453,9 +12477,9 @@
             "type": "boolean"
           },
           "result": {
-            "additionalProperties": true,
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -12722,6 +12746,7 @@
         "description": "Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API.\n:type task: TaskResponse\n:param execution_history: Paginated task history from the tasks API\n    (``items``, ``total``, ``offset``, ``limit``).\n:type execution_history: dict[str, Any]\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:type periodic_summary: list[PeriodicTaskSummary]\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.\n:type executor_hosts: list[ExecutorHostMetadata]",
         "properties": {
           "execution_history": {
+            "additionalProperties": true,
             "title": "Execution History",
             "type": "object"
           },
@@ -12875,6 +12900,7 @@
         "description": "Represent a dual-primary (mutually replicating) edge.",
         "properties": {
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -16995,7 +17021,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_dict_str__Any__"
+                  "$ref": "#/components/schemas/PaginatedResponse_ArbitraryMapping_"
                 }
               }
             },
@@ -19263,6 +19289,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Snippets Snippets Api Script History Api Apps Snippets Snippet History Get",
                   "type": "object"
                 }
@@ -19986,6 +20013,7 @@
               "application/json": {
                 "schema": {
                   "items": {
+                    "additionalProperties": true,
                     "type": "object"
                   },
                   "title": "Response Tasks List Periodic Tasks Api Sep Periodic Tasks  Get",
@@ -20091,6 +20119,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "title": "Body",
                 "type": "object"
               }
@@ -20103,6 +20132,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }
@@ -20164,6 +20194,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "title": "Body",
                 "type": "object"
               }
@@ -20176,6 +20207,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Tasks Create Periodic Task Api Sep Periodic Tasks  Task Name   Post",
                   "type": "object"
                 }
@@ -20557,6 +20589,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Tasks Stop Task History Api Sep Task History  Task History Id  Stop  Post",
                   "type": "object"
                 }
@@ -20619,6 +20652,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Tasks Get Task Stats Api Sep Task Stats  Task Name  Get",
                   "type": "object"
                 }

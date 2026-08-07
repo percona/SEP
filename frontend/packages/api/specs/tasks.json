@@ -394,6 +394,7 @@
             "title": "Eta"
           },
           "meta": {
+            "additionalProperties": true,
             "default": {},
             "title": "Meta",
             "type": "object"
@@ -876,6 +877,7 @@
             "title": "Eta"
           },
           "meta": {
+            "additionalProperties": true,
             "default": {},
             "title": "Meta",
             "type": "object"
@@ -897,7 +899,7 @@
       },
       "TaskExecutionRequest": {
         "additionalProperties": true,
-        "description": "Represent an execution request.\n\n:param task: The task name.\n:type task: str\n:param target: The target system or environment.\n:type target: str\n:param meta: Additional metadata for the task. Defaults to an empty dictionary.\n:type meta: dict | None\n:param payload: Optional payload or file path for parameterizing the task.\n    Defaults to None.\n:type payload: str | None\n:param tracking: Tracking information for task execution. Defaults to a dictionary\n    with keys for allocation and evaluation IDs.\n:type tracking: dict | None",
+        "description": "Represent an execution request.\n\n:param task: The task name.\n:type task: str\n:param target: The target system or environment.\n:type target: str\n:param meta: Additional metadata for the task. Defaults to an empty dictionary.\n:param payload: Optional payload or file path for parameterizing the task.\n    Defaults to None.\n:type payload: str | None\n:param tracking: Tracking information for task execution. Defaults to a dictionary\n    with keys for allocation and evaluation IDs.",
         "properties": {
           "eta": {
             "anyOf": [
@@ -914,6 +916,7 @@
           "meta": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -945,6 +948,7 @@
           "tracking": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -1316,6 +1320,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -1425,6 +1430,7 @@
         "description": "Model for task statistics.\n\n:param engine: The backend engine used for task execution. Defaults to \"nomad\".\n:type engine: str\n:param tasks: A list of task execution histories.\n:type tasks: list[TaskHistory]",
         "properties": {
           "duration": {
+            "additionalProperties": true,
             "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
             "readOnly": true,
             "title": "Duration",
@@ -1449,6 +1455,9 @@
             "title": "Last Finished At"
           },
           "status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
             "description": "Return the task status summary.\n\n:return: A dictionary summarizing the number of passed and failed tasks.\n:rtype: dict[str, int]",
             "readOnly": true,
             "title": "Status",
@@ -1505,6 +1514,7 @@
             "default": "nomad"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },

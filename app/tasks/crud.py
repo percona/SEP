@@ -823,7 +823,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             .where(col(TaskHistoryLog.task_history_id) == task_history_id)
             .limit(1)
         )
-        result = await session.exec(query)
+        result = await cls._exec(session, query)
         return result.first() is not None
 
     @classmethod
@@ -855,7 +855,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             .where(col(TaskHistoryLog.task_history_id).in_(task_history_ids))
             .distinct()
         )
-        result = await session.exec(query)
+        result = await cls._exec(session, query)
         return set(result.all())
 
     @classmethod
