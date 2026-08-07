@@ -75,8 +75,8 @@ def diagnostics_send_disabled_reasons() -> list[str]:
     """Return why the incident send action is unavailable, empty when it is not.
 
     The plan is resolved from the baked skeleton and its runtime inputs on every
-    call, so a partially-configured receiver -- a declared secret left without a
-    value -- is reported here rather than failing mid-send. Delivery that was
+    call, so a partially-configured receiver — a declared secret left without a
+    value — is reported here rather than failing mid-send. Delivery that was
     working until stored inputs stopped matching the plan is reported
     separately, because re-supplying the inputs and configuring delivery for the
     first time are opposite actions.
