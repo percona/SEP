@@ -203,9 +203,9 @@ Mutation testing (`mutmut`) is an optional local spike tool, not part of
 from the repo root; it writes a gitignored `mutants/` working copy:
 
 ```shell
-poetry run mutmut run        # generate and test mutants
-poetry run mutmut results    # list surviving mutants
-poetry run mutmut show <id>  # diff for a single mutant
+poetry run mutmut run           # generate and test mutants
+poetry run mutmut results       # list surviving mutants
+poetry run mutmut show <mutant> # diff for a single mutant
 ```
 
 On macOS, export the Homebrew library path first. `mutmut` invokes pytest
@@ -213,7 +213,7 @@ directly, so it bypasses the wrapper that `make test` uses to make WeasyPrint's
 native libraries resolvable:
 
 ```shell
-export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib:${DYLD_FALLBACK_LIBRARY_PATH}"
+export DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix)/lib:${DYLD_FALLBACK_LIBRARY_PATH}"
 ```
 
 ## Getting Help
