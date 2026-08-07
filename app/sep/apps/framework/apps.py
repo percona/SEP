@@ -907,10 +907,12 @@ class TaskExecutionApp(BaseApp):
         runtime. Compare keys against the names
         ``response_model.model_dump(by_alias=True)`` emits (see
         :func:`~app.sep.apps.framework.responses.serialized_field_names`), not
-        ``model_fields`` alone. Skip ``schema=`` passthrough apps (no
-        ``create_model``) and model-first apps that declare no ``list_view``;
-        detail-view ``data.*`` paths stay free-form and are checked by the
-        conformance suite instead.
+        ``model_fields`` alone. ``by_alias=True`` matches the derived list route,
+        which pins ``response_model_by_alias=True``. Keys are compared whole, so a
+        dotted path or a synthetic (``_actions``) key is rejected; no model-first
+        app uses one today. Skip ``schema=`` passthrough apps (no ``create_model``)
+        and model-first apps that declare no ``list_view``; detail-view ``data.*``
+        paths stay free-form and are checked by the conformance suite instead.
 
         :raises ValueError: When a ``views.list_view`` column ``key`` is not present
             in the serialized ``response_model`` row.

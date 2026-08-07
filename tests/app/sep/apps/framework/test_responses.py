@@ -564,27 +564,30 @@ class _AliasedModel(BaseModel):
     both: str = Field(alias="alias_only", serialization_alias="ser_wins")
 
 
-@pytest.mark.parametrize(
-    ("model", "kwargs", "expected"),
-    [
-        (_PlainModel, {"name": "x"}, frozenset({"name"})),
-        (_ExcludedModel, {"name": "x", "secret": "s"}, frozenset({"name"})),
-        (_ComputedModel, {"name": "x"}, frozenset({"name", "label", "wire_label"})),
-        (
-            _AliasedModel,
-            {"wire_name": "x", "alias_only": "y"},
-            frozenset({"wire_name", "ser_wins"}),
-        ),
-    ],
-    ids=["plain", "exclude_true", "computed_field", "aliased"],
-)
-def test_serialized_field_names(
-    model: type[BaseModel], kwargs: dict[str, str], expected: frozenset[str]
-) -> None:
-    """Match names emitted by ``model_dump(by_alias=True)``."""
-    names = serialized_field_names(model)
-    assert names == expected
-    assert names == set(model(**kwargs).model_dump(by_alias=True))
+class TestSerializedFieldNames:
+    """Test suite for ``serialized_field_names``."""
+
+    @pytest.mark.parametrize(
+        ("model", "kwargs", "expected"),
+        [
+            (_PlainModel, {"name": "x"}, frozenset({"name"})),
+            (_ExcludedModel, {"name": "x", "secret": "s"}, frozenset({"name"})),
+            (_ComputedModel, {"name": "x"}, frozenset({"name", "label", "wire_label"})),
+            (
+                _AliasedModel,
+                {"wire_name": "x", "alias_only": "y"},
+                frozenset({"wire_name", "ser_wins"}),
+            ),
+        ],
+        ids=["plain", "exclude_true", "computed_field", "aliased"],
+    )
+    def test_serialized_field_names(
+        self, model: type[BaseModel], kwargs: dict[str, str], expected: frozenset[str]
+    ) -> None:
+        """Match names emitted by ``model_dump(by_alias=True)``."""
+        names = serialized_field_names(model)
+        assert names == expected
+        assert names == set(model(**kwargs).model_dump(by_alias=True))
 
 
 class TestBaseTaskResponse:
