@@ -138,7 +138,11 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     resolves it. The enabled gate, the idempotent early-return, the initial inline
     refresh and the shutdown drain all live in :class:`WorkerRefresher`; periodic
     progress thereafter is best-effort, advancing only while a task drives
-    ``celery.loop.run_until_complete``.
+    ``celery.loop.run_until_complete``. The inline seed is bounded by a fraction
+    of ``celery.conf.worker_proc_alive_timeout`` so a hanging database cannot
+    push the child past the prefork pool's liveness deadline; on expiry the
+    periodic refresher still starts and the child runs with env-only overrides
+    until a later cycle lands.
 
     ``anonymizer_settings._resolve()`` runs unconditionally for validation even
     when the refresher is disabled, as ``messages_settings._resolve()`` does in
@@ -152,13 +156,15 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
         when the anonymizer config is invalid. Celery logs it and carries on
         dispatching; the child starts without this refresher.
     :raises Exception: Propagates a session-maker failure from the initial
-        inline refresh, absorbed the same way. Per-proxy refresh failures are
-        caught and logged inside ``refresh_all``.
+        inline refresh, absorbed the same way. Per-proxy refresh failures and
+        a bounded-seed expiry are caught and logged inside the refresher; the
+        latter still starts the periodic task.
     """
     anonymizer_settings._resolve()  # noqa: SLF001
     _refresher.start(
         settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
         enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+        proc_alive_timeout=celery.conf.worker_proc_alive_timeout,
     )
 
 
