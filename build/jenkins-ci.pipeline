@@ -76,7 +76,7 @@ pipeline {
 			steps {
 				build job: 'SEP/Audit', parameters: [
 					[$class: 'StringParameterValue', name: 'releaseTag', value: "${RELEASE_VER}"],
-					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
+					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"]
 				], propagate: true, wait: true
 			}
 		}
