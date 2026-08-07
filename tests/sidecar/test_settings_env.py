@@ -18,6 +18,7 @@ import os
 import re
 import shlex
 import subprocess
+from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import pytest
@@ -68,6 +69,20 @@ def exported(result: subprocess.CompletedProcess[str]) -> dict[str, str]:
     return dict(
         entry.split("=", 1) for entry in result.stdout.split("\0") if "=" in entry
     )
+
+
+def write_secrets(tmp_path: Path, **files: str) -> str:
+    """Write the named secret files and return the directory to mount.
+
+    :param tmp_path: The per-test temporary directory.
+    :param files: Each canonical name a file supplies, mapped to its contents.
+    :return: The directory ``SECRETS_DIR`` should name.
+    """
+    directory = tmp_path / "secrets"
+    directory.mkdir(exist_ok=True)
+    for name, content in files.items():
+        (directory / name).write_text(content, encoding="utf-8")
+    return str(directory)
 
 
 @pytest.mark.parametrize("secret_key", [{}, {"SECRET_KEY": ""}], ids=["unset", "empty"])
@@ -249,3 +264,269 @@ def test_reserved_character_password_reaches_a_usable_service_dsn(
         unquote(urlsplit(settings_class().DATABASE.URL).password)
         for settings_class in (SEPSettings, InventorySettings, TasksSettings)
     ] == [password, password, password]
+
+
+def test_secret_key_from_a_file_starts_the_script_without_exporting_it(tmp_path: Path):
+    """Clear the gate from a mounted key, leaving each process to read the file."""
+    secrets_dir = write_secrets(tmp_path, SECRET_KEY="from-file")
+
+    environment = exported(source_helper(SECRETS_DIR=secrets_dir))
+
+    assert "SECRET_KEY" not in environment
+
+
+def test_the_missing_key_message_names_the_file_channel(tmp_path: Path):
+    """Name both ways of supplying the key when neither is in place."""
+    secrets_dir = write_secrets(tmp_path)
+
+    result = source_helper(SECRETS_DIR=secrets_dir)
+
+    assert result.returncode != 0
+    assert "SECRET_KEY" in result.stderr
+    assert "openssl rand -hex 32" in result.stderr
+    assert "SECRETS_DIR" in result.stderr
+
+
+def test_a_mounted_canonical_name_is_left_unexported(tmp_path: Path):
+    """Suppress only the derived export the file supplies, leaving its siblings."""
+    secrets_dir = write_secrets(tmp_path, TASKS__DATABASE__PASSWORD="from-file")
+
+    environment = exported(
+        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir)
+    )
+
+    assert "TASKS__DATABASE__PASSWORD" not in environment
+    assert environment["SEP__DATABASE__PASSWORD"] == "pw"
+    assert environment["INVENTORY__DATABASE__PASSWORD"] == "pw"
+
+
+def test_an_explicit_variable_outranks_the_file_and_the_derived_value(tmp_path: Path):
+    """Keep an operator's own variable ahead of both lower levels.
+
+    The seed is skipped too, so the wait loops follow the value in force rather
+    than the shadowed file.
+    """
+    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__HOST="from-file")
+
+    environment = exported(
+        source_helper(
+            SECRET_KEY="k",
+            SEP__DATABASE__HOST="from-env",
+            SEP_DB_HOST="from-raw",
+            SECRETS_DIR=secrets_dir,
+        )
+    )
+
+    assert environment["SEP__DATABASE__HOST"] == "from-env"
+    assert environment["SEP_DB_HOST"] == "from-raw"
+
+
+def test_mounted_host_and_port_seed_the_supervisord_wait_loops(tmp_path: Path):
+    """Point the migrate wait loops at the database the services connect to."""
+    secrets_dir = write_secrets(
+        tmp_path, SEP__DATABASE__HOST="db.internal", SEP__DATABASE__PORT="6543"
+    )
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert environment["SEP_DB_HOST"] == "db.internal"
+    assert environment["SEP_DB_PORT"] == "6543"
+    assert "SEP__DATABASE__HOST" not in environment
+    assert "SEP__DATABASE__PORT" not in environment
+    assert environment["INVENTORY__DATABASE__HOST"] == "db.internal"
+    assert environment["TASKS__DATABASE__PORT"] == "6543"
+
+
+def test_a_mounted_password_reaches_the_beat_uri_percent_encoded(tmp_path: Path):
+    """Derive the beat store from the file, since celery-beat has no file channel."""
+    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="p@ss:w/rd")
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert "SEP__DATABASE__PASSWORD" not in environment
+    assert (
+        environment["CELERY__BEAT_DBURI"]
+        == "postgresql://sep:p%40ss%3Aw%2Frd@pmm-server:5432/sep"
+    )
+
+
+def test_mounting_the_beat_uri_suppresses_the_derivation(tmp_path: Path):
+    """Keep the password out of the environment entirely, which is the mount to use."""
+    secrets_dir = write_secrets(
+        tmp_path,
+        SEP__DATABASE__PASSWORD="pw",
+        CELERY__BEAT_DBURI="postgresql://sep:pw@pmm-server:5432/sep",
+    )
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert "CELERY__BEAT_DBURI" not in environment
+    assert not [name for name in environment if "PASSWORD" in name]
+
+
+def test_an_explicit_password_variable_reaches_the_beat_uri():
+    """Resolve the beat password through the order the canonical exports follow."""
+    environment = exported(source_helper(SECRET_KEY="k", SEP__DATABASE__PASSWORD="pw"))
+
+    assert (
+        environment["CELERY__BEAT_DBURI"] == "postgresql://sep:pw@pmm-server:5432/sep"
+    )
+
+
+def test_a_file_value_is_stripped(tmp_path: Path):
+    """Strip a file the way the settings classes strip it, so both read one value."""
+    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__HOST="  padded  \n")
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert environment["SEP_DB_HOST"] == "padded"
+    assert environment["INVENTORY__DATABASE__HOST"] == "padded"
+
+
+def test_an_empty_file_counts_as_a_supplied_value(tmp_path: Path):
+    """Treat a blank mount as supplied, which is how the settings classes read it."""
+    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="")
+
+    environment = exported(
+        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir)
+    )
+
+    assert "SEP__DATABASE__PASSWORD" not in environment
+    assert environment["INVENTORY__DATABASE__PASSWORD"] == "pw"
+    assert environment["TASKS__DATABASE__PASSWORD"] == "pw"
+    assert environment["CELERY__BEAT_DBURI"] == "postgresql://sep@pmm-server:5432/sep"
+
+
+def test_a_symlink_escaping_the_directory_does_not_supply_a_name(tmp_path: Path):
+    """Ignore an escaping symlink, so the export the settings classes need survives."""
+    outside = tmp_path / "outside"
+    outside.write_text("escaped-value", encoding="utf-8")
+    secrets_dir = write_secrets(tmp_path)
+    (Path(secrets_dir) / "SEP__DATABASE__HOST").symlink_to(outside)
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert environment["SEP__DATABASE__HOST"] == "pmm-server"
+    assert environment["SEP_DB_HOST"] == "pmm-server"
+
+
+def test_a_symlink_escaping_the_directory_does_not_satisfy_the_gate(tmp_path: Path):
+    """Reject an escaping key file, which no settings class would read either."""
+    outside = tmp_path / "outside"
+    outside.write_text("escaped-value", encoding="utf-8")
+    secrets_dir = write_secrets(tmp_path)
+    (Path(secrets_dir) / "SECRET_KEY").symlink_to(outside)
+
+    result = source_helper(SECRETS_DIR=secrets_dir)
+
+    assert result.returncode != 0
+
+
+def test_a_kubernetes_projected_secret_is_supplied(tmp_path: Path):
+    """Resolve the ``..data`` layout Kubernetes projects, which stays inside."""
+    secrets_dir = Path(write_secrets(tmp_path))
+    revision = secrets_dir / "..2026_01_01"
+    revision.mkdir()
+    (revision / "SECRET_KEY").write_text("projected-value", encoding="utf-8")
+    (secrets_dir / "..data").symlink_to("..2026_01_01")
+    (secrets_dir / "SECRET_KEY").symlink_to("..data/SECRET_KEY")
+
+    environment = exported(source_helper(SECRETS_DIR=str(secrets_dir)))
+
+    assert "SECRET_KEY" not in environment
+
+
+def test_a_lowercase_file_name_supplies_the_canonical_name(tmp_path: Path):
+    """Match file names case-insensitively, as the settings source matches them.
+
+    An exact-match lookup would export the derived value instead, and an
+    exported name outranks every secret file.
+    """
+    secrets_dir = write_secrets(tmp_path, sep__database__password="from-file")
+
+    environment = exported(
+        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="raw", SECRETS_DIR=secrets_dir)
+    )
+
+    assert "SEP__DATABASE__PASSWORD" not in environment
+    assert environment["INVENTORY__DATABASE__PASSWORD"] == "raw"
+    assert environment["TASKS__DATABASE__PASSWORD"] == "raw"
+    assert (
+        environment["CELERY__BEAT_DBURI"]
+        == "postgresql://sep:from-file@pmm-server:5432/sep"
+    )
+
+
+def test_a_lowercase_secret_key_file_satisfies_the_gate(tmp_path: Path):
+    """Clear the gate from a lowercased key file, which the settings classes read."""
+    secrets_dir = write_secrets(tmp_path, secret_key="from-file")
+
+    environment = exported(source_helper(SECRETS_DIR=secrets_dir))
+
+    assert "SECRET_KEY" not in environment
+
+
+def test_a_secret_in_a_subdirectory_does_not_supply_a_name(tmp_path: Path):
+    """Ignore a nested secret, whose settings-side key can match no field."""
+    secrets_dir = Path(write_secrets(tmp_path))
+    nested = secrets_dir / "sub"
+    nested.mkdir()
+    (nested / "SEP__DATABASE__HOST").write_text("nested-value", encoding="utf-8")
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=str(secrets_dir)))
+
+    assert environment["SEP__DATABASE__HOST"] == "pmm-server"
+
+
+@pytest.mark.parametrize(
+    "secrets_dir_name",
+    ["absent", "empty", "unrelated-file"],
+)
+def test_an_unusable_secrets_directory_changes_nothing(
+    tmp_path: Path, secrets_dir_name: str
+):
+    """Leave today's exported environment untouched when no file matches a name."""
+    if secrets_dir_name == "absent":
+        secrets_dir = str(tmp_path / "missing")
+    elif secrets_dir_name == "empty":
+        secrets_dir = write_secrets(tmp_path)
+    else:
+        secrets_dir = write_secrets(tmp_path, UNRELATED="value")
+    baseline = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw"))
+
+    environment = exported(
+        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir)
+    )
+
+    assert {
+        name: value for name, value in environment.items() if name != "SECRETS_DIR"
+    } == baseline
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_a_mounted_secret_resolves_through_the_shell_into_the_settings_classes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Assert the shell's suppression and the settings classes' file read compose."""
+    password = "p@ss:w/rd"
+    secrets_dir = write_secrets(
+        tmp_path, SECRET_KEY="from-file", SEP__DATABASE__PASSWORD=password
+    )
+    environment = exported(source_helper(SECRETS_DIR=secrets_dir))
+    for name in ("SECRET_KEY", "SEP__DATABASE__PASSWORD"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        if name not in SHELL_LOCAL_NAMES:
+            monkeypatch.setenv(name, value)
+
+    assert (
+        Settings(_secrets_dir=secrets_dir).SECRET_KEY.get_secret_value() == "from-file"
+    )
+    assert (
+        SEPSettings(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+        == password
+    )
+    assert (
+        Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
+        == "postgresql+psycopg2://sep:p%40ss%3Aw%2Frd@pmm-server:5432/sep"
+    )
