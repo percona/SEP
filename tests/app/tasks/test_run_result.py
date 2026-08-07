@@ -30,7 +30,7 @@ from sqlmodel.pool import StaticPool
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer, utc_now
 from app.tasks import hook_resolver
-from app.tasks.celery import sync_queue_item
+from app.tasks.celery import dispatch_queue_item, sync_queue_item
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
 from app.tasks.execution.executors.nomad import NomadExecutor
@@ -621,3 +621,178 @@ class TestStopPathCarveOut:
         assert stopped.status == TaskHistoryStatusEnum.STOPPED
         assert recorded == []
         executor.stream_file.assert_not_called()
+
+
+def _dispatch_to(target: TaskHistoryStatusEnum, *, result: dict | None = None):
+    """Return a fake executor whose ``dispatch_task`` lands the run on ``target``."""
+
+    async def _fake_dispatch(session, item, task=None):
+        del task
+        item.started_at = utc_now()
+        item.status = target
+        if target.is_terminal():
+            item.finished_at = utc_now()
+        return await TaskHistoryManager.save(session, item)
+
+    executor = _fake_executor(
+        _raising(_response_error(404))
+        if result is None
+        else _yielding(_result_bytes(result))
+    )
+    executor.dispatch_task = AsyncMock(side_effect=_fake_dispatch)
+    return executor
+
+
+async def _run_dispatch(mocker, maker, history_id, executor):
+    """Drive ``dispatch_queue_item`` for ``history_id`` through ``executor``.
+
+    ``schedule_annotation`` is patched out because it spawns an unawaited
+    ``asyncio.create_task``, which would otherwise leak PMM work past the test.
+    """
+    mocker.patch("app.tasks.celery.get_async_session_maker", return_value=maker)
+    mocker.patch("app.tasks.run_result.get_async_session_maker", return_value=maker)
+    mocker.patch("app.tasks.celery.get_executor_for_task", return_value=executor)
+    mocker.patch("app.tasks.celery.schedule_annotation")
+    async with maker() as session:
+        queue_item = await TaskHistoryManager.get_or_404(
+            session,
+            select_related=(TaskHistory.task,),
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=history_id,
+        )
+        return await dispatch_queue_item(queue_item, session)
+
+
+class TestDispatchSeam:
+    """Cover the recorder firing through the in-process dispatch seam.
+
+    A backend that runs its callable inline reaches a terminal status without an
+    intervening sync, so the sync seams never see it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self, mocker):
+        """Reset the resolver cache before each test."""
+        mocker.patch.dict(hook_resolver._RESOLVED, {}, clear=True)
+
+    @pytest.mark.asyncio
+    async def test_records_run_result_on_in_process_success(self, mocker):
+        """Fire the recorder with the run's result when dispatch lands on SUCCESS."""
+        recorded = []
+
+        async def _recorder(session, history, result):
+            recorded.append(result)
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder})
+        executor = _dispatch_to(TaskHistoryStatusEnum.SUCCESS, result=_RESULT)
+        async with _recorder_db(
+            recorder="pkg:rec", status=TaskHistoryStatusEnum.PENDING
+        ) as (maker, history_id):
+            dispatched = await _run_dispatch(mocker, maker, history_id, executor)
+
+        assert dispatched.status == TaskHistoryStatusEnum.SUCCESS
+        assert recorded == [_RESULT]
+
+    @pytest.mark.asyncio
+    async def test_records_none_on_in_process_failure(self, mocker):
+        """Fire the recorder with ``None`` when dispatch lands on FAILED."""
+        recorded = []
+
+        async def _recorder(session, history, result):
+            recorded.append(result)
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder})
+        executor = _dispatch_to(TaskHistoryStatusEnum.FAILED)
+        async with _recorder_db(
+            recorder="pkg:rec", status=TaskHistoryStatusEnum.PENDING
+        ) as (maker, history_id):
+            dispatched = await _run_dispatch(mocker, maker, history_id, executor)
+
+        assert dispatched.status == TaskHistoryStatusEnum.FAILED
+        assert recorded == [None]
+
+    @pytest.mark.asyncio
+    async def test_does_not_record_when_dispatch_leaves_the_run_running(self, mocker):
+        """Skip the seam entirely for a backend that dispatches asynchronously."""
+        recorded = []
+
+        async def _recorder(session, history, result):
+            recorded.append(result)
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder})
+        executor = _dispatch_to(TaskHistoryStatusEnum.RUNNING, result=_RESULT)
+        async with _recorder_db(
+            recorder="pkg:rec", status=TaskHistoryStatusEnum.PENDING
+        ) as (maker, history_id):
+            dispatched = await _run_dispatch(mocker, maker, history_id, executor)
+
+        assert dispatched.status == TaskHistoryStatusEnum.RUNNING
+        assert recorded == []
+        executor.stream_file.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_recorder_failure_cannot_fail_dispatch(self, mocker):
+        """Swallow a raising recorder so it cannot fail the dispatch it observes."""
+
+        async def _recorder(session, history, result):
+            raise RuntimeError("recorder exploded")
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder})
+        executor = _dispatch_to(TaskHistoryStatusEnum.SUCCESS, result=_RESULT)
+        async with _recorder_db(
+            recorder="pkg:rec", status=TaskHistoryStatusEnum.PENDING
+        ) as (maker, history_id):
+            dispatched = await _run_dispatch(  # must not raise
+                mocker, maker, history_id, executor
+            )
+
+        assert dispatched.status == TaskHistoryStatusEnum.SUCCESS
+
+
+class TestDispatchFailureCarveOut:
+    """Cover the deliberate exclusion of the pre-dispatch failure path."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self, mocker):
+        """Reset the resolver cache before each test."""
+        mocker.patch.dict(hook_resolver._RESOLVED, {}, clear=True)
+
+    @pytest.mark.asyncio
+    async def test_failed_dispatch_records_nothing(self, mocker):
+        """Skip recording a run that failed before it ever held an allocation."""
+        recorded = []
+
+        async def _recorder(session, history, result):
+            recorded.append(result)
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder})
+        executor = _dispatch_to(TaskHistoryStatusEnum.SUCCESS, result=_RESULT)
+        async with _recorder_db(
+            recorder="pkg:rec", status=TaskHistoryStatusEnum.PENDING
+        ) as (maker, history_id):
+            mocker.patch("app.tasks.celery.get_async_session_maker", return_value=maker)
+            mocker.patch(
+                "app.tasks.run_result.get_async_session_maker", return_value=maker
+            )
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=executor
+            )
+            mocker.patch(
+                "app.tasks.celery.alert_service.trigger", new_callable=AsyncMock
+            )
+            async with maker() as session:
+                queue_item = await TaskHistoryManager.get_or_404(
+                    session,
+                    select_related=(TaskHistory.task,),
+                    query_options=[undefer(TaskHistory.execution_request)],
+                    id=history_id,
+                )
+                queue_item.execution_request.payload = "file:///sep/missing-payload.py"
+                queue_item = await TaskHistoryManager.save(
+                    session, queue_item, flag_modified_fields=["execution_request"]
+                )
+                failed = await dispatch_queue_item(queue_item, session)
+
+        assert failed.status == TaskHistoryStatusEnum.FAILED
+        assert recorded == []
+        executor.dispatch_task.assert_not_called()
