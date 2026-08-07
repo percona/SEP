@@ -54,6 +54,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+bundle.tgz
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -105,6 +106,9 @@ __pypackages__/
 # Celery stuff
 celerybeat-schedule
 celerybeat.pid
+
+# Mutation testing
+mutants/
 
 # Environments
 .env*

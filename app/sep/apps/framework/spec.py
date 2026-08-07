@@ -61,6 +61,7 @@ from app.sep.apps.framework.form_dsl import (
     ServiceRef,
     TableRef,
 )
+from app.sep.apps.meta_keys import SERVICE_ID_META_KEY, SERVICE_NAME_META_KEY
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -86,6 +87,7 @@ __all__ = [
     "build_command_args",
     "build_run_python_task",
     "resolve_refs",
+    "service_id_meta",
     "stamp_form_input",
     "validate_arg_formats",
 ]
@@ -157,7 +159,7 @@ class RunCommandSpec:
                 "command": self.command,
                 "args": self.args,
                 "target": host,
-                "_service_name": service_name,
+                SERVICE_NAME_META_KEY: service_name,
                 **self.extra_meta,
                 **connectivity,
             },
@@ -196,7 +198,7 @@ class RunPythonSpec:
                 "config": self.config,
                 "target": host,
                 "requirements": self.requirements,
-                "_service_name": service_name,
+                SERVICE_NAME_META_KEY: service_name,
                 **self.extra_meta,
                 **connectivity,
             },
@@ -384,6 +386,22 @@ async def resolve_refs(
     )
 
 
+def service_id_meta(service: CreatedService) -> dict[str, int]:
+    """Return the ``meta`` fragment naming the resolved service's inventory id.
+
+    The id identifies the service across a later rename, which the name does not,
+    so a consumer keyed on it survives one. A service carrying no primary key
+    yields an empty fragment and so stamps no key at all — a consumer reads the
+    absence as "no id known", with no ``None`` to special-case — which is why every
+    producer must merge this fragment rather than reimplement the omit rule.
+
+    :param service: The resolved inventory service the task is created against.
+    :return: The single-key fragment to merge into ``meta``, empty when the service
+        carries no primary key.
+    """
+    return {} if service.id is None else {SERVICE_ID_META_KEY: service.id}
+
+
 def assemble_envelope(
     spec: EnvelopeSpec,
     resolved: ResolvedEntities,
@@ -404,6 +422,9 @@ def assemble_envelope(
     the service's type. The spec supplies the verb-specific keys (``command`` /
     ``args`` and any ``extra_meta`` for run-command; ``config`` / ``requirements``
     / ``payload`` for run-python).
+
+    Stamp the service id through :func:`service_id_meta`, so a consumer keying on
+    it survives a later rename of the service.
 
     Stamp ``output_files_path`` from the envelope's task name, so a task whose job
     spec pins a working directory is created knowing where its output files land —
@@ -455,6 +476,7 @@ def assemble_envelope(
     data = spec.to_envelope_data(
         host=target_host, service_name=service.name, connectivity=connectivity
     )
+    data["meta"] |= service_id_meta(service)
 
     return TaskWrite(
         name=name,
@@ -515,7 +537,7 @@ def build_run_python_task(
         "requirements": requirements,
     }
     if service_name is not None:
-        meta["_service_name"] = service_name
+        meta[SERVICE_NAME_META_KEY] = service_name
     data = {
         "task": RUN_PYTHON_TASK,
         "meta": meta,

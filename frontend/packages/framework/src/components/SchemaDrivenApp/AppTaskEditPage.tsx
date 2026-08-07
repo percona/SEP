@@ -24,7 +24,13 @@ import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
 import { useAppTask, useUpdateAppTask, type AppSchema } from '@sep/api';
-import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
+import {
+  SchemaFormRenderer,
+  coerceFormValues,
+  flattenSectionFields,
+  getAtPath,
+  setAtPath,
+} from '../SchemaFormRenderer';
 import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
 import { getStoredForm } from './storedForm';
@@ -51,16 +57,24 @@ export function normalizeChoiceDefaults(
       continue;
     }
     const choiceMap = new Map(field.choices.map((c) => [c.value.toLowerCase(), c.value]));
-    const raw = out[field.name];
+    // Path-aware: `flattenSectionFields` also returns one-of branch fields,
+    // whose names are dotted paths (`source.mode`) stored nested in the form.
+    // `setAtPath` shallow-clones the intermediates it walks, so the shallow
+    // copy above is enough to leave `form` untouched.
+    const raw = getAtPath(out, field.name);
     if (field.type === 'multi_choice' && Array.isArray(raw)) {
-      out[field.name] = raw.map((v) => {
-        const canonical = typeof v === 'string' ? choiceMap.get(v.toLowerCase()) : undefined;
-        return canonical ?? v;
-      });
+      setAtPath(
+        out,
+        field.name,
+        raw.map((v) => {
+          const canonical = typeof v === 'string' ? choiceMap.get(v.toLowerCase()) : undefined;
+          return canonical ?? v;
+        }),
+      );
     } else if (field.type === 'choice' && typeof raw === 'string') {
       const canonical = choiceMap.get(raw.toLowerCase());
       if (canonical !== undefined) {
-        out[field.name] = canonical;
+        setAtPath(out, field.name, canonical);
       }
     }
   }

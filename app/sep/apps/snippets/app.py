@@ -29,6 +29,11 @@ carried as ``extra_routes``. ``GET /capabilities`` is wired through the framewor
 ``owner=ANY_OWNER``: a script app's derived routes never consume the owner
 (it only seeds the unused per-owner task dependency), and snippets declares no
 owner of its own — ``ANY`` is the honest "no owner restriction" value.
+
+Snippet ingestion contributes no ``periodic_task_schedules``: its task lives in
+the library (``app.sep.snippets.celery``), not this package, so the app owns no
+Celery module to prefix it with and its schedule is seeded unconditionally by
+``get_system_periodic_tasks``.
 """
 
 from app.sep.apps.framework.apps import TaskExecutionApp
@@ -42,6 +47,7 @@ from app.sep.apps.snippets.extra_routes import (
 from app.sep.apps.snippets.routes import router as jinja_router
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.responses import SnippetsCapabilitiesResponse
 from app.sep.snippets.script_source import snippet_source
 from app.tasks.models import ANY_OWNER
@@ -71,6 +77,7 @@ app = TaskExecutionApp(
     description="Browse, approve, and execute operational snippets.",
     owner=ANY_OWNER,
     script_source=snippet_source,
+    list_query_spec=SnippetManager.list_query_spec,
     capabilities_provider=_snippets_capabilities_provider,
     extra_routes=(approval_router, maintenance_router, artifact_router),
     jinja_router=jinja_router,

@@ -21,6 +21,8 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA
+
 MAX_TOPOLOGY_SHARDS = 8
 
 
@@ -194,7 +196,9 @@ class DualPrimaryEdge(BaseModel):
     source: str
     target: str
     type: Literal["dual_primary"]
-    data: dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(
+        default_factory=dict, json_schema_extra=ARBITRARY_ARGS_SCHEMA
+    )
 
 
 TopologyEdge = Annotated[

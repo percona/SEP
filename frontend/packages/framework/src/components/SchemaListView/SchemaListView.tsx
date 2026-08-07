@@ -17,6 +17,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import Typography from '@mui/material/Typography';
+import type { Theme } from '@mui/material/styles';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -145,6 +146,17 @@ function formatCellValue(value: unknown, format: ListColumn['format']): ReactNod
       return str;
   }
 }
+
+/**
+ * Opaque table surface. The Percona theme's `background.paper` doesn't always
+ * resolve to an opaque colour, leaving the table looking transparent against
+ * tinted page backgrounds, so pick the mode's own opaque surface instead of
+ * pinning `common.white` (which renders a white table in dark mode).
+ */
+const opaqueTableSurface = (theme: Theme) => ({
+  bgcolor:
+    theme.palette.mode === 'dark' ? theme.palette.background.default : theme.palette.common.white,
+});
 
 /** Stable empty lookup so plugins without a schedule column never re-key. */
 const EMPTY_SCHEDULE = new Map<string, PeriodicTaskResponse>();
@@ -367,14 +379,10 @@ function SchemaListViewCore({
         className: SEP_TABLE_CLASS,
         elevation: 0,
         variant: 'outlined',
-        // The Percona theme's `background.paper` doesn't always resolve to
-        // an opaque colour, leaving the table looking transparent against
-        // tinted page backgrounds. Force `common.white` (light mode) so the
-        // table is always readable; revisit when dark mode lands.
-        sx: { bgcolor: 'common.white' },
+        sx: opaqueTableSurface,
       }}
       muiTableContainerProps={{
-        sx: { bgcolor: 'common.white' },
+        sx: opaqueTableSurface,
       }}
       muiTableBodyRowProps={
         onRowClick

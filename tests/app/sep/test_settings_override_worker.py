@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from pydantic import SecretStr
+from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncEngine,
@@ -32,22 +33,31 @@ from sqlmodel.pool import StaticPool
 from app.core.alerts.config import alert_settings
 from app.core.config import BaseYamlSettings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.settings_override import lifecycle
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.settings_override.lifecycle import refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
+from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION
 from app.core.utils import json_serializer
 from app.sep import settings_override as sep_worker
+from app.sep.config import sep_settings
 from app.sep.deps import get_pmm_api
 from app.sep.settings_override import (
     build_sep_override_proxies,
+    republish_sep_settings_snapshot,
     start_sep_settings_override_refresher,
     stop_sep_settings_override_refresher,
     WORKER_OVERRIDE_CALLBACKS,
 )
 from app.tasks.celery import build_tasks_override_proxies
+from tests.app.core.settings_override.conftest import (
+    HangingSession,
+    recording_start_refresh_task,
+    START_REFRESH_TASK,
+)
 
 SEP_CORE_CLASSES = frozenset(
     {
@@ -59,6 +69,8 @@ SEP_CORE_CLASSES = frozenset(
     }
 )
 PMM_ENDPOINT = "https://pmm-worker.example.org"
+SEP_OVERRIDE_KEY = "SYNC_REFRESH_TIME"
+SEP_OVERRIDE_VALUE = 42
 WorkerLoopEnv = tuple[asyncio.AbstractEventLoop, async_sessionmaker]
 
 
@@ -292,6 +304,36 @@ class TestSepWorkerHandlers:
 
         assert alert_settings.SOURCE_PREFIX == "worker-"
 
+    def test_init_forwards_a_budget_from_worker_proc_alive_timeout(
+        self,
+        worker_loop_env: WorkerLoopEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Derive the seed budget from Celery's prefork liveness deadline."""
+        recorded: dict[str, object] = {}
+        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
+        monkeypatch.setattr(sep_worker.celery.conf, "worker_proc_alive_timeout", 6.0)
+
+        start_sep_settings_override_refresher()
+
+        assert recorded["seed_timeout"] == pytest.approx(6.0 * SEED_TIMEOUT_FRACTION)
+
+    def test_init_returns_with_a_running_refresher_when_the_seed_hangs(
+        self,
+        worker_loop_env: WorkerLoopEnv,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Keep the periodic refresher after a hanging seed hits its budget."""
+        monkeypatch.setattr(
+            sep_worker, "get_async_session_maker", lambda: HangingSession
+        )
+        monkeypatch.setattr(sep_worker.celery.conf, "worker_proc_alive_timeout", 0.1)
+
+        start_sep_settings_override_refresher()
+
+        assert sep_worker._refresher.task is not None
+        assert not sep_worker._refresher.task.done()
+
 
 class TestWorkerPmmClientInvalidation:
     """Verify a same-endpoint PMM credential override reaches worker tasks."""
@@ -403,3 +445,63 @@ class TestWorkerPmmClientInvalidation:
         )
 
         assert settings.PMM.api_key == SecretStr("new-key")
+
+
+class TestRepublishSepSettingsSnapshot:
+    """Cover the forced republish a task takes before deciding on settings."""
+
+    @pytest.mark.asyncio
+    async def test_the_helper_publishes_a_seeded_override(
+        self, override_session_maker: async_sessionmaker
+    ) -> None:
+        """Reflect an override written after the snapshot in hand was built."""
+        await _upsert_override(
+            override_session_maker,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=SEP_OVERRIDE_KEY,
+            value=SEP_OVERRIDE_VALUE,
+        )
+
+        async with override_session_maker() as session:
+            await republish_sep_settings_snapshot(session)
+
+        assert sep_settings.SYNC_REFRESH_TIME == SEP_OVERRIDE_VALUE
+        assert sep_settings.get_snapshot()[SEP_OVERRIDE_KEY] == SEP_OVERRIDE_VALUE
+
+    @pytest.mark.asyncio
+    async def test_the_helper_fires_no_rebind_callback(
+        self, override_session_maker: async_sessionmaker, mocker: MockerFixture
+    ) -> None:
+        """Publish the changed value without notifying any rebind callback.
+
+        ``publish_snapshot`` has no callback channel, so the diff-and-fire step
+        ``refresh_all`` performs never runs, which is why the helper's
+        docstring scopes it to callers whose registry watches another class.
+        """
+        fire = mocker.spy(lifecycle, "fire_change_callbacks")
+        await _upsert_override(
+            override_session_maker,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=SEP_OVERRIDE_KEY,
+            value=SEP_OVERRIDE_VALUE,
+        )
+
+        async with override_session_maker() as session:
+            await republish_sep_settings_snapshot(session)
+
+        assert sep_settings.SYNC_REFRESH_TIME == SEP_OVERRIDE_VALUE
+        fire.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_helper_does_not_compose_the_app_owned_registry(
+        self, override_session_maker: async_sessionmaker, mocker: MockerFixture
+    ) -> None:
+        """Publish the one proxy it needs without importing the app tree."""
+        collect = mocker.patch.object(
+            sep_worker, "collect_app_owned_settings_classes", return_value=[]
+        )
+
+        async with override_session_maker() as session:
+            await republish_sep_settings_snapshot(session)
+
+        collect.assert_not_called()

@@ -45,13 +45,16 @@ from typing import Annotated, Any, cast, TypeVar
 from fastapi import APIRouter, Depends, params, Query, status
 from pydantic import BaseModel
 
+from app.core.db.list_query import ListQuerySpec, make_list_query_dep
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.core.requests.remote_api import RemoteAPI
+from app.core.utils.fields import ArbitraryMapping
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
     maybe_record_connectivity_warning,
 )
+from app.sep.apps.framework.list_query import make_in_memory_list_query_dep
 from app.sep.apps.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
@@ -1669,11 +1672,53 @@ def derive_cascade_create_route(
     )
 
 
+def _reject_unexposed_list_query(
+    source: ScriptSource[Any],
+    *,
+    name: str,
+    pagination_dep: PaginationDependency | None,
+    list_query_spec: ListQuerySpec | None,
+) -> None:
+    """Reject either half-wiring of a list query the derived route would not expose.
+
+    Both directions end the same way — a query resolved but never reaching the route.
+    Without a spec the list route registers the handler that takes no query parameter,
+    so the source's own dependency is never mounted. Without a pagination dependency the
+    route is the unpaginated ``list_scripts()``, which calls ``list_scripts(None, None)``
+    and mounts no query dependency either, spec or not. ``TaskExecutionApp`` checks the
+    same two pairings, but this seam is public and wired directly, so it cannot rely on
+    that.
+
+    :param source: The script source whose query knobs to check.
+    :param name: The app name, for the error message.
+    :param pagination_dep: The pagination dependency the caller supplied, if any.
+    :param list_query_spec: The spec the caller supplied, if any.
+    :raises ValueError: When the source resolves a list query but no spec was supplied,
+        or when a spec was supplied for a route that derives no paginated list.
+    """
+    if list_query_spec is None:
+        if source.list_query_dep is not None or source.in_memory_list_query:
+            raise ValueError(
+                f"derive_script_routes: {name!r} source resolves a list query "
+                "(list_query_dep or in_memory_list_query) but no list_query_spec was "
+                "supplied, so the derived list route would expose none of it"
+            )
+        return
+    if pagination_dep is None:
+        raise ValueError(
+            f"derive_script_routes: {name!r} was given a list_query_spec but no "
+            "pagination_dep, so the derived list route is the unpaginated one and "
+            "exposes no sort/search params — supply pagination_dep or drop "
+            "list_query_spec"
+        )
+
+
 def derive_script_routes(
     source: ScriptSource[Any],
     *,
     name: str,
     pagination_dep: PaginationDependency | None = None,
+    list_query_spec: ListQuerySpec | None = None,
 ) -> APIRouter:
     """Build a plugin router carrying a script source's derived surface.
 
@@ -1701,12 +1746,27 @@ def derive_script_routes(
     :param pagination_dep: A ``make_pagination_dep(...)`` dependency callable.
         When given, the list route takes that dependency (wrapped in
         ``Annotated[Pagination, Depends(...)]``) and returns a ``PaginatedResponse``.
-        A source that opts into the server list-page capability
-        (``list_query_dep`` + ``list_page``) has its search/filter/sort/paging pushed
-        down to that hook; otherwise the route fetches the full discovered set and
-        returns a client-side slice of it. When ``None`` the list returns a plain list.
+        When ``None`` the list returns a plain list.
+    :param list_query_spec: The app's sort/search allowlist. When given, the list route
+        exposes exactly Core's ``sort`` param (plus ``search`` when the spec has
+        searchable columns) via the SQL dependency or, for a source that sets
+        ``in_memory_list_query``, the in-memory dependency; the resolved query is handed
+        to ``source.list_scripts``. It requires ``pagination_dep``, since the unpaginated
+        route mounts no query dependency. When ``None`` the paginated route fetches the
+        full set and returns a client-side slice, so a source that resolves a query is
+        rejected rather than silently narrowed.
     :return: A plugin ``APIRouter`` carrying the derived script surface.
+    :raises ValueError: When the source resolves a list query (via ``list_query_dep``
+        or ``in_memory_list_query``) but no ``list_query_spec`` was supplied, or when a
+        ``list_query_spec`` is supplied without a ``pagination_dep`` — the unpaginated
+        list route exposes no query either way.
     """
+    _reject_unexposed_list_query(
+        source,
+        name=name,
+        pagination_dep=pagination_dep,
+        list_query_spec=list_query_spec,
+    )
     router = APIRouter()
     if source.static_schema is not None:
         schema_endpoint(router, source.static_schema)
@@ -1723,7 +1783,7 @@ def derive_script_routes(
 
         async def list_scripts() -> list[BaseModel]:
             """List every discovered script as its list-row projection."""
-            scripts = await source.list_scripts()
+            scripts, _ = await source.list_scripts(None, None)
             return [source.list_response(script) for script in scripts]
 
         router.add_api_route(
@@ -1744,19 +1804,26 @@ def derive_script_routes(
         )
 
         # FastAPI derives each route's dependencies from its handler signature, so
-        # the server-backed path (which needs the list-query dependency injected)
-        # and the fetch-all-then-slice fallback require distinct handler signatures
-        # — hence two closures, exactly one of which is registered below.
-        if source.list_query_dep is not None and source.list_page is not None:
-            list_query_param = Annotated[Any, Depends(source.list_query_dep)]
-            list_page = source.list_page
+        # the spec-backed path (which needs the list-query dependency injected) and
+        # the fetch-all-then-slice fallback require distinct handler signatures —
+        # hence two closures, exactly one of which is registered below.
+        if list_query_spec is not None:
+            # A source that adds filter params supplies a dependency composing the
+            # Core one, so the spec stays the sole sort/search authority either way.
+            query_dep = source.list_query_dep or (
+                make_in_memory_list_query_dep(list_query_spec)
+                if source.in_memory_list_query
+                else make_list_query_dep(list_query_spec)
+            )
+            list_query_param = Annotated[Any, Depends(query_dep)]
 
             async def list_scripts_paginated(
                 pagination: paginated_param, list_query: list_query_param
             ) -> PaginatedResponse:
-                """List scripts as a server-filtered, sorted, paginated projection."""
-                page = await list_page(pagination, list_query)
-                return page.map_items(source.list_response)
+                """List scripts as a filtered, sorted, paginated projection."""
+                rows, total = await source.list_scripts(list_query, pagination)
+                items = [source.list_response(script) for script in rows]
+                return PaginatedResponse.from_pagination(items, total, pagination)
 
         else:
 
@@ -1764,10 +1831,8 @@ def derive_script_routes(
                 pagination: paginated_param,
             ) -> PaginatedResponse:
                 """List discovered scripts as a paginated projection."""
-                scripts = await source.list_scripts()
-                total = len(scripts)
-                page_scripts = pagination.slice(scripts)
-                items = [source.list_response(script) for script in page_scripts]
+                rows, total = await source.list_scripts(None, pagination)
+                items = [source.list_response(script) for script in rows]
                 return PaginatedResponse.from_pagination(items, total, pagination)
 
         router.add_api_route(
@@ -1800,7 +1865,7 @@ def derive_script_routes(
     )
     async def script_history(
         script: script_param, tasks_api: TaskAPI
-    ) -> dict[str, Any]:
+    ) -> ArbitraryMapping:
         """Proxy the per-script execution history from the Tasks API by filename."""
         return await tasks_api.get(
             f"/{script.execution_task_name}/history/",

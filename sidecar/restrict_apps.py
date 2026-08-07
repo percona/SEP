@@ -23,7 +23,6 @@ derived from it rather than repeated in the build recipe.
 import argparse
 import shutil
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -42,10 +41,15 @@ def activated_apps(profile: Path) -> set[str]:
     :return: The ``SEP.APPS`` module names.
     :raises OSError: When the profile cannot be read.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
+    :raises TypeError: When the profile's root is not a mapping.
     :raises KeyError: When the profile carries no activation list, or an entry
         in it declares no module name.
     """
-    document: dict[str, Any] = yaml.safe_load(profile.read_text(encoding="utf-8"))
+    document = yaml.safe_load(profile.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise TypeError(
+            f"{profile} is not a settings mapping: parsed as {type(document).__name__}"
+        )
     return {entry["MODULE_NAME"] for entry in document["default"]["SEP"]["APPS"]}
 
 
@@ -60,6 +64,7 @@ def restrict(profile: Path, apps_root: Path) -> frozenset[str]:
     :return: The package directory names left in place.
     :raises FileNotFoundError: When a retained package — an activated app or an
         infrastructure one — has no directory.
+    :raises TypeError: When the profile's root is not a mapping.
     :raises KeyError: When the profile carries no activation list, or an entry
         in it declares no module name.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
@@ -84,8 +89,9 @@ def main() -> None:
     """Parse the profile and apps-root paths, then strip.
 
     :raises Exception: Propagates every failure ``restrict`` reports —
-        ``FileNotFoundError``, ``KeyError``, ``yaml.YAMLError`` and ``OSError``
-        — so a bad profile or a missing package fails the build step.
+        ``FileNotFoundError``, ``KeyError``, ``yaml.YAMLError``, ``TypeError``
+        and ``OSError`` — so a bad profile or a missing package fails the build
+        step.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile", type=Path)

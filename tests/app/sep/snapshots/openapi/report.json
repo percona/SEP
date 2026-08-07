@@ -306,6 +306,7 @@
             "type": "string"
           },
           "period": {
+            "additionalProperties": true,
             "title": "Period",
             "type": "object"
           },
@@ -658,9 +659,9 @@
             "type": "boolean"
           },
           "result": {
-            "additionalProperties": true,
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {

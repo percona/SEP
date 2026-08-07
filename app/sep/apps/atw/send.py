@@ -57,11 +57,12 @@ from app.sep.apps.atw.config import atw_settings
 from app.sep.apps.atw.crud import AtwIncidentManager, AtwSendLogManager
 from app.sep.apps.atw.models import AtwSendLog, AtwSendStatusEnum
 from app.sep.bundle_upload.factory import get_delivery_executor
-from app.sep.bundle_upload.plan import StepRecord
+from app.sep.bundle_upload.plan import DeliveryPlan, StepRecord
 from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.bundle_upload.seam import BundleSource
 from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
+from app.sep.settings_override import republish_sep_settings_snapshot
 from app.tasks.config import tasks_settings
 from app.tasks.models import TaskHistoryStatusEnum
 
@@ -576,13 +577,18 @@ async def run_send(send_log_id: UUID) -> None:
 
     Every failure family lands as a ``FAILED`` row carrying its reason: the row is
     the only place a support engineer can learn what happened, so the terminal
-    write is guaranteed rather than best-effort.
+    write is guaranteed rather than best-effort — short of the database itself
+    being unreachable, where the row is left to the stale sweep instead.
 
     :param send_log_id: The send log driving this attempt.
     :raises HTTPNotFoundException: Propagated when the incident was deleted
         between the enqueue and this attempt.
     :raises HTTPBadRequestException: Propagated when a terminal row cannot be
         written.
+    :raises Exception: Propagated when rolling back a failed settings re-read
+        itself fails. The database is unreachable at that point, so no terminal
+        write was going to land either way and the row is left to the stale
+        sweep.
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
@@ -596,6 +602,42 @@ async def run_send(send_log_id: UUID) -> None:
         await _run_send_for_row(session, row)
 
 
+async def _resolve_plan_after_refresh(session: AsyncSession) -> DeliveryPlan | None:
+    """Republish the SEP settings snapshot and resolve the delivery plan again.
+
+    A worker child can hold a snapshot published before the operator supplied
+    the receiver's inputs, so the plan reads as unconfigured against settings
+    that are already current everywhere else. Republishing from the session in
+    hand costs one override-row read and is taken only on the branch that would
+    otherwise record a terminal failure.
+
+    A failed republish resolves to ``None`` rather than escaping: this runs
+    ahead of the broad terminal guard, so an escaping error would leave the row
+    non-terminal until the stale sweep mislabels it as a lost worker. The
+    session is rolled back before returning, so an aborted transaction does not
+    also fail the terminal write that follows.
+
+    :param session: The database session.
+    :return: The plan resolved against the fresh snapshot, or ``None`` when
+        delivery is genuinely unconfigured or the republish failed.
+    :raises Exception: Propagates a ``session.rollback()`` that itself fails.
+        That is the only exit from the failure branch that is not a returned
+        ``None``. The database is unreachable at that point, so no terminal
+        write was going to land either way and the row is left to the stale
+        sweep.
+    """
+    try:
+        await republish_sep_settings_snapshot(session)
+    except Exception:
+        logger.exception(
+            "Could not re-read the diagnostics delivery settings; treating the "
+            "send as unconfigured."
+        )
+        await session.rollback()
+        return None
+    return resolve_delivery_plan()
+
+
 async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     """Drive one send log from pending to a terminal status.
 
@@ -604,12 +646,19 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     deliver a bundle the UI has already reported as failed -- and, if the
     engineer re-sent in the meantime, attach it to the case twice.
 
+    An unresolved plan is re-read once against a freshly published snapshot
+    before the terminal write, so a send enqueued straight after the enabling
+    settings write is not failed against a snapshot older than it.
+
     :param session: The database session.
     :param row: The send log to drive.
     :raises HTTPNotFoundException: Propagated from the manager when the incident
         was deleted between the enqueue and this attempt.
     :raises HTTPBadRequestException: Propagated from the manager when a terminal
         row cannot be written.
+    :raises Exception: Propagated from ``_resolve_plan_after_refresh`` when
+        rolling back a failed settings re-read itself fails. That call sits
+        ahead of the broad terminal guard, so nothing here catches it.
     """
     if row.status.is_terminal():
         logger.info(
@@ -619,6 +668,8 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
 
     detail = dict(row.detail)
     plan = resolve_delivery_plan()
+    if plan is None:
+        plan = await _resolve_plan_after_refresh(session)
     if plan is None:
         await _fail(session, row, detail, [], _UNCONFIGURED_ERROR)
         return
@@ -638,17 +689,17 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
                 path, row, incident_name, tasks_api, plan.max_bundle_size_mb
             )
         size = path.stat().st_size
-        executor = await get_delivery_executor(
+        async with get_delivery_executor(
             plan,
             step_observer=lambda record: steps.append(_step_detail(record)),
-        )
-        with path.open("rb") as handle:
-            result = await executor.upload_bundle(
-                source_ref=f"atw-incident/{row.incident_id}",
-                bundle=BundleSource(filename=path.name, content=handle, size=size),
-                case_ref=row.case_ref,
-                manifest=manifest,
-            )
+        ) as executor:
+            with path.open("rb") as handle:
+                result = await executor.upload_bundle(
+                    source_ref=f"atw-incident/{row.incident_id}",
+                    bundle=BundleSource(filename=path.name, content=handle, size=size),
+                    case_ref=row.case_ref,
+                    manifest=manifest,
+                )
         logger.info(
             "Diagnostics send %s delivered to case %s as %s: %s",
             row.id,

@@ -159,6 +159,29 @@ class TestStartSendJob:
         ]
         enqueue.delay.assert_called_once_with(str(row.id))
 
+    async def test_send_still_works_when_incident_is_closed(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+        enqueue: Any,
+    ) -> None:
+        """Accept a send for a closed incident so delivery is never stranded."""
+        incident, executions = await _seed_incident(session)
+        incident.closed_at = utc_now()
+        await AtwIncidentManager.save(session, incident)
+
+        response = await async_api_client.post(
+            f"{_BASE}/incidents/{incident.id}/send-jobs/",
+            json={
+                "case_ref": "CS0042",
+                "execution_ids": [str(execution.id) for execution in executions],
+            },
+        )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert response.json()["status"] == AtwSendStatusEnum.PENDING.value
+        enqueue.delay.assert_called_once()
+
     async def test_rejects_an_execution_from_another_incident(
         self,
         async_api_client: AsyncClient,

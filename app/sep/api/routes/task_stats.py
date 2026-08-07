@@ -20,11 +20,10 @@ gateway so the React frontend (``useTaskStats``) does not bypass the SEP
 ``/api/*`` routing layer when fetching per-task execution stats.
 """
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 
 from app.core.exceptions import HTTPBadGatewayException
+from app.core.utils.fields import ArbitraryMapping
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.deps import TaskAPI
 
@@ -38,7 +37,7 @@ router = APIRouter()
 async def get_task_stats(
     task_name: str,
     tasks_api: TaskAPI,
-) -> dict[str, Any]:
+) -> ArbitraryMapping:
     """Return aggregated execution statistics for ``task_name``.
 
     Proxy to the Tasks-service ``GET /stats/{task_name}`` aggregation so the

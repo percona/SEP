@@ -22,6 +22,7 @@ end-to-end. The create test issues a real form POST and never overrides the
 body resolution it exists to cover is genuinely executed.
 """
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, Any, get_args
 from unittest.mock import AsyncMock
@@ -30,9 +31,11 @@ import pytest
 from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, computed_field, ValidationError
+from sqlalchemy import column
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.db.list_query import ListQuerySpec
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
@@ -68,6 +71,7 @@ from app.sep.apps.framework.schema import (
     ListView,
     RelatedApp,
 )
+from app.sep.apps.framework.script_source import ScriptSource
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -334,6 +338,22 @@ def _synth_app(**overrides: object) -> TaskExecutionApp:
     """Build the synthetic app with the extra ``/ping`` router by default."""
     overrides.setdefault("extra_routes", (_extra_router(),))
     return synth_app(**overrides)
+
+
+_SCRIPT_LIST_SPEC = ListQuerySpec(
+    sortable={"filename": column("filename")},
+    default_sort="filename",
+    tie_breaker=column("filename"),
+)
+
+
+def _script_source_with_in_memory_query() -> ScriptSource:
+    """Return a script source that resolves a list query in-process.
+
+    :return: A source whose ``in_memory_list_query`` obliges the app to declare a spec.
+    """
+    source = synth_script_app().script_source
+    return replace(source, in_memory_list_query=True)
 
 
 def _task_dict(name: str, *, meta: dict | None = None) -> dict:
@@ -911,6 +931,85 @@ class TestExtraRoutePrecedence:
         assert response.json()["name"] == "ping"
 
 
+class TestListQuerySpecValidation:
+    """Cover the construction-time guards on the server-side sort/search wiring.
+
+    ``list_query_spec`` on the app and the source's query knobs are two halves of one
+    capability, and the derived route silently exposes nothing when they disagree — so
+    every inconsistent pairing has to be rejected at import rather than at request time.
+    """
+
+    def test_non_spec_value_raises(self) -> None:
+        """Reject a ``list_query_spec`` that is not a ``ListQuerySpec``."""
+        with pytest.raises(ValueError, match="must be a ListQuerySpec"):
+            synth_script_app(list_query_spec={"sortable": ["filename"]})
+
+    def test_spec_without_script_source_raises(self) -> None:
+        """Reject a spec on a model-first app, which derives its own list route."""
+        with pytest.raises(ValueError, match="backs only the derived script list"):
+            _synth_app(list_query_spec=_SCRIPT_LIST_SPEC)
+
+    def test_spec_under_no_pagination_raises(self) -> None:
+        """Reject a spec on an unpaginated list, which exposes no query params."""
+        with pytest.raises(ValueError, match="NO_PAGINATION"):
+            synth_script_app(
+                list_query_spec=_SCRIPT_LIST_SPEC, pagination=NO_PAGINATION
+            )
+
+    def test_source_resolving_query_without_spec_raises(self) -> None:
+        """Reject a source that resolves a query while the app declares no spec."""
+        with pytest.raises(ValueError, match="set list_query_spec or drop"):
+            synth_script_app(
+                script_source=_script_source_with_in_memory_query(),
+            )
+
+    def test_source_with_list_query_dep_without_spec_raises(self) -> None:
+        """Reject the other half of the same pairing: a filter dep with no spec.
+
+        ``list_query_dep`` and ``in_memory_list_query`` are separate ways for a source
+        to resolve a query, and a source composing its own filter dependency is the
+        shape snippets ships — so it must trip the guard on its own.
+        """
+        source = replace(
+            synth_script_app().script_source,
+            list_query_dep=lambda: None,
+        )
+
+        with pytest.raises(ValueError, match="set list_query_spec or drop"):
+            synth_script_app(script_source=source)
+
+    def test_consistent_pair_is_accepted(self) -> None:
+        """Accept a source and app that agree, so the guards are not over-broad."""
+        app = synth_script_app(
+            script_source=_script_source_with_in_memory_query(),
+            list_query_spec=_SCRIPT_LIST_SPEC,
+        )
+
+        assert app.list_query_spec is _SCRIPT_LIST_SPEC
+
+
+class _ComputedListResponse(BaseModel):
+    """Represent a list response whose dump includes a computed field."""
+
+    name: str
+
+    @computed_field(alias="wire_label")
+    @property
+    def label(self) -> str:
+        """Return a derived label under its serialized alias."""
+        return self.name.upper()
+
+
+def _computed_list_builder(
+    task: Task,
+    *,
+    status: object = None,
+    context: dict | None = None,
+) -> _ComputedListResponse:
+    """Build the computed-list response so the list route matches the gate."""
+    return _ComputedListResponse(name=task.name)
+
+
 class TestDefinitionValidation:
     """Cover the construction-time guards on the definition."""
 
@@ -1138,8 +1237,8 @@ class TestDefinitionValidation:
         with pytest.raises(ValueError, match="delete_handler"):
             _synth_app(delete_handler=_delete_handler)
 
-    def test_list_view_column_absent_from_response_model_raises(self) -> None:
-        """Reject a ``list_view`` column key that is not a field on the response model."""
+    def test_list_view_column_absent_from_serialized_row_raises(self) -> None:
+        """Reject a ``list_view`` column key absent from the serialized response row."""
         bad_views = Views(
             layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
             list_view=ListView(columns=[Column(key="ghost_field", label="Ghost")]),
@@ -1147,13 +1246,40 @@ class TestDefinitionValidation:
         with pytest.raises(ValueError, match="ghost_field"):
             _synth_app(views=bad_views)
 
+    def test_list_view_column_on_excluded_response_field_raises(self) -> None:
+        """Reject a ``list_view`` column keyed on a ``Field(exclude=True)`` response field."""
+        bad_views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(columns=[Column(key="service_type", label="Service")]),
+        )
+        with pytest.raises(ValueError, match="service_type"):
+            _synth_app(views=bad_views)
+
+    def test_list_view_column_on_aliased_computed_field_constructs(self) -> None:
+        """Construct cleanly when a column keys an aliased computed field."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(key="wire_label", label="Label"),
+                ]
+            ),
+        )
+        app_def = _synth_app(
+            response_model=_ComputedListResponse,
+            response_builder=_computed_list_builder,
+            views=views,
+        )
+        assert app_def.api_router is not None
+
     def test_create_model_with_malformed_arg_format_raises(self) -> None:
         """Reject a ``create_model`` whose ``ArgFormat`` template has an unsupported placeholder."""
         with pytest.raises(ValueError, match="unsupported placeholder"):
             _synth_app(create_model=_BadArgFormatForm)
 
-    def test_list_view_columns_present_in_response_model_construct(self) -> None:
-        """Construct cleanly when every ``list_view`` column resolves to a response field."""
+    def test_list_view_columns_present_in_serialized_row_construct(self) -> None:
+        """Construct cleanly when every ``list_view`` column is in the serialized row."""
         assert _synth_app().api_router is not None
 
     def test_schema_passthrough_skips_list_view_column_validation(self) -> None:

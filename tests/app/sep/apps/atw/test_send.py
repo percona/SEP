@@ -20,6 +20,7 @@ import json
 import os
 import zipfile
 from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,9 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+from pydantic import SecretStr
 from pytest_mock import MockerFixture
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
@@ -36,6 +39,8 @@ from sqlmodel import SQLModel
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPConflictException
 from app.core.requests import RemoteAPI
+from app.core.settings_override.manager import SettingsOverrideManager
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
 from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.crud import AtwIncidentManager, AtwSendLogManager
@@ -60,6 +65,7 @@ _EXPECTED_ENTRY_COUNT = 9
 _EXPECTED_LOG_GROUP_COUNT = 3
 _STALE_ROW_COUNT = 2
 _MAIN_STEP = "run-script"
+_STORED_SECRET = "stored-api-key"
 _DEFAULT_FILES: dict[str, Any] = {
     "stdout.log": {"is_dir": False, "size": 5},
     "diag/report.txt": {"is_dir": False, "size": 7},
@@ -109,6 +115,7 @@ class _FakeUploader:
         self.manifest: dict[str, Any] | None = None
         self.case_ref: str | None = None
         self.called = False
+        self.released = False
 
     async def upload_bundle(
         self,
@@ -257,18 +264,27 @@ def tasks_api_fixture(mocker: MockerFixture) -> AsyncMock:
 
 @pytest.fixture(name="uploader")
 def uploader_fixture(mocker: MockerFixture) -> _FakeUploader:
-    """Provide a fake delivery executor in place of the configured one."""
+    """Provide a fake delivery executor in place of the configured one.
+
+    The real factory is an async context manager owning a per-send transport, so
+    the double is one too, and records its exit for the tests that assert the
+    transport is released however the send ends.
+    """
     fake = _FakeUploader()
 
+    @asynccontextmanager
     async def _factory(
         _plan: DeliveryPlan,
         *,
         step_observer: Callable[[StepRecord], None] | None = None,
-    ) -> _FakeUploader:
+    ) -> AsyncIterator[_FakeUploader]:
         fake.step_observer = step_observer
-        return fake
+        try:
+            yield fake
+        finally:
+            fake.released = True
 
-    mocker.patch("app.sep.apps.atw.send.get_delivery_executor", side_effect=_factory)
+    mocker.patch("app.sep.apps.atw.send.get_delivery_executor", new=_factory)
     return fake
 
 
@@ -299,6 +315,36 @@ async def _seed_send_log(
             case_ref=case_ref,
             requested_by="alice",
             detail={"executions": selected},
+        ),
+    )
+
+
+def _unconfigured_skeleton(plan: DeliveryPlan) -> DeliveryPlan:
+    """Return ``plan`` with every declared secret emptied.
+
+    :param plan: The configured plan to strip.
+    :return: A skeleton that resolves as unconfigured until stored inputs supply
+        the secret values.
+    """
+    return plan.model_copy(
+        update={"secrets": dict.fromkeys(plan.secrets, SecretStr(""))}
+    )
+
+
+async def _seed_delivery_inputs(session: AsyncSession, secrets: dict[str, str]) -> None:
+    """Store a delivery-inputs override carrying ``secrets``.
+
+    :param session: The database session.
+    :param secrets: The secret values keyed by name. The names must be exactly
+        the ones the baked skeleton declares, or the materializer drops the row
+        while the snapshot is built and delivery stays unconfigured.
+    """
+    await SettingsOverrideManager.create(
+        session,
+        SettingOverride(
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key="DIAGNOSTICS_DELIVERY_INPUTS",
+            value={"secrets": secrets},
         ),
     )
 
@@ -336,6 +382,17 @@ class TestRunSendHappyPath:
         assert reloaded.detail["file_count"] == _EXPECTED_FILE_COUNT
         assert reloaded.detail["bundle_size"] > 0
         assert list(tmp_path.glob("*.zip")) == []
+
+    async def test_the_delivery_transport_is_released_when_the_send_lands(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Leave the executor's context so its per-send transport is closed."""
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        assert uploader.called is True
+        assert uploader.released is True
 
     async def test_zip_carries_a_manifest_and_per_execution_entries(
         self, send_session: AsyncSession, uploader: _FakeUploader
@@ -760,8 +817,10 @@ class TestRunSendLateDelivery:
         send_session: AsyncSession,
         uploader: _FakeUploader,
         tasks_api: AsyncMock,
+        mocker: MockerFixture,
     ) -> None:
         """Leave a terminal row alone rather than resurrecting and uploading it."""
+        overrides_read = mocker.spy(SettingsOverrideManager, "list")
         row = await _seed_send_log(send_session)
         row.status = AtwSendStatusEnum.FAILED
         row.finished_at = utc_now()
@@ -771,8 +830,54 @@ class TestRunSendLateDelivery:
 
         assert uploader.bundle_bytes is None
         tasks_api.get.assert_not_awaited()
+        overrides_read.assert_not_called()
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status == AtwSendStatusEnum.FAILED
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("tasks_api")
+class TestRunSendStaleSnapshot:
+    """Cover a send whose worker snapshot predates the enabling settings write."""
+
+    async def test_stored_inputs_reach_the_send_after_a_forced_refresh(
+        self,
+        send_session: AsyncSession,
+        uploader: _FakeUploader,
+        delivery_plan: DeliveryPlan,
+        mocker: MockerFixture,
+    ) -> None:
+        """Deliver against inputs stored after this child last refreshed."""
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _unconfigured_skeleton(delivery_plan)
+        )
+        await _seed_delivery_inputs(
+            send_session, dict.fromkeys(delivery_plan.secrets, _STORED_SECRET)
+        )
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.SUCCESS
+        assert uploader.called is True
+
+    async def test_a_plan_resolving_on_the_first_read_is_not_re_read(
+        self,
+        send_session: AsyncSession,
+        uploader: _FakeUploader,
+        mocker: MockerFixture,
+    ) -> None:
+        """Read no override row when the first resolve already succeeds."""
+        overrides_read = mocker.spy(SettingsOverrideManager, "list")
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.SUCCESS
+        assert uploader.called is True
+        overrides_read.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -788,6 +893,74 @@ class TestRunSendFailures:
 
         await run_send(row.id)
 
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert "not configured" in reloaded.detail["error"]
+
+    async def test_a_refresh_that_finds_no_stored_inputs_fails_the_row(
+        self,
+        send_session: AsyncSession,
+        delivery_plan: DeliveryPlan,
+        mocker: MockerFixture,
+    ) -> None:
+        """Fail cleanly when the refresh finds nothing that configures delivery."""
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _unconfigured_skeleton(delivery_plan)
+        )
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert "not configured" in reloaded.detail["error"]
+
+    async def test_stored_inputs_naming_a_drifted_secret_fail_the_row(
+        self,
+        send_session: AsyncSession,
+        delivery_plan: DeliveryPlan,
+        mocker: MockerFixture,
+    ) -> None:
+        """Fail cleanly when stored inputs stopped matching the baked skeleton."""
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _unconfigured_skeleton(delivery_plan)
+        )
+        await _seed_delivery_inputs(send_session, {"renamed_key": _STORED_SECRET})
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert "not configured" in reloaded.detail["error"]
+
+    async def test_a_failing_refresh_still_writes_a_terminal_row(
+        self,
+        send_session: AsyncSession,
+        delivery_plan: DeliveryPlan,
+        mocker: MockerFixture,
+    ) -> None:
+        """Land the terminal row when the override read itself fails.
+
+        The failure originates inside the real query path rather than in a
+        mocked helper, so the rollback runs against the session that then has to
+        carry the terminal write, which is why the row is read back through a
+        separate session instead of the in-flight instance.
+        """
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _unconfigured_skeleton(delivery_plan)
+        )
+        mocker.patch.object(
+            SettingsOverrideManager,
+            "list",
+            side_effect=SQLAlchemyError("database unreachable"),
+        )
+        rollback = mocker.spy(AsyncSession, "rollback")
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        assert rollback.await_count == 1
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "not configured" in reloaded.detail["error"]
@@ -872,6 +1045,19 @@ class TestRunSendFailures:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "upstream exploded" in reloaded.detail["error"]
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_the_delivery_transport_is_released_when_the_send_fails(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Close the per-send transport on the failure path too, not only on success."""
+        uploader.error = RuntimeError("upstream exploded")
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        assert (await _reload(send_session, row.id)).status is AtwSendStatusEnum.FAILED
+        assert uploader.released is True
 
     @pytest.mark.usefixtures("tasks_api", "uploader")
     async def test_a_missing_row_exits_without_raising(
