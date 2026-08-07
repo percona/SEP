@@ -139,7 +139,7 @@
           "type": "integer"
         },
         {
-          "description": "Number of days, ``daily``, or a weekday name controlling the FULL/INCR cycle window.",
+          "description": "``daily``, ``weekly``, or an ISO weekday number (1-7, Monday-Sunday) controlling when the FULL backup runs.",
           "label": "Incremental Cycle",
           "name": "pgbackrest_incremental_cycle",
           "required": false,

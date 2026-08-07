@@ -223,7 +223,8 @@ def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str
     or the shared ``response_model`` — see :func:`_detail_response_model`),
     exempting paths rooted at ``data`` (the opaque task-payload dict whose
     sub-paths are free-form). ``list_view`` column keys are enforced at
-    ``TaskExecutionApp`` construction instead, so they are not checked here.
+    ``TaskExecutionApp`` construction against the serialized response-row names
+    instead, so they are not checked here.
 
     :param app: The migrated app whose detail-view paths are checked against its
         detail response model.
