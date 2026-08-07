@@ -49,6 +49,7 @@ import {
   useAppTask,
   useAppTasks,
   type DetailSection,
+  type ListView,
   type SepComponents,
   type AppEntitySchema,
   type AppSchema,
@@ -249,6 +250,9 @@ const BASELINE_OVERVIEW_HIDDEN_FIELDS = [
   'anonymized_entities',
 ] as const;
 
+/** Stable empty column set so a schema without a `list_view` never re-memoizes. */
+const EMPTY_LIST_COLUMNS: ListView['columns'] = [];
+
 function formatLabel(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -406,7 +410,10 @@ function OverviewTab({
   const navState = (location.state ?? null) as { connectivityWarning?: unknown } | null;
   const connectivityWarning = task.connectivity_warning ?? navState?.connectivityWarning;
   const taskName = typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined;
-  const columns = schema.list_view!.columns;
+  // `list_view` is optional: an entity schema reached through an unresolved
+  // detail route has no top-level list view, so fall back to the task's own
+  // fields (rendered below as `extraEntries`) rather than crashing.
+  const columns = schema.list_view?.columns ?? EMPTY_LIST_COLUMNS;
   const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
 
   const suppressedFields = useMemo(() => {

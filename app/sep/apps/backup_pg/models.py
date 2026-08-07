@@ -196,8 +196,8 @@ class BackupPgForm(TaskFormModel):
             label="Incremental Cycle",
             section="pgBackRest",
             description=(
-                "Number of days, ``daily``, or a weekday name controlling "
-                "the FULL/INCR cycle window."
+                "``daily``, ``weekly``, or an ISO weekday number (1-7, "
+                "Monday-Sunday) controlling when the FULL backup runs."
             ),
         ),
     ] = None
