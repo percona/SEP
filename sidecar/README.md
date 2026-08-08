@@ -143,7 +143,7 @@ the container fails to start. The two surfaces that reach `SEP.APPS` are a bind
 mount at `/home/sep/app/settings.yaml` (which, per above, replaces the profile
 wholesale — so its `SEP.APPS` must be a subset of the baked one) and the
 `SEP__APPS` environment variable; the runtime settings-override API cannot,
-because `SEP.APPS` is absent from `SETTINGS_OVERRIDE_ALLOWED_KEYS`.
+because `SEP.APPS` is absent from `SETTINGS_OVERRIDE.ALLOWED_KEYS`.
 
 The two unrestricted images (`sep:${RELEASE_VER}` and
 `sep:${RELEASE_VER}-sidecar`) ship every app package, so neither constraint

@@ -386,8 +386,9 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
 
     Left unmarked on :class:`Settings` so the parent classifies
     ``NOT_OVERRIDABLE`` (matching ``SECURITY_HEADERS``). Marking it
-    ``NESTED_ONLY`` would let the override API rewrite ``ALLOWED_KEYS`` and
-    lift its own restriction.
+    ``NESTED_ONLY`` would expose ``REFRESH_INTERVAL`` and ``REFRESHER_ENABLED``
+    to the override API; ``ALLOWED_KEYS`` would stay refused by its own
+    ``not_overridable_field`` marker, which is why that marker is kept.
 
     :param REFRESH_INTERVAL: How often each service refreshes its DB-backed
         setting overrides. Defaults to 30 seconds.

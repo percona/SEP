@@ -2037,7 +2037,7 @@ def rendered_leaf_keys(
     :func:`not_overridable_field` marker. That last case makes the whole object
     the field's only write unit, so expanding it would advertise leaves no PATCH
     can target while hiding the key that one can. Leaves withheld by
-    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` are not that case -- they stay
+    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` are not that case; they stay
     enumerated, so an admin can see what the allowlist is holding back.
 
     :param settings_cls: The settings class declaring ``parent_field_name``.
