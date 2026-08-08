@@ -28,6 +28,21 @@ export interface AtwSnippetSummary {
   description: string;
 }
 
+// ── Snippet search ───────────────────────────────────────────────────────
+
+/**
+ * The subset of a snippets-app list row the picker consumes.
+ *
+ * The endpoint's `SnippetResponse` carries more (service type, approval state,
+ * digests), but the picker needs only what it labels an option with, plus the
+ * filename — which is the identity the batch-execute payload sends.
+ */
+export interface AtwSnippetSearchRow {
+  filename: string;
+  title: string;
+  description: string;
+}
+
 export interface AtwCategoryListing {
   category_root: string;
   parent_category: string;

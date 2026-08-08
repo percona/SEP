@@ -255,6 +255,14 @@ does. The same key optionally carries an `endpoint` that replaces the baked
 receiver; omit it to keep the shipped one. Stored secrets read back as
 `**********`, and resubmitting that mask preserves the stored value.
 
+If an image upgrade ships a plan that renames a declared secret, the inputs you
+stored against the previous plan stop matching it. Delivery does not silently
+fall back to the never-configured state: the Send action, the send endpoint, and
+any send that does get dispatched all report that the stored inputs no longer
+match this deployment's plan and must be re-supplied. Nothing guesses which old
+name maps to which new one — PATCH the key again, naming the secrets the new
+plan declares.
+
 Rows written before the restriction applied — by a standalone deployment whose
 database was carried over, or by direct table access — are **inert**: the
 snapshot builder skips them, so the baked value is what the services read. They
