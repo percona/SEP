@@ -29,20 +29,21 @@ default:
   # The settings the embedded deployment leaves to an administrator; everything
   # else is refused by the override API because this image provisions it.
   # Unprefixed, so all three services read the same list.
-  SETTINGS_OVERRIDE_ALLOWED_KEYS:
-    - Settings.LOGGING
-    - Settings.PMM__annotations_enabled
-    - SEPSettings.SYNC_REFRESH_TIME
-    - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
-    - SEPSettings.FOOTER_TEMPLATE
-    - SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS
-    - MessagesSettings.LEVEL
-    - AlertSettings.PROVIDERS
-    - AlertSettings.SOURCE_PREFIX
-    - AlertSettings.SOURCE_SUFFIX
-    - AnonymizerSettings.DEFAULT_ENTITIES
-    - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
-    - TasksSettings.LOG_RETENTION_DAYS
+  SETTINGS_OVERRIDE:
+    ALLOWED_KEYS:
+      - Settings.LOGGING
+      - Settings.PMM__annotations_enabled
+      - SEPSettings.SYNC_REFRESH_TIME
+      - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
+      - SEPSettings.FOOTER_TEMPLATE
+      - SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS
+      - MessagesSettings.LEVEL
+      - AlertSettings.PROVIDERS
+      - AlertSettings.SOURCE_PREFIX
+      - AlertSettings.SOURCE_SUFFIX
+      - AnonymizerSettings.DEFAULT_ENTITIES
+      - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
+      - TasksSettings.LOG_RETENTION_DAYS
 
   AUTH:
     PROVIDER:

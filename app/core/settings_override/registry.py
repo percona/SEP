@@ -332,7 +332,7 @@ def _setting_class_or_none(settings_cls: type[BaseModel]) -> SettingClassEnum | 
 
 
 def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
-    """Return whether ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withholds one canonical key.
+    """Return whether ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds one canonical key.
 
     :param settings_cls: The top-level Pydantic settings class owning the key.
     :param canonical_key: The canonical override key: a top-level field name or
@@ -369,7 +369,7 @@ def is_hot_reloadable(
     :param settings_cls: The Pydantic model class to inspect.
     :param field_name: The name of the field to check.
     :param include_policy_gate: Whether to also require
-        ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` to permit the key. Pass ``False`` to
+        ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` to permit the key. Pass ``False`` to
         read the static declaration alone, which is what distinguishes a field
         the allowlist withholds from one the code declares not overridable, and
         which is required when ``settings_cls`` is a submodel.
@@ -407,7 +407,7 @@ def field_reload_classification(
     classify a nested leaf resolved out of a submodel.
 
     When both ``owner_cls`` and ``field_name`` are supplied
-    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` is consulted too, so a field it withholds
+    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` is consulted too, so a field it withholds
     reports ``NOT_OVERRIDABLE`` and the settings API describes what it will
     actually accept. That lookup only answers for a top-level settings class,
     and this function exposes no way to skip it alone: omitting ``owner_cls`` /
@@ -764,7 +764,7 @@ def is_nested_overridable_parent(
     :param settings_cls: The Pydantic settings class declaring the field.
     :param field_name: The top-level field name.
     :param include_policy_gate: Whether to also require
-        ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` to leave something reachable under the
+        ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` to leave something reachable under the
         parent. Pass ``False`` to ask only whether the key is addressable at all,
         which is what keeps a stale row under a fully withheld parent deletable.
     :return: ``True`` iff nested-child overrides may target this field.
@@ -970,7 +970,7 @@ def chain_is_locked(settings_cls: type[BaseModel], key: str) -> bool:
     Composes the two independent reasons a nested path may be refused: an
     explicit :func:`not_overridable_field` marker anywhere along the chain
     (:func:`chain_has_explicit_not_overridable`), or
-    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withholding the leaf. The policy lookup
+    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholding the leaf. The policy lookup
     uses the canonical chain rather than ``key`` as spelled, so a
     case-insensitive spelling reaches the same verdict as the row it would
     resolve to. Returns ``False`` for an unresolvable key (the caller surfaces
@@ -1006,7 +1006,7 @@ def coerce_nested_field_value(
     Combines :func:`resolve_nested_field` and :func:`coerce_field_value` so the
     cache and API layers have one entry point for the full nested-row coercion
     contract. A path whose leaf *or any intermediate* is explicitly classified
-    ``NOT_OVERRIDABLE``, or whose leaf ``SETTINGS_OVERRIDE_ALLOWED_KEYS``
+    ``NOT_OVERRIDABLE``, or whose leaf ``SETTINGS_OVERRIDE.ALLOWED_KEYS``
     withholds, is rejected by raising :class:`KeyError`, matching the
     unresolvable-path contract so the caller's existing ``except KeyError``
     branch logs and skips uniformly.
@@ -1017,7 +1017,7 @@ def coerce_nested_field_value(
     :return: ``((canonical_segment, ...), coerced_value)``.
     :raises KeyError: If the path is unresolvable on ``settings_cls``, any
         segment along it is explicitly classified ``NOT_OVERRIDABLE``, or
-        ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` does not allow overriding the leaf.
+        ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` does not allow overriding the leaf.
     :raises ValidationError: If ``raw`` cannot be coerced to the leaf's type.
     """
     resolved = _resolve_nested_segments(settings_cls, key)
@@ -1982,7 +1982,7 @@ def resolve_nested_field_metadata(
     leaf (the default under a nested-overridable parent) and
     ``NOT_OVERRIDABLE`` when the leaf *or any intermediate in its chain* is
     explicitly :func:`not_overridable_field`-marked, or when
-    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withholds the leaf. That is the same chain
+    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds the leaf. That is the same chain
     check that gates PATCH, so the reported classification matches what an
     override would actually be allowed to do. ``is_advanced`` is chain-resolved
     via
@@ -2060,7 +2060,7 @@ def rendered_leaf_keys(
     :func:`not_overridable_field` marker. That last case makes the whole object
     the field's only write unit, so expanding it would advertise leaves no PATCH
     can target while hiding the key that one can. Leaves withheld by
-    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` are not that case -- they stay
+    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` are not that case; they stay
     enumerated, so an admin can see what the allowlist is holding back.
 
     :param settings_cls: The settings class declaring ``parent_field_name``.

@@ -143,7 +143,7 @@ the container fails to start. The two surfaces that reach `SEP.APPS` are a bind
 mount at `/home/sep/app/settings.yaml` (which, per above, replaces the profile
 wholesale — so its `SEP.APPS` must be a subset of the baked one) and the
 `SEP__APPS` environment variable; the runtime settings-override API cannot,
-because `SEP.APPS` is absent from `SETTINGS_OVERRIDE_ALLOWED_KEYS`.
+because `SEP.APPS` is absent from `SETTINGS_OVERRIDE.ALLOWED_KEYS`.
 
 The two unrestricted images (`sep:${RELEASE_VER}` and
 `sep:${RELEASE_VER}-sidecar`) ship every app package, so neither constraint
@@ -233,7 +233,7 @@ restarts.
 
 ## What the settings API will and will not change
 
-The image bakes `SETTINGS_OVERRIDE_ALLOWED_KEYS` — the exhaustive list of
+The image bakes `SETTINGS_OVERRIDE.ALLOWED_KEYS` — the exhaustive list of
 settings an administrator may change from the settings UI or API. Everything
 this container provisions is refused with `422`: the loopback endpoints and
 ports from the table above, the PMM connection and its API key, the whole Nomad
@@ -270,12 +270,13 @@ remain deletable through `DELETE /settings/<class>/<key>`, which is how an
 operator clears one; deleting a locked key that has no row answers `409`
 instead, since there is nothing to remove.
 
-`SETTINGS_OVERRIDE_ALLOWED_KEYS` is a general capability, not a side-car
-special case: any deployment can set it (bare env var, or a `default:` key in
+`SETTINGS_OVERRIDE.ALLOWED_KEYS` is a general capability, not a side-car
+special case: any deployment can set it (bare env var
+`SETTINGS_OVERRIDE__ALLOWED_KEYS`, or a nested `SETTINGS_OVERRIDE:` block in
 `settings.yaml`) to harden its own override surface. Leaving it unset — the
 default everywhere else — keeps every overridable setting overridable. It can
 never be changed through the API, only through the deployment's own
-configuration. This image carries it as a `default:` key in
+configuration. This image carries it under `SETTINGS_OVERRIDE:` in
 `settings.embedded.yaml`, so the bind mount that replaces that file is what
 changes the list. A replacement that omits the key does not preserve the
 shipped list — it lifts the restriction entirely, since an absent key reads the

@@ -61,7 +61,7 @@ from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
     SecurityHeadersOptions,
 )
-from app.core.models import BaseLowercaseModel
+from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
@@ -381,6 +381,99 @@ _INTERNAL_TOKEN_LABEL = b"sep-internal-token"
 SettingsOverrideKey = Annotated[str, StringConstraints(pattern=r"^[^\s.]+\.[^\s.]+$")]
 
 
+class SettingsOverrideOptions(BaseCaseInsensitiveModel):
+    """Configure the DB-backed settings-override layer.
+
+    Left unmarked on :class:`Settings` so the parent classifies
+    ``NOT_OVERRIDABLE`` (matching ``SECURITY_HEADERS``). Marking it
+    ``NESTED_ONLY`` would expose ``REFRESH_INTERVAL`` and ``REFRESHER_ENABLED``
+    to the override API; ``ALLOWED_KEYS`` would stay refused by its own
+    ``not_overridable_field`` marker, which is why that marker is kept.
+
+    :param REFRESH_INTERVAL: How often each service refreshes its DB-backed
+        setting overrides. Defaults to 30 seconds, and must be strictly
+        positive: ``start_refresh_task()`` hands ``interval.total_seconds()``
+        straight to ``asyncio.sleep()``, so a non-positive value would turn the
+        refresher into a tight loop that hammers the database every iteration.
+    :param REFRESHER_ENABLED: Master kill-switch for the DB-override
+        background refresher. Tests set this to ``False`` to keep
+        ``TestClient`` lifespans hermetic; production leaves it ``True``.
+    :param ALLOWED_KEYS: The exhaustive set of settings keys the override API
+        may write, each spelled ``"<SettingsClassName>.<KEY>"`` (the key being
+        a top-level field name or a ``__``-delimited nested path). ``None``,
+        the default, places no restriction. A set activates a default-locked
+        allowlist: any pair it does not name is refused. The allowlist only
+        ever *restricts*: a field that is already not overridable stays that
+        way even when listed. Whether the named class and field exist is not
+        checked at load time, so a typo'd entry allows nothing rather than
+        raising; whitespace anywhere in an entry is rejected outright, since
+        such an entry reads correct but matches nothing.
+    """
+
+    REFRESH_INTERVAL: Annotated[TimedeltaSeconds, Field(gt=timedelta(0))] = timedelta(
+        seconds=30
+    )
+    REFRESHER_ENABLED: bool = True
+    ALLOWED_KEYS: set[SettingsOverrideKey] | None = not_overridable_field(None)
+
+
+_REMOVED_SETTINGS_OVERRIDE_KEYS = {
+    "SETTINGS_OVERRIDE_REFRESH_INTERVAL": "SETTINGS_OVERRIDE__REFRESH_INTERVAL",
+    "SETTINGS_OVERRIDE_REFRESHER_ENABLED": "SETTINGS_OVERRIDE__REFRESHER_ENABLED",
+    "SETTINGS_OVERRIDE_ALLOWED_KEYS": "SETTINGS_OVERRIDE__ALLOWED_KEYS",
+}
+"""Map each removed flat settings-override key to its nested replacement."""
+
+
+class _LegacySettingsOverrideSettings(BaseYamlSettings):
+    """Define the reader for the removed flat settings-override keys.
+
+    Each field is typed :data:`~typing.Any` because only presence is inspected;
+    a stale value is reported, never parsed.
+
+    :param SETTINGS_OVERRIDE_REFRESH_INTERVAL: The removed key's value, or
+        ``None`` when unset.
+    :param SETTINGS_OVERRIDE_REFRESHER_ENABLED: The removed key's value, or
+        ``None`` when unset.
+    :param SETTINGS_OVERRIDE_ALLOWED_KEYS: The removed key's value, or ``None``
+        when unset.
+    """
+
+    SETTINGS_OVERRIDE_REFRESH_INTERVAL: Any = None
+    SETTINGS_OVERRIDE_REFRESHER_ENABLED: Any = None
+    SETTINGS_OVERRIDE_ALLOWED_KEYS: Any = None
+
+
+def detect_removed_settings_override_keys() -> None:
+    """Reject a deployment still configuring the flat settings-override keys.
+
+    ``Settings`` sets ``extra="ignore"``, so a flat key left in the environment
+    or in a YAML profile is dropped without a word and the nested field falls
+    back to its default. For ``ALLOWED_KEYS`` that default is ``None``, which
+    lifts the override-API restriction entirely, so a deployment that migrates
+    its image without re-spelling the key would widen what the settings API
+    accepts. Fail fast on any of the three instead.
+
+    :raises ValueError: When any removed flat key is still configured.
+    """
+    legacy = _LegacySettingsOverrideSettings()
+    stale = sorted(
+        (old, new)
+        for old, new in _REMOVED_SETTINGS_OVERRIDE_KEYS.items()
+        if getattr(legacy, old) is not None
+    )
+    if not stale:
+        return
+    spellings = ", ".join(f"{old} is now {new}" for old, new in stale)
+    raise ValueError(
+        f"Settings-override keys moved into the nested SETTINGS_OVERRIDE block "
+        f"and are no longer read: {spellings}. Re-spell them in the "
+        f"environment, or nest them under a SETTINGS_OVERRIDE: block in the "
+        f"YAML profile. Leaving SETTINGS_OVERRIDE_ALLOWED_KEYS unmigrated lifts "
+        f"the override-API restriction entirely."
+    )
+
+
 class Settings(BaseYamlSettings):
     """Define the main application settings.
 
@@ -407,21 +500,9 @@ class Settings(BaseYamlSettings):
     :param SECURITY_HEADERS: Global options for the SecurityHeadersMiddleware, to be
         used as the default SECURITY_HEADERS setting across all apps.
     :param PMM: PMM connection and authentication configuration.
-    :param SETTINGS_OVERRIDE_REFRESH_INTERVAL: How often each service refreshes its
-        DB-backed setting overrides. Defaults to 30 seconds.
-    :param SETTINGS_OVERRIDE_REFRESHER_ENABLED: Master kill-switch for the DB-override
-        background refresher. Tests set this to ``False`` to keep ``TestClient``
-        lifespans hermetic; production leaves it ``True``.
-    :param SETTINGS_OVERRIDE_ALLOWED_KEYS: The exhaustive set of settings keys the
-        override API may write, each spelled ``"<SettingsClassName>.<KEY>"`` (the
-        key being a top-level field name or a ``__``-delimited nested path).
-        ``None``, the default, places no restriction. A set activates a
-        default-locked allowlist: any pair it does not name is refused. The
-        allowlist only ever *restricts*: a field that is already not overridable
-        stays that way even when listed. Whether the named class and field exist
-        is not checked at load time, so a typo'd entry allows nothing rather than
-        raising; whitespace anywhere in an entry is rejected outright, since such
-        an entry reads correct but matches nothing.
+    :param SETTINGS_OVERRIDE: Options for the DB-backed settings-override layer
+        (refresh interval, refresher kill-switch, and the override-API allowlist).
+        See :class:`SettingsOverrideOptions`.
     """
 
     CELERY: CeleryOptions
@@ -436,11 +517,7 @@ class Settings(BaseYamlSettings):
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
     PMM: PMMSettings = hot_field(PMMSettings())
-    SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
-    SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
-    SETTINGS_OVERRIDE_ALLOWED_KEYS: set[SettingsOverrideKey] | None = (
-        not_overridable_field(None)
-    )
+    SETTINGS_OVERRIDE: SettingsOverrideOptions = SettingsOverrideOptions()
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
     @computed_field
@@ -466,29 +543,6 @@ class Settings(BaseYamlSettings):
         logging_config = deepcopy(LOGGING_CONFIG)
         deep_dict_update(logging_config, v)
         return logging_config
-
-    @field_validator("SETTINGS_OVERRIDE_REFRESH_INTERVAL")
-    @classmethod
-    def _settings_override_refresh_interval_positive(
-        cls, value: timedelta
-    ) -> timedelta:
-        """Reject zero or negative refresh intervals.
-
-        ``start_refresh_task()`` passes ``interval.total_seconds()`` directly
-        to ``asyncio.sleep()``. A non-positive interval would turn the
-        refresher into a tight loop that hammers the DB every iteration.
-
-        :param value: The configured refresh interval.
-        :type value: timedelta
-        :return: The validated interval.
-        :rtype: timedelta
-        :raises ValueError: If ``value`` is not strictly positive.
-        """
-        if value.total_seconds() <= 0:
-            raise ValueError(
-                "SETTINGS_OVERRIDE_REFRESH_INTERVAL must be a positive duration"
-            )
-        return value
 
     @model_validator(mode="after")
     def set_log_level(self) -> Self:
