@@ -23,10 +23,12 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel, computed_field
+from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
+from app.core.settings_override import cache
 from app.core.settings_override.cache import (
     _build_nested_update,
     _parent_base_value,
@@ -34,6 +36,7 @@ from app.core.settings_override.cache import (
 )
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.registry import MaterializerPurpose
 from app.sep.config import SEPSettings, SessionOptions
 from app.tasks.config import PreExecutionCheckMode, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
@@ -283,6 +286,29 @@ async def test_footer_template_materialized_to_template(session: AsyncSession) -
     snapshot = await build_snapshot(session, SEPSettings)
     assert isinstance(snapshot["FOOTER_TEMPLATE"], Template)
     assert snapshot["FOOTER_TEMPLATE"].template == "$summary v$version"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_build_materializes_with_the_snapshot_purpose(
+    session: AsyncSession, mocker: MockerFixture
+) -> None:
+    """Tell a materializer it is reading a stored row, not validating a new payload.
+
+    A row was written against whatever the deployment declared at the time, so a
+    materializer that cross-checks its payload against current state has to be
+    able to treat a mismatch as drift here and as a client error on PATCH.
+    """
+    materialize = mocker.spy(cache, "materialize_override_value")
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="FOOTER_TEMPLATE",
+        value="$summary",
+    )
+
+    await build_snapshot(session, SEPSettings)
+
+    assert materialize.call_args.kwargs["purpose"] is MaterializerPurpose.SNAPSHOT
 
 
 @pytest.mark.asyncio
