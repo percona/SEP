@@ -71,12 +71,12 @@ class DeliveryPlanResolution:
     constructor, which states the same invariant but only as a runtime refusal.
 
     :param plan: The plan to deliver with, or ``None`` when there is none.
-    :param reason: The operator-facing reason there is no plan, or ``None``
-        when there is one. Never names a secret the plan declares.
+    :param unavailable_reason: The operator-facing reason there is no plan, or
+        ``None`` when there is one. Never names a secret the plan declares.
     """
 
     plan: DeliveryPlan | None
-    reason: str | None
+    unavailable_reason: str | None
 
     def __post_init__(self) -> None:
         """Refuse a resolution that carries both outcomes, or neither.
@@ -87,7 +87,7 @@ class DeliveryPlanResolution:
 
         :raises ValueError: When both members are set, or neither is.
         """
-        if (self.plan is None) == (self.reason is None):
+        if (self.plan is None) == (self.unavailable_reason is None):
             raise ValueError(
                 "A delivery plan resolution carries either a plan or a reason "
                 "for there being none, not both and not neither."
@@ -100,7 +100,7 @@ class DeliveryPlanResolution:
         :param plan: The plan to deliver with.
         :return: The resolution carrying it.
         """
-        return cls(plan=plan, reason=None)
+        return cls(plan=plan, unavailable_reason=None)
 
     @classmethod
     def unavailable(cls, reason: str) -> "DeliveryPlanResolution":
@@ -109,7 +109,7 @@ class DeliveryPlanResolution:
         :param reason: The operator-facing reason, from this module's constants.
         :return: The resolution carrying it.
         """
-        return cls(plan=None, reason=reason)
+        return cls(plan=None, unavailable_reason=reason)
 
 
 def resolve_delivery_plan() -> DeliveryPlanResolution:
@@ -126,23 +126,12 @@ def resolve_delivery_plan() -> DeliveryPlanResolution:
     raising, so a caller rendering UI state from this value never fails merely
     because delivery is unconfigured or misconfigured.
 
-    Inputs naming a secret the skeleton does not declare are reported as drift,
-    which is what an image upgrade renaming a declared secret leaves behind.
-    Both routes an inputs value can arrive by reach this one check: a stored
-    override row survives snapshot build unfiltered (see
-    :func:`~app.sep.config.materialize_delivery_plan_inputs`), and a YAML- or
-    environment-set value never passed a name check at all.
-
-    The check is deliberately one-directional, and so deliberately narrower than
-    the exact-match rule :func:`~app.sep.config.materialize_delivery_plan_inputs`
-    enforces on write. An undeclared name is a dangling reference: nothing reads
-    the value, and only re-supplying the inputs clears it. A declared name the
-    inputs omit is not, because the merge below falls back to the skeleton's own
-    value — which either delivers or reports itself empty, and both of those are
-    already the right answer for an operator who has one more secret to supply.
-    Write-time is stricter for a reason of its own: a whole-object PATCH that
-    silently left some secrets on baked values would surprise whoever submitted
-    it, not because a partial stored row is unreadable.
+    Inputs naming a secret the skeleton does not declare resolve to the drift
+    reason. Inputs merely omitting a declared name do not, because the merge
+    below falls back to the skeleton's own value. The whole row is refused
+    rather than the undeclared name dropped: ``DeliveryPlanInputs.endpoint`` is
+    applied unconditionally in the same overlay, so a row whose secret names no
+    longer fit can also point delivery at a receiver this plan never named.
 
     Check order carries meaning. A deployment with no baked plan is
     unconfigured, never drifted — there is nothing to have drifted from. Drift

@@ -87,7 +87,7 @@ def diagnostics_send_disabled_reasons() -> list[str]:
 
     :return: The reasons to withhold the send action from the UI.
     """
-    if (reason := resolve_delivery_plan().reason) is not None:
+    if (reason := resolve_delivery_plan().unavailable_reason) is not None:
         return [reason]
     return []
 

@@ -73,7 +73,7 @@ class TestSkeletonOnly:
             resolution = resolve_delivery_plan()
 
         assert resolution.plan is None
-        assert resolution.reason == UNCONFIGURED_REASON
+        assert resolution.unavailable_reason == UNCONFIGURED_REASON
         assert caplog.records == []
 
     def test_returns_the_baked_plan_unchanged(self, mocker: MockerFixture) -> None:
@@ -84,7 +84,7 @@ class TestSkeletonOnly:
         resolution = resolve_delivery_plan()
 
         assert resolution.plan is skeleton
-        assert resolution.reason is None
+        assert resolution.unavailable_reason is None
 
     def test_reports_every_declared_secret_left_empty(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
@@ -100,7 +100,7 @@ class TestSkeletonOnly:
             resolution = resolve_delivery_plan()
 
         assert resolution.plan is None
-        assert resolution.reason == UNCONFIGURED_REASON
+        assert resolution.unavailable_reason == UNCONFIGURED_REASON
         assert "client_token, sn_api_key" in caplog.text
 
 
@@ -149,7 +149,7 @@ class TestMergedInputs:
             resolution = resolve_delivery_plan()
 
         assert resolution.plan is None
-        assert resolution.reason == UNCONFIGURED_REASON
+        assert resolution.unavailable_reason == UNCONFIGURED_REASON
         assert "client_token" in caplog.text
         assert "sn_api_key" not in caplog.text
 
@@ -248,7 +248,7 @@ class TestMergedInputs:
             resolution = resolve_delivery_plan()
 
         assert resolution.plan is None
-        assert resolution.reason == UNCONFIGURED_REASON
+        assert resolution.unavailable_reason == UNCONFIGURED_REASON
         assert "client_token" in caplog.text
 
 
@@ -286,7 +286,7 @@ class TestDriftedInputs:
             resolution = resolve_delivery_plan()
 
         assert resolution.plan is None
-        assert resolution.reason == DRIFTED_INPUTS_REASON
+        assert resolution.unavailable_reason == DRIFTED_INPUTS_REASON
         assert "renamed_token" in caplog.text
 
     def test_drift_outranks_a_secret_the_rename_left_without_a_value(
@@ -308,7 +308,7 @@ class TestDriftedInputs:
             DeliveryPlanInputs(secrets={"client_token": "token-value"}),
         )
 
-        assert resolve_delivery_plan().reason == DRIFTED_INPUTS_REASON
+        assert resolve_delivery_plan().unavailable_reason == DRIFTED_INPUTS_REASON
 
     def test_stored_inputs_without_a_baked_plan_are_not_drift(
         self, mocker: MockerFixture
@@ -325,7 +325,7 @@ class TestDriftedInputs:
             DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
         )
 
-        assert resolve_delivery_plan().reason == UNCONFIGURED_REASON
+        assert resolve_delivery_plan().unavailable_reason == UNCONFIGURED_REASON
 
     def test_empty_stored_secrets_report_the_unconfigured_state(
         self, mocker: MockerFixture
@@ -338,7 +338,7 @@ class TestDriftedInputs:
             sep_settings, "DIAGNOSTICS_DELIVERY_INPUTS", DeliveryPlanInputs()
         )
 
-        assert resolve_delivery_plan().reason == UNCONFIGURED_REASON
+        assert resolve_delivery_plan().unavailable_reason == UNCONFIGURED_REASON
 
     def test_a_secret_a_later_plan_added_is_not_drift(
         self, mocker: MockerFixture
@@ -361,7 +361,7 @@ class TestDriftedInputs:
             DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
         )
 
-        assert resolve_delivery_plan().reason == UNCONFIGURED_REASON
+        assert resolve_delivery_plan().unavailable_reason == UNCONFIGURED_REASON
 
     def test_a_case_variant_of_a_declared_name_is_drift(
         self, mocker: MockerFixture
@@ -376,7 +376,7 @@ class TestDriftedInputs:
             DeliveryPlanInputs(secrets={"SN_API_KEY": "key-value"}),
         )
 
-        assert resolve_delivery_plan().reason == DRIFTED_INPUTS_REASON
+        assert resolve_delivery_plan().unavailable_reason == DRIFTED_INPUTS_REASON
 
     def test_the_reason_names_no_secret_the_plan_declares(
         self, mocker: MockerFixture
@@ -397,7 +397,7 @@ class TestDriftedInputs:
             ),
         )
 
-        reason = resolve_delivery_plan().reason
+        reason = resolve_delivery_plan().unavailable_reason
 
         assert "sn_api_key" not in reason
         assert "renamed_token" not in reason
@@ -415,7 +415,7 @@ class TestDeliveryPlanResolutionInvariant:
     def test_a_reason_alone_builds(self) -> None:
         """Accept the shape a deployment unable to deliver produces."""
         assert (
-            DeliveryPlanResolution.unavailable(UNCONFIGURED_REASON).reason
+            DeliveryPlanResolution.unavailable(UNCONFIGURED_REASON).unavailable_reason
             == UNCONFIGURED_REASON
         )
 
@@ -423,10 +423,11 @@ class TestDeliveryPlanResolutionInvariant:
         """Refuse a resolution a caller would read two contradictory ways."""
         with pytest.raises(ValueError, match="not both and not neither"):
             DeliveryPlanResolution(
-                plan=_plan({"sn_api_key": "key-value"}), reason=UNCONFIGURED_REASON
+                plan=_plan({"sn_api_key": "key-value"}),
+                unavailable_reason=UNCONFIGURED_REASON,
             )
 
     def test_carrying_neither_outcome_is_refused(self) -> None:
         """Refuse the empty resolution, which reads as a plan that is missing."""
         with pytest.raises(ValueError, match="not both and not neither"):
-            DeliveryPlanResolution(plan=None, reason=None)
+            DeliveryPlanResolution(plan=None, unavailable_reason=None)

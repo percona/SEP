@@ -608,17 +608,15 @@ async def _resolve_plan_after_refresh(
 
     A worker child can hold a snapshot published before the operator supplied
     the receiver's inputs, so the plan reads as unconfigured against settings
-    that are already current everywhere else. Republishing from the session in
-    hand costs one override-row read and is taken only on the branch that would
-    otherwise record a terminal failure.
+    already current everywhere else.
 
     A failed republish degrades to ``held`` rather than escaping: this runs ahead
     of the broad terminal guard, so an escaping error would leave the row
     non-terminal until the stale sweep mislabels it as a lost worker. Degrading
     to the resolution already in hand, rather than to a fixed reason, keeps a
     transient database error from relabelling drifted inputs as delivery nobody
-    configured. The session is rolled back before returning, so an aborted
-    transaction does not also fail the terminal write that follows.
+    configured. The session is rolled back first, so an aborted transaction does
+    not also fail the terminal write that follows.
 
     :param session: The database session.
     :param held: The resolution taken against the snapshot this child already
@@ -626,10 +624,8 @@ async def _resolve_plan_after_refresh(
     :return: The resolution taken against the fresh snapshot, or ``held`` when
         the republish failed.
     :raises Exception: Propagates a ``session.rollback()`` that itself fails.
-        That is the only exit from the failure branch that is not a returned
-        resolution. The database is unreachable at that point, so no terminal
-        write was going to land either way and the row is left to the stale
-        sweep.
+        The database is unreachable at that point, so no terminal write was
+        going to land either way and the row is left to the stale sweep.
     """
     try:
         await republish_sep_settings_snapshot(session)
@@ -677,7 +673,7 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     resolution = resolve_delivery_plan()
     if resolution.plan is None:
         resolution = await _resolve_plan_after_refresh(session, resolution)
-    if (reason := resolution.reason) is not None:
+    if (reason := resolution.unavailable_reason) is not None:
         await _fail(session, row, detail, [], reason)
         return
     # A resolution refuses to hold neither member, so an empty reason is a plan.
