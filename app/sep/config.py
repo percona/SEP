@@ -16,21 +16,17 @@
 """Define SEP settings."""
 
 import logging
-from datetime import datetime, timedelta
-from functools import cached_property
+from datetime import timedelta
 from pathlib import Path
 from string import Template
 from typing import Annotated, Any, ClassVar, Literal, Self
 from urllib.parse import urlparse
 
 from annotated_types import Gt
-from fastapi.templating import Jinja2Templates
-from jinja2 import Environment, FileSystemLoader
 from pydantic import (
     AliasChoices,
     AliasGenerator,
     BaseModel,
-    computed_field,
     ConfigDict,
     Field,
     field_validator,
@@ -76,8 +72,6 @@ from app.core.utils.fields import (
 )
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.bundle_upload.plan import DeliveryPlan
-from app.sep.middleware import messages
-from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
 logger = logging.getLogger(__name__)
 
@@ -310,16 +304,6 @@ class App(BaseCaseInsensitiveModel):
         if _module_or_package_exists(target):
             return self
         raise ValueError(f"No module named {self.celery_module_path}")
-
-    @computed_field
-    @property
-    def router_path(self) -> str:
-        """Return the plugin's router path.
-
-        :return: The router path derived from the module name.
-        :rtype: str
-        """
-        return f"{self.module_name}.router"
 
 
 class SessionOptions(BaseModel):
@@ -705,16 +689,10 @@ class SEPSettings(BaseYamlAppSettings):
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
-    :param SESSION: Session configuration options for the legacy ``authToken``
-        cookie used by the Jinja UI.
     :param SESSION_REFRESH: Session configuration options for the SPA
         ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
         ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
         vars, the value must start with ``/``.
-    :param TEMPLATES_DIR: The directory containing template files. Defaults to
-        ``Path("templates")``.
-    :param STATIC_DIR: The directory containing static files. Defaults to
-        ``Path("static")``.
     :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
         definition files. When ``None``, the bundled ``alert_definitions/`` directory
         inside the alerts plugin is used.
@@ -769,7 +747,6 @@ class SEPSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
-    SESSION: SessionOptions = nested_overridable_field(SessionOptions(), advanced=True)
     SESSION_REFRESH: SessionOptions = nested_overridable_field(
         SessionOptions(
             COOKIE_NAME="refreshToken",
@@ -777,8 +754,6 @@ class SEPSettings(BaseYamlAppSettings):
         ),
         advanced=True,
     )
-    TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
-    STATIC_DIR: RelativeDirectoryPathField = Path("static")
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
     TASKS_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
@@ -882,45 +857,6 @@ class SEPSettings(BaseYamlAppSettings):
         ):
             _warn_legacy_apps_key()
         return sources
-
-    @computed_field
-    @cached_property
-    def JINJA_ENVIRONMENT(self) -> Environment:
-        """Return a Jinja2 Environment object for templates.
-
-        This property creates, caches, and returns a
-        :class:`jinja2.environment.Environment` object configured with the
-        ``jinja2.ext.do`` extension, the ``syntax_highlight`` filter, and the
-        ``syntax_highlight_css`` utility function as global.
-
-        :return: The Environment configured for Jinja2.
-        :rtype: Environment
-        """
-        env = Environment(
-            loader=FileSystemLoader(sep_settings.TEMPLATES_DIR),
-            autoescape=True,
-            extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
-        )
-        env.filters |= DEFAULT_FILTERS
-        env.globals["now"] = datetime.now
-        env.globals["syntax_highlight_css"] = syntax_highlight_css
-        env.globals["get_messages"] = messages.get_messages
-        return env
-
-    @computed_field
-    @cached_property
-    def TEMPLATES(self) -> Jinja2Templates:
-        """Return a Jinja2Templates object for template rendering.
-
-        This property creates, caches, and returns a ``Jinja2Templates`` object configured
-        with the ``TEMPLATES_DIR`` directory.
-
-        :return: The Jinja2 templates object for rendering templates.
-        :rtype: Jinja2Templates
-        """
-        return Jinja2Templates(
-            env=self.JINJA_ENVIRONMENT,
-        )
 
     @field_validator("FOOTER_TEMPLATE", mode="before")
     @classmethod

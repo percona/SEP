@@ -74,7 +74,6 @@ class TestSessionRefreshDefault:
         settings = SEPSettings()
         assert settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
         assert settings.SESSION_REFRESH.PATH == "/api/oauth"
-        assert settings.SESSION.PATH is None
 
 
 class TestAmbientSessionSSO:

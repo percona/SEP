@@ -17,7 +17,6 @@
 
 import inspect
 import os
-from collections import OrderedDict
 from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -50,17 +49,14 @@ from app.core.utils import json_serializer
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_inventory_api,
     get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.main import sep_app
-from app.sep.middleware.messages.config import messages_settings
 from app.sep.snippets.config import snippets_settings
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
@@ -119,7 +115,6 @@ def _override_snapshot_cleared() -> None:
     sep_settings._set_snapshot({})  # noqa: SLF001
     tasks_settings._set_snapshot({})  # noqa: SLF001
     snippets_settings._set_snapshot({})  # noqa: SLF001
-    messages_settings._set_snapshot({})  # noqa: SLF001
     alert_settings._set_snapshot({})  # noqa: SLF001
     anonymizer_settings._set_snapshot({})  # noqa: SLF001
 
@@ -577,10 +572,8 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
     DB. Tests that exercise the disabled path override ``get_session`` again
     with a session that carries an ``enabled=False`` row.
     """
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -595,9 +588,7 @@ def api_admin_client_no_bearer(admin_user: CasdoorUser) -> TestClient:
     JSON mutations to ``/api/apps/*`` are rejected by the framework
     Bearer gate. Use in tests that assert the 401 path.
     """
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -619,10 +610,8 @@ async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
 
     See :func:`test_client` for the Bearer-gate override rationale.
     """
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
 
     transport = ASGITransport(app=sep_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -633,11 +622,9 @@ async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
 
 @pytest.fixture
 def dummy_request() -> Request:
-    """Create a dummy Request with a messages attribute in its state."""
+    """Create a dummy Request for dependencies that take one."""
     scope = {"type": "http", "headers": [], "client": ("127.0.0.1", "80"), "path": "/"}
-    req = Request(scope)
-    req.state.messages = OrderedDict()
-    return req
+    return Request(scope)
 
 
 @pytest.fixture

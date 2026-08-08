@@ -37,7 +37,7 @@ from typing import Annotated
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import APIRouter, Depends, FastAPI, status
+from fastapi import APIRouter, Depends, status
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, create_model
 
@@ -46,7 +46,7 @@ from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.pagination import Pagination
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
-from app.sep.apps.framework import ScriptSource, StaticMount, TaskExecutionApp
+from app.sep.apps.framework import ScriptSource, TaskExecutionApp
 from app.sep.apps.framework.apps import NO_PAGINATION
 from app.sep.apps.framework.conformance import (
     check_capability_route_consistency,
@@ -63,7 +63,6 @@ from app.sep.apps.framework.schema import (
 )
 from app.sep.apps.framework.script_source import resolve_scripts, ScriptExecuteWrite
 from app.sep.deps import IsApiAuthenticated
-from app.sep.utils.static import AuthenticatedStaticFiles
 from tests.app.sep.apps.framework.contract_suite import build_contract_client
 from tests.app.sep.apps.framework.contract_suite import routes_of as _routes
 
@@ -890,40 +889,3 @@ class TestConformanceGuards:
     ) -> None:
         """Return no findings for a script app from the create-model derivation check."""
         assert check_schema_derivation_succeeds(_script_app(source)) == []
-
-
-class TestStaticMount:
-    """Cover the authenticated static-mount knob (auth parity AC)."""
-
-    def test_static_mounts_field_carries_declaration(
-        self, source: ScriptSource
-    ) -> None:
-        """Carry the declared static mounts on the app definition."""
-        mount = StaticMount(
-            path="/static/fixture", directory=source.script_dir, name="fixture_files"
-        )
-        app_def = _script_app(source, static_mounts=(mount,))
-        assert app_def.static_mounts == (mount,)
-
-    def test_static_mount_enforces_authentication(self, source: ScriptSource) -> None:
-        """Mount the payload dir behind ``AuthenticatedStaticFiles`` (no anon access)."""
-        mount = StaticMount(
-            path="/static/fixture", directory=source.script_dir, name="fixture_files"
-        )
-        app = FastAPI()
-        for declared in _script_app(source, static_mounts=(mount,)).static_mounts:
-            app.mount(
-                declared.path,
-                AuthenticatedStaticFiles(directory=declared.directory),
-                name=declared.name,
-            )
-        mounted = [
-            route
-            for route in app.routes
-            if getattr(route, "path", "") == "/static/fixture"
-        ]
-        assert mounted
-        assert isinstance(mounted[0].app, AuthenticatedStaticFiles)
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/static/fixture/report.sh")
-        assert response.status_code != status.HTTP_200_OK

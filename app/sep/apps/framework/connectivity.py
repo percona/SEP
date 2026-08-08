@@ -107,11 +107,10 @@ async def maybe_record_connectivity_warning(
 ) -> ConnectivityWarning | None:
     """Run :func:`record_connectivity_warning` when ``meta`` carries connectivity data.
 
-    Mirror the form-side :func:`app.sep.connectivity.maybe_check_connectivity`
-    guard semantics: short-circuit to ``None`` when ``check_connectivity`` is
-    ``False`` or when any of the required meta keys is missing or falsy. This
-    lets task-creation routes invoke the helper unconditionally without
-    inspecting ``meta`` themselves.
+    Short-circuit to ``None`` when ``check_connectivity`` is ``False`` or when
+    any of the required meta keys is missing or falsy. This lets task-creation
+    routes invoke the helper unconditionally without inspecting ``meta``
+    themselves.
 
     :param tasks_api: Authenticated Tasks API client.
     :param meta: The ``task.data["meta"]`` mapping from the created task.

@@ -50,7 +50,6 @@ from app.core.settings_override.registry import (
 from app.core.utils.pydantic import field_with_metadata
 from app.inventory.config import InventorySettings
 from app.sep.config import SEPSettings
-from app.sep.middleware.messages.config import MessagesSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
 
@@ -503,9 +502,9 @@ def test_hot_field_names_tasks_settings() -> None:
 
 
 def test_nested_overridable_field_names_sep_settings() -> None:
-    """Assert ``SEPSettings`` exposes the session parents plus ``APP_DRAIN``."""
+    """Assert ``SEPSettings`` exposes the refresh-session parent plus ``APP_DRAIN``."""
     assert nested_overridable_field_names(SEPSettings) == frozenset(
-        {"SESSION", "SESSION_REFRESH", "APP_DRAIN"}
+        {"SESSION_REFRESH", "APP_DRAIN"}
     )
 
 
@@ -529,11 +528,6 @@ def test_hot_field_names_snippets_settings() -> None:
             "SYNC_FILTER",
         }
     )
-
-
-def test_hot_field_names_messages_settings() -> None:
-    """Assert ``MessagesSettings`` ships ``LEVEL`` as its single HOT field."""
-    assert hot_field_names(MessagesSettings) == frozenset({"LEVEL"})
 
 
 def test_hot_field_names_inventory_settings_empty() -> None:
@@ -568,7 +562,6 @@ def test_reload_classification_values() -> None:
 @pytest.mark.parametrize(
     "field_name",
     [
-        "SESSION",
         "SESSION_REFRESH",
         "INVENTORY_ENDPOINT",
         "TASKS_ENDPOINT",
@@ -618,8 +611,8 @@ def test_tasks_settings_marked_advanced(field_name: str) -> None:
 
 
 def test_session_leaf_inherits_advanced() -> None:
-    """Assert every ``SESSION`` leaf inherits the parent's advanced flag."""
-    leaf = resolve_nested_field_metadata(SEPSettings, "SESSION__COOKIE_NAME")
+    """Assert every ``SESSION_REFRESH`` leaf inherits the parent's advanced flag."""
+    leaf = resolve_nested_field_metadata(SEPSettings, "SESSION_REFRESH__COOKIE_NAME")
     assert leaf is not None
     assert leaf.is_advanced is True
 

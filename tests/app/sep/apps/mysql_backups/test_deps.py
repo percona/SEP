@@ -23,196 +23,22 @@ import yaml
 from pydantic import ValidationError
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.utils.path import resolve_payload_reference
 from app.sep.apps.mysql_backups.deps import (
     _extract_backup_type_from_task,
-    build_backup_task_payload,
     build_mysql_backups_api_task_response,
-    get_backups_task_info,
     parse_backup_task_data,
     resolve_optional_catalog_service_key,
 )
-from app.sep.apps.mysql_backups.forms import BackupCreate, UploadProvider
 from app.sep.apps.mysql_backups.models import (
     BackupType,
     CatalogServiceKey,
     extract_backup_type_marker,
 )
-from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
-from app.sep.inventory import CreatedNode, CreatedService
 from app.tasks.models import (
     Task,
-    TaskBackendEnum,
-    TaskWrite,
 )
 from tests.app.sep.apps.mysql_backups.conftest import inventory_mock, service_payload
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    (
-        "backup_type",
-        "expected_payload_filename",
-        "expected_requirements",
-        "expected_host",
-    ),
-    [
-        (
-            BackupType.MYDUMPER,
-            "mydumper_payload",
-            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
-            "fake-address",
-        ),
-        (
-            BackupType.XTRABACKUP,
-            "xtrabackup_payload",
-            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
-            "localhost",
-        ),
-        (
-            BackupType.BINLOG,
-            "binlog_payload",
-            "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
-            "10.0.0.5",
-        ),
-    ],
-)
-async def test_build_backup_task_payload(
-    backup_type: BackupType,
-    expected_payload_filename,
-    expected_requirements,
-    expected_host,
-    faker,
-    mocker,
-    mock_remote_api,
-    created_service: CreatedService,
-):
-    """Test build_backup_task_payload.
-
-    Test that build_backup_task_payload generates the correct TaskWrite
-    depending on the backup_type, encryption, and other fields.
-    """
-    mocker.patch(
-        "app.sep.apps.framework.spec.get_created_entity",
-        return_value=created_service,
-    )
-    created_service.node = CreatedNode(
-        id=1,
-        address="fake-address",
-        node_name="fake-node",
-    )
-
-    form_data = {
-        "service_id": created_service.id,
-        "task_name": "test_task",
-        "backup_type": backup_type,
-        "hostname": "test_host",
-        "upload": [UploadProvider.S3, UploadProvider.RSYNC],
-        "s3_bucket": "my-test-bucket",
-        "rsync_path": "/rsync",
-        "encrypt": True,
-        "encryption_recipient": faker.email(),
-    }
-    if backup_type == BackupType.BINLOG:
-        form_data["binlog_alternative_host"] = "10.0.0.5"
-    backup_create = BackupCreate(**form_data)
-
-    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
-
-    assert isinstance(task_payload, TaskWrite)
-    assert task_payload.name == form_data["task_name"]
-    assert task_payload.backend == TaskBackendEnum.PROXY
-    assert task_payload.owner == "BACKUPS"
-    # A form-built task must carry the recorder so its completed runs are
-    # catalogued, exactly as the model-first JSON create path does.
-    assert task_payload.run_result_recorder == RUN_RESULT_RECORDER
-
-    data = task_payload.data
-    assert data["task"] == "run-python"
-    assert (
-        data["payload"]
-        == f"file://app/sep/apps/mysql_backups/{expected_payload_filename}"
-    )
-    assert resolve_payload_reference(data["payload"]).is_file()
-
-    meta = data["meta"]
-    assert meta["target"] == form_data["hostname"]
-    assert meta["requirements"] == expected_requirements
-    assert meta["_service_name"] == created_service.name
-
-    cfg = yaml.safe_load(meta["config"])
-    server_list = cfg["SERVER_LIST"]
-    assert len(server_list) == 1
-    server_config = server_list[0]
-
-    assert server_config["HOST"] == expected_host
-    assert server_config["BACKUP_TYPE"] == backup_type.value
-
-    if backup_type == BackupType.BINLOG:
-        assert cfg["ALL_SERVERS"]["BINLOG_ALTERNATIVE_HOST"] == "10.0.0.5"
-    else:
-        assert "BINLOG_ALTERNATIVE_HOST" not in cfg["ALL_SERVERS"]
-
-    assert "s3" in server_config["UPLOAD"]
-    assert "rsync" in server_config["UPLOAD"]
-
-    assert data["payload"].startswith("file://")
-    assert expected_payload_filename in data["payload"]
-
-
-@pytest.mark.asyncio
-async def test_build_backup_task_payload_raises_for_invalid_backup_type(
-    faker, mocker, created_service, mock_remote_api
-):
-    """Test that passing an invalid BackupType raises ValueError."""
-    mocker.patch(
-        "app.sep.apps.framework.spec.get_created_entity",
-        return_value=created_service,
-    )
-
-    backup_create = BackupCreate.model_construct(
-        service_id=created_service.id,
-        task_name="test_task",
-        hostname="test_host",
-        backup_type="invalid",
-        upload=[UploadProvider.S3],
-        s3_bucket="bkt",
-    )
-
-    with pytest.raises(ValueError, match="Invalid Backup Type"):
-        await build_backup_task_payload(backup_create, mock_remote_api)
-
-
-def test_get_backups_task_info():
-    """Test extracting the correct fields from a task dictionary."""
-    server_port = 5555
-    fake_task_dict = {
-        "data": {
-            "meta": {
-                "target": "host.example.com",
-                "config": yaml.dump(
-                    {
-                        "SERVER_LIST": [
-                            {
-                                "HOST": "my-db-host",
-                                "PORT": server_port,
-                                "UPLOAD": ["S3", "RSYNC"],
-                                "BACKUP_TYPE": "X",
-                            }
-                        ]
-                    }
-                ),
-            }
-        }
-    }
-
-    result = get_backups_task_info(fake_task_dict)
-    assert result["hostname"] == "host.example.com"
-    assert result["host"] == "my-db-host"
-    assert result["port"] == server_port
-    assert result["upload"] == "S3, RSYNC"
-    assert result["backup_type"] == BackupType.XTRABACKUP.name
 
 
 @pytest.mark.parametrize(

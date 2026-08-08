@@ -22,10 +22,9 @@ from pydantic import TypeAdapter
 
 from app.sep.deps import (
     get_task_history,
-    IsAuthenticated,
+    IsApiAuthenticated,
     TaskAPI,
 )
-from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import ExecutionEvent, TaskHistoryResponse
 
 router = APIRouter(tags=["tasks"])
@@ -33,9 +32,8 @@ router = APIRouter(tags=["tasks"])
 
 @router.get(
     "/{task_history_id}",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsApiAuthenticated],
 )
-@csrf_exempt
 async def list_task_execution_events(
     request: Request,  # noqa: ARG001
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],

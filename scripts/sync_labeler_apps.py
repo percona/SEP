@@ -23,11 +23,11 @@ deterministic filesystem walk of ``app/sep/apps/*`` (mirroring
 ``scripts/sync_alembic_version_locations.py``).
 
 An app slice is the full-stack vertical for one app: ``app/sep/apps/<name>/``,
-``frontend/packages/apps/<name>/``, ``tests/app/sep/apps/<name>/``,
-``templates/<name>/``, and ``frontend/packages/e2e/tests/<name>*.spec.ts``. Only
-surfaces that exist on disk are emitted. Three name mismatches are resolved by
-explicit alias maps that are asserted against disk, so a stale alias fails the
-``--check`` mode instead of silently emitting a dead glob.
+``frontend/packages/apps/<name>/``, ``tests/app/sep/apps/<name>/``, and
+``frontend/packages/e2e/tests/<name>*.spec.ts``. Only surfaces that exist on
+disk are emitted. Name mismatches are resolved by an explicit alias map that is
+asserted against disk, so a stale alias fails the ``--check`` mode instead of
+silently emitting a dead glob.
 
 Run without arguments to rewrite in place; run with ``--check`` to fail
 without writing when the committed block has drifted.
@@ -45,10 +45,6 @@ APPS_SUBDIR = ("app", "sep", "apps")
 
 #: Directories under ``app/sep/apps`` that are framework internals, not apps.
 EXCLUDED_APPS = frozenset({"framework", "shared"})
-
-#: App name -> ``templates/<dir>`` name, where the template directory that backs
-#: the app does not share its name. Asserted against disk by ``--check``.
-TEMPLATE_ALIASES = {"archives": "archiver"}
 
 #: App name -> e2e spec stem, where the Playwright spec uses hyphens while the
 #: app directory uses underscores. Asserted against disk by ``--check``.
@@ -99,21 +95,10 @@ def validate_aliases(apps: list[str], repo_root: Path) -> None:
 
     :param apps: Discovered app-slice names.
     :param repo_root: Repository root the surfaces are resolved against.
-    :raises ValueError: When an alias key is not a known app, or its target
-        directory (templates) or spec (e2e) is missing on disk.
+    :raises ValueError: When an alias key is not a known app, or its e2e spec is
+        missing on disk.
     """
     app_set = set(apps)
-    for app, template_dir in TEMPLATE_ALIASES.items():
-        if app not in app_set:
-            msg = f"template alias references unknown app: {app!r}"
-            raise ValueError(msg)
-        if not (repo_root / "templates" / template_dir).is_dir():
-            msg = (
-                f"stale template alias {app!r} -> templates/{template_dir}: "
-                "directory does not exist"
-            )
-            raise ValueError(msg)
-
     e2e_dir = repo_root / "frontend" / "packages" / "e2e" / "tests"
     for app, stem in E2E_ALIASES.items():
         if app not in app_set:
@@ -128,7 +113,7 @@ def app_globs(app: str, repo_root: Path) -> list[str]:
     """Return the POSIX globs for one app slice, in deterministic order.
 
     Only surfaces that exist on disk are emitted, so the config stays truthful
-    as apps migrate away from ``templates/`` or gain a React package.
+    as apps gain or drop a React package.
 
     :param app: The app-slice name.
     :param repo_root: Repository root the surfaces are resolved against.
@@ -143,10 +128,6 @@ def app_globs(app: str, repo_root: Path) -> list[str]:
     tests_dir = repo_root / "tests" / "app" / "sep" / "apps" / app
     if tests_dir.is_dir():
         globs.append(f"tests/app/sep/apps/{app}/**")
-
-    template_dir = TEMPLATE_ALIASES.get(app, app)
-    if (repo_root / "templates" / template_dir).is_dir():
-        globs.append(f"templates/{template_dir}/**")
 
     e2e_stem = E2E_ALIASES.get(app, app)
     if _e2e_matches(repo_root / "frontend" / "packages" / "e2e" / "tests", e2e_stem):

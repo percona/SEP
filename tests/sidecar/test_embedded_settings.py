@@ -61,18 +61,17 @@ past, so the block is matched by its container instead.
 SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
-ALLOWLIST_SIZE = 13
+ALLOWLIST_SIZE = 12
 """How many entries the embedded override allowlist ships.
 
 Pinned so a silently truncated list -- which the policy suite's negative
 assertions would still accept -- fails here instead.
 """
 
-UNCOMPARABLE_FIELDS = frozenset({"FASTAPI_ENV", "JINJA_ENVIRONMENT", "TEMPLATES"})
+UNCOMPARABLE_FIELDS = frozenset({"FASTAPI_ENV"})
 """Fields a dump comparison cannot use.
 
-``FASTAPI_ENV`` is what the comparison varies; the other two are computed per
-construction and compare by identity, so two instances never match on them.
+``FASTAPI_ENV`` is what the comparison varies, so it can never match.
 """
 
 
