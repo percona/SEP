@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_25204f8a7406668b_cache_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 03:09 +0000
+            created at 2026-08-08 05:27 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -652,7 +652,7 @@
     <p class="pln"><span class="n"><a id="t568" href="#t568">568</a></span><span class="t"><span class="str">    the parent must exist (``unknown_key``) and be nested-overridable</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t569" href="#t569">569</a></span><span class="t"><span class="str">    (``not_overridable``); the leaf must resolve (``unknown_nested_field``)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t570" href="#t570">570</a></span><span class="t"><span class="str">    and its chain must be open, neither explicitly not-overridable at any</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t571" href="#t571">571</a></span><span class="t"><span class="str">    segment nor withheld by ``SETTINGS_OVERRIDE_ALLOWED_KEYS``</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t571" href="#t571">571</a></span><span class="t"><span class="str">    segment nor withheld by ``SETTINGS_OVERRIDE.ALLOWED_KEYS``</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t572" href="#t572">572</a></span><span class="t"><span class="str">    (``not_overridable``); finally the value is coerced to the leaf type</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t573" href="#t573">573</a></span><span class="t"><span class="str">    (structured Pydantic error on failure).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t574" href="#t574">574</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -1139,7 +1139,7 @@
     <p class="pln"><span class="n"><a id="t1055" href="#t1055">1055</a></span><span class="t"><span class="str">        that has no override row succeeds with 204. Attempting to delete a field</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1056" href="#t1056">1056</a></span><span class="t"><span class="str">        the code declares NOT_OVERRIDABLE responds 409, since it cannot have an</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1057" href="#t1057">1057</a></span><span class="t"><span class="str">        override row in the first place and the operator's intent is</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1058" href="#t1058">1058</a></span><span class="t"><span class="str">        unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1058" href="#t1058">1058</a></span><span class="t"><span class="str">        unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1059" href="#t1059">1059</a></span><span class="t"><span class="str">        may still carry a row written before the restriction applied, so that</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1060" href="#t1060">1060</a></span><span class="t"><span class="str">        row is deleted normally and only the no-row case answers 409.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1061" href="#t1061">1061</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -1247,7 +1247,7 @@
     <p class="pln"><span class="n"><a id="t1163" href="#t1163">1163</a></span><span class="t">    <span class="str">"""Return whether the code, not the allowlist, refuses overrides of ``key``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1164" href="#t1164">1164</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1165" href="#t1165">1165</a></span><span class="t"><span class="str">    Reads the classification with the policy gate switched off, so a key only</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1166" href="#t1166">1166</a></span><span class="t"><span class="str">    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withholds reports ``False`` here. That</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1166" href="#t1166">1166</a></span><span class="t"><span class="str">    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds reports ``False`` here. That</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1167" href="#t1167">1167</a></span><span class="t"><span class="str">    distinction is what lets DELETE clear a row written before a restriction</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1168" href="#t1168">1168</a></span><span class="t"><span class="str">    applied while keeping 409 for a field the code marks ``NOT_OVERRIDABLE``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1169" href="#t1169">1169</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -1274,7 +1274,7 @@
     <p class="pln"><span class="n"><a id="t1190" href="#t1190">1190</a></span><span class="t"><span class="str">    rejected with 422 (``not_overridable``), mirroring the PATCH guard in</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1191" href="#t1191">1191</a></span><span class="t"><span class="str">    :func:`_validate_nested_key` so DELETE and PATCH agree on which nested keys</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1192" href="#t1192">1192</a></span><span class="t"><span class="str">    exist at all. The allowlist is deliberately excluded from that check: a</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1193" href="#t1193">1193</a></span><span class="t"><span class="str">    parent every one of whose leaves ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1193" href="#t1193">1193</a></span><span class="t"><span class="str">    parent every one of whose leaves ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1194" href="#t1194">1194</a></span><span class="t"><span class="str">    must stay reachable, or any row accumulated beneath it before the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1195" href="#t1195">1195</a></span><span class="t"><span class="str">    restriction applied would be stuck. A ``NESTED_ONLY`` parent rejects</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1196" href="#t1196">1196</a></span><span class="t"><span class="str">    whole-parent deletion with 422 (target a nested child instead). A</span>&nbsp;</span><span class="r"></span></p>
@@ -1400,7 +1400,7 @@
             <a class="nav" href="z_25204f8a7406668b_cache_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 03:09 +0000
+            created at 2026-08-08 05:27 +0000
         </p>
     </div>
 </footer>
