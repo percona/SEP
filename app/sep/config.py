@@ -651,7 +651,7 @@ def materialize_delivery_plan_inputs(ctx: MaterializerContext) -> Any:
 
     ``DeliveryPlan``'s cross-reference validator only checks that every cited
     secret name is declared, never the converse, so an extra name would persist
-    and then be silently ignored at send time.
+    in the stored row and come back to whoever submitted it as drift.
 
     The name check applies to a payload submitted now
     (:attr:`~app.core.settings_override.MaterializerPurpose.VALIDATE`) and not to
