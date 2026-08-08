@@ -41,6 +41,7 @@ from app.core.settings_override.policy import (
 from app.core.settings_override.registry import (
     chain_has_explicit_not_overridable,
     field_reload_classification,
+    is_nested_overridable_parent,
     iter_class_fields,
     ReloadClassification,
     rendered_leaf_keys,
