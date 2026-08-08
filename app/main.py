@@ -31,7 +31,11 @@ from app import __summary__, __version__
 from app.api.main import api_router
 from app.celery import celery as celery_app
 from app.core.auth.config import detect_removed_auth_user_model
-from app.core.config import create_app, settings
+from app.core.config import (
+    create_app,
+    detect_removed_settings_override_keys,
+    settings,
+)
 from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
 from app.core.utils.openapi import merge_openapi_documents
@@ -60,6 +64,7 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     """
     detect_removed_auth_user_model()
+    detect_removed_settings_override_keys()
     validate_importable_settings(*(s.syncer for s in sep_settings.SYNCERS))
     await sep_startup()
     async with (

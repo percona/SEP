@@ -25,9 +25,11 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable
+from datetime import timedelta
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
@@ -170,6 +172,32 @@ class TestSettingDeclaration:
         assert chain_has_explicit_not_overridable(
             Settings, "SETTINGS_OVERRIDE__ALLOWED_KEYS"
         )
+
+    @pytest.mark.parametrize("raw", ["PT0S", "-PT5S"])
+    def test_rejects_non_positive_refresh_interval_from_env(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str
+    ) -> None:
+        """Assert a zero or negative interval fails the settings load.
+
+        ``start_refresh_task`` sleeps for the configured interval between
+        cycles, so a non-positive value would spin against the database.
+        """
+        monkeypatch.setenv("SETTINGS_OVERRIDE__REFRESH_INTERVAL", raw)
+        with pytest.raises(ValidationError, match="greater than 0"):
+            Settings()
+
+    @pytest.mark.parametrize("raw", [0, -5])
+    def test_rejects_non_positive_refresh_interval_as_seconds(self, raw: int) -> None:
+        """Assert the bound also holds for the integer-seconds form YAML yields."""
+        with pytest.raises(ValidationError, match="greater than 0"):
+            SettingsOverrideOptions(REFRESH_INTERVAL=raw)
+
+    def test_accepts_positive_refresh_interval_from_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert a positive interval loads unchanged."""
+        monkeypatch.setenv("SETTINGS_OVERRIDE__REFRESH_INTERVAL", "PT45S")
+        assert timedelta(seconds=45) == Settings().SETTINGS_OVERRIDE.REFRESH_INTERVAL
 
     def test_parses_json_array_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Assert a bare env var carrying a JSON array reaches the field as a set."""

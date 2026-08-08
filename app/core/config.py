@@ -391,7 +391,10 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
     ``not_overridable_field`` marker, which is why that marker is kept.
 
     :param REFRESH_INTERVAL: How often each service refreshes its DB-backed
-        setting overrides. Defaults to 30 seconds.
+        setting overrides. Defaults to 30 seconds, and must be strictly
+        positive: ``start_refresh_task()`` hands ``interval.total_seconds()``
+        straight to ``asyncio.sleep()``, so a non-positive value would turn the
+        refresher into a tight loop that hammers the database every iteration.
     :param REFRESHER_ENABLED: Master kill-switch for the DB-override
         background refresher. Tests set this to ``False`` to keep
         ``TestClient`` lifespans hermetic; production leaves it ``True``.
@@ -407,28 +410,68 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
         such an entry reads correct but matches nothing.
     """
 
-    REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
+    REFRESH_INTERVAL: Annotated[TimedeltaSeconds, Field(gt=timedelta(0))] = timedelta(
+        seconds=30
+    )
     REFRESHER_ENABLED: bool = True
     ALLOWED_KEYS: set[SettingsOverrideKey] | None = not_overridable_field(None)
 
-    @field_validator("REFRESH_INTERVAL")
-    @classmethod
-    def _refresh_interval_positive(cls, value: timedelta) -> timedelta:
-        """Reject zero or negative refresh intervals.
 
-        ``start_refresh_task()`` passes ``interval.total_seconds()`` directly
-        to ``asyncio.sleep()``. A non-positive interval would turn the
-        refresher into a tight loop that hammers the DB every iteration.
+_REMOVED_SETTINGS_OVERRIDE_KEYS = {
+    "SETTINGS_OVERRIDE_REFRESH_INTERVAL": "SETTINGS_OVERRIDE__REFRESH_INTERVAL",
+    "SETTINGS_OVERRIDE_REFRESHER_ENABLED": "SETTINGS_OVERRIDE__REFRESHER_ENABLED",
+    "SETTINGS_OVERRIDE_ALLOWED_KEYS": "SETTINGS_OVERRIDE__ALLOWED_KEYS",
+}
+"""Map each removed flat settings-override key to its nested replacement."""
 
-        :param value: The configured refresh interval.
-        :return: The validated interval.
-        :raises ValueError: If ``value`` is not strictly positive.
-        """
-        if value.total_seconds() <= 0:
-            raise ValueError(
-                "SETTINGS_OVERRIDE__REFRESH_INTERVAL must be a positive duration"
-            )
-        return value
+
+class _LegacySettingsOverrideSettings(BaseYamlSettings):
+    """Define the reader for the removed flat settings-override keys.
+
+    Each field is typed :data:`~typing.Any` because only presence is inspected;
+    a stale value is reported, never parsed.
+
+    :param SETTINGS_OVERRIDE_REFRESH_INTERVAL: The removed key's value, or
+        ``None`` when unset.
+    :param SETTINGS_OVERRIDE_REFRESHER_ENABLED: The removed key's value, or
+        ``None`` when unset.
+    :param SETTINGS_OVERRIDE_ALLOWED_KEYS: The removed key's value, or ``None``
+        when unset.
+    """
+
+    SETTINGS_OVERRIDE_REFRESH_INTERVAL: Any = None
+    SETTINGS_OVERRIDE_REFRESHER_ENABLED: Any = None
+    SETTINGS_OVERRIDE_ALLOWED_KEYS: Any = None
+
+
+def detect_removed_settings_override_keys() -> None:
+    """Reject a deployment still configuring the flat settings-override keys.
+
+    ``Settings`` sets ``extra="ignore"``, so a flat key left in the environment
+    or in a YAML profile is dropped without a word and the nested field falls
+    back to its default. For ``ALLOWED_KEYS`` that default is ``None``, which
+    lifts the override-API restriction entirely, so a deployment that migrates
+    its image without re-spelling the key would widen what the settings API
+    accepts. Fail fast on any of the three instead.
+
+    :raises ValueError: When any removed flat key is still configured.
+    """
+    legacy = _LegacySettingsOverrideSettings()
+    stale = sorted(
+        (old, new)
+        for old, new in _REMOVED_SETTINGS_OVERRIDE_KEYS.items()
+        if getattr(legacy, old) is not None
+    )
+    if not stale:
+        return
+    spellings = ", ".join(f"{old} is now {new}" for old, new in stale)
+    raise ValueError(
+        f"Settings-override keys moved into the nested SETTINGS_OVERRIDE block "
+        f"and are no longer read: {spellings}. Re-spell them in the "
+        f"environment, or nest them under a SETTINGS_OVERRIDE: block in the "
+        f"YAML profile. Leaving SETTINGS_OVERRIDE_ALLOWED_KEYS unmigrated lifts "
+        f"the override-API restriction entirely."
+    )
 
 
 class Settings(BaseYamlSettings):
