@@ -420,9 +420,7 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
         refresher into a tight loop that hammers the DB every iteration.
 
         :param value: The configured refresh interval.
-        :type value: timedelta
         :return: The validated interval.
-        :rtype: timedelta
         :raises ValueError: If ``value`` is not strictly positive.
         """
         if value.total_seconds() <= 0:
