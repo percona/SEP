@@ -918,7 +918,7 @@ def test_env_var_beats_secret_file_for_the_yaml_profile(tmp_path, monkeypatch):
 
 
 class TestRemovedSettingsOverrideKeysDetector:
-    """Test the startup detector for the removed flat settings-override keys."""
+    """Cover the startup detector for the removed flat settings-override keys."""
 
     @staticmethod
     def _profile(tmp_path, body: str) -> None:

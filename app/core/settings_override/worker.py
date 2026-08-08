@@ -103,8 +103,8 @@ class WorkerRefresher:
             the default, reads
             ``Settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL``.
         :param enabled: Whether to start a refresher at all. When ``False``
-            nothing is resolved -- neither the proxy registry nor the session
-            maker -- and no task is created. ``None``, the default, reads
+            nothing is resolved (neither the proxy registry nor the session
+            maker) and no task is created. ``None``, the default, reads
             ``Settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED``.
         :param callbacks: Optional rebind callbacks fired by the periodic loop
             when a watched override changes value.

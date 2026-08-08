@@ -318,7 +318,7 @@ async def start_refresh_task(
 def resolve_refresher_options(
     interval: timedelta | None, *, enabled: bool | None
 ) -> tuple[timedelta, bool]:
-    """Fill in whichever refresher options the caller left unset.
+    """Return the refresher options, reading settings for whichever is unset.
 
     ``Settings.SETTINGS_OVERRIDE`` configures the refresher for all three
     services, so every start-up site would otherwise repeat the same two reads
@@ -360,9 +360,7 @@ async def settings_override_refresher(
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``, forwarded to
         :func:`start_refresh_task`.
-    :type session_maker_factory: SessionMakerFactory
     :param proxies: The wired proxy registry keyed by class identifier.
-    :type proxies: ProxyRegistry
     :param interval: The wall-clock delay between refresh cycles. ``None``, the
         default, reads ``Settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL``.
     :param enabled: Whether to start the background refresher. When ``False``,
@@ -371,7 +369,7 @@ async def settings_override_refresher(
     :param callbacks: Optional rebind callbacks forwarded to
         :func:`start_refresh_task`, fired by the periodic loop when a watched
         override changes value.
-    :yield: None
+    :return: None
     """
     interval, enabled = resolve_refresher_options(interval, enabled=enabled)
     refresher: asyncio.Task | None = None
