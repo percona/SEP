@@ -161,7 +161,7 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
         latter still starts the periodic task.
     """
     anonymizer_settings._resolve()  # noqa: SLF001
-_refresher.start(
+    _refresher.start(
         settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL,
         enabled=settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED,
         proc_alive_timeout=celery.conf.worker_proc_alive_timeout,
