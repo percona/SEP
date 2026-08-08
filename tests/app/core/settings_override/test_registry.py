@@ -35,9 +35,11 @@ from app.core.settings_override.registry import (
     is_explicit_not_overridable,
     is_hot_reloadable,
     iter_class_fields,
+    materialize_override_value,
     materialize_template,
     materialize_via_owning_model,
     MaterializerContext,
+    MaterializerPurpose,
     nested_overridable_field_names,
     preserve_patch_credential_url_value,
     ReloadClassification,
@@ -119,6 +121,60 @@ def test_materialize_template_rejects_non_string() -> None:
     """Reject a non-string, non-``Template`` override instead of passing it through."""
     with pytest.raises(ValueError, match="must be a string"):
         materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
+
+
+def _purpose_probe(seen: list[MaterializerPurpose]) -> type[BaseModel]:
+    """Build a probe class whose materializer records the purpose it ran for.
+
+    :param seen: The list each invocation appends its purpose to.
+    :return: A model class with one HOT, materializer-backed field.
+    """
+
+    def _record(ctx: MaterializerContext) -> object:
+        """Record ``ctx.purpose`` and echo the raw value back unchanged."""
+        seen.append(ctx.purpose)
+        return ctx.raw
+
+    class _Probe(BaseModel):
+        """Represent a model whose HOT field records how it was materialized."""
+
+        value: str = hot_field("", materializer=_record)
+
+    return _Probe
+
+
+class TestMaterializerPurpose:
+    """Cover the channel telling a materializer a stored row from a new payload."""
+
+    def test_a_context_defaults_to_validating_a_submitted_payload(self) -> None:
+        """Default to the strict purpose, so an unaware caller keeps write semantics."""
+        context = _ctx(SEPSettings, "FOOTER_TEMPLATE", "$summary")
+
+        assert context.purpose is MaterializerPurpose.VALIDATE
+
+    def test_materialize_override_value_defaults_to_validating(self) -> None:
+        """Hand the strict purpose down when the caller names none."""
+        seen: list[MaterializerPurpose] = []
+        probe = _purpose_probe(seen)
+
+        materialize_override_value(probe, "value", probe.model_fields["value"], "x")
+
+        assert seen == [MaterializerPurpose.VALIDATE]
+
+    def test_materialize_override_value_forwards_an_explicit_purpose(self) -> None:
+        """Let the snapshot builder announce that the value is a stored row."""
+        seen: list[MaterializerPurpose] = []
+        probe = _purpose_probe(seen)
+
+        materialize_override_value(
+            probe,
+            "value",
+            probe.model_fields["value"],
+            "x",
+            purpose=MaterializerPurpose.SNAPSHOT,
+        )
+
+        assert seen == [MaterializerPurpose.SNAPSHOT]
 
 
 def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
