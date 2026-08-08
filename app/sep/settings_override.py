@@ -187,8 +187,8 @@ def start_sep_settings_override_refresher(**_: Any) -> None:
     """
     messages_settings._resolve()  # noqa: SLF001
     _refresher.start(
-        settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-        enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+        settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL,
+        enabled=settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED,
         callbacks=WORKER_OVERRIDE_CALLBACKS,
         proc_alive_timeout=celery.conf.worker_proc_alive_timeout,
     )
