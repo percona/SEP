@@ -649,17 +649,15 @@ class DeliveryPlanInputs(BaseModel):
 def materialize_delivery_plan_inputs(ctx: MaterializerContext) -> Any:
     """Bind submitted delivery-plan inputs against the baked plan skeleton.
 
-    ``DeliveryPlan``'s cross-reference validator accepts *extra* secret names --
-    it only checks that every cited name is declared, never the converse -- so an
-    undeclared key would persist and then be silently ignored at send time. This
-    runs at both enforcement points the override module provides, and is the only
-    place a candidate payload is seen before it is stored.
+    ``DeliveryPlan``'s cross-reference validator only checks that every cited
+    secret name is declared, never the converse, so an extra name would persist
+    and then be silently ignored at send time.
 
     The name check applies to a payload submitted now
     (:attr:`~app.core.settings_override.MaterializerPurpose.VALIDATE`) and not to
     a row stored earlier. A row written against a skeleton an image upgrade has
-    since changed is a deployment condition the operator has to be told about, and
-    raising here would only drop the row from the snapshot, leaving
+    since changed is a condition the operator has to be told about, and raising
+    here would only drop the row from the snapshot, leaving
     :func:`~app.sep.bundle_upload.resolver.resolve_delivery_plan` unable to tell
     drift from a deployment that never configured delivery. Shape coercion stays
     strict on both paths, so a malformed row is still dropped.
