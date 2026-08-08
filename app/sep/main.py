@@ -290,8 +290,6 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with settings_override_refresher(
         get_async_session_maker,
         build_sep_override_proxies(),
-        settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL,
-        enabled=settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED,
         callbacks=callbacks,
     ):
         yield

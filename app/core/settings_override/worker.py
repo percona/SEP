@@ -23,7 +23,10 @@ import asyncio
 from contextlib import suppress
 from typing import TYPE_CHECKING
 
-from app.core.settings_override.lifecycle import start_refresh_task
+from app.core.settings_override.lifecycle import (
+    resolve_refresher_options,
+    start_refresh_task,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -79,9 +82,9 @@ class WorkerRefresher:
 
     def start(
         self,
-        interval: timedelta,
+        interval: timedelta | None = None,
         *,
-        enabled: bool,
+        enabled: bool | None = None,
         callbacks: CallbackRegistry | None = None,
         proc_alive_timeout: float | None = None,
     ) -> None:
@@ -96,10 +99,13 @@ class WorkerRefresher:
         cannot push the child past the prefork pool's liveness window. The
         safety factor is applied here so both call sites stay identical.
 
-        :param interval: The wall-clock delay between refresh cycles.
+        :param interval: The wall-clock delay between refresh cycles. ``None``,
+            the default, reads
+            ``Settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL``.
         :param enabled: Whether to start a refresher at all. When ``False``
             nothing is resolved -- neither the proxy registry nor the session
-            maker -- and no task is created.
+            maker -- and no task is created. ``None``, the default, reads
+            ``Settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED``.
         :param callbacks: Optional rebind callbacks fired by the periodic loop
             when a watched override changes value.
         :param proc_alive_timeout: The prefork pool's child-liveness deadline
@@ -113,6 +119,7 @@ class WorkerRefresher:
             expiry is caught inside :func:`start_refresh_task` and does not
             propagate; the periodic refresher still starts.
         """
+        interval, enabled = resolve_refresher_options(interval, enabled=enabled)
         if not enabled:
             return
         if self.task is not None and not self.task.done():
