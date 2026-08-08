@@ -427,7 +427,7 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
         """
         if value.total_seconds() <= 0:
             raise ValueError(
-                "SETTINGS_OVERRIDE.REFRESH_INTERVAL must be a positive duration"
+                "SETTINGS_OVERRIDE__REFRESH_INTERVAL must be a positive duration"
             )
         return value
 
