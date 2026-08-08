@@ -22,11 +22,6 @@ pipeline {
 				'3.11'
 			]
 		)
-		booleanParam(
-			name: 'notifySlack',
-			defaultValue: false,
-			description: 'Send notifications to Slack'
-		)
 	}
 
 	options {
@@ -37,8 +32,6 @@ pipeline {
 	environment {
 		BUILD_OPTIONS = ''
 		CMD = "${defaultCmd}"
-
-		NOTIFY_SLACK = "${notifySlack}"
 
 		POETRY_VIRTUALENVS_IN_PROJECT = "true"
 		PYTHON = "python${pyVersion}"

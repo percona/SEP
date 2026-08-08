@@ -334,3 +334,77 @@ class TestBackupSourceChoicesRoute:
         """Reject an unauthenticated caller."""
         response = unauthenticated_client.get(_URL, params={"service_id": 1})
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @pytest.mark.asyncio
+    async def test_renamed_service_keeps_its_backups_selectable(
+        self, session, regular_user
+    ) -> None:
+        """Keep earlier backups in the selector after the service was renamed.
+
+        The user-visible half of the defect: a rename — in SEP or propagated from
+        PMM by inventory sync — silently emptied the restore form's existing-backup
+        list, so every earlier backup vanished from the picker.
+        """
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="old-name",
+                service_id=1,
+                backup_type="M",
+                location="/data/mydumper/old-name",
+            ),
+        )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("new-name")), regular_user
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["value"] for item in response.json()] == [
+            "/data/mydumper/old-name"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_custom_service_name_lists_rows_recorded_with_an_id(
+        self, session, regular_user
+    ) -> None:
+        """List id-carrying rows for a free-typed parent matching their name.
+
+        A free-typed destination resolves to no inventory row, so the name is the
+        only key available and every row recorded under it is a candidate — with an
+        id or without. Still no Inventory call and no type check on this branch.
+        """
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="custom-svc",
+                service_id=1,
+                backup_type="M",
+                location="/custom-with-id",
+            ),
+        )
+        inventory = inventory_mock()
+
+        response = await self._get(session, "custom-svc", inventory, regular_user)
+
+        assert [item["value"] for item in response.json()] == ["/custom-with-id"]
+        inventory.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unicode_digit_parent_returns_empty_list_not_an_error(
+        self, session, regular_user
+    ) -> None:
+        """Answer ``[]`` for an ``int``-unparsable unicode digit, never a 500.
+
+        A superscript digit passes ``str.isdigit`` but not ``int``, so a numeric
+        gate on the former raises out of the dependency and breaks the very options
+        fetch the free-text escape hatch is meant to keep harmless.
+        """
+        response = await self._get(
+            session, "\N{SUPERSCRIPT TWO}", inventory_mock(), regular_user
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []

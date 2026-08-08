@@ -1304,27 +1304,6 @@
         "title": "SnippetServiceTypesResponse",
         "type": "object"
       },
-      "SnippetSortDirection": {
-        "description": "Enumerate the sort direction.\n\n:cvar ASC: Ascending order.\n:cvar DESC: Descending order.",
-        "enum": [
-          "asc",
-          "desc"
-        ],
-        "title": "SnippetSortDirection",
-        "type": "string"
-      },
-      "SnippetSortKey": {
-        "description": "Enumerate the allowlisted public sort keys.\n\nMembership is the type: an out-of-allowlist key fails to coerce at the\nrequest boundary, so no raw client-supplied column name can reach a query.\n\n:cvar CREATED_AT: Sort by the ``created_at`` column.\n:cvar FILENAME: Sort by the ``filename`` column.\n:cvar APPROVED_AT: Sort by the ``approved_at`` column.\n:cvar TITLE: Sort by the ``meta.title`` JSON value.\n:cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.",
-        "enum": [
-          "created_at",
-          "filename",
-          "approved_at",
-          "title",
-          "service_type"
-        ],
-        "title": "SnippetSortKey",
-        "type": "string"
-      },
       "SnippetsCapabilitiesResponse": {
         "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.apps.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
         "properties": {
@@ -10773,7 +10752,7 @@
         "type": "object"
       },
       "mysql_backups__BackupRunResponse": {
-        "description": "Expose one catalog record over the per-service query path.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.",
+        "description": "Expose one catalog record over the per-service query path.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param service_id: The inventory id of that service, or ``None`` on a record\n    written before the id was stamped.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.",
         "properties": {
           "backup_type": {
             "enum": [
@@ -10820,6 +10799,17 @@
               }
             ],
             "title": "Location"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
           },
           "service_name": {
             "anyOf": [
@@ -10870,6 +10860,7 @@
         "required": [
           "id",
           "service_name",
+          "service_id",
           "hostname",
           "backup_type",
           "location",
@@ -17857,11 +17848,11 @@
     },
     "/api/apps/mysql_backups/backup-sources/choices": {
       "get": {
-        "description": "Return ``Choice`` options for a MySQL service's restore ``backup_source``.\n\nThe ``service_id`` query parameter (cascade parent name on the restore form)\nselects which catalog rows to map. Options are newest-first and capped at\n:data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain\nreachable via free-text). An omitted, empty, sentinel, or unknown parent\nyields ``[]`` rather than a ``404``, so the RemoteChoices free-text escape\nhatch stays usable. Other Inventory API failures still propagate.\n\nFree-typed (non-numeric) parents query the catalog by that name without an\nInventory type check — matching ``ServiceRef(allow_custom=True)`` on the\nrestore form, where the destination may be a name that has no MySQL\ninventory row. Numeric parents still require a resolvable MySQL service.\n\n:param session: The database session the catalog is queried on.\n:param service_name: The cascade parent resolved to a catalog service name,\n    or ``None`` when the parent is unusable.\n:return: Choice-compatible options for the restore backup-source selector.",
+        "description": "Return ``Choice`` options for a MySQL service's restore ``backup_source``.\n\nThe ``service_id`` query parameter (cascade parent name on the restore form)\nselects which catalog rows to map. Options are newest-first and capped at\n:data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain\nreachable via free-text). An omitted, empty, sentinel, or unknown parent\nyields ``[]`` rather than a ``404``, so the RemoteChoices free-text escape\nhatch stays usable. Other Inventory API failures still propagate.\n\nFree-typed (non-numeric) parents query the catalog by that name without an\nInventory type check — matching ``ServiceRef(allow_custom=True)`` on the\nrestore form, where the destination may be a name that has no MySQL\ninventory row. Numeric parents still require a resolvable MySQL service, and\nare keyed on its inventory id so a rename does not empty the selector.\n\n:param session: The database session the catalog is queried on.\n:param service_key: The cascade parent resolved to the catalog query keys, or\n    ``None`` when the parent is unusable.\n:return: Choice-compatible options for the restore backup-source selector.",
         "operationId": "mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get",
         "parameters": [
           {
-            "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
+            "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service, keying the catalog query on its id; custom names query the catalog by name directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
             "in": "query",
             "name": "service_id",
             "required": false,
@@ -17874,7 +17865,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
+              "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service, keying the catalog query on its id; custom names query the catalog by name directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
               "title": "Service Id"
             }
           }
@@ -18246,7 +18237,7 @@
     },
     "/api/apps/mysql_backups/services/{service_id}/backups": {
       "get": {
-        "description": "Return a page of a MySQL service's completed backup runs, newest run first.\n\nThe ``service_id`` path parameter is resolved by\n:data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an\nunknown service surface as a ``404``. A resolvable service with no recorded\nruns yields an empty page, so a caller building a restore selector is never\nblocked by an empty catalog but is still told when the service itself is\nunknown.\n\n:param service: The inventory service resolved from the ``service_id`` path\n    parameter.\n:param session: The database session the catalog is queried on.\n:param pagination: The requested offset/limit window.\n:return: The requested page of the service's recorded backup runs, newest\n    run first.",
+        "description": "Return a page of a MySQL service's completed backup runs, newest run first.\n\nThe ``service_id`` path parameter is resolved by\n:data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an\nunknown service surface as a ``404``. A resolvable service with no recorded\nruns yields an empty page, so a caller building a restore selector is never\nblocked by an empty catalog but is still told when the service itself is\nunknown.\n\nThe query is keyed on the resolved service's inventory id, so a rename between\nrecording a run and asking for it cannot detach the rows; runs recorded before\nthe id was stored are still matched by the name they were written with.\n\n:param service: The inventory service resolved from the ``service_id`` path\n    parameter.\n:param session: The database session the catalog is queried on.\n:param pagination: The requested offset/limit window.\n:return: The requested page of the service's recorded backup runs, newest\n    run first.",
         "operationId": "mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get",
         "parameters": [
           {
@@ -18822,7 +18813,7 @@
     },
     "/api/apps/snippets/": {
       "get": {
-        "description": "List scripts as a server-filtered, sorted, paginated projection.",
+        "description": "List scripts as a filtered, sorted, paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
         "parameters": [
           {
@@ -18846,46 +18837,6 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Case-insensitive search over filename, title, description.",
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Case-insensitive search over filename, title, description.",
-              "title": "Search"
-            }
-          },
-          {
-            "description": "Sort key; one of the allowlisted public sort keys.",
-            "in": "query",
-            "name": "sort",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortKey",
-              "default": "created_at",
-              "description": "Sort key; one of the allowlisted public sort keys."
-            }
-          },
-          {
-            "description": "Sort direction.",
-            "in": "query",
-            "name": "order",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortDirection",
-              "default": "desc",
-              "description": "Sort direction."
             }
           },
           {
@@ -18927,6 +18878,48 @@
               "description": "When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'.",
               "title": "Uncategorized",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Sort key; prefix with '-' for descending order.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-approved_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "approved_at",
+                "-approved_at",
+                "created_at",
+                "-created_at",
+                "filename",
+                "-filename",
+                "service_type",
+                "-service_type",
+                "title",
+                "-title"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Case-insensitive search across the searchable columns.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive search across the searchable columns.",
+              "title": "Search"
             }
           }
         ],

@@ -133,9 +133,19 @@ async def maybe_record_run(task_history_id: int, executor: BaseExecutor) -> None
     Best-effort: no-op when the history is missing, not terminal, or declares no
     recorder; and any failure (unresolvable path, unexpected executor error,
     recorder raising, DB error) is logged and swallowed so recording can never
-    fail the task-history sync.
+    fail the caller.
 
-    :param task_history_id: The id of the just-synced ``TaskHistory``.
+    Observation contract — coverage follows the entry point driving the
+    transition, not the status reached. Observed:
+    :func:`app.tasks.celery.sync_queue_item`, ``POST /history/{id}/sync/``, and
+    :func:`app.tasks.celery.dispatch_queue_item` for a backend whose dispatch
+    returns already-terminal (the Celery backend runs its callable inline). Not
+    observed, each pinned by a test: a run stopped via the stop route, one
+    failed before dispatch, and one the connectivity probe drives to terminal in
+    its own poll loop — the first two have no result to read by construction,
+    and the probe parses its own verdict.
+
+    :param task_history_id: The id of the just-terminal ``TaskHistory``.
     :param executor: The executor that ran the task, used to read its result.
     """
     recorder_path: str | None = None

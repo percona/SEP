@@ -107,6 +107,9 @@ __pypackages__/
 celerybeat-schedule
 celerybeat.pid
 
+# Mutation testing
+mutants/
+
 # Environments
 .env*
 .venv

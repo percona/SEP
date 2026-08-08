@@ -28,11 +28,6 @@ pipeline {
 			]
 		)
 		booleanParam(
-			name: 'notifySlack',
-			defaultValue: true,
-			description: 'Send notifications to Slack'
-		)
-		booleanParam(
 			name: 'pushImage',
 			defaultValue: true,
 			description: 'Push the image to the registry'
@@ -91,7 +86,6 @@ pipeline {
 				build job: 'SEP/CI', parameters: [
 					[$class: 'StringParameterValue', name: 'releaseTag', value: "${env.GIT_COMMIT_SHA}"],
 					[$class: 'StringParameterValue', name: 'pyVersion', value: "${PYTHON_VERSION}"],
-					[$class: 'BooleanParameterValue', name: 'notifySlack', value: Boolean.valueOf("${params.notifySlack}")],
 					[$class: 'BooleanParameterValue', name: 'pushImage', value: Boolean.valueOf("${params.pushImage}")],
 					[$class: 'BooleanParameterValue', name: 'pushImageDocker', value: Boolean.valueOf("${params.pushImageDocker}")]
 				], propagate: true, wait: true

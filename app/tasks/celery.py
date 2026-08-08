@@ -694,10 +694,13 @@ async def _dispatch_queue_item(
             await await_annotation(result, "STARTED")
         else:
             schedule_annotation(result, "STARTED")
-        return result
     finally:
         async with lock_session_maker() as async_session:
             await DispatchLockManager.delete(async_session, dispatch_lock)
+
+    if result.status.is_terminal():
+        await maybe_record_run(result.id, executor)
+    return result
 
 
 async def _raise_if_identical_task_conflict(

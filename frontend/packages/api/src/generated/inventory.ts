@@ -1751,7 +1751,9 @@ export interface operations {
         node_type?: string | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -1914,7 +1916,9 @@ export interface operations {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2051,7 +2055,9 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2180,7 +2186,9 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2252,7 +2260,9 @@ export interface operations {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2382,7 +2392,9 @@ export interface operations {
         include_tables?: string | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2541,7 +2553,9 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
