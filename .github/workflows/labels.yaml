@@ -18,20 +18,14 @@ jobs:
       issues: write
     runs-on: ubuntu-latest
     steps:
-      # sync-labels: true removes an app:/svc: label once a force-push means its
-      # paths no longer match. Labeler only manages labels defined in its config,
-      # so the app-isolated/large-diff labels below are left untouched here.
       - uses: actions/labeler@f27b608878404679385c85cfa523b85ccb86e213 # v6.1.0
         with:
           sync-labels: true
-      # large-diff and app-isolated cannot be expressed by actions/labeler: one
-      # counts lines, the other is an "all files in one app slice" predicate.
-      # Logic lives in scripts/compute_blast_radius_labels.py; checkout the
-      # base branch only so PR-head code is never executed in this workflow.
       - name: Checkout base branch tooling
         if: github.event_name == 'pull_request_target'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          # pull_request_target is privileged; only execute tooling from the trusted base.
           ref: ${{ github.event.pull_request.base.sha }}
           sparse-checkout: |
             .github
