@@ -155,8 +155,8 @@ class MaterializerPurpose(StrEnum):
     """Name why a materializer is running, so read and write may diverge.
 
     A materializer that cross-checks its payload against state the deployment
-    holds elsewhere needs both verdicts. Rejecting a payload submitted *now*
-    against state it does not match is a client error. A row stored *earlier*
+    holds elsewhere needs both verdicts. Rejecting a payload submitted now
+    against state it does not match is a client error. A row stored earlier
     against state that has since changed is a deployment condition the operator
     has to be told about, and raising there only drops the row and erases the
     evidence.

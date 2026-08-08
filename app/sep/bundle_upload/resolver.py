@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 #: delivery.
 UNCONFIGURED_REASON = "Diagnostics delivery is not configured"
 
-#: Reported when delivery *was* configured and the inputs have since stopped
+#: Reported when delivery was configured and the inputs have since stopped
 #: fitting the plan, which an image upgrade renaming a declared secret produces.
 #: The operator has to re-supply the inputs, so this may not read as the
 #: never-configured state. It names no secret: those are the receiver's own
@@ -158,12 +158,12 @@ def resolve_delivery_plan() -> DeliveryPlanResolution:
     inputs = sep_settings.DIAGNOSTICS_DELIVERY_INPUTS
     secrets = dict(skeleton.secrets)
     if inputs is not None:
-        if undeclared := sorted(set(inputs.secrets) - set(skeleton.secrets)):
+        if undeclared := set(inputs.secrets) - set(skeleton.secrets):
             logger.warning(
                 "Diagnostics delivery inputs name secret(s) %s, which this "
                 "deployment's plan does not declare; treating the stored inputs "
                 "as drifted.",
-                ", ".join(undeclared),
+                ", ".join(sorted(undeclared)),
             )
             return DeliveryPlanResolution.unavailable(DRIFTED_INPUTS_REASON)
         secrets.update(inputs.secrets)

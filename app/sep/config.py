@@ -655,9 +655,9 @@ def materialize_delivery_plan_inputs(ctx: MaterializerContext) -> Any:
     runs at both enforcement points the override module provides, and is the only
     place a candidate payload is seen before it is stored.
 
-    The name check applies to a payload submitted *now*
+    The name check applies to a payload submitted now
     (:attr:`~app.core.settings_override.MaterializerPurpose.VALIDATE`) and not to
-    a row stored *earlier*. A row written against a skeleton an image upgrade has
+    a row stored earlier. A row written against a skeleton an image upgrade has
     since changed is a deployment condition the operator has to be told about, and
     raising here would only drop the row from the snapshot, leaving
     :func:`~app.sep.bundle_upload.resolver.resolve_delivery_plan` unable to tell
