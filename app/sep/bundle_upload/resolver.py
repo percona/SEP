@@ -133,6 +133,17 @@ def resolve_delivery_plan() -> DeliveryPlanResolution:
     :func:`~app.sep.config.materialize_delivery_plan_inputs`), and a YAML- or
     environment-set value never passed a name check at all.
 
+    The check is deliberately one-directional, and so deliberately narrower than
+    the exact-match rule :func:`~app.sep.config.materialize_delivery_plan_inputs`
+    enforces on write. An undeclared name is a dangling reference: nothing reads
+    the value, and only re-supplying the inputs clears it. A declared name the
+    inputs omit is not, because the merge below falls back to the skeleton's own
+    value — which either delivers or reports itself empty, and both of those are
+    already the right answer for an operator who has one more secret to supply.
+    Write-time is stricter for a reason of its own: a whole-object PATCH that
+    silently left some secrets on baked values would surprise whoever submitted
+    it, not because a partial stored row is unreadable.
+
     Check order carries meaning. A deployment with no baked plan is
     unconfigured, never drifted — there is nothing to have drifted from. Drift
     is then decided before the empty-value check, because a rename produces both

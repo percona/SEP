@@ -340,6 +340,29 @@ class TestDriftedInputs:
 
         assert resolve_delivery_plan().reason == UNCONFIGURED_REASON
 
+    def test_a_secret_a_later_plan_added_is_not_drift(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Route an upgrade that adds a declared secret to the unconfigured text.
+
+        Every name the stored inputs carry is still declared; the plan simply
+        declares one more, and supplying it is the remedy the unconfigured text
+        already asks for. A rename is the case that needs its own reason,
+        because it strands the stored credentials under names nothing reads.
+        """
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY",
+            _plan({"sn_api_key": "", "case_token": ""}),
+        )
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
+        )
+
+        assert resolve_delivery_plan().reason == UNCONFIGURED_REASON
+
     def test_a_case_variant_of_a_declared_name_is_drift(
         self, mocker: MockerFixture
     ) -> None:
