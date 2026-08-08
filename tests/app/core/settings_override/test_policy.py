@@ -55,7 +55,7 @@ from app.sep.middleware.messages.config import MessagesSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
-from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE
+from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE, read_allowlist
 
 #: Every settings class reachable from the settings router, keyed by the enum
 #: member whose value is the class ``__name__``.
@@ -97,9 +97,7 @@ def shipped_allowed_keys() -> list[str]:
     :return: The entries the embedded profile declares.
     """
     profile = yaml.safe_load(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
-    entries = profile["default"]
-    for segment in ALLOWLIST_KEY:
-        entries = entries.get(segment) if isinstance(entries, dict) else None
+    entries = read_allowlist(profile)
     if not isinstance(entries, list):
         pytest.fail(
             f"{'.'.join(ALLOWLIST_KEY)} is not a list in {EMBEDDED_PROFILE}: {entries!r}"

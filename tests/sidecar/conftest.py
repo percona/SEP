@@ -15,6 +15,7 @@
 """Shared fixtures for the side-car image's baked configuration."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -31,6 +32,20 @@ ALLOWLIST_KEY = ("SETTINGS_OVERRIDE", "ALLOWED_KEYS")
 Read from the profile by both the side-car resolution test and the policy
 suite's shipped-value guard, which must agree on where the list lives.
 """
+
+
+def read_allowlist(profile_data: dict) -> Any:
+    """Walk ``ALLOWLIST_KEY`` in a parsed profile and return what sits there.
+
+    :param profile_data: The parsed ``settings.embedded.yaml`` mapping.
+    :return: The value at the nested path, or ``None`` when any segment is
+        missing or the path runs into a non-mapping.
+    """
+    entries = profile_data["default"]
+    for segment in ALLOWLIST_KEY:
+        entries = entries.get(segment) if isinstance(entries, dict) else None
+    return entries
+
 
 SUITE_ENV_OVERRIDES = (
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID",
