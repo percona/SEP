@@ -485,6 +485,8 @@ class _SEPDatabaseSettings(BaseYamlSettings):
     forcing the SEP proxy re-enters the global proxy that is still resolving. This
     reads the same ``SEP__DATABASE__*`` sources without either proxy.
 
+    :cvar SETTINGS_PREFIXES: The prefix the probe resolves its environment and YAML
+        sources under. Set to ["SEP"].
     :param DATABASE: The SEP service's database connection options.
     """
 
@@ -495,12 +497,11 @@ class _SEPDatabaseSettings(BaseYamlSettings):
 class BeatStoreDefaultSource(PydanticBaseSettingsSource):
     """Supply the celery-beat store URI derived from the SEP database.
 
-    Ranked last, so an explicit ``CELERY__BEAT_DBURI`` from any real source —
-    init kwarg, environment, dotenv, secret file, or YAML profile — outranks it
-    without this source having to detect that it was set. The value is contributed
-    as source data rather than assigned after construction, so ``CeleryOptions``'
-    own validators still normalize the driver and null ``beat_schema`` for a
-    SQLite store.
+    Ranked last, and skipped entirely once a real source — init kwarg, environment,
+    dotenv, secret file, or YAML profile — supplies ``CELERY__BEAT_DBURI``. The
+    value is contributed as source data rather than assigned after construction, so
+    ``CeleryOptions``' own validators still normalize the driver and null
+    ``beat_schema`` for a SQLite store.
 
     :param settings_cls: The settings class being configured.
     :param dotenv_settings: The dotenv source, for the ``_env_file`` the caller
@@ -530,13 +531,28 @@ class BeatStoreDefaultSource(PydanticBaseSettingsSource):
         raise NotImplementedError
 
     def __call__(self) -> dict[str, Any]:
-        """Return the derived beat-store URI as settings input.
+        """Return the derived beat-store URI, or nothing when a source supplied one.
 
-        :return: The ``CELERY.BEAT_DBURI`` default derived from SEP's database.
+        Rank alone would not settle this. ``deep_update`` merges the source payloads
+        case-sensitively and ``CeleryOptions`` folds the key cases afterwards, so
+        contributing ``BEAT_DBURI`` unconditionally would pin a same-cased
+        higher-priority value at this source's position and let a lower-priority one
+        written in the other case win the fold. ``current_state`` carries the
+        sources above this one already merged, so withholding the key whenever one
+        of them supplies it keeps the collision from arising at all.
+
+        :return: The ``CELERY.BEAT_DBURI`` default derived from SEP's database, or an
+            empty payload when a configured source already supplies the store.
         :raises ValidationError: When the resolved ``SEP__DATABASE__*`` values do
             not validate, so an unusable SEP database fails ``Settings``
-            construction instead of yielding a malformed store URI.
+            construction instead of yielding a malformed store URI. Only a
+            deployment that leaves the beat store to be derived is held to this.
         """
+        configured = self.current_state.get("CELERY")
+        if isinstance(configured, dict) and any(
+            key.lower() == "beat_dburi" for key in configured
+        ):
+            return {}
         database = _SEPDatabaseSettings(
             _env_file=self._env_file, _secrets_dir=self._secrets_dir
         ).DATABASE
