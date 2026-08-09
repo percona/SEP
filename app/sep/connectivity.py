@@ -15,15 +15,14 @@
 
 """Provide connectivity check helpers and an async LRU cache for task creation.
 
-These are the shared primitives — the memoized probe, the latest-result
-snapshot, and the task annotator. The request-facing wrapper that turns a probe
-into a ``ConnectivityWarning | None`` lives in
+These are the shared primitives — the memoized probe and the latest-result
+snapshot. The request-facing wrapper that turns a probe into a
+``ConnectivityWarning | None`` lives in
 :mod:`app.sep.apps.framework.connectivity`.
 """
 
 import logging
 from collections import OrderedDict
-from collections.abc import Iterable
 from typing import Any, cast, NamedTuple
 
 from aiohttp import ClientError
@@ -45,8 +44,6 @@ CACHE_MAXSIZE = 128
 CONNECTIVITY_META_HOST_KEY = "_connectivity_host"
 CONNECTIVITY_META_PORT_KEY = "_connectivity_port"
 CONNECTIVITY_META_SERVICE_TYPE_KEY = "_connectivity_service_type"
-CONNECTIVITY_TARGET_KEY = "_connectivity_target"
-CONNECTIVITY_WARNING_KEY = "_connectivity_warning"
 
 _LATEST_RESULTS: OrderedDict[tuple[str, str], bool] = OrderedDict()
 
@@ -70,11 +67,10 @@ def _record_latest_result(target: str, service_type: str, *, success: bool) -> N
     """Record the most recent connectivity outcome for sync UI annotations.
 
     Maintain a bounded LRU snapshot of the latest connectivity outcome per
-    ``(target, service_type)`` pair so the synchronous
-    ``annotate_tasks_with_connectivity`` can flag tasks without consulting
-    ``alru_cache`` (which exposes no public sync peek). The snapshot has no
-    TTL of its own; ``alru_cache`` remains the authoritative TTL store and
-    the snapshot is best-effort, refreshed each time
+    ``(target, service_type)`` pair so a synchronous caller can read it without
+    consulting ``alru_cache`` (which exposes no public sync peek). The snapshot
+    has no TTL of its own; ``alru_cache`` remains the authoritative TTL store
+    and the snapshot is best-effort, refreshed each time
     ``app.sep.apps.framework.connectivity.record_connectivity_warning`` runs.
 
     :param target: The Nomad node name.
@@ -176,28 +172,3 @@ async def _fetch_connectivity_result(
         return ConnectivityResult(
             success=False, error="Could not reach the Tasks API", task_history_id=None
         )
-
-
-def annotate_tasks_with_connectivity(tasks: Iterable[dict[str, Any]]) -> None:
-    """Add ``_connectivity_warning`` flag to tasks based on the latest results.
-
-    Support two task dict formats:
-
-    - Raw task dicts with ``data.meta`` containing ``target`` and
-      ``_connectivity_service_type``.
-    - Enriched ``task_info`` dicts with top-level ``_connectivity_target`` and
-      ``_connectivity_service_type`` keys.
-
-    :param tasks: The iterable of task dictionaries to annotate in-place.
-    """
-    for task in tasks:
-        target = task.get(CONNECTIVITY_TARGET_KEY)
-        service_type = task.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
-        if target is None or service_type is None:
-            meta = task.get("data", {}).get("meta", {})
-            target = meta.get("target")
-            service_type = meta.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
-        if target and service_type:
-            success = _LATEST_RESULTS.get((target, service_type))
-            if success is not None:
-                task[CONNECTIVITY_WARNING_KEY] = not success

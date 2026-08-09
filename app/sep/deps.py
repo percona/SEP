@@ -18,7 +18,6 @@
 import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from typing import Annotated, Any
-from zoneinfo import available_timezones
 
 import aiohttp
 from fastapi import Depends, HTTPException, Request
@@ -66,7 +65,6 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
-AVAILABLE_TIMEZONES = sorted(available_timezones())
 
 
 def get_base_url(request: Request) -> URL:
@@ -139,8 +137,12 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
     (reads and CORS preflights are unaffected). ``POST``, ``PUT``, ``PATCH``
     and ``DELETE`` require ``Authorization: Bearer ...``.
 
-    Intended to be attached at router level so every JSON mutation route
-    inherits the guard uniformly.
+    This is a backstop rather than the primary control: :func:`get_current_user`
+    already rejects a header-less request on every method, so wherever
+    ``IsApiAuthenticated`` is also attached this dependency cannot be the one
+    that rejects. It is kept at router level so that a route reachable without
+    that alias, or a future non-Bearer authentication path, still inherits the
+    guard uniformly.
 
     :param request: The incoming HTTP request.
     :raises HTTPUnauthorizedException: When the method is unsafe and the
@@ -773,26 +775,6 @@ async def get_executor_hosts(tasks_api: TaskAPI) -> dict[str, str]:
 
 
 ExecutorHosts = Annotated[dict[str, str], Depends(get_executor_hosts)]
-
-
-async def get_chainable_tasks(
-    tasks_api: RemoteAPI,
-    owner: str,
-    target: str,
-    exclude_task_name: str,
-) -> list[dict[str, Any]]:
-    """Fetch tasks that can be chained after a given task.
-
-    Return tasks matching the same owner and target, excluding the current task.
-
-    :param tasks_api: The Tasks API client.
-    :param owner: The task owner to filter by.
-    :param target: The execution target to filter by.
-    :param exclude_task_name: The current task name to exclude from results.
-    :return: A list of chainable task dicts.
-    """
-    response = await tasks_api.get("/", params={"owner": owner, "target": target})
-    return [t for t in response["items"] if t["name"] != exclude_task_name]
 
 
 # TODO(yan): Put get_task in a proper TasksAPI SDK class

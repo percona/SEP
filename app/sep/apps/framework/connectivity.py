@@ -74,9 +74,9 @@ async def record_connectivity_warning(
     Delegate to :func:`app.sep.connectivity._fetch_connectivity_result`
     (cached via ``alru_cache``) and record the outcome in
     :data:`app.sep.connectivity._LATEST_RESULTS` via
-    :func:`app.sep.connectivity._record_latest_result`. The snapshot write
-    keeps :func:`app.sep.connectivity.annotate_tasks_with_connectivity`
-    reflecting JSON-path results the same way it reflects form-path ones.
+    :func:`app.sep.connectivity._record_latest_result`, which
+    :func:`app.sep.connectivity.get_latest_connectivity_result` reads back
+    synchronously.
 
     :param tasks_api: Authenticated Tasks API client.
     :param target: The Nomad node name.

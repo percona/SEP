@@ -929,13 +929,8 @@ def _get_pdf_environment() -> Environment:
 
     :return: An environment loading from this app's ``templates`` directory.
     """
-    env = Environment(
-        loader=FileSystemLoader(_TEMPLATES_DIR),
-        autoescape=True,
-        extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
-    )
+    env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), autoescape=True)
     env.filters |= DEFAULT_FILTERS
-    env.globals["now"] = datetime.now
     return env
 
 

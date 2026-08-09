@@ -20,12 +20,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.requests import RemoteAPI
-from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     _fetch_connectivity_result,
     _LATEST_RESULTS,
-    _record_latest_result,
-    annotate_tasks_with_connectivity,
 )
 
 
@@ -109,93 +106,3 @@ class TestFetchConnectivityResult:
         )
 
         assert result == (False, "Could not reach the Tasks API", None)
-
-
-class TestAnnotateTasksWithConnectivity:
-    """Test annotate_tasks_with_connectivity helper."""
-
-    def test_annotates_tasks_with_recorded_failure(self):
-        """Set ``_connectivity_warning`` to ``True`` for tasks with cached failures."""
-        _record_latest_result("node1", "mysql", success=False)
-        tasks = [
-            {
-                "name": "task1",
-                "data": {
-                    "meta": {
-                        "target": "node1",
-                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
-                    }
-                },
-            }
-        ]
-        annotate_tasks_with_connectivity(tasks)
-        assert tasks[0]["_connectivity_warning"] is True
-
-    def test_annotates_tasks_with_recorded_success(self):
-        """Set ``_connectivity_warning`` to ``False`` for tasks with cached successes."""
-        _record_latest_result("node1", "mysql", success=True)
-        tasks = [
-            {
-                "name": "task1",
-                "data": {
-                    "meta": {
-                        "target": "node1",
-                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
-                    }
-                },
-            }
-        ]
-        annotate_tasks_with_connectivity(tasks)
-        assert tasks[0]["_connectivity_warning"] is False
-
-    def test_no_annotation_without_meta(self):
-        """Skip annotation for tasks without connectivity meta."""
-        tasks = [{"name": "task1", "data": {"meta": {"target": "node1"}}}]
-        annotate_tasks_with_connectivity(tasks)
-        assert "_connectivity_warning" not in tasks[0]
-
-    def test_no_annotation_when_not_recorded(self):
-        """Skip annotation when no snapshot entry exists."""
-        tasks = [
-            {
-                "name": "task1",
-                "data": {
-                    "meta": {
-                        "target": "node1",
-                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
-                    }
-                },
-            }
-        ]
-        annotate_tasks_with_connectivity(tasks)
-        assert "_connectivity_warning" not in tasks[0]
-
-    def test_handles_empty_task_list(self):
-        """Handle an empty task list gracefully."""
-        tasks = []
-        annotate_tasks_with_connectivity(tasks)
-        assert tasks == []
-
-    def test_handles_task_info_format(self):
-        """Annotate tasks in the ``task_info`` shape the task listings use."""
-        _record_latest_result("node1", "mysql", success=False)
-        tasks = [
-            {
-                "name": "task1",
-                "_connectivity_target": "node1",
-                "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
-            }
-        ]
-        annotate_tasks_with_connectivity(tasks)
-        assert tasks[0]["_connectivity_warning"] is True
-
-    def test_no_annotation_for_task_info_without_service_type(self):
-        """Skip annotation for task_info dicts lacking service type."""
-        tasks = [
-            {
-                "name": "task1",
-                "_connectivity_target": "node1",
-            }
-        ]
-        annotate_tasks_with_connectivity(tasks)
-        assert "_connectivity_warning" not in tasks[0]

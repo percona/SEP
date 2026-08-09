@@ -422,9 +422,9 @@ async def update_backup_task_group(
     Rebuilds the parent ``pbm_config`` payload, re-stamps ``_form`` so the edit
     page keeps prefilling across repeated edits, backfills any missing derived
     siblings (for example ``-incremental`` on groups created before that leg
-    existed), and PUTs the
-    parent plus its derived logical, physical, status, and incremental legs in
-    place. Returns the per-leg outcome; the caller raises on partial failure.
+    existed), and PUTs the parent plus its derived logical, physical, status,
+    and incremental legs in place. Returns the per-leg outcome; the caller
+    raises on partial failure.
 
     :param tasks_api: The TaskAPI instance used to update tasks.
     :param parent_task: The parent backup config task.
