@@ -202,11 +202,13 @@ def test_the_profile_configures_no_beat_store():
 
     A profile value is a configured value and would outrank the derived default,
     handing celery-beat a password-less URI. The assertion reads the uncommented
-    text because the comment recording the omission names the key deliberately.
+    text because the comment recording the omission names the key deliberately,
+    and pairs with a sibling key so an empty read cannot pass as an absent one.
     """
     profile = uncommented(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
 
     assert "BEAT_DBURI" not in profile
+    assert "RESULT_EXPIRES" in profile
 
 
 def test_every_secret_typed_field_is_empty(embedded_profile_data: dict):
