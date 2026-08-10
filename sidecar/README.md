@@ -56,8 +56,9 @@ name. What a file supplies is a *canonical destination*:
 | Canonical name | Mountable? |
 |---|---|
 | `SECRET_KEY` | **Yes.** The gate accepts a file and the script never exports the key, so each process reads it from the file. |
-| `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` / `__PASSWORD`, `CELERY__BEAT_DBURI`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
+| `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` / `__PASSWORD`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
 | `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical and never touched by the script. |
+| `CELERY__BEAT_DBURI` | **Yes.** The script only clears a blank inherited value, which would otherwise outrank the file; the setting itself carries a default derived from `SEP__DATABASE__*`, which a file outranks. |
 | `CELERY__BROKER_URL`, `CELERY__RESULT_BACKEND` | **No.** `entrypoint.sh` mints the bundled Valkey credential per container run and exports both unconditionally, so a file has nothing to supply. |
 | The `SEP_*` deployment inputs | **No.** Shell inputs, not settings fields. |
 
@@ -65,14 +66,17 @@ The resolution order is: an explicitly-set canonical environment variable, then 
 file of that name, then the value derived from the raw `SEP_*` input.
 
 **To keep the database password out of the environment, mount all three
-`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files *and* `CELERY__BEAT_DBURI`.**
-A file supplies exactly the one canonical name it is named for: the fan-out of a
-single password to all three services happens only through the `SEP_DB_PASSWORD`
-input, which is an environment variable and so the very thing this mount avoids.
-Mounting `SEP__DATABASE__PASSWORD` alone leaves `InventorySettings` and
-`TasksSettings` with no password at all. `CELERY__BEAT_DBURI` is the fourth file
-because celery-beat has no file channel of its own — without it the derivation
-puts the password back into the environment inside the URI.
+`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files.** A file supplies exactly the
+one canonical name it is named for: the fan-out of a single password to all three
+services happens only through the `SEP_DB_PASSWORD` input, which is an
+environment variable and so the very thing this mount avoids. Mounting
+`SEP__DATABASE__PASSWORD` alone leaves `InventorySettings` and `TasksSettings`
+with no password at all.
+
+The celery-beat store needs no file of its own: it follows `SEP__DATABASE__*`, so
+the mounted `SEP__DATABASE__PASSWORD` reaches it through the same settings
+resolution the services use. Mount `CELERY__BEAT_DBURI` only to point beat at a
+*different* store.
 
 `SEP__DATABASE__HOST` and `SEP__DATABASE__PORT` are the exception to that
 one-name rule. Each seeds the `SEP_DB_HOST` / `SEP_DB_PORT` shell input the wait
@@ -161,8 +165,8 @@ and mountable. See the note under
 | Input | Required | Default | Canonical destinations |
 |---|---|---|---|
 | `SECRET_KEY` | **yes** | — (fail fast) | already canonical (global `Settings`, no prefix) |
-| `SEP_DB_PASSWORD` | yes in practice | none | `SEP__DATABASE__PASSWORD`, `INVENTORY__DATABASE__PASSWORD`, `TASKS__DATABASE__PASSWORD`, and the assembled `CELERY__BEAT_DBURI` |
-| `SEP_DB_HOST` | no | `pmm-server` | `SEP__DATABASE__HOST`, `INVENTORY__DATABASE__HOST`, `TASKS__DATABASE__HOST`, `CELERY__BEAT_DBURI`, and the three supervisord wait loops |
+| `SEP_DB_PASSWORD` | yes in practice | none | `SEP__DATABASE__PASSWORD`, `INVENTORY__DATABASE__PASSWORD`, `TASKS__DATABASE__PASSWORD` |
+| `SEP_DB_HOST` | no | `pmm-server` | `SEP__DATABASE__HOST`, `INVENTORY__DATABASE__HOST`, `TASKS__DATABASE__HOST`, and the three supervisord wait loops |
 | `SEP_DB_PORT` | no | `5432` | same as `SEP_DB_HOST` |
 | `SEP_GRAFANA_TOKEN` | no | none | `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` |
 | `SEP_PMM_ENDPOINT` | no | `https://pmm-server:8443` | `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT` (with `/graph` appended) |
@@ -199,9 +203,9 @@ Any canonical variable can also be set directly — an explicit
 `TASKS__DATABASE__HOST` outranks the one derived from `SEP_DB_HOST`. It overrides
 only itself, though: setting `SEP__DATABASE__PASSWORD` by hand leaves the other
 two services on whatever `SEP_DB_PASSWORD` supplied, so prefer the deployment
-input when you want the value to fan out. `CELERY__BEAT_DBURI` is the exception —
-it follows the same order as the canonical exports, so an explicitly-set or
-mounted `SEP__DATABASE__PASSWORD` reaches the derived beat-store URI.
+input when you want the value to fan out. `CELERY__BEAT_DBURI` needs no input at
+all: it defaults to the resolved SEP database connection, so set it explicitly
+only to keep the beat schedule in a store separate from the SEP database.
 
 ### Not deployment inputs
 
