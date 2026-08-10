@@ -42,7 +42,7 @@ _TOKEN_SERIALIZER = URLSafeTimedSerializer(
 
 
 class _TokenType(StrEnum):
-    """Assertion ``typ`` claim values.
+    """Define assertion ``typ`` claim values.
 
     An access token cannot be replayed at the refresh endpoint, nor a refresh
     token used as a Bearer credential. An exchange token is likewise refused at
@@ -181,9 +181,8 @@ class GrafanaUser(BaseUser):
         """Mint a signed identity assertion of ``token_type`` for ``user``.
 
         :param user: The user whose identity the assertion carries.
-        :param token_type: The assertion type (``_TokenType.ACCESS``,
-            ``_TokenType.REFRESH``, or ``_TokenType.EXCHANGE``), recorded as
-            the ``typ`` claim.
+        :param token_type: The assertion type recorded as the ``typ`` claim
+            (wire values: ``"access"``, ``"refresh"``, ``"exchange"``).
         :return: The signed, URL-safe identity assertion.
         """
         payload = user.model_dump(
