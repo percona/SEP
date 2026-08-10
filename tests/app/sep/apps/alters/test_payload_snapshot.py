@@ -32,9 +32,7 @@ import pytest
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import (
-    AltersLegacyForm,
     build_alters_task,
-    map_alters_legacy_form,
 )
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.alters.spec import build_alters_spec
@@ -193,44 +191,9 @@ async def _task_envelope(case: dict) -> dict:
     return task.model_dump()
 
 
-async def _legacy_form_envelope(case: dict) -> dict:
-    """Return the legacy flat-form ``TaskWrite`` dump for ``case``.
-
-    Drive the deprecated Jinja path end to end: fold the split legacy form into
-    an ``AltersCreate`` via ``map_alters_legacy_form``, then resolve and assemble
-    through the shared ``build_alters_task`` both create paths funnel into.
-    """
-    service = _service(case)
-    inventory = AsyncMock(spec=RemoteAPI)
-    inventory.get = AsyncMock(return_value=service.model_dump())
-    flat = AltersLegacyForm(
-        task_name=_TASK_NAME,
-        hostname=_HOSTNAME,
-        service_id=service.id,
-        schema_name="app",
-        table_name="users",
-        alter="ADD COLUMN new_col INT",
-        recursion_method=case["form"].get("recursion_method", "processlist"),
-        **{
-            key: value
-            for key, value in case["form"].items()
-            if key != "recursion_method"
-        },
-    )
-    task = await build_alters_task(map_alters_legacy_form(flat), inventory)
-    return task.model_dump()
-
-
 def test_spec_path_payload_matrix_matches_golden():
     """Assert the pure spec path reproduces the frozen envelope matrix."""
     payloads = {case["slug"]: _spec_envelope(case) for case in _CASES}
-    assert_or_update(PAYLOAD_DIR / "alters__payload.json", canonical_json(payloads))
-
-
-@pytest.mark.asyncio
-async def test_legacy_form_path_payload_matrix_matches_golden():
-    """Assert the legacy Jinja form path reproduces the frozen envelope matrix."""
-    payloads = {case["slug"]: await _legacy_form_envelope(case) for case in _CASES}
     assert_or_update(PAYLOAD_DIR / "alters__payload.json", canonical_json(payloads))
 
 

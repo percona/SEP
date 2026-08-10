@@ -107,7 +107,7 @@ from app.sep.connectivity import (
 )
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
-    get_api_authenticated_user,
+    get_current_user,
     get_task_by_name,
     get_tasks_api,
     IsApiAuthenticated,
@@ -203,24 +203,6 @@ _EMPTY_FORMS_SCHEMA = AppSchema(
 )
 
 
-def _register_login_placeholder(app: FastAPI) -> None:
-    """Register a no-op ``/login`` route so ``LoginRedirectException`` resolves.
-
-    ``LoginRedirectException`` constructs its ``Location`` via
-    ``request.url_for("login")``; without a named ``login`` route on the app
-    that call raises ``NoMatchFound`` and masks the real 401 behaviour the
-    test suite wants to observe.
-    """
-
-    @app.get("/login", name="login")
-    async def _login_placeholder() -> dict[str, bool]:
-        """Return a placeholder payload so ``request.url_for('login')`` resolves.
-
-        :return: A fixed success payload.
-        """
-        return {"ok": True}
-
-
 def _mount_plugin_router(plugin_router: APIRouter, plugin_prefix: str) -> FastAPI:
     """Mount ``plugin_router`` under the production-shape router tree.
 
@@ -240,7 +222,6 @@ def _mount_plugin_router(plugin_router: APIRouter, plugin_prefix: str) -> FastAP
     api_router.include_router(apps_router)
     app = FastAPI()
     app.include_router(api_router)
-    _register_login_placeholder(app)
     return app
 
 
@@ -261,7 +242,7 @@ def _build_composed_app(schema: AppSchema, plugin_prefix: str) -> FastAPI:
 def authed_client(regular_user: CasdoorUser) -> TestClient:
     """Yield an authed ``TestClient`` over a production-shape composed app."""
     app = _build_composed_app(_TEST_SCHEMA, "/test-schema-endpoint")
-    app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -269,7 +250,7 @@ def authed_client(regular_user: CasdoorUser) -> TestClient:
 def authed_all_fields_client(regular_user: CasdoorUser) -> TestClient:
     """Yield an authed ``TestClient`` whose schema exercises every field class."""
     app = _build_composed_app(_ALL_FIELDS_SCHEMA, "/test-all-fields")
-    app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -277,7 +258,7 @@ def authed_all_fields_client(regular_user: CasdoorUser) -> TestClient:
 def authed_empty_forms_client(regular_user: CasdoorUser) -> TestClient:
     """Yield an authed ``TestClient`` whose schema has zero form sections."""
     app = _build_composed_app(_EMPTY_FORMS_SCHEMA, "/test-empty-forms")
-    app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -309,7 +290,7 @@ class TestSchemaEndpointRouterComposition:
 
         [route] = [r for r in router.routes if isinstance(r, APIRoute)]
         callables = {d.dependency for d in route.dependencies}
-        assert get_api_authenticated_user in callables
+        assert get_current_user in callables
 
     def test_route_declares_response_model(self) -> None:
         """Assert the route wires ``response_model=AppSchema`` for OpenAPI."""
@@ -359,7 +340,6 @@ class TestSchemaEndpointRouterComposition:
         schema_endpoint(plugin_router, _TEST_SCHEMA)
         app = FastAPI()
         app.include_router(plugin_router)
-        _register_login_placeholder(app)
 
         response = TestClient(app, raise_server_exceptions=False).get(
             "/schema", follow_redirects=False
@@ -374,7 +354,7 @@ class TestSchemaEndpointRouterComposition:
 
         Compose the production-shape router tree with ``IsApiAuthenticated``
         declared at both router level and (via the helper) route level, then
-        spy on ``get_api_authenticated_user`` and confirm one authed request
+        spy on ``get_current_user`` and confirm one authed request
         invokes it exactly once — the behaviour that makes the belt-and-
         braces deviation free.
         """
@@ -385,7 +365,7 @@ class TestSchemaEndpointRouterComposition:
             return regular_user
 
         app = _build_composed_app(_TEST_SCHEMA, "/test-schema-endpoint")
-        app.dependency_overrides[get_api_authenticated_user] = spy
+        app.dependency_overrides[get_current_user] = spy
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.get("/api/apps/test-schema-endpoint/schema")
@@ -559,7 +539,7 @@ _CONDITIONAL_RULES_SCHEMA = AppSchema(
 def authed_conditional_rules_client(regular_user: CasdoorUser) -> TestClient:
     """Yield an authed client whose schema exercises the new rule primitives."""
     app = _build_composed_app(_CONDITIONAL_RULES_SCHEMA, "/test-conditional-rules")
-    app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -662,7 +642,7 @@ _DERIVED_SCHEMA = AppSchema(
 def authed_derived_client(regular_user: CasdoorUser) -> TestClient:
     """Yield an authed client whose schema exercises the ``derived`` field."""
     app = _build_composed_app(_DERIVED_SCHEMA, "/test-derived")
-    app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+    app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -753,7 +733,7 @@ class TestCapabilitiesEndpointRegistration:
             if isinstance(r, APIRoute) and r.path == "/capabilities"
         ]
         callables = {d.dependency for d in route.dependencies}
-        assert get_api_authenticated_user in callables
+        assert get_current_user in callables
 
     def test_response_model_inferred_from_return_annotation(self) -> None:
         """Assert the route's ``response_model`` matches the provider's return annotation."""
@@ -932,7 +912,7 @@ class TestCapabilitiesEndpointAuthenticated:
         """Yield an authed ``TestClient`` over the capabilities-app."""
         _provider_state["flag"] = True
         app = _build_capabilities_app(_stateful_provider)
-        app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+        app.dependency_overrides[get_current_user] = lambda: regular_user
         return TestClient(app, raise_server_exceptions=False)
 
     def test_authed_get_returns_provider_payload(
@@ -1009,7 +989,6 @@ class TestCapabilitiesEndpointUnauthenticated:
         capabilities_endpoint(plugin_router, capabilities_provider=_stateful_provider)
         app = FastAPI()
         app.include_router(plugin_router)
-        _register_login_placeholder(app)
 
         response = TestClient(app, raise_server_exceptions=False).get(
             "/capabilities", follow_redirects=False
@@ -1032,7 +1011,7 @@ class TestCapabilitiesEndpointOpenApi:
         produce an untyped client.
         """
         app = _build_capabilities_app(_stateful_provider)
-        app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+        app.dependency_overrides[get_current_user] = lambda: regular_user
         client = TestClient(app, raise_server_exceptions=False)
 
         openapi = client.get("/openapi.json").json()
@@ -1062,7 +1041,7 @@ class TestCapabilitiesEndpointRuntime:
             raise RuntimeError("provider failed")
 
         app = _build_capabilities_app(provider)
-        app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+        app.dependency_overrides[get_current_user] = lambda: regular_user
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.get("/api/apps/test-capabilities-endpoint/capabilities")
@@ -1090,7 +1069,7 @@ class TestCapabilitiesEndpointRuntime:
             return _DummyCapabilities(flag=flag)
 
         app = _build_capabilities_app(provider)
-        app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
+        app.dependency_overrides[get_current_user] = lambda: regular_user
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.get("/api/apps/test-capabilities-endpoint/capabilities")
@@ -1393,7 +1372,7 @@ def _authed_crud_client(
 ) -> TestClient:
     """Mount ``router`` in a production-shape app with auth + Tasks-API overrides."""
     app = _mount_plugin_router(router, _CRUD_PREFIX)
-    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_tasks_api] = lambda: tasks_api
     return TestClient(app, raise_server_exceptions=False)
 
@@ -1409,7 +1388,7 @@ def _authed_script_client(router: APIRouter, user: CasdoorUser) -> TestClient:
     :return: A bare ``TestClient`` mounting the script router under the script prefix.
     """
     app = _mount_plugin_router(router, _SCRIPT_PREFIX)
-    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -1496,7 +1475,7 @@ class TestDeriveCrudRoutesComposition:
 
         for route in _api_routes(router):
             callables = {d.dependency for d in route.dependencies}
-            assert get_api_authenticated_user in callables, route.path
+            assert get_current_user in callables, route.path
 
     def test_derived_routes_emit_by_alias(self) -> None:
         """Assert list / detail / create pin ``response_model_by_alias=True``."""
@@ -2761,7 +2740,7 @@ class TestDeriveCrudRoutesCreateExtraDeps:
         route = _route_for(router, "/", "POST")
         callables = {dep.dependency for dep in route.dependencies}
 
-        assert get_api_authenticated_user in callables
+        assert get_current_user in callables
         assert _marker_dep in callables
 
 
@@ -2851,7 +2830,7 @@ def _authed_execute_client(
 ) -> TestClient:
     """Mount ``router`` in a production-shape app with auth + Tasks-API overrides."""
     app = _mount_plugin_router(router, _EXECUTE_PREFIX)
-    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_tasks_api] = lambda: tasks_api
     return TestClient(app, raise_server_exceptions=False)
 
@@ -2893,7 +2872,7 @@ class TestDeriveExecuteRouteComposition:
         route = _route_for(_execute_router(), "/{task_name}/execute", "POST")
         callables = {d.dependency for d in route.dependencies}
 
-        assert get_api_authenticated_user in callables
+        assert get_current_user in callables
         assert check_for_conflicted_running_tasks in callables
 
     def test_extra_deps_appended_to_standard_guards(self) -> None:
@@ -2902,7 +2881,7 @@ class TestDeriveExecuteRouteComposition:
         route = _route_for(router, "/{task_name}/execute", "POST")
         callables = {d.dependency for d in route.dependencies}
 
-        assert get_api_authenticated_user in callables
+        assert get_current_user in callables
         assert check_for_conflicted_running_tasks in callables
         assert _marker_dep in callables
 
@@ -3165,7 +3144,7 @@ def _authed_cascade_client(
 ) -> TestClient:
     """Mount ``router`` in a production-shape app with auth + Tasks-API overrides."""
     app = _mount_plugin_router(router, _CASCADE_PREFIX)
-    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_tasks_api] = lambda: tasks_api
     return TestClient(app, raise_server_exceptions=False)
 

@@ -21,7 +21,7 @@ from fastapi import APIRouter
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import IntervalSchedule
-from app.sep.apps.framework.base import AppPeriodicTask, BaseApp, StaticMount
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 
 
 class TestBaseAppDisplayName:
@@ -51,21 +51,17 @@ class TestBaseAppArbitraryTypes:
     def test_accepts_live_api_router(self) -> None:
         """A live ``APIRouter`` is accepted on the router fields."""
         api_router = APIRouter()
-        jinja_router = APIRouter()
         app = BaseApp(
             name="Checksums",
             uri_path="/checksums",
             api_router=api_router,
-            jinja_router=jinja_router,
         )
         assert app.api_router is api_router
-        assert app.jinja_router is jinja_router
 
     def test_router_fields_default_to_none(self) -> None:
         """Both router fields default to ``None`` when unset."""
         app = BaseApp(name="Inventory", uri_path="/inventory")
         assert app.api_router is None
-        assert app.jinja_router is None
 
 
 class TestBaseAppSchemaAlias:
@@ -158,25 +154,6 @@ class TestBaseAppPeriodicTaskSchedules:
         )
         assert app.periodic_task_schedules is _factory
         assert app.periodic_task_schedules() == specs
-
-
-class TestBaseAppStaticMounts:
-    """Cover the ``static_mounts`` registry-collected authenticated mounts."""
-
-    def test_static_mounts_defaults_to_empty(self) -> None:
-        """Return an empty tuple when the field is unset."""
-        app = BaseApp(name="Inventory", uri_path="/inventory")
-        assert app.static_mounts == ()
-
-    def test_static_mounts_carries_declaration(self) -> None:
-        """Carry a declared mount on a plain ``BaseApp``."""
-        mount = StaticMount(
-            path="/static/dipper",
-            directory=Path("/tmp/payloads"),
-            name="dipper_files",
-        )
-        app = BaseApp(name="Dipper", uri_path="/dipper", static_mounts=(mount,))
-        assert app.static_mounts == (mount,)
 
 
 class TestBaseAppUsesTaskData:

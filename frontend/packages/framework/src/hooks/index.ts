@@ -76,6 +76,9 @@ export type {
 export { useTaskFileDownload } from './useTaskFileDownload';
 export type { TaskFileDownloadParams } from './useTaskFileDownload';
 
+export { useSnippetDownload } from './useSnippetDownload';
+export type { SnippetDownloadParams } from './useSnippetDownload';
+
 export { useSnippetAppSchema } from './useSnippetAppSchema';
 export { useSnippetAppExecution } from './useSnippetAppExecution';
 export type { UseSnippetAppExecutionOptions } from './useSnippetAppExecution';

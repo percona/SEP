@@ -30,11 +30,9 @@ from app.sep.apps.framework.registry import build_app_registry
 from app.sep.config import App, sep_settings
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
-    get_api_authenticated_user,
     get_current_user,
     IsApiAuthenticated,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 
@@ -158,16 +156,13 @@ class TestApiRouterUnauthenticated:
 
 @pytest.fixture
 def cookie_only_client(regular_user):
-    """Return a TestClient that has cookie auth but no Bearer override.
+    """Return an authenticated TestClient with the Bearer gate left intact.
 
-    Overrides ``get_current_user``, ``get_api_authenticated_user`` and
-    ``validate_csrf`` so the request passes the existing auth/CSRF stack,
-    but deliberately leaves ``require_bearer_for_unsafe_methods`` unmocked
-    so the framework Bearer gate fires for mutating methods.
+    Overrides ``get_current_user`` so the request passes authentication, but
+    deliberately leaves ``require_bearer_for_unsafe_methods`` unmocked so the
+    Bearer gate fires for mutating methods.
     """
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -249,17 +244,21 @@ class TestPluginBearerGate:
         response = cookie_only_client.options("/api/apps/checksums/schema")
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
 
-    def test_bearer_gate_is_on_apps_router_only(self) -> None:
-        """Check the Bearer gate is wired into apps_router, not the broader api_router.
+    def test_bearer_gate_is_hoisted_to_the_api_router(self) -> None:
+        """Check the Bearer gate covers the whole ``/api`` tree, not just ``/apps``.
 
-        Regression guard against accidentally Bearer-gating /api/sep/*
-        (dashboard, hosts, task-stats) which serve cookie-authenticated
-        React reads.
+        With cookie authentication gone, every ``/api`` caller presents a Bearer
+        token, so the gate is hoisted to ``api_router`` and every mutating route
+        inherits it uniformly rather than per-router. The gate is method-scoped,
+        so reads are unaffected; ``test_api_sep_get_routes_are_not_bearer_gated``
+        pins that half.
         """
         plugin_deps = [dep.dependency for dep in apps_router.dependencies]
         api_deps = [dep.dependency for dep in api_router.dependencies]
+        assert require_bearer_for_unsafe_methods in api_deps
+        # Kept on apps_router too: FastAPI caches identical ``Depends`` objects
+        # per request, so the duplicate registration executes once.
         assert require_bearer_for_unsafe_methods in plugin_deps
-        assert require_bearer_for_unsafe_methods not in api_deps
 
     def test_api_sep_get_routes_are_not_bearer_gated(
         self,
@@ -268,11 +267,11 @@ class TestPluginBearerGate:
         mock_inventory_api_dep,
         mocker,
     ) -> None:
-        """Cookie-only GET on /api/sep/* is not blocked by the Bearer gate.
+        """Serve a GET on /api/sep/* without tripping the Bearer gate.
 
-        Regression guard: dashboard/hosts/task-stats serve cookie-auth
-        React reads; the response must succeed (200) under cookie-only
-        credentials. Upstream Tasks/Inventory and the SEP snippets count
+        Regression guard for the hoist: the gate is method-scoped, so reads
+        must still succeed (200) even without a Bearer header on the request
+        itself. Upstream Tasks/Inventory and the SEP snippets count
         are stubbed so the dashboard returns a deterministic payload
         independent of any persisted snippet rows in the local SEP DB.
         """
@@ -683,8 +682,6 @@ class TestApiRouterConfigDrivenLoopIntegration:
                 "/api/apps/mysql_backups/restore/some-task",
                 "/api/apps/mysql_backups/restore",
             ),
-            ("GET", "/mysql_backups/restores/", "/mysql_backups/restores"),
-            ("GET", "/mysql_backups/restores/some-task", "/mysql_backups/restores"),
             (
                 "GET",
                 "/api/apps/backup_mongo/restore/",
@@ -705,8 +702,6 @@ class TestApiRouterConfigDrivenLoopIntegration:
                 "/api/apps/backup_mongo/restore/some-task",
                 "/api/apps/backup_mongo/restore",
             ),
-            ("GET", "/backup_mongo/restores/", "/backup_mongo/restores"),
-            ("GET", "/backup_mongo/restores/some-task", "/backup_mongo/restores"),
         ],
     )
     def test_scoped_restore_routes_not_shadowed_by_parent(

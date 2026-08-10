@@ -17,7 +17,6 @@
 
 import asyncio
 from typing import ClassVar
-from unittest.mock import MagicMock
 
 import pytest
 from pydantic import SecretStr
@@ -63,7 +62,6 @@ SEP_CORE_CLASSES = frozenset(
     {
         SettingClassEnum.SEP_SETTINGS,
         SettingClassEnum.SNIPPETS_SETTINGS,
-        SettingClassEnum.MESSAGES_SETTINGS,
         SettingClassEnum.SETTINGS,
         SettingClassEnum.ALERT_SETTINGS,
     }
@@ -238,19 +236,16 @@ class TestSepWorkerHandlers:
 
         assert sep_worker._refresher.task is not None
 
-    def test_disabled_resolves_messages_and_starts_no_task(
+    def test_disabled_starts_no_task(
         self, monkeypatch: pytest.MonkeyPatch, mocker
     ) -> None:
-        """Resolve ``messages_settings`` but start no task when disabled."""
+        """Start no refresh task when the refresher is disabled."""
         monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
         monkeypatch.setattr(sep_worker._refresher, "task", None)
-        mock_messages = MagicMock(spec=OverridableSettingsProxy)
-        monkeypatch.setattr(sep_worker, "messages_settings", mock_messages)
         start = mocker.patch("app.core.settings_override.worker.start_refresh_task")
 
         start_sep_settings_override_refresher()
 
-        mock_messages._resolve.assert_called_once_with()
         start.assert_not_called()
         assert sep_worker._refresher.task is None
 

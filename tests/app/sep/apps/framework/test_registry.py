@@ -94,11 +94,10 @@ class TestLegacyWrapping:
         assert app.custom_ui is False
         assert app.app_schema is None
 
-    def test_legacy_plugin_resolves_both_routers(self) -> None:
-        """The synthesized app carries the resolved Jinja and API routers."""
+    def test_legacy_plugin_resolves_api_router(self) -> None:
+        """Carry the resolved API router on the synthesized app."""
         registry = build_app_registry([App(name="Snippets", module_name="snippets")])
         app = registry.get("snippets")
-        assert isinstance(app.jinja_router, APIRouter)
         assert isinstance(app.api_router, APIRouter)
 
     def test_module_name_only_derives_metadata(self, mocker: MockerFixture) -> None:
@@ -513,12 +512,10 @@ class TestGetAppRegistry:
         assert app.nav_order == definition.nav_order
 
         api_routes = importlib.import_module("app.sep.apps.alters.api_routes")
-        routes = importlib.import_module("app.sep.apps.alters.routes")
         schema = importlib.import_module("app.sep.apps.alters.schema")
         assert app.app_schema is schema.alters_schema
         assert api_routes.router in app.extra_routes
         assert app.api_router is not api_routes.router
-        assert app.jinja_router is routes.router
 
 
 BESPOKE_BASE_APP_PLUGINS = [
@@ -543,12 +540,10 @@ class TestBespokeBaseAppDefinitions:
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
     def test_registry_binds_definition_routers(self, plugin: str) -> None:
-        """Bind each plugin's API and Jinja routers by identity through the registry."""
+        """Bind each plugin's API router by identity through the registry."""
         api_routes = importlib.import_module(f"app.sep.apps.{plugin}.api_routes")
-        routes = importlib.import_module(f"app.sep.apps.{plugin}.routes")
         app = get_app_registry().get(plugin)
         assert app.api_router is api_routes.router
-        assert app.jinja_router is routes.router
 
     def test_inventory_definition_carries_schema(self) -> None:
         """Carry ``inventory_schema`` on the inventory definition's ``app_schema``."""
@@ -576,20 +571,14 @@ class TestBespokeBaseAppDefinitions:
         assert get_app_registry().get(plugin).requires_apps == ()
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
-    def test_legacy_router_reexport_preserved(self, plugin: str) -> None:
-        """Preserve the legacy Jinja ``router`` re-export on each package."""
+    def test_legacy_router_reexport_removed(self, plugin: str) -> None:
+        """Assert no package still re-exports a ``router`` from the deleted Jinja layer."""
         package = importlib.import_module(f"app.sep.apps.{plugin}")
-        routes = importlib.import_module(f"app.sep.apps.{plugin}.routes")
-        assert package.router is routes.router
+        assert not hasattr(package, "router")
 
 
 class TestAtwDefinition:
-    """Cover the atw ``BaseApp`` definition (no Jinja router, no legacy re-export).
-
-    atw is kept out of ``BESPOKE_BASE_APP_PLUGINS`` because it ships no
-    ``routes.py`` Jinja router and no legacy ``router`` re-export, so the
-    parametrized router/re-export assertions there do not apply.
-    """
+    """Cover the atw ``BaseApp`` definition."""
 
     def test_module_exports_bare_base_app(self) -> None:
         """Assert atw exports a bare ``BaseApp``, not a ``TaskExecutionApp``."""
@@ -597,12 +586,11 @@ class TestAtwDefinition:
         assert isinstance(app, BaseApp)
         assert not isinstance(app, TaskExecutionApp)
 
-    def test_registry_binds_api_router_without_jinja(self) -> None:
-        """Bind atw's API router by identity and mount no Jinja router."""
+    def test_registry_binds_api_router(self) -> None:
+        """Bind atw's API router by identity."""
         api_routes = importlib.import_module("app.sep.apps.atw.api_routes")
         app = get_app_registry().get("atw")
         assert app.api_router is api_routes.router
-        assert app.jinja_router is None
 
     def test_definition_carries_schema_and_nav_metadata(self) -> None:
         """Carry ``atw_schema``, ``custom_ui``, and nav metadata from the definition."""

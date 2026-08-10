@@ -24,7 +24,6 @@ definition rather than the live ``GET /schema`` endpoint.
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.tasks.api_routes import router as api_router
-from app.sep.apps.tasks.routes import router as jinja_router
 from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 
 app = BaseApp(
@@ -36,7 +35,6 @@ app = BaseApp(
     react_route="/tasks",
     nav_icon=NavIcon.ASSIGNMENT,
     api_router=api_router,
-    jinja_router=jinja_router,
     schema=TASKS_PLUGIN_SCHEMA,
     uses_task_data=True,
 )

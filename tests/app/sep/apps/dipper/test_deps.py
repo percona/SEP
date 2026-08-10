@@ -30,7 +30,6 @@ from app.sep.apps.dipper.deps import (
     fetch_pmm_node_service_names,
     get_dipper_script_filename,
     has_pmm_script,
-    resolve_executor_host_for_service,
 )
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.inventory import CreatedService
@@ -149,65 +148,6 @@ def _make_service_with_node(
     else:
         node = CreatedNodeFactory.build(name=node_name, address=node_address)
     return CreatedServiceFactory.build(name=service_name, node=node)
-
-
-class TestResolveExecutorHostForService:
-    """Tests for ``resolve_executor_host_for_service``."""
-
-    def test_returns_node_name_when_it_matches_executor_hosts(self) -> None:
-        """Return ``service.node.name`` when it matches a Nomad node name."""
-        service = _make_service_with_node(
-            node_name="mvc-lab-db3", node_address="10.0.0.7"
-        )
-        executor_hosts = {"mvc-lab-db3": "10.0.0.7"}
-        assert (
-            resolve_executor_host_for_service(executor_hosts, service) == "mvc-lab-db3"
-        )
-
-    def test_returns_executor_name_when_node_address_matches(self) -> None:
-        """Resolve via address when inventory name differs from Nomad node name.
-
-        Inventory records ``mvc-lab-maria1`` while the Nomad agent registers
-        ``mvc-lab-db3`` for the same host; the helper must return the
-        Nomad-keyed name expected by Dipper.
-        """
-        service = _make_service_with_node(
-            node_name="mvc-lab-maria1", node_address="10.0.0.7"
-        )
-        executor_hosts = {"mvc-lab-db3": "10.0.0.7"}
-        assert (
-            resolve_executor_host_for_service(executor_hosts, service) == "mvc-lab-db3"
-        )
-
-    def test_prefers_node_name_over_address_lookup(self) -> None:
-        """Take ``service.node.name`` over an address lookup that would resolve elsewhere."""
-        service = _make_service_with_node(
-            node_name="mvc-lab-db3", node_address="10.0.0.7"
-        )
-        executor_hosts = {"mvc-lab-db3": "10.0.0.9", "mvc-lab-db5": "10.0.0.7"}
-        assert (
-            resolve_executor_host_for_service(executor_hosts, service) == "mvc-lab-db3"
-        )
-
-    def test_returns_service_name_when_node_is_none(self) -> None:
-        """Fall back to ``service.name`` when ``service.node`` is ``None``."""
-        service = _make_service_with_node(
-            service_name="mvc-lab-db3", node_name=None, node_address=None
-        )
-        executor_hosts = {"mvc-lab-db3": "10.0.0.7"}
-        assert (
-            resolve_executor_host_for_service(executor_hosts, service) == "mvc-lab-db3"
-        )
-
-    def test_returns_none_when_nothing_matches(self) -> None:
-        """Return ``None`` when neither name nor address resolves."""
-        service = _make_service_with_node(
-            service_name="mvc-lab-other",
-            node_name="mvc-lab-maria1",
-            node_address="10.0.0.99",
-        )
-        executor_hosts = {"mvc-lab-db3": "10.0.0.7"}
-        assert resolve_executor_host_for_service(executor_hosts, service) is None
 
 
 def _named(*names: str) -> list[SimpleNamespace]:

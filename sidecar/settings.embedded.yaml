@@ -37,7 +37,6 @@ default:
       - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
       - SEPSettings.FOOTER_TEMPLATE
       - SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS
-      - MessagesSettings.LEVEL
       - AlertSettings.PROVIDERS
       - AlertSettings.SOURCE_PREFIX
       - AlertSettings.SOURCE_SUFFIX

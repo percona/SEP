@@ -55,8 +55,6 @@ from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.apps.atw.config import AtwSettings
 from app.sep.config import SEPSettings
-from app.sep.middleware.messages.config import MessagesSettings
-from app.sep.middleware.messages.models import MessageLevel
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
@@ -514,14 +512,6 @@ SECRET_FILE_MATRIX = [
         77,
         lambda s: s.bundle_ttl,
         id="AtwSettings",
-    ),
-    pytest.param(
-        MessagesSettings,
-        "SEP__MESSAGES__LEVEL",
-        str(MessageLevel.ERROR.value),
-        MessageLevel.ERROR,
-        lambda s: s.LEVEL,
-        id="MessagesSettings",
     ),
     pytest.param(
         SnippetsSettings,
