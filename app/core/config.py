@@ -579,7 +579,9 @@ class Settings(BaseYamlSettings):
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :param LOGGING_CONFIG: dictConfig logging configuration.
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
-    :param BASE_URL: The application's base URL.
+    :param BASE_URL: The application's base URL. Its path is preserved, with composed
+        URLs appended to it rather than replacing it, so it must already include
+        ``SEP.ROOT_PATH`` when a URL prefix is configured.
     :param BACKEND_CORS_ORIGINS: A global list of allowed CORS origins, to be used as
         the default BACKEND_CORS_ORIGINS setting across all apps.
     :param ALLOWED_HOSTS: A global list of trusted domain names or wildcards, to be used
