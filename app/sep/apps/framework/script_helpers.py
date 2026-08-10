@@ -166,8 +166,8 @@ def build_artifact_download_url(
         {"type": artifact_type, "filename": filename, "md5": md5_digest},
         salt=ARTIFACT_DOWNLOAD_SALT,
     )
-    prefix = base_url.path.rstrip("/")
-    return str(base_url.replace(path=f"{prefix}/artifacts/download/{token}"))
+    base_path = base_url.path.rstrip("/")
+    return str(base_url.replace(path=f"{base_path}/artifacts/download/{token}"))
 
 
 async def post_task_execution(
