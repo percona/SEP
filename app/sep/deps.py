@@ -83,9 +83,6 @@ def get_base_url(request: Request) -> URL:
     return URL(str(request.base_url))
 
 
-BaseURL = Annotated[URL, Depends(get_base_url)]
-
-
 def is_bearer_authenticated(request: Request) -> bool:
     """Return whether the request carries an ``Authorization: Bearer`` header.
 
