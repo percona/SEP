@@ -48,16 +48,13 @@ from app.sep.apps.framework.registry import (
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
     TaskAPI,
-    validate_csrf,
 )
 from app.sep.main import sep_app, sep_overrides_lifespan
-from app.sep.middleware.messages.config import messages_settings
 from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.snippets.config import (
     SnippetFilter,
@@ -147,9 +144,7 @@ def api_admin_client_fixture(
     admin_user: CasdoorUser, override_session: AsyncSession
 ) -> Iterator[TestClient]:
     """Yield an admin-authenticated SEP TestClient with the in-memory SEP session."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
@@ -162,9 +157,7 @@ def api_non_admin_client_fixture(
     regular_user: CasdoorUser, override_session: AsyncSession
 ) -> Iterator[TestClient]:
     """Yield a non-admin SEP TestClient with the in-memory SEP session."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
@@ -181,9 +174,7 @@ def api_admin_cookie_client_fixture(
     The Bearer guard runs as in production; mutations should reject the
     client with 401 while reads succeed.
     """
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -335,7 +326,6 @@ class TestSepSettingsList:
         assert groups == {
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.MESSAGES_SETTINGS.value,
             SettingClassEnum.ALERTS_SETTINGS.value,
             SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
@@ -366,7 +356,6 @@ class TestSepSettingsList:
         core_and_remote = {
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.MESSAGES_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
         }
@@ -443,9 +432,9 @@ class TestSepSettingsList:
     ) -> None:
         """Assert a SEPSettings group exposes HOT and NOT_OVERRIDABLE entries.
 
-        NESTED_ONLY parents (``SESSION`` / ``SESSION_REFRESH``) are expanded into
-        their per-leaf entries, each classified ``HOT``, so the LIST projection no
-        longer carries a ``NESTED_ONLY`` parent summary.
+        The NESTED_ONLY parent ``SESSION_REFRESH`` is expanded into its per-leaf
+        entries, each classified ``HOT``, so the LIST projection no longer carries
+        a ``NESTED_ONLY`` parent summary.
         """
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -489,10 +478,10 @@ class TestSepSettingsList:
         )
         assert sep_setting["default_value"] is False
 
-    async def test_session_parent_expanded_into_leaves(
+    async def test_session_refresh_parent_expanded_into_leaves(
         self, api_admin_client: TestClient
     ) -> None:
-        """Assert ``SESSION`` is replaced by one editable entry per leaf, no summary entry."""
+        """Assert ``SESSION_REFRESH`` is replaced by one entry per leaf, no summary entry."""
         response = api_admin_client.get("/api/sep/admin/settings/")
         sep_settings_group = next(
             group
@@ -500,13 +489,13 @@ class TestSepSettingsList:
             if group["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
         )
         keys = {entry["key"] for entry in sep_settings_group["settings"]}
-        assert "SESSION" not in keys
+        assert "SESSION_REFRESH" not in keys
         expected_leaves = {
-            "SESSION__COOKIE_NAME",
-            "SESSION__MAX_AGE",
-            "SESSION__SAMESITE",
-            "SESSION__SECURE",
-            "SESSION__PATH",
+            "SESSION_REFRESH__COOKIE_NAME",
+            "SESSION_REFRESH__MAX_AGE",
+            "SESSION_REFRESH__SAMESITE",
+            "SESSION_REFRESH__SECURE",
+            "SESSION_REFRESH__PATH",
         }
         assert expected_leaves <= keys
         for entry in sep_settings_group["settings"]:
@@ -568,11 +557,11 @@ class TestSepSettingsGet:
     ) -> None:
         """Assert a nested-leaf DETAIL response carries its canonical ``key_path`` chain."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE"
+            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH__MAX_AGE"
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body["key_path"] == ["SESSION", "MAX_AGE"]
+        assert body["key_path"] == ["SESSION_REFRESH", "MAX_AGE"]
         assert "__".join(body["key_path"]) == body["key"]
 
     async def test_unknown_class_returns_422(
@@ -1330,7 +1319,7 @@ class TestSepSettingsDelete:
 
 @pytest.mark.asyncio
 class TestSepSettingsNestedOverrides:
-    """Tests for ``__``-delimited nested overrides on ``SEPSettings.SESSION``."""
+    """Cover ``__``-delimited nested overrides on ``SEPSettings.SESSION_REFRESH``."""
 
     @pytest.fixture(autouse=True)
     def _reset_proxy_snapshot(self) -> Iterator[None]:
@@ -1344,19 +1333,21 @@ class TestSepSettingsNestedOverrides:
         """Persist a nested PATCH, echo the nested key, and mark the parent."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"SESSION__SAMESITE": "strict"},
+            json={"SESSION_REFRESH__SAMESITE": "strict"},
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert body[0]["key"] == "SESSION__SAMESITE"
+        assert body[0]["key"] == "SESSION_REFRESH__SAMESITE"
         assert body[0]["value"] == "strict"
         assert body[0]["has_override"] is True
         # The parent reads back as having an override.
-        parent = api_admin_client.get("/api/sep/admin/settings/SEPSettings/SESSION")
+        parent = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH"
+        )
         assert parent.json()["has_override"] is True
         # The nested leaf reads back its current value.
         leaf = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SESSION__SAMESITE"
+            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH__SAMESITE"
         )
         assert leaf.json()["value"] == "strict"
 
@@ -1366,24 +1357,24 @@ class TestSepSettingsNestedOverrides:
         """Echo the leaf's canonical ``key_path`` chain on a nested PATCH."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"SESSION__SAMESITE": "strict"},
+            json={"SESSION_REFRESH__SAMESITE": "strict"},
         )
         assert response.status_code == status.HTTP_200_OK
         echoed = response.json()[0]
-        assert echoed["key_path"] == ["SESSION", "SAMESITE"]
+        assert echoed["key_path"] == ["SESSION_REFRESH", "SAMESITE"]
         assert "__".join(echoed["key_path"]) == echoed["key"]
 
     async def test_patch_nested_coerces_int_to_timedelta(
         self, api_admin_client: TestClient
     ) -> None:
-        """Coerce a JSON int on ``SESSION__MAX_AGE`` to a timedelta."""
+        """Coerce a JSON int on ``SESSION_REFRESH__MAX_AGE`` to a timedelta."""
         override_seconds = 7200
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"SESSION__MAX_AGE": override_seconds},
+            json={"SESSION_REFRESH__MAX_AGE": override_seconds},
         )
         assert response.status_code == status.HTTP_200_OK
-        assert sep_settings.SESSION.MAX_AGE.total_seconds() == override_seconds
+        assert sep_settings.SESSION_REFRESH.MAX_AGE.total_seconds() == override_seconds
 
     async def test_patch_nested_rejects_unknown_nested_field(
         self, api_admin_client: TestClient
@@ -1391,7 +1382,7 @@ class TestSepSettingsNestedOverrides:
         """Reject an unknown nested leaf with ``unknown_nested_field``."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"SESSION__BOGUS": 1},
+            json={"SESSION_REFRESH__BOGUS": 1},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         detail = response.json()["detail"]
@@ -1415,12 +1406,13 @@ class TestSepSettingsNestedOverrides:
         """Reject replacing the whole NESTED_ONLY parent object."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"SESSION": {"MAX_AGE": 3600}},
+            json={"SESSION_REFRESH": {"MAX_AGE": 3600}},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         detail = response.json()["detail"]
         assert any(
-            entry["type"] == "not_overridable" and entry["loc"] == ["body", "SESSION"]
+            entry["type"] == "not_overridable"
+            and entry["loc"] == ["body", "SESSION_REFRESH"]
             for entry in detail
         )
 
@@ -1429,7 +1421,7 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Return 422 (not 404) on DELETE of the whole NESTED_ONLY parent."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SESSION"
+            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH"
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         detail = response.json()["detail"]
@@ -1441,9 +1433,11 @@ class TestSepSettingsNestedOverrides:
         """Allow GET on the whole parent and return the merged value."""
         api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"SESSION__SAMESITE": "strict"},
+            json={"SESSION_REFRESH__SAMESITE": "strict"},
         )
-        response = api_admin_client.get("/api/sep/admin/settings/SEPSettings/SESSION")
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH"
+        )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["value"]["SAMESITE"] == "strict"
 
@@ -1452,24 +1446,24 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Revert the leaf to its YAML/env value when deleting a nested override (AC #3)."""
         override_seconds = 7200
-        original = sep_settings.SESSION.MAX_AGE
+        original = sep_settings.SESSION_REFRESH.MAX_AGE
         api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"SESSION__MAX_AGE": override_seconds},
+            json={"SESSION_REFRESH__MAX_AGE": override_seconds},
         )
-        assert sep_settings.SESSION.MAX_AGE.total_seconds() == override_seconds
+        assert sep_settings.SESSION_REFRESH.MAX_AGE.total_seconds() == override_seconds
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE"
+            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH__MAX_AGE"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
-        assert original == sep_settings.SESSION.MAX_AGE
+        assert original == sep_settings.SESSION_REFRESH.MAX_AGE
 
     async def test_delete_nested_override_idempotent_when_absent(
         self, api_admin_client: TestClient
     ) -> None:
         """Return 204 when deleting a never-set nested override."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE"
+            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH__MAX_AGE"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -1479,14 +1473,18 @@ class TestSepSettingsNestedOverrides:
         """Assert each leaf carries its own ``has_override``; a sibling stays ``False``."""
         api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
-            json={"SESSION__SAMESITE": "strict"},
+            json={"SESSION_REFRESH__SAMESITE": "strict"},
         )
         list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
         overridden = _find_setting(
-            list_payload, SettingClassEnum.SEP_SETTINGS.value, "SESSION__SAMESITE"
+            list_payload,
+            SettingClassEnum.SEP_SETTINGS.value,
+            "SESSION_REFRESH__SAMESITE",
         )
         sibling = _find_setting(
-            list_payload, SettingClassEnum.SEP_SETTINGS.value, "SESSION__MAX_AGE"
+            list_payload,
+            SettingClassEnum.SEP_SETTINGS.value,
+            "SESSION_REFRESH__MAX_AGE",
         )
         assert overridden["has_override"] is True
         assert sibling["has_override"] is False
@@ -1566,19 +1564,6 @@ class TestSepSettingsSecondaryClasses:
             assert snippets_settings.ENABLE_MANUAL_SYNC is (not original)
         finally:
             snippets_settings._set_snapshot({})
-
-    async def test_patch_messages_setting(self, api_admin_client: TestClient) -> None:
-        """Assert a Messages HOT field is patchable via the SEP router."""
-        target_level = 30
-        response = api_admin_client.patch(
-            "/api/sep/admin/settings/MessagesSettings",
-            json={"LEVEL": target_level},
-        )
-        try:
-            assert response.status_code == status.HTTP_200_OK
-            assert target_level == messages_settings.LEVEL
-        finally:
-            messages_settings._set_snapshot({})
 
 
 @pytest.mark.asyncio

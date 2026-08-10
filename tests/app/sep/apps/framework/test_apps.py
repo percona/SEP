@@ -23,7 +23,6 @@ body resolution it exists to cover is genuinely executed.
 """
 
 from dataclasses import replace
-from pathlib import Path
 from typing import Annotated, Any, get_args
 from unittest.mock import AsyncMock
 
@@ -43,7 +42,6 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import (
     BaseTaskResponse,
     ConnectivityWarning,
-    StaticMount,
     TaskExecuteWrite,
     TaskExecutionResponse,
 )
@@ -1728,12 +1726,3 @@ class TestInheritedBaseAppFields:
     def test_defaults_uses_task_data_true(self) -> None:
         """Carry ``True`` by default: a derived task app always renders task data."""
         assert _synth_app().uses_task_data is True
-
-    def test_static_mounts_round_trip_after_inheriting(self) -> None:
-        """Accept and carry ``static_mounts`` now that the field lives on the parent."""
-        mount = StaticMount(
-            path="/static/synthetic",
-            directory=Path("/tmp/payloads"),
-            name="synthetic_files",
-        )
-        assert _synth_app(static_mounts=(mount,)).static_mounts == (mount,)

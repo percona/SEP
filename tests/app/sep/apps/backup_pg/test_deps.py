@@ -21,7 +21,6 @@ import yaml
 from app.core.utils.path import resolve_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.deps import (
-    get_backups_task_info,
     parse_backup_task_data,
 )
 from app.sep.apps.backup_pg.models import BackupPgForm, BackupType
@@ -95,63 +94,6 @@ def test_build_backup_pg_spec_uses_stanza_as_alias():
     cfg = yaml.safe_load(spec.config)
     assert cfg["SERVER_LIST"][0]["ALIAS"] == "my-custom-stanza"
     assert cfg["SERVER_LIST"][0]["ALIAS"] != service.node.address
-
-
-def test_get_backups_task_info():
-    """Test extracting the correct fields from a backup_pg task dictionary."""
-    server_port = 5555
-    fake_task_dict = {
-        "data": {
-            "meta": {
-                "target": "host.example.com",
-                "config": yaml.dump(
-                    {
-                        "SERVER_LIST": [
-                            {
-                                "HOST": "my-db-host",
-                                "PORT": server_port,
-                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
-                            }
-                        ]
-                    }
-                ),
-            }
-        }
-    }
-
-    result = get_backups_task_info(fake_task_dict)
-
-    assert result["hostname"] == "host.example.com"
-    assert result["host"] == "my-db-host"
-    assert result["port"] == server_port
-    assert result["backup_type"] == BackupType.PGBACKREST.name
-
-
-def test_get_backups_task_info_port_falls_back_to_meta():
-    """Test PORT missing from YAML falls back to the meta connectivity port."""
-    meta_port = 6543
-    fake_task_dict = {
-        "data": {
-            "meta": {
-                "target": "host.example.com",
-                CONNECTIVITY_META_PORT_KEY: meta_port,
-                "config": yaml.dump(
-                    {
-                        "SERVER_LIST": [
-                            {
-                                "HOST": "my-db-host",
-                                "BACKUP_TYPE": BackupType.PGBACKREST.value,
-                            }
-                        ]
-                    }
-                ),
-            }
-        }
-    }
-
-    result = get_backups_task_info(fake_task_dict)
-
-    assert result["port"] == meta_port
 
 
 def test_parse_backup_task_data():

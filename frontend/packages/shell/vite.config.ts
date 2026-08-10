@@ -49,10 +49,6 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      '/legacy': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
       // Task log SSE and related routes live outside /api (see app/sep/main.py).
       '/stream-logs': {
         target: 'http://localhost:8000',
@@ -63,12 +59,6 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/files': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      // App static mounts (snippets, dipper) and anonymous legacy Jinja assets
-      // (see app/sep/main.py). Without this, SPA fallback returns index.html.
-      '/static': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },

@@ -54,17 +54,9 @@ default:
     PROXY_HEADERS: False
     ARTIFACT_DOWNLOAD_TTL: 600
     CONNECTIVITY_CHECK_DEFAULT: False
-    TEMPLATES_DIR: templates
-    STATIC_DIR: static
     ALERT_DEFINITIONS_DIR: null
     OAUTH:
       REDIRECT_URI: /oauth/callback
-    SESSION:
-      COOKIE_NAME: casdoorToken
-      SECURE: False
-      HTTP_ONLY: True
-      SAME_SITE: lax
-      MAX_AGE: 3600
     SESSION_REFRESH:
       COOKIE_NAME: refreshToken
       PATH: /api/oauth
@@ -401,9 +393,6 @@ production_docker:
         - /api/docs
         - /api/inventory/docs
         - /api/tasks/docs
-    SESSION:
-      COOKIE_NAME: casdoorToken
-      SECURE: True
     SESSION_REFRESH:
       COOKIE_NAME: refreshToken
       PATH: /api/oauth

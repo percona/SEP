@@ -37,29 +37,29 @@ from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import (
     App,
     AppDrainSettings,
+    CookieOptions,
     DeliveryPlanInputs,
     HealthReportSettings,
     materialize_delivery_plan_inputs,
     sep_settings,
     SEPSettings,
-    SessionOptions,
     SyncerExtraKwargs,
     SyncOptions,
 )
 
 
-class TestSessionOptions:
-    """Define tests for the SessionOptions model."""
+class TestCookieOptions:
+    """Define tests for the CookieOptions model."""
 
     def test_default_dump_has_none_path(self):
-        """Assert legacy SessionOptions dump keeps ``path=None`` (no explicit path)."""
-        dumped = SessionOptions().model_dump(by_alias=True)
+        """Assert a bare CookieOptions dump keeps ``path=None`` (no explicit path)."""
+        dumped = CookieOptions().model_dump(by_alias=True)
         assert dumped["key"] == "authToken"
         assert dumped["path"] is None
 
     def test_refresh_dump_carries_path(self):
         """Assert a SESSION_REFRESH-style instance exposes the configured path."""
-        dumped = SessionOptions(
+        dumped = CookieOptions(
             COOKIE_NAME="refreshToken", PATH="/api/oauth"
         ).model_dump(by_alias=True)
         assert dumped["key"] == "refreshToken"
@@ -74,7 +74,6 @@ class TestSessionRefreshDefault:
         settings = SEPSettings()
         assert settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
         assert settings.SESSION_REFRESH.PATH == "/api/oauth"
-        assert settings.SESSION.PATH is None
 
 
 class TestAmbientSessionSSO:

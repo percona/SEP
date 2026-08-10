@@ -826,10 +826,9 @@ def build_settings_router(
     dependency, and its admin-auth dependency. ``admin_dep`` is applied at
     the router level so every endpoint inherits the admin gate. State-changing
     endpoints (PATCH / DELETE) additionally take ``mutation_deps``, which the
-    SEP wiring uses to require Bearer authentication on mutations: a
-    cookie-authenticated admin can otherwise be CSRF'd into mutating settings
-    because :func:`app.sep.deps.validate_csrf` only inspects form bodies, and
-    JSON mutations carry no form body.
+    SEP wiring uses to require Bearer authentication on mutations, so a
+    cross-site JSON request carrying only ambient cookies cannot mutate
+    settings.
 
     :param classes: One ``(SettingClassEnum, settings_cls, proxy)`` triple per
         core settings class to expose on this router.

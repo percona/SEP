@@ -53,7 +53,6 @@ def _make_app(
     backend: bool = True,
     frontend: bool = False,
     tests: bool = False,
-    template: str | None = None,
     e2e: str | None = None,
 ) -> None:
     """Create the requested surfaces for one synthetic app slice.
@@ -63,7 +62,6 @@ def _make_app(
     :param backend: Create the backend app directory.
     :param frontend: Create the ``frontend/packages/apps`` directory.
     :param tests: Create the ``tests/app/sep/apps`` directory.
-    :param template: Optional ``templates/<value>`` directory name.
     :param e2e: Optional e2e spec stem to materialize as ``<value>.spec.ts``.
     """
     if backend:
@@ -76,8 +74,6 @@ def _make_app(
         (repo / "tests" / "app" / "sep" / "apps" / name).mkdir(
             parents=True, exist_ok=True
         )
-    if template is not None:
-        (repo / "templates" / template).mkdir(parents=True, exist_ok=True)
     if e2e is not None:
         e2e_dir = repo / "frontend" / "packages" / "e2e" / "tests"
         e2e_dir.mkdir(parents=True, exist_ok=True)
@@ -95,7 +91,7 @@ def _valid_repo(tmp_path: Path) -> Path:
     """
     repo = tmp_path / "repo"
     (repo / "app" / "sep" / "apps").mkdir(parents=True)
-    _make_app(repo, "archives", template="archiver", e2e="archives")
+    _make_app(repo, "archives", e2e="archives")
     _make_app(repo, "alert_troubleshooting", e2e="alert-troubleshooting")
     _make_app(repo, "mysql_backups", e2e="mysql-backups")
     return repo
@@ -126,7 +122,7 @@ def _apps_root(repo: Path) -> Path:
 def test_generates_block_for_each_app(tmp_path):
     """Emit one ``app:<name>`` entry per discovered app slice."""
     repo = _valid_repo(tmp_path)
-    _make_app(repo, "zebra", frontend=True, tests=True, template="zebra", e2e="zebra")
+    _make_app(repo, "zebra", frontend=True, tests=True, e2e="zebra")
     labeler = _write_labeler(repo, _EXISTING_RULES)
 
     assert sync_labeler_apps.sync_labeler(labeler, _apps_root(repo), repo)
@@ -136,7 +132,6 @@ def test_generates_block_for_each_app(tmp_path):
     assert "- 'app/sep/apps/zebra/**'" in text
     assert "- 'frontend/packages/apps/zebra/**'" in text
     assert "- 'tests/app/sep/apps/zebra/**'" in text
-    assert "- 'templates/zebra/**'" in text
     assert "- 'frontend/packages/e2e/tests/zebra*.spec.ts'" in text
 
 
@@ -152,20 +147,7 @@ def test_only_existing_surfaces_are_emitted(tmp_path):
     assert "app:backendonly:" in text
     assert "- 'app/sep/apps/backendonly/**'" in text
     assert "frontend/packages/apps/backendonly" not in text
-    assert "templates/backendonly" not in text
     assert "e2e/tests/backendonly" not in text
-
-
-def test_template_alias_is_resolved(tmp_path):
-    """Map ``archives`` to its ``templates/archiver`` directory."""
-    repo = _valid_repo(tmp_path)
-    labeler = _write_labeler(repo, _EXISTING_RULES)
-
-    sync_labeler_apps.sync_labeler(labeler, _apps_root(repo), repo)
-    text = labeler.read_text(encoding="utf-8")
-
-    assert "- 'templates/archiver/**'" in text
-    assert "templates/archives" not in text
 
 
 def test_e2e_alias_is_resolved(tmp_path):
@@ -261,16 +243,6 @@ def test_check_detects_drift(tmp_path):
     )
 
 
-def test_stale_template_alias_raises(tmp_path):
-    """Fail when a template alias target no longer exists on disk."""
-    repo = _valid_repo(tmp_path)
-    (repo / "templates" / "archiver").rmdir()
-    labeler = _write_labeler(repo, _EXISTING_RULES)
-
-    with pytest.raises(ValueError, match="stale template alias"):
-        sync_labeler_apps.sync_labeler(labeler, _apps_root(repo), repo)
-
-
 def test_stale_e2e_alias_raises(tmp_path):
     """Fail when an e2e alias spec no longer exists on disk."""
     repo = _valid_repo(tmp_path)
@@ -288,7 +260,6 @@ def test_alias_for_unknown_app_raises(tmp_path):
     repo = tmp_path / "repo"
     (repo / "app" / "sep" / "apps").mkdir(parents=True)
     _make_app(repo, "alert_troubleshooting", e2e="alert-troubleshooting")
-    _make_app(repo, "mysql_backups", e2e="mysql-backups")
     labeler = _write_labeler(repo, _EXISTING_RULES)
 
     with pytest.raises(ValueError, match="unknown app"):
@@ -309,7 +280,9 @@ def test_mismatched_marker_raises(tmp_path):
 def test_main_reports_error_cleanly(tmp_path, capsys):
     """Report a stale alias as a one-line CLI error, not a traceback."""
     repo = _valid_repo(tmp_path)
-    (repo / "templates" / "archiver").rmdir()
+    (
+        repo / "frontend" / "packages" / "e2e" / "tests" / "mysql-backups.spec.ts"
+    ).unlink()
     labeler = _write_labeler(repo, _EXISTING_RULES)
 
     assert (
@@ -317,7 +290,7 @@ def test_main_reports_error_cleanly(tmp_path, capsys):
         == 1
     )
     err = capsys.readouterr().err
-    assert "stale template alias" in err
+    assert "stale e2e alias" in err
     assert "Traceback" not in err
 
 

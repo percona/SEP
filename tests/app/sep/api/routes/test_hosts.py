@@ -213,9 +213,8 @@ class TestSepHostsAuth:
     ) -> None:
         """Return JSON 404 for unknown ``/api/sep/*`` paths even when unauthenticated.
 
-        Exercise the ``JSON_API_PATH_PREFIXES`` tuple directly (not just the
-        registered route): the 404 handler must return JSON rather than an
-        HTML redirect to the login page for any path matching the prefix.
+        The 404 handler is unconditional now, so an unmatched path returns JSON
+        regardless of whether the caller is authenticated.
         """
         response = unauthenticated_client.get(
             "/api/sep/does-not-exist/", follow_redirects=False

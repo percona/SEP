@@ -48,7 +48,6 @@ app:alert_troubleshooting:
       - 'app/sep/apps/alert_troubleshooting/**'
       - 'frontend/packages/apps/alert_troubleshooting/**'
       - 'tests/app/sep/apps/alert_troubleshooting/**'
-      - 'templates/alert_troubleshooting/**'
       - 'frontend/packages/e2e/tests/alert-troubleshooting*.spec.ts'
 app:alerts:
 - any:
@@ -57,7 +56,6 @@ app:alerts:
       - 'app/sep/apps/alerts/**'
       - 'frontend/packages/apps/alerts/**'
       - 'tests/app/sep/apps/alerts/**'
-      - 'templates/alerts/**'
       - 'frontend/packages/e2e/tests/alerts*.spec.ts'
 app:alters:
 - any:
@@ -66,7 +64,6 @@ app:alters:
       - 'app/sep/apps/alters/**'
       - 'frontend/packages/apps/alters/**'
       - 'tests/app/sep/apps/alters/**'
-      - 'templates/alters/**'
       - 'frontend/packages/e2e/tests/alters*.spec.ts'
 app:archives:
 - any:
@@ -74,7 +71,6 @@ app:archives:
     - any-glob-to-any-file:
       - 'app/sep/apps/archives/**'
       - 'tests/app/sep/apps/archives/**'
-      - 'templates/archiver/**'
       - 'frontend/packages/e2e/tests/archives*.spec.ts'
 app:atw:
 - any:
@@ -91,7 +87,6 @@ app:backup_mongo:
       - 'app/sep/apps/backup_mongo/**'
       - 'frontend/packages/apps/backup_mongo/**'
       - 'tests/app/sep/apps/backup_mongo/**'
-      - 'templates/backup_mongo/**'
       - 'frontend/packages/e2e/tests/backup_mongo*.spec.ts'
 app:backup_pg:
 - any:
@@ -99,7 +94,6 @@ app:backup_pg:
     - any-glob-to-any-file:
       - 'app/sep/apps/backup_pg/**'
       - 'tests/app/sep/apps/backup_pg/**'
-      - 'templates/backup_pg/**'
       - 'frontend/packages/e2e/tests/backup_pg*.spec.ts'
 app:checksums:
 - any:
@@ -107,7 +101,6 @@ app:checksums:
     - any-glob-to-any-file:
       - 'app/sep/apps/checksums/**'
       - 'tests/app/sep/apps/checksums/**'
-      - 'templates/checksums/**'
 app:dipper:
 - any:
   - changed-files:
@@ -115,7 +108,6 @@ app:dipper:
       - 'app/sep/apps/dipper/**'
       - 'frontend/packages/apps/dipper/**'
       - 'tests/app/sep/apps/dipper/**'
-      - 'templates/dipper/**'
 app:inventory:
 - any:
   - changed-files:
@@ -123,7 +115,6 @@ app:inventory:
       - 'app/sep/apps/inventory/**'
       - 'frontend/packages/apps/inventory/**'
       - 'tests/app/sep/apps/inventory/**'
-      - 'templates/inventory/**'
       - 'frontend/packages/e2e/tests/inventory*.spec.ts'
 app:mysql_backups:
 - any:
@@ -131,7 +122,6 @@ app:mysql_backups:
     - any-glob-to-any-file:
       - 'app/sep/apps/mysql_backups/**'
       - 'tests/app/sep/apps/mysql_backups/**'
-      - 'templates/mysql_backups/**'
       - 'frontend/packages/e2e/tests/mysql-backups*.spec.ts'
 app:report:
 - any:
@@ -140,7 +130,6 @@ app:report:
       - 'app/sep/apps/report/**'
       - 'frontend/packages/apps/report/**'
       - 'tests/app/sep/apps/report/**'
-      - 'templates/report/**'
       - 'frontend/packages/e2e/tests/report*.spec.ts'
 app:snippets:
 - any:
@@ -149,7 +138,6 @@ app:snippets:
       - 'app/sep/apps/snippets/**'
       - 'frontend/packages/apps/snippets/**'
       - 'tests/app/sep/apps/snippets/**'
-      - 'templates/snippets/**'
       - 'frontend/packages/e2e/tests/snippets*.spec.ts'
 app:tasks:
 - any:
@@ -158,7 +146,6 @@ app:tasks:
       - 'app/sep/apps/tasks/**'
       - 'frontend/packages/apps/tasks/**'
       - 'tests/app/sep/apps/tasks/**'
-      - 'templates/tasks/**'
       - 'frontend/packages/e2e/tests/tasks*.spec.ts'
 app:topology:
 - any:
