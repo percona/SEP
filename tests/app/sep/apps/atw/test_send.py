@@ -862,7 +862,7 @@ class TestRunSendLateDelivery:
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("tasks_api")
 class TestRunSendStaleSnapshot:
-    """Cover a send whose worker snapshot predates the enabling settings write."""
+    """Cover a send whose worker snapshot predates a delivery-settings write."""
 
     async def test_stored_inputs_reach_the_send_after_a_forced_refresh(
         self,
@@ -886,13 +886,13 @@ class TestRunSendStaleSnapshot:
         assert reloaded.status is AtwSendStatusEnum.SUCCESS
         assert uploader.called is True
 
-    async def test_a_plan_resolving_on_the_first_read_is_not_re_read(
+    async def test_a_plan_resolving_on_the_first_read_is_re_read_anyway(
         self,
         send_session: AsyncSession,
         uploader: _FakeUploader,
         mocker: MockerFixture,
     ) -> None:
-        """Read no override row when the first resolve already succeeds."""
+        """Re-read the override row even when the held snapshot already resolves."""
         overrides_read = mocker.spy(SettingsOverrideManager, "list")
         row = await _seed_send_log(send_session)
 
@@ -901,7 +901,48 @@ class TestRunSendStaleSnapshot:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.SUCCESS
         assert uploader.called is True
-        overrides_read.assert_not_called()
+        assert overrides_read.await_count == 1
+
+    async def test_a_rotated_secret_and_endpoint_reach_the_send(
+        self,
+        send_session: AsyncSession,
+        uploader: _FakeUploader,
+        delivery_plan: DeliveryPlan,
+        mocker: MockerFixture,
+    ) -> None:
+        """Deliver against stored inputs that differ from a still-valid stale snapshot.
+
+        A stale-but-valid snapshot resolves on the first read, so the pre-SEP-1781
+        refresh gate would never fire; the send must still pick up the rotated
+        secret and the repointed endpoint from the stored row.
+        """
+        rotated_secret = "rotated-api-key"
+        new_endpoint = "https://intake-rotated.example.com"
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(
+                endpoint="https://intake-stale.example.com",
+                secrets=dict.fromkeys(delivery_plan.secrets, SecretStr("stale-api-key")),
+            ),
+        )
+        await _seed_delivery_inputs(
+            send_session,
+            dict.fromkeys(delivery_plan.secrets, rotated_secret),
+            endpoint=new_endpoint,
+        )
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.SUCCESS
+        assert uploader.plan is not None
+        assert str(uploader.plan.endpoint) == new_endpoint
+        assert {
+            name: secret.get_secret_value()
+            for name, secret in uploader.plan.secrets.items()
+        } == dict.fromkeys(delivery_plan.secrets, rotated_secret)
 
 
 @pytest.mark.asyncio
