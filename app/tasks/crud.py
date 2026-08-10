@@ -410,7 +410,7 @@ class TaskHistoryManager(BaseSQLModelManager):
             )
             .values(log_allocation_epoch=new_allocation_epoch)
         )
-        await session.exec(stmt)
+        await cls._exec(session, stmt)
 
     @classmethod
     async def list_by_task_name(
@@ -1079,7 +1079,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             content=chunk.decode("utf-8", errors="replace"),
             created_at=now,
         )
-        await session.exec(stmt)
+        await cls._exec(session, stmt)
 
     @classmethod
     async def delete_chunks_below_offset(
@@ -1133,7 +1133,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             .where(col(TaskHistoryLog.id).in_(select(limited_ids.c.id)))
             .execution_options(synchronize_session=False)
         )
-        result = await session.exec(stmt)
+        result = await cls._exec(session, stmt)
         return result.rowcount or 0
 
 
@@ -1268,7 +1268,7 @@ class TaskHistoryLogStateManager(BaseManager):
                 updated_at=utc_now(),
             )
         )
-        await session.exec(stmt)
+        await cls._exec(session, stmt)
 
     @classmethod
     async def insert_row_idempotent(
@@ -1331,7 +1331,7 @@ class TaskHistoryLogStateManager(BaseManager):
             version=version,
             created_at=now,
         )
-        result = await session.exec(stmt)
+        result = await cls._exec(session, stmt)
         return bool(result.rowcount == 1)
 
     @classmethod
@@ -1405,7 +1405,7 @@ class TaskHistoryLogStateManager(BaseManager):
                 updated_at=now,
             )
         )
-        result = await session.exec(stmt)
+        result = await cls._exec(session, stmt)
         return bool(result.rowcount == 1)
 
 

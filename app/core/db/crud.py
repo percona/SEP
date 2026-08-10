@@ -25,6 +25,7 @@ from sqlalchemy import (
     CursorResult,
     delete,
     func,
+    Insert,
     inspect,
     ScalarResult,
     Select,
@@ -54,7 +55,7 @@ from app.core.utils.fields import DatabaseDialect
 
 logger = logging.getLogger(__name__)
 
-Whereable = Select | DMLWhereBase
+Whereable = Select | Insert | DMLWhereBase
 ColumnExpressionOrStrLabelArgument = str | ColumnExpressionArgument[Any]
 W = TypeVar("W", bound=Whereable)
 T = TypeVar("T")
