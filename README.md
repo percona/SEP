@@ -582,12 +582,12 @@ SSL certificate files should be in PEM format. Relative paths will be resolved f
 ##### Getting your PMM API Key
 
 1. In a browser, open PMM's web interface and login (the default credentials are `admin:admin`).
-If you followed the Docker tutorial, it should be in https://localhost.
+If you started PMM with the Docker command in [Prerequisites](#prerequisites), it should be in https://localhost.
 
 ![image](https://github.com/user-attachments/assets/1d521d18-388d-49ea-be32-168d7940748b)
 
-2. Navigate to Configuration > API keys. If you followed the Docker tutorial, it should
-be in https://localhost/graph/org/apikeys.
+2. Navigate to Configuration > API keys. If you started PMM with the Docker command in
+[Prerequisites](#prerequisites), it should be in https://localhost/graph/org/apikeys.
 
 ![image](https://github.com/user-attachments/assets/c98792c9-a247-49d7-aafd-c4fcb3523848)
 
@@ -634,9 +634,9 @@ See our [CONTRIBUTING](https://github.com/percona/SEP/blob/main/CONTRIBUTING.md)
 
 ## Deployment
 
-SEP ships bundled with Percona Monitoring and Management (PMM), which deploys and runs it
-for you; there is no separate SEP deployment step. See the PMM documentation for how to
-enable it.
+SEP is moving to ship bundled with Percona Monitoring and Management (PMM), which will
+deploy and run it — no separate SEP deployment step. That integration has not been
+released yet; once it ships, PMM's own documentation will cover enabling it.
 
 v0.13.1 was the final standalone SEP release. Its installer and standalone image remain
 available from that release tag for existing deployments.

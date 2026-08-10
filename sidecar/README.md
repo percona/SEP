@@ -6,8 +6,8 @@ broker under a single PID 1, so the whole product ships as one container with
 one log stream.
 
 Build it with `make image` (tag `sep:${RELEASE_VER}`, no suffix). This is the
-only image SEP ships; Jenkins builds and publishes that one tag on both the
-internal and Docker Hub registries.
+only image SEP ships; Jenkins builds and publishes that one tag to the internal
+registry, and to Docker Hub when the build's `pushImageDocker` parameter is set.
 
 The image is **app-restricted**: the app strip is switched on, so it ships only
 the app packages the settings profile activates — see [App set](#app-set).
@@ -22,7 +22,7 @@ the app packages the settings profile activates — see [App set](#app-set).
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
 | `settings.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
-| `restrict_apps.py` | Build-step strip for the app-restricted variant; removes every app package the baked profile does not activate. Removed during the build, so it is not present in the final image. |
+| `restrict_apps.py` | Build-step strip: removes every app package the baked profile does not activate. Removed during the build, so it is not present in the final image. |
 | `verify_image_apps.py` | Post-build assertion that an image's app set matches its own baked profile. Piped into the image, never copied into it. |
 | `verify_image_apps.sh` | Runs `verify_image_apps.py` inside an already-built image; used by both CI and the Jenkins build. |
 

@@ -164,7 +164,7 @@ pipeline {
 			}
 		}
 
-		stage('Verify image app sets') {
+		stage('Verify image app set') {
 			options {
 				timeout(time: 5, unit: 'MINUTES')
 			}

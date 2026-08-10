@@ -245,7 +245,7 @@ jobs:
     # Runs concurrently with the python test matrix — the docker image build
     # consumes no test output, so it no longer gates on `python`. It starts as
     # soon as label-gate and changes succeed, while tests are still running.
-    # running. Merge correctness is preserved by ci-success below, which
+    # Merge correctness is preserved by ci-success below, which
     # aggregates python, frontend, and build.
     # `lint-fmt-only`: audit-group deps not in the production image.
     if: >-
