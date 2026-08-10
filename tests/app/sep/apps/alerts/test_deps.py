@@ -25,7 +25,6 @@ import app.sep.deps as sep_deps
 from app.sep.apps.alerts import deps as alerts_deps
 from app.sep.apps.alerts.deps import (
     ensure_pagerduty_notification_route,
-    get_alerts_index_context,
     get_or_create_alert_folder,
     get_pagerduty_status,
     get_pmm_present_names,
@@ -33,7 +32,6 @@ from app.sep.apps.alerts.deps import (
 )
 from app.sep.apps.alerts.models import (
     AlertTemplate,
-    ServiceType,
 )
 from app.sep.clients.pmm import AlertTemplate as PMMAlertTemplate
 from app.sep.clients.pmm import ContactPoint, Folder, NotificationPolicy, PMMRemoteAPI
@@ -222,55 +220,6 @@ class TestEnsurePagerdutyNotificationRoute:
         expected_route_count = 2
         assert len(updated_policy.routes) == expected_route_count
         assert updated_policy.routes[0] == existing_route
-
-
-class TestGetAlertsIndexContext:
-    """Test the ``get_alerts_index_context`` dependency."""
-
-    @pytest.mark.asyncio
-    async def test_assembles_context_with_all_fields(self):
-        """Assert the context contains all expected keys."""
-        base_context = {"user": "test-user", "plugins": []}
-        templates_by_service = {
-            ServiceType.GENERIC: (AlertTemplateFactory.build(),),
-            ServiceType.MYSQL: (
-                AlertTemplateFactory.build(service_type=ServiceType.MYSQL),
-            ),
-            ServiceType.MONGODB: (),
-            ServiceType.POSTGRESQL: (),
-        }
-        pmm_names = {"High CPU"}
-        pd_status = {"configured": False}
-
-        result = await get_alerts_index_context(
-            base_context, templates_by_service, pmm_names, [], pd_status
-        )
-
-        assert "all_templates" in result
-        assert "service_types" in result
-        assert "pmm_present_names" in result
-        assert "recent_backups" in result
-        assert "pagerduty_status" in result
-        expected_template_count = sum(len(ts) for ts in templates_by_service.values())
-        assert len(result["all_templates"]) == expected_template_count
-        assert result["service_types"] == list(ServiceType)
-        assert result["pmm_present_names"] is pmm_names
-        assert result["pagerduty_status"] is pd_status
-        assert result["user"] == "test-user"
-
-    @pytest.mark.asyncio
-    async def test_pmm_present_names_can_be_none(self):
-        """Assert the context works when PMM is unavailable."""
-        base_context = {"user": "test-user"}
-        templates_by_service = {svc: () for svc in ServiceType}
-
-        result = await get_alerts_index_context(
-            base_context, templates_by_service, None, [], None
-        )
-
-        assert result["pmm_present_names"] is None
-        assert result["pagerduty_status"] is None
-        assert result["all_templates"] == []
 
 
 class TestGetOrCreateAlertFolder:

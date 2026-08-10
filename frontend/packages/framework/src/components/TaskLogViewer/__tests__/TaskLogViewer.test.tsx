@@ -98,6 +98,14 @@ describe('TaskLogViewer', () => {
     return screen.getByRole('combobox');
   }
 
+  function queryTailSelect() {
+    return screen.queryByRole('combobox');
+  }
+
+  function lines(count: number): string {
+    return 'x\n'.repeat(count);
+  }
+
   function fetchUrl(callIndex: number): string {
     const url = mock.fetchSpy.mock.calls[callIndex]?.[0];
     return typeof url === 'string' ? url : (url as URL).href;
@@ -219,6 +227,127 @@ describe('TaskLogViewer', () => {
 
     expect(screen.queryByTestId('log-output')).not.toBeInTheDocument();
     expect(screen.getByText(/no output yet/i)).toBeInTheDocument();
+  });
+
+  it('hides the line cap when a finished log is provably shorter than the smallest option', async () => {
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="20" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('20');
+    act(() => {
+      handle.pushMessage({ msg: lines(3), step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushMessage({ msg: lines(2), step: 'setup', type: 'stderr', offset: 1 });
+      handle.pushNamed('finish', { status: 'success' });
+    });
+
+    await waitFor(() => expect(queryTailSelect()).toBeNull());
+    // Hiding the control leaves the stored choice alone for the next log.
+    expect(globalThis.localStorage.getItem('sep.taskLogViewer.tail')).toBeNull();
+    // The request still carried the stored cap — size is unknown until it arrives.
+    expect(logFetchUrls()[0]).toBe('/stream-logs/20?tail=1000');
+  });
+
+  it('hides the line cap when a short finished log was fetched with All lines', async () => {
+    globalThis.localStorage.setItem('sep.taskLogViewer.tail', 'all');
+
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="21" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('21');
+    act(() => {
+      handle.pushMessage({ msg: lines(4), step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushNamed('finish', { status: 'success' });
+    });
+
+    await waitFor(() => expect(queryTailSelect()).toBeNull());
+  });
+
+  it('keeps the line cap when a finished pane sits exactly at the requested cap', async () => {
+    globalThis.localStorage.setItem('sep.taskLogViewer.tail', '100');
+
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="22" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+    expect(logFetchUrls()[0]).toBe('/stream-logs/22?tail=100');
+
+    const handle = getHandle('22');
+    act(() => {
+      handle.pushMessage({ msg: lines(100), step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushNamed('finish', { status: 'success' });
+    });
+    await waitFor(() => expect(screen.getByTestId('log-output')).toBeInTheDocument());
+
+    // 100 lines under a tail=100 request may have been trimmed server-side.
+    expect(getTailSelect()).toBeInTheDocument();
+  });
+
+  it('keeps the line cap when a finished log exceeds the smallest option', async () => {
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="23" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('23');
+    act(() => {
+      handle.pushMessage({ msg: lines(2), step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushMessage({ msg: lines(150), step: 'build', type: 'stderr', offset: 1 });
+      handle.pushNamed('finish', { status: 'success' });
+    });
+    await waitFor(() => expect(screen.getByTestId('log-output')).toBeInTheDocument());
+
+    // Decision uses the largest pane, not the visible one.
+    expect(getTailSelect()).toBeInTheDocument();
+  });
+
+  it('keeps the line cap when a short finished log ends in a stream error', async () => {
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="25" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('25');
+    act(() => {
+      handle.pushMessage({ msg: lines(2), step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushNamed('sep-error', { detail: 'gateway blew up' });
+    });
+    await waitFor(() => expect(screen.getByText('gateway blew up')).toBeInTheDocument());
+
+    // An aborted stream never proves the log is complete.
+    expect(getTailSelect()).toBeInTheDocument();
+  });
+
+  it('keeps the line cap visible but disabled for a running task with a short log', async () => {
+    render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="24" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('24');
+    act(() => {
+      handle.pushMessage({ msg: lines(2), step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushNamed('finish', { status: 'success' });
+    });
+    await waitFor(() => expect(screen.getByText('Done')).toBeInTheDocument());
+
+    expect(getTailSelect()).toBeInTheDocument();
+    expect(getTailSelect()).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('marks the stderr top tab as unread when stderr arrives while on stdout', async () => {

@@ -424,6 +424,14 @@ class CreatedTable(CreatedEntityBase, Table):
         return f"Table(name={self.name!r}, schema_id={self.schema_id})"
 
 
+# ``Service``/``Schema`` reference each other's children before those classes
+# exist, so Pydantic defers their build. Resolve it here, where every name is in
+# scope, rather than leaving it to whichever consumer happens to build a model
+# first -- a subclass declared in another module (``SystemFactsService``) cannot
+# resolve ``Schema`` from its own namespace.
+for _model in (Node, CreatedNode, Service, CreatedService, Schema, CreatedSchema):
+    _model.model_rebuild()
+
 CreatedEntity = CreatedNode | CreatedService | CreatedSchema | CreatedTable
 
 ENTITY_MAPPING = {

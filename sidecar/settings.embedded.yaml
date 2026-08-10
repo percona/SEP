@@ -29,20 +29,20 @@ default:
   # The settings the embedded deployment leaves to an administrator; everything
   # else is refused by the override API because this image provisions it.
   # Unprefixed, so all three services read the same list.
-  SETTINGS_OVERRIDE_ALLOWED_KEYS:
-    - Settings.LOGGING
-    - Settings.PMM__annotations_enabled
-    - SEPSettings.SYNC_REFRESH_TIME
-    - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
-    - SEPSettings.FOOTER_TEMPLATE
-    - SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS
-    - MessagesSettings.LEVEL
-    - AlertSettings.PROVIDERS
-    - AlertSettings.SOURCE_PREFIX
-    - AlertSettings.SOURCE_SUFFIX
-    - AnonymizerSettings.DEFAULT_ENTITIES
-    - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
-    - TasksSettings.LOG_RETENTION_DAYS
+  SETTINGS_OVERRIDE:
+    ALLOWED_KEYS:
+      - Settings.LOGGING
+      - Settings.PMM__annotations_enabled
+      - SEPSettings.SYNC_REFRESH_TIME
+      - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
+      - SEPSettings.FOOTER_TEMPLATE
+      - SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS
+      - AlertSettings.PROVIDERS
+      - AlertSettings.SOURCE_PREFIX
+      - AlertSettings.SOURCE_SUFFIX
+      - AnonymizerSettings.DEFAULT_ENTITIES
+      - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
+      - TasksSettings.LOG_RETENTION_DAYS
 
   AUTH:
     PROVIDER:
@@ -64,7 +64,8 @@ default:
     # Superseded per container start by the credentialed URLs entrypoint.sh mints.
     BROKER_URL: redis://127.0.0.1:6379/0
     RESULT_BACKEND: redis://127.0.0.1:6379/1
-    BEAT_DBURI: postgresql://sep@pmm-server:5432/sep
+    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so the
+    # mounted SEP__DATABASE__PASSWORD reaches it without an env-visible URI.
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
 

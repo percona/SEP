@@ -34,7 +34,7 @@ import Typography from '@mui/material/Typography';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useExecutionEvents } from '../../hooks/useExecutionEvents';
 import { useLogDownload } from '../../hooks/useLogDownload';
-import { useTaskLogs, type LogType } from '../../hooks/useTaskLogs';
+import { useTaskLogs, type LogType, type StepText } from '../../hooks/useTaskLogs';
 import { ExecutionEventsPanel } from './ExecutionEventsPanel';
 import { LogOutputPane } from './LogOutputPane';
 import { LogStepTabs } from './LogStepTabs';
@@ -53,6 +53,21 @@ export const LOG_TAIL_LINE_OPTIONS = [
 ] as const;
 
 export type LogTailLineChoice = (typeof LOG_TAIL_LINE_OPTIONS)[number]['value'];
+
+const NUMERIC_LOG_TAIL_OPTIONS = LOG_TAIL_LINE_OPTIONS.map((option) => Number(option.value)).filter(
+  (value) => Number.isFinite(value),
+);
+
+/**
+ * Smallest numeric cap on offer. A proven-complete log at or below this size
+ * looks identical under every option, so the select has nothing left to do.
+ * Derived from the options list so changing the list moves the threshold.
+ *
+ * Falls back to 0 when the list holds no numeric option: `Math.min()` of an
+ * empty list is Infinity, which would hide the select for every finished task.
+ */
+const SMALLEST_LOG_TAIL_OPTION =
+  NUMERIC_LOG_TAIL_OPTIONS.length > 0 ? Math.min(...NUMERIC_LOG_TAIL_OPTIONS) : 0;
 
 const LOG_TAIL_STORAGE_KEY = 'sep.taskLogViewer.tail';
 
@@ -86,6 +101,45 @@ function isRunningStatus(status?: string): boolean {
   return (status ?? '').toLowerCase() === 'running';
 }
 
+/**
+ * Line count, saturating at `limit + 1`. Callers only need to know whether a
+ * pane is over the threshold, so a large log stops being scanned as soon as it
+ * provably is — no full pass over megabytes of "All lines" output.
+ */
+function countLinesUpTo(text: string, limit: number): number {
+  if (text === '') {
+    return 0;
+  }
+  let lines = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\n') {
+      lines += 1;
+      if (lines > limit) {
+        return lines;
+      }
+    }
+  }
+  // A trailing fragment without its newline is still a line on screen.
+  return text.endsWith('\n') ? lines : lines + 1;
+}
+
+/**
+ * Largest line count across every step and both streams, saturating at
+ * `limit + 1`. The line-cap decision uses this rather than the visible pane so
+ * the control does not appear and disappear as the user moves between step or
+ * stream tabs.
+ */
+function maxPaneLineCountUpTo(textByStep: Record<string, StepText>, limit: number): number {
+  let max = 0;
+  for (const pane of Object.values(textByStep)) {
+    max = Math.max(max, countLinesUpTo(pane.stdout, limit), countLinesUpTo(pane.stderr, limit));
+    if (max > limit) {
+      return max;
+    }
+  }
+  return max;
+}
+
 function resolveBadgeStatus(
   finishStatus: ReturnType<typeof useTaskLogs>['finishStatus'],
   error: ReturnType<typeof useTaskLogs>['error'],
@@ -101,7 +155,7 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
   const [logTailChoice, setLogTailChoice] = useState<LogTailLineChoice>(readStoredLogTailChoice);
   const tailLines = logTailChoiceToParam(logTailChoice);
   const effectiveTailLines = running ? undefined : tailLines;
-  const { textByStep, stepOrder, finishStatus, error } = useTaskLogs(
+  const { textByStep, stepOrder, streamStatus, finishStatus, error } = useTaskLogs(
     taskHistoryId,
     effectiveTailLines,
   );
@@ -232,6 +286,25 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
 
   const badgeStatus = resolveBadgeStatus(finishStatus, error);
 
+  // Hide the line cap once a finished history has streamed a log that is
+  // provably complete and short enough that every option would show the same
+  // thing. Gated on the terminal stream status so the control does not flicker
+  // while lines are still arriving.
+  const showLogTailSelect = useMemo(() => {
+    if (running || streamStatus !== 'finished') {
+      return true;
+    }
+    // Saturated at one over the threshold: any pane above it keeps the select
+    // regardless of the requested cap, so the exact count no longer matters.
+    const maxLines = maxPaneLineCountUpTo(textByStep, SMALLEST_LOG_TAIL_OPTION);
+    if (maxLines > SMALLEST_LOG_TAIL_OPTION) {
+      return true;
+    }
+    // A pane sitting exactly at the requested cap may have been trimmed
+    // server-side, so only a count strictly below the cap proves completeness.
+    return effectiveTailLines !== undefined && maxLines >= effectiveTailLines;
+  }, [running, streamStatus, textByStep, effectiveTailLines]);
+
   return (
     <Paper variant="outlined" sx={{ display: 'flex', flexDirection: 'column' }}>
       <Stack
@@ -288,36 +361,38 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
         <Box sx={{ flex: 1 }} />
         <Stack direction="row" alignItems="center" spacing={1} sx={{ pr: 1 }}>
           {badgeStatus && <StatusBadge status={badgeStatus} />}
-          <Tooltip
-            title={
-              running
-                ? 'Line cap applies to finished task logs only'
-                : 'Limit how many lines are loaded from the server'
-            }
-          >
-            <FormControl size="small" sx={{ minWidth: 96 }} disabled={running}>
-              <Select
-                value={logTailChoice}
-                onChange={(event) => handleLogTailChange(event.target.value as LogTailLineChoice)}
-                aria-label="Log lines to show"
-                disabled={running}
-                renderValue={(value) => (
-                  <Typography variant="body2" component="span">
-                    {value === 'all' ? 'All lines' : `Last ${value}`}
-                  </Typography>
-                )}
-                sx={{
-                  '& .MuiSelect-select': { py: 0.75, display: 'flex', alignItems: 'center' },
-                }}
-              >
-                {LOG_TAIL_LINE_OPTIONS.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label === 'All' ? 'All lines' : `Last ${option.label}`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Tooltip>
+          {showLogTailSelect && (
+            <Tooltip
+              title={
+                running
+                  ? 'Line cap applies to finished task logs only'
+                  : 'Limit how many lines are loaded from the server'
+              }
+            >
+              <FormControl size="small" sx={{ minWidth: 96 }} disabled={running}>
+                <Select
+                  value={logTailChoice}
+                  onChange={(event) => handleLogTailChange(event.target.value as LogTailLineChoice)}
+                  aria-label="Log lines to show"
+                  disabled={running}
+                  renderValue={(value) => (
+                    <Typography variant="body2" component="span">
+                      {value === 'all' ? 'All lines' : `Last ${value}`}
+                    </Typography>
+                  )}
+                  sx={{
+                    '& .MuiSelect-select': { py: 0.75, display: 'flex', alignItems: 'center' },
+                  }}
+                >
+                  {LOG_TAIL_LINE_OPTIONS.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label === 'All' ? 'All lines' : `Last ${option.label}`}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Tooltip>
+          )}
           <FormControlLabel
             control={
               <Switch size="small" checked={wrap} onChange={(_, checked) => setWrap(checked)} />

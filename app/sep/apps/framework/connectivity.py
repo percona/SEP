@@ -74,9 +74,9 @@ async def record_connectivity_warning(
     Delegate to :func:`app.sep.connectivity._fetch_connectivity_result`
     (cached via ``alru_cache``) and record the outcome in
     :data:`app.sep.connectivity._LATEST_RESULTS` via
-    :func:`app.sep.connectivity._record_latest_result`. The snapshot write
-    keeps :func:`app.sep.connectivity.annotate_tasks_with_connectivity`
-    reflecting JSON-path results the same way it reflects form-path ones.
+    :func:`app.sep.connectivity._record_latest_result`, which
+    :func:`app.sep.connectivity.get_latest_connectivity_result` reads back
+    synchronously.
 
     :param tasks_api: Authenticated Tasks API client.
     :param target: The Nomad node name.
@@ -107,11 +107,10 @@ async def maybe_record_connectivity_warning(
 ) -> ConnectivityWarning | None:
     """Run :func:`record_connectivity_warning` when ``meta`` carries connectivity data.
 
-    Mirror the form-side :func:`app.sep.connectivity.maybe_check_connectivity`
-    guard semantics: short-circuit to ``None`` when ``check_connectivity`` is
-    ``False`` or when any of the required meta keys is missing or falsy. This
-    lets task-creation routes invoke the helper unconditionally without
-    inspecting ``meta`` themselves.
+    Short-circuit to ``None`` when ``check_connectivity`` is ``False`` or when
+    any of the required meta keys is missing or falsy. This lets task-creation
+    routes invoke the helper unconditionally without inspecting ``meta``
+    themselves.
 
     :param tasks_api: Authenticated Tasks API client.
     :param meta: The ``task.data["meta"]`` mapping from the created task.

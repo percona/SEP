@@ -15,7 +15,7 @@
 
 """Answer which ``(settings class, key)`` pairs stay overridable.
 
-``Settings.SETTINGS_OVERRIDE_ALLOWED_KEYS`` drives every predicate here.
+``Settings.SETTINGS_OVERRIDE.ALLOWED_KEYS`` drives every predicate here.
 ``None``, the default, means unrestricted: every classification behaves exactly
 as if this module did not exist. A set activates a default-locked allowlist, so
 only the pairs it names stay overridable. Anything else is refused until an
@@ -40,12 +40,12 @@ def _allowed_entries() -> frozenset[str] | None:
     """Return the configured entries as a hashable set, or ``None`` when unset.
 
     :return: The entry set projected to a ``frozenset``, or ``None`` when
-        ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` places no restriction.
+        ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` places no restriction.
     """
     # circular import: config imports registry imports policy (this module)
     from app.core.config import settings
 
-    entries = settings.SETTINGS_OVERRIDE_ALLOWED_KEYS
+    entries = settings.SETTINGS_OVERRIDE.ALLOWED_KEYS
     return None if entries is None else frozenset(entries)
 
 
@@ -68,7 +68,7 @@ def _allowed_keys_for(setting_class: SettingClassEnum) -> frozenset[str] | None:
     """Return the keys allowed on one settings class, or ``None`` when unset.
 
     :param setting_class: The settings class identifier to look up.
-    :return: The allowed keys, or ``None`` when ``SETTINGS_OVERRIDE_ALLOWED_KEYS``
+    :return: The allowed keys, or ``None`` when ``SETTINGS_OVERRIDE.ALLOWED_KEYS``
         places no restriction, which every caller reads as "allow everything".
     """
     entries = _allowed_entries()
@@ -78,7 +78,7 @@ def _allowed_keys_for(setting_class: SettingClassEnum) -> frozenset[str] | None:
 
 
 def is_restriction_active() -> bool:
-    """Return whether ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` restricts anything.
+    """Return whether ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` restricts anything.
 
     :return: ``True`` when an allowlist is configured, ``False`` when every
         statically overridable field stays overridable.
