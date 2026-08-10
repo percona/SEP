@@ -156,7 +156,7 @@ def worker_loop_env_fixture(
     loop = asyncio.new_event_loop()
     monkeypatch.setattr(sep_worker.celery, "loop", loop)
     monkeypatch.setattr(sep_worker._refresher, "task", None)
-    monkeypatch.setattr(settings, "SETTINGS_OVERRIDE_REFRESHER_ENABLED", True)
+    monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", True)
     monkeypatch.setattr(sep_worker, "collect_app_owned_settings_classes", list)
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -247,7 +247,7 @@ class TestSepWorkerHandlers:
         self, monkeypatch: pytest.MonkeyPatch, mocker
     ) -> None:
         """Resolve ``messages_settings`` but start no task when disabled."""
-        monkeypatch.setattr(settings, "SETTINGS_OVERRIDE_REFRESHER_ENABLED", False)
+        monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
         monkeypatch.setattr(sep_worker._refresher, "task", None)
         mock_messages = MagicMock(spec=OverridableSettingsProxy)
         monkeypatch.setattr(sep_worker, "messages_settings", mock_messages)

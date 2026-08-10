@@ -43,6 +43,7 @@ from app.core.config import (
     BaseYamlAppSettings,
     create_app,
     default_lifespan,
+    detect_removed_settings_override_keys,
     PMMSettings,
     PreEnvSettings,
     Settings,
@@ -914,3 +915,77 @@ def test_env_var_beats_secret_file_for_the_yaml_profile(tmp_path, monkeypatch):
     baseline = _yaml_source_for(Settings, empty)
 
     assert from_env.yaml_data == baseline.yaml_data
+
+
+class TestRemovedSettingsOverrideKeysDetector:
+    """Cover the startup detector for the removed flat settings-override keys."""
+
+    @staticmethod
+    def _profile(tmp_path, body: str) -> None:
+        """Write a YAML profile into ``tmp_path`` and make it the working directory.
+
+        :param tmp_path: The directory to write the profile into.
+        :param body: The ``default:`` block's body, already indented.
+        """
+        (tmp_path / "settings.yaml").write_text(f"default:\n{body}", encoding="utf-8")
+
+    def test_unset_is_noop(self, monkeypatch, tmp_path):
+        """Verify a profile naming none of the removed keys raises nothing."""
+        self._profile(tmp_path, "  LOGGING: WARNING\n")
+        monkeypatch.chdir(tmp_path)
+        detect_removed_settings_override_keys()
+
+    @pytest.mark.parametrize(
+        ("legacy_var", "value"),
+        [
+            ("SETTINGS_OVERRIDE_REFRESH_INTERVAL", "PT60S"),
+            ("SETTINGS_OVERRIDE_REFRESHER_ENABLED", "false"),
+            ("SETTINGS_OVERRIDE_ALLOWED_KEYS", '["Settings.LOGGING"]'),
+        ],
+    )
+    def test_flat_env_var_fails_fast(self, monkeypatch, tmp_path, legacy_var, value):
+        """Verify each removed key still set in the environment stops start-up."""
+        self._profile(tmp_path, "  LOGGING: WARNING\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv(legacy_var, value)
+        with pytest.raises(ValueError, match=legacy_var):
+            detect_removed_settings_override_keys()
+
+    @pytest.mark.parametrize(
+        ("nested_var", "value"),
+        [
+            ("SETTINGS_OVERRIDE__REFRESH_INTERVAL", "PT60S"),
+            ("SETTINGS_OVERRIDE__REFRESHER_ENABLED", "false"),
+            ("SETTINGS_OVERRIDE__ALLOWED_KEYS", '["Settings.LOGGING"]'),
+        ],
+    )
+    def test_nested_env_var_is_accepted(self, monkeypatch, tmp_path, nested_var, value):
+        """Verify the nested spelling is not mistaken for the removed flat one."""
+        self._profile(tmp_path, "  LOGGING: WARNING\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv(nested_var, value)
+        detect_removed_settings_override_keys()
+
+    def test_flat_yaml_key_fails_fast(self, monkeypatch, tmp_path):
+        """Verify a profile still nesting nothing stops start-up.
+
+        This is the deployment shape that matters most: a mounted profile
+        written against the old spelling reads as an absent allowlist, which
+        leaves the override API unrestricted.
+        """
+        self._profile(
+            tmp_path,
+            "  SETTINGS_OVERRIDE_ALLOWED_KEYS:\n    - Settings.LOGGING\n",
+        )
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(ValueError, match="SETTINGS_OVERRIDE_ALLOWED_KEYS"):
+            detect_removed_settings_override_keys()
+
+    def test_nested_yaml_block_is_accepted(self, monkeypatch, tmp_path):
+        """Verify a migrated profile passes the detector."""
+        self._profile(
+            tmp_path,
+            "  SETTINGS_OVERRIDE:\n    ALLOWED_KEYS:\n      - Settings.LOGGING\n",
+        )
+        monkeypatch.chdir(tmp_path)
+        detect_removed_settings_override_keys()
