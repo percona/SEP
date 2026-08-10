@@ -16,8 +16,9 @@
 from types import MappingProxyType
 
 STREAMING_PROXY_HEADERS = MappingProxyType({"X-Accel-Buffering": "no"})
-"""Headers that stop an intermediary proxy buffering an incremental response.
+"""Stop an intermediary proxy buffering an incremental response.
 
-Frozen because the streaming routes hold it directly rather than copying, so an
-in-place mutation at one call site would reach every later response.
+Frozen so a route needing extra headers must copy it, as ``download_files``
+does to add ``Content-Disposition``, rather than mutating the shared object
+into every later response.
 """

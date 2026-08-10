@@ -67,7 +67,7 @@ async def download_task_history_file(
     tasks_client: TasksClient,
 ) -> StreamingResponse:
     """Stream a task history's archived file as a binary download."""
-    headers: dict[str, str] = dict(STREAMING_PROXY_HEADERS)
+    headers = dict(STREAMING_PROXY_HEADERS)
     path = request.query_params.get("path")
     with tasks_client.auth(user.access_token) as tasks_api:
         if path:
