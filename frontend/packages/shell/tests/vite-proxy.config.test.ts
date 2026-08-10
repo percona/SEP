@@ -21,22 +21,37 @@ import viteConfig from '../vite.config';
 import viteQaConfig from '../vite.qa.config';
 
 describe('Vite backend proxy prefixes', () => {
-  it('proxies /static to the local dev backend', () => {
+  // The SPA fallback would otherwise answer these with index.html: they live
+  // outside /api, so each needs its own proxy entry.
+  const NON_API_PREFIXES = ['/stream-logs', '/execution-events', '/files'];
+
+  it('proxies the non-/api backend prefixes to the local dev backend', () => {
     const proxy = viteConfig.server?.proxy;
     expect(proxy).toBeDefined();
-    expect(proxy?.['/static']).toMatchObject({
-      target: 'http://localhost:8000',
-      changeOrigin: true,
-    });
+    for (const prefix of NON_API_PREFIXES) {
+      expect(proxy?.[prefix]).toMatchObject({
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      });
+    }
   });
 
-  it('proxies /static to the QA backend alongside other entries', () => {
+  it('proxies the non-/api backend prefixes to the QA backend', () => {
     const proxy = viteQaConfig.server?.proxy;
     expect(proxy).toBeDefined();
-    expect(proxy?.['/static']).toMatchObject({
-      target: process.env.SEP_QA_BACKEND ?? 'http://127.0.0.1:18002',
-      changeOrigin: true,
-      cookieDomainRewrite: 'localhost',
-    });
+    for (const prefix of NON_API_PREFIXES) {
+      expect(proxy?.[prefix]).toMatchObject({
+        target: process.env.SEP_QA_BACKEND ?? 'http://127.0.0.1:18002',
+        changeOrigin: true,
+        cookieDomainRewrite: 'localhost',
+      });
+    }
+  });
+
+  it('drops the retired /static and /legacy proxy entries', () => {
+    for (const proxy of [viteConfig.server?.proxy, viteQaConfig.server?.proxy]) {
+      expect(proxy?.['/static']).toBeUndefined();
+      expect(proxy?.['/legacy']).toBeUndefined();
+    }
   });
 });

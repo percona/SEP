@@ -45,7 +45,6 @@ from app.sep.apps.framework.registry import (
 )
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import IsApiAdmin, RequireBearerForUnsafeMethods, SessionDep, TaskAPI
-from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 # TasksSettings is owned by the Tasks sub-app, so SEP proxies it server-side
@@ -54,7 +53,6 @@ from app.sep.snippets.config import snippets_settings, SnippetsSettings
 SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
     (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
-    (SettingClassEnum.MESSAGES_SETTINGS, MessagesSettings, messages_settings),
     (SettingClassEnum.ALERT_SETTINGS, AlertSettings, alert_settings),
     # The global ``Settings`` class is refreshed only by the SEP web process, so
     # its override-eligible fields (e.g. ``PMM``, ``LOGGING``) are exposed here.

@@ -15,6 +15,5 @@
 
 from app.sep.apps.alerts.app import app
 from app.sep.apps.alerts.app_owned_settings import APP_OWNED_SETTINGS_CLASSES
-from app.sep.apps.alerts.routes import router
 
-__all__ = ["APP_OWNED_SETTINGS_CLASSES", "app", "router"]
+__all__ = ["APP_OWNED_SETTINGS_CLASSES", "app"]

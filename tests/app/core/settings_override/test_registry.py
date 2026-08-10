@@ -35,9 +35,11 @@ from app.core.settings_override.registry import (
     is_explicit_not_overridable,
     is_hot_reloadable,
     iter_class_fields,
+    materialize_override_value,
     materialize_template,
     materialize_via_owning_model,
     MaterializerContext,
+    MaterializerPurpose,
     nested_overridable_field_names,
     preserve_patch_credential_url_value,
     ReloadClassification,
@@ -48,7 +50,6 @@ from app.core.settings_override.registry import (
 from app.core.utils.pydantic import field_with_metadata
 from app.inventory.config import InventorySettings
 from app.sep.config import SEPSettings
-from app.sep.middleware.messages.config import MessagesSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
 
@@ -119,6 +120,60 @@ def test_materialize_template_rejects_non_string() -> None:
     """Reject a non-string, non-``Template`` override instead of passing it through."""
     with pytest.raises(ValueError, match="must be a string"):
         materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
+
+
+def _purpose_probe(seen: list[MaterializerPurpose]) -> type[BaseModel]:
+    """Build a probe class whose materializer records the purpose it ran for.
+
+    :param seen: The list each invocation appends its purpose to.
+    :return: A model class with one HOT, materializer-backed field.
+    """
+
+    def _record(ctx: MaterializerContext) -> object:
+        """Record ``ctx.purpose`` and echo the raw value back unchanged."""
+        seen.append(ctx.purpose)
+        return ctx.raw
+
+    class _Probe(BaseModel):
+        """Represent a model whose HOT field records how it was materialized."""
+
+        value: str = hot_field("", materializer=_record)
+
+    return _Probe
+
+
+class TestMaterializerPurpose:
+    """Cover the channel telling a materializer a stored row from a new payload."""
+
+    def test_a_context_defaults_to_validating_a_submitted_payload(self) -> None:
+        """Default to the strict purpose, so an unaware caller keeps write semantics."""
+        context = _ctx(SEPSettings, "FOOTER_TEMPLATE", "$summary")
+
+        assert context.purpose is MaterializerPurpose.VALIDATE
+
+    def test_materialize_override_value_defaults_to_validating(self) -> None:
+        """Hand the strict purpose down when the caller names none."""
+        seen: list[MaterializerPurpose] = []
+        probe = _purpose_probe(seen)
+
+        materialize_override_value(probe, "value", probe.model_fields["value"], "x")
+
+        assert seen == [MaterializerPurpose.VALIDATE]
+
+    def test_materialize_override_value_forwards_an_explicit_purpose(self) -> None:
+        """Let the snapshot builder announce that the value is a stored row."""
+        seen: list[MaterializerPurpose] = []
+        probe = _purpose_probe(seen)
+
+        materialize_override_value(
+            probe,
+            "value",
+            probe.model_fields["value"],
+            "x",
+            purpose=MaterializerPurpose.SNAPSHOT,
+        )
+
+        assert seen == [MaterializerPurpose.SNAPSHOT]
 
 
 def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
@@ -447,9 +502,9 @@ def test_hot_field_names_tasks_settings() -> None:
 
 
 def test_nested_overridable_field_names_sep_settings() -> None:
-    """Assert ``SEPSettings`` exposes the session parents plus ``APP_DRAIN``."""
+    """Assert ``SEPSettings`` exposes the refresh-session parent plus ``APP_DRAIN``."""
     assert nested_overridable_field_names(SEPSettings) == frozenset(
-        {"SESSION", "SESSION_REFRESH", "APP_DRAIN"}
+        {"SESSION_REFRESH", "APP_DRAIN"}
     )
 
 
@@ -473,11 +528,6 @@ def test_hot_field_names_snippets_settings() -> None:
             "SYNC_FILTER",
         }
     )
-
-
-def test_hot_field_names_messages_settings() -> None:
-    """Assert ``MessagesSettings`` ships ``LEVEL`` as its single HOT field."""
-    assert hot_field_names(MessagesSettings) == frozenset({"LEVEL"})
 
 
 def test_hot_field_names_inventory_settings_empty() -> None:
@@ -512,7 +562,6 @@ def test_reload_classification_values() -> None:
 @pytest.mark.parametrize(
     "field_name",
     [
-        "SESSION",
         "SESSION_REFRESH",
         "INVENTORY_ENDPOINT",
         "TASKS_ENDPOINT",
@@ -562,8 +611,8 @@ def test_tasks_settings_marked_advanced(field_name: str) -> None:
 
 
 def test_session_leaf_inherits_advanced() -> None:
-    """Assert every ``SESSION`` leaf inherits the parent's advanced flag."""
-    leaf = resolve_nested_field_metadata(SEPSettings, "SESSION__COOKIE_NAME")
+    """Assert every ``SESSION_REFRESH`` leaf inherits the parent's advanced flag."""
+    leaf = resolve_nested_field_metadata(SEPSettings, "SESSION_REFRESH__COOKIE_NAME")
     assert leaf is not None
     assert leaf.is_advanced is True
 

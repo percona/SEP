@@ -21,9 +21,8 @@ import logging
 from datetime import datetime
 from typing import Annotated, Any
 
-import yaml
 from aiohttp import ClientResponseError
-from fastapi import Depends, Form
+from fastapi import Depends
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
@@ -58,10 +57,7 @@ from app.sep.apps.framework.cascade import (
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
     check_group_for_conflicted_running_tasks,
-    DefaultContext,
-    ExecutorHostsCtx,
     get_created_entity,
-    get_tasks_context,
     InventoryAPI,
     reject_if_protected,
     TaskAPI,
@@ -175,27 +171,6 @@ async def build_backup_cascade_plan(
 
 
 BackupCascadePlan = Annotated[CascadeCreatePlan, Depends(build_backup_cascade_plan)]
-
-
-async def build_backup_task_payload_from_form(
-    form: Annotated[BackupCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build a Backups task payload from an HTML form submission.
-
-    Delegates to :func:`build_backup_task_payload` after FastAPI form parsing.
-
-    :param form: The form data for the Backups creation.
-    :type form: BackupCreate
-    :param inventory_api: The Inventory API to get entities from.
-    :type inventory_api: InventoryAPI
-    :return: A fully constructed ``TaskWrite`` object for the Tasks API.
-    :rtype: TaskWrite
-    """
-    return await build_backup_task_payload(form, inventory_api)
-
-
-BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload_from_form)]
 
 
 def build_backup_mongo_api_task_response(
@@ -446,9 +421,10 @@ async def update_backup_task_group(
 
     Rebuilds the parent ``pbm_config`` payload, re-stamps ``_form`` so the edit
     page keeps prefilling across repeated edits, backfills any missing derived
-    siblings (for example ``-incremental`` on pre-SEP-1373 groups), and PUTs the
-    parent plus its derived logical, physical, status, and incremental legs in
-    place. Returns the per-leg outcome; the caller raises on partial failure.
+    siblings (for example ``-incremental`` on groups created before that leg
+    existed), and PUTs the parent plus its derived logical, physical, status,
+    and incremental legs in place. Returns the per-leg outcome; the caller
+    raises on partial failure.
 
     :param tasks_api: The TaskAPI instance used to update tasks.
     :param parent_task: The parent backup config task.
@@ -468,66 +444,3 @@ async def update_backup_task_group(
         backup_derived_task_names(parent_task.name),
         BACKUP_MONGO_DERIVED,
     )
-
-
-def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
-    """Extract relevant information from a task for the Backups plugin.
-
-    Processes the task data to extract hostname and tables information.
-
-    :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
-    :return: A dictionary containing hostname and tables information.
-    :rtype: dict[str, Any]
-    """
-    data = task["data"]
-    meta = data["meta"]
-    return {
-        "config": yaml.safe_load(meta["config"]),
-        "parent": data.get("parent"),
-        "target": meta["target"],
-        "created_at": task["created_at"],
-        "created_by": task.get("created_by"),
-        "last_updated_by": task.get("last_updated_by"),
-    }
-
-
-async def get_backups_index_context(
-    inventory_api: InventoryAPI,
-    tasks_api: TaskAPI,
-    context: DefaultContext,
-    executor_hosts_ctx: ExecutorHostsCtx,
-) -> dict[str, Any]:
-    """Assemble the context for the Backups plugin index view.
-
-    Retrieves MongoDB services and associated tasks, organizing them based on their
-    execution status. Integrates this information into the default context for
-    rendering in templates.
-
-    :param inventory_api: The Inventory API client for fetching service and schema data.
-    :type inventory_api: InventoryAPI
-    :param tasks_api: The TaskAPI client for fetching task data.
-    :type tasks_api: TaskAPI
-    :param context: The default context to be updated with Backups-specific information.
-    :type context: DefaultContext
-    :param executor_hosts_ctx: The executor hosts context for the Backups tasks.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: An updated context dictionary containing Backups-related data.
-    :rtype: dict[str, Any]
-    """
-    return await get_tasks_context(
-        inventory_api,
-        tasks_api,
-        get_backups_task_info,
-        executor_hosts_ctx,
-        context,
-        OWNER,
-        service_type=ServiceTypeEnum.MONGODB,
-        alert_on_fail_default=True,
-    )
-
-
-BackupsIndexContextDep = Annotated[
-    dict[str, Any],
-    Depends(get_backups_index_context),
-]

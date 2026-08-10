@@ -24,7 +24,22 @@ from app.sep.apps.atw.deps import (
     require_diagnostics_send_configured,
 )
 from app.sep.bundle_upload.plan import DeliveryPlan
-from app.sep.config import sep_settings
+from app.sep.bundle_upload.resolver import DRIFTED_INPUTS_REASON
+from app.sep.config import DeliveryPlanInputs, sep_settings
+
+
+def _drifted_inputs(mocker: MockerFixture, plan: DeliveryPlan) -> None:
+    """Store inputs naming a secret ``plan`` no longer declares.
+
+    :param mocker: The patching fixture.
+    :param plan: The baked plan the stored inputs stopped matching.
+    """
+    mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", plan)
+    mocker.patch.object(
+        sep_settings,
+        "DIAGNOSTICS_DELIVERY_INPUTS",
+        DeliveryPlanInputs(secrets={"renamed_token": "token-value"}),
+    )
 
 
 class TestDiagnosticsSendDisabledReasons:
@@ -39,6 +54,14 @@ class TestDiagnosticsSendDisabledReasons:
         assert diagnostics_send_disabled_reasons() == [
             "Diagnostics delivery is not configured"
         ]
+
+    def test_drifted_inputs_yield_their_own_reason(
+        self, mocker: MockerFixture, delivery_plan: DeliveryPlan
+    ) -> None:
+        """Tell the operator to re-supply, not to configure delivery from scratch."""
+        _drifted_inputs(mocker, delivery_plan)
+
+        assert diagnostics_send_disabled_reasons() == [DRIFTED_INPUTS_REASON]
 
     def test_configured_delivery_yields_no_reasons(
         self, mocker: MockerFixture, delivery_plan: DeliveryPlan
@@ -61,6 +84,18 @@ class TestRequireDiagnosticsSendConfigured:
             await require_diagnostics_send_configured()
 
         assert "Diagnostics delivery is not configured" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_raises_503_carrying_the_drift_reason(
+        self, mocker: MockerFixture, delivery_plan: DeliveryPlan
+    ) -> None:
+        """Carry the drift reason through to the endpoint an operator calls."""
+        _drifted_inputs(mocker, delivery_plan)
+
+        with pytest.raises(HTTPServiceUnavailableException) as exc_info:
+            await require_diagnostics_send_configured()
+
+        assert exc_info.value.detail == DRIFTED_INPUTS_REASON
 
     @pytest.mark.asyncio
     async def test_passes_when_configured(

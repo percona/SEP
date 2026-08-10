@@ -127,35 +127,18 @@ def mock_background_tasks() -> Iterator[MagicMock]:
 
 @pytest.fixture
 def mock_run_sync_funcs(mocker: MockerFixture) -> dict[str, AsyncMock]:
-    """Replace the ``run_*_sync`` symbols on the routes/api_routes modules.
+    """Replace the ``run_*_sync`` symbols on the ``api_routes`` module.
 
     The real background-task callables open database sessions and invoke
     ``syncer.api_auth(...)``, which the lightweight stub syncers cannot
-    satisfy. Patching them at both the Jinja2 ``routes`` and JSON-API
-    ``api_routes`` module level lets the real ``BackgroundTasks`` instance
-    schedule and execute the mocks immediately after the response, capturing
-    the args originally passed to ``add_task``.
+    satisfy. Patching them at the module level lets the real
+    ``BackgroundTasks`` instance schedule and execute the mocks immediately
+    after the response, capturing the args originally passed to ``add_task``.
     """
     inventory_mock = AsyncMock()
     node_mock = AsyncMock()
     service_mock = AsyncMock()
     schema_mock = AsyncMock()
-    mocker.patch(
-        "app.sep.apps.inventory.routes.run_inventory_sync",
-        new=inventory_mock,
-    )
-    mocker.patch(
-        "app.sep.apps.inventory.routes.run_node_sync",
-        new=node_mock,
-    )
-    mocker.patch(
-        "app.sep.apps.inventory.routes.run_service_sync",
-        new=service_mock,
-    )
-    mocker.patch(
-        "app.sep.apps.inventory.routes.run_schema_sync",
-        new=schema_mock,
-    )
     mocker.patch(
         "app.sep.apps.inventory.api_routes.run_inventory_sync",
         new=inventory_mock,
