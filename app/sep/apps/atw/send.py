@@ -602,27 +602,26 @@ async def run_send(send_log_id: UUID) -> None:
 
 
 async def _resolve_plan_after_refresh(
-    session: AsyncSession, held: DeliveryPlanResolution
+    session: AsyncSession,
 ) -> DeliveryPlanResolution:
-    """Republish the SEP settings snapshot and resolve the delivery plan again.
+    """Republish the SEP settings snapshot and resolve the delivery plan.
 
-    A worker child can hold a snapshot published before the operator supplied
-    the receiver's inputs, so the plan reads as unconfigured against settings
-    already current everywhere else.
+    Every send resolves against a snapshot no older than itself, so a rotated
+    secret, a repointed endpoint, or a first-time enabling write takes effect
+    even when this worker child's refresher has not yet advanced.
 
-    A failed republish degrades to ``held`` rather than escaping: this runs ahead
-    of the broad terminal guard, so an escaping error would leave the row
-    non-terminal until the stale sweep mislabels it as a lost worker. Degrading
-    to the resolution already in hand, rather than to a fixed reason, keeps a
-    transient database error from relabelling drifted inputs as delivery nobody
-    configured. The session is rolled back first, so an aborted transaction does
-    not also fail the terminal write that follows.
+    A failed republish must not escape and must not invent a fixed reason: this
+    runs ahead of the broad terminal guard, so an escaping error would leave the
+    row non-terminal until the stale sweep mislabels it as a lost worker, and a
+    fixed "not configured" would turn a deliverable send — one whose in-hand
+    snapshot already resolves a usable plan — into a terminal failure on a
+    transient database error. Log, roll the session back so an aborted
+    transaction does not also fail the terminal write that may still follow, and
+    resolve against the snapshot this child already holds.
 
     :param session: The database session.
-    :param held: The resolution taken against the snapshot this child already
-        holds, returned unchanged when the republish fails.
-    :return: The resolution taken against the fresh snapshot, or ``held`` when
-        the republish failed.
+    :return: The resolution taken against the fresh snapshot, or against the
+        snapshot this child already holds when the republish failed.
     :raises Exception: Propagates a ``session.rollback()`` that itself fails.
         The database is unreachable at that point, so no terminal write was
         going to land either way and the row is left to the stale sweep.
@@ -635,7 +634,6 @@ async def _resolve_plan_after_refresh(
             "to the snapshot this worker already holds."
         )
         await session.rollback()
-        return held
     return resolve_delivery_plan()
 
 
@@ -647,11 +645,12 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     deliver a bundle the UI has already reported as failed -- and, if the
     engineer re-sent in the meantime, attach it to the case twice.
 
-    An unresolved plan is re-read once against a freshly published snapshot
-    before the terminal write, so a send enqueued straight after the enabling
-    settings write is not failed against a snapshot older than it. The failed
-    row carries whichever reason the resolver gave, so an operator can tell
-    inputs that stopped matching the plan from delivery nobody configured.
+    The delivery plan is re-read once against a freshly published snapshot
+    before it is resolved, so a send enqueued after an enabling write, a rotated
+    secret, or a changed endpoint is not delivered against a snapshot older
+    than it. The failed row carries whichever reason the resolver gave, so an
+    operator can tell inputs that stopped matching the plan from delivery
+    nobody configured.
 
     :param session: The database session.
     :param row: The send log to drive.
@@ -670,9 +669,7 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
         return
 
     detail = dict(row.detail)
-    resolution = resolve_delivery_plan()
-    if resolution.plan is None:
-        resolution = await _resolve_plan_after_refresh(session, resolution)
+    resolution = await _resolve_plan_after_refresh(session)
     if (reason := resolution.unavailable_reason) is not None:
         await _fail(session, row, detail, [], reason)
         return
