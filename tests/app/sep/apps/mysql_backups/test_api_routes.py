@@ -22,11 +22,8 @@ import pytest
 import yaml
 from fastapi import status
 
-from app.core.exceptions import HTTPNotFoundException
-from app.sep.apps.mysql_backups.deps import get_backups_task
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
-from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 
 BEARER_HEADERS = {"Authorization": "Bearer test-token"}
@@ -258,28 +255,14 @@ class TestDetailEndpoint:
 
     def test_detail_returns_404_for_missing(self, test_client, mock_task_api_dep):
         """Missing task returns 404."""
+        response = test_client.get("/api/apps/mysql_backups/nope")
 
-        async def _raise_not_found() -> None:
-            raise HTTPNotFoundException
-
-        sep_app.dependency_overrides[get_backups_task] = _raise_not_found
-        try:
-            response = test_client.get("/api/apps/mysql_backups/nope")
-        finally:
-            sep_app.dependency_overrides.pop(get_backups_task, None)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_detail_returns_404_for_wrong_owner(self, test_client, mock_task_api_dep):
         """Task owned by another plugin returns 404 (no cross-plugin enumeration)."""
+        response = test_client.get("/api/apps/mysql_backups/some-checksums-task")
 
-        async def _raise_not_found() -> None:
-            raise HTTPNotFoundException
-
-        sep_app.dependency_overrides[get_backups_task] = _raise_not_found
-        try:
-            response = test_client.get("/api/apps/mysql_backups/some-checksums-task")
-        finally:
-            sep_app.dependency_overrides.pop(get_backups_task, None)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
@@ -537,17 +520,10 @@ class TestDeleteEndpoint:
 
     def test_delete_returns_404_for_missing(self, test_client, mock_task_api_dep):
         """Delete of unknown task returns 404."""
+        response = test_client.delete(
+            "/api/apps/mysql_backups/nope", headers=BEARER_HEADERS
+        )
 
-        async def _raise_not_found() -> None:
-            raise HTTPNotFoundException
-
-        sep_app.dependency_overrides[get_backups_task] = _raise_not_found
-        try:
-            response = test_client.delete(
-                "/api/apps/mysql_backups/nope", headers=BEARER_HEADERS
-            )
-        finally:
-            sep_app.dependency_overrides.pop(get_backups_task, None)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
@@ -568,7 +544,7 @@ class TestExecuteEndpoint:
             side_effect=[
                 {"items": [], "total": 0, "offset": 0, "limit": 50},  # running
                 {"items": [], "total": 0, "offset": 0, "limit": 50},  # pending
-                task,  # get_backups_task
+                task,  # the framework task dep
             ]
         )
         mock_task_api_dep.post = AsyncMock(return_value=self._execute_response())
@@ -611,7 +587,7 @@ class TestExecuteEndpoint:
     def test_execute_returns_404_for_missing(self, test_client, mock_task_api_dep):
         """Execute against an unknown task returns 404."""
         # 1, 2: HasNoConflictedRunningTasks (running, pending histories).
-        # 3: get_backups_task fetches the task; unparseable response → 404
+        # 3: the task dep fetches the task; unparseable response → 404
         #    via the same ValidationError → HTTPNotFoundException path used
         #    by the detail endpoint tests.
         mock_task_api_dep.get = AsyncMock(

@@ -38,12 +38,10 @@ from app.core.utils import json_serializer
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import DeliveryPlanInputs, sep_settings, SEPSettings
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 
@@ -124,9 +122,7 @@ def api_admin_client_fixture(
     mock_tasks_api: AsyncMock,
 ) -> Iterator[TestClient]:
     """Yield an admin-authenticated SEP TestClient with the in-memory SEP session."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock_tasks_api
@@ -141,9 +137,7 @@ def api_non_admin_client_fixture(
     mock_tasks_api: AsyncMock,
 ) -> Iterator[TestClient]:
     """Yield a non-admin SEP TestClient with the in-memory SEP session."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock_tasks_api
@@ -235,7 +229,6 @@ class TestSepConfigExportYaml:
         for setting_class in (
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.MESSAGES_SETTINGS.value,
             SettingClassEnum.ALERTS_SETTINGS.value,
         ):
             assert set(export[setting_class]) == list_keys[setting_class]
@@ -573,7 +566,6 @@ class TestSepConfigExportTasksFanOut:
 
 SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
 SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
-MESSAGES_CLASS = SettingClassEnum.MESSAGES_SETTINGS.value
 ALERTS_CLASS = SettingClassEnum.ALERTS_SETTINGS.value
 SETTINGS_CLASS = SettingClassEnum.SETTINGS.value
 ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
@@ -581,7 +573,6 @@ TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
 FULL_EXPORT_CLASSES = {
     SEP_CLASS,
     SNIPPETS_CLASS,
-    MESSAGES_CLASS,
     ALERTS_CLASS,
     SETTINGS_CLASS,
     ALERT_CLASS,
@@ -657,17 +648,17 @@ class TestSepConfigExportFilter:
     async def test_mixed_class_and_key_selectors(
         self, api_admin_client: TestClient
     ) -> None:
-        """Yield exactly two blocks for ``SEPSettings.<key>`` plus whole ``MessagesSettings``."""
+        """Yield exactly two blocks for ``SEPSettings.<key>`` plus whole ``AlertsSettings``."""
         key = _one_sep_key(api_admin_client)
         list_keys = _list_keys_by_class(api_admin_client)
         response = api_admin_client.get(
-            EXPORT_URL, params={"keys": [f"{SEP_CLASS}.{key}", MESSAGES_CLASS]}
+            EXPORT_URL, params={"keys": [f"{SEP_CLASS}.{key}", ALERTS_CLASS]}
         )
         assert response.status_code == status.HTTP_200_OK
         payload = yaml.safe_load(response.text)
-        assert set(payload) == {SEP_CLASS, MESSAGES_CLASS}
+        assert set(payload) == {SEP_CLASS, ALERTS_CLASS}
         assert set(payload[SEP_CLASS]) == {key}
-        assert set(payload[MESSAGES_CLASS]) == list_keys[MESSAGES_CLASS]
+        assert set(payload[ALERTS_CLASS]) == list_keys[ALERTS_CLASS]
 
     async def test_block_order_is_canonical_not_selector_order(
         self, api_admin_client: TestClient

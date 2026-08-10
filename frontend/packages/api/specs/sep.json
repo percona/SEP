@@ -950,12 +950,11 @@
         "type": "string"
       },
       "SettingClassEnum": {
-        "description": "Enumerate settings classes that may have HOT override rows.\n\nThe wired classes are ``SEPSettings``, ``TasksSettings``,\n``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,\n``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and\n``InventorySettings``.\n\nTo wire a new settings class:\n\n1. Add a member here whose value matches the Pydantic class ``__name__``.\n2. Generate an Alembic migration on every consumer track that extends the\n   ``CHECK`` constraint on ``settingoverride.setting_class``. The column\n   uses ``native_enum=False`` so the value list lives in a constraint,\n   not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.\n   Note that the column and ``CHECK`` constraint persist the enum member\n   *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member\n   *value* (the Pydantic class name, e.g. ``SEPSettings``).\n3. Wire a ``ProxyEntry`` for the new class in the relevant service's\n   lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).",
+        "description": "Enumerate settings classes that may have HOT override rows.\n\nThe wired classes are ``SEPSettings``, ``TasksSettings``,\n``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,\n``AlertsSettings``, ``AnonymizerSettings`` and ``InventorySettings``.\n\nTo wire a new settings class:\n\n1. Add a member here whose value matches the Pydantic class ``__name__``.\n2. Generate an Alembic migration on every consumer track that extends the\n   ``CHECK`` constraint on ``settingoverride.setting_class``. The column\n   uses ``native_enum=False`` so the value list lives in a constraint,\n   not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.\n   Note that the column and ``CHECK`` constraint persist the enum member\n   *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member\n   *value* (the Pydantic class name, e.g. ``SEPSettings``).\n3. Wire a ``ProxyEntry`` for the new class in the relevant service's\n   lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).",
         "enum": [
           "SEPSettings",
           "TasksSettings",
           "SnippetsSettings",
-          "MessagesSettings",
           "Settings",
           "AlertSettings",
           "AnonymizerSettings",
@@ -1303,27 +1302,6 @@
         ],
         "title": "SnippetServiceTypesResponse",
         "type": "object"
-      },
-      "SnippetSortDirection": {
-        "description": "Enumerate the sort direction.\n\n:cvar ASC: Ascending order.\n:cvar DESC: Descending order.",
-        "enum": [
-          "asc",
-          "desc"
-        ],
-        "title": "SnippetSortDirection",
-        "type": "string"
-      },
-      "SnippetSortKey": {
-        "description": "Enumerate the allowlisted public sort keys.\n\nMembership is the type: an out-of-allowlist key fails to coerce at the\nrequest boundary, so no raw client-supplied column name can reach a query.\n\n:cvar CREATED_AT: Sort by the ``created_at`` column.\n:cvar FILENAME: Sort by the ``filename`` column.\n:cvar APPROVED_AT: Sort by the ``approved_at`` column.\n:cvar TITLE: Sort by the ``meta.title`` JSON value.\n:cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.",
-        "enum": [
-          "created_at",
-          "filename",
-          "approved_at",
-          "title",
-          "service_type"
-        ],
-        "title": "SnippetSortKey",
-        "type": "string"
       },
       "SnippetsCapabilitiesResponse": {
         "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.apps.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
@@ -13746,7 +13724,7 @@
     }
   },
   "info": {
-    "description": "Percona Services Enablement Platform\n\nBrowser-oriented SEP routes (HTML, redirects, proxies, streams). JSON REST APIs for inventory and tasks live on the mounted sub-apps.",
+    "description": "Percona Services Enablement Platform\n\nBrowser-oriented SEP routes (proxies, streams, downloads). JSON REST APIs for inventory and tasks live on the mounted sub-apps.",
     "title": "SEP Web Application API",
     "version": "v1.0.0.dev0"
   },
@@ -18834,7 +18812,7 @@
     },
     "/api/apps/snippets/": {
       "get": {
-        "description": "List scripts as a server-filtered, sorted, paginated projection.",
+        "description": "List scripts as a filtered, sorted, paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
         "parameters": [
           {
@@ -18858,46 +18836,6 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Case-insensitive search over filename, title, description.",
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Case-insensitive search over filename, title, description.",
-              "title": "Search"
-            }
-          },
-          {
-            "description": "Sort key; one of the allowlisted public sort keys.",
-            "in": "query",
-            "name": "sort",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortKey",
-              "default": "created_at",
-              "description": "Sort key; one of the allowlisted public sort keys."
-            }
-          },
-          {
-            "description": "Sort direction.",
-            "in": "query",
-            "name": "order",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortDirection",
-              "default": "desc",
-              "description": "Sort direction."
             }
           },
           {
@@ -18939,6 +18877,48 @@
               "description": "When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'.",
               "title": "Uncategorized",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Sort key; prefix with '-' for descending order.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-approved_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "approved_at",
+                "-approved_at",
+                "created_at",
+                "-created_at",
+                "filename",
+                "-filename",
+                "service_type",
+                "-service_type",
+                "title",
+                "-title"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Case-insensitive search across the searchable columns.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive search across the searchable columns.",
+              "title": "Search"
             }
           }
         ],
@@ -19836,7 +19816,7 @@
     },
     "/api/sep/admin/settings/{setting_class}/{key}": {
       "delete": {
-        "description": "Revert one override row to the field's declared default.\n\nFor a remote class the DELETE is forwarded to the owning sub-app, which\nowns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and\n``detail`` are preserved through the proxy.\n\nFor a local class the DELETE is idempotent: deleting a (class, key) pair\nthat has no override row succeeds with 204. Attempting to delete a field\nthe code declares NOT_OVERRIDABLE responds 409, since it cannot have an\noverride row in the first place and the operator's intent is\nunsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld\nmay still carry a row written before the restriction applied, so that\nrow is deleted normally and only the no-row case answers 409.\n\nAfter republishing the snapshot, fires the rebind callbacks for the\nreverted key so a HOT target rebinds to its restored value without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:raises HTTPNotFoundException: If the class isn't exposed or the key\n    doesn't exist on the class.\n:raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has\n    no row to delete.\n:raises HTTPUnprocessableEntityException: If ``key`` names a\n    ``NESTED_ONLY`` parent (the whole parent cannot be overridden;\n    target an individual ``parent__leaf`` instead).\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.",
+        "description": "Revert one override row to the field's declared default.\n\nFor a remote class the DELETE is forwarded to the owning sub-app, which\nowns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and\n``detail`` are preserved through the proxy.\n\nFor a local class the DELETE is idempotent: deleting a (class, key) pair\nthat has no override row succeeds with 204. Attempting to delete a field\nthe code declares NOT_OVERRIDABLE responds 409, since it cannot have an\noverride row in the first place and the operator's intent is\nunsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld\nmay still carry a row written before the restriction applied, so that\nrow is deleted normally and only the no-row case answers 409.\n\nAfter republishing the snapshot, fires the rebind callbacks for the\nreverted key so a HOT target rebinds to its restored value without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:raises HTTPNotFoundException: If the class isn't exposed or the key\n    doesn't exist on the class.\n:raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has\n    no row to delete.\n:raises HTTPUnprocessableEntityException: If ``key`` names a\n    ``NESTED_ONLY`` parent (the whole parent cannot be overridden;\n    target an individual ``parent__leaf`` instead).\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.",
         "operationId": "sep_delete_setting_api_sep_admin_settings__setting_class___key__delete",
         "parameters": [
           {

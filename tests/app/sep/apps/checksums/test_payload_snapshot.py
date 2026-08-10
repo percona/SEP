@@ -15,23 +15,15 @@
 
 """Freeze the byte-identity guardrail for the checksums Nomad payload.
 
-Capture the full ``TaskWrite`` envelope produced by both the model-first spec
-path (``build_checksums_spec`` + ``assemble_envelope``) and the legacy Jinja form
-path (``assemble_checksum_payload``) across a matrix of representative inputs,
-and compare each against a committed golden. A declarative rewrite that shifts
-both code paths together would slip past the form-vs-spec parity test in
-``test_deps.py``; this golden is captured from a known-good baseline so any drift
-in the generated ``meta.args`` (or the surrounding envelope) fails loudly.
+Capture the full ``TaskWrite`` envelope produced by the model-first spec path
+(``build_checksums_spec`` + ``assemble_envelope``) across a matrix of
+representative inputs, and compare each against a committed golden, captured
+from a known-good baseline so any drift in the generated ``meta.args`` (or the
+surrounding envelope) fails loudly.
 """
 
-from unittest.mock import AsyncMock
-
-import pytest
-
-from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.checksums.deps import build_checksums_task_payload
-from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm
+from app.sep.apps.checksums.models import ChecksumsForm
 from app.sep.apps.checksums.spec import build_checksums_spec
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
 from app.sep.inventory import CreatedService
@@ -165,42 +157,6 @@ def _spec_envelope(case: dict) -> dict:
     return task.model_dump()
 
 
-async def _form_envelope(case: dict) -> dict:
-    """Return the legacy Jinja-path ``TaskWrite`` dump for ``case``.
-
-    Drive the public ``build_checksums_task_payload`` entry point with a boundary
-    inventory mock that serves the case's deterministic service.
-    """
-    service = _service(case)
-    inventory = AsyncMock(spec=RemoteAPI)
-    inventory.get = AsyncMock(return_value=service.model_dump())
-    form = ChecksumsCreate(
-        task_name=_TASK_NAME,
-        hostname=_HOSTNAME,
-        service_id=service.id,
-        recursion_method=case["form"].get("recursion_method", "processlist"),
-        dsn_table=case["form"].get("dsn_table", ""),
-        databases=case["form"].get("databases", ""),
-        tables=case["form"].get("tables", ""),
-        pause_file=case["form"].get("pause_file", ""),
-        binary_index=case["form"].get("binary_index", False),
-        explain_arg=case["form"].get("explain_arg", False),
-        fail_on_stopped_replication=case["form"].get(
-            "fail_on_stopped_replication", False
-        ),
-        truncate_replicate_table=case["form"].get("truncate_replicate_table", False),
-        progress=case["form"].get("progress", ""),
-        set_vars=case["form"].get("set_vars", ""),
-        max_load=case["form"].get("max_load", ""),
-        chunk_time=case["form"].get("chunk_time", ""),
-        max_lag=case["form"].get("max_lag", ""),
-        alert_on_fail=case["alert_on_fail"],
-        extra_args=case.get("extra_args", ""),
-    )
-    task = await build_checksums_task_payload(form, inventory)
-    return task.model_dump()
-
-
 def test_spec_path_payload_matrix_matches_golden():
     """Assert the model-first spec path reproduces the frozen envelope matrix."""
     payloads = {
@@ -210,13 +166,4 @@ def test_spec_path_payload_matrix_matches_golden():
     }
     assert_or_update(
         PAYLOAD_DIR / "checksums__spec_path.json", canonical_json(payloads)
-    )
-
-
-@pytest.mark.asyncio
-async def test_form_path_payload_matrix_matches_golden():
-    """Assert the legacy Jinja form path reproduces the frozen envelope matrix."""
-    payloads = {case["slug"]: await _form_envelope(case) for case in _CASES}
-    assert_or_update(
-        PAYLOAD_DIR / "checksums__form_path.json", canonical_json(payloads)
     )

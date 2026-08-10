@@ -26,23 +26,21 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import StreamingResponse
 
 from app.sep.deps import (
-    CurrentUser,
+    ApiCurrentUser,
     get_task_history,
-    IsAuthenticated,
+    IsApiAuthenticated,
     TasksClient,
 )
-from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
 
 
-@router.get("/{task_history_id}/execution-events", dependencies=[IsAuthenticated])
-@csrf_exempt
+@router.get("/{task_history_id}/execution-events", dependencies=[IsApiAuthenticated])
 async def task_execution_events_stream(
     request: Request,
-    user: CurrentUser,
+    user: ApiCurrentUser,
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_client: TasksClient,
 ) -> StreamingResponse:
@@ -132,16 +130,14 @@ async def task_history_events_event_stream(
         yield f"event: sep-error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
 
 
-@router.get("/{task_history_id}", dependencies=[IsAuthenticated])
-@csrf_exempt
+@router.get("/{task_history_id}", dependencies=[IsApiAuthenticated])
 async def task_logs_event_stream(
     request: Request,
-    user: CurrentUser,
+    user: ApiCurrentUser,
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_client: TasksClient,
 ) -> StreamingResponse:
     """Stream a task history's logs as server-sent events."""
-    logger.debug("request.state.is_csrf_exempt is %s", request.state.is_csrf_exempt)
     return StreamingResponse(
         task_history_logs_event_stream(
             tasks_client, task_history.id, request, user.access_token

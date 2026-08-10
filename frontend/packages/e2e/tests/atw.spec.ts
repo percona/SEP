@@ -65,6 +65,35 @@ const MOCK_ATW_LIST = [
 ];
 
 /**
+ * A snippet the ATW category listing never exposes (it carries no `atw` tag),
+ * reachable only through the Collect pane's search of `GET /api/apps/snippets/`.
+ */
+const MOCK_SEARCH_SNIPPET = {
+  filename: 'ops/pt-summary.sh',
+  title: 'PT Summary',
+  description: 'Collects a percona-toolkit system summary.',
+  service_type: null,
+  size: 512,
+  md5_digest: 'e2e',
+  is_approved: true,
+  approved_at: '2026-07-20T10:00:00Z',
+  updated_by: null,
+  reason: '',
+  requires_sudo: false,
+  sudo_optional: false,
+  sudo_default: false,
+  interpreter: 'bash',
+  created_at: '2026-07-20T10:00:00Z',
+  updated_at: null,
+};
+
+/**
+ * Matches far more snippets than the mocked page carries, so the pane must
+ * report the overflow rather than present the first page as the whole result.
+ */
+const MOCK_SEARCH_TOTAL = 137;
+
+/**
  * Merged execution schema for the selected snippet — a single shared string
  * ``executor_host`` avoids host-registry API calls, and no per-snippet override
  * fields keeps the form to the shared section.
@@ -115,12 +144,20 @@ interface AtwApiMockOptions {
   seededExecutions?: (typeof MOCK_EXECUTION)[];
 }
 
+/** What the mocked API recorded, for assertions on the requests themselves. */
+interface AtwApiMockCalls {
+  /** Every `GET /api/apps/snippets/` the Collect pane's search issued. */
+  snippetSearchUrls: string[];
+  /** Every merged-schema request, which carries the selection's filenames. */
+  executionSchemaUrls: string[];
+}
+
 /**
- * Authenticated session plus the incident, category, merged-schema, batch-execute,
- * and grouped-history routes the incident-first ATW flow exercises. The executions
- * listing is empty until a successful batch POST records one.
+ * Authenticated session plus the incident, category, snippet-search, merged-schema,
+ * batch-execute, and grouped-history routes the incident-first ATW flow exercises.
+ * The executions listing is empty until a successful batch POST records one.
  */
-async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise<void> {
+async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise<AtwApiMockCalls> {
   const batchStatus = options.batchStatus ?? 201;
   const batchJson =
     options.batchJson ??
@@ -137,10 +174,11 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
 
   const seededExecutions = options.seededExecutions ?? [];
   let executionRecorded = false;
+  const calls: AtwApiMockCalls = { snippetSearchUrls: [], executionSchemaUrls: [] };
 
   await page.route('**/api/**', (route) => {
     const req = route.request();
-    const { pathname } = new URL(req.url());
+    const { pathname, searchParams } = new URL(req.url());
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
@@ -224,10 +262,36 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
 
     // Merged execution schema for the current selection.
     if (pathname.endsWith('/atw/execution-schema/')) {
+      calls.executionSchemaUrls.push(req.url());
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(MOCK_MERGED_SCHEMA),
+      });
+    }
+
+    // Snippet search, served by the snippets app's own list endpoint. Reports a
+    // total far beyond the returned page so the truncation notice is exercised.
+    if (pathname === '/api/apps/snippets/' || pathname === '/api/apps/snippets') {
+      calls.snippetSearchUrls.push(req.url());
+      const term = (searchParams.get('search') ?? '').toLowerCase();
+      const matches =
+        term !== '' &&
+        [
+          MOCK_SEARCH_SNIPPET.filename,
+          MOCK_SEARCH_SNIPPET.title,
+          MOCK_SEARCH_SNIPPET.description,
+        ].some((field) => field.toLowerCase().includes(term));
+      const items = matches ? [MOCK_SEARCH_SNIPPET] : [];
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          total: matches ? MOCK_SEARCH_TOTAL : 0,
+          offset: 0,
+          limit: 50,
+        }),
       });
     }
 
@@ -255,6 +319,8 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       body: '[]',
     });
   });
+
+  return calls;
 }
 
 function isBenignConsoleError(msg: string): boolean {
@@ -288,7 +354,8 @@ async function openIncidentAndBuildForm(page: Page): Promise<void> {
   await page.getByRole('option', { name: 'Overall Slowness' }).click();
 
   await page.getByRole('combobox', { name: 'Snippets' }).click();
-  await page.getByRole('option', { name: 'Slow Query Diagnostics' }).click();
+  // Each option lists its filename under the title, so match on the title alone.
+  await page.getByRole('option', { name: /Slow Query Diagnostics/ }).click();
   // Close the option list so it does not overlay the form controls.
   await page.keyboard.press('Escape');
 
@@ -318,6 +385,42 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
 
     const criticalErrors = consoleErrors.filter((msg) => !isBenignConsoleError(msg));
     expect(criticalErrors).toEqual([]);
+  });
+
+  test('search reaches a snippet the category browser never exposes', async ({ page }) => {
+    const calls = await mockAtwApis(page);
+    await page.goto(`${APP_ROUTE}/${INCIDENT_ID}`);
+
+    const picker = page.getByRole('combobox', { name: 'Snippets' });
+    await expect(picker).toBeVisible({ timeout: 30_000 });
+
+    // No category has been chosen, so the picker's only source is the search.
+    await picker.fill('summary');
+
+    const option = page.getByRole('option', { name: /PT Summary/ });
+    await expect(option).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Showing the first 1 of 137 snippets/)).toBeVisible();
+
+    await option.click();
+    await page.keyboard.press('Escape');
+
+    // Selecting a searched snippet builds the execution form, same as a browsed
+    // one — and the schema request carries the searched snippet's own filename,
+    // which is the identity the batch payload will send.
+    await expect(page.getByLabel('Executor host')).toBeVisible({ timeout: 15_000 });
+    const lastSchemaUrl = calls.executionSchemaUrls.at(-1);
+    expect(lastSchemaUrl, 'the selection should have requested a merged schema').toBeDefined();
+    expect(new URL(lastSchemaUrl ?? '').searchParams.getAll('snippet_filename')).toEqual([
+      MOCK_SEARCH_SNIPPET.filename,
+    ]);
+
+    const lastSearchUrl = calls.snippetSearchUrls.at(-1);
+    expect(lastSearchUrl, 'typing should have issued a snippet search').toBeDefined();
+    for (const url of calls.snippetSearchUrls) {
+      // Unapproved snippets are rejected at execute time, so they are never offered.
+      expect(new URL(url).searchParams.get('approval')).toBe('approved');
+    }
+    expect(new URL(lastSearchUrl ?? '').searchParams.get('search')).toBe('summary');
   });
 
   test('batch execute failure shows a submit error on the form', async ({ page }) => {

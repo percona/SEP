@@ -23,10 +23,12 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel, computed_field
+from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
+from app.core.settings_override import cache
 from app.core.settings_override.cache import (
     _build_nested_update,
     _parent_base_value,
@@ -34,7 +36,8 @@ from app.core.settings_override.cache import (
 )
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
-from app.sep.config import SEPSettings, SessionOptions
+from app.core.settings_override.registry import MaterializerPurpose
+from app.sep.config import CookieOptions, SEPSettings
 from app.tasks.config import PreExecutionCheckMode, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 
@@ -286,6 +289,29 @@ async def test_footer_template_materialized_to_template(session: AsyncSession) -
 
 
 @pytest.mark.asyncio
+async def test_snapshot_build_materializes_with_the_snapshot_purpose(
+    session: AsyncSession, mocker: MockerFixture
+) -> None:
+    """Tell a materializer it is reading a stored row, not validating a new payload.
+
+    A row was written against whatever the deployment declared at the time, so a
+    materializer that cross-checks its payload against current state has to be
+    able to treat a mismatch as drift here and as a client error on PATCH.
+    """
+    materialize = mocker.spy(cache, "materialize_override_value")
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="FOOTER_TEMPLATE",
+        value="$summary",
+    )
+
+    await build_snapshot(session, SEPSettings)
+
+    assert materialize.call_args.kwargs["purpose"] is MaterializerPurpose.SNAPSHOT
+
+
+@pytest.mark.asyncio
 async def test_invalid_footer_template_value_logged_and_skipped(
     session: AsyncSession, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -333,16 +359,18 @@ async def test_nested_override_appears_as_model_copy_under_top_level_key(
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION__MAX_AGE",
+        key="SESSION_REFRESH__MAX_AGE",
         value=3600,
     )
     snapshot = await build_snapshot(session, SEPSettings)
-    merged = snapshot["SESSION"]
-    assert isinstance(merged, SessionOptions)
+    merged = snapshot["SESSION_REFRESH"]
+    assert isinstance(merged, CookieOptions)
     assert timedelta(seconds=3600) == merged.MAX_AGE
-    # Untouched fields match the default ``SessionOptions``.
-    assert merged.COOKIE_NAME == SessionOptions().COOKIE_NAME
-    assert merged.SAMESITE == SessionOptions().SAMESITE
+    # Untouched leaves keep the field's own declared default, which is not the
+    # bare ``CookieOptions()`` default (``SESSION_REFRESH`` pins its own).
+    declared_default = SEPSettings.model_fields["SESSION_REFRESH"].default
+    assert merged.COOKIE_NAME == declared_default.COOKIE_NAME
+    assert merged.SAMESITE == declared_default.SAMESITE
 
 
 @pytest.mark.asyncio
@@ -350,15 +378,15 @@ async def test_nested_override_merges_onto_base_settings_value(
     session: AsyncSession,
 ) -> None:
     """Leaves with no override row fall back to the YAML/env base value (AC #3)."""
-    base = SimpleNamespace(SESSION=SessionOptions(SAMESITE="strict"))
+    base = SimpleNamespace(SESSION_REFRESH=CookieOptions(SAMESITE="strict"))
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION__MAX_AGE",
+        key="SESSION_REFRESH__MAX_AGE",
         value=3600,
     )
     snapshot = await build_snapshot(session, SEPSettings, base_settings=base)
-    merged = snapshot["SESSION"]
+    merged = snapshot["SESSION_REFRESH"]
     assert timedelta(seconds=3600) == merged.MAX_AGE
     # The non-overridden SAMESITE keeps the base (YAML/env) value, not the default.
     assert merged.SAMESITE == "strict"
@@ -378,17 +406,17 @@ async def test_mixed_case_sibling_rows_merge_into_one_parent(
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="session__max_age",
+        key="session_refresh__max_age",
         value=3600,
     )
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION__SAMESITE",
+        key="SESSION_REFRESH__SAMESITE",
         value="strict",
     )
     snapshot = await build_snapshot(session, SEPSettings)
-    merged = snapshot["SESSION"]
+    merged = snapshot["SESSION_REFRESH"]
     assert timedelta(seconds=3600) == merged.MAX_AGE
     assert merged.SAMESITE == "strict"
 
@@ -408,17 +436,17 @@ async def test_duplicate_canonical_leaf_keeps_newest_row(
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="session__max_age",
+        key="session_refresh__max_age",
         value=3600,
     )
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION__MAX_AGE",
+        key="SESSION_REFRESH__MAX_AGE",
         value=7200,
     )
     snapshot = await build_snapshot(session, SEPSettings)
-    assert timedelta(seconds=7200) == snapshot["SESSION"].MAX_AGE
+    assert timedelta(seconds=7200) == snapshot["SESSION_REFRESH"].MAX_AGE
 
 
 @pytest.mark.asyncio
@@ -490,11 +518,11 @@ async def test_unknown_nested_leaf_skipped_with_warning(
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION__BOGUS_FIELD",
+        key="SESSION_REFRESH__BOGUS_FIELD",
         value=1,
     )
     snapshot = await build_snapshot(session, SEPSettings)
-    assert "SESSION" not in snapshot
+    assert "SESSION_REFRESH" not in snapshot
     assert any(
         "unknown or not-overridable field" in r.getMessage() for r in caplog.records
     )
@@ -508,20 +536,20 @@ async def test_nested_coercion_failure_skips_only_failing_leaf(
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION__MAX_AGE",
+        key="SESSION_REFRESH__MAX_AGE",
         value="not-a-number",
     )
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION__SAMESITE",
+        key="SESSION_REFRESH__SAMESITE",
         value="strict",
     )
     snapshot = await build_snapshot(session, SEPSettings)
-    merged = snapshot["SESSION"]
+    merged = snapshot["SESSION_REFRESH"]
     assert merged.SAMESITE == "strict"
     # The failed MAX_AGE leaf keeps the default.
-    assert merged.MAX_AGE == SessionOptions().MAX_AGE
+    assert merged.MAX_AGE == CookieOptions().MAX_AGE
 
 
 @pytest.mark.asyncio
@@ -533,20 +561,20 @@ async def test_top_level_row_targeting_nested_only_parent_is_skipped(
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION",
+        key="SESSION_REFRESH",
         value={"MAX_AGE": 10, "SAMESITE": "none"},
     )
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION__MAX_AGE",
+        key="SESSION_REFRESH__MAX_AGE",
         value=3600,
     )
     snapshot = await build_snapshot(session, SEPSettings)
-    merged = snapshot["SESSION"]
+    merged = snapshot["SESSION_REFRESH"]
     assert timedelta(seconds=3600) == merged.MAX_AGE
     # The whole-object row did not take effect (SAMESITE stays default).
-    assert merged.SAMESITE == SessionOptions().SAMESITE
+    assert merged.SAMESITE == CookieOptions().SAMESITE
     assert any("non-HOT" in r.getMessage() for r in caplog.records)
 
 
@@ -639,16 +667,18 @@ async def test_snapshot_refresh_replaces_merged_copy(session: AsyncSession) -> N
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
-        key="SESSION__MAX_AGE",
+        key="SESSION_REFRESH__MAX_AGE",
         value=100,
     )
     first = await build_snapshot(session, SEPSettings)
-    assert "SESSION" in first
+    assert "SESSION_REFRESH" in first
     await SettingsOverrideManager.delete_where(
-        session, setting_class=SettingClassEnum.SEP_SETTINGS, key="SESSION__MAX_AGE"
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SESSION_REFRESH__MAX_AGE",
     )
     second = await build_snapshot(session, SEPSettings)
-    assert "SESSION" not in second
+    assert "SESSION_REFRESH" not in second
 
 
 class _Derived(BaseModel):
@@ -756,16 +786,19 @@ def test_parent_base_value_prefers_whole_object_snapshot_entry() -> None:
     YAML/env value -- otherwise whole-object fields not touched by a leaf row are
     silently reverted.
     """
-    whole_object = SessionOptions(MAX_AGE=timedelta(seconds=111))
-    field_info = SEPSettings.model_fields["SESSION"]
+    whole_object = CookieOptions(MAX_AGE=timedelta(seconds=111))
+    field_info = SEPSettings.model_fields["SESSION_REFRESH"]
     result = _parent_base_value(
-        {"SESSION": whole_object}, field_info, "SESSION", base_settings=None
+        {"SESSION_REFRESH": whole_object},
+        field_info,
+        "SESSION_REFRESH",
+        base_settings=None,
     )
     assert result is whole_object
 
 
 def test_parent_base_value_falls_back_to_field_default() -> None:
     """With no snapshot entry and no base settings, the field default seeds the merge."""
-    field_info = SEPSettings.model_fields["SESSION"]
-    result = _parent_base_value({}, field_info, "SESSION", base_settings=None)
-    assert isinstance(result, SessionOptions)
+    field_info = SEPSettings.model_fields["SESSION_REFRESH"]
+    result = _parent_base_value({}, field_info, "SESSION_REFRESH", base_settings=None)
+    assert isinstance(result, CookieOptions)

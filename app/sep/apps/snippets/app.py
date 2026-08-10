@@ -17,8 +17,7 @@
 
 The registry discovers the exported ``app`` under the key ``snippets`` (derived
 from the module path), mounting its derived JSON router at
-``/api/apps/snippets/`` while the existing Jinja UI keeps serving at
-``/snippets/`` via the threaded ``jinja_router``. The JSON surface is the first
+``/api/apps/snippets/``. The JSON surface is the first
 real adoption of the framework ``ScriptSource`` seam: listing, per-snippet form
 schema, execution history, and execute are derived from
 :data:`~app.sep.snippets.script_source.snippet_source`, while the
@@ -37,16 +36,15 @@ Celery module to prefix it with and its schedule is seeded unconditionally by
 """
 
 from app.sep.apps.framework.apps import TaskExecutionApp
-from app.sep.apps.framework.base import StaticMount
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.snippets.extra_routes import (
     approval_router,
     artifact_router,
     maintenance_router,
 )
-from app.sep.apps.snippets.routes import router as jinja_router
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.responses import SnippetsCapabilitiesResponse
 from app.sep.snippets.script_source import snippet_source
 from app.tasks.models import ANY_OWNER
@@ -76,15 +74,8 @@ app = TaskExecutionApp(
     description="Browse, approve, and execute operational snippets.",
     owner=ANY_OWNER,
     script_source=snippet_source,
+    list_query_spec=SnippetManager.list_query_spec,
     capabilities_provider=_snippets_capabilities_provider,
     extra_routes=(approval_router, maintenance_router, artifact_router),
-    jinja_router=jinja_router,
     artifact_base_dirs={ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR},
-    static_mounts=(
-        StaticMount(
-            path="/static/snippets",
-            directory=snippets_settings.SNIPPETS_DIR,
-            name="snippets_files",
-        ),
-    ),
 )

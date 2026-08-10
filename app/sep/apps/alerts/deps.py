@@ -34,7 +34,6 @@ from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 # live in ``app.sep.deps`` alongside the sibling Inventory / Tasks client deps;
 # they are re-exported here for existing importers (routes, celery, tests).
 from app.sep.deps import (
-    DefaultContext,
     get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     PMMAPIDep,
     require_pmm_api,  # noqa: F401 -- re-exported for existing importers
@@ -218,38 +217,3 @@ async def ensure_pagerduty_notification_route(
         }
     )
     await pmm_api.update_notification_policy(policy)
-
-
-async def get_alerts_index_context(
-    context: DefaultContext,
-    alert_templates: AlertTemplatesDep,
-    pmm_present_names: PMMPresentNamesDep,
-    recent_backups: RecentBackupsDep,
-    pagerduty_status: PagerDutyStatusDep,
-) -> dict[str, Any]:
-    """Assemble the template context for the alerts plugin index view.
-
-    :param context: The default template context with user, plugins, etc.
-    :param alert_templates: Alert templates grouped by service type.
-    :param pmm_present_names: Set of template names present in PMM, or ``None``
-        when PMM is unreachable.
-    :param recent_backups: The most recent alert backups for the sidebar widget.
-    :param pagerduty_status: PagerDuty contact point status for the sidebar
-        widget, or ``None`` when PMM is unreachable.
-    :return: The updated context dictionary with alerts data.
-    """
-    all_templates = [t for templates in alert_templates.values() for t in templates]
-    context.update(
-        {
-            "alert_templates": alert_templates,
-            "all_templates": all_templates,
-            "service_types": list(ServiceType),
-            "pmm_present_names": pmm_present_names,
-            "recent_backups": recent_backups,
-            "pagerduty_status": pagerduty_status,
-        }
-    )
-    return context
-
-
-AlertsIndexContext = Annotated[dict[str, Any], Depends(get_alerts_index_context)]
