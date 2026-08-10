@@ -35,7 +35,7 @@ name: sep-pmm-fb
 
 services:
   pmm-server:
-    image: docker.io/perconalab/pmm-server-fb:PR-4500-0357c3b
+    image: docker.io/perconalab/pmm-server-fb:PR-4500-133001e
     environment:
       PMM_ENABLE_SEP: "1"
       PMM_SEP_POSTGRES_PASSWORD: ${SEP_PG_PASSWORD:?run ./bootstrap.sh first}
