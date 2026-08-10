@@ -1035,6 +1035,33 @@ class TestRunSendFailures:
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "not configured" in reloaded.detail["error"]
 
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_failing_refresh_still_delivers_against_the_held_snapshot(
+        self,
+        send_session: AsyncSession,
+        uploader: _FakeUploader,
+        mocker: MockerFixture,
+    ) -> None:
+        """Keep delivering when the re-read fails but the held snapshot is usable.
+
+        A transient database error must not convert a deliverable send into a
+        terminal "not configured" row once the re-read is unconditional.
+        """
+        mocker.patch.object(
+            SettingsOverrideManager,
+            "list",
+            side_effect=SQLAlchemyError("database unreachable"),
+        )
+        rollback = mocker.spy(AsyncSession, "rollback")
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        assert rollback.await_count == 1
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.SUCCESS
+        assert uploader.called is True
+
     async def test_a_failing_refresh_keeps_the_reason_already_resolved(
         self,
         send_session: AsyncSession,
