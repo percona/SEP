@@ -26,7 +26,7 @@ from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal, Self, TypeVar
+from typing import Annotated, Any, ClassVar, Literal, NoReturn, Self, TypeVar
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, FastAPI
@@ -44,10 +44,12 @@ from pydantic import (
     StringConstraints,
     validate_call,
 )
+from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
     NestedSecretsSettingsSource,
     PydanticBaseSettingsSource,
+    SecretsSettingsSource,
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
@@ -57,6 +59,7 @@ from starlette.types import Lifespan
 
 from app import BASE_DIR
 from app.core.celery.config import CeleryOptions
+from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
     SecurityHeadersOptions,
@@ -474,10 +477,94 @@ def detect_removed_settings_override_keys() -> None:
     )
 
 
+class _SEPDatabaseSettings(BaseYamlSettings):
+    """Resolve the SEP service's database options in isolation.
+
+    ``Settings`` cannot read ``sep_settings`` while it is being constructed:
+    ``BaseYamlAppSettings.BACKEND_CORS_ORIGINS`` defaults off ``settings``, so
+    forcing the SEP proxy re-enters the global proxy that is still resolving. This
+    reads the same ``SEP__DATABASE__*`` sources without either proxy.
+
+    :cvar SETTINGS_PREFIXES: The prefix the probe resolves its environment and YAML
+        sources under. Set to ["SEP"].
+    :param DATABASE: The SEP service's database connection options.
+    """
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
+
+
+class BeatStoreDefaultSource(PydanticBaseSettingsSource):
+    """Supply the celery-beat store URI derived from the SEP database.
+
+    Ranked last, and skipped entirely once a real source — init kwarg, environment,
+    dotenv, secret file, or YAML profile — supplies ``CELERY__BEAT_DBURI``. The
+    value is contributed as source data rather than assigned after construction, so
+    ``CeleryOptions``' own validators still normalize the driver and null
+    ``beat_schema`` for a SQLite store.
+
+    :param settings_cls: The settings class being configured.
+    :param dotenv_settings: The dotenv source, for the ``_env_file`` the caller
+        passed to ``Settings``.
+    :param file_secret_settings: The secret-file source, for the caller's
+        ``_secrets_dir``. Typed concretely because that attribute is declared by
+        ``SecretsSettingsSource`` rather than by the source base class.
+    """
+
+    def __init__(
+        self,
+        settings_cls: type[BaseSettings],
+        dotenv_settings: DotEnvSettingsSource,
+        file_secret_settings: SecretsSettingsSource,
+    ) -> None:
+        super().__init__(settings_cls)
+        self._env_file = dotenv_settings.env_file
+        self._secrets_dir = file_secret_settings.secrets_dir
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> NoReturn:
+        """Raise, since this source builds its whole payload in ``__call__``.
+
+        :param field: The field being resolved.
+        :param field_name: The field's name.
+        :raises NotImplementedError: Always.
+        """
+        raise NotImplementedError
+
+    def __call__(self) -> dict[str, Any]:
+        """Return the derived beat-store URI, or nothing when a source supplied one.
+
+        Rank alone would not settle this. ``deep_update`` merges the source payloads
+        case-sensitively and ``CeleryOptions`` folds the key cases afterwards, so
+        contributing ``BEAT_DBURI`` unconditionally would pin a same-cased
+        higher-priority value at this source's position and let a lower-priority one
+        written in the other case win the fold. ``current_state`` carries the
+        sources above this one already merged, so withholding the key whenever one
+        of them supplies it keeps the collision from arising at all.
+
+        :return: The ``CELERY.BEAT_DBURI`` default derived from SEP's database, or an
+            empty payload when a configured source already supplies the store.
+        :raises ValidationError: When the resolved ``SEP__DATABASE__*`` values do
+            not validate, so an unusable SEP database fails ``Settings``
+            construction instead of yielding a malformed store URI. Only a
+            deployment that leaves the beat store to be derived is held to this.
+        """
+        configured = self.current_state.get("CELERY")
+        if isinstance(configured, dict) and any(
+            key.lower() == "beat_dburi" for key in configured
+        ):
+            return {}
+        database = _SEPDatabaseSettings(
+            _env_file=self._env_file, _secrets_dir=self._secrets_dir
+        ).DATABASE
+        return {"CELERY": {"BEAT_DBURI": database.URL}}
+
+
 class Settings(BaseYamlSettings):
     """Define the main application settings.
 
-    :param CELERY: Celery configuration options.
+    :param CELERY: Celery configuration options. ``BEAT_DBURI`` defaults to the
+        resolved SEP database connection, so the beat store follows
+        ``SEP__DATABASE__*`` unless a source configures it explicitly.
     :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same
         user. Defaults to False, meaning all previous sessions will be invalidated once
         a new one is created.
@@ -590,6 +677,37 @@ class Settings(BaseYamlSettings):
         ).hexdigest()
         self.SEP_INTERNAL_TOKEN = SecretStr(derived)
         return self
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Append the beat-store default below every configured source.
+
+        :param settings_cls: The settings class being configured.
+        :param init_settings: The init-arguments source.
+        :param env_settings: The environment-variable source.
+        :param dotenv_settings: The dotenv-file source.
+        :param file_secret_settings: The file-secret source.
+        :return: The settings sources, ordered highest-priority first.
+        :raises SettingsError: When ``SECRETS_DIR`` names a path that is not a
+            directory, or one whose contents exceed the source's size ceiling.
+        """
+        return (
+            *super().settings_customise_sources(
+                settings_cls,
+                init_settings,
+                env_settings,
+                dotenv_settings,
+                file_secret_settings,
+            ),
+            BeatStoreDefaultSource(settings_cls, dotenv_settings, file_secret_settings),
+        )
 
     @validate_call
     async def get_remote_api(

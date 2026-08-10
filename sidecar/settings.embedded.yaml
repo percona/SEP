@@ -65,7 +65,8 @@ default:
     # Superseded per container start by the credentialed URLs entrypoint.sh mints.
     BROKER_URL: redis://127.0.0.1:6379/0
     RESULT_BACKEND: redis://127.0.0.1:6379/1
-    BEAT_DBURI: postgresql://sep@pmm-server:5432/sep
+    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so the
+    # mounted SEP__DATABASE__PASSWORD reaches it without an env-visible URI.
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
 
