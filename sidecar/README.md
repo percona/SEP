@@ -77,20 +77,16 @@ with no password at all.
 every service, not just SEP.** Unlike a password file, these two seed the
 `SEP_DB_HOST` / `SEP_DB_PORT` shell inputs, which the migrate wait loops read and
 which all three services derive their host and port from. Mounting
-`SEP__DATABASE__HOST` alone therefore also sets `INVENTORY__DATABASE__HOST` and
-`TASKS__DATABASE__HOST`. To point only SEP at a different database, set the
+`SEP__DATABASE__HOST` therefore also sets `INVENTORY__DATABASE__HOST` and
+`TASKS__DATABASE__HOST`; likewise `SEP__DATABASE__PORT` fans out to
+`INVENTORY__DATABASE__PORT` and `TASKS__DATABASE__PORT`. There is no way to point
+one service at a different host or port with a file alone — to do that, set the
 per-service canonical variables explicitly rather than mounting the SEP file.
 
 The celery-beat store needs no file of its own: it follows `SEP__DATABASE__*`, so
 the mounted `SEP__DATABASE__PASSWORD` reaches it through the same settings
 resolution the services use. Mount `CELERY__BEAT_DBURI` only to point beat at a
 *different* store.
-
-`SEP__DATABASE__HOST` and `SEP__DATABASE__PORT` are the exception to that
-one-name rule. Each seeds the `SEP_DB_HOST` / `SEP_DB_PORT` shell input the wait
-loops and all three services derive from, so mounting either moves every service
-rather than only SEP — there is no way to point one service at a different host
-with a file alone.
 
 Constraints on the directory: entries must be regular files directly inside it (a
 name in a subdirectory matches no setting). File names are matched
