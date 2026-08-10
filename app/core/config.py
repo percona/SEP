@@ -895,42 +895,36 @@ def create_app(
     generate_unique_id_function: Callable[[APIRoute], str] | None = None,
     docs_url: str | None | _UnsetType = _UNSET,
     redoc_url: str | None | _UnsetType = _UNSET,
+    root_path: str = "",
 ) -> FastAPI:
     """Create and configure the FastAPI app.
 
     :param routers: Routers to include to created app.
-    :type routers: APIRouter
     :param lifespan: Lifespan context manager for the FastAPI app, if any. Defaults to
         None.
-    :type lifespan: Lifespan[AppType] | None
     :param backend_cors_origins: A list of allowed origins for the CORSMiddleware.
         Defaults to None, meaning the middleware won't be added to the app.
-    :type backend_cors_origins: list[StrHttpUrl] | None
     :param allowed_hosts: List of allowed hosts for the TrustedHostMiddleware. Defaults
         to None, meaning the middleware won't be added to the app.
-    :type allowed_hosts: list[str]
     :param security_headers: Options for the SecurityHeadersMiddleware. Defaults to
         None, meaning the middleware won't be added to the app.
     :param title: Optional OpenAPI title for the generated spec.
-    :type title: str | None
     :param version: Optional OpenAPI version string.
-    :type version: str | None
     :param description: Optional OpenAPI description text.
-    :type description: str | None
     :param generate_unique_id_function: Optional callback for stable ``operationId``
         values. When omitted, :func:`app.core.utils.openapi.generate_tag_prefixed_unique_id`
         is used so similarly named handlers across routers do not collide.
-    :type generate_unique_id_function: Callable[[APIRoute], str] | None
     :param docs_url: Override for FastAPI's ``docs_url`` parameter. Pass ``None`` to
         disable the auto-generated Swagger UI. When omitted, FastAPI's default of
         ``"/docs"`` is preserved.
-    :type docs_url: str | None | _UnsetType
     :param redoc_url: Override for FastAPI's ``redoc_url`` parameter. Pass ``None`` to
         disable the auto-generated ReDoc UI. When omitted, FastAPI's default of
         ``"/redoc"`` is preserved.
-    :type redoc_url: str | None | _UnsetType
+    :param root_path: The URL prefix an intermediary proxy mounts the app under.
+        Starlette strips it before matching routes and ``request.url_for`` re-adds
+        it. Defaults to ``""``, which is inert: FastAPI writes the ASGI scope key
+        only for a non-empty value, so the unprefixed app is untouched.
     :return: An instance of the FastAPI application with an attached Celery app.
-    :rtype: FastAPI
     """
     openapi_kwargs = {}
     if title is not None:
@@ -946,7 +940,7 @@ def create_app(
         openapi_kwargs["docs_url"] = docs_url
     if redoc_url is not _UNSET:
         openapi_kwargs["redoc_url"] = redoc_url
-    app = FastAPI(lifespan=lifespan, **openapi_kwargs)
+    app = FastAPI(lifespan=lifespan, root_path=root_path, **openapi_kwargs)
     if backend_cors_origins is not None:
         app.add_middleware(
             CORSMiddleware,

@@ -69,6 +69,8 @@ from app.core.utils.fields import (
     TimedeltaSeconds,
     UniqueList,
     URIPath,
+    URIPathPrefix,
+    URL,
 )
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.bundle_upload.plan import DeliveryPlan
@@ -684,6 +686,14 @@ class SEPSettings(BaseYamlAppSettings):
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
+    :param ROOT_PATH: The URL prefix an intermediary proxy serves SEP under, such as
+        ``/sep``. Defaults to ``""``, the origin root. Read once when the application
+        is constructed, so it is set through env or YAML only. Cookie paths are not
+        derived from it: a deployment serving SEP's own SPA under a prefix must
+        prefix ``SESSION_REFRESH.PATH`` too, or the browser withholds the refresh
+        cookie from the prefixed endpoint. The side-car, which is what sets this
+        value, ships no SPA and authenticates through the cookie-less
+        ``/api/oauth/session/exchange`` route instead.
     :param SESSION_REFRESH: Cookie configuration options for the SPA
         ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
         ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
@@ -742,6 +752,7 @@ class SEPSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
+    ROOT_PATH: URIPathPrefix = ""
     SESSION_REFRESH: CookieOptions = nested_overridable_field(
         CookieOptions(
             COOKIE_NAME="refreshToken",
@@ -921,3 +932,28 @@ class SEPSettings(BaseYamlAppSettings):
 sep_settings: SEPSettings = OverridableSettingsProxy(
     SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
 )
+
+
+def warn_if_base_url_lacks_root_path(base_url: URL | None, setting_name: str) -> None:
+    """Warn when an externally configured base URL omits the configured prefix.
+
+    URLs are composed by joining onto the base's path, so a base that resolves
+    outside ``ROOT_PATH`` still yields a well-formed string and the mismatch
+    surfaces only as a download that no longer routes through the prefix.
+    Advisory only: the caller still emits the URL.
+
+    :param base_url: The configured external base URL, or ``None`` when unset.
+    :param setting_name: The setting the base was read from, named in the warning
+        so an operator knows which value to correct.
+    """
+    prefix = sep_settings.ROOT_PATH
+    if not prefix or base_url is None:
+        return
+    if not urlparse(str(base_url)).path.rstrip("/").endswith(prefix):
+        logger.warning(
+            "%s is set to %s, which omits the configured ROOT_PATH %s; URLs built "
+            "on it will not reach SEP through the prefix it is served under.",
+            setting_name,
+            base_url,
+            prefix,
+        )

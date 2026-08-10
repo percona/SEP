@@ -12,3 +12,12 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+from types import MappingProxyType
+
+STREAMING_PROXY_HEADERS = MappingProxyType({"X-Accel-Buffering": "no"})
+"""Headers that stop an intermediary proxy buffering an incremental response.
+
+Frozen because the streaming routes hold it directly rather than copying, so an
+in-place mutation at one call site would reach every later response.
+"""

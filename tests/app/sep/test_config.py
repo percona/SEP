@@ -88,6 +88,18 @@ class TestAmbientSessionSSO:
         assert is_hot_reloadable(SEPSettings, "AMBIENT_SESSION_SSO_ENABLED")
 
 
+class TestRootPath:
+    """Cover the URL mount prefix SEP serves under."""
+
+    def test_defaults_to_unprefixed(self):
+        """Verify SEP serves from the origin root unless a deployment opts in."""
+        assert SEPSettings().ROOT_PATH == ""
+
+    def test_is_not_hot_reloadable(self):
+        """Verify a DB override cannot claim to move a prefix read at construction."""
+        assert not is_hot_reloadable(SEPSettings, "ROOT_PATH")
+
+
 class TestDiagnosticsDelivery:
     """Cover the ``DIAGNOSTICS_DELIVERY`` delivery-plan settings block."""
 

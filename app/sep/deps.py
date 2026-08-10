@@ -70,17 +70,17 @@ User = get_user_model()
 def get_base_url(request: Request) -> URL:
     """Return the application's base URL.
 
-    If the `BASE_URL` setting is defined, returns it. Otherwise, the function extracts
-    the base URL from an incoming request by removing the path.
+    If the ``BASE_URL`` setting is defined, returns it. Otherwise the base is
+    derived from the incoming request, and carries the URL prefix the application
+    is served under, so a URL composed on it stays inside that prefix. It always
+    ends in a trailing slash, which callers joining a path onto it must absorb.
 
     :param request: The HTTP request object from which the base URL is derived.
-    :type request: Request
-    :return: The base URL with the path removed.
-    :rtype: Any
+    :return: The application's base URL.
     """
     if settings.BASE_URL is not None:
         return settings.BASE_URL
-    return request.url.replace(path="", query="", fragment="")
+    return URL(str(request.base_url))
 
 
 BaseURL = Annotated[URL, Depends(get_base_url)]

@@ -31,6 +31,7 @@ from app.sep.deps import (
     TaskAPI,
     TasksClient,
 )
+from app.sep.routes import STREAMING_PROXY_HEADERS
 from app.tasks.models import FileMetadata, TaskHistoryResponse
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ async def download_task_history_file(
     tasks_client: TasksClient,
 ) -> StreamingResponse:
     """Stream a task history's archived file as a binary download."""
-    headers: dict[str, str] = {}
+    headers: dict[str, str] = dict(STREAMING_PROXY_HEADERS)
     path = request.query_params.get("path")
     with tasks_client.auth(user.access_token) as tasks_api:
         if path:
@@ -87,7 +88,7 @@ async def download_task_history_file(
         return StreamingResponse(
             task_history_file_stream(tasks_api, task_history.id, request),
             media_type="application/octet-stream",
-            headers=headers or None,
+            headers=headers,
         )
 
 

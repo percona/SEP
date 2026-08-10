@@ -50,6 +50,7 @@ from app.sep.apps.framework.script_source import (
     ScriptSource,
 )
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
+from app.sep.config import warn_if_base_url_lacks_root_path
 from app.sep.deps import get_base_url
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import (
@@ -132,6 +133,12 @@ def build_artifact_download_url(
 ) -> str:
     """Return the signed ``/artifacts/download/{token}`` URL for an artifact.
 
+    The download path is joined onto the base URL's own path rather than
+    replacing it, so a base carrying the prefix SEP is served under keeps it.
+    ``SNIPPETS_BASE_URL`` can be overridden after the startup check has run, so
+    a value omitting that prefix is warned about here; the URL is well-formed
+    either way and is still returned.
+
     :param request: The HTTP request whose host derives the base URL, or ``None``
         for the request-less source path, which falls back to the configured
         ``BASE_URL``.
@@ -152,11 +159,15 @@ def build_artifact_download_url(
             )
     else:
         base_url = snippets_settings.SNIPPETS_BASE_URL or get_base_url(request)
+    warn_if_base_url_lacks_root_path(
+        snippets_settings.SNIPPETS_BASE_URL, "SNIPPETS_BASE_URL"
+    )
     token = crypto_timestamp_serializer.dumps(
         {"type": artifact_type, "filename": filename, "md5": md5_digest},
         salt=ARTIFACT_DOWNLOAD_SALT,
     )
-    return str(base_url.replace(path=f"/artifacts/download/{token}"))
+    prefix = base_url.path.rstrip("/")
+    return str(base_url.replace(path=f"{prefix}/artifacts/download/{token}"))
 
 
 async def post_task_execution(
