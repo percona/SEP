@@ -23,7 +23,6 @@ definition rather than the live ``GET /schema`` endpoint.
 
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.inventory.api_routes import router as api_router
-from app.sep.apps.inventory.routes import router as jinja_router
 from app.sep.apps.inventory.schema import inventory_schema
 
 app = BaseApp(
@@ -32,6 +31,5 @@ app = BaseApp(
     uri_path="/inventory",
     css_class="inventory",
     api_router=api_router,
-    jinja_router=jinja_router,
     schema=inventory_schema,
 )

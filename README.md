@@ -141,7 +141,7 @@ These are some, but not all, the possible settings you can have, per app:
 | AUTH__PROVIDER__CASDOOR__APPLICATION_NAME  | all | no  | app-built-in                                    | sep-app                                          |
 | AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS   | all | no  | `[<ENDPOINT>]`                                  | `[http://localhost:9999, http://127.0.0.1:9999]` |
 | CELERY__BROKER_URL         | all       | no       | N/A                                                 | filesystem://                                    |
-| CELERY__BEAT_DBURI         | all       | no       | N/A                                                 | sqlite:///schedule.db                            |
+| CELERY__BEAT_DBURI         | all       | no       | The resolved SEP database connection                | sqlite:///schedule.db                            |
 | LOGGING                    | all       | no       | WARNING                                             | N/A                                              |
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000]   |
 | TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                            |

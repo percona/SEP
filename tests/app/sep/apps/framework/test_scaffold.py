@@ -57,7 +57,7 @@ from app.sep.apps.framework.conformance import (
 from app.sep.apps.framework.registry import build_app_registry
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.config import App
-from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
+from app.sep.deps import get_current_user, IsApiAuthenticated
 from app.sep.snippets.config import snippets_settings
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
@@ -208,7 +208,7 @@ def _mount_api_first(app_def: BaseApp, user: CasdoorUser) -> TestClient:
     api_router.include_router(apps_router)
     fastapi_app = FastAPI()
     fastapi_app.include_router(api_router)
-    fastapi_app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    fastapi_app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(fastapi_app, raise_server_exceptions=False)
 
 
@@ -606,7 +606,6 @@ def test_task_flavor_scaffolds_conformant_app(
         registry = build_app_registry([App(module_name=name)])
         app = registry.get(name)
         assert isinstance(app, TaskExecutionApp)
-        assert app.jinja_router is None
         assert not _task_conformance(app)
         assert not check_route_collisions(registry)
 
@@ -639,7 +638,6 @@ def test_script_flavor_scaffolds_snippet_routes(
         registry = build_app_registry([App(module_name=name)])
         app = registry.get(name)
         assert isinstance(app, TaskExecutionApp)
-        assert app.jinja_router is None
         assert not _task_conformance(app)
 
         tasks_api = AsyncMock(spec=RemoteAPI)
@@ -675,7 +673,6 @@ def test_base_flavor_scaffolds_api_first_app(
         registry = build_app_registry([App(module_name=name)])
         app = registry.get(name)
         assert app is not None
-        assert app.jinja_router is None
         assert app.api_router is not None
         assert not check_route_collisions(registry)
 

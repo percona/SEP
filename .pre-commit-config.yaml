@@ -7,38 +7,15 @@ repos:
     hooks:
       - id: ruff
       - id: ruff-format
-  - repo: https://github.com/djlint/djLint
-    rev: 9112cb64851c95a7802358af285d21ad8b7f6437  # v1.36.4
-    hooks:
-      - id: djlint
-        types_or: [jinja]
-      - id: djlint-reformat
-        types_or: [jinja]
   - repo: https://github.com/google/addlicense
     rev: b289835c0741ba2fb92dd5f61af070e79c69a55e  # v1.2.0
     hooks:
       - id: addlicense
         args: ["-f", ".license_header", "-v"]
         types_or: [python, javascript, ts, tsx, css, jinja]
-        exclude: ^(static/(js|css)/vendor/|frontend/(node_modules|.*/dist|packages/[^/]+/src/generated)/)
+        exclude: ^frontend/(node_modules|.*/dist|packages/[^/]+/src/generated)/
   - repo: local
     hooks:
-      - id: js-beautify
-        name: JS Beautify
-        description: "Run js-beautify (from jsbeautifier) on .js files"
-        entry: js-beautify --end-with-newline --replace
-        language: python
-        additional_dependencies: ["jsbeautifier==1.15.1"]
-        files: ^(?!.*\.min\.js$)(?!static/(js|css)/vendor/).*\.js$
-        exclude: ^frontend/
-      - id: css-beautify
-        name: CSS Beautify
-        description: "Run css-beautify (from cssbeautifier) on .css files"
-        entry: css-beautify --end-with-newline --replace
-        language: python
-        additional_dependencies: ["cssbeautifier==1.15.1"]
-        files: ^(?!.*\.min\.css$)(?!static/(js|css)/vendor/).*\.css$
-        exclude: ^frontend/
       - id: update-installer-checksum
         name: Update sep_installer.sh checksum
         description: "Update sep_installer.sha256 when sep_installer.sh changes"
@@ -67,6 +44,13 @@ repos:
         entry: python3 scripts/sync_alembic_version_locations.py
         language: system
         files: ^app/sep/apps/.*/migrations/versions/
+        pass_filenames: false
+      - id: sync-labeler-apps
+        name: Sync .github/labeler.yml app labels
+        description: "Regenerate app:<name> labeler rules from app-slice dirs"
+        entry: python3 scripts/sync_labeler_apps.py
+        language: system
+        files: ^(app/sep/apps/|frontend/packages/apps/|tests/app/sep/apps/|templates/|frontend/packages/e2e/tests/|\.github/labeler\.yml$|scripts/sync_labeler_apps\.py$)
         pass_filenames: false
       - id: check-nomad-payload-size
         name: Check Nomad payload size
