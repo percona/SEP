@@ -27,6 +27,7 @@ from alembic import op
 from app.core.db.utils import (
     acquire_pg_advisory_xact_lock,
     check_constraint_lists_members,
+    table_exists,
 )
 from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 
@@ -101,6 +102,8 @@ def downgrade() -> None:
     """
     bind = op.get_bind()
     acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    if not table_exists(bind, "settingoverride"):
+        return
     if check_constraint_lists_members(
         bind, "settingoverride", "setting_class", ("MESSAGES_SETTINGS",)
     ):
