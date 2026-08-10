@@ -22,7 +22,7 @@ the app packages the settings profile activates — see [App set](#app-set).
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
 | `settings.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
-| `restrict_apps.py` | Build-step strip: removes every app package the baked profile does not activate. Removed during the build, so it is not present in the final image. |
+| `restrict_apps.py` | Build-step strip: removes every app package the baked profile does not activate. Deleted in the same `RUN`, so `make image`'s squashed build ships no copy of it. |
 | `verify_image_apps.py` | Post-build assertion that an image's app set matches its own baked profile. Piped into the image, never copied into it. |
 | `verify_image_apps.sh` | Runs `verify_image_apps.py` inside an already-built image; used by both CI and the Jenkins build. |
 
