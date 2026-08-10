@@ -24,7 +24,7 @@ from enum import StrEnum
 
 
 class NomadStep(StrEnum):
-    """Nomad task ``Name`` values used by SEP job-spec templates.
+    """Represent Nomad task ``Name`` values used by SEP job-spec templates.
 
     ``STEP1`` is legacy — only historical task logs / the frozen Alembic
     migration still emit it. Do not wire new job specs to ``step1``.
