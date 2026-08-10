@@ -187,7 +187,7 @@ def test_spec_path_payload_matrix_matches_golden():
     )
 
 
-def _all_servers_config(backup_type: str, encryption: dict) -> dict:
+def _all_servers_config(backup_type: str, encryption: dict[str, object]) -> dict[str, object]:
     """Return the ``ALL_SERVERS`` block of the YAML config ``build_backup_spec`` emits.
 
     :param backup_type: The ``BackupType`` code (``M``/``X``/``B``).
