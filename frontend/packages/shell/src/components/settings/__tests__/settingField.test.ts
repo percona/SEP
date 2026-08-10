@@ -64,6 +64,45 @@ describe('getFieldKind', () => {
   it('prioritises complex over secret', () => {
     expect(getFieldKind(makeSetting({ is_complex: true, is_secret: true }))).toBe('complex');
   });
+
+  it('treats non-empty options as choice even when type is a named enum', () => {
+    expect(
+      getFieldKind(
+        makeSetting({
+          type: 'LogLevel',
+          options: [
+            { label: 'WARNING', value: 30 },
+            { label: 'DEBUG', value: 10 },
+          ],
+        }),
+      ),
+    ).toBe('choice');
+  });
+
+  it('keeps complex and secret ahead of options-based choice', () => {
+    expect(
+      getFieldKind(
+        makeSetting({
+          is_complex: true,
+          options: [{ label: 'A', value: 'a' }],
+        }),
+      ),
+    ).toBe('complex');
+    expect(
+      getFieldKind(
+        makeSetting({
+          is_secret: true,
+          type: 'SecretStr',
+          options: [{ label: 'A', value: 'a' }],
+        }),
+      ),
+    ).toBe('secret');
+  });
+
+  it('still does not invent Literal options from a bare enum type name', () => {
+    expect(parseLiteralOptions('PreExecutionCheckMode')).toBeNull();
+    expect(getFieldKind(makeSetting({ type: 'PreExecutionCheckMode' }))).toBe('text');
+  });
 });
 
 describe('isEditable', () => {
@@ -99,6 +138,20 @@ describe('toPatchValue', () => {
     expect(toPatchValue(makeSetting({ type: 'bool' }), true)).toBe(true);
     expect(toPatchValue(makeSetting({ type: 'int' }), '7')).toBe(7);
     expect(toPatchValue(makeSetting({ type: 'str' }), 'hi')).toBe('hi');
+  });
+
+  it('round-trips IntEnum choice via typed option value', () => {
+    const setting = makeSetting({
+      type: 'LogLevel',
+      value: 30,
+      options: [
+        { label: 'WARNING', value: 30 },
+        { label: 'DEBUG', value: 10 },
+      ],
+    });
+    expect(toInitialEditValue(setting)).toBe('30');
+    expect(toPatchValue(setting, '10')).toBe(10);
+    expect(typeof toPatchValue(setting, '10')).toBe('number');
   });
 });
 
