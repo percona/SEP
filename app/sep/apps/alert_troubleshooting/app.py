@@ -17,16 +17,14 @@
 
 alert_troubleshooting projects alerts out of snippet frontmatter and exposes a
 composite-keyed JSON surface — alerts grouped by service type and a
-``(service_type, alert_name)`` detail with linked snippets — plus a deprecated
-Jinja UI whose ``POST /execute`` reuses the snippets execution path. None of that
-maps onto the framework's filename-keyed ``ScriptSource`` derived routes, so it is
+``(service_type, alert_name)`` detail with linked snippets. That does not map
+onto the framework's filename-keyed ``ScriptSource`` derived routes, so it is
 exported as a plain :class:`BaseApp` carrying its hand-written ``api_router``
 unchanged, the same shape as ``dipper`` and the bespoke ``inventory``/``report``
-apps. The legacy Jinja UI is threaded as ``jinja_router``.
+apps.
 """
 
 from app.sep.apps.alert_troubleshooting.api_routes import router as api_router
-from app.sep.apps.alert_troubleshooting.routes import router as jinja_router
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.nav_icons import NavIcon
 
@@ -40,6 +38,5 @@ app = BaseApp(
     react_route="/alerts/troubleshooting",
     nav_icon=NavIcon.TROUBLESHOOT,
     api_router=api_router,
-    jinja_router=jinja_router,
     uses_task_data=True,
 )

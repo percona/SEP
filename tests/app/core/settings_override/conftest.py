@@ -93,7 +93,7 @@ def _propagate_cache_logs() -> None:
 
 @pytest.fixture(name="restrict")
 def restrict_fixture(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
-    """Return a callable pinning ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` to given entries.
+    """Return a callable pinning ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` to given entries.
 
     Pins the value on the already-constructed proxy rather than through the
     environment, which the singleton no longer reads.
@@ -103,7 +103,7 @@ def restrict_fixture(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """
 
     def _restrict(*entries: str) -> None:
-        monkeypatch.setattr(settings, "SETTINGS_OVERRIDE_ALLOWED_KEYS", set(entries))
+        monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "ALLOWED_KEYS", set(entries))
 
     return _restrict
 

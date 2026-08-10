@@ -28,7 +28,6 @@ from app.sep.apps.framework.connectivity import (
 )
 from app.sep.connectivity import (
     _record_latest_result,
-    annotate_tasks_with_connectivity,
     clear_connectivity_caches,
     get_latest_connectivity_result,
 )
@@ -208,35 +207,6 @@ class TestRecordConnectivityWarning:
         )
 
         assert get_latest_connectivity_result("node1", "mysql") is False
-
-    @pytest.mark.asyncio
-    async def test_snapshot_drives_list_view_annotation(self, mock_tasks_api):
-        """Verify ``annotate_tasks_with_connectivity`` reflects the JSON-path result."""
-        mock_tasks_api.post.return_value = {
-            "success": False,
-            "error": "connection refused",
-        }
-        await record_connectivity_warning(
-            mock_tasks_api,
-            target="node1",
-            host="10.0.0.1",
-            port=3306,
-            service_type="mysql",
-        )
-
-        tasks = [
-            {
-                "data": {
-                    "meta": {
-                        "target": "node1",
-                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
-                    },
-                },
-            },
-        ]
-        annotate_tasks_with_connectivity(tasks)
-
-        assert tasks[0]["_connectivity_warning"] is True
 
 
 class TestMaybeRecordConnectivityWarning:

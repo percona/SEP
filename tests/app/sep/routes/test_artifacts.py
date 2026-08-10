@@ -15,13 +15,15 @@
 
 """Define tests for the app.sep.routes.artifacts module."""
 
+import time
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from starlette.status import (
     HTTP_200_OK,
-    HTTP_303_SEE_OTHER,
+    HTTP_400_BAD_REQUEST,
+    HTTP_404_NOT_FOUND,
 )
 
 from app.core.security import crypto_timestamp_serializer
@@ -122,43 +124,51 @@ class TestDownloadArtifact:
 
         assert response.status_code == HTTP_200_OK
 
-    def test_expired_token_causes_redirect(self, test_client, tmp_path):
-        """Redirect (via SEP exception handler) when token TTL is exceeded."""
+    def test_expired_token_returns_400(self, test_client, tmp_path):
+        """Reject with 400 once the token is older than the configured TTL.
+
+        The signed timestamp is what expires, so the token is minted an hour in
+        the past rather than the TTL being set to ``0`` — at ``0`` a
+        just-minted token has age ``0``, which is not yet *over* the limit, and
+        the request would fall through to the file lookup and 404 instead.
+        """
         payload = {
             "type": "snippet",
             "filename": "test_script.sh",
             "md5": "abc123",
         }
-        token = _make_token(payload)
+        an_hour_ago = time.time() - 3600
+        with patch("itsdangerous.timed.time.time", return_value=an_hour_ago):
+            token = _make_token(payload)
 
         with (
-            patch("app.sep.routes.artifacts.sep_settings.ARTIFACT_DOWNLOAD_TTL", 0),
+            patch("app.sep.routes.artifacts.sep_settings.ARTIFACT_DOWNLOAD_TTL", 60),
             patch("app.sep.apps.snippets.app.snippets_settings.SNIPPETS_DIR", tmp_path),
         ):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
             )
 
-        assert response.status_code == HTTP_303_SEE_OTHER
+        assert response.status_code == HTTP_400_BAD_REQUEST
 
-    def test_tampered_token_causes_redirect(self, test_client):
-        """Redirect (via SEP exception handler) for a token with a tampered signature."""
+    def test_tampered_token_returns_400(self, test_client):
+        """Reject with 400 a token whose signature was tampered with."""
         response = test_client.get(
             "/artifacts/download/this.is.not.a.valid.token", follow_redirects=False
         )
-        assert response.status_code == HTTP_303_SEE_OTHER
+        assert response.status_code == HTTP_400_BAD_REQUEST
 
-    def test_wrong_salt_token_causes_redirect(self, test_client):
-        """Redirect for a token signed with the wrong salt."""
+    def test_wrong_salt_token_returns_400(self, test_client):
+        """Reject with 400 a token signed with the wrong salt."""
         payload = {"type": "snippet", "filename": "test.sh", "md5": "abc"}
         token = _make_token(payload, salt="wrong-salt")
         response = test_client.get(
             f"/artifacts/download/{token}", follow_redirects=False
         )
-        assert response.status_code == HTTP_303_SEE_OTHER
+        assert response.status_code == HTTP_400_BAD_REQUEST
 
-    def test_valid_token_nonexistent_file_causes_redirect(self, test_client, tmp_path):
-        """Redirect (via SEP exception handler) when token is valid but file does not exist."""
+    def test_valid_token_nonexistent_file_returns_404(self, test_client, tmp_path):
+        """Return 404 when the token is valid but the file does not exist."""
         payload = {
             "type": "snippet",
             "filename": "nonexistent.sh",
@@ -173,10 +183,10 @@ class TestDownloadArtifact:
                 f"/artifacts/download/{token}", follow_redirects=False
             )
 
-        assert response.status_code == HTTP_303_SEE_OTHER
+        assert response.status_code == HTTP_404_NOT_FOUND
 
-    def test_path_traversal_in_filename_causes_redirect(self, test_client, tmp_path):
-        """Redirect when the token filename contains a path traversal sequence."""
+    def test_path_traversal_in_filename_returns_400(self, test_client, tmp_path):
+        """Reject with 400 a token whose filename carries a path-traversal sequence."""
         payload = {
             "type": "snippet",
             "filename": "../../etc/passwd",
@@ -191,13 +201,13 @@ class TestDownloadArtifact:
                 f"/artifacts/download/{token}", follow_redirects=False
             )
 
-        assert response.status_code == HTTP_303_SEE_OTHER
+        assert response.status_code == HTTP_400_BAD_REQUEST
 
-    def test_invalid_artifact_type_causes_redirect(self, test_client):
-        """Redirect for a token with an unsupported artifact type."""
+    def test_invalid_artifact_type_returns_400(self, test_client):
+        """Reject with 400 a token naming an unsupported artifact type."""
         payload = {"type": "backup", "filename": "backup.tar.gz", "md5": "abc"}
         token = _make_token(payload)
         response = test_client.get(
             f"/artifacts/download/{token}", follow_redirects=False
         )
-        assert response.status_code == HTTP_303_SEE_OTHER
+        assert response.status_code == HTTP_400_BAD_REQUEST

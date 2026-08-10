@@ -26,7 +26,7 @@ from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal, Self, TypeVar
+from typing import Annotated, Any, ClassVar, Literal, NoReturn, Self, TypeVar
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, FastAPI
@@ -44,10 +44,12 @@ from pydantic import (
     StringConstraints,
     validate_call,
 )
+from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
     NestedSecretsSettingsSource,
     PydanticBaseSettingsSource,
+    SecretsSettingsSource,
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
@@ -57,11 +59,12 @@ from starlette.types import Lifespan
 
 from app import BASE_DIR
 from app.core.celery.config import CeleryOptions
+from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
     SecurityHeadersOptions,
 )
-from app.core.models import BaseLowercaseModel
+from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
@@ -381,10 +384,187 @@ _INTERNAL_TOKEN_LABEL = b"sep-internal-token"
 SettingsOverrideKey = Annotated[str, StringConstraints(pattern=r"^[^\s.]+\.[^\s.]+$")]
 
 
+class SettingsOverrideOptions(BaseCaseInsensitiveModel):
+    """Configure the DB-backed settings-override layer.
+
+    Left unmarked on :class:`Settings` so the parent classifies
+    ``NOT_OVERRIDABLE`` (matching ``SECURITY_HEADERS``). Marking it
+    ``NESTED_ONLY`` would expose ``REFRESH_INTERVAL`` and ``REFRESHER_ENABLED``
+    to the override API; ``ALLOWED_KEYS`` would stay refused by its own
+    ``not_overridable_field`` marker, which is why that marker is kept.
+
+    :param REFRESH_INTERVAL: How often each service refreshes its DB-backed
+        setting overrides. Defaults to 30 seconds, and must be strictly
+        positive: ``start_refresh_task()`` hands ``interval.total_seconds()``
+        straight to ``asyncio.sleep()``, so a non-positive value would turn the
+        refresher into a tight loop that hammers the database every iteration.
+    :param REFRESHER_ENABLED: Master kill-switch for the DB-override
+        background refresher. Tests set this to ``False`` to keep
+        ``TestClient`` lifespans hermetic; production leaves it ``True``.
+    :param ALLOWED_KEYS: The exhaustive set of settings keys the override API
+        may write, each spelled ``"<SettingsClassName>.<KEY>"`` (the key being
+        a top-level field name or a ``__``-delimited nested path). ``None``,
+        the default, places no restriction. A set activates a default-locked
+        allowlist: any pair it does not name is refused. The allowlist only
+        ever *restricts*: a field that is already not overridable stays that
+        way even when listed. Whether the named class and field exist is not
+        checked at load time, so a typo'd entry allows nothing rather than
+        raising; whitespace anywhere in an entry is rejected outright, since
+        such an entry reads correct but matches nothing.
+    """
+
+    REFRESH_INTERVAL: Annotated[TimedeltaSeconds, Field(gt=timedelta(0))] = timedelta(
+        seconds=30
+    )
+    REFRESHER_ENABLED: bool = True
+    ALLOWED_KEYS: set[SettingsOverrideKey] | None = not_overridable_field(None)
+
+
+_REMOVED_SETTINGS_OVERRIDE_KEYS = {
+    "SETTINGS_OVERRIDE_REFRESH_INTERVAL": "SETTINGS_OVERRIDE__REFRESH_INTERVAL",
+    "SETTINGS_OVERRIDE_REFRESHER_ENABLED": "SETTINGS_OVERRIDE__REFRESHER_ENABLED",
+    "SETTINGS_OVERRIDE_ALLOWED_KEYS": "SETTINGS_OVERRIDE__ALLOWED_KEYS",
+}
+"""Map each removed flat settings-override key to its nested replacement."""
+
+
+class _LegacySettingsOverrideSettings(BaseYamlSettings):
+    """Define the reader for the removed flat settings-override keys.
+
+    Each field is typed :data:`~typing.Any` because only presence is inspected;
+    a stale value is reported, never parsed.
+
+    :param SETTINGS_OVERRIDE_REFRESH_INTERVAL: The removed key's value, or
+        ``None`` when unset.
+    :param SETTINGS_OVERRIDE_REFRESHER_ENABLED: The removed key's value, or
+        ``None`` when unset.
+    :param SETTINGS_OVERRIDE_ALLOWED_KEYS: The removed key's value, or ``None``
+        when unset.
+    """
+
+    SETTINGS_OVERRIDE_REFRESH_INTERVAL: Any = None
+    SETTINGS_OVERRIDE_REFRESHER_ENABLED: Any = None
+    SETTINGS_OVERRIDE_ALLOWED_KEYS: Any = None
+
+
+def detect_removed_settings_override_keys() -> None:
+    """Reject a deployment still configuring the flat settings-override keys.
+
+    ``Settings`` sets ``extra="ignore"``, so a flat key left in the environment
+    or in a YAML profile is dropped without a word and the nested field falls
+    back to its default. For ``ALLOWED_KEYS`` that default is ``None``, which
+    lifts the override-API restriction entirely, so a deployment that migrates
+    its image without re-spelling the key would widen what the settings API
+    accepts. Fail fast on any of the three instead.
+
+    :raises ValueError: When any removed flat key is still configured.
+    """
+    legacy = _LegacySettingsOverrideSettings()
+    stale = sorted(
+        (old, new)
+        for old, new in _REMOVED_SETTINGS_OVERRIDE_KEYS.items()
+        if getattr(legacy, old) is not None
+    )
+    if not stale:
+        return
+    spellings = ", ".join(f"{old} is now {new}" for old, new in stale)
+    raise ValueError(
+        f"Settings-override keys moved into the nested SETTINGS_OVERRIDE block "
+        f"and are no longer read: {spellings}. Re-spell them in the "
+        f"environment, or nest them under a SETTINGS_OVERRIDE: block in the "
+        f"YAML profile. Leaving SETTINGS_OVERRIDE_ALLOWED_KEYS unmigrated lifts "
+        f"the override-API restriction entirely."
+    )
+
+
+class _SEPDatabaseSettings(BaseYamlSettings):
+    """Resolve the SEP service's database options in isolation.
+
+    ``Settings`` cannot read ``sep_settings`` while it is being constructed:
+    ``BaseYamlAppSettings.BACKEND_CORS_ORIGINS`` defaults off ``settings``, so
+    forcing the SEP proxy re-enters the global proxy that is still resolving. This
+    reads the same ``SEP__DATABASE__*`` sources without either proxy.
+
+    :cvar SETTINGS_PREFIXES: The prefix the probe resolves its environment and YAML
+        sources under. Set to ["SEP"].
+    :param DATABASE: The SEP service's database connection options.
+    """
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
+
+
+class BeatStoreDefaultSource(PydanticBaseSettingsSource):
+    """Supply the celery-beat store URI derived from the SEP database.
+
+    Ranked last, and skipped entirely once a real source — init kwarg, environment,
+    dotenv, secret file, or YAML profile — supplies ``CELERY__BEAT_DBURI``. The
+    value is contributed as source data rather than assigned after construction, so
+    ``CeleryOptions``' own validators still normalize the driver and null
+    ``beat_schema`` for a SQLite store.
+
+    :param settings_cls: The settings class being configured.
+    :param dotenv_settings: The dotenv source, for the ``_env_file`` the caller
+        passed to ``Settings``.
+    :param file_secret_settings: The secret-file source, for the caller's
+        ``_secrets_dir``. Typed concretely because that attribute is declared by
+        ``SecretsSettingsSource`` rather than by the source base class.
+    """
+
+    def __init__(
+        self,
+        settings_cls: type[BaseSettings],
+        dotenv_settings: DotEnvSettingsSource,
+        file_secret_settings: SecretsSettingsSource,
+    ) -> None:
+        super().__init__(settings_cls)
+        self._env_file = dotenv_settings.env_file
+        self._secrets_dir = file_secret_settings.secrets_dir
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> NoReturn:
+        """Raise, since this source builds its whole payload in ``__call__``.
+
+        :param field: The field being resolved.
+        :param field_name: The field's name.
+        :raises NotImplementedError: Always.
+        """
+        raise NotImplementedError
+
+    def __call__(self) -> dict[str, Any]:
+        """Return the derived beat-store URI, or nothing when a source supplied one.
+
+        Rank alone would not settle this. ``deep_update`` merges the source payloads
+        case-sensitively and ``CeleryOptions`` folds the key cases afterwards, so
+        contributing ``BEAT_DBURI`` unconditionally would pin a same-cased
+        higher-priority value at this source's position and let a lower-priority one
+        written in the other case win the fold. ``current_state`` carries the
+        sources above this one already merged, so withholding the key whenever one
+        of them supplies it keeps the collision from arising at all.
+
+        :return: The ``CELERY.BEAT_DBURI`` default derived from SEP's database, or an
+            empty payload when a configured source already supplies the store.
+        :raises ValidationError: When the resolved ``SEP__DATABASE__*`` values do
+            not validate, so an unusable SEP database fails ``Settings``
+            construction instead of yielding a malformed store URI. Only a
+            deployment that leaves the beat store to be derived is held to this.
+        """
+        configured = self.current_state.get("CELERY")
+        if isinstance(configured, dict) and any(
+            key.lower() == "beat_dburi" for key in configured
+        ):
+            return {}
+        database = _SEPDatabaseSettings(
+            _env_file=self._env_file, _secrets_dir=self._secrets_dir
+        ).DATABASE
+        return {"CELERY": {"BEAT_DBURI": database.URL}}
+
+
 class Settings(BaseYamlSettings):
     """Define the main application settings.
 
-    :param CELERY: Celery configuration options.
+    :param CELERY: Celery configuration options. ``BEAT_DBURI`` defaults to the
+        resolved SEP database connection, so the beat store follows
+        ``SEP__DATABASE__*`` unless a source configures it explicitly.
     :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same
         user. Defaults to False, meaning all previous sessions will be invalidated once
         a new one is created.
@@ -407,21 +587,9 @@ class Settings(BaseYamlSettings):
     :param SECURITY_HEADERS: Global options for the SecurityHeadersMiddleware, to be
         used as the default SECURITY_HEADERS setting across all apps.
     :param PMM: PMM connection and authentication configuration.
-    :param SETTINGS_OVERRIDE_REFRESH_INTERVAL: How often each service refreshes its
-        DB-backed setting overrides. Defaults to 30 seconds.
-    :param SETTINGS_OVERRIDE_REFRESHER_ENABLED: Master kill-switch for the DB-override
-        background refresher. Tests set this to ``False`` to keep ``TestClient``
-        lifespans hermetic; production leaves it ``True``.
-    :param SETTINGS_OVERRIDE_ALLOWED_KEYS: The exhaustive set of settings keys the
-        override API may write, each spelled ``"<SettingsClassName>.<KEY>"`` (the
-        key being a top-level field name or a ``__``-delimited nested path).
-        ``None``, the default, places no restriction. A set activates a
-        default-locked allowlist: any pair it does not name is refused. The
-        allowlist only ever *restricts*: a field that is already not overridable
-        stays that way even when listed. Whether the named class and field exist
-        is not checked at load time, so a typo'd entry allows nothing rather than
-        raising; whitespace anywhere in an entry is rejected outright, since such
-        an entry reads correct but matches nothing.
+    :param SETTINGS_OVERRIDE: Options for the DB-backed settings-override layer
+        (refresh interval, refresher kill-switch, and the override-API allowlist).
+        See :class:`SettingsOverrideOptions`.
     """
 
     CELERY: CeleryOptions
@@ -436,11 +604,7 @@ class Settings(BaseYamlSettings):
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
     PMM: PMMSettings = hot_field(PMMSettings())
-    SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
-    SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
-    SETTINGS_OVERRIDE_ALLOWED_KEYS: set[SettingsOverrideKey] | None = (
-        not_overridable_field(None)
-    )
+    SETTINGS_OVERRIDE: SettingsOverrideOptions = SettingsOverrideOptions()
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
     @computed_field
@@ -466,29 +630,6 @@ class Settings(BaseYamlSettings):
         logging_config = deepcopy(LOGGING_CONFIG)
         deep_dict_update(logging_config, v)
         return logging_config
-
-    @field_validator("SETTINGS_OVERRIDE_REFRESH_INTERVAL")
-    @classmethod
-    def _settings_override_refresh_interval_positive(
-        cls, value: timedelta
-    ) -> timedelta:
-        """Reject zero or negative refresh intervals.
-
-        ``start_refresh_task()`` passes ``interval.total_seconds()`` directly
-        to ``asyncio.sleep()``. A non-positive interval would turn the
-        refresher into a tight loop that hammers the DB every iteration.
-
-        :param value: The configured refresh interval.
-        :type value: timedelta
-        :return: The validated interval.
-        :rtype: timedelta
-        :raises ValueError: If ``value`` is not strictly positive.
-        """
-        if value.total_seconds() <= 0:
-            raise ValueError(
-                "SETTINGS_OVERRIDE_REFRESH_INTERVAL must be a positive duration"
-            )
-        return value
 
     @model_validator(mode="after")
     def set_log_level(self) -> Self:
@@ -536,6 +677,37 @@ class Settings(BaseYamlSettings):
         ).hexdigest()
         self.SEP_INTERNAL_TOKEN = SecretStr(derived)
         return self
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Append the beat-store default below every configured source.
+
+        :param settings_cls: The settings class being configured.
+        :param init_settings: The init-arguments source.
+        :param env_settings: The environment-variable source.
+        :param dotenv_settings: The dotenv-file source.
+        :param file_secret_settings: The file-secret source.
+        :return: The settings sources, ordered highest-priority first.
+        :raises SettingsError: When ``SECRETS_DIR`` names a path that is not a
+            directory, or one whose contents exceed the source's size ceiling.
+        """
+        return (
+            *super().settings_customise_sources(
+                settings_cls,
+                init_settings,
+                env_settings,
+                dotenv_settings,
+                file_secret_settings,
+            ),
+            BeatStoreDefaultSource(settings_cls, dotenv_settings, file_secret_settings),
+        )
 
     @validate_call
     async def get_remote_api(

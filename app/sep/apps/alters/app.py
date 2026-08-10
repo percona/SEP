@@ -26,7 +26,7 @@ ride the ``extra_routes`` router. ``capabilities.detail=False`` suppresses the
 greedy derived detail so the custom ``GET /{task_name}`` wins. The schema is the
 model-first :data:`~app.sep.apps.alters.schema.alters_schema` passed through
 verbatim, so its ``display_name`` stays ``"Alters"`` — distinct from the navigation
-label ``"Schema Change"`` carried here. The Jinja UI router is threaded explicitly.
+label ``"Schema Change"`` carried here.
 """
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
@@ -35,7 +35,6 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.api_routes import router as alters_custom_router
 from app.sep.apps.alters.deps import build_alters_api_list_response, get_alters_task
 from app.sep.apps.alters.models import AltersTaskResponse, OWNER
-from app.sep.apps.alters.routes import router as jinja_router
 from app.sep.apps.alters.schema import alters_schema
 from app.sep.apps.framework.apps import (
     AppCapabilities,
@@ -65,5 +64,4 @@ app = TaskExecutionApp(
         create=False, detail=False, execute=False, update=False, delete=False
     ),
     extra_routes=(alters_custom_router,),
-    jinja_router=jinja_router,
 )
