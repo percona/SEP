@@ -186,7 +186,7 @@ Already canonical, so they are passed straight through with no expansion:
 | Input | Required | Notes |
 |---|---|---|
 | `SEP_INTERNAL_TOKEN` | no | Derived from `SECRET_KEY` by HMAC when unset. Set it explicitly when PMM's nginx overlay pins a specific value. |
-| `BASE_URL` | no* | The side-car's address as reachable from Nomad task executors. *Required when tasks download scripts or artifacts. |
+| `BASE_URL` | no* | The side-car's address as reachable from Nomad task executors, including SEP's URL prefix — `https://pmm-server:8443/sep`, not `https://pmm-server:8443`. Download URLs are joined onto its path rather than replacing it, so a value omitting the prefix yields a well-formed URL that no longer routes to SEP; startup warns when it does. *Required when tasks download scripts or artifacts. |
 
 Any canonical variable can also be set directly — an explicit
 `TASKS__DATABASE__HOST` outranks the one derived from `SEP_DB_HOST`. It overrides
