@@ -47,6 +47,13 @@ legitimate, so an ``@``-rejecting pattern would be broader than the invariant
 this file enforces.
 """
 
+PMM_URL_PREFIX = "/sep"
+"""The mount prefix PMM hardcodes in the ``location`` block it ships for SEP.
+
+Fixed topology rather than a per-deployment input, so the profile and the
+healthcheck are both held against this one literal.
+"""
+
 PLACEHOLDER_MARKER = re.compile(r"glsa_|__[A-Z_]+__")
 SECRET_KEYS = frozenset({"password", "service_account_token", "api_key"})
 
@@ -272,6 +279,28 @@ def test_uvicorn_ports_match_the_healthcheck_probe():
         InventorySettings().UVICORN_PORT,
         TasksSettings().UVICORN_PORT,
     ]
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_profile_serves_under_the_prefix_pmm_proxies():
+    """Assert the profile mounts SEP where PMM's nginx drop-in forwards to it."""
+    assert SEPSettings().ROOT_PATH == PMM_URL_PREFIX
+
+
+def test_healthcheck_probes_the_prefix_free_path():
+    """Assert the loopback probe stays unprefixed even though the profile sets a prefix.
+
+    Routing tolerates a request that arrives without the prefix, which is what
+    lets the probe keep its short path; the HTTP-level proof lives beside the
+    other prefixed-routing tests.
+    """
+    healthcheck = (SIDECAR_DIR / "healthcheck.sh").read_text(encoding="utf-8")
+    probed = re.search(
+        r"urlopen\(f\"http://127\.0\.0\.1:\{port\}([^\"]*)\"", healthcheck
+    )
+
+    assert probed is not None
+    assert probed.group(1) == "/health"
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")

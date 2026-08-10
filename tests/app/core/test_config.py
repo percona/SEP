@@ -401,6 +401,16 @@ def test_create_app_custom_docs_url():
     assert app.redoc_url == "/custom-redoc"
 
 
+def test_create_app_defaults_to_no_root_path():
+    """``create_app`` without a prefix leaves ``root_path`` empty."""
+    assert create_app().root_path == ""
+
+
+def test_create_app_forwards_root_path():
+    """``create_app`` forwards ``root_path`` to FastAPI."""
+    assert create_app(root_path="/sep").root_path == "/sep"
+
+
 class TestDeriveInternalToken:
     """Cover SEP_INTERNAL_TOKEN derivation from SECRET_KEY."""
 
