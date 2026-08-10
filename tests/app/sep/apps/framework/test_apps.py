@@ -22,7 +22,7 @@ end-to-end. The create test issues a real form POST and never overrides the
 body resolution it exists to cover is genuinely executed.
 """
 
-from pathlib import Path
+from dataclasses import replace
 from typing import Annotated, Any, get_args
 from unittest.mock import AsyncMock
 
@@ -31,8 +31,10 @@ from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, computed_field, ValidationError
+from sqlalchemy import column
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.db.list_query import ListQuerySpec
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
@@ -40,7 +42,6 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import (
     BaseTaskResponse,
     ConnectivityWarning,
-    StaticMount,
     TaskExecuteWrite,
     TaskExecutionResponse,
 )
@@ -68,6 +69,7 @@ from app.sep.apps.framework.schema import (
     ListView,
     RelatedApp,
 )
+from app.sep.apps.framework.script_source import ScriptSource
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -334,6 +336,22 @@ def _synth_app(**overrides: object) -> TaskExecutionApp:
     """Build the synthetic app with the extra ``/ping`` router by default."""
     overrides.setdefault("extra_routes", (_extra_router(),))
     return synth_app(**overrides)
+
+
+_SCRIPT_LIST_SPEC = ListQuerySpec(
+    sortable={"filename": column("filename")},
+    default_sort="filename",
+    tie_breaker=column("filename"),
+)
+
+
+def _script_source_with_in_memory_query() -> ScriptSource:
+    """Return a script source that resolves a list query in-process.
+
+    :return: A source whose ``in_memory_list_query`` obliges the app to declare a spec.
+    """
+    source = synth_script_app().script_source
+    return replace(source, in_memory_list_query=True)
 
 
 def _task_dict(name: str, *, meta: dict | None = None) -> dict:
@@ -909,6 +927,63 @@ class TestExtraRoutePrecedence:
         assert response.status_code == status.HTTP_200_OK
         assert "shadowed" not in response.json()
         assert response.json()["name"] == "ping"
+
+
+class TestListQuerySpecValidation:
+    """Cover the construction-time guards on the server-side sort/search wiring.
+
+    ``list_query_spec`` on the app and the source's query knobs are two halves of one
+    capability, and the derived route silently exposes nothing when they disagree — so
+    every inconsistent pairing has to be rejected at import rather than at request time.
+    """
+
+    def test_non_spec_value_raises(self) -> None:
+        """Reject a ``list_query_spec`` that is not a ``ListQuerySpec``."""
+        with pytest.raises(ValueError, match="must be a ListQuerySpec"):
+            synth_script_app(list_query_spec={"sortable": ["filename"]})
+
+    def test_spec_without_script_source_raises(self) -> None:
+        """Reject a spec on a model-first app, which derives its own list route."""
+        with pytest.raises(ValueError, match="backs only the derived script list"):
+            _synth_app(list_query_spec=_SCRIPT_LIST_SPEC)
+
+    def test_spec_under_no_pagination_raises(self) -> None:
+        """Reject a spec on an unpaginated list, which exposes no query params."""
+        with pytest.raises(ValueError, match="NO_PAGINATION"):
+            synth_script_app(
+                list_query_spec=_SCRIPT_LIST_SPEC, pagination=NO_PAGINATION
+            )
+
+    def test_source_resolving_query_without_spec_raises(self) -> None:
+        """Reject a source that resolves a query while the app declares no spec."""
+        with pytest.raises(ValueError, match="set list_query_spec or drop"):
+            synth_script_app(
+                script_source=_script_source_with_in_memory_query(),
+            )
+
+    def test_source_with_list_query_dep_without_spec_raises(self) -> None:
+        """Reject the other half of the same pairing: a filter dep with no spec.
+
+        ``list_query_dep`` and ``in_memory_list_query`` are separate ways for a source
+        to resolve a query, and a source composing its own filter dependency is the
+        shape snippets ships — so it must trip the guard on its own.
+        """
+        source = replace(
+            synth_script_app().script_source,
+            list_query_dep=lambda: None,
+        )
+
+        with pytest.raises(ValueError, match="set list_query_spec or drop"):
+            synth_script_app(script_source=source)
+
+    def test_consistent_pair_is_accepted(self) -> None:
+        """Accept a source and app that agree, so the guards are not over-broad."""
+        app = synth_script_app(
+            script_source=_script_source_with_in_memory_query(),
+            list_query_spec=_SCRIPT_LIST_SPEC,
+        )
+
+        assert app.list_query_spec is _SCRIPT_LIST_SPEC
 
 
 class _ComputedListResponse(BaseModel):
@@ -1651,12 +1726,3 @@ class TestInheritedBaseAppFields:
     def test_defaults_uses_task_data_true(self) -> None:
         """Carry ``True`` by default: a derived task app always renders task data."""
         assert _synth_app().uses_task_data is True
-
-    def test_static_mounts_round_trip_after_inheriting(self) -> None:
-        """Accept and carry ``static_mounts`` now that the field lives on the parent."""
-        mount = StaticMount(
-            path="/static/synthetic",
-            directory=Path("/tmp/payloads"),
-            name="synthetic_files",
-        )
-        assert _synth_app(static_mounts=(mount,)).static_mounts == (mount,)

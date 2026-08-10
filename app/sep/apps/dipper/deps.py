@@ -17,24 +17,19 @@
 
 import logging
 from collections.abc import Iterable
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import Depends, Header, Request
+from fastapi import Request
 from pydantic import ValidationError
-from starlette import status
 
 from app.core.config import settings
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
-    HTTPRedirectException,
     HTTPUnprocessableEntityException,
 )
-from app.core.pagination import fetch_all_dict_items
-from app.core.utils import remove_falsy_values_from_dict
 from app.core.utils.iterators import unique_everseen
 from app.inventory.models import ServiceTypeEnum
-from app.sep.api.host_resolution import resolve_executor_name_by_address
 from app.sep.apps.dipper.constants import (
     ARTIFACT_TYPE_DIPPER,
     CollectorTypeEnum,
@@ -50,14 +45,11 @@ from app.sep.apps.framework.script_helpers import (
 from app.sep.apps.framework.script_source import ScriptPreviewResponse
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.deps import (
-    CreatedServiceDep,
     ExecutorHosts,
     get_pmm_api,  # noqa: F401 -- re-exported for existing importers
-    InventoryAPI,
     PMMAPIDep,  # noqa: F401 -- re-exported for existing importers
 )
 from app.sep.inventory import CreatedService
-from app.sep.middleware import messages
 from app.sep.snippets.models.snippet import (
     BaseSnippetArgs,
     EXECUTOR_HOSTS_INPUT_NAME,
@@ -154,45 +146,6 @@ async def get_dipper_script_preview(
         ) from exc
 
 
-async def get_dipper_script(
-    service: CreatedServiceDep,
-    collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT,
-) -> DipperScript:
-    """Resolve and load the payload script for the selected service.
-
-    :param service: The selected service.
-    :type service: CreatedServiceDep
-    :param collector_type: The collector type (environment or pmm).
-    :type collector_type: CollectorTypeEnum
-    :return: The DipperScript instance for the selected service.
-    :rtype: DipperScript
-    """
-    filename = get_dipper_script_filename(service.type, collector_type)
-    try:
-        return await DipperScript.from_path(filename)
-    except FileNotFoundError as exc:
-        logger.warning("Missing dipper payload script %r", filename)
-        raise HTTPNotFoundException from exc
-
-
-DipperScriptDep = Annotated[DipperScript, Depends(get_dipper_script)]
-
-
-async def get_dipper_script_with_meta(script: DipperScriptDep) -> DipperScript:
-    """Load the payload script along with its metadata.
-
-    This dependency ensures that the script's metadata is retrieved and up to date.
-
-    :return: The DipperScript instance with updated metadata.
-    :rtype: DipperScript
-    """
-    await script.update_meta()
-    return script
-
-
-DipperScriptWithMetaDep = Annotated[DipperScript, Depends(get_dipper_script_with_meta)]
-
-
 def get_dipper_script_source(request: Request, script: DipperScript) -> str:
     """Return a signed URL for Nomad to download the dipper payload script.
 
@@ -209,104 +162,6 @@ def get_dipper_script_source(request: Request, script: DipperScript) -> str:
         filename=script.filename,
         md5_digest=script.md5_digest,
     )
-
-
-async def get_dipper_execution_args(
-    request: Request,
-    script: DipperScriptWithMetaDep,
-    collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT,
-    referer: Annotated[str | None, Header()] = None,
-) -> BaseSnippetArgs:
-    """Validate execution parameters for the selected payload script.
-
-    For PMM collector type, merges form values with settings.PMM defaults.
-
-    :param request: The incoming HTTP request.
-    :type request: Request
-    :param script: The DipperScript instance with metadata.
-    :type script: DipperScriptWithMetaDep
-    :param collector_type: The collector type (environment or pmm).
-    :type collector_type: CollectorTypeEnum
-    :param referer: The referer URL. If None is specified, it defaults to the
-        dipper_index route.
-    :type referer: str | None
-    :return: The validated execution arguments.
-    :rtype: BaseSnippetArgs
-    :raises HTTPException: If validation fails or required parameters are missing.
-    """
-    execution_model = script.get_execution_model()
-    async with request.form() as form:
-        form_data = dict(form)
-    logger.debug("Form data: %s", form_data)
-
-    if collector_type == CollectorTypeEnum.PMM:
-        pmm = settings.PMM
-        pmm_server = form_data.get("pmmserver") or pmm.endpoint
-        if not pmm_server:
-            raise HTTPUnprocessableEntityException(
-                detail="PMM server URL is required."
-                " Provide it in the form or configure PMM__ENDPOINT.",
-            )
-        form_data["pmmserver"] = pmm_server
-        form_data["apikey"] = form_data.get("apikey") or (
-            pmm.api_key.get_secret_value() if pmm.api_key else None
-        )
-
-    try:
-        return execution_model.model_validate(remove_falsy_values_from_dict(form_data))
-    except ValidationError as exc:
-        logger.debug("Invalid execution args", exc_info=True)
-        messages.from_validation_error(
-            request,
-            exc,
-            "Error executing script",
-            request.url.path,
-            exclude_types=("none_required",),
-        )
-        raise HTTPRedirectException(
-            location=referer
-            or request.url_for("dipper_index").replace(query=request.url.query),
-            status_code=status.HTTP_303_SEE_OTHER,
-        ) from None
-
-
-def resolve_executor_host_for_service(
-    executor_hosts: ExecutorHosts, service: CreatedServiceDep
-) -> str | None:
-    """Resolve a Nomad client hostname for the given inventory service.
-
-    Resolution order:
-
-    1. ``service.node.name`` -- direct match against Nomad node names
-       (fast path).
-    2. ``service.node.address`` -- address-based lookup via
-       :func:`resolve_executor_name_by_address`, which covers the case
-       where the inventory display name differs from the Nomad client
-       node name but both refer to the same network address.
-    3. ``service.name`` -- last-resort match against Nomad node names.
-    4. ``None`` -- caller falls back to manual selection in the UI.
-
-    :param executor_hosts: Mapping of Nomad node name to network address as
-        returned by ``GET /api/tasks/hosts/``.
-    :type executor_hosts: ExecutorHosts
-    :param service: The selected inventory service.
-    :type service: CreatedServiceDep
-    :return: The resolved Nomad node name, or ``None`` when no candidate
-        matches.
-    :rtype: str | None
-    """
-    if service.node:
-        if service.node.name and service.node.name in executor_hosts:
-            return service.node.name
-        if service.node.address:
-            resolved = resolve_executor_name_by_address(
-                service.node.address, executor_hosts
-            )
-            if resolved is not None:
-                return resolved
-    if service.name and service.name in executor_hosts:
-        return service.name
-    return None
 
 
 def resolve_pmm_executor_host(executor_hosts: ExecutorHosts) -> str | None:
@@ -413,35 +268,6 @@ async def fetch_pmm_node_service_names(
         _dedupe_nonempty(node.name for node in nodes),
         _dedupe_nonempty(service.name for service in services),
     )
-
-
-async def list_supported_services(inventory_api: InventoryAPI) -> list[dict]:
-    """Fetch the list of services that are supported by Dipper plugin.
-
-    :param inventory_api: The InventoryAPI instance for making requests to the inventory
-        service.
-    :type inventory_api: InventoryAPI
-    :return: A list of dictionaries representing the supported services.
-    :rtype: list[dict]
-    """
-    services = []
-    for service_type in DIPPER_SCRIPT_BY_SERVICE_TYPE:
-        services.extend(
-            await fetch_all_dict_items(
-                lambda pagination, service_type=service_type: inventory_api.get(
-                    "/services/",
-                    params={
-                        "service_type": service_type.value,
-                        **pagination.model_dump(),
-                    },
-                )
-            )
-        )
-    logger.debug("Supported Dipper services: %s", services)
-    return services
-
-
-SupportedDipperServices = Annotated[list[dict], Depends(list_supported_services)]
 
 
 def clean_dipper_api_args(raw_args: dict[str, Any]) -> dict[str, Any]:
@@ -579,34 +405,3 @@ async def build_dipper_execution_meta(
         sudo_default=body.sudo or False,
     )
     return meta, script.execution_task_name
-
-
-def get_dipper_execution_meta(
-    service: CreatedServiceDep,
-    script: DipperScriptWithMetaDep,
-    script_source: Annotated[str, Depends(get_dipper_script_source)],
-    execution_args: Annotated[BaseSnippetArgs, Depends(get_dipper_execution_args)],
-) -> SnippetExecutionMeta:
-    """Create the task metadata payload for Dipper executions.
-
-    :param service: The target service for the Dipper execution.
-    :type service: CreatedServiceDep
-    :param script: The Dipper payload script with metadata.
-    :type script: DipperScript
-    :param script_source: The signed URL to download the Dipper artifact.
-    :type script_source: str
-    :param execution_args: The execution arguments for the Dipper script.
-    :type execution_args: BaseSnippetArgs
-    :return: The prepared execution metadata.
-    :rtype: SnippetExecutionMeta
-    :raises HTTPBadRequestException: If no interpreter is configured for the script.
-    """
-    return build_dipper_meta_from_args(
-        service,
-        script,
-        script_source,
-        execution_args,
-    )
-
-
-ExecutionMetaDep = Annotated[SnippetExecutionMeta, Depends(get_dipper_execution_meta)]

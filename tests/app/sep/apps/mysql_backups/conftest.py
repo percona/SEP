@@ -26,7 +26,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_inventory_api,
     get_session,
@@ -96,7 +95,6 @@ async def authenticated_get(
     previous_overrides = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[get_session] = lambda: session
     sep_app.dependency_overrides[get_current_user] = lambda: user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: user
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_inventory_api] = lambda: inventory
     try:

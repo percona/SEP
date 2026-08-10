@@ -96,8 +96,6 @@ jobs:
               - 'pyproject.toml'
               - 'poetry.lock'
               - 'snippets/**'
-              - 'static/**'
-              - 'templates/**'
               - 'entrypoint.sh'
               - 'entrypoint_celery.sh'
               - 'Makefile'

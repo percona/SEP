@@ -35,11 +35,9 @@ from app.core.utils import json_serializer
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.crud import AppRunningTaskManager, AppStateManager
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 from app.sep.models import (
@@ -101,9 +99,7 @@ def api_admin_client_fixture(
     Overrides the celery-beat session too, so the toggle's periodic-task gate
     runs against the in-memory beat DB instead of the real scheduler database.
     """
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[get_celery_beat_session] = lambda: celery_beat_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
@@ -116,9 +112,7 @@ def api_non_admin_client_fixture(
     regular_user: CasdoorUser, override_session: AsyncSession
 ) -> Iterator[TestClient]:
     """Yield a non-admin client with the in-memory SEP session."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -130,9 +124,7 @@ def api_admin_cookie_client_fixture(
     admin_user: CasdoorUser, override_session: AsyncSession
 ) -> Iterator[TestClient]:
     """Yield a cookie-authenticated admin with the Bearer gate left intact."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}

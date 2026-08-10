@@ -22,15 +22,9 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.core.utils.fields import UTCDatetime
 from app.core.utils.pydantic import CustomFieldMetadata
-from app.sep.apps.field_names import RESERVED_EXECUTION_FIELD_NAMES
-from app.sep.snippets.forms import (
-    CheckboxInputElement,
-    DateTimeInputElement,
-    NumberInputElement,
-    SelectElement,
-    TextareaElement,
-    TextInputElement,
-    TextInputHTMLElement,
+from app.sep.apps.field_names import (
+    EXTRA_ARGS_FIELD_NAME,
+    RESERVED_EXECUTION_FIELD_NAMES,
 )
 from app.sep.snippets.models.meta import (
     serialize_cli_value,
@@ -408,51 +402,6 @@ class TestIsFlag:
         assert param.is_flag is False
 
 
-class TestFormFieldElementCls:
-    """Test the form_field_element_cls cached property."""
-
-    def test_with_choices_returns_select(self):
-        """Verify parameter with choices returns SelectElement."""
-        param = SnippetMetaParameter(name="opt", choices=["a", "b"])
-        assert param.form_field_element_cls is SelectElement
-
-    def test_bool_type_returns_checkbox(self):
-        """Verify BOOL type returns CheckboxInputElement."""
-        param = SnippetMetaParameter(name="flag", type=SnippetMetaParameterType.BOOL)
-        assert param.form_field_element_cls is CheckboxInputElement
-
-    def test_int_type_returns_number(self):
-        """Verify INT type returns NumberInputElement."""
-        param = SnippetMetaParameter(name="count", type=SnippetMetaParameterType.INT)
-        assert param.form_field_element_cls is NumberInputElement
-
-    def test_float_type_returns_number(self):
-        """Verify FLOAT type returns NumberInputElement."""
-        param = SnippetMetaParameter(name="ratio", type=SnippetMetaParameterType.FLOAT)
-        assert param.form_field_element_cls is NumberInputElement
-
-    def test_datetime_type_returns_datetime_input(self):
-        """Verify DATETIME type returns DateTimeInputElement."""
-        param = SnippetMetaParameter(
-            name="start", type=SnippetMetaParameterType.DATETIME
-        )
-        assert param.form_field_element_cls is DateTimeInputElement
-
-    def test_str_type_returns_text_input(self):
-        """Verify STR type returns TextInputElement by default."""
-        param = SnippetMetaParameter(name="name", type=SnippetMetaParameterType.STR)
-        assert param.form_field_element_cls is TextInputElement
-
-    def test_textarea_html_elem_returns_textarea(self):
-        """Verify STR type with TEXTAREA html_elem returns TextareaElement."""
-        param = SnippetMetaParameter(
-            name="body",
-            type=SnippetMetaParameterType.STR,
-            html_elem=TextInputHTMLElement.TEXTAREA,
-        )
-        assert param.form_field_element_cls is TextareaElement
-
-
 class TestConstraints:
     """Test the constraints cached property."""
 
@@ -556,37 +505,6 @@ class TestToValidationField:
         )
         field = param.to_validation_field()
         assert field.default is None
-
-
-class TestToFormField:
-    """Test the to_form_field method."""
-
-    def test_returns_correct_form_element(self):
-        """Verify to_form_field returns an instance of the correct element class."""
-        param = SnippetMetaParameter(
-            name="count",
-            type=SnippetMetaParameterType.INT,
-            label="Count",
-        )
-        form_field = param.to_form_field()
-        assert isinstance(form_field, NumberInputElement)
-
-    def test_datetime_to_form_field_returns_datetime_input(self):
-        """Verify to_form_field returns DateTimeInputElement for DATETIME params."""
-        param = SnippetMetaParameter(
-            name="start",
-            type=SnippetMetaParameterType.DATETIME,
-            label="Start time (UTC)",
-        )
-        form_field = param.to_form_field()
-        assert isinstance(form_field, DateTimeInputElement)
-        assert 'type="datetime-local"' in form_field.to_html()
-
-    def test_select_element_for_choices(self):
-        """Verify to_form_field returns SelectElement when choices are present."""
-        param = SnippetMetaParameter(name="opt", choices=["a", "b"])
-        form_field = param.to_form_field()
-        assert isinstance(form_field, SelectElement)
 
 
 class TestGroupField:

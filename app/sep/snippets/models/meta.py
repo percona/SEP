@@ -67,15 +67,11 @@ from app.core.utils.pydantic import (
     field_with_metadata,
     loc_to_dot_sep,
 )
-from app.sep.apps.field_names import RESERVED_EXECUTION_FIELD_NAMES
-from app.sep.snippets.forms import (
-    CheckboxInputElement,
-    DateTimeInputElement,
-    FormFieldElement,
-    NumberInputElement,
-    SelectElement,
-    TextareaElement,
-    TextInputElement,
+from app.sep.apps.field_names import (
+    EXTRA_ARGS_FIELD_NAME,
+    RESERVED_EXECUTION_FIELD_NAMES,
+)
+from app.sep.snippets.models.constants import (
     TextInputHTMLElement,
 )
 
@@ -593,28 +589,6 @@ class SnippetMetaParameter(BaseModel):
         return self.py_type == SnippetMetaParameterType.BOOL
 
     @cached_property
-    def form_field_element_cls(self) -> type[FormFieldElement]:
-        """Get the form field element class based on the parameter type.
-
-        :return: The appropriate form field element class for the parameter type.
-        :rtype: type[FormFieldElement]
-        """
-        if self.choices:
-            return SelectElement
-        if self.py_type == SnippetMetaParameterType.BOOL:
-            return CheckboxInputElement
-        if self.py_type in [
-            SnippetMetaParameterType.INT,
-            SnippetMetaParameterType.FLOAT,
-        ]:
-            return NumberInputElement
-        if self.py_type == SnippetMetaParameterType.DATETIME:
-            return DateTimeInputElement
-        if self.html_elem == TextInputHTMLElement.TEXTAREA:
-            return TextareaElement
-        return TextInputElement
-
-    @cached_property
     def constraints(self) -> list[GroupedMetadata]:
         """Get the constraints for the parameter based on its type and attributes.
 
@@ -685,16 +659,6 @@ class SnippetMetaParameter(BaseModel):
                 exclude_defaults=True,
             ),
         )
-
-    def to_form_field(self) -> FormFieldElement:
-        """Convert the SnippetMetaParameter to a form field element.
-
-        :return: An instance of the form field element class corresponding to the
-            parameter type, populated with the parameter's attributes.
-        :rtype: FormFieldElement
-        """
-        instance_data = self.model_dump(exclude_none=True)
-        return self.form_field_element_cls.model_validate(instance_data)
 
     @staticmethod
     def convert_validation_errors(exc: ValidationError, input_param: Any) -> list[str]:

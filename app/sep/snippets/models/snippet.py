@@ -22,7 +22,6 @@ import hashlib
 import json
 import logging
 import shlex
-from collections.abc import Iterable
 from functools import cached_property
 from io import SEEK_END
 from os import PathLike
@@ -66,7 +65,6 @@ from app.core.utils.fields import (
 )
 from app.core.utils.pydantic import CustomFieldMetadata
 from app.sep.apps.field_names import EXTRA_ARGS_FIELD_NAME, SUDO_FIELD_NAME
-from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
     SnippetFilterType,
@@ -77,14 +75,6 @@ from app.sep.snippets.config import (
 
 if TYPE_CHECKING:
     from aiofiles.threadpool.text import AsyncTextIOWrapper
-from app.sep.snippets.forms import (
-    CheckboxInputElement,
-    FieldsetElement,
-    FormElement,
-    SelectElement,
-    SubmitButtonElement,
-    TextInputElement,
-)
 from app.sep.snippets.models.meta import (
     META_KEY_DESCRIPTION,
     META_KEY_SERVICE_TYPE,
@@ -99,53 +89,11 @@ _ONE_HOUR = 60 * 60
 _SEVEN_DAYS = 7 * 24 * _ONE_HOUR
 EXECUTOR_HOSTS_INPUT_NAME = "-hostname-"
 EXTRA_ARGS_INPUT_NAME = "-extra_args-"
-EXTRA_ARGS_INPUT = TextInputElement(
-    name=EXTRA_ARGS_INPUT_NAME,
-    placeholder="e.g. --verbose",
-    description="Any extra args to pass to the snippet execution command",
-    label="Extra Args",
-)
 SUDO_INPUT_NAME = "-sudo-"
-SUDO_INPUT = CheckboxInputElement(
-    name=SUDO_INPUT_NAME,
-    description="Execute the snippet with sudo",
-    label="Use sudo",
-    id="sudoCheckbox",
-)
 
 logger = logging.getLogger(__name__)
 
 ExtraArgsField = Annotated[list[str], BeforeValidator(shlex.split)]
-
-
-@validate_call
-@ttl_cache(ttl=_SEVEN_DAYS, maxsize=4)
-def get_executor_hosts_fieldset(
-    executor_hosts: frozenset[tuple[str, str]],
-) -> FieldsetElement:
-    """Create a fieldset for executor hosts with a legend and input fields.
-
-    :param executor_hosts: A set of (value, label) tuples for executor hosts.
-    :type executor_hosts: frozenset[tuple[str, str]]
-    :return: A FieldsetElement containing the input fields for the executor hosts.
-    :rtype: FieldsetElement
-    """
-    options = [
-        {"value": value, "label": label} for value, label in sorted(executor_hosts)
-    ]
-    return FieldsetElement(
-        legend=EXECUTION_HOST_LABEL,
-        children=[
-            SelectElement(
-                children=options,
-                name=EXECUTOR_HOSTS_INPUT_NAME,
-                description="Select the hostname of the target system for snippet execution.",
-                label="Select host",
-                required=True,
-                classes={"executorHostSelect"},
-            ),
-        ],
-    )
 
 
 class FilePreview(NamedTuple):
@@ -617,58 +565,6 @@ class BaseSnippet(BaseModel):
         """Update the snippet's metadata."""
         self.meta = await self.get_meta_by_path(self)
 
-    def to_form(
-        self,
-        executor_hosts: Iterable[tuple[str, str]] | None = None,
-        form_action: str = "",
-        defaults: dict[str, Any] | None = None,
-        *,
-        form_id: str = "snippetExecuteForm",
-    ) -> str:
-        """Generate an HTML form for executing the snippet.
-
-        This method creates a form with fields based on the snippet's metadata and
-        the provided executor hosts. It includes a select element for choosing the
-        executor host and fields for snippet parameters.
-
-        :param executor_hosts: An iterable of (value, label) tuples for executor hosts.
-            When ``None``, the executor host fieldset is omitted from the form.
-        :type executor_hosts: Iterable[tuple[str, str]] | None
-        :param form_action: The action URL for the form submission. Defaults to an
-            empty string.
-        :type form_action: str
-        :param defaults: Optional dictionary of default values keyed by parameter
-            name.  When provided, matching parameter defaults are overridden before
-            form generation.
-        :type defaults: dict[str, Any] | None
-        :param form_id: The HTML ``id`` attribute for the ``<form>`` element.
-        :type form_id: str
-        :return: An HTML string representing the form for executing the snippet.
-        :rtype: str
-        """
-        logger.debug(
-            "Generating execution form for snippet %s (action=%r)", self, form_action
-        )
-        parameters = self.meta.get("parameters", [])
-        if defaults:
-            parameters = [
-                {**param, "default": defaults[param["name"]]}
-                if param.get("name") in defaults
-                else param
-                for param in parameters
-            ]
-        logger.debug("Meta Snippet parameters: %s)", parameters)
-        return self._to_form(
-            json_serializer(parameters, sort_keys=True),
-            executor_hosts,
-            add_extra_args_field=self.allow_extra_args,
-            add_sudo_field=self.sudo.is_optional,
-            sudo_default=self.sudo.sudo_default,
-            form_action=form_action,
-            disabled=not self.can_execute,
-            form_id=form_id,
-        )
-
     def get_execution_model(self) -> type[BaseSnippetArgs]:
         """Generate a Pydantic model for validating snippet execution parameters.
 
@@ -809,101 +705,6 @@ class BaseSnippet(BaseModel):
                         f"references unknown parameter {condition.parameter!r}"
                     )
         return errors
-
-    @staticmethod
-    @validate_call
-    @ttl_cache(ttl=_ONE_HOUR, maxsize=8)
-    def _to_form(
-        parameters_json: str,
-        executor_hosts: frozenset[tuple[str, str]] | None = None,
-        *,
-        add_extra_args_field: bool = False,
-        add_sudo_field: bool = False,
-        sudo_default: bool = False,
-        form_action: str = "",
-        disabled: bool = False,
-        form_id: str = "snippetExecuteForm",
-    ) -> str:
-        """Generate an HTML form for executing a snippet.
-
-        This internal method creates a form with fields based on the snippet's
-        parameters and the provided executor hosts. It includes a select element for
-        choosing the executor host and fields for snippet parameters. Parameters
-        marked ``hidden`` are omitted from the form. It is cached for performance.
-
-        :param parameters_json: A JSON string representing a list of snippet parameters.
-        :type parameters_json: str
-        :param executor_hosts: A set of (value, label) tuples for executor hosts.
-            When ``None``, the executor host fieldset is omitted.
-        :type executor_hosts: frozenset[tuple[str, str]] | None
-        :param add_extra_args_field: Whether to include an extra arguments field in the
-            form. Defaults to ``False``.
-        :type add_extra_args_field: bool
-        :param add_sudo_field: Whether to include a sudo checkbox in the form.
-            Defaults to ``False``.
-        :type add_sudo_field: bool
-        :param sudo_default: The default checked state for the sudo checkbox. Only
-            relevant when ``add_sudo_field`` is ``True``. Defaults to ``False``.
-        :type sudo_default: bool
-        :param form_action: The action URL for the form submission. Defaults to an
-            empty string.
-        :type form_action: str
-        :param disabled: Whether to disable the form fields and submit button. Defaults
-            to ``False``.
-        :type disabled: bool
-        :param form_id: The HTML ``id`` attribute for the ``<form>`` element.
-        :type form_id: str
-        :return: An HTML string representing the form for executing the snippet.
-        :rtype: str
-        """
-        fieldsets = []
-        if executor_hosts is not None:
-            executor_hosts_fieldset = get_executor_hosts_fieldset(executor_hosts)
-            executor_hosts_fieldset.disabled = disabled
-            fieldsets.append(executor_hosts_fieldset)
-        parameters = BaseSnippet._get_parameters_from_json(
-            parameters_json
-        ).visible_parameters
-        logger.debug("Snippet params: %s", [param.name for param in parameters])
-        groups = {}
-        for param in parameters:
-            try:
-                field = param.to_form_field()
-            except ValidationError:
-                logger.warning("Invalid snippet parameter: %r", param, exc_info=True)
-                continue
-            groups.setdefault(param.group, []).append(field)
-        if add_extra_args_field:
-            groups.setdefault(None, []).append(EXTRA_ARGS_INPUT)
-        if add_sudo_field:
-            groups.setdefault(None, []).append(
-                CheckboxInputElement(
-                    name=SUDO_INPUT_NAME,
-                    description="Execute the snippet with sudo",
-                    label="Use sudo",
-                    id="sudoCheckbox",
-                    checked=sudo_default,
-                )
-            )
-        for group_name, group_fields in groups.items():
-            legend = group_name if group_name is not None else "Parameters"
-            logger.debug(
-                "Generated snippet form fields for %r: %s", legend, group_fields
-            )
-            fieldsets.append(
-                FieldsetElement(legend=legend, children=group_fields, disabled=disabled)
-            )
-        return FormElement(
-            id=form_id,
-            children=fieldsets,
-            submit_button=SubmitButtonElement(
-                label="Execute",
-                icon="send",
-                classes=("text", "medium"),
-                disabled=disabled,
-            ),
-            action=form_action,
-        ).to_html()
 
     @staticmethod
     @ttl_cache(ttl=_ONE_HOUR, maxsize=8)

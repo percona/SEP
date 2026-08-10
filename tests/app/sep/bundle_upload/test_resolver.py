@@ -21,7 +21,12 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.sep.bundle_upload.plan import DeliveryPlan, UploadStep
-from app.sep.bundle_upload.resolver import resolve_delivery_plan
+from app.sep.bundle_upload.resolver import (
+    DeliveryPlanResolution,
+    DRIFTED_INPUTS_REASON,
+    resolve_delivery_plan,
+    UNCONFIGURED_REASON,
+)
 from app.sep.config import DeliveryPlanInputs, sep_settings
 
 _BAKED_ENDPOINT = "https://intake.example.com/"
@@ -58,15 +63,17 @@ def no_inputs_fixture(mocker: MockerFixture) -> None:
 class TestSkeletonOnly:
     """Cover the resolver's behaviour when no runtime inputs are supplied."""
 
-    def test_returns_none_without_a_baked_plan(
+    def test_reports_the_unconfigured_reason_without_a_baked_plan(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Report the ordinary unconfigured state silently, without a log line."""
         mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", None)
 
         with caplog.at_level(logging.INFO, logger=_RESOLVER_LOGGER):
-            assert resolve_delivery_plan() is None
+            resolution = resolve_delivery_plan()
 
+        assert resolution.plan is None
+        assert resolution.unavailable_reason == UNCONFIGURED_REASON
         assert caplog.records == []
 
     def test_returns_the_baked_plan_unchanged(self, mocker: MockerFixture) -> None:
@@ -74,7 +81,10 @@ class TestSkeletonOnly:
         skeleton = _plan({"api_key": "real-api-key"})
         mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", skeleton)
 
-        assert resolve_delivery_plan() is skeleton
+        resolution = resolve_delivery_plan()
+
+        assert resolution.plan is skeleton
+        assert resolution.unavailable_reason is None
 
     def test_reports_every_declared_secret_left_empty(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
@@ -87,8 +97,10 @@ class TestSkeletonOnly:
         )
 
         with caplog.at_level(logging.INFO, logger=_RESOLVER_LOGGER):
-            assert resolve_delivery_plan() is None
+            resolution = resolve_delivery_plan()
 
+        assert resolution.plan is None
+        assert resolution.unavailable_reason == UNCONFIGURED_REASON
         assert "client_token, sn_api_key" in caplog.text
 
 
@@ -112,7 +124,7 @@ class TestMergedInputs:
             ),
         )
 
-        plan = resolve_delivery_plan()
+        plan = resolve_delivery_plan().plan
 
         assert plan is not None
         assert plan.secrets["sn_api_key"].get_secret_value() == "key-value"
@@ -134,8 +146,10 @@ class TestMergedInputs:
         )
 
         with caplog.at_level(logging.INFO, logger=_RESOLVER_LOGGER):
-            assert resolve_delivery_plan() is None
+            resolution = resolve_delivery_plan()
 
+        assert resolution.plan is None
+        assert resolution.unavailable_reason == UNCONFIGURED_REASON
         assert "client_token" in caplog.text
         assert "sn_api_key" not in caplog.text
 
@@ -155,7 +169,7 @@ class TestMergedInputs:
             ),
         )
 
-        plan = resolve_delivery_plan()
+        plan = resolve_delivery_plan().plan
 
         assert plan is not None
         assert str(plan.endpoint) == "https://elsewhere.example.com/"
@@ -173,37 +187,32 @@ class TestMergedInputs:
             DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
         )
 
-        plan = resolve_delivery_plan()
+        plan = resolve_delivery_plan().plan
 
         assert plan is not None
         assert str(plan.endpoint) == _BAKED_ENDPOINT
 
-    def test_drops_an_input_secret_the_skeleton_does_not_declare(
+    def test_a_subset_of_the_declared_secrets_still_merges(
         self, mocker: MockerFixture
     ) -> None:
-        """Ignore an undeclared secret name a YAML- or env-set inputs value carries.
-
-        Such a value never passes ``materialize_delivery_plan_inputs``, which is
-        the only exact-key check, so the resolver is what keeps an undeclared
-        name out of the merged plan.
-        """
+        """Let the baked value stand for a declared secret the inputs omit."""
         mocker.patch.object(
-            sep_settings, "DIAGNOSTICS_DELIVERY", _plan({"sn_api_key": ""})
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY",
+            _plan({"sn_api_key": "", "client_token": "baked-token"}),
         )
         mocker.patch.object(
             sep_settings,
             "DIAGNOSTICS_DELIVERY_INPUTS",
-            DeliveryPlanInputs(
-                secrets={"sn_api_key": "key-value", "rogue": "smuggled"}
-            ),
+            DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
         )
 
-        plan = resolve_delivery_plan()
+        plan = resolve_delivery_plan().plan
 
         assert plan is not None
-        assert set(plan.secrets) == {"sn_api_key"}
+        assert plan.secrets["client_token"].get_secret_value() == "baked-token"
 
-    def test_returns_none_when_the_merged_plan_fails_validation(
+    def test_reports_the_unconfigured_reason_when_the_merged_plan_fails_validation(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Degrade to unconfigured instead of raising into the request path.
@@ -236,6 +245,189 @@ class TestMergedInputs:
         )
 
         with caplog.at_level(logging.WARNING, logger=_RESOLVER_LOGGER):
-            assert resolve_delivery_plan() is None
+            resolution = resolve_delivery_plan()
 
+        assert resolution.plan is None
+        assert resolution.unavailable_reason == UNCONFIGURED_REASON
         assert "client_token" in caplog.text
+
+
+class TestDriftedInputs:
+    """Cover inputs whose secret names stopped matching the baked skeleton.
+
+    An image upgrade that renames a declared secret leaves the stored inputs
+    untouched, and the operator has to re-supply them. That is the opposite
+    action from a deployment nobody ever configured, so the two states may not
+    report the same thing.
+    """
+
+    def test_reports_an_undeclared_secret_name_as_drift(
+        self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Tell the operator the stored inputs no longer fit this deployment.
+
+        Inverts the previous contract, under which an undeclared name was
+        silently filtered out of the merged plan and delivery either carried on
+        with a credential the operator did not mean to use or reported itself as
+        never configured.
+        """
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _plan({"sn_api_key": ""})
+        )
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(
+                secrets={"sn_api_key": "key-value", "renamed_token": "token-value"}
+            ),
+        )
+
+        with caplog.at_level(logging.WARNING, logger=_RESOLVER_LOGGER):
+            resolution = resolve_delivery_plan()
+
+        assert resolution.plan is None
+        assert resolution.unavailable_reason == DRIFTED_INPUTS_REASON
+        assert "renamed_token" in caplog.text
+
+    def test_drift_outranks_a_secret_the_rename_left_without_a_value(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Blame the rename, not the value it left behind.
+
+        A rename produces both symptoms at once: the old name is undeclared and
+        the new one has only the skeleton's empty value. Reporting the empty
+        value would send the operator looking for a secret to supply under a
+        name they have never seen.
+        """
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _plan({"case_token": ""})
+        )
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"client_token": "token-value"}),
+        )
+
+        assert resolve_delivery_plan().unavailable_reason == DRIFTED_INPUTS_REASON
+
+    def test_stored_inputs_without_a_baked_plan_are_not_drift(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Call a deployment that bakes no plan unconfigured, never drifted.
+
+        There is nothing for the inputs to have drifted from, and re-supplying
+        them would not help.
+        """
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", None)
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
+        )
+
+        assert resolve_delivery_plan().unavailable_reason == UNCONFIGURED_REASON
+
+    def test_empty_stored_secrets_report_the_unconfigured_state(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Keep an inputs row that names nothing on the unconfigured path."""
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _plan({"sn_api_key": ""})
+        )
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY_INPUTS", DeliveryPlanInputs()
+        )
+
+        assert resolve_delivery_plan().unavailable_reason == UNCONFIGURED_REASON
+
+    def test_a_secret_a_later_plan_added_is_not_drift(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Route an upgrade that adds a declared secret to the unconfigured text.
+
+        Every name the stored inputs carry is still declared; the plan simply
+        declares one more, and supplying it is the remedy the unconfigured text
+        already asks for. A rename is the case that needs its own reason,
+        because it strands the stored credentials under names nothing reads.
+        """
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY",
+            _plan({"sn_api_key": "", "case_token": ""}),
+        )
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
+        )
+
+        assert resolve_delivery_plan().unavailable_reason == UNCONFIGURED_REASON
+
+    def test_a_case_variant_of_a_declared_name_is_drift(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Match secret names exactly, as every other read of them does."""
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _plan({"sn_api_key": ""})
+        )
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"SN_API_KEY": "key-value"}),
+        )
+
+        assert resolve_delivery_plan().unavailable_reason == DRIFTED_INPUTS_REASON
+
+    def test_the_reason_names_no_secret_the_plan_declares(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Keep receiver-internal names out of a string an operator reads.
+
+        The operator cannot act on them: they name fields of the receiver's own
+        API, not anything the deployment exposes.
+        """
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _plan({"sn_api_key": ""})
+        )
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(
+                secrets={"sn_api_key": "key-value", "renamed_token": "token-value"}
+            ),
+        )
+
+        reason = resolve_delivery_plan().unavailable_reason
+
+        assert "sn_api_key" not in reason
+        assert "renamed_token" not in reason
+
+
+class TestDeliveryPlanResolutionInvariant:
+    """Cover the one-outcome rule the resolution type states."""
+
+    def test_a_plan_alone_builds(self) -> None:
+        """Accept the shape a deployment able to deliver produces."""
+        plan = _plan({"sn_api_key": "key-value"})
+
+        assert DeliveryPlanResolution.resolved(plan).plan is plan
+
+    def test_a_reason_alone_builds(self) -> None:
+        """Accept the shape a deployment unable to deliver produces."""
+        assert (
+            DeliveryPlanResolution.unavailable(UNCONFIGURED_REASON).unavailable_reason
+            == UNCONFIGURED_REASON
+        )
+
+    def test_carrying_both_outcomes_is_refused(self) -> None:
+        """Refuse a resolution a caller would read two contradictory ways."""
+        with pytest.raises(ValueError, match="not both and not neither"):
+            DeliveryPlanResolution(
+                plan=_plan({"sn_api_key": "key-value"}),
+                unavailable_reason=UNCONFIGURED_REASON,
+            )
+
+    def test_carrying_neither_outcome_is_refused(self) -> None:
+        """Refuse the empty resolution, which reads as a plan that is missing."""
+        with pytest.raises(ValueError, match="not both and not neither"):
+            DeliveryPlanResolution(plan=None, unavailable_reason=None)

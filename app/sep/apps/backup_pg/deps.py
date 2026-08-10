@@ -17,74 +17,22 @@
 
 import logging
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Any
 
 import yaml
-from fastapi import Depends, Form, Request
+from fastapi import Depends, Request
 
 from app.core.exceptions import HTTPConflictException
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_pg.models import (
-    BackupPgForm,
-    BackupTaskDetailResponse,
-    BackupTaskResponse,
-    BackupType,
-    OWNER,
-)
-from app.sep.apps.backup_pg.spec import build_backup_pg_spec
-from app.sep.apps.framework import build_default_task_response, make_task_dep
-from app.sep.apps.framework.spec import (
-    assemble_envelope,
-    resolve_refs,
-)
+from app.sep.apps.backup_pg.models import BackupTaskDetailResponse, BackupTaskResponse
+from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
-from app.sep.deps import (
-    DefaultContext,
-    ExecutorHostsCtx,
-    get_tasks_context,
-    InventoryAPI,
-    TaskAPI,
-)
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
+from app.sep.deps import TaskAPI
+from app.tasks.models import Task, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-
-
-async def build_backup_task_payload(
-    form: Annotated[BackupPgForm, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build the backup task payload from a form-urlencoded body.
-
-    The legacy Jinja form path's payload dependency. Resolves the form's
-    reference fields and feeds the shared pure
-    :func:`~app.sep.apps.backup_pg.spec.build_backup_pg_spec` through the
-    framework's ``assemble_envelope`` — the same pair the model-first JSON create
-    route uses — so a form-created task's Nomad payload stays byte-identical to a
-    JSON-created one.
-
-    :param form: The form data for the Backups creation.
-    :param inventory_api: The Inventory API to resolve the service reference.
-    :return: A fully constructed ``TaskWrite`` object.
-    """
-    resolved = await resolve_refs(form, inventory_api)
-    return assemble_envelope(
-        build_backup_pg_spec(form, resolved),
-        resolved,
-        name=form.task_name,
-        owner=OWNER,
-        alert_on_fail=form.alert_on_fail,
-    )
-
-
-BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
-
-
-get_backups_task = make_task_dep(OWNER)
-
-BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
 
 async def check_create_has_no_conflicted_running_tasks(
@@ -224,69 +172,6 @@ def build_backup_pg_api_detail_response(
         or meta.get(CONNECTIVITY_META_PORT_KEY)
         or DEFAULT_POSTGRESQL_PORT,
     )
-
-
-def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
-    """Extract relevant information from a task for the Backups plugin.
-
-    Processes the task data to extract hostname and tables information.
-
-    :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
-    :return: A dictionary containing hostname and tables information.
-    :rtype: dict[str, Any]
-    """
-    data = task["data"]
-    meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    backup_server = task_config["SERVER_LIST"][0]
-
-    return {
-        "hostname": meta["target"],
-        "host": backup_server.get("HOST"),
-        "port": backup_server.get("PORT")
-        or meta.get(CONNECTIVITY_META_PORT_KEY)
-        or DEFAULT_POSTGRESQL_PORT,
-        "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
-    }
-
-
-async def get_backups_index_context(
-    inventory_api: InventoryAPI,
-    tasks_api: TaskAPI,
-    context: DefaultContext,
-    executor_hosts_ctx: ExecutorHostsCtx,
-) -> dict[str, Any]:
-    """Assemble the context for the Backups plugin index view.
-
-    Retrieves PostgreSQL services and associated tasks, organizing them based on their
-    execution status. Integrates this information into the default context for
-    rendering in templates.
-
-    :param inventory_api: The Inventory API client for fetching service and schema data.
-    :type inventory_api: InventoryAPI
-    :param tasks_api: The TaskAPI client for fetching task data.
-    :type tasks_api: TaskAPI
-    :param context: The default context to be updated with Backups-specific information.
-    :type context: DefaultContext
-    :param executor_hosts_ctx: The executor hosts context for the Backups tasks.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: An updated context dictionary containing Backups-related data.
-    :rtype: dict[str, Any]
-    """
-    return await get_tasks_context(
-        inventory_api,
-        tasks_api,
-        get_backups_task_info,
-        executor_hosts_ctx,
-        context,
-        OWNER,
-        service_type=ServiceTypeEnum.POSTGRESQL,
-        alert_on_fail_default=True,
-    )
-
-
-BackupsIndexContext = Annotated[dict[str, Any], Depends(get_backups_index_context)]
 
 
 def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:

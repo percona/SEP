@@ -44,12 +44,10 @@ from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.crud import AtwIncidentExecutionManager, AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
@@ -1505,10 +1503,8 @@ class TestAtwBatchExecuteOnRealPostgres:
 
         mocker.patch.object(AtwIncidentExecutionManager, "save", new=_flaky_save)
 
-        sep_app.dependency_overrides[validate_csrf] = lambda: True
         sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
         sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-        sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
         sep_app.dependency_overrides[get_session] = lambda: postgres_session
         client = AsyncClient(
             transport=ASGITransport(app=sep_app), base_url="http://test"

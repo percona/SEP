@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from fastapi import Query
+from fastapi import params, Query
 from sqlalchemy import or_
 
 from app.core.db.utils import NullsLastOrdering
@@ -41,6 +41,9 @@ if TYPE_CHECKING:
     from app.core.db.crud import BaseManager
 
 _ILIKE_ESCAPE = "\\"
+
+SORT_PARAM_DESCRIPTION = "Sort key; prefix with '-' for descending order."
+SEARCH_PARAM_DESCRIPTION = "Case-insensitive search across the searchable columns."
 
 
 class UnknownSortKeyError(Exception):
@@ -186,6 +189,43 @@ def build_search_predicate(
     return or_(*(column.ilike(pattern, escape=_ILIKE_ESCAPE) for column in searchable))
 
 
+def sort_query_param(spec: ListQuerySpec) -> params.Query:
+    """Return the ``sort`` query-parameter declaration a spec's allowlist backs.
+
+    The allowlist is emitted into the schema as an ``enum`` covering both directions of
+    every public key, so a generated client carries the accepted values as a union
+    instead of a bare string and a typed caller fails to compile rather than getting a
+    runtime 422. The enum documents; :meth:`ListQuerySpec.resolve_sort` still validates,
+    so the 422 boundary is unchanged.
+
+    A fresh declaration is built per call because FastAPI binds one to each parameter it
+    reflects.
+
+    :param spec: The spec whose sortable allowlist and default seed the declaration.
+    :return: The ``sort`` parameter declaration.
+    """
+    return Query(
+        default=spec.default_sort,
+        description=SORT_PARAM_DESCRIPTION,
+        json_schema_extra={
+            "enum": [
+                value for key in sorted(spec.sortable) for value in (key, f"-{key}")
+            ]
+        },
+    )
+
+
+def search_query_param() -> params.Query:
+    """Return the ``search`` query-parameter declaration.
+
+    Carries no spec-derived detail — the searchable set is a server-side implementation
+    choice, not a client input — so only the description is declared.
+
+    :return: The ``search`` parameter declaration.
+    """
+    return Query(default=None, description=SEARCH_PARAM_DESCRIPTION)
+
+
 def make_list_query_dep(
     source: type[BaseManager] | ListQuerySpec,
 ) -> Callable[..., ListQuery]:
@@ -194,7 +234,9 @@ def make_list_query_dep(
     The returned callable declares exactly the enabled query parameters — ``sort``
     always, ``search`` only when the spec's searchable set is non-empty — using two
     statically-defined inner functions (not a dynamically built signature) so OpenAPI
-    reflection is guaranteed. Callers wrap the result in a module-scope
+    reflection is guaranteed. Both parameters carry a description, and ``sort`` carries
+    the spec's allowlist as a schema ``enum``, so the generated client documents the
+    accepted keys. Callers wrap the result in a module-scope
     ``Annotated[ListQuery, Depends(...)]`` alias, mirroring
     :func:`app.core.pagination.deps.make_pagination_dep`.
 
@@ -212,15 +254,15 @@ def make_list_query_dep(
     if spec.search_enabled:
 
         def _list_query_dep(
-            sort: str = Query(default=spec.default_sort),
-            search: str | None = Query(default=None),
+            sort: str = sort_query_param(spec),
+            search: str | None = search_query_param(),
         ) -> ListQuery:
             return _build_list_query(spec, sort, search)
 
         return _list_query_dep
 
     def _list_query_dep_no_search(
-        sort: str = Query(default=spec.default_sort),
+        sort: str = sort_query_param(spec),
     ) -> ListQuery:
         return _build_list_query(spec, sort, None)
 

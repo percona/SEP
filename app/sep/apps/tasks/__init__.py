@@ -14,6 +14,5 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from app.sep.apps.tasks.app import app
-from app.sep.apps.tasks.routes import router
 
-__all__ = ["app", "router"]
+__all__ = ["app"]

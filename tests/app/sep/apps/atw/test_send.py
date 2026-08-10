@@ -55,8 +55,9 @@ from app.sep.apps.atw.send import (
     run_send,
 )
 from app.sep.bundle_upload.plan import DeliveryPlan, DeliveryPlanError, StepRecord
+from app.sep.bundle_upload.resolver import DRIFTED_INPUTS_REASON
 from app.sep.bundle_upload.seam import BundleSource, UploadResult
-from app.sep.config import sep_settings
+from app.sep.config import DeliveryPlanInputs, sep_settings
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 _UPLOAD_DETAIL: dict[str, Any] = {"result": {"sys_id": "att-9", "size_bytes": 42}}
@@ -921,7 +922,12 @@ class TestRunSendFailures:
         delivery_plan: DeliveryPlan,
         mocker: MockerFixture,
     ) -> None:
-        """Fail cleanly when stored inputs stopped matching the baked skeleton."""
+        """Blame the drift on the terminal row, not the never-configured state.
+
+        Inverts the previous contract, under which this row read exactly like a
+        deployment that never configured delivery — yet re-supplying the inputs
+        and configuring delivery from scratch are opposite actions.
+        """
         mocker.patch.object(
             sep_settings, "DIAGNOSTICS_DELIVERY", _unconfigured_skeleton(delivery_plan)
         )
@@ -932,7 +938,7 @@ class TestRunSendFailures:
 
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
-        assert "not configured" in reloaded.detail["error"]
+        assert reloaded.detail["error"] == DRIFTED_INPUTS_REASON
 
     async def test_a_failing_refresh_still_writes_a_terminal_row(
         self,
@@ -964,6 +970,39 @@ class TestRunSendFailures:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "not configured" in reloaded.detail["error"]
+
+    async def test_a_failing_refresh_keeps_the_reason_already_resolved(
+        self,
+        send_session: AsyncSession,
+        delivery_plan: DeliveryPlan,
+        mocker: MockerFixture,
+    ) -> None:
+        """Keep blaming the drift when the re-read that might clear it fails.
+
+        The refresh is what would notice the operator re-supplying the inputs.
+        A transient database error means it noticed nothing — not that the
+        drift the worker's own snapshot already shows has gone away.
+        """
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _unconfigured_skeleton(delivery_plan)
+        )
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"renamed_key": _STORED_SECRET}),
+        )
+        mocker.patch.object(
+            SettingsOverrideManager,
+            "list",
+            side_effect=SQLAlchemyError("database unreachable"),
+        )
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == DRIFTED_INPUTS_REASON
 
     @pytest.mark.usefixtures("uploader")
     async def test_a_files_listing_conflict_names_the_execution(

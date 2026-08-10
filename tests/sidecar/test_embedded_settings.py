@@ -33,8 +33,8 @@ from app.sep.config import SEPSettings
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
 from tests.sidecar.conftest import (
-    ALLOWLIST_KEY,
     EMBEDDED_PROFILE,
+    read_allowlist,
     SETTINGS_ENV_HELPER,
     SIDECAR_DIR,
 )
@@ -42,9 +42,9 @@ from tests.sidecar.conftest import (
 PASSWORD_BEARING_USERINFO = re.compile(r"://[^/@\s]+:[^/@\s]+@")
 """Match a URL whose authority carries both a user and a password.
 
-Passwordless userinfo is legitimate here -- the profile's ``BEAT_DBURI`` is
-``postgresql://sep@pmm-server:5432/sep`` -- so an ``@``-rejecting pattern would
-fail against the very file it validates.
+Only an embedded credential is a finding, and a bare user in an authority is
+legitimate, so an ``@``-rejecting pattern would be broader than the invariant
+this file enforces.
 """
 
 PLACEHOLDER_MARKER = re.compile(r"glsa_|__[A-Z_]+__")
@@ -61,18 +61,17 @@ past, so the block is matched by its container instead.
 SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
-ALLOWLIST_SIZE = 13
+ALLOWLIST_SIZE = 12
 """How many entries the embedded override allowlist ships.
 
 Pinned so a silently truncated list -- which the policy suite's negative
 assertions would still accept -- fails here instead.
 """
 
-UNCOMPARABLE_FIELDS = frozenset({"FASTAPI_ENV", "JINJA_ENVIRONMENT", "TEMPLATES"})
+UNCOMPARABLE_FIELDS = frozenset({"FASTAPI_ENV"})
 """Fields a dump comparison cannot use.
 
-``FASTAPI_ENV`` is what the comparison varies; the other two are computed per
-construction and compare by identity, so two instances never match on them.
+``FASTAPI_ENV`` is what the comparison varies, so it can never match.
 """
 
 
@@ -172,10 +171,10 @@ def test_grafana_provider_constructs_with_an_empty_token():
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_override_allowlist_resolves_from_the_profile(embedded_profile_data: dict):
     """Assert the profile's YAML list coerces into the field the policy reads."""
-    declared = embedded_profile_data["default"][ALLOWLIST_KEY]
+    declared = read_allowlist(embedded_profile_data)
 
     assert len(declared) == ALLOWLIST_SIZE
-    assert set(declared) == Settings().SETTINGS_OVERRIDE_ALLOWED_KEYS
+    assert set(declared) == Settings().SETTINGS_OVERRIDE.ALLOWED_KEYS
 
 
 def test_profile_carries_a_single_default_block(embedded_profile_data: dict):
@@ -194,7 +193,21 @@ def test_no_url_carries_a_password():
     profile = uncommented(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
 
     assert PASSWORD_BEARING_USERINFO.search(profile) is None
-    assert "postgresql://sep@pmm-server:5432/sep" in profile
+    assert PASSWORD_BEARING_USERINFO.search("postgresql://u:p@h/db")
+
+
+def test_the_profile_configures_no_beat_store():
+    """Leave ``BEAT_DBURI`` unset, so the beat store follows the SEP database.
+
+    A profile value is a configured value and would outrank the derived default,
+    handing celery-beat a password-less URI. The assertion reads the uncommented
+    text because the comment recording the omission names the key deliberately,
+    and pairs with a sibling key so an empty read cannot pass as an absent one.
+    """
+    profile = uncommented(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
+
+    assert "BEAT_DBURI" not in profile
+    assert "RESULT_EXPIRES" in profile
 
 
 def test_every_secret_typed_field_is_empty(embedded_profile_data: dict):
@@ -319,7 +332,7 @@ def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: di
     for entry in collect_app_owned_settings_classes(profile_apps):
         reachable_tokens.add(entry.setting_class.value)
 
-    allowlist = embedded_profile_data["default"][ALLOWLIST_KEY]
+    allowlist = read_allowlist(embedded_profile_data)
     for key in allowlist:
         class_token = key.split(".")[0]
         assert class_token in reachable_tokens, (
