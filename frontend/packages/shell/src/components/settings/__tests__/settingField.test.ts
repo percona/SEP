@@ -23,6 +23,7 @@ import {
   countOverriddenLeaves,
   groupNodeId,
   formatSettingValue,
+  formatSettingDisplayValue,
   getFieldKind,
   isEditable,
   isSaveable,
@@ -120,6 +121,23 @@ describe('formatSettingValue', () => {
     expect(formatSettingValue(true)).toBe('true');
     expect(formatSettingValue(42)).toBe('42');
     expect(formatSettingValue({ a: 1 })).toBe('{"a":1}');
+  });
+});
+
+describe('formatSettingDisplayValue', () => {
+  it('prefers the matching option label over the raw dumped value', () => {
+    const options = [
+      { label: 'WARNING', value: 30 },
+      { label: 'DEBUG', value: 10 },
+    ];
+    expect(formatSettingDisplayValue(30, options)).toBe('WARNING');
+    expect(formatSettingDisplayValue(10, options)).toBe('DEBUG');
+  });
+
+  it('falls back to formatSettingValue when options are absent or unmatched', () => {
+    expect(formatSettingDisplayValue(30)).toBe('30');
+    expect(formatSettingDisplayValue(30, [])).toBe('30');
+    expect(formatSettingDisplayValue(99, [{ label: 'WARNING', value: 30 }])).toBe('99');
   });
 });
 

@@ -253,10 +253,38 @@ export function formatSettingValue(value: unknown): string {
 }
 
 /**
+ * Format a value for the read-only Current column. When ``options`` includes a
+ * matching member, show its label (e.g. ``WARNING``) instead of the dumped
+ * wire value (e.g. ``30``).
+ */
+export function formatSettingDisplayValue(
+  value: unknown,
+  options?: SettingChoiceOption[] | null,
+): string {
+  if (options && options.length > 0 && value !== null && value !== undefined) {
+    const match = options.find((opt) => String(opt.value) === String(value));
+    if (match) {
+      return match.label;
+    }
+  }
+  return formatSettingValue(value);
+}
+
+/**
  * Format a value for the "view more" modal, pretty-printing objects/arrays
  * onto multiple indented lines so a `<pre>` block renders readable JSON.
+ * Prefer option labels when provided (same as the Current column).
  */
-export function formatSettingValuePretty(value: unknown): string {
+export function formatSettingValuePretty(
+  value: unknown,
+  options?: SettingChoiceOption[] | null,
+): string {
+  if (options && options.length > 0 && value !== null && value !== undefined) {
+    const match = options.find((opt) => String(opt.value) === String(value));
+    if (match) {
+      return match.label;
+    }
+  }
   if (value === null || value === undefined) {
     return '—';
   }
