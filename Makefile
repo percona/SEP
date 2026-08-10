@@ -71,7 +71,7 @@ builder:
 	@buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
 
 # The app-restricted PMM-embedded image is the only artifact SEP ships. Which
-# apps survive is settings.yaml's SEP.APPS.
+# apps survive is sidecar/settings.yaml's SEP.APPS.
 # docker format, not oci: OCI silently discards the HEALTHCHECK instruction
 image: pack
 	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true

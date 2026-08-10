@@ -1,6 +1,6 @@
 # SEP consolidated side-car image
 
-The SEP image: frontend-less, built for embedding SEP inside a PMM
+The SEP image is frontend-less, built for embedding SEP inside a PMM
 deployment. One `supervisord` runs the five SEP programs plus a bundled Valkey
 broker under a single PID 1, so the whole product ships as one container with
 one log stream.
