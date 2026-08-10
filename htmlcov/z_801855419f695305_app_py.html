@@ -66,8 +66,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_801855419f695305_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 06:46 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
+            created at 2026-08-10 15:29 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -95,9 +95,9 @@
     <p class="pln"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t"><span class="com"># GNU Affero General Public License for more details.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="com">#</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t"><span class="com"># You should have received a copy of the GNU Affero General Public License</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="com"># along with this program. If not, see &lt;https://www.gnu.org/licenses/>.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="com"># along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="str">"""Wire the Checksums plugin as a declarative ``TaskExecutionApp``.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="str">&quot;&quot;&quot;Wire the Checksums plugin as a declarative ``TaskExecutionApp``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="str">This definition replaces the hand-written JSON API router and schema: the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="str">registry discovers the exported ``app`` and mounts its derived router, which</span>&nbsp;</span><span class="r"></span></p>
@@ -105,9 +105,9 @@
     <p class="pln"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="str">delete surfaces. Create and update are derived from the model-first</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="str">:class:`~app.sep.apps.checksums.models.ChecksumsForm` through the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t"><span class="str">``pt-table-checksum`` spec builder; the derived PUT and DELETE carry the</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">framework's default protected-task + running-conflict guards. The Jinja UI router</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">framework&#x27;s default protected-task + running-conflict guards. The Jinja UI router</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t"><span class="str">is threaded explicitly (the registry does not).</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t"><span class="str">"""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t"><span class="str">&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t28" href="#t28">28</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">inventory</span><span class="op">.</span><span class="nam">models</span> <span class="key">import</span> <span class="nam">ServiceTypeEnum</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t29" href="#t29">29</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">sep</span><span class="op">.</span><span class="nam">apps</span><span class="op">.</span><span class="nam">checksums</span><span class="op">.</span><span class="nam">deps</span> <span class="key">import</span> <span class="nam">build_checksums_payload</span>&nbsp;</span><span class="r"></span></p>
@@ -123,13 +123,13 @@
     <p class="run"><span class="n"><a id="t39" href="#t39">39</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">sep</span><span class="op">.</span><span class="nam">deps</span> <span class="key">import</span> <span class="nam">get_username_mapping</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t40" href="#t40">40</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t41" href="#t41">41</a></span><span class="t"><span class="nam">app</span> <span class="op">=</span> <span class="nam">TaskExecutionApp</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t42" href="#t42">42</a></span><span class="t">    <span class="nam">name</span><span class="op">=</span><span class="str">"checksums"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t43" href="#t43">43</a></span><span class="t">    <span class="nam">display_name</span><span class="op">=</span><span class="str">"Checksums"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t44" href="#t44">44</a></span><span class="t">    <span class="nam">uri_path</span><span class="op">=</span><span class="str">"/checksums"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t45" href="#t45">45</a></span><span class="t">    <span class="nam">css_class</span><span class="op">=</span><span class="str">"checksums"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t42" href="#t42">42</a></span><span class="t">    <span class="nam">name</span><span class="op">=</span><span class="str">&quot;checksums&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t43" href="#t43">43</a></span><span class="t">    <span class="nam">display_name</span><span class="op">=</span><span class="str">&quot;Checksums&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t44" href="#t44">44</a></span><span class="t">    <span class="nam">uri_path</span><span class="op">=</span><span class="str">&quot;/checksums&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t45" href="#t45">45</a></span><span class="t">    <span class="nam">css_class</span><span class="op">=</span><span class="str">&quot;checksums&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t">    <span class="nam">nav_order</span><span class="op">=</span><span class="num">7</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t">    <span class="nam">nav_icon</span><span class="op">=</span><span class="nam">NavIcon</span><span class="op">.</span><span class="nam">CHECK_CIRCLE</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t">    <span class="nam">description</span><span class="op">=</span><span class="str">"Run pt-table-checksum to verify MySQL replication consistency."</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t">    <span class="nam">description</span><span class="op">=</span><span class="str">&quot;Run pt-table-checksum to verify MySQL replication consistency.&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t">    <span class="nam">owner</span><span class="op">=</span><span class="nam">OWNER</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t">    <span class="nam">create_model</span><span class="op">=</span><span class="nam">ChecksumsForm</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t">    <span class="nam">views</span><span class="op">=</span><span class="nam">checksums_views</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -148,8 +148,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_801855419f695305_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 06:46 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
+            created at 2026-08-10 15:29 +0000
         </p>
     </div>
 </footer>

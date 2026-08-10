@@ -66,8 +66,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_0db5f69b046da905_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 06:46 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
+            created at 2026-08-10 15:29 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -95,17 +95,17 @@
     <p class="pln"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t"><span class="com"># GNU Affero General Public License for more details.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="com">#</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t"><span class="com"># You should have received a copy of the GNU Affero General Public License</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="com"># along with this program. If not, see &lt;https://www.gnu.org/licenses/>.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="com"># along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="str">"""Wire the MongoDB Restores subpackage as a parent-bound ``TaskExecutionApp``.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="str">&quot;&quot;&quot;Wire the MongoDB Restores subpackage as a parent-bound ``TaskExecutionApp``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="str">The registry discovers this app through ``backup_mongo``'s ``child_apps`` rather</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="str">The registry discovers this app through ``backup_mongo``&#x27;s ``child_apps`` rather</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="str">than a ``settings.yaml`` entry, so it is mounted and toggled exactly with its</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="str">parent: its JSON router serves at ``/api/apps/backup_mongo/restore/`` while the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="str">existing Jinja UI keeps serving at ``/backup_mongo/restores/`` via the threaded</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="str">``jinja_router``. A restore is a task group (parent config plus restore / pbm-list</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t"><span class="str">/ optional force-resync legs), so its ``update`` / ``delete`` act on the whole</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">cascade &#8212; the framework's single-task derived routes would orphan or stale the</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">cascade &#8212; the framework&#x27;s single-task derived routes would orphan or stale the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t"><span class="str">legs &#8212; leaving only ``schema`` and ``execute`` derived; the union list, the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t"><span class="str">sibling-aggregating detail, and the cascade create / update / delete ride</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t"><span class="str">``extra_routes`` with the derived ``list`` and ``detail`` suppressed so the custom</span>&nbsp;</span><span class="r"></span></p>
@@ -114,7 +114,7 @@
     <p class="pln"><span class="n"><a id="t30" href="#t30">30</a></span><span class="t"><span class="str">here. A child has no ``settings.yaml`` entry to stamp its identity, so ``key`` /</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t31" href="#t31">31</a></span><span class="t"><span class="str">``name`` / ``uri_path`` are set explicitly; ``uri_path`` preserves the Jinja route</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t"><span class="str">the ``pbm_restores_*`` handlers build their redirects against.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t"><span class="str">"""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t"><span class="str">&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">sep</span><span class="op">.</span><span class="nam">apps</span><span class="op">.</span><span class="nam">backup_mongo</span><span class="op">.</span><span class="nam">restore</span><span class="op">.</span><span class="nam">api_routes</span> <span class="key">import</span> <span class="nam">router</span> <span class="key">as</span> <span class="nam">restore_custom_router</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">sep</span><span class="op">.</span><span class="nam">apps</span><span class="op">.</span><span class="nam">backup_mongo</span><span class="op">.</span><span class="nam">restore</span><span class="op">.</span><span class="nam">deps</span> <span class="key">import</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -127,15 +127,15 @@
     <p class="run"><span class="n"><a id="t43" href="#t43">43</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">sep</span><span class="op">.</span><span class="nam">apps</span><span class="op">.</span><span class="nam">framework</span><span class="op">.</span><span class="nam">apps</span> <span class="key">import</span> <span class="nam">AppCapabilities</span><span class="op">,</span> <span class="nam">TaskExecutionApp</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t44" href="#t44">44</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t45" href="#t45">45</a></span><span class="t"><span class="nam">app</span> <span class="op">=</span> <span class="nam">TaskExecutionApp</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t">    <span class="nam">key</span><span class="op">=</span><span class="str">"backup_mongo/restore"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t">    <span class="nam">name</span><span class="op">=</span><span class="str">"backup_mongo_restores"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t">    <span class="nam">display_name</span><span class="op">=</span><span class="str">"MongoDB Restores"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t">    <span class="nam">uri_path</span><span class="op">=</span><span class="str">"/backup_mongo/restores"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t">    <span class="nam">css_class</span><span class="op">=</span><span class="str">"backup_mongo"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t">    <span class="nam">group</span><span class="op">=</span><span class="str">"backups"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t">    <span class="nam">key</span><span class="op">=</span><span class="str">&quot;backup_mongo/restore&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t">    <span class="nam">name</span><span class="op">=</span><span class="str">&quot;backup_mongo_restores&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t">    <span class="nam">display_name</span><span class="op">=</span><span class="str">&quot;MongoDB Restores&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t">    <span class="nam">uri_path</span><span class="op">=</span><span class="str">&quot;/backup_mongo/restores&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t">    <span class="nam">css_class</span><span class="op">=</span><span class="str">&quot;backup_mongo&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t">    <span class="nam">group</span><span class="op">=</span><span class="str">&quot;backups&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t">    <span class="nam">nav_order</span><span class="op">=</span><span class="num">9</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t">    <span class="nam">sidebar</span><span class="op">=</span><span class="key">False</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t">    <span class="nam">parent_key</span><span class="op">=</span><span class="str">"backup_mongo"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t">    <span class="nam">parent_key</span><span class="op">=</span><span class="str">&quot;backup_mongo&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t">    <span class="nam">owner</span><span class="op">=</span><span class="nam">OWNER</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">    <span class="nam">schema</span><span class="op">=</span><span class="nam">restore_mongo_schema</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t">    <span class="nam">response_model</span><span class="op">=</span><span class="nam">RestoreTaskResponse</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -160,8 +160,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_0db5f69b046da905_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 06:46 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
+            created at 2026-08-10 15:29 +0000
         </p>
     </div>
 </footer>

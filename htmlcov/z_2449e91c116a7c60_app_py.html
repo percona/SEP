@@ -66,8 +66,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_2449e91c116a7c60_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 06:46 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
+            created at 2026-08-10 15:29 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -95,11 +95,11 @@
     <p class="pln"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t"><span class="com"># GNU Affero General Public License for more details.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="com">#</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t"><span class="com"># You should have received a copy of the GNU Affero General Public License</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="com"># along with this program. If not, see &lt;https://www.gnu.org/licenses/>.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="com"># along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="str">"""Wire the MySQL Restores subpackage as a parent-bound ``TaskExecutionApp``.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="str">&quot;&quot;&quot;Wire the MySQL Restores subpackage as a parent-bound ``TaskExecutionApp``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="str">The registry discovers this app through ``mysql_backups``'s ``child_apps`` rather</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="str">The registry discovers this app through ``mysql_backups``&#x27;s ``child_apps`` rather</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="str">than a ``settings.yaml`` entry, so it is mounted and toggled exactly with its</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="str">parent under the explicit scoped key ``mysql_backups/restore``, serving its</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="str">derived JSON router at ``/api/apps/mysql_backups/restore/`` while the existing</span>&nbsp;</span><span class="r"></span></p>
@@ -108,12 +108,12 @@
     <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">XtraBackup / Binlog and tolerates a 404 fallback, the create payload is built by</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t"><span class="str">the ``payload_builder`` escape hatch</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t"><span class="str">(:func:`~app.sep.apps.mysql_backups.restore.deps.build_restore_payload`)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t"><span class="str">rather than the framework's auto-resolve three-phase path; the model-first</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t"><span class="str">rather than the framework&#x27;s auto-resolve three-phase path; the model-first</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t28" href="#t28">28</a></span><span class="t"><span class="str">:class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate` still drives</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t29" href="#t29">29</a></span><span class="t"><span class="str">``GET /schema`` and the create form. ``service_id`` lives in the General section</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t30" href="#t30">30</a></span><span class="t"><span class="str">so the restore ``backup_source`` ``RemoteChoices`` cascade is available for every</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t31" href="#t31">31</a></span><span class="t"><span class="str">backup type (not only Mydumper).</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t"><span class="str">"""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t"><span class="str">&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">pagination</span> <span class="key">import</span> <span class="nam">DEFAULT_PAGINATION_LIMIT</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">pagination</span><span class="op">.</span><span class="nam">deps</span> <span class="key">import</span> <span class="nam">make_pagination_dep</span>&nbsp;</span><span class="r"></span></p>
@@ -135,16 +135,16 @@
     <p class="run"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">sep</span><span class="op">.</span><span class="nam">apps</span><span class="op">.</span><span class="nam">mysql_backups</span><span class="op">.</span><span class="nam">restore</span><span class="op">.</span><span class="nam">views</span> <span class="key">import</span> <span class="nam">restore_views</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t"><span class="nam">app</span> <span class="op">=</span> <span class="nam">TaskExecutionApp</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t">    <span class="nam">key</span><span class="op">=</span><span class="str">"mysql_backups/restore"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t">    <span class="nam">name</span><span class="op">=</span><span class="str">"mysql_backups_restores"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">    <span class="nam">display_name</span><span class="op">=</span><span class="str">"MySQL Restores"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t">    <span class="nam">uri_path</span><span class="op">=</span><span class="str">"/mysql_backups/restores"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">    <span class="nam">css_class</span><span class="op">=</span><span class="str">"mysql_backups"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">    <span class="nam">group</span><span class="op">=</span><span class="str">"backups"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t">    <span class="nam">key</span><span class="op">=</span><span class="str">&quot;mysql_backups/restore&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t">    <span class="nam">name</span><span class="op">=</span><span class="str">&quot;mysql_backups_restores&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">    <span class="nam">display_name</span><span class="op">=</span><span class="str">&quot;MySQL Restores&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t">    <span class="nam">uri_path</span><span class="op">=</span><span class="str">&quot;/mysql_backups/restores&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">    <span class="nam">css_class</span><span class="op">=</span><span class="str">&quot;mysql_backups&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">    <span class="nam">group</span><span class="op">=</span><span class="str">&quot;backups&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t">    <span class="nam">nav_order</span><span class="op">=</span><span class="num">8</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t">    <span class="nam">sidebar</span><span class="op">=</span><span class="key">False</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t62" href="#t62">62</a></span><span class="t">    <span class="nam">parent_key</span><span class="op">=</span><span class="str">"mysql_backups"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t63" href="#t63">63</a></span><span class="t">    <span class="nam">description</span><span class="op">=</span><span class="str">"Restore MySQL hosts from XtraBackup, Mydumper, and Binlog backups."</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t62" href="#t62">62</a></span><span class="t">    <span class="nam">parent_key</span><span class="op">=</span><span class="str">&quot;mysql_backups&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t63" href="#t63">63</a></span><span class="t">    <span class="nam">description</span><span class="op">=</span><span class="str">&quot;Restore MySQL hosts from XtraBackup, Mydumper, and Binlog backups.&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t64" href="#t64">64</a></span><span class="t">    <span class="nam">owner</span><span class="op">=</span><span class="nam">OWNER</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t65" href="#t65">65</a></span><span class="t">    <span class="nam">create_model</span><span class="op">=</span><span class="nam">RestoreCreate</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t66" href="#t66">66</a></span><span class="t">    <span class="nam">response_model</span><span class="op">=</span><span class="nam">RestoresResponse</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -164,8 +164,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_2449e91c116a7c60_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 06:46 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
+            created at 2026-08-10 15:29 +0000
         </p>
     </div>
 </footer>

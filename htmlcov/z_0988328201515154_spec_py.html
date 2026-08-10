@@ -66,8 +66,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_0988328201515154_views_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 06:46 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
+            created at 2026-08-10 15:29 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -95,19 +95,19 @@
     <p class="pln"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t"><span class="com"># GNU Affero General Public License for more details.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="com">#</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t"><span class="com"># You should have received a copy of the GNU Affero General Public License</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="com"># along with this program. If not, see &lt;https://www.gnu.org/licenses/>.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="com"># along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="str">"""Build the ``run-python`` pgBackRest spec for the PostgreSQL Backups app.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="str">&quot;&quot;&quot;Build the ``run-python`` pgBackRest spec for the PostgreSQL Backups app.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="str">:func:`build_backup_pg_spec` is the pure ``(form, resolved) -> RunPythonSpec``</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="str">builder fed to the framework's three-phase create path (and reused by the legacy</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="str">Jinja form path via ``deps.build_backup_task_payload``), so a backup task's Nomad</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="str">:func:`build_backup_pg_spec` is the pure ``(form, resolved) -&gt; RunPythonSpec``</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="str">builder fed to the framework&#x27;s three-phase create path (and reused by the legacy</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="str">Jinja form path via ``deps.build_backup_task_payload``), so a backup task&#x27;s Nomad</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="str">payload is byte-identical regardless of the call origin. It reuses the kept</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="str">``BackupConfig`` / ``BackupConfigAll`` / ``BackupConfigServer`` validators to</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t"><span class="str">serialise the pgBackRest YAML config and injects :attr:`BackupType.PGBACKREST`</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">(not a form field). The framework's ``assemble_envelope`` supplies the executor</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">(not a form field). The framework&#x27;s ``assemble_envelope`` supplies the executor</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t"><span class="str">``target``, ``_service_name``, and the connectivity meta keys around this spec.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t"><span class="str">"""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t"><span class="str">&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t28" href="#t28">28</a></span><span class="t"><span class="key">import</span> <span class="nam">yaml</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t29" href="#t29">29</a></span><span class="t"><span class="key">from</span> <span class="nam">fastapi</span><span class="op">.</span><span class="nam">encoders</span> <span class="key">import</span> <span class="nam">jsonable_encoder</span>&nbsp;</span><span class="r"></span></p>
@@ -122,38 +122,38 @@
     <p class="run run2"><span class="n"><a id="t38" href="#t38">38</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t39" href="#t39">39</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">sep</span><span class="op">.</span><span class="nam">apps</span><span class="op">.</span><span class="nam">framework</span><span class="op">.</span><span class="nam">spec</span> <span class="key">import</span> <span class="nam">ResolvedEntities</span><span class="op">,</span> <span class="nam">RunPythonSpec</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t40" href="#t40">40</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t41" href="#t41">41</a></span><span class="t"><span class="nam">_REQUIREMENTS</span> <span class="op">=</span> <span class="str">"packaging\nPyYAML"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t41" href="#t41">41</a></span><span class="t"><span class="nam">_REQUIREMENTS</span> <span class="op">=</span> <span class="str">&quot;packaging\nPyYAML&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t42" href="#t42">42</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t43" href="#t43">43</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t44" href="#t44">44</a></span><span class="t"><span class="key">def</span> <span class="nam">build_backup_pg_spec</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t45" href="#t45">45</a></span><span class="t">    <span class="nam">form</span><span class="op">:</span> <span class="nam">BackupPgForm</span><span class="op">,</span> <span class="nam">_resolved</span><span class="op">:</span> <span class="nam">ResolvedEntities</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t"><span class="op">)</span> <span class="op">-></span> <span class="nam">RunPythonSpec</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t">    <span class="str">"""Build the ``run-python`` pgBackRest spec from the validated form.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t"><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">RunPythonSpec</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Build the ``run-python`` pgBackRest spec from the validated form.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t"><span class="str">    Serialize the pgBackRest ``config`` YAML from the kept ``BackupConfig``</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t"><span class="str">    validators &#8212; the ``ALL_SERVERS`` general settings from the form's</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t"><span class="str">    validators &#8212; the ``ALL_SERVERS`` general settings from the form&#x27;s</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t"><span class="str">    pgbackrest_* / logging / backup-dir fields and a single ``SERVER_LIST`` entry</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t"><span class="str">    aliased by the stanza, pinned to ``localhost``, with the backup type fixed to</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t"><span class="str">    :attr:`BackupType.PGBACKREST`. The framework's ``assemble_envelope`` fills</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t"><span class="str">    :attr:`BackupType.PGBACKREST`. The framework&#x27;s ``assemble_envelope`` fills</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t"><span class="str">    ``target`` (the executor ``HostRef``), ``_service_name``, and the connectivity</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t"><span class="str">    keys &#8212; including the resolved service port &#8212; around this spec.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t"><span class="str">    :param form: The validated create form (a ``BackupPgForm``).</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t"><span class="str">    :param _resolved: The entities resolved from the form's reference fields, part</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t"><span class="str">        of the framework's ``(form, resolved) -> RunPythonSpec`` builder contract.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t"><span class="str">    :param _resolved: The entities resolved from the form&#x27;s reference fields, part</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t"><span class="str">        of the framework&#x27;s ``(form, resolved) -&gt; RunPythonSpec`` builder contract.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t"><span class="str">        Unused here: the ``SERVER_LIST`` host is the fixed ``localhost`` and the</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t"><span class="str">        service port is carried by ``assemble_envelope``'s connectivity meta, not</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t"><span class="str">        service port is carried by ``assemble_envelope``&#x27;s connectivity meta, not</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t62" href="#t62">62</a></span><span class="t"><span class="str">        the dumped config.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t63" href="#t63">63</a></span><span class="t"><span class="str">    :return: The run-python spec consumed by ``assemble_envelope``.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t64" href="#t64">64</a></span><span class="t"><span class="str">    """</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t64" href="#t64">64</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t65" href="#t65">65</a></span><span class="t">    <span class="nam">all_config</span> <span class="op">=</span> <span class="nam">form</span><span class="op">.</span><span class="nam">model_dump</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t66" href="#t66">66</a></span><span class="t">        <span class="nam">exclude</span><span class="op">=</span><span class="op">{</span><span class="str">"task_name"</span><span class="op">,</span> <span class="str">"hostname"</span><span class="op">,</span> <span class="str">"service_id"</span><span class="op">,</span> <span class="str">"stanza"</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t66" href="#t66">66</a></span><span class="t">        <span class="nam">exclude</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;task_name&quot;</span><span class="op">,</span> <span class="str">&quot;hostname&quot;</span><span class="op">,</span> <span class="str">&quot;service_id&quot;</span><span class="op">,</span> <span class="str">&quot;stanza&quot;</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t67" href="#t67">67</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t68" href="#t68">68</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t69" href="#t69">69</a></span><span class="t">    <span class="nam">server_config</span> <span class="op">=</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">        <span class="str">"alias"</span><span class="op">:</span> <span class="nam">form</span><span class="op">.</span><span class="nam">stanza</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t">        <span class="str">"backup_type"</span><span class="op">:</span> <span class="nam">BackupType</span><span class="op">.</span><span class="nam">PGBACKREST</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t">        <span class="str">"host"</span><span class="op">:</span> <span class="str">"localhost"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">        <span class="str">&quot;alias&quot;</span><span class="op">:</span> <span class="nam">form</span><span class="op">.</span><span class="nam">stanza</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t">        <span class="str">&quot;backup_type&quot;</span><span class="op">:</span> <span class="nam">BackupType</span><span class="op">.</span><span class="nam">PGBACKREST</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t">        <span class="str">&quot;host&quot;</span><span class="op">:</span> <span class="str">&quot;localhost&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t">    <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t">    <span class="nam">backup_config</span> <span class="op">=</span> <span class="nam">BackupConfig</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -166,7 +166,7 @@
     <p class="run run2"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t">            <span class="nam">jsonable_encoder</span><span class="op">(</span><span class="nam">backup_config</span><span class="op">,</span> <span class="nam">by_alias</span><span class="op">=</span><span class="key">True</span><span class="op">,</span> <span class="nam">exclude_none</span><span class="op">=</span><span class="key">True</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t">        <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t">        <span class="nam">requirements</span><span class="op">=</span><span class="nam">_REQUIREMENTS</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t85" href="#t85">85</a></span><span class="t">        <span class="nam">payload</span><span class="op">=</span><span class="nam">payload_uri</span><span class="op">(</span><span class="nam">__file__</span><span class="op">,</span> <span class="str">"payload"</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t85" href="#t85">85</a></span><span class="t">        <span class="nam">payload</span><span class="op">=</span><span class="nam">payload_uri</span><span class="op">(</span><span class="nam">__file__</span><span class="op">,</span> <span class="str">&quot;payload&quot;</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t86" href="#t86">86</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
@@ -176,8 +176,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_0988328201515154_views_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-08-08 06:46 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
+            created at 2026-08-10 15:29 +0000
         </p>
     </div>
 </footer>
